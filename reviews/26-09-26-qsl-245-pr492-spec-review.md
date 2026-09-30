@@ -3,7 +3,7 @@ id: SR-747
 title: "PR 492 spec review (QSL-245 remainder)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@caa1520a4393c132583accda17aa9f8c01c14949; diff 2df75ab6...caa1520a; FR-096 (lines 129-134, AC-15, Status 437-446, 483-486); TC-428 step 6; spec/tests.md TC-428 row; spec/spec.md FR-096 row; ADR-013; ADR-012"
+scope: "agent-ix/quire-spec-language; PR diff; FR-096 (lines 129-134, AC-15, Status 437-446, 483-486); TC-428 step 6; spec/tests.md TC-428 row; spec/spec.md FR-096 row; ADR-013; ADR-012"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#492. Spec review of the FR-096 edits, TC-428 step 6 and the spec.md and tests.md rows. Read against FR-096 on origin/main (2df75ab6) and the code at caa1520a.
+Ticket: QSL-245. PR: quire-spec-language#492. Spec review of the FR-096 edits, TC-428 step 6 and the spec.md and tests.md rows. Read against FR-096 on origin/main and the code at the PR head.
 
 Checked and clean:
 
@@ -38,20 +38,20 @@ Checked and clean:
 
 ## Dispositions
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-747 pr=quire-spec-language#492 reviewed=d5cf7b9487eec13c3f08d469cb239a582b54796d base=caa1520a4393c132583accda17aa9f8c01c14949 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-747 pr=quire-spec-language#492 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | still-open (narrowed) | The d5cf7b94 rewording fixes the contradiction for `Typer` and lowering. It keeps it for the declaration input-bytes ceiling, through a new table row whose producer does not exist in code |
-| FND-002 | fixed | d5cf7b94: new locus row for lowering's own work charge (node-located), plus FR-096-AC-16 |
-| FND-003 | fixed | d5cf7b94: AC-15 now names `qsl_semantics::check::ValueFunctionFamily::evaluate` |
+| FND-001 | still-open (narrowed) | The rewording fixes the contradiction for `Typer` and lowering. It keeps it for the declaration input-bytes ceiling, through a new table row whose producer does not exist in code |
+| FND-002 | fixed | new locus row for lowering's own work charge (node-located), plus FR-096-AC-16 |
+| FND-003 | fixed | AC-15 now names `qsl_semantics::check::ValueFunctionFamily::evaluate` |
 
-**FND-001, still open (latest outcome at d5cf7b94).** The reworded paragraph says two things about the same stop:
+**FND-001, still open (latest outcome).** The reworded paragraph says two things about the same stop:
 
 - A family `check`'s own per-declaration precheck (the table row "S3, a family `check`, for a declaration as a whole": preimage input bytes, node count, work charge) "SHALL be reported as `LimitExceeded`".
 - "package checking's own declaration-level precheck (`PackageDeclarations::check`)" is a `CheckRefusal`, "never a standalone `LimitExceeded` value". The new table row "S3, package checking's declaration-level precheck" gives it "a declaration's input bytes".
 
-In code these are one stop. `limits.input_bytes()` has exactly one production reader, check/mod.rs:848, which feeds `contract_limits.input_bytes`. It is checked only by the family's `cx.check_input_bytes` (check/family.rs:1469), which returns `StageFailure::Limit(LimitExceeded)` located at the declaration. `PackageDeclarations::check` then converts that `LimitExceeded` into a `CheckRefusal` whose `StageLimitCause` keeps the region (check/mod.rs:914-935). qsl-replay/src/spine.rs:936 takes the region from `refusal_region` on that `CheckRefusal`. So the input-bytes ceiling is still required to be both `LimitExceeded` and never a standalone `LimitExceeded`, and the table has two rows for one producer. The d5cf7b94 region-test doc says the same thing ("node count, input bytes and work budget are the family's own per-declaration precheck"), so the spec now disagrees with the code's own doc.
+In code these are one stop. `limits.input_bytes()` has exactly one production reader, check/mod.rs:848, which feeds `contract_limits.input_bytes`. It is checked only by the family's `cx.check_input_bytes` (check/family.rs:1469), which returns `StageFailure::Limit(LimitExceeded)` located at the declaration. `PackageDeclarations::check` then converts that `LimitExceeded` into a `CheckRefusal` whose `StageLimitCause` keeps the region (check/mod.rs:914-935). qsl-replay/src/spine.rs:936 takes the region from `refusal_region` on that `CheckRefusal`. So the input-bytes ceiling is still required to be both `LimitExceeded` and never a standalone `LimitExceeded`, and the table has two rows for one producer. The fix round's region-test doc says the same thing ("node count, input bytes and work budget are the family's own per-declaration precheck"), so the spec now disagrees with the code's own doc.
 
 Suggested fix, one of:
 - Delete the "package checking's declaration-level precheck" row and clause. State that `PackageDeclarations::check` re-reports the family precheck's `LimitExceeded` as a `CheckRefusal`/`stage_limit_exceeded` whose `StageLimitCause` keeps the declaration region.
@@ -81,13 +81,11 @@ dispositions:
       | S3, package checking's declaration-level precheck, under `CheckingLimits` | a declaration's input bytes (NFR-011) | `Locus::Region` over the declaration being charged |
   - fnd: FND-002
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `check::Location` |
       | FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
   - fnd: FND-003
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       | FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` ...
 ```
@@ -98,23 +96,23 @@ dispositions:
 
 ### Joint disposition-pass verdict
 
-<!-- reviewer-verdict repo=agent-ix/quire-spec-language visibility=public id=SR-745,SR-746,SR-747 pr=quire-spec-language#492 reviewed=d5cf7b9487eec13c3f08d469cb239a582b54796d base=caa1520a4393c132583accda17aa9f8c01c14949 date=2026-09-26 -->
+<!-- reviewer-verdict repo=agent-ix/quire-spec-language visibility=public id=SR-745,SR-746,SR-747 pr=quire-spec-language#492 date=2026-09-26 -->
 
-**Disposition pass, PR #492 at d5cf7b94: changes requested.** One spec-text item is still open. Everything else is fixed and verified.
+**Disposition pass, PR #492: changes requested.** One spec-text item is still open. Everything else is fixed and verified.
 
 | SR | FND | Sev | Outcome |
 | --- | --- | --- | --- |
-| SR-745 | FND-001 | low | fixed d5cf7b94 |
-| SR-745 | FND-002 | low | fixed d5cf7b94 |
-| SR-745 | FND-003 | low | fixed d5cf7b94 |
-| SR-745 | FND-004 | low | fixed d5cf7b94 |
-| SR-746 | FND-001 | medium | fixed d5cf7b94 (reviewer mutation-proved) |
-| SR-746 | FND-002 | low | fixed d5cf7b94 |
-| SR-746 | FND-003 | low | fixed d5cf7b94 |
-| SR-746 | FND-004 | low | fixed d5cf7b94 |
+| SR-745 | FND-001 | low | fixed |
+| SR-745 | FND-002 | low | fixed |
+| SR-745 | FND-003 | low | fixed |
+| SR-745 | FND-004 | low | fixed |
+| SR-746 | FND-001 | medium | fixed (reviewer mutation-proved) |
+| SR-746 | FND-002 | low | fixed |
+| SR-746 | FND-003 | low | fixed |
+| SR-746 | FND-004 | low | fixed |
 | SR-747 | FND-001 | medium | **still-open (narrowed)**. The input-bytes ceiling is still both `LimitExceeded` and never a standalone `LimitExceeded`, through the new "package checking's declaration-level precheck" row, which has no producer in code |
-| SR-747 | FND-002 | medium | fixed d5cf7b94 |
-| SR-747 | FND-003 | low | fixed d5cf7b94 |
+| SR-747 | FND-002 | medium | fixed |
+| SR-747 | FND-003 | low | fixed |
 
 The fix round introduced no other new issue. The only code changes are docs, one private fn extraction and tests. `budget_located_at_c_plus_d` is a genuine derivation. FR-096-AC-16 and FR-096-AC-17 collide with nothing. What is left is a one-paragraph FR-096 edit (see the SR-747 dispositions comment). The coder also needs to append the `## Dispositions` sections to the three SR files.
 

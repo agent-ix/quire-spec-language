@@ -3,7 +3,7 @@
 Tracking: [Agent A #58 / LR02](https://github.com/agent-ix/quire-research/issues/58),
 coordinated with [LC01](https://github.com/agent-ix/quire-spec-language/issues/2)
 on the existing PR7 branch. The specification is FR-012/NFR-005
-and IT-004 at 11a9128. The scoped full review is under
+and IT-004. The scoped full review is under
 [spec/reviews/rust-verification](../spec/reviews/rust-verification/base.md), and
 [Plan-001](../plan/Plan-001-rust-fixture-audits/plan.md) records implementation.
 
@@ -42,12 +42,10 @@ as a parity oracle; original fixture bytes and independently authored adverse
 cases supply the checks.
 
 Serde's [visitor interface](https://serde.rs/deserialize-map.html) permits
-checking each decoded map entry. [thiserror](https://docs.rs/thiserror/2.0.20/thiserror/)
+checking each decoded map entry. [thiserror](https://docs.rs/thiserror)
 supplies standard Rust error traits, and
-[tempfile](https://docs.rs/tempfile/3.27.0/tempfile/) isolates test copies.
-Versions and MIT OR Apache-2.0 grants were inspected in the selected local
-package manifests before adoption. The Cargo lock and included-artifact
-inventory records the actual resolved closure; existing grants are preserved.
+[tempfile](https://docs.rs/tempfile) isolates test copies. Both are
+MIT OR Apache-2.0.
 
 ## Current status
 
@@ -58,8 +56,7 @@ packet tests passed with independent corruptions. The six audit unit tests pass
 in the optimized release profile as well. Formatter, strict all-feature Clippy
 and a separate-target locked build pass locally.
 
-The selected standard packet revision is
-36293bae7f5bcb7ca3b2389ed166e525dc9dba87. Review reports 23 files/seven cases/six
+Review reports 23 files/seven cases/six
 controls; roles reports 17 artifacts/four regions; rule-syntax reports 50 parsed/one unsupported.
 Integration tests compare all original fixture bytes before/after execution;
 neither repository's historical fixtures changed.
@@ -78,14 +75,12 @@ no child-process invocation. Test harness processes invoke only the real Rust
 binary; its environment has an empty PATH. Four named historical paths above
 are an inventory of removed files.
 
-The owner requested local CI until stable. NFR-002/IT-004 amendments at 1649ef7
-received all eight review addenda at 2e5cd9a before the workflow change at
-8cf5571. The compiler workflow has only workflow_dispatch; the specification
+The owner requested local CI until stable. The NFR-002/IT-004 amendments
+received all eight review addenda before the workflow change. The compiler workflow has only workflow_dispatch; the specification
 repository has no workflows. No hosted run was dispatched or used to qualify
 this remediation. The shared ix-trace-rs dependency is now public, so a future
 hosted runner no longer needs special access to clone it before the test/lint
 commands can run. Local locked builds already have that access/cache; hosted
 credential setup is not claimed by local results.
 
-This scope covers the local-CI remediation described above. The root code and gap
-reviews record the actual evaluated implementation revision and limitations.
+This scope covers the local-CI remediation described above.

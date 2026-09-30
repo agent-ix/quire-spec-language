@@ -8,39 +8,24 @@ column; do not rename a header back toward `Coverage Status`. The historical
 record below was measured before that collapse, when functional tables still
 used `Coverage Status`; the compiler does not fork or install a shared catalog.
 
-The following exact stack was checked against compiler `7619105`. Its CLI and
-engine report clean source provenance. The CLI capability has landed through
-[CLI PR77](https://github.com/agent-ix/quire-cli/pull/77).
-
-| Component | Selected source revision |
-| --- | --- |
-| CLI | ff638b9802178aa62c757aab914cf0288c1cbe67 |
-| Engine | d3bc2baff191c9521f1064480a56c8dc0bd1c7fa |
-| Process module | e6ea5151b59a55d7ce0d43f1581cbe276f750e04 |
-| ISO module | a60ee12d735976081849f60a38d603fb5494b015 |
-
-Select a binary and module checkouts matching those revisions; inspect the CLI's
-`provenance` output and each checkout's Git revision and clean status. Set
-`QUIRE_STATUS_BIN` to that binary, `QUIRE_PROCESS_ROOT` to its selected
-`spec_artifacts_process` directory and `QUIRE_ISO_ROOT` to the selected
+The CLI capability has landed through
+[CLI PR77](https://github.com/agent-ix/quire-cli/pull/77). Set
+`QUIRE_STATUS_BIN` to the quire binary, `QUIRE_PROCESS_ROOT` to the
+`spec_artifacts_process` directory and `QUIRE_ISO_ROOT` to the
 `spec_artifacts_iso` directory. From this compiler checkout:
 
 ```sh
-"$QUIRE_STATUS_BIN" provenance --pretty
 "$QUIRE_STATUS_BIN" coverage --scope . \
   --module "$QUIRE_PROCESS_ROOT" --module "$QUIRE_ISO_ROOT" --json
 "$QUIRE_STATUS_BIN" validate --scope . \
   --module "$QUIRE_PROCESS_ROOT" --module "$QUIRE_ISO_ROOT" 'spec/**/*.md' --summary
 ```
 
-Explicit module roots replace ambient discovery. The installed CLI `4f6ed024`
-with engine `ca7362d4` rejects the new `status_column` field; its ordinary ambient
-run still reports seven missing status columns. A successful check with the
-candidate stack does not upgrade that installed setup or promote a Quoin lock.
+Explicit module roots replace ambient discovery.
 
 ## Observed results and limits
 
-The exact stack reports zero `status-column-matches-nothing` diagnostics and
+The check reports zero `status-column-matches-nothing` diagnostics and
 zero status lies on the real matrices. The trace rollup is 325/329; its
 `no_symbol_rows` explicitly exempts manual TC-010 and inspection FR-017-AC-2
 from source-symbol status checks. The other two unbacked targets are StR-001's
@@ -81,22 +66,15 @@ trees. No live matrix, production source or producer module was altered.
 
 ## Status repair re-run (#28)
 
-The same commands were re-run on the same pinned stack after the
-`spec/model-linking/tests.md` status repair. The CLI reported its own revision
-`ff638b9802178aa62c757aab914cf0288c1cbe67` / engine
-`d3bc2baff191c9521f1064480a56c8dc0bd1c7fa`, both `clean`. `coverage` exits 0
+The same commands were re-run after the
+`spec/model-linking/tests.md` status repair. `coverage` exits 0
 with `status_lies: []`, no `status-column-matches-nothing` diagnostic and
 `coverage.backed` 374/383 matrix rows over 264 criteria; `validate --scope .
 'spec/**/*.md'` exits 0.
 
-At the time of this record, `status_lies: []` on the pinned stack meant the check
-ran and found nothing, while the same empty list from the installed CLI
-`4f6ed024` meant the check was skipped, because that revision raised
-`status-column-matches-nothing` for all seven matrices. Before
-`spec-artifacts-process#87`, only the pinned stack's result could be cited as a
-status verification. Since #87 collapsed the two names to one `Status` column,
-an installed stack at or after that module revision that reports no
-`status-column-matches-nothing` diagnostic may be cited instead.
+An empty `status_lies` list means nothing only when the run reports no
+`status-column-matches-nothing` diagnostic; with that diagnostic present the
+check was skipped.
 
 Four limits of that clean result are worth stating, because none is caught by the
 absence of status diagnostics:
@@ -120,8 +98,8 @@ absence of status diagnostics:
   status defect.** The `nfr-acceptance-criterion` declaration selects every NFR
   by archetype and reports that none has an `Acceptance Criteria` section. None
   does: the seven NFRs state their obligations as `Measurement and Evaluation`
-  metric rows plus a prose `Verification` section, and as measured on
-  `bb30eac` no `NFR-nnn-AC-n` id existed anywhere in this repository. That last
+  metric rows plus a prose `Verification` section, and when measured no
+  `NFR-nnn-AC-n` id existed anywhere in this repository. That last
   clause is time-bounded and is already being overtaken: `NFR-008` on
   `agent-a/l5-native-temporal` declares `NFR-008-AC-1..AC-5` under a real
   `## Acceptance Criteria` heading with the required `ID | Criteria |

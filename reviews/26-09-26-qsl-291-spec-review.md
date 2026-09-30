@@ -3,7 +3,7 @@ id: SR-730
 title: "QSL-291 spec review of PR 488 (FR-100/FR-106 follow catalog 1-draft.8)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@18d10c06702eb3d9c823f2a2b30ae2753af6e739; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-106-admit-snapshots-and-invocations.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-106-admit-snapshots-and-invocations.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -14,11 +14,11 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-291 (PR agent-ix/quire-spec-language#488, base e9d235c9). The
-diff is spec-only. It was measured against QSpec commit 84ed5298
+Ticket: QSL-291 (PR agent-ix/quire-spec-language#488). The
+diff is spec-only. It was measured against QSpec
 (`proposals/quire-v1/definitions/native-diagnostics.md` revision
 `1-draft.8`, FR-145), against FR-096 and FR-001 as merged on origin/main by
-#487, and against `quire-exact/src/outcome.rs` at the reviewed sha.
+#487, and against `quire-exact/src/outcome.rs`.
 
 Matches confirmed:
 
@@ -59,15 +59,14 @@ one-word fix. FND-004 is a recommendation for the owner.
 
 ## Dispositions
 
-Round 2, reviewed at a62cb0d00170598b9c66ad346d3ae274ac36314d (fix commit
-a62cb0d0 on b9da7cd4, rebased onto origin/main dc6cf925). The author's gate
-log `qsl-291-ci-r2.log` starts with the head sha and ends `exit=0`.
+Round 2, reviewed at the fix commit, rebased onto origin/main. The author's
+gate log `qsl-291-ci-r2.log` ends `exit=0`.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | a62cb0d0: FR-100:202-205 makes an empty `sum` whose `N` does not admit `0` `sum-out-of-domain` at the `sum` node (owner ruling); FR-100-AC-10 and TC-452 step 5 test it |
-| FND-002 | fixed | a62cb0d0: FR-106:174-179 scopes the label order "within this check" and drops the `empty-path` sentence |
-| FND-003 | fixed | a62cb0d0: FR-100:194-200 locates a failing seed at the summand's node and a failing addition at the `sum` node, matching FR-096:268-270, FR-096-AC-14 and TC-500 steps 1 and 3 |
+| FND-001 | fixed | FR-100:202-205 makes an empty `sum` whose `N` does not admit `0` `sum-out-of-domain` at the `sum` node (owner ruling); FR-100-AC-10 and TC-452 step 5 test it |
+| FND-002 | fixed | FR-106:174-179 scopes the label order "within this check" and drops the `empty-path` sentence |
+| FND-003 | fixed | FR-100:194-200 locates a failing seed at the summand's node and a failing addition at the `sum` node, matching FR-096:268-270, FR-096-AC-14 and TC-500 steps 1 and 3 |
 | FND-004 | accepted-no-change | Owner ruling: the `undefined` outcome keeps rendering only `reason`, as before this PR |
 
 Round-2 note (new, low, non-blocking): FR-096 on main still says FR-100's

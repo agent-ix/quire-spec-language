@@ -5,7 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "Compiler FR-035/036, TC-113–115, IT-009 and changed US-001/002, master index and TM-003; current parser/syntax/linking/package interfaces"
 review_set: all
-evaluated_revision: "fa07b079861286c884e2f44380a3ed8f9508ef86"
 review_date: "2026-09-10"
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-035, type: reviews }
@@ -56,8 +55,7 @@ reconstructs through the real compiler. The proposed partial report remains a
 separate stage under FR-036, without requiring a second parser, model authority
 or incidental wire format.
 
-The standard input was inspected at
-`d7483f3d0abe7e71614f73ee18eb51a677ebe3d8` in
+The standard input was inspected in
 `quire-specification`: `proposals/quire-v1/shared-grammar.md`,
 `package-contract.md` and `definitions/edition.md`. Its source/static/runtime
 boundaries support the controls above. Standard/producer acceptance remains an

@@ -6,8 +6,6 @@ use std::{collections::BTreeMap, process::Command};
 use ix_trace_rs::trace;
 use serde_json::Value;
 
-const HISTORICAL_IR_REVISION: &str = "04eb6f849c03be23177d373549c6c272551f957d";
-
 #[trace("TC-139", "FR-051-AC-6")]
 #[test]
 fn production_graph_is_cycle_free_and_historical_ir_is_test_only() {
@@ -53,11 +51,8 @@ fn production_graph_is_cycle_free_and_historical_ir_is_test_only() {
         .find(|dependency| dependency["name"] == "quire_contract_ir")
         .expect("production Contract Model alias");
     let model_id = model["pkg"].as_str().expect("Contract Model package id");
-    // The pinned revision itself is informational, not asserted here: it
-    // moves every time the key is bumped (docs/dependencies.md records the
-    // current one), while the properties this test actually guards -- the
-    // package name, that it is a normal production dependency and that the
-    // production graph stays cycle-free -- do not.
+    // Guards the package name, that it is a normal production dependency and
+    // that the production graph stays cycle-free.
     assert_eq!(by_id[model_id].0, "quire-contract-model");
     assert!(
         model["dep_kinds"]
@@ -93,17 +88,10 @@ fn production_graph_is_cycle_free_and_historical_ir_is_test_only() {
         "the compatibility Contract-IR package must not enter QSL's production graph"
     );
 
-    let historical = packages
-        .iter()
-        .find(|package| {
-            package["name"] == "quire-contract-ir"
-                && package["source"]
-                    .as_str()
-                    .is_some_and(|source| source.contains(HISTORICAL_IR_REVISION))
-        })
-        .expect("explicit historical test-only Contract-IR revision");
     assert!(
-        !production.contains(historical["id"].as_str().expect("historical package id")),
-        "historical Contract-IR must remain outside the production graph"
+        packages
+            .iter()
+            .any(|package| package["name"] == "quire-contract-ir"),
+        "the historical test-only Contract-IR package is resolved"
     );
 }

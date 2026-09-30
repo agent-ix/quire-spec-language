@@ -5,7 +5,6 @@ type: SpecReview
 analysis: evidence
 scope: "FR-005, IT-005, TM-003, TC-020–024 and current boundary documentation"
 review_set: all
-evaluated_revision: "858a628e71df8f2bbc498fb6a410ea1f95166e24"
 ---
 
 ## Summary
@@ -33,20 +32,18 @@ The first normal advisor attempt failed to identify its child Quire version. Dir
 
 Quire reports 57/103 backed, TM-003 0/10, 41/41 existing Rust test symbols bound, and no status lies. The six existing duplicate module diagnostics and functional Status/Coverage Status mismatch remain visible. These external observations do not change planned-case statuses.
 
-The unchanged native source passes 38 default tests and all three explicitly selected private-packet tests with Rust 1.98.1, plus formatting and strict all-target/all-feature Clippy. That qualifies the existing parser/audit behavior on this compiler; it is not an executed native typechecker, new producer or state workflow.
+The unchanged native source passes 38 default tests and all three explicitly selected private-packet tests, plus formatting and strict all-target/all-feature Clippy. That qualifies the existing parser/audit behavior on this compiler; it is not an executed native typechecker, new producer or state workflow.
 
 Exact successful commands from the language worktree:
 
 ```sh
-cargo +1.98.1 fmt --all -- --check
-cargo +1.98.1 test --offline --locked --target-dir target --no-default-features
-cargo +1.98.1 clippy --offline --locked --target-dir target --all-targets --all-features -- -D warnings
-QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core cargo +1.98.1 test --offline --locked --target-dir target --test fixture_audit -- --ignored
+cargo fmt --all -- --check
+cargo test --offline --locked --target-dir target --no-default-features
+cargo clippy --offline --locked --target-dir target --all-targets --all-features -- -D warnings
+QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core cargo test --offline --locked --target-dir target --test fixture_audit -- --ignored
 ```
 
-Observed rustc: 1.98.1 (48a229cea 2026-09-01); Cargo: 1.98.1
-(797e8a9bc 2026-08-05). Runtime source, Cargo.lock and workflow bytes match
-d6c6515; this amendment did not migrate their pins. Final validation including
+Final validation including
 these eight reviews reports 100/100 specification documents grammar-clean.
 
 ## Provenance

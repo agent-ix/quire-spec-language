@@ -5,15 +5,13 @@ type: SpecReview
 analysis: evidence
 scope: "FR-043, FR-044, FR-045, NFR-008, TC-122-125, TM-008, docs/native-temporal-evaluation.md"
 review_set: subset
-evaluated_revision: "87bc83f5fad724413737e0a707cf80bdbcba931a"
-previous_evaluated_revision: "4c1eee8646b51e00cd141d15eb110a33354b8475"
 review_date: "2026-09-11"
 ---
 
 ## Summary
 
-Re-run of this review against 87bc83f, which reworked the temporal scope in
-response to the sixteen findings recorded at 4c1eee8. Thirty-two acceptance
+Re-run of this review against the revision that reworked the temporal scope in
+response to the sixteen findings recorded in the first cycle. Thirty-two acceptance
 criteria across FR-043, FR-044, FR-045 and NFR-008 and five NFR-008 metric rows
 were re-examined, together with the newly published counter contract in
 `docs/native-temporal-evaluation.md`. All three high findings are resolved: the
@@ -28,7 +26,7 @@ evidence artifact of their own.
 
 ### Disposition
 
-| Prior finding | Status at 87bc83f | Evidence |
+| Prior finding | Status | Evidence |
 | --- | --- | --- |
 | FND-001 weakened eviction method | Resolved | Metric row 3 is `model-based-test-generation`; all five rows carry catalog ids and name a population. |
 | FND-002 no counter definitions | Resolved | NFR-008 Counter definitions lists eight counters; `docs/native-temporal-evaluation.md` publishes kinds, units and defaults under `quire.native.temporal-work/1`; `src/temporal/budget.rs` lands `Limits`, `Usage` and `Dimension` with the same eight. |
@@ -69,7 +67,7 @@ Rust test alone. Nine now carry a second method, and every one of those nine is
 the right call; the residual problems are machine-readability (FND-001) and, in
 three cases, an unnamed artifact.
 
-| Criterion | Declared at 87bc83f | Disposition |
+| Criterion | Declared | Disposition |
 | --- | --- | --- |
 | FR-043-AC-1 | Test (TC-122), Inspection | Correct. TC-122 group 1 inspects the emitted graph for distinct `Constant` and `Holds` nodes, so the Inspection has a concrete subject. |
 | FR-043-AC-2 | Test (TC-122), Analysis | Correct method; the Analysis is discharged by the pairwise identity comparison in group 2, which is a test step, so the Analysis adds nothing the test does not already do. |

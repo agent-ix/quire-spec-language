@@ -3,7 +3,7 @@ id: SR-086
 title: "Code and Rust review of native clause checking"
 type: SpecReview
 analysis: code-review
-scope: "FR-006/016 at cdb6560ea26b9baad725b17ab82a315ae7c39a30"
+scope: "FR-006/016"
 review_set: subset
 ---
 
@@ -27,9 +27,9 @@ backend qualification and Quire integration remain required downstream work.
 
 ## Review context
 
-Reviewed cdb6560ea26b9baad725b17ab82a315ae7c39a30 against FR-006/016 and the
-concrete docs/native-model-checking.md contract reviewed at ceccabb by the
-owner-selected all-review set SR-066–073 at 3cdeb59. Applied the actual
+Reviewed against FR-006/016 and the
+concrete docs/native-model-checking.md contract reviewed by the
+owner-selected all-review set SR-066–073. Applied the actual
 /home/peter/dev/agent-skills/code-review/SKILL.md and rust-review/SKILL.md,
 portable rust-style defaults and implementation-gap-analysis discovery.
 AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern. No applicable
@@ -137,7 +137,7 @@ Paths below are relative to reviews/data/native-checking/.
 | `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache | checker-minimal-build.txt |
 | `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | checker-rustdoc.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed | checker-audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests and exact producer pin passed | checker-audit-model-bytes.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests passed | checker-audit-model-bytes.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | checker-cli-parse.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | checker-cli-format.txt |
 

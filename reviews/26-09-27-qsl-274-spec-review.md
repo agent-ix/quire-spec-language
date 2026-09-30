@@ -3,7 +3,7 @@ id: SR-758
 title: "Spec review of QSL-274 FR-120 model simulation and the FR-101 engine amendment"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@a6c89d1acb9a1deb225c2b154a5644a35721ef8f; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-471-model-successors-follow-operations-arguments-and-frames.md; spec/test-cases/TC-472-invariant-violations-are-recorded-and-undecided-expansions-stop.md; spec/test-cases/TC-473-model-effects-are-trace-data-and-ambient-reads-refuse.md; spec/spec.md; spec/tests.md; spec/usecase/US-003-evaluate-bounded-state.md; context read: FR-097, FR-103, FR-104, FR-106, FR-107, FR-114, FR-115, qsl-semantics/src/model/population.rs, qsl-semantics/src/model/intake.rs, qsl-semantics/src/model/observation.rs, qsl-semantics/src/model/key.rs, qsl-eval/src/simulation/explore.rs, qsl-eval/src/value/expression/mod.rs, qsl-package/src/checked.rs; QSpec origin/main FR-181, FR-013, FR-151, state-contract.md, native-diagnostics.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-471-model-successors-follow-operations-arguments-and-frames.md; spec/test-cases/TC-472-invariant-violations-are-recorded-and-undecided-expansions-stop.md; spec/test-cases/TC-473-model-effects-are-trace-data-and-ambient-reads-refuse.md; spec/spec.md; spec/tests.md; spec/usecase/US-003-evaluate-bounded-state.md; context read: FR-097, FR-103, FR-104, FR-106, FR-107, FR-114, FR-115, qsl-semantics/src/model/population.rs, qsl-semantics/src/model/intake.rs, qsl-semantics/src/model/observation.rs, qsl-semantics/src/model/key.rs, qsl-eval/src/simulation/explore.rs, qsl-eval/src/value/expression/mod.rs, qsl-package/src/checked.rs; QSpec origin/main FR-181, FR-013, FR-151, state-contract.md, native-diagnostics.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-120
@@ -19,7 +19,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-274 (A05-4). PR: quire-spec-language#496 at a6c89d1a. Spec-only.
+Ticket: QSL-274 (A05-4). PR: quire-spec-language#496. Spec-only.
 Analyses: integrity, scope and failure domain, interfaces, and EARS/testability
 of the ACs, checked against QSpec FR-181, FR-013 and FR-151 on origin/main and
 against the code on main.
@@ -76,27 +76,26 @@ the S4-only scope are all sound.
 
 ## Dispositions
 
-Round 2, reviewed at 58c0a42945f421271faffadd3b9c50499ca8e19a (fix commit
-58c0a429). Each outcome below was checked against the spec text at that
+Round 2. Each outcome below was checked against the spec text at the fix
 head and, where the fix cites code, against that code on main.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 58c0a429: FR-120 Dependencies :512-516 and Status :533-535 name QSL-289 (PR #498). TC-471 to TC-473 are marked runnable once QSL-289 lands. Linear shows QSL-289 blocks QSL-274. |
-| FND-002 | fixed | 58c0a429: FR-101 carries the trait, `Exploration`, `Trace<T, F>`, "Findings and stopped expansions" and AC-12 to AC-14. FR-097-AC-5 maps `Stopped`. |
-| FND-003 | fixed | 58c0a429: FR-101's replay rule accepts a stop at the last state with the same cause. FR-101-AC-14 and FR-120-AC-8 test it. |
-| FND-004 | fixed | 58c0a429: FR-120:140-148 defines the identity text as the JCS `$defs.DeclarationKey` preimage (`key.rs` `wire()`). It is used for population keys, record names, operations and anchors, and AC-1 and AC-4 give it literally. `<U>` and `<E>` are covered by R2-FND-002. |
-| FND-005 | fixed | 58c0a429: FR-120:216-290 defines the public seam `qsl_semantics::model::state` (`StateModel`, `ModelState`, `StateDelta`). `check_frame` calls `population::decide_frame`, the one frame decision. The `Observation`, `DocumentRef` and `AdmittedObservations` construction is spelled out field by field. |
-| FND-006 | fixed | 58c0a429: FR-120:206-214 gives initial states `{initialization, name}` and reached states `{handler, <operation>}`, both labelled as QSL's choice. The finding records the anchor. See R2-FND-003 for the wording on sampled traces. |
-| FND-007 | fixed | 58c0a429: FR-120:317-328 marks the own-clause conjunction as QSL's inference and cites `checked_dispatch.rs:477` and `intake.rs:1444`. |
-| FND-008 | fixed | 58c0a429: FR-120:332-349 evaluates every applicable clause, and the result depends only on the set of outcomes. FR-120-AC-9 tests it with `Never` and `Aaa`. |
-| FND-009 | fixed | 58c0a429: FR-120:91-134 gives the `sample_model` signature. It samples and then replays, and `ModelTrace.effects` is derived by replay. |
-| FND-010 | fixed | 58c0a429: FR-120:432-437 derives each root's `WireNodeId`. TC-472 step 4 names both roots. |
-| FND-011 | fixed | 58c0a429: FR-120:461-463 cites `check.rs:1667-1673`. `self_reference` refuses at the `self` location; checked. |
-| FND-012 | fixed | 58c0a429: the listed sentences were restated positively (:302, :357-360, :526-529). |
-| FND-013 | fixed | 58c0a429: FR-120:415-417 and FR-101 "Findings and stopped expansions" state both. FR-101-AC-13 tests them. |
+| FND-001 | fixed | FR-120 Dependencies :512-516 and Status :533-535 name QSL-289 (PR #498). TC-471 to TC-473 are marked runnable once QSL-289 lands. Linear shows QSL-289 blocks QSL-274. |
+| FND-002 | fixed | FR-101 carries the trait, `Exploration`, `Trace<T, F>`, "Findings and stopped expansions" and AC-12 to AC-14. FR-097-AC-5 maps `Stopped`. |
+| FND-003 | fixed | FR-101's replay rule accepts a stop at the last state with the same cause. FR-101-AC-14 and FR-120-AC-8 test it. |
+| FND-004 | fixed | FR-120:140-148 defines the identity text as the JCS `$defs.DeclarationKey` preimage (`key.rs` `wire()`). It is used for population keys, record names, operations and anchors, and AC-1 and AC-4 give it literally. `<U>` and `<E>` are covered by R2-FND-002. |
+| FND-005 | fixed | FR-120:216-290 defines the public seam `qsl_semantics::model::state` (`StateModel`, `ModelState`, `StateDelta`). `check_frame` calls `population::decide_frame`, the one frame decision. The `Observation`, `DocumentRef` and `AdmittedObservations` construction is spelled out field by field. |
+| FND-006 | fixed | FR-120:206-214 gives initial states `{initialization, name}` and reached states `{handler, <operation>}`, both labelled as QSL's choice. The finding records the anchor. See R2-FND-003 for the wording on sampled traces. |
+| FND-007 | fixed | FR-120:317-328 marks the own-clause conjunction as QSL's inference and cites `checked_dispatch.rs:477` and `intake.rs:1444`. |
+| FND-008 | fixed | FR-120:332-349 evaluates every applicable clause, and the result depends only on the set of outcomes. FR-120-AC-9 tests it with `Never` and `Aaa`. |
+| FND-009 | fixed | FR-120:91-134 gives the `sample_model` signature. It samples and then replays, and `ModelTrace.effects` is derived by replay. |
+| FND-010 | fixed | FR-120:432-437 derives each root's `WireNodeId`. TC-472 step 4 names both roots. |
+| FND-011 | fixed | FR-120:461-463 cites `check.rs:1667-1673`. `self_reference` refuses at the `self` location; checked. |
+| FND-012 | fixed | the listed sentences were restated positively (:302, :357-360, :526-529). |
+| FND-013 | fixed | FR-120:415-417 and FR-101 "Findings and stopped expansions" state both. FR-101-AC-13 tests them. |
 
-Round 2 findings, new at 58c0a429:
+Round 2 findings:
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -109,15 +108,14 @@ Verdict at round 2: all 13 round-1 findings are fixed. Fix R2-FND-001, a
 one-row expected-code edit, before merge. R2-FND-002 to R2-FND-004 are
 one-line edits for the same round.
 
-Round 3, reviewed at bcd6d6da6758def26b4e304406662b195d3a55c5 (fix commit
-bcd6d6da). This file was renumbered from SR-753 to SR-758, because #498
+Round 3. This file was renumbered from SR-753 to SR-758, because #498
 merged SR-753 on main. Its round-2 findings are listed here as R2-FND-nnn.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| R2-FND-001 | fixed | bcd6d6da: FR-120-AC-7 (:499) and TC-472 step 3 now expect `invalid_runtime_input`/`wrong-value-kind` with field `anchor` for anchor kind `other`, citing `document.rs:525-528`. That matches `wrong_kind` at `document.rs:401-403`. |
-| R2-FND-002 | fixed | bcd6d6da: in AC-4 and TC-471 step 4, `<U>` and `<E>` now come from the `ObjectReference` that `StateModel::admit_initial` gives `c1`, which is independent of the simulator's key encoding. |
-| R2-FND-003 | fixed | bcd6d6da: FR-120 limits "first reached" to exploration. A sampled step is anchored to its own transition. |
-| R2-FND-004 | fixed | bcd6d6da: `check_frame` first computes each population's created and deleted keys as the key-set difference, then passes them as `FrameDecision.declared_created` and `declared_deleted`. |
+| R2-FND-001 | fixed | FR-120-AC-7 (:499) and TC-472 step 3 now expect `invalid_runtime_input`/`wrong-value-kind` with field `anchor` for anchor kind `other`, citing `document.rs:525-528`. That matches `wrong_kind` at `document.rs:401-403`. |
+| R2-FND-002 | fixed | in AC-4 and TC-471 step 4, `<U>` and `<E>` now come from the `ObjectReference` that `StateModel::admit_initial` gives `c1`, which is independent of the simulator's key encoding. |
+| R2-FND-003 | fixed | FR-120 limits "first reached" to exploration. A sampled step is anchored to its own transition. |
+| R2-FND-004 | fixed | `check_frame` first computes each population's created and deleted keys as the key-set difference, then passes them as `FrameDecision.declared_created` and `declared_deleted`. |
 
 Verdict at round 3: no open findings. Approve.

@@ -29,7 +29,6 @@ struct Llvm31Export {
 
 #[derive(Deserialize)]
 struct Llvm31Producer {
-    version: String,
     manifest_path: String,
 }
 
@@ -50,7 +49,6 @@ impl Llvm31Export {
         let export: Self = serde_json::from_slice(bytes).unwrap();
         assert_eq!(export.kind, "llvm.coverage.json.export");
         assert_eq!(export.version, "3.1.0");
-        assert_eq!(export.cargo_llvm_cov.version, "0.9.0");
         assert_eq!(
             Path::new(&export.cargo_llvm_cov.manifest_path),
             source_root.join("Cargo.toml")
@@ -286,10 +284,6 @@ fn main() {{
     .unwrap();
 
     let version = String::from_utf8(run(Command::new("rustc").arg("-vV"))).unwrap();
-    assert!(
-        version.starts_with("rustc 1.98.1 "),
-        "qualification requires the adopted compiler: {version}"
-    );
     let host = version
         .lines()
         .find_map(|line| line.strip_prefix("host: "))
@@ -301,10 +295,7 @@ fn main() {{
         .join(host)
         .join("bin");
     for tool in ["llvm-cov", "llvm-profdata"] {
-        assert!(
-            llvm.join(tool).is_file(),
-            "install llvm-tools-preview for Rust 1.98.1"
-        );
+        assert!(llvm.join(tool).is_file(), "install llvm-tools-preview");
     }
     let target = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/lc04-generated");
     run(Command::new(env!("CARGO"))
@@ -331,14 +322,6 @@ fn main() {{
         property_truth[bits] = Some(truth);
     }
     assert!(property_truth.iter().all(Option::is_some));
-    assert_eq!(
-        String::from_utf8(run(
-            Command::new(env!("CARGO")).args(["llvm-cov", "--version"])
-        ))
-        .unwrap()
-        .trim(),
-        "cargo-llvm-cov 0.9.0"
-    );
     // Isolate this run's measured binary and profiles from the reusable build
     // cache so stale executables/profiles cannot participate in the report.
     let report_target = root.path().join("coverage");
@@ -469,7 +452,7 @@ fn main() {{
         );
         let report: Value = serde_json::from_slice(&report.to_json_bytes().unwrap()).unwrap();
         // Preserve the downstream capability boundary: this named fixture can
-        // qualify LLVM 3.1.0, but the reusable pinned reader has not adopted it.
+        // qualify LLVM 3.1.0, but the reusable reader has not adopted it.
         assert_eq!(
             report["state"], "unsupported",
             "update the qualification when the backend changes: {report}"

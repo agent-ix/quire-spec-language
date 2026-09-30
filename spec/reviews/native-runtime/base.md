@@ -5,7 +5,6 @@ type: SpecReview
 analysis: base
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
-evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -67,7 +66,7 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Read the TC-055–057 setup correction at dc63f337fcdaee1320d221383eca38599239f62c.
+Read the TC-055–057 setup correction.
 The original shared setup sentence incorrectly required a CheckedPackage for
 construction. The corrected cases use the public input constructors and existing
 IR identities, as FR-018 already requires. All seven AC mappings, three case

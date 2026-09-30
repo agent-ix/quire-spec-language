@@ -5,13 +5,12 @@ type: SpecReview
 analysis: failure-domain
 scope: "IT-005, TM-003 and TC-020–029 against existing FR-005/006"
 review_set: all
-evaluated_revision: "0998e51f7051ea6996d21f6ed4db39d7e5d8f6ba"
 ---
 
 ## Summary
 
 Reviewed the LC02 evidence specification using the owner's retained base plus
-all seven QUOIN analyses. The owner has accepted specification e897f81 as the
+all seven QUOIN analyses. The owner has accepted the specification as the
 internal implementation target; no external adapter or execution is invented.
 
 ## Verdict
@@ -46,5 +45,5 @@ advisor and coverage data are retained in this review directory.
 
 ## Adoption and fixture correction review — 2026-09-08
 
-Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+Evaluated the amendment using the retained
 review set. Equal numerical bounds do not remove the missing-qualified-model setup condition or change any requested refusal. No new fallback, skip, partial success or failure classification was introduced. FND-001/002 and the conditional verdict remain.

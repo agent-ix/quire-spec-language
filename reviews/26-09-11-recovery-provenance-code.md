@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-`/code-review` over `origin/main...a33a3c1` (12 files, +751/−247), Rust lane from
+`/code-review` over the branch diff (12 files, +751/−247), Rust lane from
 the actual `/home/peter/dev/agent-skills/skills/rust-review/SKILL.md` plus the
 portable `/home/peter/dev/agent-skills/skills/rust-style/SKILL.md`; this repo
 publishes no Rust idiom skill of its own. The increment removes the duplicated

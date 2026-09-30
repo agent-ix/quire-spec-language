@@ -5,7 +5,6 @@ type: SpecReview
 analysis: risk-complexity
 scope: "FR-015/016, FR-006 judgments, docs/native-model-checking.md, IT-005, TC-025–029/040–053 and TM-003"
 review_set: all
-evaluated_revision: "ceccabb564b61742597ad356eb1019ab0c8d1544"
 review_date: "2026-09-08"
 ---
 

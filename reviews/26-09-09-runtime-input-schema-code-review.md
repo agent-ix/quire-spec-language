@@ -3,7 +3,7 @@ id: SR-284
 title: "Code and Rust review of the runtime input schema"
 type: SpecReview
 analysis: code-review
-scope: "f4679ef against 6d7de6a; schema, runtime_reading schema tests and FR-024"
+scope: "schema, runtime_reading schema tests and FR-024"
 review_set: subset
 ---
 ## Summary

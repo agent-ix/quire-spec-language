@@ -3,7 +3,7 @@ id: SR-783
 title: "QSL-319 gap analysis of PR 520 (value/parameter occurrence role)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@00e411c88065195926487cb5b0b8e1f4343fb598; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/claims.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/lowering/tests/binder_scope.rs (unchanged); qsl-semantics/src/check/lowering/tests/differential.rs (unchanged); QSpec FR-341-AC-10 at quire-specification@e56756f (reference, read only)"
+scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/claims.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/lowering/tests/binder_scope.rs (unchanged); qsl-semantics/src/check/lowering/tests/differential.rs (unchanged); QSpec FR-341-AC-10 in quire-specification (reference, read only)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-093
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-319. PR: quire-spec-language#520 at 00e411c8.
+Ticket: QSL-319. PR: quire-spec-language#520.
 
 The PR has no plan bundle. The ticket's acceptance criterion is QSpec
 FR-341-AC-10: "A `value`/`parameter` node's body is an `aggregate` of exactly
@@ -57,7 +57,7 @@ parameters.
 
 ## New findings (disposition pass 1)
 
-Reviewed at agent-ix/quire-spec-language@9dd43d1d278dfd0f9b8782b4a7cdb6d7f82f2af3 (fix commit 9dd43d1d).
+Reviewed at the fix commit.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
@@ -67,4 +67,4 @@ Reviewed at agent-ix/quire-spec-language@9dd43d1d278dfd0f9b8782b4a7cdb6d7f82f2af
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 9dd43d1d: `s4_emits_exactly_the_fr_105_state_nodes` (TC-462, now also traced to FR-341-AC-10) iterates every `value`/`parameter` node of the real ConfigVersion compile (`compiled.package.graph()`) and asserts that every one of its `graph.occurrences()` entries has role `expression`, with at least one entry per node. State-clause `self`/`result` go through `parameter()` in state.rs:162, so reverting lowering.rs:2169 to `Anchor` makes the assertion fail on their ordinal-0 entry. `make ci` at 9dd43d1d passes it. |
+| FND-001 | fixed | `s4_emits_exactly_the_fr_105_state_nodes` (TC-462, now also traced to FR-341-AC-10) iterates every `value`/`parameter` node of the real ConfigVersion compile (`compiled.package.graph()`) and asserts that every one of its `graph.occurrences()` entries has role `expression`, with at least one entry per node. State-clause `self`/`result` go through `parameter()` in state.rs:162, so reverting lowering.rs:2169 to `Anchor` makes the assertion fail on their ordinal-0 entry. `make ci` passes it. |

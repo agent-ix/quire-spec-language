@@ -67,10 +67,10 @@ run, not five interleaved rounds. It does not meet this rule.
 | Item | Value |
 | --- | --- |
 | Machine | Intel Core i9-10900K @ 3.70 GHz, 20 logical CPUs (`nproc`), 62 GiB RAM, WSL2 Linux 6.18.33.2-microsoft-standard-WSL2 |
-| Toolchain | rustc 1.98.1 (48a229cea 2026-09-01), `bench` profile (release) |
-| Harness | criterion 0.8.2, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
-| Checker and evaluator axes | 5 runs, 2026-09-23 17:22 to 18:23 (UTC-7), at `4dd02fb1`. That revision's checker, evaluator, package, forms and kernel sources are identical to this branch's base, `25ee38ff`. Load average ranged from 3.3 to 26.6, with two other QSL builds running. |
-| Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7), at `46113bb5`. This is rebased on `25ee38ff` (QSL-201) and includes the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
+| Toolchain | `bench` profile (release) |
+| Harness | criterion, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
+| Checker and evaluator axes | 5 runs, 2026-09-23 17:22 to 18:23 (UTC-7). Load average ranged from 3.3 to 26.6, with two other QSL builds running. |
+| Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7), including the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
 
 These three axes were re-measured because each changed what it measures:
 
@@ -125,7 +125,7 @@ it took to refuse.
 | `parser/volume/admitted/2000` | 2,000 functions, 125,069 B, 36,003 nodes (largest that parses) | 194 ms | 182 ms – 261 ms | 9% | volume/1000: 1.8 times, linear |
 | `parser/volume/refused/3000` | 3,000 functions, 188,069 B; `resource_exhausted`, "complete grammar work or nesting budget exhausted" | 134 ms | 117 ms – 149 ms | 11% | volume/2000. Time to reach the refusal. QSL-197 AC 5 requires this input to parse. |
 
-Refusal boundary at 89326999, from `qsl-bench-probe parse`, which tries depths
+Refusal boundary, from `qsl-bench-probe parse`, which tries depths
 0 to 64: depth 4 is the deepest nesting that parses, and every depth from 5 to
 64 is refused. 4,000 functions is refused with "CST leaf budget exhausted".
 
@@ -157,7 +157,7 @@ is excluded from the timing.
 
 Chains too slow to sample repeatedly were measured with
 `qsl-bench-probe check chain <n>`. Each size ran three times, in three separate
-processes, at `4dd02fb1` (same checker code as above).
+processes (same checker code as above).
 
 - **Wall time** is one `check`.
 - **Peak RSS** is `VmHWM` of a process that built and checked only that chain.
@@ -191,7 +191,7 @@ count; qsl-cst's own unit test counts the digest calls.
 - The `cst/sha256/<input>` rows timed the per-node digests QSL-200 removed and
   are gone with them. `qsl-bench-probe cst` now prints node counts only.
 
-The tables below were measured at 89326999, before QSL-200, when every node
+The tables below were measured before QSL-200, when every node
 carried a SHA-256 `StableNodeId` over its whole source slice and every
 ancestor's production name. They are kept as the record of what QSL-200
 removed; the PR #380 A/B run is the comparison against them.
@@ -354,7 +354,7 @@ baseline does not show the per-frame cost changing with depth.
   object universe from the effective view the caller normalized under its own
   limits, and does no normalization. The `model/object_universe_of/<n>` bench
   is gone with the function it timed. The rows above are kept as history.
-  Back-to-back A/B in one session, base `f157f346` against PR head, criterion
+  Back-to-back A/B in one session, base against PR head, criterion
   point estimates:
 
   | Bench | Base | QSL-204 | Change |
@@ -419,9 +419,9 @@ count is about 10^7 to 10^8, not 10^9.
   dominate, not on `checker/chain/*`, where termination hides them until
   QSL-203 lands.
 
-### F13: model intake parses the same bytes three times. Confirmed at `89326999`, fixed by QSL-201. Intake's real cost is FCD's validator.
+### F13: model intake parses the same bytes three times. Confirmed, fixed by QSL-201. Intake's real cost is FCD's validator.
 
-- **At `89326999`.** The first session measured three parses of the same bytes,
+- **Before QSL-201.** The first session measured three parses of the same bytes,
   about 117 ms at 4,000 types. The two redundant parses cost about 74 ms of a
   2.45 s intake (3%).
 - **After QSL-201.** Intake parses once (`PackageDocument::parse`):
@@ -432,11 +432,10 @@ count is about 10^7 to 10^8, not 10^9.
   - A dwarf `perf` profile at 4,000 types attributes 72% of all samples to
     `agent_ix_semantic_ir::decide`, and 68% to one collect inside it.
   - The collect is FCD's `constructs::frames`
-    (`crates/semantic-ir/src/constructs.rs:645-646` at FCD `1572ba4b`). It
+    (`crates/semantic-ir/src/constructs.rs` in FCD). It
     calls `document_features(document)`, which collects every field of every
     type, once per type. That is O(T × F), in the FCD validator QSL calls.
-  - This was profiled at `89326999`. QSL-201 did not change the validator
-    call.
+  - QSL-201 did not change the validator call.
 - **The fix belongs to FCD: PLAT-1051.** Hoist `document_features` out of the
   per-type loop in `decide`.
 
@@ -447,7 +446,7 @@ all-pairs component filter with an iterative Tarjan SCC
 (`qsl-semantics/src/check/termination.rs`). It was measured by the claim rule
 above, in one session on 2026-09-23, 21:12 to 21:27 (UTC-7):
 
-- A is `67f44989` (origin/main) and B is `59da8964` (the fix). Each side has
+- A is origin/main and B is the fix. Each side has
   its own worktree and target directory.
 - The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
   `make bench-checker`, then `qsl-bench-probe check chain <n>` for 250, 1,000,
@@ -517,7 +516,7 @@ The session is recorded as four collections under
   `qsl203-ab-b-probe-v1.json`. Wall time and peak RSS are separate
   `quantity` dimensions.
 
-`quoin report --since 67f44989` compares A with B for both plans.
+`quoin report --since <A>` compares A with B for both plans.
 
 ### Per-component cost of the termination pass
 
@@ -557,7 +556,7 @@ QSL-206 changed three things on the evaluator's per-frame path:
 It was measured by the claim rule above, in one session on 2026-09-23, 23:49
 to 23:56 (UTC-7):
 
-- A is `55db8a4c` (origin/main) and B is `396f9503` (the fix). Each side has
+- A is origin/main and B is the fix. Each side has
   its own worktree and target directory.
 - The rounds ran A1, B1, A2, B2 … A5, B5, one `make bench-evaluator` each.
 - Load average ranged from 4.3 to 10.1.
@@ -606,8 +605,7 @@ QSL-205 replaced the checker's linear lookups with maps built once:
 It was measured by the claim rule above, in one session on 2026-09-24, 01:37 to
 01:53 (UTC-7):
 
-- A is `ddc0083e` (origin/main, after QSL-156 A4b) and B is `61dd8188` (the
-  fix). Each side has its own worktree and target directory.
+- A is origin/main, after QSL-156 A4b, and B is the fix. Each side has its own worktree and target directory.
 - The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
   `make bench-checker`, then `qsl-bench-probe check chain <n>` for 1,000,
   2,000, 4,000 and 8,000 and `qsl-bench-probe check independent <n>` for 1,000
@@ -685,8 +683,8 @@ over one ordered enum of *m* members. Each function is `fI(x) = E::c{I mod m}
 equality. It was measured in one interleaved A/B session on 2026-09-24, 02:57
 to 03:06 (UTC-7), 5 rounds each, with only this group per round:
 
-- A is `5c93a3a1` (origin/main) with the new bench and its generator applied
-  and not committed. B is `149a4055`. The apparatus is byte-identical on both
+- A is origin/main with the new bench and its generator applied
+  and not committed. B is the fix. The apparatus is byte-identical on both
   sides.
 - Load average ranged from 5.2 to 12.9.
 - Each figure is a criterion point estimate of one whole-package check. Per
@@ -730,7 +728,7 @@ QSL-202 replaced the model layer's per-call maps with one `ModelIndex`
 It was measured by the claim rule above, in one session on 2026-09-24, 02:47
 to 03:47 (UTC-7):
 
-- A is `5c93a3a1` (origin/main) and B is `9d5ccdfd` (the fix). Each side has
+- A is origin/main and B is the fix. Each side has
   its own worktree and target directory.
 - The rounds ran A1, B1, A2, B2 … A5, B5, one `make bench-model` each.
 - Load average (1-minute) ranged from 4.9 to 19.0. Other agents' builds and
@@ -864,7 +862,7 @@ shapes. The generators are in `src/text_cluster.rs`.
 one check in one process, with peak RSS (`VmHWM`). `deep-wide-chain <c>` is
 the same tree under a `c`-record chain with one-byte names.
 
-- **A** is `ddc0083e` (main). Its `CheckingLimits::default()` has no node or
+- **A** is main. Its `CheckingLimits::default()` has no node or
   work ceiling.
 - **B** is this branch. It has NFR-011's defaults: 100,000 nodes and
   16,777,216 work units.

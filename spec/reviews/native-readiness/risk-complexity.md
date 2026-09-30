@@ -5,7 +5,6 @@ type: SpecReview
 analysis: risk-complexity
 scope: "FR-002/003/010, NFR-001/005 refinements and TM-002/Plan-002"
 review_set: all
-evaluated_revision: "afeeb20 (requirement changes a10ec80)"
 ---
 
 ## Summary
@@ -15,7 +14,7 @@ owner-selected base plus all seven QUOIN analyses. The reviewed boundary is expl
 
 ## Verdict
 
-### Compatibility amendment reviewed at 5d0c9de
+### Compatibility amendment review
 
 **PASS** for the FR-010/NFR-005 native Error implementation exception.
 Two small standard trait impls preserve compatibility without a wrapper, fake SourceIdentity error implementation or new trait seam. No production concurrency or new resource path is introduced.
@@ -35,7 +34,7 @@ It does not accept future shared model/semantic contracts.
 
 ## Bounded design choices
 
-Retain the existing format API and add a single limit-taking entrypoint backed by a private checked output buffer. Do not introduce a writer trait or new crate without a consumer seam. Apply standard Error via the already pinned derive and document public invariants. Native SourceIdentity strings remain local diagnostic labels rather than changing public construction for a speculative shared interface. Test helpers own temporary paths through tempfile. Explicit argument and output ceilings remove the demonstrated panic/overflow-risk paths with small local changes.
+Retain the existing format API and add a single limit-taking entrypoint backed by a private checked output buffer. Do not introduce a writer trait or new crate without a consumer seam. Apply standard Error via the existing derive and document public invariants. Native SourceIdentity strings remain local diagnostic labels rather than changing public construction for a speculative shared interface. Test helpers own temporary paths through tempfile. Explicit argument and output ceilings remove the demonstrated panic/overflow-risk paths with small local changes.
 
 ## Provenance and validation
 
@@ -43,7 +42,7 @@ Used the installed Quoin 0.20.0 specify/spec-review and the actual catalog
 skeletons/schema pack (org agent-ix). The owner retained the full review set
 and declined the optional semantic gap comparison. No additional agent was
 spawned. Native runtime source remains unchanged at this reviewed revision.
-The source merge at 8751eff reconciles only upstream owner-policy documentation.
+The source merge reconciles only upstream owner-policy documentation.
 74/74 requirement/TC/plan documents were grammar-clean before these eight reports;
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain

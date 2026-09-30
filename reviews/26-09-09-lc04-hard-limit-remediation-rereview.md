@@ -3,7 +3,7 @@ id: SR-115
 title: "Independent re-review of the LC04 hard-limit remediation"
 type: SpecReview
 analysis: code-review
-scope: "PR #13 at d58ca7a; SR-114 FND-001..FND-004; src/lowering.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009"
+scope: "PR #13; SR-114 FND-001..FND-004; src/lowering.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009"
 review_set: subset
 ---
 
@@ -25,9 +25,9 @@ driven entirely by two lows the owner deferred, not by anything new.
 are closed; the two open lows are the owner-deferred FND-002 and FND-003 from
 SR-114, carried forward unchanged.
 
-## Gates run at `d58ca7a`
+## Gates run
 
-Rust 1.98.1, `-j 1`, `--test-threads=1`, isolated target directory.
+`-j 1`, `--test-threads=1`, isolated target directory.
 
 | Gate | Result |
 | --- | --- |
@@ -37,10 +37,10 @@ Rust 1.98.1, `-j 1`, `--test-threads=1`, isolated target directory.
 
 ## Mutation evidence
 
-Each mutant applied to `d58ca7a` and reverted; the tree was clean before and
+Each mutant applied to the remediated head and reverted; the tree was clean before and
 after.
 
-| # | Mutant | at `813069f` | at `d58ca7a` |
+| # | Mutant | before remediation | after remediation |
 | --- | --- | --- | --- |
 | M2 | All three defaults raised to `usize::MAX` | all 266 pass | **FAIL** — `exact_limits_and_fresh_retries` at `tests/native_lowering.rs:225` |
 | M2a | `nodes` 10,000 → 10,001 only | not probed | **FAIL**, same assertion |
@@ -132,7 +132,7 @@ would keep both items where the next author looks.
 ## Unchanged and re-confirmed
 
 - The backend qualification still does real work; nothing in this change touches
-  the lowering itself, and the full suite reproduces green at `d58ca7a`.
+  the lowering itself, and the full suite reproduces green.
 - `TM-006` still marks FR-009-AC-5 and TC-094 `⛔ Activation pending`, Task-020
   is still `in_progress` with unchecked subtasks, and the required activation
   lane is still an explicit `#[ignore]` naming its cause. Nothing was quietly

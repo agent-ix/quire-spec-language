@@ -3,7 +3,7 @@ id: SR-637
 title: "QSL-266 EARS conformance review of per-operation requirement records"
 type: SpecReview
 analysis: ears-conformance
-scope: "agent-ix/quire-spec-language@64ee12700cd66bb17767a8e9090cbca114308364; spec/functional/FR-057-admit-shared-capability-kinds.md; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-057-admit-shared-capability-kinds.md; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
@@ -48,10 +48,10 @@ under integrity (SR-638 FND-003).
 
 ## Dispositions
 
-Disposition pass at `agent-ix/quire-spec-language@accbac3849a26f9f8206e655369105408b9f4a11` (fix commit `accbac38`, "QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass ("QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed accbac38 | The rule is now an unwanted-condition SHALL: "If `check` cannot pair a claim site with an `expression` occurrence at its `Location`, including an application that has only a `generated` occurrence, then `check` SHALL return `KeyFault::UnkeyableRequirements` and SHALL produce no checked package." (FR-062:268-273). |
-| FND-002 | fixed accbac38 | Now reads "`route`'s request builder (design name …) SHALL take … It SHALL return one `RequirementItem` …". "provide" is gone (FR-075:117-123). |
-| FND-003 | fixed accbac38 | "with no caller-supplied item list" and "never by omission" are removed from FR-075, and "The caller supplies no item list" is removed from ADR-012 §7.2 step 1. The empty-set and unbounded items are now stated positively: they are "written like any other and settle at negotiation" (FR-075:135-139, ADR-012:660). The closed list in FR-062 was acceptable and stays. |
+| FND-001 | fixed | The rule is now an unwanted-condition SHALL: "If `check` cannot pair a claim site with an `expression` occurrence at its `Location`, including an application that has only a `generated` occurrence, then `check` SHALL return `KeyFault::UnkeyableRequirements` and SHALL produce no checked package." (FR-062:268-273). |
+| FND-002 | fixed | Now reads "`route`'s request builder (design name …) SHALL take … It SHALL return one `RequirementItem` …". "provide" is gone (FR-075:117-123). |
+| FND-003 | fixed | "with no caller-supplied item list" and "never by omission" are removed from FR-075, and "The caller supplies no item list" is removed from ADR-012 §7.2 step 1. The empty-set and unbounded items are now stated positively: they are "written like any other and settle at negotiation" (FR-075:135-139, ADR-012:660). The closed list in FR-062 was acceptable and stays. |

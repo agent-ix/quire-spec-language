@@ -5,7 +5,6 @@ type: SpecReview
 analysis: gap-analysis
 scope: "plan/Plan-001-rust-fixture-audits/, spec/tests.md, tools/fixture-audit/, tests/fixture_audit.rs"
 review_set: subset
-evaluated_revision: "d83b4eaac970231e5b3823240a61fd48bf7ea4e1 plus recorded Plan-001/matrix completion updates"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-001
     type: reviews
@@ -36,8 +35,7 @@ functional rows were manually reconciled with actual local outcomes.
 Target bundle: plan/Plan-001-rust-fixture-audits. Specification: spec/spec.md;
 matrix: spec/tests.md, TM-001; identity prefix: ix://agent-ix/quire-spec-language.
 Audit source: tools/fixture-audit and Cargo/CI adoption; tests:
-tests/fixture_audit.rs and adjacent unit modules. Runtime source is exactly
-d83b4eaac970231e5b3823240a61fd48bf7ea4e1. Task/matrix completion updates reflect
+tests/fixture_audit.rs and adjacent unit modules. Task/matrix completion updates reflect
 already executed checks and do not amend requirements. This gap review only
 writes this review artifact; implementation/plan updates preceded the audit.
 
@@ -50,7 +48,7 @@ semantic review was explicitly declined and skipped.
 ## Coverage
 
 Reconciliation: actual `quire coverage --scope . --json`, CLI 0.31.0
-4f6ed024 / engine 0.46.0 ca7362d4, using the installed spec-artifacts-process
+/ engine 0.46.0, using the installed spec-artifacts-process
 traceability model. There was no grep fallback. Raw output and stderr are in
 spec/reviews/rust-verification/data/implementation-coverage.json and its
 companion .stderr file.
@@ -99,7 +97,7 @@ grammar-clean; this is not an error-free global catalog signoff.
 ## Reverse ownership and boundaries
 
 FR-012 AC-1/2 owns review/self-test, AC-3 owns roles/source/model/run checks,
-AC-4 owns model bytes/pin, and AC-5 owns the actual parser syntax mode.
+AC-4 owns model bytes, and AC-5 owns the actual parser syntax mode.
 AC-6/7/9 owns strict JSON, checked intake/paths and resource exhaustion;
 AC-8 owns immutability/claim limits; AC-10/11 owns OS invocation and producer
 refusal. NFR-005 owns Rust verification and canonical tracing. NFR-002/IT-004

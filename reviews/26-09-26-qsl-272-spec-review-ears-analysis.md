@@ -3,7 +3,7 @@ id: SR-642
 title: "QSL-272 EARS review of FR-101"
 type: SpecReview
 analysis: ears-conformance
-scope: "agent-ix/quire-spec-language@84a691bf8beb9df40aa945c48e1e05d7f5fb070b; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
@@ -29,9 +29,9 @@ It is recorded as low, not as a defect.
 
 ## Dispositions
 
-Disposition pass at `agent-ix/quire-spec-language@be1851894b7dbe9f47a606186f181900e5e6eb3b` (fix commit `be185189`, "QSL-272 spec: fix PR #457 review findings (SR-641 to SR-645)"). I re-checked each outcome against the spec at that head. I did not take any outcome from the commit message. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
+Disposition pass ("QSL-272 spec: fix PR #457 review findings (SR-641 to SR-645)"). I re-checked each outcome against the spec at that head. I did not take any outcome from the commit message. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed be185189 | AC-7 now says: "returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth". This matches explore.rs:180. TC-455 step 2 states the chain's counts (3 states, 2 transitions, depth 2), and step 5 adds 5 states, 4 transitions and depth 2. I checked both against the engine. |
+| FND-001 | fixed | AC-7 now says: "returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth". This matches explore.rs:180. TC-455 step 2 states the chain's counts (3 states, 2 transitions, depth 2), and step 5 adds 5 states, 4 transitions and depth 2. I checked both against the engine. |
 | FND-002 | accepted-no-change | Not a defect when raised. FR-101's Status section now records the declarative style and cites FR-097's precedent. |

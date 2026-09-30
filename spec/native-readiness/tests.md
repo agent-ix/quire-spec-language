@@ -7,9 +7,8 @@ type: TestMatrix
 ## Overview
 
 Plan-002 covers the implemented native syntax/source/CLI boundary and SR-009
-findings. TC-011–TC-019 were specified before changes and passed locally on
-cbccbb61e9bf15690af386d857b6255ed2bfb948 (runtime source df2d0b5).
-Historical LR02 evidence and TM-001 remain separately pinned. Linking, typing,
+findings. TC-011–TC-019 were specified before changes and passed locally.
+Linking, typing,
 evaluation, shared wire and external producer qualification are outside this plan.
 
 ## Requirements Traceability

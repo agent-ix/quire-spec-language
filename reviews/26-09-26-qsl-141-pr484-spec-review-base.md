@@ -3,7 +3,7 @@ id: SR-708
 title: "Spec review of the FR-091 test-row status flips"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@5a51beb0e6ccd69b5086c2510cf22d89ed907e15; spec/tests.md; spec/spec.md; spec/functional/FR-110-resolve-header-profile-selections-at-e3.md; spec/test-cases/TC-392..TC-403, TC-406; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; qsl-forms/tests/it/value_forms.rs; qsl-forms/tests/it/identity_free_forms.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-eval/tests/it/source_call.rs"
+scope: "agent-ix/quire-spec-language; spec/tests.md; spec/spec.md; spec/functional/FR-110-resolve-header-profile-selections-at-e3.md; spec/test-cases/TC-392..TC-403, TC-406; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; qsl-forms/tests/it/value_forms.rs; qsl-forms/tests/it/identity_free_forms.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-eval/tests/it/source_call.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-141. PR: quire-spec-language#484 at 5a51beb0. Base checklist over
+Ticket: QSL-141. PR: quire-spec-language#484. Base checklist over
 the three changed spec files. For each `spec/tests.md` row the PR flips to
 Passed, I checked that the traced test exists, carries that TC tag, and asserts
 the TC file's steps.
@@ -50,14 +50,14 @@ Partial.
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-3a4b2496 (SR-708 dispositions).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 reviewed=bee599c7a2f174864f0e90ed3911b2aec5d39e6c date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | bee599c7 |
+| FND-001 | fixed | |
 | FND-002 | still-open | Step 3 now has a test, but neither new test can fail on the two ways a CST edge actually gets in. The re-export scan reads the wrong crate, and the step-3 scan skips `use` trees. Both were proved by mutation. Details in SR-712 FND-001 and FND-002. TC-402 should stay Partial until they are fixed. |
-| FND-003 | fixed | bee599c7 (with a low follow-up in SR-712 FND-003) |
-| FND-004 | fixed | bee599c7 |
+| FND-003 | fixed | (with a low follow-up in SR-712 FND-003) |
+| FND-004 | fixed | |
 
 +++ [reviewer data]
 
@@ -65,7 +65,6 @@ Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent
 dispositions:
   - fnd: FND-001
     outcome: fixed
-    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
     path: spec/test-cases/TC-398-value-builder-layering-and-identity-free-forms.md
     lines: "66-81"
     after_excerpt: |-
@@ -85,16 +84,14 @@ dispositions:
       half is not effectively tested. no_qsl_cst_type_is_re_exported_from_qsl_semantics (:548) scans
       qsl-semantics/src, but qsl-cst is only a dev-dependency of qsl-semantics (Cargo.toml:63), so
       non-test code there cannot `pub use qsl_cst` at all. The channel that can compile is a
-      re-export from qsl-forms, a normal dependency that depends on qsl-cst. Mutation at bee599c7:
+      re-export from qsl-forms, a normal dependency that depends on qsl-cst. Mutation:
       adding `pub use qsl_cst::Production as CstProduction;` to qsl-forms/src/lib.rs and
       `use qsl_forms::CstProduction as _P;` to qsl-semantics/src/check/assemble.rs left all 41
       check::assemble tests and the qsl-forms identity_free tests green. The step-3 scan also
       visits only syn::Path, so `use qsl_cst::CstNode as _Mutant;` added to assemble/tests.rs left
       it green. spec/tests.md:188 still shows TC-402 Passed. New findings: SR-712 FND-001 and FND-002.
-    partial_fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
   - fnd: FND-003
     outcome: fixed
-    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
     path: qsl-forms/tests/it/value_forms.rs
     lines: "595-635"
     after_excerpt: |-
@@ -114,7 +111,6 @@ dispositions:
     note: "The two bodies have 9 non-root nodes, so `seen >= 7` lets two nodes go without a span. Low follow-up is SR-712 FND-003."
   - fnd: FND-004
     outcome: fixed
-    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
     path: qsl-semantics/src/check/assemble/tests.rs
     lines: "313-318"
     after_excerpt: |-
@@ -134,13 +130,13 @@ dispositions:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-f16a8ec6 (SR-708 round 2).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 reviewed=5e11d336ab776ceafd592ce12802a3f5c3f99d2a date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
 
-Second disposition pass at 5e11d336. This updates FND-002 only. FND-001, FND-003 and FND-004 stay fixed at bee599c7, as recorded in the earlier SR-708 dispositions comment.
+Second disposition pass. This updates FND-002 only. FND-001, FND-003 and FND-004 stay fixed, as recorded in the earlier SR-708 dispositions comment.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-002 | fixed | 5e11d336. This supersedes the earlier still-open outcome. A `pub type` alias gap remains and is a low finding in SR-721 FND-001. |
+| FND-002 | fixed | This supersedes the earlier still-open outcome. A `pub type` alias gap remains and is a low finding in SR-721 FND-001. |
 
 +++ [reviewer data]
 
@@ -148,8 +144,7 @@ Second disposition pass at 5e11d336. This updates FND-002 only. FND-001, FND-003
 dispositions:
   - fnd: FND-002
     outcome: fixed
-    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
-    supersedes: "still-open (SR-708 dispositions at bee599c7)"
+    supersedes: "still-open (SR-708 dispositions)"
     path: qsl-semantics/src/check/assemble/tests.rs
     lines: "600-624, 631-720"
     after_excerpt: |-
@@ -168,7 +163,7 @@ dispositions:
               fn visit_macro(&mut self, mac: &'ast syn::Macro) {
                   self.tokens(mac.tokens.clone());
     evidence: >-
-      Mutations in a scratch worktree at 5e11d336. (1) `pub use qsl_cst::Production as CstProduction;`
+      Mutations in a scratch worktree. (1) `pub use qsl_cst::Production as CstProduction;`
       in qsl-forms/src/lib.rs plus `use qsl_forms::CstProduction as _P;` in check/assemble.rs fails
       no_qsl_cst_type_is_re_exported_to_the_assembler ("qsl_cst is re-exported: [.../qsl-forms/src/lib.rs:48]").
       (2) `use qsl_cst::CstNode as _Mutant;` in assemble/tests.rs fails

@@ -5,7 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "FR-043, FR-044, FR-045, NFR-008, TC-122-125, TM-008"
 review_set: subset
-evaluated_revision: "1f0ff952045ca9298eeec81f1e6871730e115355"
 review_date: "2026-09-11"
 ---
 
@@ -15,7 +14,7 @@ Agent A owns native temporal compilation and the compiler-side evaluation of the
 `quire.compiled-protocol/1` temporal body it already emits; agent E owns native
 temporal meaning, agent B the protocol activation/participation result contract,
 agent F observation transport and authority, and the existing IR/TL owners the
-bridge. This is the third pass. The blocking finding against 87bc83f — a blanket
+bridge. This is the third pass. The blocking finding from the second pass — a blanket
 "every rule below is a restatement" clause sheltering a rule no owned requirement
 states — is resolved in FR-043, and resolved properly: every row of its new
 source table was checked against the cited artifact and each cited rule says what
@@ -31,11 +30,11 @@ left, and it is recorded at the same severity for the same reason.
 
 ### Disposition
 
-| Prior finding | Disposition at 1f0ff95 | Evidence |
+| Prior finding | Disposition | Evidence |
 | --- | --- | --- |
 | FND-011 blanket restatement claim sheltering an unsourced rule | Resolved, verified row by row | FR-043 source table; "Open questions referred to agent E" naming the pointwise reading as a selection, its visible consequence, the reversed earlier revision and the #38 ruling |
 | FND-012 one-axis substitution in FR-045's table | Resolved | Rows keyed on complete/open surrounding execution as FR-095 does; decision-scope closure named as separate in the boundary section and Inputs; AC-1 asserts it is not consulted. New FND-016 records the residual axis ambiguity in the source itself |
-| FND-013 unpinned table, no TL target, "declaration alone" contradiction | Resolved | Baseline `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f` cited; TL target column naming `mltl.closed-trace/v1` and `mltl.online-prefix/v1`; classification stated as a total function of exactly three named inputs, two from the declaration and one from the request; AC-5 |
+| FND-013 unpinned table, no TL target, "declaration alone" contradiction | Resolved | Baseline cited; TL target column naming `mltl.closed-trace/v1` and `mltl.online-prefix/v1`; classification stated as a total function of exactly three named inputs, two from the declaration and one from the request; AC-5 |
 | FND-014 clock parameters unverifiable | Resolved | FR-043 Behavior marks the rule "retention, not checking", states FR-090-AC-2 is only partly satisfiable here and that no criterion claims otherwise; Dependencies limitation extended to the definition digest |
 | FND-015 US-004 allocation asserted, not derived | Resolved | Reciprocal `exercises` edge in US-004 frontmatter and traceability list |
 
@@ -91,7 +90,7 @@ flowchart LR
   F["Agent F - observation transport, progress, provenance"] -->|assumed, caller-supplied trace| Eval
   D["Agent D - model and registered profile definitions"] -->|assumed| Link
   B["Agent B - protocol activation and result serialization"] -.->|excluded, consumes disposition| Act
-  Table["FR-095 table at baseline 782c1ce"] -->|assumed, revision pinned| Class
+  Table["FR-095 table at baseline"] -->|assumed, revision pinned| Class
   Bridge["IR and TL owners - emission half, contract-ir 63 and 64"] -.->|excluded and blocked| Class
 ```
 
@@ -130,7 +129,7 @@ to FR-036's delivered scope checking under TM-002 rather than duplicated.
 | Agent B protocol activation, participation and result serialization | Assumed, excluded in requirement text | FR-043 and FR-044 each state they produce no protocol result and no wire encoding of their own |
 | Agent D model and registered profile definitions | Guaranteed in-repo through the existing linker | src/linking/composed/definition_source.rs pins the three concrete profile identities and the shared bounded facet; the shared facet is not a selectable clause profile, so FR-045's table covers every admissible profile |
 | FR-042 emitted temporal body, clock binding index, activation record and closed operation graph | Guaranteed | Covered by TM-007. The body carries no declared clock parameters and no definition digest; both are recorded as remaining work on #38 |
-| FR-095 reviewed correspondence support table | Assumed, revision pinned | FR-045 cites baseline `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`, reports the TL target identity and that baseline on a supported classification, and consults no backend report, installed version, syntax match or historical result. The source table's own axis ambiguity is resolved unilaterally, which FND-016 records |
+| FR-095 reviewed correspondence support table | Assumed, revision pinned | FR-045 cites a baseline, reports the TL target identity and that baseline on a supported classification, and consults no backend report, installed version, syntax match or historical result. The source table's own axis ambiguity is resolved unilaterally, which FND-016 records |
 | quire-contract-ir #63 and #64, actual TL capability, FR-095 emission half | Absent, excluded and blocked | No TL formula, valuation request or correspondence record is produced. A supported classification is a statement about the table, not evidence of a mapping |
 | Caller-lowered ceilings and the accounting contract | Assumed for the values, published for the rules | Counters, units, traversal rules, the ceiling table and the clamp rule are published in docs/native-temporal-evaluation.md under `quire.native.temporal-work/1`; expected charges derive from there, not from reported usage |
 | Agent F observation storage, replay and lateness | Assumed, explicitly out | NFR-008 separates the evaluator's own retained-state table, which the retention ceiling bounds and whose eviction seam is named, from F's mechanisms |
@@ -161,7 +160,7 @@ The remedy applied to FR-043 is sound and was verified rather than accepted:
 every row of its source table was checked against the cited artifact, and the one
 rule with no owned source is now labelled a selection with its consequence,
 its reversed history and its pending ruling on the record. All five findings
-raised against 87bc83f are resolved, none by narrowing the claim instead of
+raised in the second pass are resolved, none by narrowing the claim instead of
 meeting it. Nothing in scope belongs to another agent's delivery, and nothing
 another agent owns has been implemented here.
 

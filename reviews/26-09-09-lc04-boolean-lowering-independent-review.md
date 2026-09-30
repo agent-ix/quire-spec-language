@@ -3,7 +3,7 @@ id: SR-114
 title: "Independent code review of the LC04 Boolean lowering"
 type: SpecReview
 analysis: code-review
-scope: "PR #13 at 813069f; src/lowering.rs, src/lowering/wire.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009, IT-008, TC-092..TC-094, TM-006, Plan-008"
+scope: "PR #13; src/lowering.rs, src/lowering/wire.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009, IT-008, TC-092..TC-094, TM-006, Plan-008"
 review_set: subset
 ---
 
@@ -23,9 +23,9 @@ the three hard ceilings FR-009 states normatively are bound by no test.
 
 **CONDITIONAL** — no high findings. One medium, three lows.
 
-## Gates run at `813069f`
+## Gates run
 
-Rust 1.98.1 (the pinned toolchain), `-j 1`, `--test-threads=1`, isolated target
+`-j 1`, `--test-threads=1`, isolated target
 directory.
 
 | Gate | Result |
@@ -39,7 +39,7 @@ directory.
 
 ## Mutation experiments
 
-Each applied to `813069f` and reverted; the tree was clean before and after.
+Each applied to the PR head and reverted; the tree was clean before and after.
 
 | # | Mutant | Result |
 | --- | --- | --- |
@@ -111,8 +111,8 @@ it as dead.
 This PR adds two steps to the job:
 
 ```yaml
-- run: rustup toolchain install 1.98.1 … --component llvm-tools-preview
-- run: cargo install cargo-llvm-cov --version 0.9.0 --locked
+- run: rustup toolchain install … --component llvm-tools-preview
+- run: cargo install cargo-llvm-cov --locked
 ```
 
 `cargo install … --locked` builds the tool from source, and the existing
@@ -195,7 +195,7 @@ reviewer does not spend the same time.
   changes `canonical_identity()` and leaves the bound digest equal.
 - **The dependency split is honest.** `quire-contract-codegen`,
   `quire-contract-ir-backend` and `syn` are all in `[dev-dependencies]`;
-  production depends only on IR `690bde7`. The two-IR arrangement is verified,
+  production depends only on the production IR. The two-IR arrangement is verified,
   not asserted — `consumer.digest() == projection.bound().digest()` proves both
   revisions bind the same bytes to the same identity.
 - **The blocked gate is scoped correctly.** `TM-006` marks FR-009-AC-5 and

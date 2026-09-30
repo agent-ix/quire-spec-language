@@ -38,9 +38,8 @@ route-lint:
 # requires. Scoped to `check bans` -- deny.toml configures no license or
 # advisory policy.
 #
-# Install: `cargo install cargo-deny --locked --version 0.19.8` (the same
-# pinned version `.github/workflows/ci.yml` installs). This target FAILS
-# when `cargo-deny` is not on PATH, with that exact install command --
+# Install: `cargo install cargo-deny --locked`. This target FAILS
+# when `cargo-deny` is not on PATH, with that install command --
 # `.github/workflows/ci.yml` is `workflow_dispatch`-only, so `make ci` is the
 # gate that actually runs in practice, and a machine without cargo-deny must
 # not be able to report a green `make ci` over a tree that depends on one of
@@ -56,7 +55,7 @@ cargo-deny-bans:
 	@if command -v cargo-deny >/dev/null 2>&1; then \
 		cargo deny check bans --config deny.toml; \
 	else \
-		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked --version 0.19.8\` to install it" >&2; \
+		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked\` to install it" >&2; \
 		exit 1; \
 	fi
 

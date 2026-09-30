@@ -3,7 +3,7 @@ id: SR-083
 title: "Code and Rust review of qualification pipeline repairs"
 type: SpecReview
 analysis: code-review
-scope: "FR-017 / Task-011 at 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f"
+scope: "FR-017 / Task-011"
 review_set: subset
 ---
 
@@ -27,12 +27,11 @@ FR-015/016, native runtime evaluation or the full Agent A assignment.
 
 ## Evaluated context and sequence
 
-Reviewed source revision 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f, including
-implementation d1168dd6604100d52fa4cb97877cf6991e68dda4 and the following
+Reviewed the implementation and the following
 regression-trace-only commit. The original architecture evaluation remains
-FAIL at its historical 4798508 baseline; this artifact records its repair.
-FR-017/TC-054 were specified at a350754 and received the owner-selected base
-plus all seven analyses in SR-075–082 at 02b7cc8 before repair implementation.
+FAIL at its historical baseline; this artifact records its repair.
+FR-017/TC-054 were specified and received the owner-selected base
+plus all seven analyses in SR-075–082 before repair implementation.
 The preimplementation handoff is recorded on LC02 #3.
 
 Applied the actual `/home/peter/dev/agent-skills/code-review/SKILL.md`, its
@@ -57,7 +56,7 @@ No additional agents, hosted runs or external producer processes were used.
 
 ## Rust, faithfulness and implementation-gap inspection
 
-The source-aware helper uses the pinned Serde grammar and structured errors.
+The source-aware helper uses the Serde grammar and structured errors.
 Every newly exposed test-support item has a doc comment; production model
 access is immutable and fallible. Native role identities use existing IR
 newtypes. Exhaustive typed enum conversion remains appropriate; no lexer,
@@ -112,7 +111,7 @@ no corresponding runtime body changed afterward.
 | `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using the existing minimal-build cache | minimal-build.txt |
 | `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | rustdoc.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls passed; duplicate keys refused | audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 checkpoint digests and exact producer pin passed | audit-model-bytes.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 checkpoint digests passed | audit-model-bytes.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | cli-parse.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | cli-format.txt |
 

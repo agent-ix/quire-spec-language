@@ -3,7 +3,7 @@ id: SR-745
 title: "PR 492 code review (QSL-245 remainder)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@caa1520a4393c132583accda17aa9f8c01c14949; diff 2df75ab6...caa1520a; qsl-eval/src/value/expression/evaluate.rs; qsl-eval/src/value/expression/mod.rs; qsl-eval/tests/it/model_reference_queries.rs; qsl-foundation/src/diagnostic/stage.rs; qsl-replay/src/bounds.rs; qsl-semantics/src/check/region.rs"
+scope: "agent-ix/quire-spec-language; PR diff; qsl-eval/src/value/expression/evaluate.rs; qsl-eval/src/value/expression/mod.rs; qsl-eval/tests/it/model_reference_queries.rs; qsl-foundation/src/diagnostic/stage.rs; qsl-replay/src/bounds.rs; qsl-semantics/src/check/region.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -33,16 +33,16 @@ Ticket: QSL-245. PR: quire-spec-language#492. Code review with the Rust lane (ru
 
 ## Dispositions
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-745 pr=quire-spec-language#492 reviewed=d5cf7b9487eec13c3f08d469cb239a582b54796d base=caa1520a4393c132583accda17aa9f8c01c14949 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-745 pr=quire-spec-language#492 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | d5cf7b94 — `stopped` doc now cites FR-096-AC-15 |
-| FND-002 | fixed | d5cf7b94 — `Machine::run` and `CheckedPackageEvaluation::call`/`evaluate` docs name the CheckedInvariant `Err` path |
-| FND-003 | fixed | d5cf7b94 — region test doc separates the family precheck (declaration span) from `Typer`'s per-node stops |
-| FND-004 | fixed | d5cf7b94 — `declared + 36` replaced by `budget_located_at_c_plus_d(declared)`, a bounded scan over real `check` runs |
+| FND-001 | fixed | `stopped` doc now cites FR-096-AC-15 |
+| FND-002 | fixed | `Machine::run` and `CheckedPackageEvaluation::call`/`evaluate` docs name the CheckedInvariant `Err` path |
+| FND-003 | fixed | region test doc separates the family precheck (declaration span) from `Typer`'s per-node stops |
+| FND-004 | fixed | `declared + 36` replaced by `budget_located_at_c_plus_d(declared)`, a bounded scan over real `check` runs |
 
-Verified at d5cf7b94 by reading `git diff caa1520a..d5cf7b94`. FND-004: the scan is a real derivation. It runs `unit.check` for each budget in `declared+1 .. declared+1000` and returns the first whose single refusal resolves to the `c + d` text; if the cost model moves the stop off that node the scan panics instead of passing. The test loop then asserts kind `WorkBudget`, `region: None`, `location == body([2])` and region equality independently of the scan predicate. Re-ran in a scratch worktree: all 5 `check::region` tests pass.
+Verified by reading the fix-round diff. FND-004: the scan is a real derivation. It runs `unit.check` for each budget in `declared+1 .. declared+1000` and returns the first whose single refusal resolves to the `c + d` text; if the cost model moves the stop off that node the scan panics instead of passing. The test loop then asserts kind `WorkBudget`, `region: None`, `location == body([2])` and region equality independently of the scan predicate. Re-ran in a scratch worktree: all 5 `check::region` tests pass.
 
 +++ [reviewer data]
 
@@ -50,7 +50,6 @@ Verified at d5cf7b94 by reading `git diff caa1520a..d5cf7b94`. FND-004: the scan
 dispositions:
   - fnd: FND-001
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
       /// S6a invariant break, an `InternalFault` and never a refusal record
@@ -58,7 +57,6 @@ dispositions:
       /// [`qsl_semantics::check::ValueFunctionFamily::evaluate`]).
   - fnd: FND-002
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       /// **`Err(InternalFault)` (FR-090-AC-10, FR-096-AC-15).** Two distinct
       /// invariant breaks return `Err` from here, never `Ok(Evaluation {
@@ -70,7 +68,6 @@ dispositions:
       this `Ok` arm at all (FR-096-AC-15)
   - fnd: FND-003
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       /// at a specific source text. Depth is located at the node whose entry
       /// failed the charge (`Typer`'s own per-node check); node count, input
@@ -80,7 +77,6 @@ dispositions:
       /// whole declaration's span.
   - fnd: FND-004
     outcome: fixed
-    fix_sha: d5cf7b94
     after_excerpt: |-
       fn budget_located_at_c_plus_d(declared: u64) -> u64 {
           for budget in (declared + 1)..(declared + 1000) {

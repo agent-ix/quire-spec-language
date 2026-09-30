@@ -483,8 +483,7 @@ classifies Manual as no_source_symbol. Hosted CI is manual-dispatch only.
 ## Execution record
 
 The audit unit and default audit integration tests pass locally. All three named
-private-packet tests were explicitly executed against specification revision
-36293bae7f5bcb7ca3b2389ed166e525dc9dba87 and passed. Quire resolves every audit
+private-packet tests were explicitly executed and passed. Quire resolves every audit
 test symbol, every FR-012 AC and every executable TC. TC-010 has manual evidence. These counts establish
 the selected scope; they are not full compiler or semantic qualification.
 

@@ -5,7 +5,6 @@ type: SpecReview
 analysis: gap-analysis
 scope: "plan/Plan-003-formal-linker, spec/model-linking/tests.md, src/linking.rs and tests/linking.rs"
 review_set: subset
-evaluated_revision: "d44e97424ecfe42343edb869e9203275aca26db1"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-003
     type: reviews
@@ -75,7 +74,7 @@ stop this available native work. No broader LC issue or goal is closed here.
 
 ## Handoff disposition
 
-FND-001 is resolved for the reviewable-PR deliverable after 3924dbb was pushed,
+FND-001 is resolved for the reviewable-PR deliverable after the reviews were pushed,
 compiler PR8 was made ready, and exact LC02/CO01 handoffs were posted. Both
 Plan-003 tasks are now done for that bounded delivery. The original evaluated
 revision and 1/2 rollup above remain historical evidence. FND-002/003 remain;

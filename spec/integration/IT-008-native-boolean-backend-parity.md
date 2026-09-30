@@ -23,10 +23,9 @@ supplies generated activation for the exact admitted fixture profile.
 
 ## Preconditions
 
-Exact dependencies, Rust 1.98.1 with matching LLVM tools, and cargo-llvm-cov 0.9.0
-are available locally. The code generator's
-older IR pin is consumed through its own wire reader in qualification only;
-production lowering retains the adopted IR pin. Missing prerequisites fail the
+Rust with matching LLVM tools and cargo-llvm-cov are available locally. The
+code generator's older IR is consumed through its own wire reader in
+qualification only; production lowering uses the adopted IR. Missing prerequisites fail the
 test rather than silently skip it. No hosted run is dispatched.
 
 ## Inputs

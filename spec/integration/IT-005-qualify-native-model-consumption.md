@@ -19,8 +19,8 @@ integration boundary within IT-002's full state workflow.
 
 The native compiler consumes Contract IR FR-013 DeclarationEnvironment and
 FR-019 public Rust interfaces. FR-023 BoundPackage is the existing later
-executable projection binder. The pinned upstream decision is accepted ADR-0054
-at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f, merged in PR61 with issue #54 closed.
+executable projection binder. The upstream decision is accepted ADR-0054,
+merged in PR61 with issue #54 closed.
 No Filament reader, internal agent-ix-semantic-ir dependency, universal model
 adapter, or new Contract IR model layer is needed for generic language work.
 

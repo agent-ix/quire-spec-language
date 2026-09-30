@@ -3,7 +3,7 @@ id: SR-784
 title: "QSL-305/QSL-307 code review (with rust-review lane) of PR 522"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@0e93ed8dbb225266de2b55e363075a09f755d154; Cargo.toml; qsl-package/Cargo.toml; Cargo.lock; qsl-package/src/emit.rs; qsl-package/src/checked_v2/tests.rs; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/value/semantic_node.rs (unchanged, context); tests/it/text_enum_identity.rs (unchanged, context); quire-contract-ir@2a286437 checked_package/v2/{identity,operations,structural,frame}.rs (dependency, read only)"
+scope: "agent-ix/quire-spec-language; Cargo.toml; qsl-package/Cargo.toml; Cargo.lock; qsl-package/src/emit.rs; qsl-package/src/checked_v2/tests.rs; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/value/semantic_node.rs (unchanged, context); tests/it/text_enum_identity.rs (unchanged, context); quire-contract-ir checked_package/v2/{identity,operations,structural,frame}.rs (dependency, read only)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-087
@@ -13,22 +13,20 @@ relationships:
 ---
 ## Summary
 
-Tickets: QSL-305, QSL-307. PR: quire-spec-language#522 at 0e93ed8d, base
-origin/main 1a368fa4. Methods: code-review with the rust-review lane folded in.
+Tickets: QSL-305, QSL-307. PR: quire-spec-language#522. Methods: code-review with the rust-review lane folded in.
 
-The PR bumps the `quire-contract-ir` (`quire-contract-model`) pin from
-48ab5dc to 2a286437 in both manifests and the lock. It fills IR's new required
+The PR bumps the `quire-contract-ir` (`quire-contract-model`) dependency in
+both manifests and the lock. It fills IR's new required
 `NominalOwner::Model.version` with an empty string in `emit.rs`. It re-spells
 the FR-340 frame fixtures for QSpec's 30-vector `modifies` entry shape and the
 `generated` frame occurrence role. It re-ignores TC-463 with a new reason.
 
 Checks run, with results:
 
-1. Pin. Both manifests carry 2a286437. The lock moves `quire-contract-model`
-   to 2a286437 and, transitively, `quire-verification-contracts` from 61f4a44
-   to 4c49706. Only `quire-contract-model` depends on that crate, so there is
-   one lock entry and no split. `quire-contract-ir-historical` stays at
-   04eb6f84 in `Cargo.toml` and `Cargo.lock`, unchanged from main.
+1. Dependency bump. The lock moves `quire-contract-model` and, transitively,
+   `quire-verification-contracts`. Only `quire-contract-model` depends on that
+   crate, so there is one lock entry and no split.
+   `quire-contract-ir-historical` is unchanged from main.
 2. `NodeOwner::Model` construction. No `NodeOwner::Model(` expression exists
    anywhere in the workspace. The `Owner::Model` hits in
    `qsl-semantics/src/check/lowering/model.rs` are `node_key::Owner`, a
@@ -44,7 +42,7 @@ Checks run, with results:
    `tests/it/text_enum_identity.rs`. `ModelSubject` matches main.
    `enum_node_identity_vectors_reproduce_and_noncanonical_preimages_refuse`
    passes at head (part of the 885-pass `it` run).
-4. IR-side claims, checked against the pinned checkout at 2a286437.
+4. IR-side claims, checked against the dependency checkout.
    `operations.rs:1087-1092` has `OperationConstraintKind::ReferenceEdge =>
    return ineligible(indices.first().copied())` with the quoted comment.
    `structural.rs:134` has `Self::Frame => Some(CheckedOccurrenceRole::
@@ -62,15 +60,11 @@ Checks run, with results:
 ## Verdict
 
 Mergeable after FND-001, which is a comment fix. FND-002 is a low nit.
-`make ci` exit 0 at 0e93ed8d (my own run, QSPEC_DIR unset). Full
+`make ci` exit 0 (my own run, QSPEC_DIR unset). Full
 `cargo test --locked --workspace` with QSPEC_DIR set to a fresh
-quire-specification clone (e56756f) exit 0, with the main `it` suite at
+quire-specification clone exit 0, with the main `it` suite at
 885 passed / 6 ignored. `make conformance` against the same clone exit 0,
 including "30 frame-body mutation vectors matched".
-
-The informational prose at `integration/current-head/Cargo.toml:29` still says
-the root pins 48ab5dc2. It is already labelled informational and nothing reads
-it, so it is not a finding.
 
 ## Findings
 
@@ -83,5 +77,5 @@ it, so it is not a finding.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 926873eb: the comment now names `qsl_semantics::value::NodeOwner::Model`, says a model-owned nominal node can be built, and names `owner_is_locked` / `UnlockedOwner` as the guard. Verified: `owner_is_locked` matches only `NodeOwner::Source` equal to the unit's source, `omissions` drops the node, `emit_package_inner` calls `wire_node` only on kept candidates, and `nominal_preimage` (the only caller of `nominal_owner`) is called only from `wire_node`. |
-| FND-002 | fixed | 926873eb: the TC-463 `#[ignore]` reason and doc comment now name IR-370. |
+| FND-001 | fixed | the comment now names `qsl_semantics::value::NodeOwner::Model`, says a model-owned nominal node can be built, and names `owner_is_locked` / `UnlockedOwner` as the guard. Verified: `owner_is_locked` matches only `NodeOwner::Source` equal to the unit's source, `omissions` drops the node, `emit_package_inner` calls `wire_node` only on kept candidates, and `nominal_preimage` (the only caller of `nominal_owner`) is called only from `wire_node`. |
+| FND-002 | fixed | the TC-463 `#[ignore]` reason and doc comment now name IR-370. |

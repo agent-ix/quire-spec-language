@@ -3,7 +3,7 @@ id: SR-670
 title: "QSL-266 code and Rust review of per-occurrence requirement records"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@ba8b2f82ae99bb898bb6b33d6b1dd9b8bdfb708d; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/claims/tests.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/family.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/family/contract.rs; qsl-semantics/src/family/mod.rs; qsl-semantics/src/family/requirements.rs; qsl-route/src/request.rs; qsl-route/Cargo.toml; qsl-package/src/emit/extent_agreement.rs; qsl-eval/src/value/expression/family.rs; tests/it/request_builder.rs; tests/it/family_outcome_layering.rs; tests/it/main.rs; Cargo.lock"
+scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/claims/tests.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/family.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/family/contract.rs; qsl-semantics/src/family/mod.rs; qsl-semantics/src/family/requirements.rs; qsl-route/src/request.rs; qsl-route/Cargo.toml; qsl-package/src/emit/extent_agreement.rs; qsl-eval/src/value/expression/family.rs; tests/it/request_builder.rs; tests/it/family_outcome_layering.rs; tests/it/main.rs; Cargo.lock"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
@@ -17,7 +17,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-266 (PR quire-spec-language#459). `/code-review` with the
-`/rust-review` lane over `git diff origin/main...HEAD` at `ba8b2f82`.
+`/rust-review` lane over `git diff origin/main...HEAD`.
 
 The PR replaces identity-based keying of one optional `Requirements` per
 declaration with one `value-validity` claim per scalar operation
@@ -119,19 +119,19 @@ issues.
 
 ## Dispositions
 
-Disposition pass at `agent-ix/quire-spec-language@27fa6f87c744677df61c0cfacfe0549425ec4800`
+Disposition pass
 (renumbered from SR-641: main already held SR-641 and SR-642). Each
 outcome was checked against the code at that head, not against the
 coder's claims.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-001 | fixed 44750e77 | `tc_160_guards_carry_their_outcome_outermost_first` covers an `if`'s `otherwise` guard (false), `or` (false), `implies` (true) and a nested `if` with two guards. The reviewer re-ran three mutants of `claims.rs` at 27fa6f87. Each fails that test: `index == 1` changed to `index == 2` (also fails the fixture test), `or`'s guard set to hold true, and `path_condition.reverse()` removed. |
-| FND-002 | fixed e0d67230 | `bound_by` removes a query's slot and a fold's accumulator and element from `reads` when the walk leaves the binding node. That is the `Flatten` location for `flat_map`, which matches `Lowering::bind`. `tc_160_a_binder_is_a_root_only_inside_its_scope` (44750e77) fails when `reads.remove(&bound)` is removed; the reviewer re-ran that mutant. FR-062 and ADR-014 §4 state the rule (0872c86a). IR at the pinned revision 48ab5dc: `requires_bound` is a reachable-closure predicate with no notion of scope (`checked_package/v2/lower.rs`), and IR-283 makes any bounded integer domain satisfy every integer type. So the scoped rule and IR agree on the verdict for the shapes tested, `size(filter(v in s: v > 0)) + 1` and `fold`, where the dropped binder's type is the source's element type. A finer comparison waits on IR-283. |
-| FND-003 | fixed 29ecb52a | `item(occurrence, requirements)` and `bounded_item(occurrence, requirements, bounds)`. `RequestItem` has no `node` field, and `node()` is `occurrence.node()`. FR-075's design signature matches (0872c86a). |
-| FND-004 | fixed e0d67230 | A missing guard index is `InternalFault` `guard-in-arena`. `SiteBound::{Narrowed(IntegerInterval), Own(ValueType)}` replaces the boolean. The `Classify` struct replaces the `too_many_arguments` allow. |
-| FND-005 | fixed 44750e77 | `tc_160_fold_reduce_and_flat_map_binders_are_roots` asserts exact two-domain extents for the `fold` step (`acc + x`), the `reduce` step (`acc * x`) and the `flatMap` step (`x + y`). It keys them by the parameter nodes the lowered application's own operands reference, which is independent of the binder table. |
-| FND-006 | fixed 0872c86a | `docs/family-migration-recipe.md` now says "one `Self::Claim` per claim site", and the stale `None` note is rewritten. |
+| FND-001 | fixed | `tc_160_guards_carry_their_outcome_outermost_first` covers an `if`'s `otherwise` guard (false), `or` (false), `implies` (true) and a nested `if` with two guards. The reviewer re-ran three mutants of `claims.rs`. Each fails that test: `index == 1` changed to `index == 2` (also fails the fixture test), `or`'s guard set to hold true, and `path_condition.reverse()` removed. |
+| FND-002 | fixed | `bound_by` removes a query's slot and a fold's accumulator and element from `reads` when the walk leaves the binding node. That is the `Flatten` location for `flat_map`, which matches `Lowering::bind`. `tc_160_a_binder_is_a_root_only_inside_its_scope` fails when `reads.remove(&bound)` is removed; the reviewer re-ran that mutant. FR-062 and ADR-014 §4 state the rule. IR: `requires_bound` is a reachable-closure predicate with no notion of scope (`checked_package/v2/lower.rs`), and IR-283 makes any bounded integer domain satisfy every integer type. So the scoped rule and IR agree on the verdict for the shapes tested, `size(filter(v in s: v > 0)) + 1` and `fold`, where the dropped binder's type is the source's element type. A finer comparison waits on IR-283. |
+| FND-003 | fixed | `item(occurrence, requirements)` and `bounded_item(occurrence, requirements, bounds)`. `RequestItem` has no `node` field, and `node()` is `occurrence.node()`. FR-075's design signature matches. |
+| FND-004 | fixed | A missing guard index is `InternalFault` `guard-in-arena`. `SiteBound::{Narrowed(IntegerInterval), Own(ValueType)}` replaces the boolean. The `Classify` struct replaces the `too_many_arguments` allow. |
+| FND-005 | fixed | `tc_160_fold_reduce_and_flat_map_binders_are_roots` asserts exact two-domain extents for the `fold` step (`acc + x`), the `reduce` step (`acc * x`) and the `flatMap` step (`x + y`). It keys them by the parameter nodes the lowered application's own operands reference, which is independent of the binder table. |
+| FND-006 | fixed | `docs/family-migration-recipe.md` now says "one `Self::Claim` per claim site", and the stale `None` note is rewritten. |
 
 New finding in this pass:
 
@@ -145,11 +145,11 @@ New finding in this pass:
   contradict. The row should say `requirements()` returns one claim per
   site, and that S3 derives each record's `Requirements`.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-007 | fixed 99391861 | ADR-012 §2's Requirements row says `requirements()` returns one claim per claim site, with its extent keyed by binder, and that S3, after lowering, keys each claim by occurrence, renames each binder to its parameter node and derives the record's `Requirements`. |
+| FND-007 | fixed | ADR-012 §2's Requirements row says `requirements()` returns one claim per claim site, with its extent keyed by binder, and that S3, after lowering, keys each claim by occurrence, renames each binder to its parameter node and derives the record's `Requirements`. |
 
-Gate: the first `make ci` at 27fa6f87 used the shared
+Gate: the first `make ci` used the shared
 `CARGO_TARGET_DIR=/home/peter/.cargo-target`. It failed in `ci-docs`
 with `E0432 no RequirementRecord in check`. `cargo doc -p qsl-route`
 alone passed at the same head, which points to another session's build

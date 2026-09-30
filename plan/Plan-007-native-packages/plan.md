@@ -23,10 +23,8 @@ relationships:
 
 ## Requirements Summary
 
-This new LC02 package slice is owned by private language issue #3. Its
-specification is 41da6e5eb86bb727fbad5370fd23b38d330bcfea; the actual eight
-QUOIN reviews SR-101–108 are committed at
-69588ad9888893ae839352661e16df3ec040b0d4. Plan-005's checker and Plan-006's
+This new LC02 package slice is owned by private language issue #3. The
+actual eight QUOIN reviews are SR-101–108. Plan-005's checker and Plan-006's
 runtime qualification are done. Existing source/link plans retain their own
 requirements; this bundle adds the new package requirements, without
 duplicating their completed tasks.

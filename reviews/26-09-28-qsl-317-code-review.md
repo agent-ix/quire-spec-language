@@ -3,7 +3,7 @@ id: SR-780
 title: "QSL-317 code review of PR 517 (qsl-replay call-site facade and request-type re-exports)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@5a233b04000b2447b723400fcfbfe570c5a83505; qsl-replay/src/call_site.rs; qsl-replay/src/lib.rs; qsl-replay/src/execute.rs (read, unchanged); tools/arch-lint/api_surface.rs (read, unchanged); xtask/src/typestate_scan.rs (read, unchanged)"
+scope: "agent-ix/quire-spec-language; qsl-replay/src/call_site.rs; qsl-replay/src/lib.rs; qsl-replay/src/execute.rs (read, unchanged); tools/arch-lint/api_surface.rs (read, unchanged); xtask/src/typestate_scan.rs (read, unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-317. PR: quire-spec-language#517 at 5a233b04. This review covers
+Ticket: QSL-317. PR: quire-spec-language#517. This review covers
 code and Rust (the rust-review lane is folded in here). The diff adds
 `qsl-replay/src/call_site.rs` (a public `call_site` entry, `CallSite` and
 `CallSiteRefusal`) and seven re-exports in `qsl-replay/src/lib.rs`.

@@ -35,7 +35,7 @@ of full backend parity, production safety or complete LC04 acceptance follows.
 ## Coverage
 
 Reconciliation: quire coverage --scope . --json, CLI 0.31.0, engine
-0.46.0@ca7362d4. The scoped TM-006 test-case group is 3/3 backed; all seven
+0.46.0. The scoped TM-006 test-case group is 3/3 backed; all seven
 FR-009 criteria have actual trace attributes. There are no scoped unbacked rows
 or untracked tests. Source presence does not establish execution success: the
 generated activation lane remains explicitly ignored in the ordinary suite.
@@ -52,6 +52,6 @@ owner census, source mapping, read/observation correspondence, native/IR identit
 atomic refusals, resource/retry accounting, and strict wire binding/accessors.
 Untraced behaviors: 0; source stubs: 0; test stubs: 0. Optional semantic review
 was skipped as requested. SR-114/115 retain the code/Rust review and execution
-evidence at d58ca7a, including six passing targeted tests, the full ordinary
+evidence, including six passing targeted tests, the full ordinary
 suite and detected operator/limit mutations. Production and tests are unchanged
 by this delivery amendment; no Cargo phase was repeated.

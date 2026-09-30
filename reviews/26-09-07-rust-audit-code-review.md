@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "tools/fixture-audit/, tests/fixture_audit.rs, Cargo manifests, CI and migration documentation"
 review_set: subset
-evaluated_revision: "d83b4eaac970231e5b3823240a61fd48bf7ea4e1"
 ---
 
 ## Summary
@@ -28,18 +27,16 @@ native assessment are not qualified by this review.
 
 ## Scope and assurance context
 
-Implementation revision is d83b4eaac970231e5b3823240a61fd48bf7ea4e1. The owning
-specification at 11a9128 and full eight-analysis review/plan at f43ace3 preceded
-implementation. Layout/budget and canonical-marker clarifications were reviewed
-at 91a4fc0 and 5172f9e. Manual CI specification 1649ef7 was reviewed at 2e5cd9a
-before workflow change 8cf5571. The current matrix and task completion updates
+The owning
+specification and full eight-analysis review/plan preceded
+implementation. Layout/budget and canonical-marker clarifications were reviewed.
+The manual CI specification was reviewed
+before the workflow change. The current matrix and task completion updates
 record these already-performed runs; they do not change acceptance criteria.
 
 Applied the actual shared `/home/peter/dev/agent-skills/code-review/SKILL.md`,
 `rust-review/SKILL.md`, `rust-style/SKILL.md` and implementation-gap-analysis
-discovery. Rust-review SHA-256 is
-bec67626edf3944397fa6c2c83c1164278c9f86db3efdcc67cf91b2152b2d85a.
-The repository's reviewed NFR-005 canonical attributes override the older
+discovery. The repository's reviewed NFR-005 canonical attributes override the older
 rust-style comment/name convention. No AssuranceProfile artifact applies in
 this repository. No advisory waiver, gate suppression or subagent was used.
 The optional semantic gap review was declined and remains skipped.
@@ -52,7 +49,7 @@ The optional semantic gap review was declined and remains skipped.
 | Tests and tracking | All 14 new functions use imported canonical trace attributes. Unit tests stay beside code; integration tests use the real binary. Three ignored tests name IT-004's explicit private-packet lane and were actually run. |
 | Seams | Temporary fixture copies and real process/file/parser boundaries; no production cfg(test) behavior switch or replacement of the unit under test. |
 | Source completeness | No production placeholder, panic/unwrap, unsafe block, bypass flag, unimplemented mode or new public API. Model-producer is the specified unconditional refusal. |
-| Test completeness | Assertions check observed counts/codes/claims and immutable bytes. Independently changed artifacts, producer pin, metadata, source correspondence, path escape and boundary values discriminate failures. |
+| Test completeness | Assertions check observed counts/codes/claims and immutable bytes. Independently changed artifacts, metadata, source correspondence, path escape and boundary values discriminate failures. |
 | Integrity | No lint weakening. Explicit checks remain enabled in optimized builds. Original model/standard fixture bytes and producer history are preserved. |
 | Panic and resource surface | OS arguments remain OsString/Path. File and aggregate bytes, file/value counts, JSON depth and native parser Limits bound work. Recoverable errors return Result and nonzero process status. |
 | Conversions | Wire offsets use checked unsigned conversion and checked source ranges; scalar positions come from existing Source. No truncating wire casts. |
@@ -83,8 +80,6 @@ schema authority.
 
 ## Actual local gates
 
-Rust toolchain 1.94.1; locked Cargo SHA-256
-26c8dc235777ff79a5882e01a6c700d2feab9fe4d9f4397662490aa37fb9d444.
 Commands used --offline and --locked, with --target-dir target except the
 separate build target. The local default suite's substantive result lines were:
 
@@ -102,8 +97,8 @@ cargo build --offline --locked --no-default-features --target-dir target/clean: 
 ```
 
 Library/main/doc targets contain zero tests and are not added to these counts.
-The private lane used QUIRE_STATE_CORE pointing to specification revision
-36293bae7f5bcb7ca3b2389ed166e525dc9dba87. Its three tests run actual audits plus
+The private lane used QUIRE_STATE_CORE pointing to the specification
+checkout. Its three tests run actual audits plus
 independent mutations; none skipped inside that selected run. All four direct
 modes produced the specified 23/7/6, 17/4, 5 and 50/1 counts. Producer refusal
 returned exit 3 under the actual binary test with no external runtime PATH.

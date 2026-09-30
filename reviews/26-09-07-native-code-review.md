@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "src/, tests/, tools/, Cargo/toolchain/CI and corresponding current requirements"
 review_set: subset
-evaluated_revision: "a80a17d1dd303b91712df2023fdba8aba83e89c1"
 review_date: "2026-09-07"
 ---
 
@@ -33,7 +32,7 @@ The current Rust syntax implementation has real bounded parser/source-map behavi
 
 ## Scope and skill provenance
 
-Reviewed `quire-spec-language@a80a17d1dd303b91712df2023fdba8aba83e89c1`: all Rust source, the three Rust integration-test files, Cargo/toolchain/CI configuration, and four optional Python helper scripts. No applicable AssuranceProfile or repository-specific Rust idiom document was present. AGENTS.md, LICENSE-DECISION.md and the documented commands were read first.
+Reviewed `quire-spec-language`: all Rust source, the three Rust integration-test files, Cargo/toolchain/CI configuration, and four optional Python helper scripts. No applicable AssuranceProfile or repository-specific Rust idiom document was present. AGENTS.md, LICENSE-DECISION.md and the documented commands were read first.
 
 The actual shared Agent-IX `agent-skills/code-review/SKILL.md` dispatches Rust review to `agent-skills/rust-review/SKILL.md`; its default idioms come from `agent-skills/rust-style/SKILL.md`. The initially loaded `/home/peter/dev/agent_skills/` Rust review/style copies were verified byte-for-byte identical to the owner's named `/home/peter/dev/agent-skills/` paths. Rust review SHA-256: `bec67626edf3944397fa6c2c83c1164278c9f86db3efdcc67cf91b2152b2d85a`; Rust style SHA-256: `1ed18f352d8a9235e04ea293e94c1ee0cf5e541f4da5908c8ee3af40032b6e69`.
 

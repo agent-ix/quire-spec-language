@@ -1,7 +1,7 @@
 # Native source correspondence for Contract IR
 
 FR-014 defines a local Rust correspondence API over existing Source and Contract
-IR source types at dependency revision 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f.
+IR source types.
 The public module is `formal_source`:
 
 ```rust
@@ -57,7 +57,7 @@ SourceMap still owns extraction layout and discontiguous original regions.
 Composing these APIs requires callers to retain each exact original segment;
 this API neither combines those regions nor replaces the extraction contract.
 
-Qualification uses actual pinned IR types and Rust assertions, including an
+Qualification uses actual IR types and Rust assertions, including an
 independent coordinate oracle and deliberately misleading constructor-valid IR
 locations. There are no new dependencies or non-Rust qualification helpers.
 Type/definedness checking, native model semantic roles, lowering and evaluation

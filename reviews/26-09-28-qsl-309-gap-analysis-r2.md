@@ -3,7 +3,7 @@ id: SR-773
 title: "QSL-309 gap re-analysis of PR 510 after the SR-770/SR-771 fix round"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@fbb63d61c382c527c957f029b94dc14902f70e90; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/test-cases/TC-513-s3-binds-a-protocol-attempt-to-its-operation-frame.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md (read only, §12.2); qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-replay/src/spine.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/test-cases/TC-513-s3-binds-a-protocol-attempt-to-its-operation-frame.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md (read only, §12.2); qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-replay/src/spine.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-114
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-309. PR: quire-spec-language#510 at fbb63d6. This is the
+Ticket: QSL-309. PR: quire-spec-language#510. This is the
 gap-analysis re-review after the SR-771 fix round. SR-771's own dispositions
 are appended to SR-771.
 
@@ -57,5 +57,5 @@ Approve after FND-001, which the reviewer fixed in-PR together with FND-002.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f976743e: FR-113 and FR-114 Status say that the protocol itself is not emitted, and FR-113 lists the duplicate-role refusal |
-| FND-002 | fixed | f976743e: `a_valid_attempt_does_not_let_garbage_content_through` covers `using Config`, `by Q`, a duplicate role and a `relationship`. A mutation that removes the `Relationship` capture turns it red |
+| FND-001 | fixed | FR-113 and FR-114 Status say that the protocol itself is not emitted, and FR-113 lists the duplicate-role refusal |
+| FND-002 | fixed | `a_valid_attempt_does_not_let_garbage_content_through` covers `using Config`, `by Q`, a duplicate role and a `relationship`. A mutation that removes the `Relationship` capture turns it red |

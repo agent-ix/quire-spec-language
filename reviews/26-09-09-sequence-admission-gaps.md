@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Inspected all five Plan-005 tasks, the TM-003 bindings and the Task-034 code/test
-amendment at fd69a60 plus final review wording. The new sequence ceiling is
+amendment plus final review wording. The new sequence ceiling is
 implemented and locally checked; the broader source-profile ruling remains #30.
 
 ## Verdict

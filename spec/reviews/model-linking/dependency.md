@@ -5,13 +5,12 @@ type: SpecReview
 analysis: dependency
 scope: "IT-005, TM-003 and TC-020–029 against existing FR-005/006"
 review_set: all
-evaluated_revision: "0998e51f7051ea6996d21f6ed4db39d7e5d8f6ba"
 ---
 
 ## Summary
 
 Reviewed the LC02 evidence specification using the owner's retained base plus
-all seven QUOIN analyses. The owner has accepted specification e897f81 as the
+all seven QUOIN analyses. The owner has accepted the specification as the
 internal implementation target; no external adapter or execution is invented.
 
 ## Verdict
@@ -29,7 +28,7 @@ identified below. This review does not authorize a substitute model binder.
 
 ## Analysis and dispositions
 
-FR-005 and FR-006 are features: native name resolution and static judgment. Existing FR-001/002 syntax/source are prior enablement. Within this repository the sequence is FR-005 -> FR-006 -> IT-002's runtime/backend workflow, each downstream of the shared model/reference view it consumes. Current BoundPackage belongs after native qualification; it cannot serve as a model loader. This DAG has no cycle. Owner adoption at specification e897f81 resolves the normative internal-target choice; adapter release/API, reference representation, qualified rule-model realization and native implementation contracts remain unavailable. No task claims those dependencies done.
+FR-005 and FR-006 are features: native name resolution and static judgment. Existing FR-001/002 syntax/source are prior enablement. Within this repository the sequence is FR-005 -> FR-006 -> IT-002's runtime/backend workflow, each downstream of the shared model/reference view it consumes. Current BoundPackage belongs after native qualification; it cannot serve as a model loader. This DAG has no cycle. Owner adoption of the specification resolves the normative internal-target choice; adapter release/API, reference representation, qualified rule-model realization and native implementation contracts remain unavailable. No task claims those dependencies done.
 
 ## Provenance and validation
 
@@ -46,5 +45,5 @@ advisor and coverage data are retained in this review directory.
 
 ## Adoption and fixture correction review — 2026-09-08
 
-Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
-review set. The root lifecycle now agrees with the already recorded owner adoption at specification e897f81. No further semantic-target approval is needed for internal implementation. The shared interface, qualified rule model and native API/resource specification remain the concrete dependencies. Equal scalar bounds do not supply those interfaces. FND-001/002 and the conditional verdict remain.
+Evaluated the amendment using the retained
+review set. The root lifecycle now agrees with the already recorded owner adoption of the specification. No further semantic-target approval is needed for internal implementation. The shared interface, qualified rule model and native API/resource specification remain the concrete dependencies. Equal scalar bounds do not supply those interfaces. FND-001/002 and the conditional verdict remain.

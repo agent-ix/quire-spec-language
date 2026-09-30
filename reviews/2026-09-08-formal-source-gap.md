@@ -3,9 +3,8 @@ id: SR-065
 title: "Gap analysis — formal source bridge and LC02 matrix"
 type: SpecReview
 analysis: gap-analysis
-scope: "Plan-004-formal-source, TM-003 and source bridge at 7464c9a"
+scope: "Plan-004-formal-source, TM-003 and source bridge"
 review_set: subset
-evaluated_revision: "7464c9a"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-004
     type: reviews
@@ -60,10 +59,10 @@ Agent A implementation work after the source bridge is landed.
 
 ## Reviewable-deliverable addendum
 
-Private PR9 now exists at 4c3ce895645af85d1a0c452758aba677c3eafc04, reports ready
+Private PR9 now exists, reports ready
 and mergeable, and includes the real code, tests and review evidence. Task-007
 has been reconciled to done for its reviewed implementation/PR deliverable;
 tasks done is now 1/1 and FND-001 is resolved for that deliverable. Actual merge
 is still a separate next action, not backdated into this review. No source or
-test changed after 7464c9a. The FR-014 result remains 5/5; the full TM-003 verdict
+test changed after the reviewed implementation. The FR-014 result remains 5/5; the full TM-003 verdict
 remains FAIL because FND-002's five typing cases are still unimplemented.

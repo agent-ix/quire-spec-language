@@ -3,7 +3,7 @@ id: SR-097
 title: "Code and Rust review of native runtime validation"
 type: SpecReview
 analysis: code-review
-scope: "FR-007 / Task-013 at 45ed1b4d11eb162ac6bab9d94e2dca6113545037"
+scope: "FR-007 / Task-013"
 review_set: subset
 ---
 
@@ -28,11 +28,11 @@ remain required work. TC-061's evaluation/captured-read portion remains planned.
 
 ## Review scope and sequence
 
-Evaluated source 45ed1b4d11eb162ac6bab9d94e2dca6113545037, including the
-c4f7c74 validation checkpoint, against FR-007, NFR-006-M-6..11,
-NFR-003/NFR-005 and docs/native-runtime-inputs.md. Initial specification
-045025f received the eight actual QUOIN reviews SR-088–095 before runtime
-implementation; their commits and dispositions remain in Plan-006. No new
+Evaluated source, including the
+validation checkpoint, against FR-007, NFR-006-M-6..11,
+NFR-003/NFR-005 and docs/native-runtime-inputs.md. The initial specification
+received the eight actual QUOIN reviews SR-088–095 before runtime
+implementation; their dispositions remain in Plan-006. No new
 requirement, snapshot encoding, model role or frame permission is introduced
 by the qualification fixes.
 

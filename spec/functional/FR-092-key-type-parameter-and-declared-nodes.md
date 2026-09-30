@@ -41,8 +41,7 @@ conforms to QSpec's arm once QSpec publishes one (QC-18, QC-24). It follows the 
 anonymous type node carries none and shares one id across packages. QSpec
 references (`ix://agent-ix/quire-specification`, cited by reference, never
 copied): FR-322, `proposals/checked-package-v2/node-identity-preimage.schema.json`,
-`schema.json`, `operation-catalog.json` and the positive fixtures, at
-`e72756f`.
+`schema.json`, `operation-catalog.json` and the positive fixtures.
 
 ## Inputs
 

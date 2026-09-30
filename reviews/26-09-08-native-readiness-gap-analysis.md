@@ -5,7 +5,6 @@ type: SpecReview
 analysis: gap-analysis
 scope: "Plan-002 and TM-002; native syntax merge readiness"
 review_set: subset
-evaluated_revision: "a7ccd4df221650de7778ea830eaa806b9543d6eb"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-002
     type: reviews
@@ -59,7 +58,7 @@ SR-028 records 38 default tests passing and all three selected private-packet
 tests passing, plus strict Clippy, formatting, public rustdoc, separate-target
 build and direct Rust audit/example commands. This establishes executed scoped
 assertions and traceability, not whole-program line coverage or state truth.
-Runtime/test source is cbccbb6; later reviewed-plan commits change only docs.
+Later reviewed-plan commits change only docs.
 
 TM-001 remains 9/10 because TC-010 is declared Manual/no_source_symbol and
 has actual executable-path inspection under Plan-001. Three existing unmatched

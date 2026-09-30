@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "PR #12; Task-017/018 reader, runtime integration and producer review SR-111"
 review_set: subset
-evaluated_revision: "eb97a871f107eecebf49b1a53cc46e23ddc1d7ae"
 review_date: "2026-09-09"
 ---
 
@@ -40,8 +39,8 @@ record arrays refuse. These are contract corrections, not changed semantics.
 Applied the actual `/home/peter/dev/agent-skills/code-review/SKILL.md` and
 `rust-review/SKILL.md`, Rust-style defaults subordinate to repository guidance,
 and implementation-gap discovery. No applicable AssuranceProfile, repository
-Rust override or deny.toml exists. The existing specification/reviews remain
-41da6e5/69588ad, with source-fixture correction 2c6b9b8/1c3aa50. SR-111 supplies
+Rust override or deny.toml exists. The existing specification/reviews remain,
+with the source-fixture correction. SR-111 supplies
 the completed producer audit; optional semantic gap review remains declined.
 
 | Contract | Executed evidence |
@@ -77,11 +76,11 @@ All commands terminated with exit 0. Cargo phases used `nice -n 10`,
 | `cargo test --no-default-features --test package_reading -- --test-threads=1` | All 18 passed, including the final inventory and ordered-array controls; 260 ordinary tests exercised across these runs. |
 | `cargo build --no-default-features` | Passed using the existing cache. |
 | `RUSTDOCFLAGS='-D warnings' cargo doc --no-default-features --no-deps` | Passed. |
-| `cargo run --bin fixture-audit -- self-test` / `model-bytes tests/fixtures` | Six negative controls/duplicate refusal and five historical model digests/pin passed. |
+| `cargo run --bin fixture-audit -- self-test` / `model-bytes tests/fixtures` | Six negative controls/duplicate refusal and five historical model digests passed. |
 | `cargo run -- parse test:parent fixture:1 tests/fixtures/parent.native` / `format ...` | Both passed. |
-| `cargo test --test fixture_audit -- --ignored --test-threads=1` | All three private audits passed; QUIRE_STATE_CORE selected an immutable git archive of standard e897f810a7356d4ce8fd19026221ebda7b65596f `proposals/state-core`. Temporary archive removed. |
+| `cargo test --test fixture_audit -- --ignored --test-threads=1` | All three private audits passed; QUIRE_STATE_CORE selected an immutable git archive of the adopted standard's `proposals/state-core`. Temporary archive removed. |
 
-Rust is pinned at 1.98.1 and IR at 690bde7. The existing serde_json pin gains
+The existing serde_json dependency gains
 only the already-reviewed unbounded_depth feature; the reader's own 128-container
-guard remains enforced. Cargo.lock and dependency versions/grants are unchanged.
+guard remains enforced.
 The sole hosted workflow still accepts only workflow_dispatch; none was run.

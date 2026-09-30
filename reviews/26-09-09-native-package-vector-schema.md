@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "Task-016 fixed producer/canonical vectors, Rust fixture author, schema development feature and shared private-test setup"
 review_set: subset
-evaluated_revision: "cffcaa413f800dd3840eb002d894d3a4f38f2a42"
 review_date: "2026-09-09"
 ---
 
@@ -42,8 +41,8 @@ Shared trace attributes follow repository conventions; legacy doc-line examples
 in the portable skill do not replace them. The optional semantic gap pass was
 not run.
 
-Scope remains specification 41da6e5 / all-eight review 69588ad and correction
-2c6b9b8 / all-eight supplements 1c3aa50. No production API, accepted language,
+Scope remains the specification with its all-eight review and the correction
+with its all-eight supplements. No production API, accepted language,
 wire field, authority or acceptance criterion changed. The source/model fixture
 bytes are upstream inputs; parser/linker/checker outputs never author the
 expected package fields. Fixed data follows the first implementation, and all
@@ -76,10 +75,9 @@ original setup failures remain recorded.
   items. It is confined to that support import, not a global warning waiver or
   disabled functional test. Strict all-target Clippy passes. The private test
   lane has no added dead-code suppression.
-- jsonschema 0.17.1 retains its MIT grant and resolves only draft202012, with
-  HTTP/file/CLI resolution disabled. The lock adds one root development edge;
-  all 138 package/version/source/license entries remain identical. The
-  structural mutation walk is iterative over bounded fixed test fixtures and
+- jsonschema retains its MIT grant and resolves only draft202012, with
+  HTTP/file/CLI resolution disabled. The lock adds one root development edge.
+  The structural mutation walk is iterative over bounded fixed test fixtures and
   tests missing, extra and wrong-type members at every encountered object.
   Real invariant/local-binding/pre/post/result packages also exercise the
   schema. A false model-artifact claim remains structurally valid by design;
@@ -103,7 +101,7 @@ lines for git diff --check.
 | --- | --- | --- |
 | Formatting / strict Clippy | Passed, all targets and no default features | vector-schema-format.txt; vector-schema-clippy.txt |
 | Regression | 225 ordinary tests plus one compile-fail doctest passed | vector-schema-regression.txt |
-| Private audit lane | Three selected tests passed against adopted e897f81 immutable archive | vector-schema-private-audits.txt |
+| Private audit lane | Three selected tests passed against the adopted standard's immutable archive | vector-schema-private-audits.txt |
 | Cached build / strict rustdoc | Passed; no clean-cache claim | vector-schema-build.txt; vector-schema-rustdoc.txt |
 | Audit self-test / model bytes | Six controls plus duplicate refusal and five historical digests passed | vector-schema-audit-self-test.txt; vector-schema-audit-model-bytes.txt |
 | Fixture author | All 14 candidate files match; existing/missing/extra-argument calls each refuse with exit 1 | vector-author-final.txt; vector-author-*-argument.txt; vector-author-existing-directory.txt |

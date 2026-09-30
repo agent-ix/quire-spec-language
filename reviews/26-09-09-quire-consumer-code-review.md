@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 55649b3 using actual code-review, rust-review and
+Author PR-readiness review using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -34,10 +34,10 @@ contract version and semantic-core skew; byte/line budget failures retain measur
 counts and effective limits. Tests distinguish each variant before extraction.
 Clause selection, fence geometry, exact byte verification and map construction
 are separate bounded helpers. Language is borrowed from the actual extraction.
-Quire-owned result/context types are deliberately re-exported with pin ownership.
+Quire-owned result/context types are deliberately re-exported.
 No new dependency, parser, unsafe block, request panic or concurrent work was added.
 
-At 55649b3 both full configurations passed: 316 ordinary tests with all features
+Both full configurations passed: 316 ordinary tests with all features
 and 311 with minimal features, each plus three compile-fail doctests and four
 existing ignored assurance tests. The five real extraction tests retain exact
 LF/CRLF/Unicode provenance, actual runtime truth/refusal and fresh retry. Strict

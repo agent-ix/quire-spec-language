@@ -51,7 +51,7 @@ source/test stub. Full native profile conformance is still #30.
 
 ## Local verification
 
-At implementation 3c6a0e6, with locked/offline Cargo, target cache, nice 10,
+With locked/offline Cargo, target cache, nice 10,
 one job and one test thread:
 
 | Gate | Result |

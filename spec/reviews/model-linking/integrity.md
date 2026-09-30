@@ -5,13 +5,12 @@ type: SpecReview
 analysis: integrity
 scope: "IT-005, TM-003 and TC-020–029 against existing FR-005/006"
 review_set: all
-evaluated_revision: "0998e51f7051ea6996d21f6ed4db39d7e5d8f6ba"
 ---
 
 ## Summary
 
 Reviewed the LC02 evidence specification using the owner's retained base plus
-all seven QUOIN analyses. The owner has accepted specification e897f81 as the
+all seven QUOIN analyses. The owner has accepted the specification as the
 internal implementation target; no external adapter or execution is invented.
 
 ## Verdict
@@ -46,5 +45,5 @@ advisor and coverage data are retained in this review directory.
 
 ## Adoption and fixture correction review — 2026-09-08
 
-Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+Evaluated the amendment using the retained
 review set. Direct inspection of tests/fixtures/model-source/types/main.tsp and model-output/semantic-ir.json shows VersionNumber min 0 and max 1000, matching the abstract rule fixture's Version bounds. The earlier wording suggesting different bounds was inaccurate and IT-005 now corrects it. The declarations still have different stable identities and containing models; equal ranges alone do not establish equivalence. Original input bytes and authored judgments are unchanged. FND-001/002 and the conditional verdict remain.

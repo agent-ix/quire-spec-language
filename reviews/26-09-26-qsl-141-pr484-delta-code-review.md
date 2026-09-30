@@ -3,7 +3,7 @@ id: SR-712
 title: "Delta code review of the PR #484 fix round"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@bee599c7a2f174864f0e90ed3911b2aec5d39e6c; qsl-semantics/src/check/assemble/tests.rs; qsl-forms/tests/it/value_forms.rs; spec/test-cases/TC-402-assembler-reads-no-cst.md; reviews/"
+scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/assemble/tests.rs; qsl-forms/tests/it/value_forms.rs; spec/test-cases/TC-402-assembler-reads-no-cst.md; reviews/"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
@@ -13,7 +13,7 @@ relationships:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-c6de6739. Ticket QSL-141, PR quire-spec-language#484.
 
-Delta review of the fix round, `5a51beb0..bee599c7`. It covers new tests added for SR-707 and SR-708.
+Delta review of the fix round. It covers new tests added for SR-707 and SR-708.
 
 ## Findings
 
@@ -25,9 +25,9 @@ Delta review of the fix round, `5a51beb0..bee599c7`. It covers new tests added f
 
 ## Reviewer comment (verbatim)
 
-<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 method=code-review lang=rust pr=quire-spec-language#484 reviewed=bee599c7a2f174864f0e90ed3911b2aec5d39e6c date=2026-09-26 -->
+<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 method=code-review lang=rust pr=quire-spec-language#484 date=2026-09-26 -->
 
-Delta review of the fix round, `5a51beb0..bee599c7`. It covers new tests added for SR-707 and SR-708.
+Delta review of the fix round. It covers new tests added for SR-707 and SR-708.
 
 | FND | Severity | Check | Summary |
 | --- | --- | --- | --- |
@@ -68,7 +68,7 @@ findings:
     finding: "qsl-cst appears in qsl-semantics only under [dev-dependencies] (Cargo.toml:63).
       So non-test code there cannot `pub use qsl_cst` at all, and the test can fail only on a
       #[cfg(test)] re-export nobody can reach. The assembler reaches types through qsl_forms,
-      which is a normal dependency and depends on qsl-cst. Mutation at bee599c7:
+      which is a normal dependency and depends on qsl-cst. Mutation:
       `pub use qsl_cst::Production as CstProduction;` in qsl-forms/src/lib.rs plus
       `use qsl_forms::CstProduction as _P;` in check/assemble.rs left all 41 check::assemble
       tests green. Fix: scan the normal dependencies that depend on qsl-cst (today qsl-forms)
@@ -89,7 +89,7 @@ findings:
     finding: "TC-402 step 3 says to resolve every qsl_cst edge in the #[cfg(test)] items.
       A use tree is syn::UseTree, not syn::Path, and syn::visit does not enter macro tokens.
       So `use qsl_cst::CstNode as _Mutant;` passes, and so does a qsl_cst:: path inside
-      assert!/matches!. Mutation at bee599c7: adding that `use` line to assemble/tests.rs
+      assert!/matches!. Mutation: adding that `use` line to assemble/tests.rs
       left the test green. Fix: judge use trees as well, with the use_tree_names_cst walk
       already in this file extended to check the second segment, and scan macro tokens the
       way identity_free_forms.rs's visit_macro does."
@@ -122,15 +122,15 @@ findings:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-8fafb046.
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 pr=quire-spec-language#484 reviewed=5e11d336ab776ceafd592ce12802a3f5c3f99d2a date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 pr=quire-spec-language#484 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 5e11d336 |
-| FND-002 | fixed | 5e11d336 |
-| FND-003 | fixed | 5e11d336 |
+| FND-001 | fixed | |
+| FND-002 | fixed | |
+| FND-003 | fixed | |
 
-Each fix was verified by mutation in a scratch worktree at 5e11d336. Each mutation that the finding said went undetected now fails its test. At the unmutated head, the check::assemble tests passed 41 of 41, and the qsl-forms every_expression and value_module tests passed 3 of 3.
+Each fix was verified by mutation in a scratch worktree. Each mutation that the finding said went undetected now fails its test. At the unmutated head, the check::assemble tests passed 41 of 41, and the qsl-forms every_expression and value_module tests passed 3 of 3.
 
 +++ [reviewer data]
 
@@ -138,7 +138,6 @@ Each fix was verified by mutation in a scratch worktree at 5e11d336. Each mutati
 dispositions:
   - fnd: FND-001
     outcome: fixed
-    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
     path: qsl-semantics/src/check/assemble/tests.rs
     lines: "547-624"
     after_excerpt: |-
@@ -155,7 +154,6 @@ dispositions:
     evidence: "`pub use qsl_cst::Production as CstProduction;` in qsl-forms/src/lib.rs + `use qsl_forms::CstProduction as _P;` in assemble.rs -> FAILED, qsl_cst is re-exported: [.../qsl-forms/src/lib.rs:48]"
   - fnd: FND-002
     outcome: fixed
-    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
     path: qsl-semantics/src/check/assemble/tests.rs
     lines: "631-720"
     after_excerpt: |-
@@ -176,7 +174,6 @@ dispositions:
     evidence: "`use qsl_cst::CstNode as _Mutant;` in tests.rs -> FAILED, beyond S1: [qsl_cst::CstNode]; `stringify!(qsl_cst::CstNode)` in a test in tests.rs -> FAILED the same way"
   - fnd: FND-003
     outcome: fixed
-    fix_sha: 5e11d336ab776ceafd592ce12802a3f5c3f99d2a
     path: qsl-forms/tests/it/value_forms.rs
     lines: "634"
     after_excerpt: |-

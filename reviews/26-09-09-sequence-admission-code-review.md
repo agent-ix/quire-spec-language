@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR review of implementation fd69a60 using the actual agent-skills
+Author PR review of the implementation using the actual agent-skills
 code-review, rust-review, rust-style and implementation-gap discovery workflows.
 No required AssuranceProfile, repository-specific Rust idiom override or deny.toml
 was found. The final spec wording clarifies existing preflight precedence.

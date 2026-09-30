@@ -3,7 +3,7 @@ id: SR-722
 title: "Round-two code and spec review of the string-edge fix round"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@5f57371139b8da75106a901b6932dcc755c315dc; src/protocol_artifact/mod.rs; src/temporal.rs; src/protocol_artifact/native_temporal/request.rs; src/protocol_artifact/validate.rs; src/protocol_artifact/intake.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v3/intake.rs; src/protocol_artifact/native/metadata.rs; src/protocol_artifact/native/mod.rs; src/protocol_artifact/native/temporal_v2.rs; src/protocol_artifact/handoff/writer.rs; src/state/input.rs; src/state/evaluation.rs; src/mapped.rs; src/linking.rs; qsl-semantics/src/check/family.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/lowering.rs; xtask/src/string_edge.rs; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md"
+scope: "agent-ix/quire-spec-language; src/protocol_artifact/mod.rs; src/temporal.rs; src/protocol_artifact/native_temporal/request.rs; src/protocol_artifact/validate.rs; src/protocol_artifact/intake.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v3/intake.rs; src/protocol_artifact/native/metadata.rs; src/protocol_artifact/native/mod.rs; src/protocol_artifact/native/temporal_v2.rs; src/protocol_artifact/handoff/writer.rs; src/state/input.rs; src/state/evaluation.rs; src/mapped.rs; src/linking.rs; qsl-semantics/src/check/family.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/lowering.rs; xtask/src/string_edge.rs; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -12,7 +12,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485.
-This review covers the fix round, `git diff 9686fc5f..5f573711`: four code
+This review covers the fix round diff: four code
 commits plus the review-file commit. SR-709, SR-710 and SR-711 carry the
 dispositions of the first-round findings.
 
@@ -35,7 +35,7 @@ Mutations, each reverted afterwards:
 - A plain `mod plain_tests;` file with a string compare, and new compares in
   `features` and `mapped::compile`: all three are reported (exit non-zero).
 
-New `#[string_edge]` marks since 9686fc5f, each judged:
+New `#[string_edge]` marks in the fix round, each judged:
 
 - `OccurrenceRole::of`: a conversion to a closed enum. Genuine.
 - `NativeLanguage::of`: a conversion to a closed type. Genuine.

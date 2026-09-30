@@ -3,7 +3,7 @@ id: SR-098
 title: "Code and Rust review of native reference evaluation"
 type: SpecReview
 analysis: code-review
-scope: "FR-008 / Task-014 at 48f53aed5990f7daf15ae6871c1c081d8974c64f"
+scope: "FR-008 / Task-014"
 review_set: subset
 ---
 
@@ -29,10 +29,10 @@ remain required by the original assignment.
 
 ## Scope and review process
 
-Reviewed source 48f53aed5990f7daf15ae6871c1c081d8974c64f against FR-008,
+Reviewed source against FR-008,
 NFR-006, NFR-003/NFR-005 and docs/native-runtime-evaluation.md. The governing
 specification and eight actual QUOIN reviews remain those recorded in Plan-006:
-045025f, SR-088–095, 1603f97/f7ed193, with the earlier construction-test setup
+SR-088–095, with the earlier construction-test setup
 correction and review addenda. This implementation changes no admitted syntax,
 native scalar/observation meaning, runtime input encoding or model authority.
 

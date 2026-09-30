@@ -46,7 +46,7 @@ Source borrowing uses the pinned serde_json raw_value development feature.
 No new package, language, lexer or unsafe code. All checks run serially at nice
 10 with one build job/test thread and explicit cached target directory.
 
-Completed at source 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f. SR-083 records
+Completed. SR-083 records
 the actual code/Rust inspection and all four SR-074 dispositions. Local evidence
 includes 61 default tests, three selected private audit tests, strict Clippy,
 formatting, minimal build, strict rustdoc and documented CLI/audit commands.

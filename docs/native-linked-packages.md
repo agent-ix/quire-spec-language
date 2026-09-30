@@ -1,11 +1,9 @@
 # Native checked-package artifact and reconstruction
 
-Draft LC02 contract for FR-019/020/021 and NFR-007, based on compiler
-789c636bf9fb26812a74a2a2f5310b595262bfee. This is the compiler-owned payload
+Draft LC02 contract for FR-019/020/021 and NFR-007. This is the compiler-owned payload
 inside any separately selected transport/reference envelope. B owns shared
 references/results; Contract IR owns executable binding. Plan-007 tracks
-implementation after all-eight QUOIN review at 69588ad and the source-setup
-correction/re-review at 2c6b9b8/1c3aa50. Construction, verified reconstruction
+implementation. Construction, verified reconstruction
 and runtime integration are implemented under Task-016/017/018.
 
 ## Purpose and boundaries
@@ -112,17 +110,9 @@ The semantic-selection record has fixed member order `language`, `edition`,
 - model_profile: native-state-model/1.
 - checking_contract: native-checked-clauses/1, naming the existing FR-016 contract
   as selected by this artifact version; it does not change language meaning.
-- ir_revision: 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f.
-- Each definition is `{revision, digest}`, where revision is the exact standard
-  Git revision e897f810a7356d4ce8fd19026221ebda7b65596f, not an authored IR revision.
-- base_definition.digest is sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429,
-  for proposals/state-core/profile.md at that revision.
-- rules_definition.digest is sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b,
-  for proposals/state-core/state-semantics.md at that revision.
 
-Both artifacts are required: the unchanged base-profile file alone does not
-identify the adopted semantic refinement. These pins record the owner's adopted
-internal semantics, not a new shared SemanticRef or a public release. Different
+Both definitions are required: the unchanged base-profile file alone does not
+identify the adopted semantic refinement. Different
 definition bytes require an explicit new supported selection; there is no latest
 definition lookup or caller-overridden meaning.
 
@@ -397,14 +387,13 @@ error contract; copying it would not establish these limits. The package's
 recognition adapter remains private and contains no application interpretation.
 Typed selectors stay strings until explicit selection, so a Deserialize enum
 cannot turn unknown_wire or unknown_profile into an accidental shape error.
-The existing serde_json pin may enable unbounded_depth solely so this adapter's
+The serde_json dependency may enable unbounded_depth solely so this adapter's
 own checked 128-container bound governs traversal; other decoders retain their
 existing recursion configuration. No arbitrary-precision number feature or new
 production dependency is required. Qualification may use the already locked
-MIT jsonschema 0.17.1 as a direct development dependency with default features
+MIT jsonschema as a direct development dependency with default features
 disabled and draft202012 enabled. Schema tests use local references only and
-do not perform network/file resolution. Dependency inventory and the complete
-existing audit/IR regression remain required when selecting these features.
+do not perform network/file resolution.
 Shared canonical-domain registration, independent consumer adoption, compiled ConfigVersion
 backend parity and Quire extraction integration remain explicit full-assignment
 acceptance work. No passing package test can close those gates.

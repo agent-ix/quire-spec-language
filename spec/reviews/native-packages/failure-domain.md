@@ -5,8 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
-evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
-supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -55,10 +53,10 @@ closure, frame and graph evaluation contracts remain qualified separately.
 
 ## Admitted source setup correction — 2026-09-09
 
-Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+Re-reviewed the specification using this
 installed QUOIN lens, superseding the initial review's header-only positive
-fixture assumption at 41da6e5. The original PASS and its missed precondition
-remain visible at 69588ad. Escape cause: wrong-requirement.
+fixture assumption. The original PASS and its missed precondition
+remain visible. Escape cause: wrong-requirement.
 
 The real parser still runs before successful rebind. Header-only and import-only sources are adverse inputs; no unchecked constructor or alternate grammar bypass is introduced.
 

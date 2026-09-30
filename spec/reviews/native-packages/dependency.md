@@ -5,8 +5,6 @@ type: SpecReview
 analysis: dependency
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
-evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
-supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -74,10 +72,10 @@ closed IR #54. No cycles remain among the new requirements.
 
 ## Admitted source setup correction — 2026-09-09
 
-Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+Re-reviewed the specification using this
 installed QUOIN lens, superseding the initial review's header-only positive
-fixture assumption at 41da6e5. The original PASS and its missed precondition
-remain visible at 69588ad. Escape cause: wrong-requirement.
+fixture assumption. The original PASS and its missed precondition
+remain visible. Escape cause: wrong-requirement.
 
 The FR-015/016 → FR-021 → FR-019 → FR-020 order is unchanged. Existing qualified model admission supplies the positive fixture; malformed source remains a downstream reader refusal.
 

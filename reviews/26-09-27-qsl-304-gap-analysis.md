@@ -3,7 +3,7 @@ id: SR-766
 title: "QSL-304 gap analysis of PR 506 (ConfigVersion fixture on the bound VersionNumber scalar)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@1d58b150d62709540b21adcf474ead696251aebb; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/functional/FR-104-check-state-clauses.md; spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md; spec/test-cases/TC-459-s3-checks-configversion-state-clauses.md (unchanged); spec/test-cases/TC-465-admission-refuses-each-input-defect.md; spec/tests.md"
+scope: "agent-ix/quire-spec-language; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/functional/FR-104-check-state-clauses.md; spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md; spec/test-cases/TC-459-s3-checks-configversion-state-clauses.md (unchanged); spec/test-cases/TC-465-admission-refuses-each-input-defect.md; spec/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-103
@@ -15,14 +15,14 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-304. PR: quire-spec-language#506 at 1d58b150. There is no plan
+Ticket: QSL-304. PR: quire-spec-language#506. There is no plan
 bundle; the scope is the ticket's own three asks.
 
 1. **Flip the shared fixture to the bound `VersionNumber` scalar.** Done. See
    SR-765 item 1: all five `ConfigVersion` builders are retyped, plus the
    AC-3 `delta` parameter.
 2. **Re-verify TC-458/459/460/462/464/466/469.** Their tests all run in the
-   `it` binary, and my own fresh `make ci` at 1d58b150 exited 0 (93
+   `it` binary, and my own fresh `make ci` exited 0 (93
    `test result: ok` lines, 0 FAILED, 229 `it` tests). Only one test's
    fixture had to change: `Sub::version`, a real widening that the flip made
    reachable (SR-765 item 2). No asserted outcome in those TCs changed, apart
@@ -64,4 +64,4 @@ is stale code comments, fixed with SR-765.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | e59e1ff8 — the stale code-comment deferrals are removed (SR-765 FND-001/FND-002), so code and spec now agree |
+| FND-001 | fixed | the stale code-comment deferrals are removed (SR-765 FND-001/FND-002), so code and spec now agree |

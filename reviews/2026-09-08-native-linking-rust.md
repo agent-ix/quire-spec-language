@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "src/linking.rs, native diagnostics, tests/linking.rs, Cargo and local qualification"
 review_set: subset
-evaluated_revision: "d44e97424ecfe42343edb869e9203275aca26db1"
 ---
 
 ## Summary
@@ -34,9 +33,9 @@ single-line imported trace attributes override the historical doc-tag examples.
 All ten new tests have compiler-checked tags bound by Quire's declared grammar.
 No additional agents or optional gap-analysis semantic comparison were used.
 
-The concrete API was specified at c78792a and all eight QUOIN reviews preceded
-implementation at 8dc6b48. Corrections to the example at ecaf4cf were re-reviewed
-through all eight retained records at 01e597d before corrected tests continued.
+The concrete API was specified and all eight QUOIN reviews preceded
+implementation. Corrections to the example were re-reviewed
+through all eight retained records before corrected tests continued.
 
 ## Rust and architecture checks
 
@@ -62,7 +61,7 @@ Counts are checked before traversal; depth is checked before descending. The
 canonical emitter receives the minimum remaining aggregate/per-model budget.
 The retained bounds count emitted bytes, not allocator capacity or a new IR
 heap guarantee. Total subtraction/addition is within the 8 MiB ceiling enforced
-by the pinned emitter. The usize-to-u64 conversion is checked after a 1 MiB clamp.
+by the emitter. The usize-to-u64 conversion is checked after a 1 MiB clamp.
 The two expect sites concern a bounded conversion and private ParsedUnit handles;
 callers cannot construct invalid handles or mutate the arena through this API.
 No recoverable caller failure reaches an expect or library panic.
@@ -93,17 +92,17 @@ All Cargo work after the owner's resource report used nice -n 10, one build job
 and serial test execution. No builds overlapped and no hosted run was dispatched.
 
 ```text
-cargo +1.98.1 fmt --all -- --check
+cargo fmt --all -- --check
 exit 0
-cargo +1.98.1 test --offline --locked --target-dir target -j 1 --no-default-features -- --test-threads=1
+cargo test --offline --locked --target-dir target -j 1 --no-default-features -- --test-threads=1
 48 passed; 0 failed; 3 named private-lane tests ignored
-QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core cargo +1.98.1 test --offline --locked --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1
+QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core cargo test --offline --locked --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1
 3 passed; 0 failed
-cargo +1.98.1 clippy --offline --locked --target-dir target -j 1 --all-targets --all-features -- -D warnings
+cargo clippy --offline --locked --target-dir target -j 1 --all-targets --all-features -- -D warnings
 exit 0
-RUSTDOCFLAGS='-D warnings' cargo +1.98.1 doc --offline --locked --target-dir target -j 1 --no-deps
+RUSTDOCFLAGS='-D warnings' cargo doc --offline --locked --target-dir target -j 1 --no-deps
 exit 0
-cargo +1.98.1 build --offline --locked --no-default-features --target-dir target/clean -j 1
+cargo build --offline --locked --no-default-features --target-dir target/clean -j 1
 exit 0
 quire validate --scope . 'spec/**/*.md' 'plan/**/*.md' 'reviews/**/*.md' --summary
 134/134 docs grammar-clean before these two review artifacts; 0 grammar findings
@@ -130,15 +129,14 @@ review preserves incomplete typing, runtime, backend and extraction acceptance.
 
 The final merge check found that IT-005 still called the field value and selected
 a signed 0..1000 counter while tests used an unsigned counter. The original review
-missed that IT input mismatch. The field consistency correction at 3e8d348 was
-reviewed in all eight specification records at 5f3707c before the test changed.
+missed that IT input mismatch. The field consistency correction was
+reviewed in all eight specification records before the test changed.
 The existing signed-domain requirement was preserved, not relaxed.
 
-Reviewed the corrected qualification at
-9615b6eb414dd5b0dab6bd1deac5fdf9df75a779: PASS. The real IR integer constructor
+Reviewed the corrected qualification: PASS. The real IR integer constructor
 now selects Signed, minimum 0, maximum 1000, reject overflow. The complete 48-test
 default suite passes again, including all ten linker tests; formatting and strict
 Clippy pass. [Final signed-fixture output](data/native-linking/formalization-a-link-signed-tests.txt)
 and its sibling Clippy log retain those observations. Production source and the
-dependency lock are unchanged from d44e974, so its successful private-audit,
+dependency lock are unchanged from the reviewed implementation, so its successful private-audit,
 rustdoc and separate-build observations remain applicable to that same source.

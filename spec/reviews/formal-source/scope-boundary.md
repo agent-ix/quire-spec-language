@@ -5,7 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "FR-014, docs/formal-source-binding.md, TC-035–039 and TM-003 addition"
 review_set: all
-evaluated_revision: "4eb4ef6"
 review_date: "2026-09-08"
 ---
 
@@ -28,7 +27,7 @@ Agent A owns local source correspondence; existing native intake and IR type con
 | FR-014 | Native formal_source module | core |
 | NFR-005 | Native production/qualification paths | cross-cutting |
 
-System context: caller → native FormalSource → existing Source coordinate API and pinned Contract IR source constructors → caller. Caller authority to assign the appropriate formal identity is assumed and exposed explicitly. Source byte/coordinate correspondence is guaranteed by TC-035–039; actual pinned IR constructor consumption is guaranteed by the integration cases. There are no external services.
+System context: caller → native FormalSource → existing Source coordinate API and Contract IR source constructors → caller. Caller authority to assign the appropriate formal identity is assumed and exposed explicitly. Source byte/coordinate correspondence is guaranteed by TC-035–039; actual IR constructor consumption is guaranteed by the integration cases. There are no external services.
     
 The bridge does not create a model source decoder, authored requirement registry, shared evidence store or executable projection. Local path equality guards requests without creating a portable path identity. Package-wide identity uniqueness and preserving original extraction segments belong to their future owning integration contracts. Public release, hosted CI and changes to another owner's repositories are outside this task.
 

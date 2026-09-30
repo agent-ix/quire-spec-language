@@ -3,7 +3,7 @@ id: SR-760
 title: "Spec review of FR-064 Status and ADR-012 §9 clock row (PR 501)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@8b5606b9d2f5b92c14837142f6c0ac99e82b8dd2; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Tickets: QSL-287, QSL-288. PR: quire-spec-language#501 at 8b5606b9. A
+Tickets: QSL-287, QSL-288. PR: quire-spec-language#501. A
 spec-review (integrity: does the Status text state what is) of the two spec
 edits: FR-064's Status moves from Partial to Implemented, and ADR-012 §9's
 `"clock:"` row moves from Partly done to Done. The AC backing list in FR-064

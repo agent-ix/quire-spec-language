@@ -8,10 +8,10 @@ review_set: subset
 ---
 ## Summary
 
-Current recheck: correction `09c50a5` against integrated baseline `87b35ea`,
+Current recheck: the correction against the integrated baseline,
 narrowed to the four external findings on the earlier revision. This is a
-finding recheck, not a fresh whole-repository review; the earlier PASS for
-revision `b789eed` is superseded as a current verdict and retained below only as
+finding recheck, not a fresh whole-repository review; the earlier PASS
+is superseded as a current verdict and retained below only as
 historical context. Applied the actual agent-skills code-review Rust lane,
 rust-review and rust-style with repository conventions. No AssuranceProfile
 document exists in the repository, and no deny.toml.
@@ -107,7 +107,7 @@ Current correction evidence (root's runs, not this reviewer's):
   integration disposition is the author's verification after Claude's recheck,
   not an additional independent review or a change to the production ceiling.
 
-Historical, superseded: at `b789eed` the full all-feature suite passed 347
+Historical, superseded: the full all-feature suite passed 347
 ordinary tests plus three compile-fail doctests and minimal features passed 331
 plus three, with four assurance tests ignored in each. Those counts describe the
 pre-correction revision and are not carried forward as this correction's result.

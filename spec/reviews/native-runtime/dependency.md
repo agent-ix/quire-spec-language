@@ -5,7 +5,6 @@ type: SpecReview
 analysis: dependency
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
-evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -18,7 +17,7 @@ The implementation DAG is acyclic: input construction and the landed checked-pac
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Resolved boundary: remaining LC02 strict package/projection and FS03 acceptance still gate issue closure; landed FR-015/016 suffice for implementing this native runtime API. IT-006 cannot substitute for IT-002. | FR-007; FR-008; IT-006; IT-002 |
-| FND-002 | low | No new shared reader dependency: inspected runtime 7caefac contains campaign counters, and B's d577486 reader owns portable references. Neither supplies a domain population validator to wrap. | FR-018; docs/native-runtime-inputs.md |
+| FND-002 | low | No new shared reader dependency: inspected runtime contains campaign counters, and B's reader owns portable references. Neither supplies a domain population validator to wrap. | FR-018; docs/native-runtime-inputs.md |
 
 ## Classification
 
@@ -68,7 +67,7 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Construction tests depend
+Reviewed the TC-055–057 setup correction. Construction tests depend
 on existing IR identity types and the FR-018 public constructors. They do not
 need a CheckedPackage. Model-aware validation still needs FR-015/016 and
 FR-018; evaluation still needs validated input. The existing acyclic order

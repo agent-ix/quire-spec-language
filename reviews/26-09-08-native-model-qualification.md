@@ -3,7 +3,7 @@ id: SR-085
 title: "Code and Rust review of complete native model qualification"
 type: SpecReview
 analysis: code-review
-scope: "FR-015 / TC-040–045 at 0cd679c7b8491d002ad96524e59155073b52b048"
+scope: "FR-015 / TC-040–045"
 review_set: subset
 ---
 
@@ -26,8 +26,8 @@ checking and the remaining state workflow are still unimplemented milestones.
 
 ## Review context
 
-Reviewed source 0cd679c7b8491d002ad96524e59155073b52b048 against FR-015 and
-docs/native-model-checking.md, previously reviewed at ceccabb in SR-066–073.
+Reviewed source against FR-015 and
+docs/native-model-checking.md, previously reviewed in SR-066–073.
 The production admission and artifact implementation is unchanged; native
 linkage retains its SR-084 inspection and reran in the full suite. Applied the
 actual /home/peter/dev/agent-skills/code-review/SKILL.md and rust-review/SKILL.md,
@@ -109,7 +109,7 @@ normalized for repository whitespace conformance.
 | `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache | model-qualification-minimal-build.txt |
 | `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | model-qualification-rustdoc.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed | model-qualification-audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests and exact producer pin passed | model-qualification-audit-model-bytes.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests passed | model-qualification-audit-model-bytes.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | model-qualification-cli-parse.txt |
 | `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | model-qualification-cli-format.txt |
 

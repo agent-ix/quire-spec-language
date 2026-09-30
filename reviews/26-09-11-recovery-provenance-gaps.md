@@ -14,9 +14,9 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` over `origin/main...a33a3c1`, re-running `quire coverage
+QUOIN `gap-analysis` over the branch diff, re-running `quire coverage
 --scope /home/peter/dev/worktrees/quire-language-recovery-provenance --json`
-(quire 0.31.0, engine `ca7362d4`). Step 1 (plan completion) remains not
+(quire 0.31.0). Step 1 (plan completion) remains not
 applicable — `plan/` holds Plan-001..009, none covering protocol-artifact
 emission — so matrix reconciliation is the operative gate. The optional semantic
 review (Step 4) was declined by the requester. Reconciliation is unchanged from

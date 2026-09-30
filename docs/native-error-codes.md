@@ -4,7 +4,7 @@ FR-010 exposes one native `Diagnostic` envelope with phase, code, exact caller
 source labels, display path, original span and explanatory message. `Display`
 renders `code: message`; `std::error::Error` has no underlying cause. The public
 `source` field is provenance, so the standard traits are implemented directly:
-the pinned thiserror derive would incorrectly treat that field as an error cause.
+the thiserror derive would incorrectly treat that field as an error cause.
 The fixture-audit target retains its separate [audit codes](audit-error-codes.md).
 
 Native package APIs use the same Code vocabulary in a separate PackageError

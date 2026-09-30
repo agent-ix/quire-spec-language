@@ -3,7 +3,7 @@ id: SR-755
 title: "QSL-295 code review of PR 502 (run_clause I3 extracted source)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@6a78d6c9843c419b5a94eed41654a22e4b11bbcc; Cargo.toml; Cargo.lock; qsl-replay/Cargo.toml; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/clause/tests.rs; context read: qsl-source/src/lib.rs, src/command/extraction.rs, src/mapped.rs, spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md, Makefile"
+scope: "agent-ix/quire-spec-language; Cargo.toml; Cargo.lock; qsl-replay/Cargo.toml; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/clause/tests.rs; context read: qsl-source/src/lib.rs, src/command/extraction.rs, src/mapped.rs, spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md, Makefile"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-109
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-295. PR: quire-spec-language#502 at 6a78d6c9, base a62bd8b4.
+Ticket: QSL-295. PR: quire-spec-language#502.
 Code review with the rust-review lane folded in.
 
 Sound:
@@ -52,11 +52,11 @@ feature edge, gate coverage, code rules) is sound.
 
 ## Dispositions
 
-Round 2, reviewed 39837943e97327e49c203501188a556651439211. Gate log
-scratchpad/qsl-295-ci-r2.log: first line is the head, last line `exit=0`, and
+Round 2. Gate log
+scratchpad/qsl-295-ci-r2.log: last line `exit=0`, and
 `string-edge` is clean.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 39837943. `run_clause` decodes `extracted.language()` through `NativeLanguage::of` before compiling. A non-`ix:native` fence reports `ClauseDisposition::UnknownLanguage` at stage `compile`, `Refusal`, with exit `Code::UnknownLanguage.exit_code()` = 20. The extraction stays in provenance (qsl-replay/src/spine/clause.rs:506-517). The decoder moved unchanged, still `#[string_edge]`, from src/mapped.rs to qsl-foundation/src/source_map.rs:6-20. `mapped::compile` makes the same `NativeLanguage::of(language).is_none()` call, so the CLI path is unchanged. No Cargo.toml or Cargo.lock change: qsl-foundation already depends on qsl-attrs, and qsl-replay and the root already depend on qsl-foundation. |
-| FND-002 | fixed | 39837943. `ClauseRunSource` is `#[non_exhaustive]` (qsl-replay/src/spine/clause.rs:82-83). |
+| FND-001 | fixed | `run_clause` decodes `extracted.language()` through `NativeLanguage::of` before compiling. A non-`ix:native` fence reports `ClauseDisposition::UnknownLanguage` at stage `compile`, `Refusal`, with exit `Code::UnknownLanguage.exit_code()` = 20. The extraction stays in provenance (qsl-replay/src/spine/clause.rs:506-517). The decoder moved unchanged, still `#[string_edge]`, from src/mapped.rs to qsl-foundation/src/source_map.rs:6-20. `mapped::compile` makes the same `NativeLanguage::of(language).is_none()` call, so the CLI path is unchanged. No Cargo.toml or Cargo.lock change: qsl-foundation already depends on qsl-attrs, and qsl-replay and the root already depend on qsl-foundation. |
+| FND-002 | fixed | `ClauseRunSource` is `#[non_exhaustive]` (qsl-replay/src/spine/clause.rs:82-83). |

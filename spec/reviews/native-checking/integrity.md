@@ -5,7 +5,6 @@ type: SpecReview
 analysis: integrity
 scope: "FR-015/016, FR-006 judgments, docs/native-model-checking.md, IT-005, TC-025–029/040–053 and TM-003"
 review_set: all
-evaluated_revision: "ceccabb564b61742597ad356eb1019ab0c8d1544"
 review_date: "2026-09-08"
 ---
 
@@ -17,7 +16,7 @@ Source roles, exact type constraints, proof discharge and runtime assumptions ha
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Resolved in e1ae696: the legacy profile is named native-formal-environment/1 exactly, preserving the existing import domain rather than inventing a second spelling. | FR-015; FR-013; TC-042; TC-044 |
+| FND-001 | medium | Resolved: the legacy profile is named native-formal-environment/1 exactly, preserving the existing import domain rather than inventing a second spelling. | FR-015; FR-013; TC-042; TC-044 |
 | FND-002 | low | No remaining contradiction between backward contextual inference and forward evaluation order: type constraints can flow to an initializer, but later guard facts cannot justify its execution. | FR-016; TC-048; TC-050 |
 
 ## Traceability

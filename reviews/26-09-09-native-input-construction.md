@@ -3,7 +3,7 @@ id: SR-096
 title: "Code and Rust review of native input construction"
 type: SpecReview
 analysis: code-review
-scope: "FR-018 / Task-012 at c8fa41f6e172e58b9406792d1b9f6b6bd85e52cc"
+scope: "FR-018 / Task-012"
 review_set: subset
 ---
 
@@ -26,12 +26,12 @@ and the complete native/backend/Quire workflow remain required downstream work.
 
 ## Review context and sequence
 
-Evaluated source c8fa41f6e172e58b9406792d1b9f6b6bd85e52cc against FR-018,
-NFR-006-M-1..5 and docs/native-runtime-inputs.md. Initial specification 045025f
+Evaluated source against FR-018,
+NFR-006-M-1..5 and docs/native-runtime-inputs.md. The initial specification
 received all eight QUOIN reviews SR-088–095 before runtime implementation.
 The review later found a copied model/checker setup sentence in TC-055–057;
-dc63f33 corrects that sentence to the existing construction-only boundary and
-29922d7 records all eight review addenda. Existing code was preserved during
+a correction restores the existing construction-only boundary and
+all eight review addenda record it. Existing code was preserved during
 that correction; no acceptance result, byte encoding, limit or API changed.
 
 Applied the actual /home/peter/dev/agent-skills/code-review/SKILL.md,
@@ -127,7 +127,7 @@ succeeded. These initial failures are not qualification successes.
 
 ## Traceability and remaining work
 
-Quire 0.31.0 / engine 0.46.0@ca7362d4 binds 134/134 Rust test symbols, with
+Quire 0.31.0 / engine 0.46.0 binds 134/134 Rust test symbols, with
 FR-018 7/7 criteria and TM-004 3/23 cases backed. Root backing is 141/208,
 not complete runtime coverage. No untracked symbols or reported status lies
 appear. Twenty catalog/classifier diagnostics, three preexisting unmatched

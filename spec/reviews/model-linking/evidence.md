@@ -5,13 +5,12 @@ type: SpecReview
 analysis: evidence
 scope: "IT-005, TM-003 and TC-020–029 against existing FR-005/006"
 review_set: all
-evaluated_revision: "0998e51f7051ea6996d21f6ed4db39d7e5d8f6ba"
 ---
 
 ## Summary
 
 Reviewed the LC02 evidence specification using the owner's retained base plus
-all seven QUOIN analyses. The owner has accepted specification e897f81 as the
+all seven QUOIN analyses. The owner has accepted the specification as the
 internal implementation target; no external adapter or execution is invented.
 
 ## Verdict
@@ -29,7 +28,7 @@ identified below. This review does not authorize a substitute model binder.
 
 ## Analysis and dispositions
 
-The actual Quoin advisor ran at 0998e51. FR-005/006 Test-class cells have no mismatch/uncatalogued flags. Its universal-shape rules recommend property-based testing for nine ACs; FR-005-AC-3 receives example/Unit/E2E suggestions. Reviewer judgment retains actual integration cases for selected observed adapter/checker behavior and a generated Property family for failed-link atomicity. This is an initial AC-directed evidence design, not universal conformance proof. Broader generated model/guard families, malformed-input fuzzing and fault-detection measurements remain candidate additions when the implementation/API contracts exist. No fuzzing, mutation-score, fault campaign or Loom execution is claimed.
+The actual Quoin advisor ran. FR-005/006 Test-class cells have no mismatch/uncatalogued flags. Its universal-shape rules recommend property-based testing for nine ACs; FR-005-AC-3 receives example/Unit/E2E suggestions. Reviewer judgment retains actual integration cases for selected observed adapter/checker behavior and a generated Property family for failed-link atomicity. This is an initial AC-directed evidence design, not universal conformance proof. Broader generated model/guard families, malformed-input fuzzing and fault-detection measurements remain candidate additions when the implementation/API contracts exist. No fuzzing, mutation-score, fault campaign or Loom execution is claimed.
 
 ## Provenance and validation
 
@@ -46,5 +45,5 @@ advisor and coverage data are retained in this review directory.
 
 ## Adoption and fixture correction review — 2026-09-08
 
-Evaluated amendment 01a04910fdd4cdc97bf8f90aeb0b64cf1708386a using the retained
+Evaluated the amendment using the retained
 review set. The correction follows the actual retained TypeSpec source and compiled semantic IR, both with bounds 0..1000; it introduces no fresh producer observation or executed judgment. Repeated scoped Quire coverage remains 57/103 globally backed with 41/41 Rust symbols bound and TM-003 0/10. The ten cases remain planned. FND-001/002 and the conditional verdict remain.

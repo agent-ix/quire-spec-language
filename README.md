@@ -69,7 +69,7 @@ combines four source units, queries, population/reference roles and actual model
 operations, recording the producer's own source identity as a digest over its
 own source text and retaining independently derived selectors.
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
-`/1` handoff directly from the pinned crate. Version-explicit member constants
+`/1` handoff directly from the crate. Version-explicit member constants
 name its offer, external reference, `Selection` record and checksum inventory;
 consumers need no environment variable, producer execution or repository-layout
 guess. Its `Service` and `Provider` roles retain distinct admitted model
@@ -172,7 +172,7 @@ model/read/observation correspondence. Object and graph expressions refuse.
 `lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
 bounded integer arithmetic and comparisons accepted by the strict IR binder.
 Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
-the pinned codegen emits executable numeric Rust for obligation-free comparisons.
+codegen emits executable numeric Rust for obligation-free comparisons.
 The `standalone_fixtures`
 example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
 Their native runs return true and false; both export the same integer projection.
@@ -188,10 +188,10 @@ all four generated strategy populations and cargo-kani 0.67.0, and checks the
 shared bounded corpus against `runtime::execute`. Values outside `0..=1000`
 produce no Boolean oracle verdict, while object/graph expressions refuse at the
 earliest source-owned boundary without a substitute IR expression.
-The LC04 backend qualification uses pinned existing codegen and actual generated
+The LC04 backend qualification uses existing codegen and actual generated
 Rust. Its named `boolean-oracle/v1` fixture compiles a generated proptest strategy,
 checks every Boolean assignment against native evaluation and compares LLVM 3.1.0
-source probes with native implication events. The pinned reusable coverage reader
+source probes with native implication events. The reusable coverage reader
 still explicitly refuses LLVM 3.1.0; that downstream capability is not inferred
 from the fixture-specific check. See [Plan-008](plan/Plan-008-native-lowering/plan.md).
 
@@ -218,11 +218,11 @@ the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
 Backend parity additionally requires Rust's `llvm-tools-preview` component
-and cargo-llvm-cov 0.9.0. Missing tools fail the test. Run the named LC04 parity
+and cargo-llvm-cov. Missing tools fail the test. Run the named LC04 parity
 gate with `cargo test --locked --offline --target-dir target -j 1 --test it
 native_backend::generated_proptest_and_old_profile_activation_match_reference
 -- --exact --test-threads=1`. The fixture verifies generated truth and activation
-for `boolean-oracle/v1` while also requiring the pinned reusable reader to retain
+for `boolean-oracle/v1` while also requiring the reusable reader to retain
 its explicit LLVM 3.1.0 refusal.
 
 On the shared desktop, run Cargo phases one at a time with `nice -n 10` and
@@ -246,8 +246,8 @@ Run these checks locally while the repository stabilizes. Hosted CI exposes
 only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
 opening a pull request does not request CI; hosted execution requires a separate
 explicit dispatch.
-Tests also need read access to the pinned private `agent-ix/ix-trace-rs` Git
-dependency (or its exact cached revision). A future hosted runner needs that
+Tests also need read access to the private `agent-ix/ix-trace-rs` Git
+dependency. A future hosted runner needs that
 access configured; local results do not qualify hosted credentials.
 
 CLI arguments are `parse|format`, source identity, source revision, and file path.
@@ -286,7 +286,7 @@ or change extraction availability. Run `cargo test --test it mapped::` for the
 mapped parent workflow and stage refusals.
 
 With `quire-extraction`, `qsl_source::extract(original, context, selection,
-limits)` from the `qsl-source` crate calls Quire's actual pinned Rust extractor
+limits)` from the `qsl-source` crate calls Quire's actual Rust extractor
 and returns an `ExtractedSource`: the verified native body in its document
 source map, the clause's declared language and Quire's unchanged result. Supply
 a digest-verified original Source, a loaded Quire SemanticContext (the `run`
@@ -332,9 +332,8 @@ model/program/runtime files and calls these same APIs. See
 [the runnable workflow](docs/native-standalone.md) for healthy, violating,
 operation and refused examples, JSON results and exit codes.
 
-[Matrix status checks](docs/matrix-status.md) records the exact CLI/module stack
-that reads both authored status columns, its false-completion controls and the
-remaining installed-tool limitation. Coverage binding does not execute tests.
+[Matrix status checks](docs/matrix-status.md) describes the matrix status
+check and its false-completion controls. Coverage binding does not execute tests.
 
 `Snapshot::read_verified` and `Invocation::read_verified` now read selected
 `native-state-input/1` bytes through closed Serde decoding and the existing
@@ -353,10 +352,7 @@ for later checking; the caller owns assigning the formal identity.
 ## Design and status
 
 The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
-catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
-skills, validation results and outstanding review work. These requirements are
-drafts; the completed native readiness reviews and local results are recorded
-in the authoring status. The owner adopted specification PR8 for internal LC02 implementation.
+catalog artifacts. These requirements are drafts. The owner adopted specification PR8 for internal LC02 implementation.
 [LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
 planned type checking. The new
 [formal linker API](docs/formal-environment-linking.md) owns the exact parsed
@@ -373,8 +369,7 @@ remain modules and use the existing model/IR authorities. No second domain model
 backend binder or Markdown expression parser is created here.
 
 New implementation and newly authored implementation fixtures use
-[AGPL-3.0-or-later](LICENSE). [Dependency inventory](docs/dependencies.md) preserves
-third-party grants. [License decision](LICENSE-DECISION.md) records owner approval
+[AGPL-3.0-or-later](LICENSE). [License decision](LICENSE-DECISION.md) records owner approval
 and deferred standard-artifact terms. No public release is authorized.
 
 Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/2),

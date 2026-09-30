@@ -3,7 +3,7 @@ id: SR-100
 title: "Gap analysis of Plan-006 native runtime qualification"
 type: SpecReview
 analysis: gap-analysis
-scope: "plan/Plan-006-native-runtime/, spec/native-runtime/tests.md at d546133999b77e0c7ec8c532a4695c1a7da03b6c"
+scope: "plan/Plan-006-native-runtime/, spec/native-runtime/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-006
@@ -21,7 +21,7 @@ remains open beyond this plan.
 
 ## Verdict
 
-**PASS** for Plan-006's native runtime qualification/handoff at d546133.
+**PASS** for Plan-006's native runtime qualification/handoff.
 The private PR is eligible for the conditional merge; this audit does not assert
 that merge has already happened or that downstream requirements are finished.
 
@@ -33,13 +33,13 @@ that merge has already happened or that downstream requirements are finished.
 
 ## Initial audit and resolution
 
-The first audit at fbaf29a was **FAIL** with one high finding: Task-015 was
+The first audit was **FAIL** with one high finding: Task-015 was
 still in_progress pending reconciliation/private handoff. That original review
-is retained at 6dbc55f. It found no runtime implementation or matrix gap.
+found no runtime implementation or matrix gap.
 Outside the read-only audit, the qualified PR and LC03 handoff were published
 (language #4 comment 5601317618), and remaining work was recorded on LC02,
 FS03, LC04 and LC05 (comments 5601318368, 5601318700, 5601319178,
-5601319633). Task/plan statuses were reconciled at d546133. This final audit
+5601319633). Task/plan statuses were then reconciled. This final audit
 re-read those statuses and reran actual coverage; the original finding is resolved.
 No implementation, requirement, test or matrix was changed by either audit.
 
@@ -55,7 +55,7 @@ Optional semantic comparison was skipped under the owner's existing choice.
 
 Reconciliation: actual `quire coverage --scope
 /home/peter/dev/worktrees/formalization-a-language --json`, without --strict,
-using Quire 0.31.0 / engine ca7362d4. This meets the >=0.16 split-root contract;
+using Quire 0.31.0. This meets the >=0.16 split-root contract;
 no grep fallback was used. All four Task documents were inspected. Tasks done:
 4/4; the dependency chain is satisfied in order, including completed Task-009
 in Plan-005. IT-006 is checked and qualified;
@@ -103,10 +103,9 @@ SR-098. No line-coverage or mutation-adequacy percentage is inferred.
 
 ## Executed evidence and limits
 
-SR-099 records the exact commands, source pins, Rust 1.98.1, IR 690bde7 and
-adopted standard e897f81. At 46f5e70, 202 ordinary tests, one compile-fail
+SR-099 records the exact commands. 202 ordinary tests, one compile-fail
 doctest, three private audits, strict Clippy/rustdoc, formatting, minimal build
-and CLI/audit checks passed. The comment/status-only 4ac3597 revision reran all
+and CLI/audit checks passed. A later comment/status-only revision reran all
 five affected integration tests and formatting successfully. All gates were
 serial, offline/local and reused target caches; no hosted CI was dispatched.
 

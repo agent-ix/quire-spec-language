@@ -184,7 +184,7 @@ above.
 `EvaluateRefusal::Incomplete`, `DeclarationCause` and `Stage::Requirements`
 as this ticket's "real deleted symbols." Those five were deleted from an
 uncommitted working draft before this ticket's first commit
-(`7ec1302`) ever landed -- from a reader's point of view, indistinguishable
+ever landed -- from a reader's point of view, indistinguishable
 from a symbol that was never proposed at all, which is precisely the
 "hypothetical placeholder" AC-4 forbids citing. `Requirements`,
 `CapabilityKind`, `Extent`, `Bound` and `Stage::Requirements` are recorded
@@ -196,8 +196,7 @@ removed). `PackageRefusal`, `EvaluateRefusal::Incomplete` and
 narrowed to take no `Result` (so it never needed a `PackageRefusal`) rather
 than have one deleted, and `EvaluateRefusal`/function-declaration's `Cause`
 were never given those variants in any committed revision to delete from.
-The following, in contrast, existed in `7ec1302` (pushed, inspectable with
-`git show 7ec1302` or later) and were removed by a later, also-pushed
+The following, in contrast, existed in that first commit and were removed by a later, also-pushed
 commit on this branch, in the PR #262 review round -- real deletions
 someone can find:
 - `FamilyContract::package` and `ValueFunctionFamily`'s implementation of it

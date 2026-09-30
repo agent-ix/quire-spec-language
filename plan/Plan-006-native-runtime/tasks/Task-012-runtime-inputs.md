@@ -41,7 +41,7 @@ Public input constructors/references and standard Rust errors; complete emitted 
 
 Start from the existing SourceIdentity/ByteDigest and native_model artifact pattern, but keep the new payload's explicit schema and stage distinctions. Adding new dependencies, source decoding or changed semantics reopens the spec gate.
 
-Qualified source c8fa41f6e172e58b9406792d1b9f6b6bd85e52cc. SR-096 records
+Qualified. SR-096 records
 the actual code/Rust review, 21 constructor tests, one role compile-fail doctest,
 full local gates and bounded-work limitations. TC-055–057 are passed; Task-013
 remains responsible for every model-aware validity/completeness judgment.

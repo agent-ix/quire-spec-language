@@ -38,8 +38,7 @@ every `result_type` and literal `type` from the checked type, never by
 inference. Each `Expression` form checks to the `NodeKind` the table below
 names.
 
-QSpec references (`ix://agent-ix/quire-specification`, by reference, at
-`e72756f`): FR-322 "Operation families, groups and constraints", the closed
+QSpec references (`ix://agent-ix/quire-specification`, by reference): FR-322 "Operation families, groups and constraints", the closed
 `proposals/checked-package-v2/operation-catalog.json` and the operator-class
 semantic forms its qualification tests fix.
 
@@ -451,8 +450,7 @@ for the named node, under owner (`a`, `u`), from these declarations:
 
 The lock evidence selects QSpec's text definition
 `quire.value.text.unicode-17.0.0/v1`, revision `quire-draft`/`1-draft.1`,
-the `DefinitionRef` of QSpec's `structural-eq-record` operation vector at
-`e72756f`; every text leaf carries it as its `text_profile` law. The leaves
+the `DefinitionRef` of QSpec's `structural-eq-record` operation vector; every text leaf carries it as its `text_profile` law. The leaves
 are:
 
 | Vector | Compared type | Leaves, in order |

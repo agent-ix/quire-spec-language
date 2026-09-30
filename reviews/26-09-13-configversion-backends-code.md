@@ -53,9 +53,7 @@ actionable low Rust finding remains.
 - ParentOrder stops at its first unrepresentable `present` object read before
   `deref`; NoCycle stops at `reaches`. Both retain authored clause/source loci
   and produce no upstream or IR artifact. No approximation is admitted.
-- cargo-kani 0.67.0 is pinned by executable SHA-256
-  `7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9`.
-  The graph fixes `-Z function-contracts`, `-Z concrete-playback`, exact harness,
+- The graph fixes `-Z function-contracts`, `-Z concrete-playback`, exact harness,
   `--exact`, `--unwind 2`, `--solver cadical`, regular output, and concrete
   playback printing. Identity proves; the changed subject fails and its actual
   decoded counterexample returns false natively.
@@ -69,7 +67,7 @@ actionable low Rust finding remains.
 | Full all-target/all-feature suite before review fixes | pass; review fixes were then covered by the full minimal suite and focused all-feature tests |
 | Strict Clippy, all targets, minimal features | pass with `-D warnings` |
 | Strict Clippy, all targets, all features | pass with `-D warnings` |
-| Changed specification and review documents | pass with pinned Quire 0.31.0 |
+| Changed specification and review documents | pass with Quire 0.31.0 |
 
 All Cargo invocations used `--target-dir target-codex-backends`. No hosted
 workflow was dispatched, `publish = false` is asserted, `.github` is unchanged,

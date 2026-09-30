@@ -3,9 +3,8 @@ id: SR-064
 title: "Rust code review — native formal source correspondence"
 type: SpecReview
 analysis: code-review
-scope: "7464c9a: src/formal_source.rs, src/lib.rs, tests/formal_source.rs and FR-014"
+scope: "src/formal_source.rs, src/lib.rs, tests/formal_source.rs and FR-014"
 review_set: subset
-evaluated_revision: "7464c9a"
 ---
 
 ## Summary

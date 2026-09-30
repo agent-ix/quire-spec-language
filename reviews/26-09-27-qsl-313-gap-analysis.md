@@ -3,7 +3,7 @@ id: SR-766
 title: "QSL-313 gap analysis of PR 508 (FR-105-AC-6 fault-injected all-or-nothing emission)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@b0da45cc4b99b37a32b0f025b1e7881b0933369b; spec/functional/FR-105-emit-state-nodes.md; spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/tests.md; qsl-package/src/emit.rs; qsl-package/src/emit/tests.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-105-emit-state-nodes.md; spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/tests.md; qsl-package/src/emit.rs; qsl-package/src/emit/tests.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-313 (QSL-308d). PR: quire-spec-language#508 at b0da45cc. There is
+Ticket: QSL-313 (QSL-308d). PR: quire-spec-language#508. There is
 no plan bundle, so the scope is the ticket: FR-105-AC-6, backed by TC-463
 step 4.
 
