@@ -108,11 +108,14 @@ through it, or a crate alias or glob import that reaches it.
   `WireNodeId` to a `NodeKey` only by lookup in the recompiled package, and
   order the arguments by the function's declared parameter positions,
   whatever order they arrive in.
-- Each canonical integer assignment SHALL become a value of its
-  parameter's declared type: an integer for an integer type, and `0` or
-  `1` (`false`, `true`) for `Boolean`. Any other value for a Boolean
-  parameter, or any value for a parameter of a kind no integer is,
-  refuses before the call. A value outside a parameter's declared domain
+- Each argument SHALL arrive as a typed `WitnessValue` and become a value
+  of its parameter's declared type. An `Input` assignment carries
+  `WitnessValue::Boolean` for a `Boolean` parameter and
+  `WitnessValue::Integer` for an integer type; a witness transcript entry
+  reads as the parameter's binding type, `0` or `1` (`false`, `true`) for
+  `Boolean` and a decimal integer for an integer type. An integer for a
+  Boolean parameter, a Boolean for an integer one, or any value for a
+  parameter of a kind no `WitnessValue` is, refuses before the call. A value outside a parameter's declared domain
   (`12` for `Int[0, 9]`) refuses at S6a admission. Both refuse with the
   same cause, `WrongValueKind` (`invalid_runtime_input`), naming the
   parameter's position.
@@ -126,8 +129,9 @@ through it, or a crate alias or glob import that reaches it.
   (`DependencyInput`), a recompile
   refusal or stage limit (`stage_limit_exceeded`), a stale `package_id`, a
   selection naming no function node, an argument naming no parameter, a
-  parameter bound twice or not at all, a witness that does not decode, an
-  S6a admission refusal (wrong type, or a value outside the declared
+  parameter bound twice or not at all, a witness that does not decode
+  (naming the request's originating obligation identity), an S6a
+  admission refusal (wrong type, or a value outside the declared
   domain), and a selected function whose declared result is not
   `Boolean`. Each has a catalog code (`ReplayRefusal::code`).
 - A replay whose verdict differs from `violation` SHALL settle
@@ -141,7 +145,7 @@ through it, or a crate alias or glob import that reaches it.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-098-AC-1 | A request whose byte provision carries its one source and, under their `sha256-jcs` digests, the domain packages the source selects recompiles from those bytes alone, keeps its `package_id`, and replays. A package reference naming a definition document or two sources refuses before any recompile. | Test (TC-444) |
-| FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` bindings join the function's parameters by parameter node id, in declared parameter order whatever order they arrive in, and a Boolean parameter takes `0` and `1`; the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` with its FR-351 record (`Witness`), carrying the call's charges and the executor's toolchain pin. | Test (TC-444) |
+| FR-098-AC-2 | The selection resolves by `QualifiedName` in the recompiled package; `Input` assignments and `Witness` bindings join the function's parameters by parameter node id, in declared parameter order whatever order they arrive in, and a Boolean parameter takes a witness entry `0` or `1` and an `Input` assignment's `WitnessValue::Boolean` (an `Input` `WitnessValue::Integer` for it refuses `WrongValueKind`); the call runs through S6a, and an agreeing replay settles `reproduced-without-witness` (`Input`) or `reproduced-with-evaluated-witness` with its FR-351 record (`Witness`), carrying the call's charges and the executor's toolchain pin. | Test (TC-444) |
 | FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- unknown version, a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
 | FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |

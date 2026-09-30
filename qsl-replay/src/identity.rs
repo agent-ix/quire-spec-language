@@ -2,9 +2,7 @@
 //! Provenance and identity carriers the four #231 envelopes need (ADR-013
 //! O-07, O-09, O-11, O-19), scoped to the layer-6 `replay` module.
 //!
-//! **Provisional, not canonical.** ADR-013 assigns the long-term home of
-//! several of these types to tickets that have not landed on `origin/main`
-//! as of this change:
+//! Where each type's canonical home is:
 //!
 //! - [`QualifiedName`] (O-11) is #213 S-3's. PR #262 (#214, open, unmerged)
 //!   independently adds an equivalent `QualifiedName` to
@@ -14,14 +12,15 @@
 //! - O-07's occurrence key and O-12's source region have their canonical
 //!   home in `qsl_foundation::source::provenance` (#213 S-4, QSL-159);
 //!   this crate carries them from there.
-//! - [`ObligationIdentity`] (O-09) is CG-computed (AD-016 arrow 5, no QSL
-//!   ticket); QSL only ever carries the digest CG mints, never hashes one
-//!   itself, mirroring `quire_exact`'s own opaque digest identities.
+//! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): CG
+//!   names this type directly; IR names no QSL type. CG computes its digest
+//!   (AD-016 arrow 5); QSL only ever carries the digest CG mints, never
+//!   hashes one itself, mirroring `quire_exact`'s own opaque digest
+//!   identities.
 //!
-//! Each of these should be consolidated into its ADR-013-assigned canonical
-//! home once that ticket lands; until then they exist here, once, so the
-//! four envelope types have a typed (never string-keyed, never bare-`&str`)
-//! vocabulary to carry.
+//! [`QualifiedName`] moves to its ADR-013-assigned home once that ticket
+//! lands; until then it exists here, once, so the four envelope types have a
+//! typed (never string-keyed, never bare-`&str`) vocabulary to carry.
 use std::fmt;
 
 use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};

@@ -11,10 +11,10 @@
 //! counterexample claims. The replay reads it in `crate::execute`
 //! (`replay_frame`).
 //!
-//! CG builds this payload from the frame witness bindings over IR's
-//! `WitnessBinding` (AD-016) once agent-ix/quire-contract-ir#109 and
-//! agent-ix/quire-contract-codegen#49 land; until then the envelope is
-//! built in process. [`ClaimedChange::of_witness`] is the native decode: a
+//! CG builds this payload from the frame witness bindings over QSL's
+//! [`super::WitnessBinding`] (ADR-013 O-25) once
+//! agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49
+//! land; until then the envelope is built in process. [`ClaimedChange::of_witness`] is the native decode: a
 //! check-time [`FrameWitness`] (FR-115) as the change a payload claims.
 
 use quire_exact::Identifier;

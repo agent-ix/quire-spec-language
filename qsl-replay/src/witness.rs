@@ -3,15 +3,11 @@
 //!
 //! Two nested types, matching ADR-013 O-25's own split:
 //!
-//! - [`Witness`] mirrors IR's own `Witness{transcript}` (`src/kani/
-//!   witness.rs`, IR PR #139): exactly one stored field, the admitted
-//!   transcript, with every other witness fact derived from it on every
-//!   call. QSL has no Rust dependency edge onto IR's real `Witness` type
-//!   (the `quire-contract-ir` Cargo dependency is a compatibility bridge to
-//!   `quire-contract-model`, a distinct crate with no Kani/witness code at
-//!   all), so this is QSL's own copy of the same admission rule, applied to
-//!   the transcript text this envelope reads off the FR-331 wire, not a
-//!   port of IR's implementation.
+//! - [`Witness`] is the backend witness: exactly one stored field, the
+//!   admitted transcript, with every other witness fact derived from it on
+//!   every call. [`Witness::decode`] reads its typed [`WitnessValue`]s
+//!   against the caller's [`WitnessBinding`]s. CG's backend adapter parses
+//!   a backend run into the transcript [`Witness::parse`] admits.
 //! - [`WitnessEnvelope`] is the common ADR-013 O-25 carrier: every member
 //!   FR-070's Behavior section lists, plus the [`FamilyPayload`] extension
 //!   point a family (starting with #186's state `forall`) attaches its own
@@ -119,73 +115,160 @@ impl Witness {
         self.fields().check_text
     }
 
-    /// The transcript's raw `(name, value text)` bindings, split but not yet
-    /// parsed -- an entry whose text after `=` does not parse as an integer
-    /// still appears here, unlike [`Self::concrete_values`], so
-    /// [`Self::decode`] can tell "no binding named this parameter" apart
-    /// from "a binding named it but its value was malformed" (the diagnosis
-    /// [`Self::concrete_values`]'s silent `Option`-drop used to erase).
-    fn raw_bindings(&self) -> Vec<(&str, &str)> {
+    /// The transcript's raw `(name, value text)` entries, split but not yet
+    /// parsed -- an entry whose text does not parse still appears here,
+    /// unlike [`Self::concrete_values`], so [`Self::decode`] can tell "no
+    /// entry names this parameter" apart from "an entry names it but its
+    /// value is malformed". An entry that is not a `name=value` pair is its
+    /// own `Err`, so decode can refuse it rather than drop it.
+    fn raw_bindings(&self) -> Vec<Result<(&str, &str), &str>> {
         self.fields()
             .values
             .split(';')
             .filter(|entry| !entry.is_empty())
-            .filter_map(|entry| entry.split_once('='))
+            .map(|entry| entry.split_once('=').ok_or(entry))
             .collect()
     }
 
     /// The transcript's concrete `(name, value)` bindings, recomputed from
-    /// the stored transcript on every call. A binding whose text does not
-    /// parse as an integer is skipped here; [`Self::decode`] reports that
-    /// case with a typed [`DecodeRefusal::Malformed`] rather than silently
-    /// treating the parameter as unbound.
+    /// the stored transcript on every call, read without a schema: an entry
+    /// that is not a `name=value` pair, or whose value does not parse as an
+    /// integer, is skipped here, where
+    /// [`Self::decode`] reads each entry as its binding's declared type and
+    /// refuses a malformed one.
     pub fn concrete_values(&self) -> Vec<(String, i64)> {
         self.raw_bindings()
             .into_iter()
-            .filter_map(|(name, value)| Some((name.to_owned(), value.parse().ok()?)))
+            .filter_map(|entry| {
+                let (name, value) = entry.ok()?;
+                Some((name.to_owned(), value.parse().ok()?))
+            })
             .collect()
     }
 
-    /// [`Self::concrete_values`] projected onto `order`'s parameter names,
-    /// the harness argument order (ADR-013 O-25: "harness argument order
-    /// equals `arguments` order"). Refuses with [`DecodeRefusal::Missing`]
-    /// if a name in `order` has no binding in the transcript at all, or
-    /// [`DecodeRefusal::Malformed`] if it has a binding whose text does not
-    /// parse as an integer -- the two are distinguished by reading
-    /// `raw_bindings` directly rather than through
-    /// [`Self::concrete_values`]'s already-filtered, already-parsed list.
-    pub fn decode(&self, order: &[String]) -> Result<Vec<i64>, DecodeRefusal> {
-        let bindings = self.raw_bindings();
-        order
+    /// The transcript's values for `bindings`, one typed [`WitnessValue`]
+    /// per binding, in `bindings` order (ADR-013 O-25: harness argument
+    /// order equals `arguments` order). Each transcript entry is joined to
+    /// the binding whose parameter node id it names, never by position,
+    /// and its text is read as the binding's declared
+    /// [`WitnessValueType`]. Refuses with [`DecodeRefusal::Missing`] when a
+    /// binding's parameter has no entry, [`DecodeRefusal::Duplicate`] when
+    /// it has more than one, [`DecodeRefusal::MalformedEntry`] when an entry
+    /// is not a `name=value` pair, [`DecodeRefusal::Unbound`] when an entry
+    /// names no binding's parameter, and [`DecodeRefusal::Malformed`] when an
+    /// entry's text is not a value of the binding's type.
+    pub fn decode(&self, bindings: &[WitnessBinding]) -> Result<Vec<WitnessValue>, DecodeRefusal> {
+        let entries = self
+            .raw_bindings()
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|entry| DecodeRefusal::MalformedEntry(entry.to_owned()))?;
+        let names: Vec<String> = bindings
             .iter()
-            .map(|name| {
-                match bindings
-                    .iter()
-                    .find(|(bound_name, _)| *bound_name == name.as_str())
-                {
-                    Some((_, text)) => text
-                        .parse()
-                        .map_err(|_| DecodeRefusal::Malformed(name.clone(), (*text).to_owned())),
-                    None => Err(DecodeRefusal::Missing(name.clone())),
+            .map(|binding| binding.parameter.to_string())
+            .collect();
+        if let Some((name, _)) = entries
+            .iter()
+            .find(|(name, _)| !names.iter().any(|bound| bound == name))
+        {
+            return Err(DecodeRefusal::Unbound((*name).to_owned()));
+        }
+        bindings
+            .iter()
+            .zip(&names)
+            .map(|(binding, name)| {
+                let mut matching = entries.iter().filter(|(entry, _)| entry == name);
+                let (_, text) = matching
+                    .next()
+                    .ok_or(DecodeRefusal::Missing(binding.parameter))?;
+                if matching.next().is_some() {
+                    return Err(DecodeRefusal::Duplicate(binding.parameter));
                 }
+                binding
+                    .value_type
+                    .read(text)
+                    .ok_or_else(|| DecodeRefusal::Malformed {
+                        parameter: binding.parameter,
+                        value_type: binding.value_type,
+                        text: (*text).to_owned(),
+                    })
             })
             .collect()
     }
 }
 
-/// [`Witness::decode`]'s structured refusal: a named parameter with no
-/// binding at all in the transcript, distinguished from one whose bound text
-/// failed to parse as an integer -- conflating the two would report a
-/// malformed value as an absent parameter.
+/// The declared primitive type of one harness argument (ADR-013 O-25).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WitnessValueType {
+    /// A Boolean, written `0` (`false`) or `1` (`true`) in a transcript, as
+    /// a backend's one-byte encoding carries it.
+    Boolean,
+    /// A signed 64-bit integer, written in decimal in a transcript.
+    I64,
+}
+
+impl WitnessValueType {
+    /// `text` as a value of this type, or `None` when it is not one.
+    #[qsl_attrs::string_edge]
+    fn read(self, text: &str) -> Option<WitnessValue> {
+        match self {
+            Self::Boolean => match text {
+                "0" => Some(WitnessValue::Boolean(false)),
+                "1" => Some(WitnessValue::Boolean(true)),
+                _ => None,
+            },
+            Self::I64 => text.parse().ok().map(WitnessValue::Integer),
+        }
+    }
+}
+
+/// One declared harness argument [`Witness::decode`] reads: the parameter
+/// node id the transcript entry names, and the argument's declared type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WitnessBinding {
+    /// The parameter this argument binds.
+    pub parameter: WireNodeId,
+    /// The argument's declared primitive type.
+    pub value_type: WitnessValueType,
+}
+
+/// One concrete argument value, typed by the binding or assignment that
+/// carries it. An integer widens into the kernel's unbounded integer
+/// without loss (ADR-013 C-11).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WitnessValue {
+    /// A Boolean value.
+    Boolean(bool),
+    /// A signed 64-bit integer value.
+    Integer(i64),
+}
+
+/// [`Witness::decode`]'s structured refusal. Each join failure is its own
+/// variant, so a malformed value is never reported as an absent one.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DecodeRefusal {
-    /// No witness binding names this parameter at all.
-    #[error("no witness binding for parameter {0:?}")]
-    Missing(String),
-    /// A witness binding names this parameter, but its bound text does not
-    /// parse as an integer.
-    #[error("witness binding for parameter {0:?} does not parse as an integer: {1:?}")]
-    Malformed(String, String),
+    /// No transcript entry names this parameter.
+    #[error("no witness entry for parameter {0}")]
+    Missing(WireNodeId),
+    /// More than one transcript entry names this parameter.
+    #[error("more than one witness entry for parameter {0}")]
+    Duplicate(WireNodeId),
+    /// A transcript entry names no binding's parameter.
+    #[error("witness entry {0:?} names no bound parameter")]
+    Unbound(String),
+    /// A transcript entry is not a `name=value` pair.
+    #[error("witness entry {0:?} is not a name=value pair")]
+    MalformedEntry(String),
+    /// A transcript entry's text is not a value of its binding's type.
+    #[error("witness entry for parameter {parameter} is not a {value_type:?} value: {text:?}")]
+    Malformed {
+        /// The parameter the entry names.
+        parameter: WireNodeId,
+        /// The binding's declared type.
+        value_type: WitnessValueType,
+        /// The entry's text.
+        text: String,
+    },
 }
 
 /// FR-073: `Debug` never reproduces the full transcript -- only a bounded
@@ -219,13 +302,11 @@ struct BlockFields<'a> {
     values: &'a str,
 }
 
-/// This module's own transcript grammar (not IR's real Kani-playback
-/// syntax, which QSL cannot reach -- see the module doc comment): a block
-/// is `<<<kind|harness|check_text|values>>>`, `values` a `;`-separated list
-/// of `name=integer` bindings. Exactly the structural shape ADR-013 O-25
-/// admission needs to be tested against (a cover/assertion kind
-/// distinction, and single-block/trimmed-content checks), with no claim to
-/// any wider fidelity.
+/// This module's transcript grammar: a block is
+/// `<<<kind|harness|check_text|values>>>`, `values` a `;`-separated list
+/// of `name=value` entries, `name` a parameter node id. It carries exactly
+/// the structure ADR-013 O-25 admission and decode read: a cover/assertion
+/// kind distinction, a single trimmed block, and per-parameter entries.
 fn find_blocks(text: &str) -> Vec<&str> {
     let mut blocks = Vec::new();
     let mut offset = 0;
@@ -264,13 +345,13 @@ fn parse_block(block: &str) -> Option<BlockFields<'_>> {
 
 /// A counterexample's canonical assignment when it did not come from a
 /// backend transcript (the `ReplaySource::Input` arm): a parameter's wire
-/// node id and its concrete integer value.
+/// node id and its typed concrete value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAssignment {
     /// The parameter this assignment binds.
     pub parameter: WireNodeId,
-    /// The parameter's concrete integer value.
-    pub value: i64,
+    /// The parameter's concrete value.
+    pub value: WitnessValue,
 }
 
 /// ADR-013 O-25: the packet's `source`, an enum with two variants that
@@ -301,7 +382,15 @@ impl fmt::Debug for ReplaySource {
                 let mut buf = Vec::with_capacity(assignments.len() * 40);
                 for assignment in assignments {
                     buf.extend_from_slice(assignment.parameter.as_bytes());
-                    buf.extend_from_slice(&assignment.value.to_le_bytes());
+                    match assignment.value {
+                        WitnessValue::Boolean(value) => {
+                            buf.extend_from_slice(&[0, u8::from(value)])
+                        }
+                        WitnessValue::Integer(value) => {
+                            buf.push(1);
+                            buf.extend_from_slice(&value.to_le_bytes());
+                        }
+                    }
                 }
                 f.debug_struct("Input")
                     .field("entries", &assignments.len())
@@ -429,6 +518,20 @@ mod witness_tests {
         format!("<<<assertion|{harness}|{check}|{values}>>>")
     }
 
+    fn integer(parameter: WireNodeId) -> WitnessBinding {
+        WitnessBinding {
+            parameter,
+            value_type: WitnessValueType::I64,
+        }
+    }
+
+    fn boolean(parameter: WireNodeId) -> WitnessBinding {
+        WitnessBinding {
+            parameter,
+            value_type: WitnessValueType::Boolean,
+        }
+    }
+
     /// N5: `check()` and `check_text()` are named in FR-070's Behavior
     /// (`harness_symbol()`, `check()`/`check_text()`, `concrete_values()`
     /// and `decode()` "each recompute their answer from the stored
@@ -452,7 +555,10 @@ mod witness_tests {
     #[trace("TC-180", "FR-070-AC-1")]
     #[test]
     fn tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript() {
-        let text = assertion("harness_a", "x == 1", "x=1;y=2");
+        let x = WireNodeId::from_digest([1; 32]);
+        let y = WireNodeId::from_digest([2; 32]);
+        let bindings = [integer(x), integer(y)];
+        let text = assertion("harness_a", "x == 1", &format!("{x}=1;{y}=2"));
         let witness = Witness::parse(text.clone()).unwrap();
         // Step 1: exhaustive destructure naming only `transcript`.
         let Witness { transcript } = witness;
@@ -463,9 +569,10 @@ mod witness_tests {
         assert_eq!(witness.harness_symbol(), witness.harness_symbol());
         assert_eq!(witness.concrete_values(), witness.concrete_values());
         assert_eq!(
-            witness.decode(&["x".to_owned()]),
-            witness.decode(&["x".to_owned()])
+            witness.decode(&bindings),
+            Ok(vec![WitnessValue::Integer(1), WitnessValue::Integer(2)])
         );
+        assert_eq!(witness.decode(&bindings), witness.decode(&bindings));
 
         // Step 3: a second envelope from identical bytes via a distinct
         // path (simulated here as a second independent `parse` call, this
@@ -475,9 +582,13 @@ mod witness_tests {
         assert_eq!(witness.harness_symbol(), second.harness_symbol());
 
         // Step 4: a differing transcript produces a differing derived value.
-        let third_text = assertion("harness_a", "x == 1", "x=99;y=2");
+        let third_text = assertion("harness_a", "x == 1", &format!("{x}=99;{y}=2"));
         let third = Witness::parse(third_text).unwrap();
         assert_ne!(witness.concrete_values(), third.concrete_values());
+        assert_eq!(
+            third.decode(&bindings),
+            Ok(vec![WitnessValue::Integer(99), WitnessValue::Integer(2)])
+        );
     }
 
     /// FR-070-AC-2 (TC-181, transcript half): a cover-playback transcript,
@@ -509,34 +620,86 @@ mod witness_tests {
         );
     }
 
-    /// N5: `decode` distinguishes a parameter with no binding at all from
-    /// one whose bound text fails to parse as an integer -- the fix for
-    /// `concrete_values`'s old silent `.ok()?` drop, which used to make
-    /// `decode` misreport a malformed value as a missing parameter.
+    /// FR-098-AC-2: `decode` reads one typed value per binding, in binding
+    /// order whatever order the transcript lists its entries in, joined by
+    /// parameter node id: `0`/`1` as a Boolean binding's `false`/`true`, and
+    /// decimal text as an integer binding's value, `i64::MIN` and
+    /// `i64::MAX` included.
+    #[trace("TC-444", "FR-098-AC-2")]
     #[test]
-    fn decode_distinguishes_malformed_value_from_missing_binding() {
-        let witness = Witness::parse(assertion("h", "c", "x=not-a-number;y=2")).unwrap();
+    fn tc_444_decode_reads_typed_values_by_parameter_node_id() {
+        let flag = WireNodeId::from_digest([1; 32]);
+        let low = WireNodeId::from_digest([2; 32]);
+        let high = WireNodeId::from_digest([3; 32]);
+        let values = format!("{high}={};{flag}=1;{low}={}", i64::MAX, i64::MIN);
+        let witness = Witness::parse(assertion("h", "c", &values)).unwrap();
+        assert_eq!(
+            witness.decode(&[boolean(flag), integer(low), integer(high)]),
+            Ok(vec![
+                WitnessValue::Boolean(true),
+                WitnessValue::Integer(i64::MIN),
+                WitnessValue::Integer(i64::MAX),
+            ])
+        );
+        let off = Witness::parse(assertion("h", "c", &format!("{flag}=0"))).unwrap();
+        assert_eq!(
+            off.decode(&[boolean(flag)]),
+            Ok(vec![WitnessValue::Boolean(false)])
+        );
+    }
+
+    /// FR-098-AC-4: each join failure refuses with its own typed variant --
+    /// a parameter with no entry, a parameter with two, an entry naming no
+    /// bound parameter, an entry that is not a `name=value` pair, and an
+    /// entry whose text is not a value of its
+    /// binding's type (`2` for a Boolean, non-decimal text and a value past
+    /// `i64::MAX` for an integer).
+    #[trace("TC-444", "FR-098-AC-4")]
+    #[test]
+    fn tc_444_decode_refuses_each_join_failure_with_its_own_variant() {
+        let x = WireNodeId::from_digest([1; 32]);
+        let b = WireNodeId::from_digest([2; 32]);
+        let decode = |values: String, bindings: &[WitnessBinding]| {
+            Witness::parse(assertion("h", "c", &values))
+                .unwrap()
+                .decode(bindings)
+        };
 
         assert_eq!(
-            witness.decode(&["x".to_owned()]),
-            Err(DecodeRefusal::Malformed(
-                "x".to_owned(),
-                "not-a-number".to_owned()
-            ))
+            decode(format!("{x}=1"), &[integer(x), boolean(b)]),
+            Err(DecodeRefusal::Missing(b))
         );
         assert_eq!(
-            witness.decode(&["z".to_owned()]),
-            Err(DecodeRefusal::Missing("z".to_owned()))
+            decode(format!("{x}=1;{x}=2"), &[integer(x)]),
+            Err(DecodeRefusal::Duplicate(x))
         );
-        assert_eq!(witness.decode(&["y".to_owned()]), Ok(vec![2]));
-
-        // `concrete_values()` still silently skips the malformed entry (its
-        // own documented behavior); only `decode` must not conflate the two
-        // causes.
-        assert!(witness
-            .concrete_values()
-            .iter()
-            .all(|(name, _)| name != "x"));
+        assert_eq!(
+            decode(format!("{x}=1;{b}=0"), &[integer(x)]),
+            Err(DecodeRefusal::Unbound(b.to_string()))
+        );
+        assert_eq!(
+            decode(format!("{x}=1;junk"), &[integer(x)]),
+            Err(DecodeRefusal::MalformedEntry("junk".to_owned()))
+        );
+        assert_eq!(
+            decode(format!("{b}=2"), &[boolean(b)]),
+            Err(DecodeRefusal::Malformed {
+                parameter: b,
+                value_type: WitnessValueType::Boolean,
+                text: "2".to_owned(),
+            })
+        );
+        let past_max = format!("{}0", i64::MAX);
+        for text in ["not-a-number", past_max.as_str()] {
+            assert_eq!(
+                decode(format!("{x}={text}"), &[integer(x)]),
+                Err(DecodeRefusal::Malformed {
+                    parameter: x,
+                    value_type: WitnessValueType::I64,
+                    text: text.to_owned(),
+                })
+            );
+        }
     }
 
     /// FR-073-AC-1 (TC-209): neither `Debug` nor `Display` of a constructed
@@ -659,9 +822,9 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
         .map_or(0, |position| position.as_str().len());
     total += match &packet.source {
         Some(ReplaySource::Witness(witness)) => witness.transcript().len(),
-        // Each canonical assignment is a 32-byte node id plus an 8-byte
-        // integer value on the wire (QC-1's digest-addressed shape) -- a
-        // fixed per-entry size, no `Debug`-rendered text involved.
+        // Each canonical assignment is a 32-byte node id plus a value of at
+        // most 8 bytes on the wire (QC-1's digest-addressed shape) -- a
+        // fixed per-entry bound, no `Debug`-rendered text involved.
         Some(ReplaySource::Input(assignments)) => assignments.len() * (32 + 8),
         None => 0,
     };
@@ -978,7 +1141,7 @@ mod envelope_tests {
         let mut input_packet = full_packet(0);
         input_packet.source = Some(ReplaySource::Input(vec![CanonicalAssignment {
             parameter: WireNodeId::from_digest(digest(9)),
-            value: 42,
+            value: WitnessValue::Integer(42),
         }]));
         let input_envelope = WitnessEnvelope::reconstruct(input_packet).unwrap();
         let input_round_tripped = WitnessEnvelope::reconstruct(input_envelope.to_packet()).unwrap();

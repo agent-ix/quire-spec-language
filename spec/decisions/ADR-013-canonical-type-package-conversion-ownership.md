@@ -902,8 +902,11 @@ an IR type would need a `qsl-replay` → IR root dependency. IR defines all
 three today in its `src/kani/witness.rs` (IR FR-039), beside the `Witness`
 copy it deletes, and deletes them with it; CG builds bindings from
 `KaniObligationIdentity.arguments` against QSL's types. `qsl-replay` has no
-dependency on the IR root crate. It does not yet define these types: today's `Witness::decode` takes parameter names and returns `i64`s.
-Remaining work: QSL-322.
+dependency on the IR root crate. A `WitnessBinding` names its parameter node
+id and its `WitnessValueType` (`Boolean` or `I64`); `decode` returns one
+`WitnessValue` (`Boolean` or `Integer`) per binding, in binding order. The
+`ReplaySource::Input` arm's canonical assignments carry the same
+`WitnessValue`.
 
 Envelope invariant (#231): the counterexample envelope stores the backend
 witness as its admitted transcript only. Every other witness fact the envelope
@@ -1215,7 +1218,7 @@ Codegen lead ruled this; IR PR #202 records the same fact in IR's AD-001.
 
 | ID | Question | Ruling | Reason | Reopen if |
 | --- | --- | --- | --- | --- |
-| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, its `decode` input and output types `WitnessBinding`, `WitnessValue` and `WitnessValueType`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord`, `ProofResultEnvelope`, `ObligationIdentity`, `ReplayRequest` and `ReplayResult` (O-24, O-25, O-26, O-27). IR names no QSL type. CG, which depends on IR and on the `qsl-replay` facade, maps IR's `KaniOutcome` into `TerminalValue` (C-09), builds the O-25 packet as QSL's `WitnessEnvelope` over the `qsl-replay` witness types, uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10); IR has no obligation identity type. IR keeps `KaniOutcome`, `KaniProfile`, `CapabilityEntry` and its lowering requests, which are its lowering vocabulary, not replay types. CG's replay paths move onto the `qsl-replay` witness and outcome types first, and IR deletes its witness and replay copies after that (TK-04, TK-05). The AD-016 Packet owner amendment is QC-29. | The same concepts were defined in QSL, IR and CG. CG already depends on both IR and `qsl-replay`, so placing the C-09 map and the packet in CG adds no dependency edge. IR stays off QSL (ADR-011 FB-05): an IR → `qsl-replay` edge would close a QSL ⇄ IR repository cycle through `qsl-package` → `quire-contract-model` (ADR-011 FB-11). QSL already builds every one of these types (FR-069 to FR-072) except the three `decode` types, which QSL-322 adds (O-25). | IR needs a replay type in its own code. |
+| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, its `decode` input and output types `WitnessBinding`, `WitnessValue` and `WitnessValueType`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord`, `ProofResultEnvelope`, `ObligationIdentity`, `ReplayRequest` and `ReplayResult` (O-24, O-25, O-26, O-27). IR names no QSL type. CG, which depends on IR and on the `qsl-replay` facade, maps IR's `KaniOutcome` into `TerminalValue` (C-09), builds the O-25 packet as QSL's `WitnessEnvelope` over the `qsl-replay` witness types, uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10); IR has no obligation identity type. IR keeps `KaniOutcome`, `KaniProfile`, `CapabilityEntry` and its lowering requests, which are its lowering vocabulary, not replay types. CG's replay paths move onto the `qsl-replay` witness and outcome types first, and IR deletes its witness and replay copies after that (TK-04, TK-05). The AD-016 Packet owner amendment is QC-29. | The same concepts were defined in QSL, IR and CG. CG already depends on both IR and `qsl-replay`, so placing the C-09 map and the packet in CG adds no dependency edge. IR stays off QSL (ADR-011 FB-05): an IR → `qsl-replay` edge would close a QSL ⇄ IR repository cycle through `qsl-package` → `quire-contract-model` (ADR-011 FB-11). QSL builds every one of these types (FR-069 to FR-072), including the three `decode` types (O-25). | IR needs a replay type in its own code. |
 
 Owner ruling (2026-09-29), SC-Q1 union kernel shape (ADR-012 §16.11). The
 ADR-013 owner ruled this and, per this record's Status (a #209, #210, #222

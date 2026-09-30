@@ -15,7 +15,7 @@ use super::*;
 use crate::request::StateEnvironment;
 use crate::result::{InputSettlement, WitnessSettlement};
 use crate::spine::SpineStage;
-use crate::witness::{CanonicalAssignment, Witness};
+use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n";
@@ -161,6 +161,10 @@ fn request(
 }
 
 fn input(parameter: WireNodeId, value: i64) -> ReplaySource {
+    typed_input(parameter, WitnessValue::Integer(value))
+}
+
+fn typed_input(parameter: WireNodeId, value: WitnessValue) -> ReplaySource {
     ReplaySource::Input(vec![CanonicalAssignment { parameter, value }])
 }
 
@@ -213,7 +217,8 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
 
 /// FR-098-AC-2: a backend witness binds `x` by its parameter node id and
 /// settles `reproduced-with-evaluated-witness` with its FR-351 record; a
-/// transcript binding no parameter refuses with the decode's cause.
+/// transcript with no entry for `x`, or with an entry naming no parameter,
+/// refuses with the decode's cause and the request's obligation identity.
 #[trace("TC-444", "FR-098-AC-2")]
 #[test]
 fn tc_444_a_witness_decodes_by_parameter_node_id() {
@@ -238,11 +243,33 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     let record = result.record().expect("a decisive settlement has a record");
     assert_eq!(record.deciding_element, EvaluatedValue::Boolean(false));
 
+    let refused = replay(witness(String::new())).unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            ReplayRefusal::Witness { refusal: DecodeRefusal::Missing(missing), .. } if missing == x
+        ),
+        "expected a missing entry, got {refused:?}"
+    );
     let refused = replay(witness("x=8".to_owned())).unwrap_err();
-    let ReplayRefusal::Witness(DecodeRefusal::Missing(missing)) = &refused else {
-        panic!("expected a missing binding, got {refused:?}");
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::Witness { refusal: DecodeRefusal::Unbound(name), .. } if name == "x"
+        ),
+        "expected an unbound entry, got {refused:?}"
+    );
+
+    // The decode refusal names the obligation the request replays, so a
+    // batch of replays reports which one failed.
+    let mut wire = witness(String::new());
+    wire.originating_counterexample_identity = [7; 32];
+    let refused = replay(wire).unwrap_err();
+    let ReplayRefusal::Witness { obligation, .. } = &refused else {
+        panic!("expected a witness refusal, got {refused:?}");
     };
-    assert_eq!(missing, &x.to_string());
+    assert_eq!(*obligation, crate::ObligationIdentity::from_digest([7; 32]));
+    assert!(refused.to_string().contains(&obligation.to_string()));
 }
 
 /// FR-098-AC-5: a replay that disagrees -- `small(3)` holds -- settles
@@ -527,11 +554,11 @@ fn tc_444_an_arity_mismatch_refuses() {
     let unknown = with(vec![
         CanonicalAssignment {
             parameter: x,
-            value: 7,
+            value: WitnessValue::Integer(7),
         },
         CanonicalAssignment {
             parameter: b,
-            value: 1,
+            value: WitnessValue::Integer(1),
         },
     ]);
     assert!(
@@ -541,11 +568,11 @@ fn tc_444_an_arity_mismatch_refuses() {
     let twice = with(vec![
         CanonicalAssignment {
             parameter: x,
-            value: 7,
+            value: WitnessValue::Integer(7),
         },
         CanonicalAssignment {
             parameter: x,
-            value: 8,
+            value: WitnessValue::Integer(8),
         },
     ]);
     assert!(
@@ -555,25 +582,30 @@ fn tc_444_an_arity_mismatch_refuses() {
 }
 
 /// FR-098-AC-4: an argument not of its parameter's kind -- any integer
-/// for an `Option<Boolean>` parameter, `2` for a Boolean one -- refuses before the
-/// call, and a value outside the declared domain (`12` for `Int[0, 9]`)
-/// refuses at S6a admission; each is `WrongValueKind`
-/// (`invalid_runtime_input`).
+/// for an `Option<Boolean>` parameter, an integer for a Boolean one, a
+/// Boolean for an integer one -- refuses before the call, and a value
+/// outside the declared domain (`12` for `Int[0, 9]`) refuses at S6a
+/// admission; each is `WrongValueKind` (`invalid_runtime_input`).
 #[trace("TC-444", "FR-098-AC-4")]
 #[test]
 fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
-    let with = |function: &str, value: i64| {
+    let with = |function: &str, value: WitnessValue| {
         replay(request(
             source.as_bytes(),
             compiled.emitted.package_id(),
             name(&[function]),
-            input(parameter(&compiled, function, 0), value),
+            typed_input(parameter(&compiled, function, 0), value),
         ))
         .unwrap_err()
     };
-    for refused in [with("maybe", 1), with("flag", 2), with("small", 12)] {
+    for refused in [
+        with("maybe", WitnessValue::Integer(1)),
+        with("flag", WitnessValue::Integer(1)),
+        with("small", WitnessValue::Boolean(true)),
+        with("small", WitnessValue::Integer(12)),
+    ] {
         let ReplayRefusal::Input(refusal) = &refused else {
             panic!("expected an admission refusal, got {refused:?}");
         };
@@ -582,32 +614,50 @@ fn tc_444_a_type_or_domain_mismatch_refuses_as_wrong_value_kind() {
     }
 }
 
-/// FR-098-AC-2: a Boolean parameter takes `0` as `false` and `1` as
-/// `true`: `flag(0)` is `false` and agrees with the refuted property, and
-/// `flag(1)` is `true` and does not.
+/// FR-098-AC-2: a Boolean parameter takes a witness entry `0` as `false`
+/// and `1` as `true`, and an `Input` assignment's typed Boolean: `flag`
+/// with `false` agrees with the refuted property, and with `true` does
+/// not.
 #[trace("TC-444", "FR-098-AC-2")]
 #[test]
 fn tc_444_a_boolean_parameter_replays() {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
-    let flag = |value: i64| {
-        let ReplayResult::Input(result) = replay(request(
+    let b = parameter(&compiled, "flag", 0);
+    let flag = |source_of: ReplaySource| {
+        replay(request(
             source.as_bytes(),
             compiled.emitted.package_id(),
             name(&["flag"]),
-            input(parameter(&compiled, "flag", 0), value),
+            source_of,
         ))
-        .unwrap() else {
-            panic!("Input arm");
-        };
-        result
+        .unwrap()
+    };
+    let witness = |bit: u8| {
+        ReplaySource::Witness(Witness::parse(format!("<<<assertion|h|c|{b}={bit}>>>")).unwrap())
+    };
+
+    let ReplayResult::Witness(off) = flag(witness(0)) else {
+        panic!("Witness arm");
     };
     assert_eq!(
-        flag(0).settlement(),
-        InputSettlement::ReproducedWithoutWitness
+        off.settlement(),
+        WitnessSettlement::ReproducedWithEvaluatedWitness
     );
-    assert_eq!(flag(1).settlement(), InputSettlement::Inconclusive);
-    assert_eq!(flag(1).value(), Some(EvaluatedValue::Boolean(true)));
+    let ReplayResult::Witness(on) = flag(witness(1)) else {
+        panic!("Witness arm");
+    };
+    assert_eq!(on.settlement(), WitnessSettlement::Inconclusive);
+
+    let ReplayResult::Input(off) = flag(typed_input(b, WitnessValue::Boolean(false))) else {
+        panic!("Input arm");
+    };
+    assert_eq!(off.settlement(), InputSettlement::ReproducedWithoutWitness);
+    let ReplayResult::Input(on) = flag(typed_input(b, WitnessValue::Boolean(true))) else {
+        panic!("Input arm");
+    };
+    assert_eq!(on.settlement(), InputSettlement::Inconclusive);
+    assert_eq!(on.value(), Some(EvaluatedValue::Boolean(true)));
 }
 
 /// FR-098-AC-2: arguments take the function's declared parameter order,
@@ -625,11 +675,11 @@ fn tc_444_arguments_follow_declared_parameter_order() {
         ReplaySource::Input(vec![
             CanonicalAssignment {
                 parameter: parameter(&compiled, "lt", 1),
-                value: 3,
+                value: WitnessValue::Integer(3),
             },
             CanonicalAssignment {
                 parameter: parameter(&compiled, "lt", 0),
-                value: 5,
+                value: WitnessValue::Integer(5),
             },
         ]),
     ))

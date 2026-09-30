@@ -15,14 +15,15 @@
 //! crate's public API and nothing else in QSL (ADR-011 FB-05); `command`
 //! uses [`spine::compile`] for the CLI's `compile`.
 //!
-//! # Provisional local types
+//! # Identity and provenance types
 //!
-//! Several members these envelopes carry have a canonical home ADR-013
-//! assigns to #213 slices S-3/S-4. O-07's occurrence key and O-12's source
-//! region are `qsl_foundation::source::provenance`'s (S-4, QSL-159), and
-//! this crate re-exports them for CG. O-09's obligation identity and O-11's
-//! `QualifiedName` are still `identity`'s own minimal versions, with the
-//! shape ADR-013 specifies; `identity` names the ticket that absorbs each.
+//! O-07's occurrence key and O-12's source region are
+//! `qsl_foundation::source::provenance`'s (#213 S-4, QSL-159), and this
+//! crate re-exports them for CG. O-09's obligation identity is this crate's
+//! own, the canonical type ADR-013 OQ-H assigns here, which CG names
+//! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal
+//! version, with the shape ADR-013 specifies; `identity` names the ticket
+//! that absorbs it.
 
 #![forbid(unsafe_code)]
 
@@ -82,8 +83,8 @@ pub use result::{
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,
-    FrameOperation, MalformedTranscript, NoPayload, ReplaySource, Witness, WitnessEnvelope,
-    WitnessPacket, WitnessRefusal,
+    FrameOperation, MalformedTranscript, NoPayload, ReplaySource, Witness, WitnessBinding,
+    WitnessEnvelope, WitnessPacket, WitnessRefusal, WitnessValue, WitnessValueType,
 };
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
@@ -154,7 +155,7 @@ mod redaction_tests {
             selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
-                value: 1,
+                value: WitnessValue::Integer(1),
             }]),
             originating_counterexample_identity: [2; 32],
             backend: (
@@ -205,7 +206,7 @@ mod redaction_tests {
             selected_function: QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap(),
             source: ReplaySource::Input(vec![CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
-                value: 1,
+                value: WitnessValue::Integer(1),
             }]),
             originating_counterexample_identity: [2; 32],
             backend: (
