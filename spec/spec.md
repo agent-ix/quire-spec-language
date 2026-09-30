@@ -20,8 +20,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-012
     type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-010
-    type: contains
   - target: ix://agent-ix/quire-spec-language/IT-011
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-038
@@ -458,7 +456,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-036](functional/FR-036-link-composed-native-packages.md) | FR | Binding and shared value types implemented; complete family/runtime-role admission open under #35 |
 | [FR-040](functional/FR-040-check-composed-values.md) | FR | Shared types and supported guarded proofs implemented; query/runtime acceptance open under #35/#36 |
 | [FR-041](functional/FR-041-admit-rational-native-model-profile.md) | FR | Explicit rational model admission implemented |
-| [IT-010](integration/IT-010-config-version-numeric-backends.md) | IT | Locally tested ConfigVersion numeric backend parity |
 | [FR-038](functional/FR-038-encode-exact-protocol-numbers.md) | FR | Exact numeric wire component; compiler #40 |
 | [FR-042](functional/FR-042-publish-compiled-protocol-artifacts.md) | FR | Native emission, strict reader and immutable `/1`/`/2` owner handoffs implemented; external Protocol acceptance remains under quire-protocol#11; `Model.domain_package` member landed and `ProducerObject`/`Correspondence` removed under #132 (FR-042-AC-12); a domain-typed declaration checks and emits a `Model` naming its domain package (FR-042-AC-11, QSL-64), except over a domain object type, whose population input has no export yet |
 | [FR-043](functional/FR-043-evaluate-bounded-native-temporal.md) | FR | Planned bounded temporal evaluation; compiler #38 |

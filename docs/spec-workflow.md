@@ -1,9 +1,12 @@
 # Quoin specification workflow status
 
-The sections below retain their historical revisions and run evidence. For
-current matrix status interpretation and the verified candidate tool/module
-stack, see [matrix status checks](matrix-status.md). Bound tags, classified
-statuses and executed tests are separate observations.
+The sections below retain their historical revisions and run evidence. The
+compiler's matrices use one `Status` column for functional coverage, quality
+coverage and test summaries (upstream
+[`spec-artifacts-process#87`](https://github.com/agent-ix/spec-artifacts-process/pull/87)
+collapsed the former `Coverage Status` into it); do not rename a header back
+toward `Coverage Status`. Bound tags, classified statuses and executed tests
+are separate observations.
 
 ## LC02 native package review — 2026-09-09
 

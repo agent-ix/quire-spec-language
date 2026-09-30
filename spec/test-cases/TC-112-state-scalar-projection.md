@@ -18,7 +18,9 @@ collision-safe aliases, requiring the expected field and direct-read counts
 before inspecting filtered observations. Materialize unchanged and changed native inputs and
 inspect their provenance. Exercise direct state/captured parameters, selection,
 mismatched context, frame refusal, excluded forms, exact limits, cancellation
-and fresh retries. Export the checked-in example using the actual command.
+and fresh retries. Lower ConfigVersion's object-presence and graph-reachability
+clauses and compare each refusal's clause and authored span. Export the
+checked-in example using the actual command.
 
 Use real model values named nativeField0 through nativeField15 to require
 seventeen fresh alias candidates; test the exact combined node/candidate ceiling,

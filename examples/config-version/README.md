@@ -65,7 +65,6 @@ nice -n 10 cargo run --locked --offline --target-dir target-codex-backends -j 1 
 
 The strict IR binder accepts this rule with separate pre/post version inputs.
 Library consumers use `NativeProjection::inputs` after native runtime validation
-to obtain actual values and their artifact/object provenance. IT-010 compiles and
-executes its generated oracle and all strategy populations, proves the identity
-subject with cargo-kani 0.67.0, and replays the violating subject's concrete
-counterexample through `runtime::execute`.
+to obtain actual values and their artifact/object provenance. quire-integration's
+[IT-010](ix://agent-ix/quire-integration/IT-010) composes this projection with
+the code generator's generated oracle, strategies and Kani proof.

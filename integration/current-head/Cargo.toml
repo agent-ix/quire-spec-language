@@ -48,11 +48,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf4
 
 # `current-head-lane prepare` clones/refreshes quire-contract-ir's default
 # branch into `.deps/quire-contract-ir` (git-ignored) before every build;
-# see FR-058, this crate's README and `src/main.rs`. This does not touch
-# quire-spec-language's dev-dependency `quire-contract-ir-historical` (a
-# different package name, `quire-contract-ir`, from the same repository),
-# which stays pinned -- that alias is QSL's own deliberate
-# historical-compatibility fixture, not part of this lane.
+# see FR-058, this crate's README and `src/main.rs`.
 [patch."https://github.com/agent-ix/quire-contract-ir"]
 quire-contract-model = { path = ".deps/quire-contract-ir/crates/quire-contract-model" }
 quire-contract-ir = { path = ".deps/quire-contract-ir" }

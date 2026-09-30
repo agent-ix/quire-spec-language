@@ -6,7 +6,7 @@ status: done
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-009
     type: references
-  - target: ix://agent-ix/quire-spec-language/IT-008
+  - target: ix://agent-ix/quire-integration/IT-008
     type: references
 ---
 # Plan-008: Native Boolean lowering and backend parity

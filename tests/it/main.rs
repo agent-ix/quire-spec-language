@@ -58,9 +58,8 @@ mod composed_temporal_mapping_v2;
 mod composed_type_pipeline;
 mod composed_types;
 mod config_version;
+mod config_version_refusals;
 mod config_version_spine;
-mod configversion_backends;
-mod contract_model_architecture;
 mod domain_protocol_emission;
 mod evaluate_reads_no_display_strings;
 mod exact_decimals;
@@ -68,7 +67,6 @@ mod extracted_command;
 mod family_outcome_layering;
 mod fixture_audit;
 mod formal_source;
-mod function_application_kani;
 // QSL-251: the handoff writer is behind its feature; the all-features lane runs this.
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
@@ -81,7 +79,6 @@ mod lowering_registry_isolation;
 mod mapped;
 mod model_source;
 mod name_resolution_confinement;
-mod native_backend;
 mod native_boundaries;
 mod native_checking;
 mod native_choice_emission;

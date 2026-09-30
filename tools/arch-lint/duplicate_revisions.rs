@@ -180,10 +180,9 @@ source = "git+https://github.com/agent-ix/quire-contract-ir?rev=04eb6f8#04eb6f8"
     /// tc_arch_lint_duplicate_revisions_005 (negative control, R2/#249
     /// review): two *different* crate names sourced from the same repository
     /// at two different revisions -- IR's own facade package
-    /// `quire-contract-ir` and its workspace member `quire-contract-model`,
-    /// exactly QSL's real root `Cargo.lock` shape (the `-historical` alias
-    /// vs. the current pin) -- are one repository component and are reported,
-    /// not skipped because their names differ.
+    /// `quire-contract-ir` and its workspace member `quire-contract-model` --
+    /// are one repository component and are reported, not skipped because
+    /// their names differ.
     #[trace("TC-158", "FR-061-AC-3")]
     #[test]
     fn tc_arch_lint_duplicate_revisions_005_same_repository_different_names_is_a_violation() {
@@ -225,5 +224,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "#;
         let packages = parse_lockfile(lockfile);
         assert!(check(&packages).is_empty());
+    }
+
+    /// tc_arch_lint_duplicate_revisions_006 (QSL-334): QSL's own root
+    /// `Cargo.lock` resolves every quire-ecosystem repository once. A
+    /// dependency that depended back on QSL would resolve a second,
+    /// git-sourced QSL copy beside the workspace path copy and fail here.
+    #[trace("TC-139", "FR-051-AC-6", "TC-158", "FR-061-AC-4")]
+    #[test]
+    fn tc_arch_lint_duplicate_revisions_006_root_lockfile_has_one_revision_each() {
+        let lockfile =
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock"))
+                .unwrap();
+        let packages = parse_lockfile(&lockfile);
+        assert!(packages
+            .iter()
+            .any(|package| package.name == "quire-spec-language"));
+        assert_eq!(check(&packages), Vec::new());
     }
 }

@@ -51,7 +51,7 @@ The command shall return exit 22 for exhausted budgets, exit 21 for an unsupport
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-029-AC-1 | Actual lower-command bytes match library lowering, pass both pinned IR readers and generate the complete existing backend oracle population without runtime files. | Test |
+| FR-029-AC-1 | Actual lower-command bytes match library lowering, and the IR reader accepts them with the package digest and every authored clause of the library projection, without runtime files. | Test |
 | FR-029-AC-2 | A later unsupported clause refuses the complete projection and exits 21 with empty stdout and original request/package/source/clause identity; location context distinguishes absent, located and invalid spans; a fresh valid retry succeeds. | Test |
 | FR-029-AC-3 | Wrong request format, runtime fields, stale source and intake limits retain existing error/exit behavior; lower arity errors precede I/O and exit 20; compile/run/parse/format remain usable. | Test |
 | FR-029-AC-4 | A failure writing the exported projection bytes exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |

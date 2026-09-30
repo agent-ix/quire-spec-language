@@ -81,8 +81,6 @@ retains these ceilings as an additional guard over already checked packages.
 
 ## Status
 
-FR-009-AC-5 is qualified for the named `boolean-oracle/v1` domain by TC-094.
-The fixture compiles codegen's generated proptest strategy, covers all eight
-assignments, and compares actual LLVM 3.1.0 source probes with native implication
-events. The fixture-specific reader does not expand the pinned reusable coverage
-reader, whose explicit LLVM 3.1.0 refusal remains a downstream capability limit.
+FR-009-AC-5 is qualified for the named `boolean-oracle/v1` domain by
+quire-integration's [TC-094](ix://agent-ix/quire-integration/TC-094), which
+composes this compiler's lowering with the code generator's generated Rust.
