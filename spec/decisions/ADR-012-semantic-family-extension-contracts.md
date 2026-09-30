@@ -1467,20 +1467,24 @@ Imported }` (`family.rs:739`). A bare qualified name reaches `Typer::name`
 (`typing.rs:637`), which resolves enum members (`check/check.rs:1367`).
 #187 adds the following:
 
-1. **One `check`-core call-target seam function** (for example
-   `check::call_target`). The `Call` arm and the `Name` arm each call it
+1. **One `check`-core call-target seam function**, in the new module
+   `check::call_target` (`qsl-semantics/src/check/call_target.rs`). The `Call` arm and the `Name` arm each call it
    exactly once, with no branch of their own. The function performs S3 name
    binding (ADR-011 §1) and returns a closed `check`-core enum of resolved
    targets. The enum has one union-member variant, and one variant that
    carries `Value`'s existing resolution for everything else.
-2. **Resolution precedence.** A qualified name `q::m` is a union member when
-   `q` names a declared union and no import alias. It is an import member
-   when `q` names an import alias and no declared union. When `q` names
-   both, the name refuses `ambiguous_declaration`/`ambiguous-name`, naming
-   both declarations. Every other name resolves exactly as it does today:
-   through `Application::resolve` for a call, and `Typer::name` for a bare
-   name. Unions and enums share the type-declaration namespace, so a union
-   and an enum with one name are already a duplicate declaration.
+2. **Resolution precedence.** The scope admits several types under one
+   name and refuses only an ambiguous use (`check/check.rs:572-591`,
+   `check/type_form.rs:124-133`). `q::m` follows that rule:
+   - When `q` names exactly one of a declared union, a declared enum or an
+     import alias, `q::m` resolves against that one: a union member, an enum
+     member (through `Typer::name`, as today) or an import member (through
+     `Application::resolve`, as today).
+   - When `q` names more than one of them, including two unions both named
+     `q`, `q::m` refuses `ambiguous_declaration`/`ambiguous-name`, naming
+     every candidate declaration.
+
+   Every unqualified name resolves exactly as it does today.
 3. **Dispatch inside the seam function.** The seam function matches its
    resolved target with one arm per variant and no `_` arm. Each arm makes
    one call into the owning family: `check::sum_case::construct` for a union
@@ -1618,7 +1622,7 @@ section follows TC-264.
 | Construction: undeclared member, payload on a nullary member, missing call on a payload member, or wrong argument count | `SumCase`, S3 construction | `ill_typed`/`type-mismatch` (FR-143) | expected and actual shape | the construction expression |
 | Union recursion that does not escape | `SumCase` declaration check, through the shared recursion graph. Payload positions are named edges (FR-143), so they enter the `NonEscaping` subgraph and not the `Unnamed` (tuple-position) one. | `ill_typed`, from the existing `DeclarationCause::Recursion { edges: NonEscaping, cycle }` (`qsl-semantics/src/value/declaration.rs:682-694`) | the cycle | the union declaration |
 | Duplicate member name in one union | `SumCase` declaration check | `invalid_semantic_graph`, from the existing `DeclarationCause::DuplicateMember` (same function) | the member name | the union declaration |
-| Stage limit or meter exhaustion inside a family `check` | `SumCase`, S3 | `StageFailure::Limit(LimitExceeded)`, limit kind work budget (§2, T-4) | the limit record | the charge's locus |
+| Stage limit or meter exhaustion inside a family `check` | `SumCase`, S3 | `StageFailure::Limit(LimitExceeded)`, the nesting-depth limit when `case` nesting exceeds the checking depth bound, or the work-budget limit when the family `check` exhausts its meter (§2, T-4) | the limit record | the charge's locus |
 
 The unreachable-arm row explains why the table has no separate code for it.
 The grammar has no wildcard arm, no guard and no nested pattern. An arm is
@@ -1722,7 +1726,7 @@ reopens #221.
 | --- | --- | --- |
 | `qsl-cst` | `token.rs` (the `union` keyword); `grammar.rs` (`union-decl` and expression `case`); `cst.rs` (the `Production` inventory). The expression production takes a name distinct from the protocol `Production::Case` (`grammar.rs:1206`), because the two share only the `case` keyword. | S1 productions |
 | `qsl-forms` | new `sum_case.rs`; `dispatch.rs` (one kind, one entry, one table row); `syntax.rs` (the `Case`, `CaseForm`, `ArmForm`, `Union` and `UnionForm` variants and types); `value.rs` (its CST-to-`Expression` builder builds `Expression::Case`, as it builds `Expression::If`, and its exhaustive `Production` matches get forced arms); `lib.rs` (the module) | S2 family module and forms-core variants |
-| `qsl-semantics` | new `check/sum_case.rs`; `check/mod.rs` (the module and the family wiring); the new `check`-core call-target seam function and resolved-target enum (§16.2), in the `check` core module that hosts `Typer`'s dispatch; `check/assemble.rs` (the `Union` arm); `check/identity.rs` (the union `CheckedTypeNode` variant and its `to_kernel_value_type` arm); `check/check/typing.rs` (the `Case` arm, and the `Call` and `Name` arms per §16.2); `check/check.rs` (the scope member index, so the seam function can see union members); `check/ir.rs` (the `NodeKind` variants and children); `check/checked_dispatch.rs` (its FR-151 `Expression` rewrite gets a forced `Case` arm, which renames inside the scrutinee and the arm bodies but never renames an arm binder); `check/family.rs` (forced `Expression` walk arms only; `Application` is unchanged, §16.2); the forced `NodeKind` arms in `check/lowering.rs`, `check/lowering/*`, `check/claims.rs`, `check/facts.rs` and `check/observation.rs`; `check/refusal.rs` (the boxed `SumCaseCause` arm); `check/region.rs` (the locus arm); `check/node_key/mod.rs` and `value/member.rs` (wire vocabulary, with the §16.10 proposed spelling); `value/declaration.rs` (the union in the type environment, in `check_recursion`, and in the collection element rule of §16.4) | S3 family module, seam code and compile-forced arms |
+| `qsl-semantics` | new `check/sum_case.rs`; `check/mod.rs` (the module and the family wiring); new `check/call_target.rs`, a `check`-core module declared in `check/mod.rs`, holding the call-target seam function and the resolved-target enum (§16.2); `check/assemble.rs` (the `Union` arm); `check/identity.rs` (the union `CheckedTypeNode` variant and its `to_kernel_value_type` arm); `check/check/typing.rs` (the `Case` arm, and the `Call` and `Name` arms per §16.2); `check/check.rs` (the scope member index, so the seam function can see union members); `check/ir.rs` (the `NodeKind` variants and children); `check/checked_dispatch.rs` (its FR-151 `Expression` rewrite gets a forced `Case` arm, which renames inside the scrutinee and the arm bodies but never renames an arm binder); `check/family.rs` (forced `Expression` walk arms only; `Application` is unchanged, §16.2); the forced `NodeKind` arms in `check/lowering.rs`, `check/lowering/*`, `check/claims.rs`, `check/facts.rs` and `check/observation.rs`; `check/refusal.rs` (the boxed `SumCaseCause` arm); `check/region.rs` (the locus arm); `check/node_key/mod.rs` and `value/member.rs` (wire vocabulary, with the §16.10 proposed spelling); `value/declaration.rs` (the union in the type environment, in `check_recursion`, and in the collection element rule of §16.4) | S3 family module, seam code and compile-forced arms |
 | `qsl-package` | `emit.rs` (`BodyNames::of` arms); any forced arm in `emit/*` | S4 arm |
 | `qsl-eval` | new `value/expression/sum_case.rs`; `value/expression/evaluate.rs` (the `Machine::apply` arms); `value/expression/mod.rs` (union argument admission, SC-R3) | S6a arms and admission |
 | `quire-exact` | only as SC-Q1 rules: the union value shape and its admission, equality and key arms (`value.rs`, `equality.rs`, `key.rs`; the key arm yields no key, §16.4) | kernel value |
@@ -1763,6 +1767,7 @@ to the named cases.
 | Class | Cases | Stage | Oracle |
 | --- | --- | --- | --- |
 | Positive | a union with nullary and payload members; a recursive union that escapes (`union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }`, FR-143); construction of a nullary and of a payload member; `case` selecting each member of a two-member union; a nested `case` in an arm body; `case` inside a state clause body and inside a `decreases` measure, each under its clause kind (FR-065-AC-5 pattern) | S2 to S6a | the checked node, then `Completed` with the expected value |
+| Adverse, resolution | `q::m` where `q` names both a union and an enum, and where `q` names two unions, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; `q::m` where `q` names a union and an import alias, refusing the same way | S3 | §16.2 precedence |
 | Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order); an `unknown-member` arm whose body is ill-typed, asserting only `unknown-member` (its body is not checked) | S3 | §16.5 rows, with payload and locus |
 | Refusal order | one `case` with an ill-typed body in a resolved arm and a missing arm, asserting only `ill_typed` at that body (typing first); a scrutinee that is not a union, followed by arms naming unknown members, asserting only the scrutinee's `ill_typed` (a scrutinee refusal ends the builder) | S3 | §16.5 "One refusal per `case`" |
 | Adverse, typing | a scrutinee of enum type and one of `Integer`; an arm body of the wrong type | S3 | `ill_typed`/`type-mismatch` |
@@ -1770,7 +1775,7 @@ to the named cases.
 | Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `invalid_semantic_graph` | S3 | §16.5 declaration rows |
 | Adverse, parse | a `case` whose scrutinee is an unparenthesized record value is not parsed as a scrutinee; the parenthesized form parses (shared-grammar.md `case` rule) | S1 | parse diagnostic, and the admitted form |
 | Adverse, collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union refuse `ill_typed`/`operator-ineligible`; `Sequence<U>` is admitted (§16.4, until SC-G5) | S3 | §16.4 collection row |
-| Limits | a `case` nested past the checking depth bound returns `StageFailure::Limit` with its limit kind, and the same depth minus one is admitted (FR-062-AC-7 pattern) | S3 | §16.5 limit row |
+| Limits | a `case` nested past the checking depth bound returns `StageFailure::Limit` with the nesting-depth limit kind, and the same depth minus one is admitted (FR-062-AC-7 pattern) | S3 | §16.5 limit row, nesting-depth half |
 | Adverse, admission | one supplied union argument for each SC-R3 refusal case: a foreign union key, a non-member `VariantId`, a wrong payload count, and a payload of the wrong type; and a union payload holding a dangling reference, refused by the reference walk | argument admission | `invalid_runtime_input`/`wrong-value-kind` before any charge |
 | Builder | out-of-order clause submission refuses with a clause-order refusal, and in-order submission admits (recipe item 2); diagnostic order by builder state, then source position | S3 | §4.2 |
 | Evaluation | `case` on each member with payload binding (FR-146-AC-11); a scrutinee that evaluates `Undefined` propagates `Undefined`; an injected invariant break yields `InternalFault` (§16.4 S6a row), not a refusal | S6a | O-16 categories |
@@ -1857,7 +1862,7 @@ treatment (§16.9).
 
 | ID | Question | Options | Recommendation |
 | --- | --- | --- | --- |
-| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a). It admits FR-143-AC-13 and reuses the record precedent. It changes no `ValueType` variant, so RT and CG get compile-forced arms for the new `Value` variant only. It reopens one O-14 cell ("The kernel `ValueType` gains one sum shape"), ADR-013's Status lets a #209, #210, #222 or #229 decision reopen a cell. #221 is not in that list, so whether this #210-line mapping may reopen the cell is the ADR-013 owner's call, as is the ruling itself. |
+| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a). It admits FR-143-AC-13 and reuses the record precedent. It changes no `ValueType` variant, so RT and CG get compile-forced arms for the new `Value` variant only. It reopens one O-14 cell ("The kernel `ValueType` gains one sum shape"). ADR-013's Status lets a #209, #210, #222 or #229 decision reopen a cell. #221 is not in that list, so whether this #210-line mapping may reopen the cell is the ADR-013 owner's call, as is the ruling itself. |
 
 
 These parts of §16 depend on SC-Q1's answer. Each is written for option (a)

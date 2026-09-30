@@ -98,13 +98,17 @@ Per analysis:
 
 ## Verdict
 
-Changes requested. The family assignment, identity rows, S6a treatment and
-QSpec gap list are sound and measured. But the ticket's first acceptance
-criterion is not yet met: "#187 can implement … without inventing a new owner
-or bypass". FND-001 means #187 reopens #221 on its first PR, and FND-002
-leaves the construction-dispatch owner undecided. FND-003 lets untrusted
-input reach an `InternalFault`. Fix the two high findings and FND-002 and
-FND-004 to FND-009 in this PR. The low findings can be fixed in the same pass.
+Changes requested at c49eea84, with one medium item left: FND-015. FND-001
+to FND-014 are verified fixed (see "Re-review (c49eea84)"). Fix FND-015 in
+this PR. FND-016 and FND-017 are low and can go in the same pass. Once
+FND-015 is fixed, the mapping meets the ticket's acceptance criteria.
+
+Original verdict at c6e1e5ac: changes requested. The family assignment,
+identity rows, S6a treatment and QSpec gap list were sound and measured. But
+the ticket's first acceptance criterion was not met: "#187 can implement …
+without inventing a new owner or bypass". FND-001 meant #187 would reopen
+#221 on its first PR, FND-002 left the construction-dispatch owner
+undecided, and FND-003 let untrusted input reach an `InternalFault`.
 
 ## Dispositions
 
@@ -126,3 +130,53 @@ Every finding is fixed in ADR-012 (and in the recipe for FND-007).
 | FND-012 | SC-Q1 lists the parts of §16 that depend on it and leaves the ADR-013 Status basis to the owner. |
 | FND-013 | §16.8 adds the missing rows: declaration duplicate member, limits, parse scrutinee, unknown-member body not checked, and admission. |
 | FND-014 | The scrutinee refusal reuses `CheckCause::IllTyped`, and `SumCaseCause` holds only the exhaustiveness refusal. The obligation reading cites TC-264 E03 and E04. |
+
+## Re-review (c49eea84)
+
+Scope: `git diff c6e1e5ac c49eea84` (ADR-012 and
+`docs/family-migration-recipe.md`). Each fix was measured against the tree
+at c49eea84 and QSpec `origin/main`, not taken from the dispositions table.
+
+Measured for the new text:
+- `typing.rs:646-656` is the `Expression::If` arm calling
+  `Self::conditional(Branches::Inferred(hint), …)`.
+- `declaration.rs:1055-1060` is `type_refusal`'s collection rule. It refuses
+  `operator-ineligible` for a non-`Sequence` whose element `contains_ieee`,
+  and that walk descends through record and tuple declarations. A union rule
+  there applies to every declared type, because `check_type`
+  (`declaration.rs:974`) covers parameter and result types and :1099 covers
+  declarations. Collection literals take their element type from that
+  declared hint (`typing.rs:811-812`).
+- ADR-013 O-13's Population row (ADR-013:345) says `compare_keys` "yields no
+  key" for a population pair. The key-arm precedent is real.
+- `ambiguous_declaration`/`ambiguous-name` is in the QSpec catalog
+  (native-diagnostics.md:81) and in QSL (`refusal.rs:873`, `:908`).
+- ADR-012:850, the v2 reader rule in §9, and ADR-013 QC-19 (:1135) back the
+  §16.9 rewrite.
+- `family.rs:795` and `:739`, `typing.rs:637` and `check.rs:1367` match the
+  §16.2 description of today's resolution.
+- The recipe edit keeps all three FR-066-AC-2 categories. No test reads the
+  recipe text.
+- The stale sentences that FND-006 listed are gone. The only remaining
+  "variant declaration" (ADR-012:946) is covered by §12.1's amendment note
+  ("the keyword is `union`").
+
+| ID | Status | Note |
+| --- | --- | --- |
+| FND-001 | verified | §16.7 parts 1 to 4 cover every path the finding named: `cst.rs`, `qsl-forms/value.rs`, `checked_dispatch.rs`, `check/family.rs`, `check/check.rs`, tests, spec, and the SC-Q1(a) composite-shape arms. The Excluded list is unchanged. The host file of the new seam function is left as "the `check` core module that hosts `Typer`'s dispatch" (see FND-017). |
+| FND-002 | verified, with a new defect | §16.2 now says no resolver exists today. It names one check-core call-target seam function, called once from each arm, with no branch in the arm, and `Application` is unchanged. The precedence rule rests on a false premise (FND-015). |
+| FND-003 | verified | SC-R3 lists the four admission refusals and the payload reference walk, and puts them in QSL admission rather than kernel `admits`. The SC-Q1(a) value carries the union key. The §16.4 S6a row says an `InternalFault` can only come from a QSL defect. §16.8 has an adverse-admission row. |
+| FND-004 | verified | §16.5 "One refusal per `case`" matches the fail-fast `Typer` and the one-refusal contract (`typing.rs:613-619`, `contract.rs:370-373`). A scrutinee refusal ends the builder, and `finish` reads arm heads only, which is consistent with §4.2. Typing first agrees with FR-146:264. The refusal-order tests are present. |
+| FND-005 | verified | The `if` rule is cited correctly (`typing.rs:646-656`). SC-G6 is recorded as unfiled QSpec work. |
+| FND-006 | verified | ADR-012 :270, the §11 #187 row, §12.1's Form, Witness and tests rows, §13.5 Q210-3, and the "unchanged" in the §16.4 Witness row are all amended. |
+| FND-007 | verified | Recipe item 2 is keyed on "families whose declarations S6a calls or selects" and names `SumCase`'s `Machine::apply` conversion. The path is corrected to `s6a/mod.rs`. |
+| FND-008 | verified | The collection row's path, precedent and tests hold (see above). The kernel has no map kind: `CollectionKind` is Sequence, Set, Bag and OrderedSet, so there is no map-key case. |
+| FND-009 | verified | Arms lower in `U`'s declared member order. SC-R2 asserts the `case` node id and `package_id`, and the Identity test row covers arm reordering. |
+| FND-010 | verified | All seven corrections are right. The FR-143 and FR-146 titles and sections, PR #121, 15 entries, the `S6aFamilyKind::family` wording, `identity.rs:538`, `emit.rs:279` and FR-092 each match the source. |
+| FND-011 | verified | §16.9 cites the §9 owner ruling and QC-19. The profile bullet is marked as QSL's inference and recorded as SC-G7. |
+| FND-012 | verified | The SC-Q1 dependents are listed, and the ADR-013 Status basis is left to the owner. The wording of that cell is garbled (FND-017). |
+| FND-013 | verified | Rows exist for the duplicate member name, limits, the parse scrutinee, the unknown-member body, admission and collections. The limit oracle does not match its row (FND-016). |
+| FND-014 | verified | The scrutinee refusal reuses `CheckCause::IllTyped`, and `SumCaseCause` holds only `UnprovedExhaustiveness`. TC-264 E03 and E04 are cited. |
+| FND-015 | new, medium | The §16.2 precedence rule claims "Unions and enums share the type-declaration namespace, so a union and an enum with one name are already a duplicate declaration". That is false. The scope index keeps a `Vec` per type name (`check.rs:572-574`, `index.types`), and so does the enum-member index (`check.rs:579-591`). Same-named types are admitted, and a use refuses as ambiguous only at that point (`type_form.rs:124-133`; `Typer::name` `check.rs:1396-1402`). So `q::m` can name a union member and an enum member at once, or members of two unions named `q`, and §16.2 resolves neither. The seam function would silently prefer one, depending on the order in which it checks. Fix: state that `q::m` refuses `ambiguous_declaration`/`ambiguous-name` whenever `q` names more than one of: a union, an enum, an import alias (including two unions). Drop the duplicate-declaration sentence and add one adverse test (a union and an enum sharing a name, with `q::m` naming a member of both). Refs: spec/decisions/ADR-012-semantic-family-extension-contracts.md:1470-1478; qsl-semantics/src/check/check.rs:572-591; qsl-semantics/src/check/type_form.rs:124-133. |
+| FND-016 | new, low | The §16.5 limit row's oracle is "limit kind work budget" (ADR-012:1615). The new §16.8 Limits test (ADR-012:1767) drives the checking depth bound on the FR-062-AC-7 pattern, which yields a nesting-depth limit. The row and the test name different limit kinds. Fix: have the row name both limit kinds (nesting depth from the `Typer`'s depth bound, work budget from a family meter charge), or make the test match the row. |
+| FND-017 | new, low | Two wording slips. (1) In the SC-Q1 recommendation cell (ADR-012:1854), "It reopens one O-14 cell ("…"), ADR-013's Status lets …" is a comma splice that joins two sentences, so it reads as garbled. (2) §16.7 (ADR-012:1719) names the host of the new seam function only as "the `check` core module that hosts `Typer`'s dispatch". Name the file (`check/check/typing.rs` or `check/check.rs`) so the change set is concrete. |
