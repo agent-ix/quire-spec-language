@@ -12,6 +12,8 @@ relationships:
 
 ## Description
 
+**RETIRED by QSL-335.** QSL-335 deletes `integration/current-head/` and its Makefile targets. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration.
+
 QSL's own build (root `Cargo.toml`, root `Cargo.lock`) resolves
 `quire-contract-ir`, `quire-contract-codegen` and every other cross-repository
 dependency at one pinned git revision each (the exact-pin lane). That lane
@@ -136,10 +138,10 @@ current-head lane failed), and how to re-run it locally.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-058-AC-1 | The current-head lane's manifest(s) are not members of the root `[workspace]`; running the lane never changes the root `Cargo.lock`'s resolved revisions. | Test (TC-159) |
-| FR-058-AC-2 | A lane run against real current heads of quire-contract-ir, quire-contract-runtime and quire-contract-codegen resolves and records one commit per repository (QSL, IR, RT, CG) in a log. | Test (TC-159) |
-| FR-058-AC-3 | A lane run against the intentionally incompatible fixture manifest fails, and its diagnostic names the incompatible dependency and a stable marker string, not only a raw compiler error. | Test (TC-159) |
-| FR-058-AC-4 | The lane is invocable by one documented local command; its documentation names an owner and an update procedure. | Test (TC-159) |
+| FR-058-AC-1 | **RETIRED by QSL-335**, for the reason given in the Description. The current-head lane's manifest(s) are not members of the root `[workspace]`; running the lane never changes the root `Cargo.lock`'s resolved revisions. | Retired |
+| FR-058-AC-2 | **RETIRED by QSL-335**, for the reason given in the Description. A lane run against real current heads of quire-contract-ir, quire-contract-runtime and quire-contract-codegen resolves and records one commit per repository (QSL, IR, RT, CG) in a log. | Retired |
+| FR-058-AC-3 | **RETIRED by QSL-335**, for the reason given in the Description. A lane run against the intentionally incompatible fixture manifest fails, and its diagnostic names the incompatible dependency and a stable marker string, not only a raw compiler error. | Retired |
+| FR-058-AC-4 | **RETIRED by QSL-335**, for the reason given in the Description. The lane is invocable by one documented local command; its documentation names an owner and an update procedure. | Retired |
 
 ## Dependencies
 
@@ -151,40 +153,7 @@ current-head lane failed), and how to re-run it locally.
 
 ## Status
 
-Specified and implemented under
-[#215](https://github.com/agent-ix/quire-spec-language/issues/215). One design
-question this requirement does not settle: where hosted CI runs the lane. It
-is reported to the issue rather than decided here. QSpec artifacts are
-resolved from `agent-ix/quire-specification` by identity and revision; this
-lane does not additionally resolve them at head.
-
-A real run of `revision-log` against the three repositories' real current
-heads (#249 review) resolved QSL at `087fb4e5...`, quire-contract-ir at
-`ef11217a...`, quire-contract-runtime at `aff8177c...` and
-quire-contract-codegen at `a4b2a733...`, each matching `git ls-remote <url>
-main` exactly (HIGH-1's staleness check passed on a real run, not only a
-synthetic one).
-
-A real run of `check-incompatible-fixture` against the real fixture manifest
-exits `0` (it correctly detected the intended failure) and prints the
-`FR-058-AC-3` marker naming the incompatible dependency; the fixture's own
-`cargo build` fails with `error[E0432]: unresolved imports
-quire_contract_ir::SourceIdentity, ...` (the stub crate exports nothing QSL's
-real source imports), confirming HIGH-3's real-diagnostic requirement against
-real, not only synthetic, output.
-
-Separately, building the current-head lane's own manifest (not the fixture)
-at real current heads surfaced a genuine, unplanned cross-repository
-incompatibility -- exactly the class of finding this requirement exists to
-catch, found as a byproduct of R3's lock-convergence work rather than by a
-designed fixture: real quire-contract-codegen head fails to compile with
-`error[E0560]: struct CounterexamplePacket has no field named witness` at
-quire-contract-codegen's own `src/bounded_kani_corpus.rs:196`. This is a
-**CG/IR** incompatibility, not CG/RT: `CounterexamplePacket` is defined in
-quire-contract-**ir**'s `src/kani/replay.rs:45`, not in quire-contract-runtime
-at all, and IR's real head already removed its `witness: Option<Witness>`
-field in favor of `source: ReplaySource` (IR commit `ef11217`, "kani:
-ReplaySource replaces the optional witness"); CG's own
-`bounded_kani_corpus.rs` still constructs the old `witness:` field, which no
-longer exists on IR's head. This is reported here as new, real evidence; it
-is a CG/IR concern, not QSL's, and this requirement does not remediate it.
+**Retired by QSL-335.** `integration/current-head/` (the lane crate, its `tool/` and
+`fixtures/`) and its Makefile targets are deleted. All acceptance criteria
+above are retired for the reason given in the Description. There is no
+successor requirement in this repository.

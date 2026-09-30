@@ -69,15 +69,6 @@ revisions: `quire-contract-ir` (consumed at one revision) and
 `quire-contract-model` (IR's own workspace member, consumed at a different
 revision) are the IR repository twice, and are reported (#249 review R2).
 
-### Scope: the current-head lane's own lock too
-
-FR-058's current-head lane (`integration/current-head/`) has its own,
-separate `Cargo.lock`, independent of QSL's root one. That lock is in scope
-for this requirement too (#249 review R3): the Makefile SHALL provide a
-target that runs this check over the lane's own lockfile, and the lane's own
-dependency graph SHALL be arranged (via its `[patch]` table) so that lock
-converges on one revision per ecosystem repository.
-
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -85,14 +76,11 @@ converges on one revision per ecosystem repository.
 | FR-061-AC-1 | `Cargo.lock` parsing recovers each `[[package]]` stanza's name, version and source. | Test (TC-158) |
 | FR-061-AC-2 | A lockfile with one source per ecosystem repository reports no duplicate; a non-ecosystem crate name (for example `serde`) resolved to two sources is not reported. | Test (TC-158) |
 | FR-061-AC-3 | A lockfile with two packages classifying to the same ecosystem repository -- whether they share one crate name or not -- resolved to two distinct sources reports exactly one duplicate finding, naming both sources. | Test (TC-158) |
-| FR-061-AC-4 | Run against QSL's real root `Cargo.lock` (`make arch-lint-duplicate-revisions`, part of `make ci`), the check reports no duplicate. Run against the current-head lane's own `Cargo.lock` (`integration/current-head/Cargo.lock`), the check reports no duplicate. | Test (TC-158) |
+| FR-061-AC-4 | Run against QSL's real root `Cargo.lock` (`make arch-lint-duplicate-revisions`, part of `make ci`), the check reports no duplicate. | Test (TC-158) |
 
 ## Dependencies
 
 - ADR-011 §7.1 (`ix://agent-ix/quire-spec-language/ADR-011`).
-- [FR-058](FR-058-detect-current-head-cross-repository-incompatibility.md)'s
-  current-head lane owns the second lockfile this requirement's R3 scope
-  extension checks.
 
 ## Status
 
@@ -106,12 +94,3 @@ Run against QSL's real root `Cargo.lock`, the check reports no duplicate
 (FR-061-AC-4) and runs in `make ci`. QSL-334 removed the
 `quire-contract-codegen` development dependency whose graph resolved second
 copies of QSL and IR crates.
-
-Run against the current-head lane's own `Cargo.lock`
-(`make arch-lint-duplicate-revisions-lane`), the check reports no duplicate:
-the lane's `[patch]` table (`integration/current-head/Cargo.toml`) redirects
-every QSL/IR/RT node in its graph to one head-tracked git or path source per
-repository, so `cargo update` converges that lock to exactly one revision
-each for quire-contract-codegen, quire-contract-ir, quire-contract-model,
-quire-contract-runtime, quire-observation, quire-protocol and
-quire-spec-language (#249 review R3).

@@ -262,15 +262,14 @@ conformance:
 # run and report, and the target exits 2 (usage) for the missing input.
 #
 # `arch-lint` runs this repo's own checks: api-surface, duplicate-revisions on
-# QSL's own root lock, duplicate-revisions on the current-head lane's own lock
-# (it converges via the lane's own [patch] table) and canonical-encoder.
+# QSL's own root lock and canonical-encoder.
 # `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
 # above.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -282,63 +281,17 @@ arch-lint-api-surface:
 arch-lint-duplicate-revisions:
 	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
 
-# FR-061 (#249 review R3): the current-head lane's own Cargo.lock is in scope
-# too -- it converges on one revision per ecosystem repository via the lane's
-# own [patch] table (integration/current-head/Cargo.toml), independent of the
-# root workspace's lock this target above checks.
-arch-lint-duplicate-revisions-lane:
-	cargo run --locked -p arch-lint -- duplicate-revisions \
-		--lockfile integration/current-head/Cargo.lock
-
 # ADR-013 §2 (ADR-013:113, QSL-194): no second canonical encoder beside
 # `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
 # a hash fails, named files excepted with their reason. Needs only this
-# repository and passes on it, so unlike the checks above it is part of `ci:`.
+# repository and passes on it, so it is part of `ci:`.
 arch-lint-canonical-encoder:
 	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
 
-# Runs the four checks that need only this repository (#249 review round 2
-# L-2: `arch-lint-duplicate-revisions-lane` was previously checkable only on
-# request, with no target routinely enforcing R3's convergence).
+# Runs the three checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
 # run separately.
-arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
-
-# FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane. Not
-# part of `ci:` -- it needs network access to fetch each repository's
-# default branch head, and it is a separate lane from the exact-pin build
-# `ci:` verifies. See integration/current-head/README.md.
-.PHONY: integration-current-head-prepare integration-current-head integration-current-head-revision-log integration-current-head-incompatible-fixture
-
-# Refreshes the local clones the lane's [patch] entries need, then runs
-# `cargo update` against the lane's own manifest so its committed Cargo.lock
-# picks up each dependency's current head (#249 review, HIGH-1) -- this never
-# touches the root workspace's Cargo.lock. Run this first, and again any time
-# a dependency's head should be picked up again.
-integration-current-head-prepare:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		prepare --deps-root integration/current-head/.deps \
-		--manifest integration/current-head/Cargo.toml
-
-# #249 review round 2 L-2: a test run must not silently execute against a
-# local checkout that fell behind head -- previously only the separate
-# `integration-current-head-revision-log` target caught that (HIGH-1's
-# `require_current_head` guard), so a plain `make integration-current-head`
-# could test a stale snapshot with no warning. `revision-log`'s freshness
-# check now gates every test run too, and fails loudly (non-zero exit) before
-# `cargo test` runs at all if any local clone or CG's resolved head is
-# stale.
-integration-current-head: integration-current-head-revision-log
-	cargo test --manifest-path integration/current-head/Cargo.toml
-
-integration-current-head-revision-log:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-		--deps-root integration/current-head/.deps
-
-integration-current-head-incompatible-fixture:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		check-incompatible-fixture --manifest integration/current-head/fixtures/incompatible/Cargo.toml
+arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-canonical-encoder
 
 # QSL-197: the whole 30,000-input parser differential against
 # tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first

@@ -54,15 +54,11 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-057
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-058
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-059
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-060
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-061
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-013
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
     type: contains
@@ -481,11 +477,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies; canonical `Capability` type implemented (QSL-173, TC-153 partial); requests carry it and `report` reads no backend, registration and candidate sets are in `route` (QSL-46, PR #305); carrier-version refusal and admission remain under #213, the post-E7 routing step under #185; kind applicability is FR-057-AC-11 (TC-115) |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
-| [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | Implemented current-head cross-repository integration lane; #215 |
+| [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | **Retired by QSL-335**, which deletes `integration/current-head/`; QSL's own build resolves quire-contract-ir from `main` and quire-integration tests cross-repository composition |
 | [FR-059](functional/FR-059-check-backend-dependency-direction.md) | FR | Implemented ADR-011 FB-05/FB-11 backend dependency-direction check (`arch-lint direction`); #215 |
 | [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B (`check` only) and T12-C (`model` only) live, each with a named debt list that only shrinks (amended 2026-09-22; gate rewrite pending), T12-D (kernel `PopulationId` constructor, `model` only) live and passing; #215 |
 | [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
-| [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | Implemented current-head lane contract test across QSL, Contract IR, Runtime and Codegen; #215 |
+| [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | **Retired by QSL-335**, for the same reason as FR-058 |
 | [FR-062](functional/FR-062-implement-checked-family-contract.md) | FR | Specified under #214; not yet implemented. AC-11 (package-wide expression-node limit, TC-381) is backed; AC-12 (a family limit's actual counter, TC-432) is backed; AC-4 (`requirements`, TC-160) is partly backed under QSL-140: the no-kind clause passes, the with-kind clause is pending QSL-42's first claim family |
 | [FR-063](functional/FR-063-exhaustive-family-extension-seam-probe.md) | FR | Specified under #214; not yet implemented |
 | [FR-064](functional/FR-064-restrict-string-dispatch-to-marked-edges.md) | FR | Implemented; `xtask string-edge` runs in `make ci` (QSL-145) |

@@ -234,9 +234,7 @@ Run these checks locally while the repository stabilizes. Hosted CI exposes
 only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
 opening a pull request does not request CI; hosted execution requires a separate
 explicit dispatch.
-Tests also need read access to the pinned private `agent-ix/ix-trace-rs` Git
-dependency (or its exact cached revision). A future hosted runner needs that
-access configured; local results do not qualify hosted credentials.
+Tests fetch the `agent-ix/ix-trace-rs` Git dependency from its `main` branch.
 
 CLI arguments are `parse|format`, source identity, source revision, and file path.
 `parse` emits JSON with status `parsed`; `format` writes source to stdout and

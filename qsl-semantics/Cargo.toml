@@ -47,7 +47,7 @@ tempfile = "=3.27.0"
 # against. Shipped code hashes through `quire-canonical` or
 # `qsl_foundation::ByteDigest` (QSL-194); TC-390 asserts sha2 stays here.
 sha2 = "=0.10.9"
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
 num-bigint = "=0.4.8"
 num-traits = "=0.2.19"
