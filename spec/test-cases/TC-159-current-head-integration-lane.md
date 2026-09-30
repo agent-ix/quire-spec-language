@@ -22,36 +22,11 @@ update procedure. Scope: FR-058-AC-1 through FR-058-AC-4.
 
 ## Test Procedure
 
-1. Inspect the root `Cargo.toml` `[workspace]` `members` list and the lane's
-   own manifest(s) under `integration/current-head/`. Record the root
-   `Cargo.lock`'s content hash, run `make integration-current-head-prepare`
-   and `make integration-current-head`, then re-inspect the root
-   `Cargo.lock`.
-2. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
-   revision-log --qsl . --manifest integration/current-head/Cargo.toml
-   --deps-root integration/current-head/.deps` against real network
-   access to the three backend repositories' default branches.
-3. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
-   check-incompatible-fixture --manifest
-   integration/current-head/fixtures/incompatible/Cargo.toml`.
-4. Read `integration/current-head/README.md`.
+**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Expected Results
 
-- Step 1: the lane's manifest(s) are not listed in the root `[workspace]`
-  `members`; the root `Cargo.lock`'s content hash is identical before and
-  after both `make` invocations.
-- Step 2: the revision log names exactly four lines, one per repository (QSL,
-  quire-contract-ir, quire-contract-runtime, quire-contract-codegen), each
-  with a real resolved commit hash.
-- Step 3: the subcommand exits successfully (it detected the expected
-  failure) and prints the stable `FR-058-AC-3` marker line naming the
-  incompatible dependency; the underlying `cargo build` of the fixture itself
-  fails to compile with unresolved-import errors, not a patch-resolution
-  error.
-- Step 4: the README names an owner (whoever owns ADR-011 T-12, tracked under
-  #215 and successors), a bisection/escalation procedure for a failing run,
-  and the exact local invocation commands used in steps 1-3.
+**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Status
 
