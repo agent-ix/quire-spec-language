@@ -47,3 +47,4 @@ testable.
 | --- | --- | --- |
 | FND-001 | fixed | 17b7269c |
 | FND-002 | still-open | New this round: AC-6 and TC-156 step 6 require the run to show or fail on the QSL → IR edge; arch-lint direction prints only violations and passes when both reports are empty. |
+| FND-002 | fixed | 5ce6f07e |
