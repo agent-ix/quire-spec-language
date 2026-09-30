@@ -109,6 +109,17 @@ pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
 };
 
+// FR-122: the state-clause counterexample's replay entry, payload and
+// result, and the FR-106 observation types a payload is built from and a
+// refusal names, re-exported so CG can name and build them through this
+// crate (ADR-011 FB-05).
+pub use execute::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
+pub use qsl_forms::StateClauseKind;
+pub use qsl_semantics::model::observation::{
+    AnchorKind, ClauseSelectionInput, ObservationForm, SelectedAnchor, SnapshotValue,
+};
+pub use witness::StateClauseCounterexample;
+
 #[cfg(test)]
 mod redaction_tests {
     use ix_trace_rs::trace;

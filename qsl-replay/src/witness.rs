@@ -417,6 +417,11 @@ impl FamilyPayload for NoPayload {}
 mod frame;
 pub use frame::{ClaimedChange, FrameCounterexample, FrameOperation};
 
+// FR-122: the state-clause family's own payload, a state-clause
+// counterexample.
+mod state_clause;
+pub use state_clause::StateClauseCounterexample;
+
 /// FR-070/ADR-013 O-25: the typed counterexample/witness envelope, generic
 /// over its family-owned payload `P` (the extension point FR-070-AC-5
 /// requires). Every field below is one of ADR-013 O-25's own listed

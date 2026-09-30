@@ -452,14 +452,42 @@ pub struct ClauseRunReport {
 /// `Invocation`'s invocation, or `Function`'s current snapshot.
 fn selection_documents(selection: &ClauseRunSelection) -> Vec<DocumentRef> {
     match selection {
-        ClauseRunSelection::Clause(clause) => match &clause.input {
-            ClauseSelectionInput::Current { snapshot, .. }
-            | ClauseSelectionInput::PreCall { snapshot, .. } => vec![snapshot.clone()],
-            ClauseSelectionInput::Invocation { invocation } => vec![invocation.clone()],
-        },
+        ClauseRunSelection::Clause(clause) => vec![clause_input_document(&clause.input).clone()],
         ClauseRunSelection::Function { snapshot, .. } => vec![snapshot.clone()],
         ClauseRunSelection::Frame { invocation, .. } => vec![invocation.clone()],
     }
+}
+
+/// The one document a clause selection input names.
+fn clause_input_document(input: &ClauseSelectionInput) -> &DocumentRef {
+    match input {
+        ClauseSelectionInput::Current { snapshot, .. }
+        | ClauseSelectionInput::PreCall { snapshot, .. } => snapshot,
+        ClauseSelectionInput::Invocation { invocation } => invocation,
+    }
+}
+
+/// Every document admission read for `input`, in FR-106 check 1's read
+/// order: the current or pre-call snapshot, or the invocation and then its
+/// pre and post snapshots.
+fn admitted_documents(
+    input: &ClauseSelectionInput,
+    observations: &AdmittedObservations,
+) -> Vec<DocumentRef> {
+    let invocation = match input {
+        ClauseSelectionInput::Invocation { invocation } => Some(invocation),
+        ClauseSelectionInput::Current { .. } | ClauseSelectionInput::PreCall { .. } => None,
+    };
+    invocation
+        .into_iter()
+        .cloned()
+        .chain(
+            [&observations.current, &observations.pre, &observations.post]
+                .into_iter()
+                .flatten()
+                .map(|observation| observation.identity.clone()),
+        )
+        .collect()
 }
 
 impl ClauseRunReport {
@@ -656,113 +684,33 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     sources.extend(compiled.libraries.iter().cloned());
 
     match request.selection {
-        ClauseRunSelection::Clause(selection) => {
-            let Some(clause) = package.graph().state_clause(&selection.name) else {
-                return Ok(report(
-                    Some(package_id),
-                    ClauseDisposition::MissingName {
-                        name: selection.name,
-                    },
-                    model_selections,
-                    Vec::new(),
-                ));
-            };
-            let provisions = Provisions {
-                snapshots: &request.snapshots,
-                invocations: &request.invocations,
-            };
-            let observations = match admit_clause_observations(
-                package.graph(),
-                clause,
-                &request.packages,
-                request.model_limits,
-                &provisions,
-                &selection,
-                request.observation_limits,
-            ) {
-                Ok(observations) => observations,
-                Err(failure) => {
-                    return Ok(report(
-                        Some(package_id),
-                        ClauseDisposition::Admit(failure),
-                        model_selections,
-                        selection_documents.clone(),
-                    ))
-                }
-            };
-            // FR-109 Outputs' provenance is "the identity and digest of
-            // every snapshot and invocation admission read" -- for a
-            // precondition/postcondition, that is the invocation plus its
-            // pre and/or post snapshot, in the read order FR-106 check 1
-            // itself states ("the invocation and then its pre and post
-            // snapshots"), not merely the one document the selection named
-            // (SR-751 FND-002 round 2).
-            let mut admitted_documents = selection_documents.clone();
-            if let Some(pre) = &observations.pre {
-                admitted_documents.push(pre.identity.clone());
-            }
-            if let Some(post) = &observations.post {
-                admitted_documents.push(post.identity.clone());
-            }
-            use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-            let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
-                return Ok(report(
-                    Some(package_id),
-                    ClauseDisposition::MissingName {
-                        name: selection.name,
-                    },
-                    model_selections,
-                    selection_documents.clone(),
-                ));
-            };
-            let mut meter = Meter::new(request.accounting);
-            let disposition = match package.evaluate_clause(&qualified, &observations, &mut meter) {
-                Ok(evaluation) => match convert_outcome(evaluation, package.graph(), &sources) {
-                    Ok(outcome) => ClauseDisposition::Evaluate(outcome),
-                    Err(refusal) => match *refusal {
-                        RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-                        other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-                    },
+        ClauseRunSelection::Clause(ref selection) => {
+            let run = CompiledRun {
+                packages: &request.packages,
+                model_limits: request.model_limits,
+                provisions: Provisions {
+                    snapshots: &request.snapshots,
+                    invocations: &request.invocations,
                 },
-                Err(qsl_eval::value::CallFailure::Input(input)) => {
-                    use qsl_eval::value::InputRefusal;
-                    match input {
-                        InputRefusal::UnknownClause(name) => {
-                            ClauseDisposition::MissingName { name }
-                        }
-                        // Unreachable in this flow: this module resolves the
-                        // named clause once (above) and admits `observations`
-                        // against that same clause's identity, so
-                        // `evaluate_clause`'s own name/identity checks can
-                        // never disagree with it. Treated as a broken
-                        // invariant rather than a document defect, never a
-                        // wildcard arm (FR-090).
-                        InputRefusal::ObservationsMismatch => ClauseDisposition::EvaluateFault(
-                            InternalFault::new("call", "clause-observations-mismatch"),
-                        ),
-                        InputRefusal::UnknownFunction(_)
-                        | InputRefusal::Arity { .. }
-                        | InputRefusal::WrongValueKind { .. }
-                        | InputRefusal::DanglingReference { .. } => {
-                            ClauseDisposition::EvaluateFault(InternalFault::new(
-                                "call",
-                                "evaluate-clause-supplies-no-function-style-input",
-                            ))
-                        }
-                    }
-                }
-                Err(qsl_eval::value::CallFailure::Fault(fault)) => {
-                    ClauseDisposition::EvaluateFault(fault)
-                }
-            };
-            let mut result = report(
-                Some(package_id),
-                disposition,
+                observation_limits: request.observation_limits,
+                accounting: request.accounting,
+                package,
+                package_id,
+                unit: &unit_provenance,
+                sources: &sources,
                 model_selections,
-                admitted_documents,
-            );
-            result.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
-            Ok(result)
+                selection: request.selection.clone(),
+            };
+            let Some(clause) = package.graph().state_clause(&selection.name) else {
+                return Ok(run.report(
+                    ClauseDisposition::MissingName {
+                        name: selection.name.clone(),
+                    },
+                    Vec::new(),
+                    None,
+                ));
+            };
+            Ok(check_clause(&run, clause, selection))
         }
         ClauseRunSelection::Function {
             ref name,
@@ -789,7 +737,7 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
             ref operation,
             ref invocation,
         } => Ok(run_frame(
-            &FrameRun {
+            &CompiledRun {
                 packages: &request.packages,
                 model_limits: request.model_limits,
                 provisions: Provisions {
@@ -811,11 +759,11 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     }
 }
 
-/// What an FR-115 frame run reads besides the operation and invocation:
-/// [`run_clause`]'s `Frame` arm builds it from its request, and FR-116's
-/// frame replay (`crate::execute`) from its recompiled package and byte
-/// provision.
-pub(crate) struct FrameRun<'a> {
+/// What a clause run or an FR-115 frame run reads besides its selection:
+/// [`run_clause`] builds it from its request, and FR-116's frame replay and
+/// FR-122's state-clause replay (`crate::execute`) from the recompiled
+/// package and byte provision.
+pub(crate) struct CompiledRun<'a> {
     /// FR-056's package input.
     pub(crate) packages: &'a BTreeMap<[u8; 32], Vec<u8>>,
     /// The limits admission re-normalizes the domain packages under.
@@ -840,7 +788,7 @@ pub(crate) struct FrameRun<'a> {
     pub(crate) selection: ClauseRunSelection,
 }
 
-impl FrameRun<'_> {
+impl CompiledRun<'_> {
     fn report(
         &self,
         disposition: ClauseDisposition,
@@ -864,11 +812,88 @@ impl FrameRun<'_> {
     }
 }
 
+/// FR-109's clause run over a resolved state clause: admit `selection` for
+/// `clause` by FR-106, then evaluate the clause once through S6a (FR-107)
+/// under a fresh meter built from `run.accounting`. `clause` is
+/// `run.package`'s own state clause of `selection.name`. FR-122's replay
+/// (`crate::execute`) runs this same evaluation.
+pub(crate) fn check_clause(
+    run: &CompiledRun<'_>,
+    clause: &CheckedStateClause,
+    selection: &ClauseSelection,
+) -> ClauseRunReport {
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal, QualifiedName};
+
+    let graph = run.package.graph();
+    let observations = match admit_clause_observations(
+        graph,
+        clause,
+        run.packages,
+        run.model_limits,
+        &run.provisions,
+        selection,
+        run.observation_limits,
+    ) {
+        Ok(observations) => observations,
+        Err(failure) => {
+            return run.report(
+                ClauseDisposition::Admit(failure),
+                vec![clause_input_document(&selection.input).clone()],
+                None,
+            )
+        }
+    };
+    let documents = admitted_documents(&selection.input, &observations);
+    let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
+        return run.report(
+            ClauseDisposition::MissingName {
+                name: selection.name.clone(),
+            },
+            documents,
+            None,
+        );
+    };
+    let mut meter = Meter::new(run.accounting);
+    let disposition = match run
+        .package
+        .evaluate_clause(&qualified, &observations, &mut meter)
+    {
+        Ok(evaluation) => match convert_outcome(evaluation, graph, run.sources) {
+            Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+            Err(refusal) => match *refusal {
+                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+            },
+        },
+        Err(CallFailure::Input(input)) => match input {
+            InputRefusal::UnknownClause(name) => ClauseDisposition::MissingName { name },
+            // Unreachable in this flow: `clause` was resolved by name and
+            // `observations` admitted against that same clause's identity,
+            // so `evaluate_clause`'s own name/identity checks can never
+            // disagree with it. A broken invariant rather than a document
+            // defect, never a wildcard arm (FR-090).
+            InputRefusal::ObservationsMismatch => ClauseDisposition::EvaluateFault(
+                InternalFault::new("call", "clause-observations-mismatch"),
+            ),
+            InputRefusal::UnknownFunction(_)
+            | InputRefusal::Arity { .. }
+            | InputRefusal::WrongValueKind { .. }
+            | InputRefusal::DanglingReference { .. } => ClauseDisposition::EvaluateFault(
+                InternalFault::new("call", "evaluate-clause-supplies-no-function-style-input"),
+            ),
+        },
+        Err(CallFailure::Fault(fault)) => ClauseDisposition::EvaluateFault(fault),
+    };
+    let mut report = run.report(disposition, documents, None);
+    report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
+    report
+}
+
 /// FR-115: resolve `operation` to its frame, admit `invocation` by FR-106's
 /// checks 1 and 3 to 10, and check it against the frame through the
 /// `ProtocolClause` S6a `evaluate` arm (FR-106's check 11).
 fn run_frame(
-    run: &FrameRun<'_>,
+    run: &CompiledRun<'_>,
     operation: &OperationName,
     invocation: &DocumentRef,
 ) -> ClauseRunReport {
@@ -906,7 +931,7 @@ pub(crate) fn resolve_frame<'g>(
 /// `ProtocolClause` S6a `evaluate` arm (FR-106's check 11). `context` and
 /// `operation_frame` are [`resolve_frame`]'s answer over `run.package`.
 pub(crate) fn check_frame(
-    run: &FrameRun<'_>,
+    run: &CompiledRun<'_>,
     context: quire_exact::EffectiveId,
     operation_frame: &qsl_semantics::check::CheckedOperationFrame,
     invocation: &DocumentRef,

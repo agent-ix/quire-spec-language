@@ -35,7 +35,7 @@ use crate::result::{
 };
 use crate::spine::{
     check_frame, resolve_frame, CallOutcome, CallValue, ClauseDisposition, ClauseRunSelection,
-    FrameRun, OperationName, UnitProvenance,
+    CompiledRun, OperationName, UnitProvenance,
 };
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
@@ -241,7 +241,7 @@ pub fn replay_frame(
     let mut sources = Vec::with_capacity(1 + compiled.libraries.len());
     sources.push(compiled.source.clone());
     sources.extend(compiled.libraries.iter().cloned());
-    let run = FrameRun {
+    let run = CompiledRun {
         packages: &packages,
         model_limits: ModelNormalizationLimits::default(),
         provisions: Provisions {
