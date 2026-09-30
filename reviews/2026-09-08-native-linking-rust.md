@@ -110,10 +110,7 @@ git diff --check
 exit 0
 ```
 
-[Actual logs](data/native-linking/formalization-a-link-all-tests.txt) and sibling
-files retain default/private tests, Clippy, rustdoc, build and coverage output.
-The rights snapshot has 138 packages including this crate, all with declared
-licenses. IR remains MIT OR Apache-2.0; new source is AGPL-3.0-only; ICU and
+IR remains MIT OR Apache-2.0; new source is AGPL-3.0-only; ICU and
 other dependency grants remain intact. No deny.toml exists and no cargo-deny
 or vulnerability-scan result is claimed. Hosted credential setup is unqualified.
 
@@ -136,7 +133,6 @@ The existing signed-domain requirement was preserved, not relaxed.
 Reviewed the corrected qualification: PASS. The real IR integer constructor
 now selects Signed, minimum 0, maximum 1000, reject overflow. The complete 48-test
 default suite passes again, including all ten linker tests; formatting and strict
-Clippy pass. [Final signed-fixture output](data/native-linking/formalization-a-link-signed-tests.txt)
-and its sibling Clippy log retain those observations. Production source and the
+Clippy pass. Production source and the
 dependency lock are unchanged from the reviewed implementation, so its successful private-audit,
 rustdoc and separate-build observations remain applicable to that same source.

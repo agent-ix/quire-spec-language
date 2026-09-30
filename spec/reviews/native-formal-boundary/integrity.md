@@ -32,7 +32,7 @@ The generic BoundedCounter formal test model is distinct from the retained Confi
 
 ## Provenance
 
-Applied installed QUOIN 0.20.0 specify/spec-matrix/spec-review and this analysis
-skill, using the actual authoring pack from Quoin 0.23.1. The retained review set
+Applied installed QUOIN specify/spec-matrix/spec-review and this analysis
+skill, using the actual authoring pack from Quoin. The retained review set
 is all; C's separate base-only review does not reduce A's set. No subagent or
-optional semantic gap comparison was run. Tool records are in data/.
+optional semantic gap comparison was run.

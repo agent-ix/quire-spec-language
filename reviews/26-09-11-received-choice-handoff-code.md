@@ -17,8 +17,7 @@ relationships:
 Actual Claude Sonnet code/Rust review of PR61 on PR60, using the repository
 conventions and the actual `code-review` and `rust-review` skills. The reviewer
 inspected the fixture diff, full touched files, enforcing producer interfaces
-and terminal local gate log. Session `317e2ef1-055c-4e3d-8cbe-46559f6f26a5`;
-retained CLI output: `/tmp/quire-received-handoff-sonnet-review.jsonl`.
+and terminal local gate log.
 
 ## Verdict
 

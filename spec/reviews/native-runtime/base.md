@@ -44,9 +44,8 @@ are no selectable semantic fallbacks requiring another option matrix.
 
 ## Automated checks
 
-data/spec-validation-full.txt is the successful scoped structural validation;
-data/spec-validation.txt reports 189/189 grammar-clean documents and zero grammar
-findings. Six existing module/relationship duplicate notices are registry
+Scoped structural validation succeeded and reports 189/189 grammar-clean
+documents and zero grammar findings. Six existing module/relationship duplicate notices are registry
 first-wins messages, not duplicate IDs introduced by this packet. Coverage
 reports 113 existing bound Rust test symbols, no status lies and no untracked
 symbols; none is offered as execution of these 23 new cases.
@@ -72,5 +71,4 @@ construction. The corrected cases use the public input constructors and existing
 IR identities, as FR-018 already requires. All seven AC mappings, three case
 procedures, expected results and six coverage-rule dispositions remain intact.
 No ID, relationship, interface or acceptance result changed. Scoped strict
-validation records 204/204 grammar-clean documents and no grammar findings in
-reviews/data/native-runtime/input-setup-validation.txt. PASS for the correction.
+validation records 204/204 grammar-clean documents and no grammar findings. PASS for the correction.

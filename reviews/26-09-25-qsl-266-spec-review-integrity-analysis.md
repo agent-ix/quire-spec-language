@@ -58,7 +58,7 @@ What conflicts:
 
 ## Dispositions
 
-Disposition pass ("QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ New in this pass: FND-007 (medium), FND-008 (medium) and FND-009 (low), recorded
 
 ## Dispositions (second pass)
 
-Second disposition pass ("QSL-266 spec: address spec review disposition pass"). It covers the findings the first pass left open. Each outcome was re-checked against the spec at that head.
+Second disposition pass. It covers the findings the first pass left open. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ New in this pass: FND-010 (low), recorded in `## Findings` above. It has no outc
 
 ## Dispositions (third pass)
 
-Third disposition pass ("QSL-266 spec: bounded_item takes the originating occurrence key; one follow-up per record (SR-638 FND-010)"). It covers FND-010 only, re-checked against the spec at that head.
+Third disposition pass. It covers FND-010 only, re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ New in this pass: FND-011 (low), recorded in `## Findings` above. It has no outc
 
 ## Dispositions (fourth pass)
 
-Fourth disposition pass ("QSL-266 spec: move the one-follow-up driver rule out of FR-075-AC-8 (SR-638 FND-011)"). It covers FND-011 only, re-checked against the spec at that head.
+Fourth disposition pass. It covers FND-011 only, re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

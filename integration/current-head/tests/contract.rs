@@ -98,9 +98,7 @@ fn quire_contract_codegen_bound_coverage_schema_is_valid_draft202012_at_head() {
 
 /// Returns the text of one `[[package]]` stanza (from its `name = "..."`
 /// line up to, but not including, the next stanza or end of file), for
-/// asserting on that one package's fields without a general TOML parser --
-/// the same proportionate parsing `tools/arch-lint/duplicate_revisions.rs`
-/// uses over this same file shape.
+/// asserting on that one package's fields without a general TOML parser.
 fn lockfile_stanza<'a>(lockfile: &'a str, package_name: &str) -> &'a str {
     let marker = format!("name = \"{package_name}\"");
     let start = lockfile

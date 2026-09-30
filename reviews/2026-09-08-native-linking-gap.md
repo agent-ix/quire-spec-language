@@ -29,13 +29,13 @@ not invalidate the qualified FR-005/013 implementation milestone in SR-054.
 | --- | --- | --- | --- |
 | FND-001 | high | Critical Task-006 is still in_progress: retained review and exact private PR delivery are not complete at this revision. | plan/Plan-003-formal-linker/tasks/Task-006-linker-qualification.md |
 | FND-002 | high | TC-025–029 and FR-006's five criteria have no native checker backing. The full matrix cannot be marked complete. | spec/model-linking/tests.md; spec/functional/FR-006-check-defined-expressions.md |
-| FND-003 | medium | Catalog/status extraction diagnostics constrain the global coverage rollup; no evidence is claimed for unmatched or uncatalogued methods. | data/native-linking/formalization-a-link-coverage.json |
+| FND-003 | medium | Catalog/status extraction diagnostics constrain the global coverage rollup; no evidence is claimed for unmatched or uncatalogued methods. | - |
 
 ## Coverage
 
 Used the installed QUOIN gap-analysis skill, including target, plan, matrix,
 reverse-gap and artifact steps. Reconciliation is actual quire coverage --scope .
---json with CLI 0.31.0 and engine 0.46.0, under the active spec-artifacts-process
+--json under the active spec-artifacts-process
 traceability model. No grep fallback or zero-denominator pass is used.
 
 Target: plan/Plan-003-formal-linker; spec root: spec/; matrix: TM-003 at

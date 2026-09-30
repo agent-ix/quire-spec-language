@@ -26,7 +26,7 @@ native API or mark planned integration cases complete.
 
 ## Analysis
 
-Actual quoin advise output matches authored Test for all ten FR-005/006 ACs. Nine receive property-based-testing from property_shapes=universal; ambiguity receives example-based Unit/E2E suggestions. These facts are retained in data/advice.json. Reviewer judgment retains real native/shared-API integration examples and bounded permutation TC-024; it does not claim that a finite example set proves the universal profile. Further discriminating generators belong to the concrete native implementation plan.
+Actual quoin advise output matches authored Test for all ten FR-005/006 ACs. Nine receive property-based-testing from property_shapes=universal; ambiguity receives example-based Unit/E2E suggestions. Reviewer judgment retains real native/shared-API integration examples and bounded permutation TC-024; it does not claim that a finite example set proves the universal profile. Further discriminating generators belong to the concrete native implementation plan.
 
 The first normal advisor attempt failed to identify its child Quire version. Direct quire --version succeeded; the access-enabled retry completed successfully. The failure and retry are distinguished here rather than presented as two successful reviews.
 
@@ -48,7 +48,7 @@ these eight reviews reports 100/100 specification documents grammar-clean.
 
 ## Provenance
 
-Applied installed QUOIN 0.20.0 specify/spec-matrix/spec-review and this analysis
-skill, using the actual authoring pack from Quoin 0.23.1. The retained review set
+Applied installed QUOIN specify/spec-matrix/spec-review and this analysis
+skill, using the actual authoring pack from Quoin. The retained review set
 is all; C's separate base-only review does not reduce A's set. No subagent or
-optional semantic gap comparison was run. Tool records are in data/.
+optional semantic gap comparison was run.

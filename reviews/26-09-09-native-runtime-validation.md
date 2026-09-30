@@ -124,23 +124,20 @@ A completeness flag remains an input assumption, not a deployment guarantee.
 
 ## Actual local gates
 
-The following commands completed successfully for the evaluated source/test
-bytes. Cargo phases were serial, nice 10, locked/offline, one job and one test
-thread, with the existing explicit caches. Evidence is under
-reviews/data/native-runtime/.
+The following commands completed successfully. Cargo phases were serial,
+nice 10, locked/offline, one job and one test thread, with the existing
+explicit caches.
 
-| Command | Result | Evidence |
-| --- | --- | --- |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 166 ordinary tests, including all 35 runtime validation tests, and 1 compile-fail doctest passed; 3 named private tests ignored in this lane | validation-qualified-full-tests.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | validation-final-clippy.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed | validation-qualified-rustdoc.txt |
-| `nice -n 10 cargo fmt --all -- --check` | Passed | validation-qualified-fmt.txt |
-| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using the existing cache | validation-qualified-minimal-build.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private audits passed | validation-qualified-private-audits.txt |
+| Command | Result |
+| --- | --- |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 166 ordinary tests, including all 35 runtime validation tests, and 1 compile-fail doctest passed; 3 named private tests ignored in this lane |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed |
+| `nice -n 10 cargo fmt --all -- --check` | Passed |
+| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using the existing cache |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private audits passed |
 
-The earlier validation-complete-cases.txt is an unsuccessful setup run, not
-the final qualification result. The complete passing 35-test run is included
-in validation-qualified-full-tests.txt. No failed gate was waived.
+No failed gate was waived.
 
 ## Traceability and remaining work
 

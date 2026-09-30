@@ -409,8 +409,7 @@ private sibling repository. Audit intake bounds files to 8 MiB, aggregate reads
 to 64 MiB, files/decoded values to 10,000, and JSON nesting to 64 values; it refuses
 escaped duplicate keys, invalid fields, foreign paths and exhausted budgets.
 Fixture trees must stay immutable during a run. See the
-[audit error catalog](docs/audit-error-codes.md) and
-[remediation evidence](docs/rust-verification-remediation.md).
+[audit error catalog](docs/audit-error-codes.md).
 
 New tests use the shared `ix_trace_rs::trace` macro with canonical attributes
 such as `#[trace("TC-006", "FR-012-AC-6")]`. Quire's declared grammar binds the

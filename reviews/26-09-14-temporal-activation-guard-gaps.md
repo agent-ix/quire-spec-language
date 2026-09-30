@@ -28,7 +28,7 @@ reverse-trace gap remains.
 
 ## Coverage
 
-Quire 0.32.0 reports no targeted unbacked row, status lie, no-symbol row or
+Quire reports no targeted unbacked row, status lie, no-symbol row or
 unmatched trace for FR-051-AC-6 or TC-139. Repository-wide coverage remains
 489/504 because of inherited work outside QSL #98; it does not obscure the
 targeted binding.

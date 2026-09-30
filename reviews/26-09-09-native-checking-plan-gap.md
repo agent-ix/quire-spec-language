@@ -31,8 +31,7 @@ The full runtime/backend/Quire assignment remains incomplete.
 
 ## Target and completion evidence
 
-Applied the installed QUOIN gap-analysis skill at
-/home/peter/.codex/plugins/cache/quoin/quoin/0.22.5/skills/gap-analysis/SKILL.md.
+Applied the installed QUOIN gap-analysis skill.
 The target is the repository's Plan-005 bundle, spec/spec.md identifies
 agent-ix/quire-spec-language, and spec/model-linking/tests.md owns TM-003.
 Production/tests were reviewed; a later commit adds SR-086 and the actual task log. This report and final completion
@@ -55,9 +54,7 @@ execution, extra agent, external semantic reviewer, Loom run or fuzz result.
 ## Coverage
 
 Reconciliation: actual `quire coverage --scope
-/home/peter/dev/worktrees/formalization-a-language --json`, using Quire 0.31.0
-(engine 0.46.0). Evidence is
-reviews/data/native-checking/checker-coverage.json; no grep fallback was used.
+/home/peter/dev/worktrees/formalization-a-language --json`; no grep fallback was used.
 
 - TM-003: 35/35 backed cases. All have actual execution evidence, including
   the thirteen formerly planned checker cases.
@@ -122,8 +119,7 @@ lint, test assertion or manual-only CI policy was weakened.
 
 ## Validation and claim boundary
 
-Explicit-root Quire spec/plan/review validation passes; command results are under
-reviews/data/native-checking/. SR-086 records the successful required README,
+Explicit-root Quire spec/plan/review validation passes. SR-086 records the successful required README,
 strict Rust and private audit gates for the unchanged source. Final completion
 metadata and this report are validated before commit/publication.
 

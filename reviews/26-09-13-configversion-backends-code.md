@@ -67,7 +67,7 @@ actionable low Rust finding remains.
 | Full all-target/all-feature suite before review fixes | pass; review fixes were then covered by the full minimal suite and focused all-feature tests |
 | Strict Clippy, all targets, minimal features | pass with `-D warnings` |
 | Strict Clippy, all targets, all features | pass with `-D warnings` |
-| Changed specification and review documents | pass with Quire 0.31.0 |
+| Changed specification and review documents | pass with Quire |
 
 All Cargo invocations used `--target-dir target-codex-backends`. No hosted
 workflow was dispatched, `publish = false` is asserted, `.github` is unchanged,

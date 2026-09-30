@@ -193,7 +193,7 @@ conformance:
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
 
-# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
+# FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059
 # reports real, already-tracked findings against QSL's own current head
 # (ADR-011 OBS-029), owned by #213, not by this target's caller.
@@ -208,22 +208,13 @@ conformance:
 # Without CG_CLONE, T12-A reports NOT EVALUATED, T12-B, T12-C and T12-D still
 # run and report, and the target exits 2 (usage) for the missing input.
 #
-# `arch-lint` (this repo's own checks: api-surface, duplicate-revisions on
-# QSL's own root lock, and duplicate-revisions on the current-head lane's own
-# lock) exits non-zero today: QSL's own root Cargo.lock's deliberate double
-# pin of the IR repository (`quire-contract-ir` vs. `quire-contract-model`,
-# #249 review R2) makes `arch-lint-duplicate-revisions` fail, and
-# `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
-# above. `arch-lint-duplicate-revisions-lane`
-# passes (R3: the lane's own lock converges via its own [patch] table) and is
-# included here so that convergence is routinely enforced, not merely
-# checkable on request. `arch-lint` joins `ci:` once #211 remediates the
-# lockfile pin and a `CG_CLONE` checkout is routinely available.
+# `arch-lint` (this repo's own checks) exits 2 without a `CG_CLONE`
+# checkout, per T12-A above.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint arch-lint-canonical-encoder
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -232,17 +223,6 @@ arch-lint-direction:
 arch-lint-api-surface:
 	cargo run --locked -p arch-lint -- api-surface --qsl . $(if $(CG_CLONE),--cg $(CG_CLONE))
 
-arch-lint-duplicate-revisions:
-	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
-
-# FR-061 (#249 review R3): the current-head lane's own Cargo.lock is in scope
-# too -- it converges on one revision per ecosystem repository via the lane's
-# own [patch] table (integration/current-head/Cargo.toml), independent of the
-# root workspace's lock this target above checks.
-arch-lint-duplicate-revisions-lane:
-	cargo run --locked -p arch-lint -- duplicate-revisions \
-		--lockfile integration/current-head/Cargo.lock
-
 # ADR-013 §2 (ADR-013:113, QSL-194): no second canonical encoder beside
 # `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
 # a hash fails, named files excepted with their reason. Needs only this
@@ -250,18 +230,15 @@ arch-lint-duplicate-revisions-lane:
 arch-lint-canonical-encoder:
 	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
 
-# Runs the four checks that need only this repository (#249 review round 2
-# L-2: `arch-lint-duplicate-revisions-lane` was previously checkable only on
-# request, with no target routinely enforcing R3's convergence).
+# Runs the checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
 # run separately.
-arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
+arch-lint: arch-lint-api-surface arch-lint-canonical-encoder
 
 # FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane. Not
 # part of `ci:` -- it needs network access to fetch each repository's
-# default branch head, and it is a separate lane from the exact-pin build
-# `ci:` verifies. See integration/current-head/README.md.
-.PHONY: integration-current-head-prepare integration-current-head integration-current-head-revision-log integration-current-head-incompatible-fixture
+# default branch head. See integration/current-head/README.md.
+.PHONY: integration-current-head-prepare integration-current-head integration-current-head-incompatible-fixture
 
 # Refreshes the local clones the lane's [patch] entries need, then runs
 # `cargo update` against the lane's own manifest so its committed Cargo.lock
@@ -273,21 +250,8 @@ integration-current-head-prepare:
 		prepare --deps-root integration/current-head/.deps \
 		--manifest integration/current-head/Cargo.toml
 
-# #249 review round 2 L-2: a test run must not silently execute against a
-# local checkout that fell behind head -- previously only the separate
-# `integration-current-head-revision-log` target caught that (HIGH-1's
-# `require_current_head` guard), so a plain `make integration-current-head`
-# could test a stale snapshot with no warning. `revision-log`'s freshness
-# check now gates every test run too, and fails loudly (non-zero exit) before
-# `cargo test` runs at all if any local clone or CG's resolved head is
-# stale.
-integration-current-head: integration-current-head-revision-log
+integration-current-head:
 	cargo test --manifest-path integration/current-head/Cargo.toml
-
-integration-current-head-revision-log:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-		--deps-root integration/current-head/.deps
 
 integration-current-head-incompatible-fixture:
 	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \

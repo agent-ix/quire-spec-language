@@ -55,8 +55,7 @@ closure, frame and graph evaluation contracts remain qualified separately.
 
 Re-reviewed the specification using this
 installed QUOIN lens, superseding the initial review's header-only positive
-fixture assumption. The original PASS and its missed precondition
-remain visible. Escape cause: wrong-requirement.
+fixture assumption. Escape cause: wrong-requirement.
 
 The real parser still runs before successful rebind. Header-only and import-only sources are adverse inputs; no unchecked constructor or alternate grammar bypass is introduced.
 
@@ -64,14 +63,14 @@ Task-016 began under the original completed review gate. Its initial API-red
 run is followed by a first implementation run with one passing nonempty case
 and three parser setup failures. Further implementation paused for this
 specification correction and all-eight re-review; no parser behavior was
-relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+relaxed.
 No claim of executed full package, schema or canonical-vector qualification is
 made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 
 PASS for planning and implementing this producer/reader slice. Agent A applied
-the installed QUOIN 0.22.5 skills serially under the owner's existing all-review
+the installed QUOIN skills serially under the owner's existing all-review
 selection; no required AssuranceProfile applies. This is the author's recorded
 review, not independent B/C acceptance. All package cases remain planned.
 Changes to the reviewed requirements or interface reopen specify/spec-review.

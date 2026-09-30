@@ -3,7 +3,7 @@ id: SR-739
 title: "PR 490 kernel refusal records gap analysis"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@985e0d016fa50ef1da5dadff950941ccc7823e86; FR-096-AC-8; FR-096-AC-13; FR-096-AC-14; FR-100-AC-9; FR-100-AC-10; TC-428; TC-500; TC-452; quire-exact/src/outcome.rs; qsl-foundation/tests/kernel_refusal_record.rs; qsl-eval/src/value/expression/evaluate.rs; qsl-eval/tests/it/collection_queries.rs; qsl-replay/src/spine/call.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs"
+scope: "agent-ix/quire-spec-language; FR-096-AC-8; FR-096-AC-13; FR-096-AC-14; FR-100-AC-9; FR-100-AC-10; TC-428; TC-500; TC-452; quire-exact/src/outcome.rs; qsl-foundation/tests/kernel_refusal_record.rs; qsl-eval/src/value/expression/evaluate.rs; qsl-eval/tests/it/collection_queries.rs; qsl-replay/src/spine/call.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#490 at 985e0d01.
+Ticket: QSL-245. PR: quire-spec-language#490.
 This maps each AC to its tests and measures how strong each oracle is. The mutation checks ran in a detached scratch worktree with its own `CARGO_TARGET_DIR`, which was deleted afterwards.
 
 AC to test:
@@ -48,10 +48,10 @@ The empty-sum path can be reached. A scratch test ran `sum<Int[1, 3]>(x in q: x)
 
 ## Dispositions
 
-Round 1, re-checked at 94e49221.
+Round 1, re-checked after the fix.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 54633014: `tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node` checks `sum<Positive = Int[1, 3]>` over an empty `Sequence<Int[1, 3]>[0, 2]` under `CheckMode::Kernel`: `SumOutOfDomain` at the `sum` node, with no arithmetic and no retain charge. Disabling the empty-sum check now makes it fail. |
-| FND-002 | fixed | 54633014: the replay loop and the CLI test each list five reasons, including `sum-out-of-domain`. The CLI test feeds the string in directly, so it checks rendering only; the replay test checks the mapping. |
-| FND-003 | fixed | 54633014: `coerce_and_count_refusals_carry_the_declared_domain` builds the record from a real S6a `Evaluation` through `refusal_record(package.graph())`: `integer_out_of_domain`/`outside-domain`, `expected` `Int[0, 3]`. |
+| FND-001 | fixed | `tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node` checks `sum<Positive = Int[1, 3]>` over an empty `Sequence<Int[1, 3]>[0, 2]` under `CheckMode::Kernel`: `SumOutOfDomain` at the `sum` node, with no arithmetic and no retain charge. Disabling the empty-sum check now makes it fail. |
+| FND-002 | fixed | the replay loop and the CLI test each list five reasons, including `sum-out-of-domain`. The CLI test feeds the string in directly, so it checks rendering only; the replay test checks the mapping. |
+| FND-003 | fixed | `coerce_and_count_refusals_carry_the_declared_domain` builds the record from a real S6a `Evaluation` through `refusal_record(package.graph())`: `integer_out_of_domain`/`outside-domain`, `expected` `Int[0, 3]`. |

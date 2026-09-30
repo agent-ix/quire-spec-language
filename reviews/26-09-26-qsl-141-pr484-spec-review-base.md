@@ -50,14 +50,14 @@ Partial.
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-3a4b2496 (SR-708 dispositions).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-001 | fixed | |
+| FND-001 | fixed | - |
 | FND-002 | still-open | Step 3 now has a test, but neither new test can fail on the two ways a CST edge actually gets in. The re-export scan reads the wrong crate, and the step-3 scan skips `use` trees. Both were proved by mutation. Details in SR-712 FND-001 and FND-002. TC-402 should stay Partial until they are fixed. |
 | FND-003 | fixed | (with a low follow-up in SR-712 FND-003) |
-| FND-004 | fixed | |
+| FND-004 | fixed | - |
 
 +++ [reviewer data]
 
@@ -130,7 +130,7 @@ dispositions:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-f16a8ec6 (SR-708 round 2).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-708 pr=quire-spec-language#484 date=2026-09-26 -->
 
 Second disposition pass. This updates FND-002 only. FND-001, FND-003 and FND-004 stay fixed, as recorded in the earlier SR-708 dispositions comment.
 

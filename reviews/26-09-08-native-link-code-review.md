@@ -91,25 +91,23 @@ partial tests, and the checking API remains planned rather than a passing stub.
 
 Every final command below exited 0. All Cargo phases ran sequentially, offline
 and locked, at nice 10 with one job and one test thread, reusing the existing
-target and target/clean caches. Logs are under reviews/data/native-checking/;
-terminal blank lines may be removed for repository whitespace conformance.
+target and target/clean caches.
 
-| Command | Result | Log |
-| --- | --- | --- |
-| `nice -n 10 cargo fmt --all -- --check` | Passed | native-link-fmt.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 69 passed; 3 named private cases ignored | native-link-tests.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private cases passed | native-link-private-audits.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | native-link-clippy.txt |
-| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using the existing cache | native-link-minimal-build.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | native-link-rustdoc.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed | native-link-audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 byte digests passed | native-link-audit-model-bytes.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | native-link-cli-parse.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | native-link-cli-format.txt |
+| Command | Result |
+| --- | --- |
+| `nice -n 10 cargo fmt --all -- --check` | Passed |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 69 passed; 3 named private cases ignored |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private cases passed |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
+| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using the existing cache |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 byte digests passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted |
 
 Quire spec, plan and review validation passed with the six existing registry
-duplicate notices retained in native-link-*-validation.txt. The recorded
-native-link-coverage.json binds all 72 Rust test symbols, with no status lies
+duplicate notices. Coverage binds all 72 Rust test symbols, with no status lies
 or untracked symbols. TM-003 has tags for 22/35 cases; only 17 cases are fully
 qualified, while five model cases have partial evidence. FR-015's 6/6 tagged
 criteria therefore do not establish full qualification. The 18 existing

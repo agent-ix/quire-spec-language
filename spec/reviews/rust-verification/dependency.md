@@ -38,9 +38,8 @@ The owner's existing selection is base plus all seven Quoin analyses; the
 optional gap-analysis semantic comparison remains declined. Agent A performed
 the analyses sequentially under the assignment's no-extra-agents rule.
 
-The installed Quoin 0.20.0 specify/spec-review skills and catalog packs were
-used. Quoin 0.23.1, Quire CLI 0.31.0 / engine 0.46.0 and the same manifests as
-the [baseline review](../base.md) apply. The new authoring pack resolved org
+The installed Quoin specify/spec-review skills and catalog packs were
+used. The new authoring pack resolved org
 agent-ix from this Git remote. The original 35 scoped documents, including
 baseline reviews, were grammar-clean after this specification change. The six
 known installed registry errors remain external and are not an error-free

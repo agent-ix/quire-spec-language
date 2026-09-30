@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Base checklist rerun over correction source `56c1621`, which changes FR-042
+Base checklist rerun over the correction source, which changes FR-042
 Inputs, TC-121 steps 1 and 10, and the TC-121 matrix rows. No
 `type: AssuranceProfile` document exists in the local specification scope, so no
 `review_selection` is enforced and the owner's selection stands: base set,

@@ -38,11 +38,10 @@ All changed requirements have explicit input/output boundaries and negative outc
 
 ## Provenance and validation
 
-Used the installed Quoin 0.20.0 specify/spec-review and the actual catalog
+Used the installed Quoin specify/spec-review and the actual catalog
 skeletons/schema pack (org agent-ix). The owner retained the full review set
 and declined the optional semantic gap comparison. No additional agent was
-spawned. Native runtime source remains unchanged at this reviewed revision.
-The source merge reconciles only upstream owner-policy documentation.
+spawned.
 74/74 requirement/TC/plan documents were grammar-clean before these eight reports;
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain

@@ -45,7 +45,7 @@ No implementation, requirement, test or matrix was changed by either audit.
 
 ## Coverage
 
-Applied QUOIN 0.22.5 gap-analysis and its target, plan, matrix, reverse-gap and
+Applied QUOIN gap-analysis and its target, plan, matrix, reverse-gap and
 SpecReview procedures. This audit changed only this review artifact. Target:
 Plan-006; spec root: spec/; matrix: spec/native-runtime/tests.md (TM-004);
 identity prefix: ix://agent-ix/quire-spec-language; source: src/runtime.rs and
@@ -55,7 +55,7 @@ Optional semantic comparison was skipped under the owner's existing choice.
 
 Reconciliation: actual `quire coverage --scope
 /home/peter/dev/worktrees/formalization-a-language --json`, without --strict,
-using Quire 0.31.0. This meets the >=0.16 split-root contract;
+using Quire's split-root contract;
 no grep fallback was used. All four Task documents were inspected. Tasks done:
 4/4; the dependency chain is satisfied in order, including completed Task-009
 in Plan-005. IT-006 is checked and qualified;

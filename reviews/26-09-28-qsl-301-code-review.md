@@ -3,7 +3,7 @@ id: SR-776
 title: "QSL-301 code review of PR 514 (FR-116 FrameCounterexample payload and native frame replay)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@611da08ee299621e328b0fd56f9f70d9c896dd79; qsl-replay/src/execute.rs; qsl-replay/src/execute/frame.rs; qsl-replay/src/lib.rs; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/witness.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/result.rs (read, unchanged); qsl-replay/src/request.rs (read, unchanged); qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/model/observation.rs (read, unchanged); spec/functional/FR-116-replay-a-frame-counterexample.md; spec/spec.md; spec/tests.md"
+scope: "agent-ix/quire-spec-language; qsl-replay/src/execute.rs; qsl-replay/src/execute/frame.rs; qsl-replay/src/lib.rs; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/witness.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/result.rs (read, unchanged); qsl-replay/src/request.rs (read, unchanged); qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/model/observation.rs (read, unchanged); spec/functional/FR-116-replay-a-frame-counterexample.md; spec/spec.md; spec/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-116
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-301. PR: quire-spec-language#514 at 611da08e. This review covers
+Ticket: QSL-301. PR: quire-spec-language#514. This review covers
 code and Rust (the rust-review lane is folded in here).
 
 What was checked:
@@ -74,8 +74,8 @@ test now takes all three identities from the other package. The shared
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 975993fd: `check_identities` checks frame, occurrence, anchor; AC-3 test takes anchor, frame and occurrence from the parent-modifying package and asserts the anchors differ |
-| FND-002 | fixed | 975993fd: spec.md FR-116 row: implemented under QSL-301 (QSL-21f), TC-515 passed locally |
-| FND-003 | fixed | 975993fd: FR-116 Inputs: "the four change kinds of FR-106's check 11, which FR-115 runs" |
-| FND-004 | fixed | 975993fd: lib.rs comment names the qsl_foundation and quire_exact types CG also needs |
+| FND-001 | fixed | `check_identities` checks frame, occurrence, anchor; AC-3 test takes anchor, frame and occurrence from the parent-modifying package and asserts the anchors differ |
+| FND-002 | fixed | spec.md FR-116 row: implemented under QSL-301 (QSL-21f), TC-515 passed locally |
+| FND-003 | fixed | FR-116 Inputs: "the four change kinds of FR-106's check 11, which FR-115 runs" |
+| FND-004 | fixed | lib.rs comment names the qsl_foundation and quire_exact types CG also needs |
 | FND-005 | deferred | FR-116 names only the `package_id` cross-check. What CG puts in the envelope's `occurrence_key`/`clause_node` for a frame counterexample is not defined until quire-contract-codegen#49 lands, so there is nothing to check against yet |

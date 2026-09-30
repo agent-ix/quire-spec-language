@@ -32,7 +32,7 @@ delivery direction permits the PR while this existing assurance gap stays open.
 
 ## Coverage
 
-Quire 0.31.0, actual `quire coverage --scope . --json`, with no grep fallback:
+Actual `quire coverage --scope . --json`, with no grep fallback:
 FR-015 6/6 criteria backed; TM-003 35/35 test-case rows backed; global rollup
 325/329. Those are trace counts, not execution or project-completion percentages.
 All five Plan-005 tasks are done. SR-263 records the actual new red/green controls,

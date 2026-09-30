@@ -51,7 +51,7 @@ report.
 
 ## Dispositions
 
-Disposition pass ("QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

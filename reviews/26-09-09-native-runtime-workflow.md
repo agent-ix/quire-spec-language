@@ -107,26 +107,25 @@ corrected. No result or failing assertion was weakened.
 ## Actual local gates
 
 Each Cargo phase ran serially at nice 10, locked/offline, one job and one test
-thread, using existing explicit target caches. Evidence is under
-reviews/data/native-runtime/; every command below exited zero.
+thread, using existing explicit target caches. Every command below exited zero.
 
-| Command | Result | Log |
-| --- | --- | --- |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 202 ordinary tests and one compile-fail doctest passed; three named private tests ignored in this lane | workflow-full-tests.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_workflow -- --test-threads=1 --nocapture` | All five integration tests passed, including final comment repair | workflow-final-tests.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed; this crate has no optional features | workflow-clippy.txt |
-| `nice -n 10 cargo fmt --all -- --check` | Passed at final source | workflow-final-fmt.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed | workflow-rustdoc.txt |
-| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using existing minimal-build cache | workflow-minimal-build.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | Three private audits passed | workflow-private-audits.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed four clauses/one import with exact source digest | workflow-cli-parse.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted source successfully | workflow-cli-format.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | Six independent digest/content controls and duplicate-key refusal passed | workflow-audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | Five historical checkpoint digests passed; no producer/evaluator executed | workflow-model-bytes.txt |
+| Command | Result |
+| --- | --- |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 202 ordinary tests and one compile-fail doctest passed; three named private tests ignored in this lane |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_workflow -- --test-threads=1 --nocapture` | All five integration tests passed, including final comment repair |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed; this crate has no optional features |
+| `nice -n 10 cargo fmt --all -- --check` | Passed at final source |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed |
+| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using existing minimal-build cache |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | Three private audits passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed four clauses/one import with exact source digest |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted source successfully |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | Six independent digest/content controls and duplicate-key refusal passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | Five historical checkpoint digests passed; no producer/evaluator executed |
 
 ## Traceability and method limits
 
-Quire 0.31.0 binds 205/205 Rust symbols. FR-018 is backed
+Quire binds 205/205 Rust symbols. FR-018 is backed
 7/7, FR-007 15/15, FR-008 20/20 and TM-004 23/23. Root backing is 196/208;
 this is not full-assignment completion. The final scan has no untracked
 symbols or reported status lies. Twenty existing classifier/catalog diagnostics,
@@ -137,9 +136,7 @@ is required and was performed. NFR metric ordinals and IT procedure labels are
 not invented trace IDs. Manual/Inspection no-symbol rows are not missing tests.
 
 `quoin advise --repo /home/peter/dev/worktrees/formalization-a-language --json`
-exited 2 because its Quire version probe failed, although a direct quire
---version reports 0.31.0. The actual failure is retained in
-workflow-advice-diagnostics.txt; no advice result is claimed. Explicit method
+exited 2 because its Quire version probe failed; no advice result is claimed. Explicit method
 assessment retains examples, adverse mutations, generated bounded families,
 independent closure/cost oracles, cancellation/panic controls and integration.
 No fuzz, concurrent model-checking or mutation-adequacy run is inferred from

@@ -51,9 +51,7 @@ the completed producer audit; optional semantic gap review remains declined.
 | FR-021 AC-2,4,5 | Representation/feature permutations preserve static identity and retain distinct original bytes; unchanged-identity projection forgeries and actual raw/IR/JCS digest substitutions refuse. Producer vectors/static mutations retain SR-111's AC-1,3,6 evidence. |
 | FR-020 AC-1,11; IT-007 SC-01..08 | `package_runtime.rs`, frozen vectors and reader controls: original package dropped; current parent/graph/aggregate truth, exact events/costs, pre/post deleted captures/results, dangling/stale/incomplete/frame/budget refusals and fresh retries; original unlowered IR obligations remain addressable. |
 
-The reader's initial successful compiler setup and genuine missing-API failure
-remain in `data/native-packages/reader-successful-setup.txt` and
-`reader-missing-api.txt`. Runtime integration assertions also preceded their
+Runtime integration assertions also preceded their
 first execution. New qualification is Rust; no tests replace the compiler or
 runtime with a double.
 

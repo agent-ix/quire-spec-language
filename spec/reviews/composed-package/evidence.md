@@ -22,9 +22,7 @@ produce recommendations because its CLI-version check failed.
 ## Advisor and catalog evidence
 
 `quoin advise --repo /home/peter/dev/worktrees/quire-language-composed-spec --json`
-exited 2 with `could not determine the quire CLI version (expected >= 0.21.0)`.
-The actual version command reports `quire 0.31.0 (engine
-0.46.0)`; installed Quoin reports `0.23.1`. No obligation recommendation,
+exited 2 with `could not determine the quire CLI version (expected >= 0.21.0)`. No obligation recommendation,
 matched applicability rule, evidence-store observation or mismatch population was
 returned. This limitation is not an inconclusive recommendation for each AC and
 does not justify changing authored methods from an imagined advisor result.

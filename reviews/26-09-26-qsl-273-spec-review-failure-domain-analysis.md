@@ -55,7 +55,7 @@ contract.
 
 ## Dispositions
 
-Disposition pass ("QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -69,7 +69,7 @@ Disposition pass ("QSL-273 spec: fix SR-660 to SR-664 review findings", rebased 
 
 ### Round 2
 
-Disposition pass ("QSL-273 spec: fix disposition-pass findings (SR-660, SR-662, SR-664)"). Each outcome was re-checked against the spec and code at that head. `quire validate` over the changed spec files and the reviews exits 0.
+Second disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and the reviews exits 0.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

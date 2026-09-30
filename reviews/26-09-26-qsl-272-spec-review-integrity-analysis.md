@@ -3,7 +3,7 @@ id: SR-643
 title: "QSL-272 integrity review of FR-101, its TCs and the ADR-011/TC-390 amendment"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (unchanged); spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (unchanged); spec/functional/FR-097-classify-claim-extent-and-write-bounded-requests.md (unchanged); qsl-eval/Cargo.toml; tests/it/family_outcome_layering.rs; qsl-eval/src/simulation/trace.rs; quire-canonical@0143a2b src/lib.rs; quire-specification@0d53cf2d FR-181, FR-201, TC-210, simulation-sampler.md"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (unchanged); spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (unchanged); spec/functional/FR-097-classify-claim-extent-and-write-bounded-requests.md (unchanged); qsl-eval/Cargo.toml; tests/it/family_outcome_layering.rs; qsl-eval/src/simulation/trace.rs; quire-canonical src/lib.rs; quire-specification FR-181, FR-201, TC-210, simulation-sampler.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
@@ -51,7 +51,7 @@ What holds:
 
 ## Dispositions
 
-Disposition pass ("QSL-272 spec: fix PR #457 review findings (SR-641 to SR-645)"). I re-checked each outcome against the spec at that head. I did not take any outcome from the commit message. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
+Disposition pass. I re-checked each outcome against the spec. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

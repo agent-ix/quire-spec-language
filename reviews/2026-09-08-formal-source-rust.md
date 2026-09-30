@@ -66,7 +66,7 @@ is justified by this scoped review.
 
 ## Verification
 
-Actual exit-zero logs are in reviews/data/formal-source. Cargo runs used nice 10,
+Cargo runs used nice 10,
 offline locked dependencies, the existing target caches and -j 1; tests used
 --test-threads=1. The first focused run records the expected missing-module
 compiler error before implementation, followed by five passing new tests.

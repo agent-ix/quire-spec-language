@@ -9,7 +9,7 @@ review_set: subset
 
 ## Summary
 
-Reviewed `agent-a/native-ecosystem-handoff` against `origin/main` (`9c145bd`, PR57
+Reviewed `agent-a/native-ecosystem-handoff` against `origin/main` (PR57
 integrated) — the producer recipe's growth from one source unit to four
 (`predicates`/`state`/`temporal`/`workflow`), the `/2` model gaining
 `Amount`/`Total`/`Tally` scalars, a `Notice` record, three values and the
@@ -21,18 +21,18 @@ bytes; the findings are one coverage gap and a cluster of expressiveness/idiom
 issues. No `AssuranceProfile` document exists anywhere in `spec/` — none applied,
 consistent with the previous producer recipe review.
 
-**Updated 2026-09-11 (recheck):** correction `b34ab8c` rechecked against the recorded
-findings at `549dd81`, integrated at `485573b`. Both `medium` findings are resolved;
+**Updated 2026-09-11 (recheck):** the integrated correction rechecked against the recorded
+findings. Both `medium` findings are resolved;
 see the disposition table below.
 
 ## Verdict
 
-**CONDITIONAL** — recheck of `b34ab8c` against `549dd81`, integrated at `485573b`.
+**CONDITIONAL** — recheck of the integrated correction against the recorded findings.
 Both `medium` findings are resolved and verified; two `low` residuals remain
 (FND-003 and FND-005). FND-006 was resolved by local author verification after
 Claude's recheck, as distinguished below. No `high` finding at any point.
 
-## Recheck disposition (b34ab8c vs 549dd81)
+## Recheck disposition
 
 Finding recheck only, not a second campaign. PR59's shared recovery provenance was
 separately reviewed and is not re-examined here.
@@ -83,7 +83,7 @@ Re-verified against the final integrated fixture
 `/tmp/quire-native-ecosystem-fixture-integrated-20260911`; the corrected and earlier
 reviewed fixtures are retained historical output and were not re-read. All 67
 dependency digests re-checked with `sha256sum --check`; `dependencies/0.bin`
-(`c58585d3…`) is byte-identical to the live main executable
+is byte-identical to the live main executable
 `/tmp/formalization-a-language-target/release/examples/native_protocol_handoff`; the
 output seal equals SHA-256 of `compiled-protocol.json` (`424e4942…`). Four isolated
 source identities/formal documents, six declarations with `pre`/`post` on
@@ -137,14 +137,14 @@ tree and still holds.
 
 | ID      | Severity | Summary                                                                                      | Refs                                                  | Escape Cause                   |
 | ------- | -------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------ |
-| FND-001 | medium   | RESOLVED in b34ab8c — named ignored release test now executes the real producer recipe          | examples/native_protocol_handoff.rs:29                | correct-requirement-no-evidence |
-| FND-002 | medium   | RESOLVED in b34ab8c — typed `DeclarationCause` and typed operation/anchor variants replace message discrimination | examples/protocol-handoff/producer.rs:165, 175, 519 | correct-requirement-no-evidence |
+| FND-001 | medium   | RESOLVED by the correction — named ignored release test now executes the real producer recipe          | examples/native_protocol_handoff.rs:29                | correct-requirement-no-evidence |
+| FND-002 | medium   | RESOLVED by the correction — typed `DeclarationCause` and typed operation/anchor variants replace message discrimination | examples/protocol-handoff/producer.rs:165, 175, 519 | correct-requirement-no-evidence |
 | FND-003 | low      | OPEN — wire export-ordering rule restated as arithmetic in the example; no single source of truth | examples/protocol-handoff/producer.rs:580-599         | correct-requirement-no-evidence |
-| FND-004 | low      | RESOLVED in b34ab8c — source comments now separate correspondence conjuncts from recovery conditions | examples/protocol-handoff/workflow.body.native:2; state.body.native:2, 11 | missing-requirement |
+| FND-004 | low      | RESOLVED by the correction — source comments now separate correspondence conjuncts from recovery conditions | examples/protocol-handoff/workflow.body.native:2; state.body.native:2, 11 | missing-requirement |
 | FND-005 | low      | OPEN — anchor-mismatch and `Initialization` arms carry accurate typed context but stay unreachable for the current recipe | examples/protocol-handoff/producer.rs:505, 522        | correct-requirement-no-evidence |
 | FND-006 | low      | RESOLVED — local author verification confirms the bare trace attribute binds the example test | examples/native_protocol_handoff.rs:33                | correct-requirement-no-evidence |
 
-### FND-001 — nothing runs the example (as recorded at 549dd81; resolved in b34ab8c)
+### FND-001 — nothing runs the example (resolved by the correction)
 
 `grep` for `native_protocol_handoff` / `protocol-handoff` across `tests/` and `src/`
 returns nothing. `cargo test` never invokes the recipe; `cargo clippy --all-targets`
@@ -160,7 +160,7 @@ sentence true. An `#[ignore]`d integration test in a named lane that runs `write
 into a temp dir and asserts the four sources / six declarations / two compensations
 would close it without adding cost to the default run.
 
-### FND-002 — refusals discriminated by message (as recorded at 549dd81; resolved in b34ab8c)
+### FND-002 — refusals discriminated by message (resolved by the correction)
 
 `Error::Declaration { name, problem: &'static str }` now stands for four distinct
 refusals ("not present in the original namespace", "ambiguous in the original
@@ -185,7 +185,7 @@ checking neither. It fails closed (the reader refuses a wrong handle) rather tha
 silently, which is why this is `low` and not higher; a `pub` helper on the model or
 emitter that names an export's handle would remove the second edit site.
 
-### FND-004 — conjuncts that cannot be false (as recorded at 549dd81; resolved in b34ab8c)
+### FND-004 — conjuncts that cannot be false (resolved by the correction)
 
 `amount >= 1` (state.body.native:11) restates `Amount`'s declared minimum of 1.
 `targetFull >= 0` / `targetPartial >= 0` restate `Total`'s minimum of 0.
@@ -223,7 +223,7 @@ This disposition is local author verification, not an additional Claude recheck.
 `AuthoredExecution` has only `Handler`/`Pre`/`Post`, and `UnitInput::new` always
 builds `Pre`/`Post` from the single selected anchor. The
 `ExecutionPoint::Initialization` arm and the anchor-mismatch fallback are therefore
-unreachable for every input the recipe can construct. `b34ab8c` improves them — the
+unreachable for every input the recipe can construct. The correction improves them — the
 mismatch arms now report `expected`/`actual` anchors instead of a misattributed cause —
 but they remain untested branches. Retained as a recorded low residual; no new public
 model interface was added for them, and none is being asked for.
@@ -240,7 +240,7 @@ review does not convert that deferred acceptance into a prototype engineering ga
 
 ## Gates
 
-Executed by the root at the integrated head `485573b`, inspected here, not re-run
+Executed by the root on the integrated tree, inspected here, not re-run
 (no green heavy-check repeats):
 `/tmp/quire-native-ecosystem-integrated-{fmt,clippy-minimal,clippy-all,release-test,run,spec}.log`.
 `fmt` clean; both Clippy lanes finish clean; 398/398 specs grammar-clean. The named

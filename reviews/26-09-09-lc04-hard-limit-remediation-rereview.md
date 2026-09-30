@@ -17,17 +17,17 @@ message and keeps the version tripwire while tolerating a rewording — verified
 printing the message the test actually sees. FR-009 gained the sentence
 explaining that lowering's ceilings sit above the checker's, which is what keeps
 a later reader from deleting the depth bound as dead. The remaining verdict is
-driven entirely by two lows the owner deferred, not by anything new.
+driven entirely by a low the owner deferred, not by anything new.
 
 ## Verdict
 
 **CONDITIONAL** — no high or medium findings. Both findings this change targets
-are closed; the two open lows are the owner-deferred FND-002 and FND-003 from
+are closed; the open low is the owner-deferred FND-002 from
 SR-114, carried forward unchanged.
 
 ## Gates run
 
-`-j 1`, `--test-threads=1`, isolated target directory.
+Run with `-j 1`, `--test-threads=1` and an isolated target directory.
 
 | Gate | Result |
 | --- | --- |
@@ -68,10 +68,9 @@ rewording — which was the whole point of the finding.
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | low | Deferred from SR-114: the CI job gains a from-source tool build while `timeout-minutes: 10` is unchanged | .github/workflows/ci.yml | correct-requirement-no-evidence |
-| FND-002 | low | Deferred from SR-114: `docs/dependency-licenses.json` is referenced by no test, tool or CI step | docs/dependency-licenses.json | missing-requirement |
 
-Both are the owner's deferral, recorded so they are not lost rather than
-re-argued. Neither blocks this change, and neither is affected by it.
+It is the owner's deferral, recorded so it is not lost rather than
+re-argued. It does not block this change and is not affected by it.
 
 ## Closure detail
 

@@ -3,7 +3,7 @@ id: SR-732
 title: "QSL-245 code and Rust review of PR 489 (blank-label and empty-path causes)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@237f65714b313473649a155f87932778a790d819; qsl-foundation/src/source.rs; qsl-foundation/src/diagnostic.rs; qsl-foundation/src/lib.rs; qsl-cst/src/diagnostic.rs; qsl-cst/src/cst.rs; qsl-cst/tests/it/complete_cst.rs; qsl-cst/tests/it/complete_grammar.rs; qsl-replay/src/execute/tests.rs; src/main.rs; src/command/output.rs; src/command/output/types.rs; src/complete/edit.rs; src/complete/editor.rs; src/runtime/construction.rs; src/runtime/input.rs; tests/it/cli.rs; tests/it/complete_cst.rs; tests/it/complete_editor.rs; tests/it/runtime_inputs.rs; tests/it/standalone.rs"
+scope: "agent-ix/quire-spec-language; qsl-foundation/src/source.rs; qsl-foundation/src/diagnostic.rs; qsl-foundation/src/lib.rs; qsl-cst/src/diagnostic.rs; qsl-cst/src/cst.rs; qsl-cst/tests/it/complete_cst.rs; qsl-cst/tests/it/complete_grammar.rs; qsl-replay/src/execute/tests.rs; src/main.rs; src/command/output.rs; src/command/output/types.rs; src/complete/edit.rs; src/complete/editor.rs; src/runtime/construction.rs; src/runtime/input.rs; tests/it/cli.rs; tests/it/complete_cst.rs; tests/it/complete_editor.rs; tests/it/runtime_inputs.rs; tests/it/standalone.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-001
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#489 at 237f6571. This is a code
+Ticket: QSL-245. PR: quire-spec-language#489. This is a code
 review with the rust-review lane. It covers only `git diff origin/main...HEAD`,
 which touches 21 Rust files.
 
@@ -60,7 +60,7 @@ Forbidden-path check: the diff touches no `quire-exact`,
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | The build still claims `quire.native.diagnostics/v1` revision `1-draft.7`, but it now emits `invalid_source_identity` with `blank-label` and `empty-path`. The catalog at QSpec 84ed5298 says: "A producer claiming revision `1-draft.7` or earlier ... emits `invalid_source_identity` with neither `blank-label` nor `empty-path`." Scenario: #489 merges before the revision bump, so main is a nonconforming producer until the bump lands. Holding the bump back is intentional here (coder A bumps it), so this is a merge-order constraint: land it with the bump or after it. It is not a code defect. | src/linking/composed/definition_source.rs:248; qsl-foundation/src/source.rs:340-353 |
+| FND-001 | medium | The build still claims `quire.native.diagnostics/v1` revision `1-draft.7`, but it now emits `invalid_source_identity` with `blank-label` and `empty-path`. The QSpec catalog says: "A producer claiming revision `1-draft.7` or earlier ... emits `invalid_source_identity` with neither `blank-label` nor `empty-path`." Scenario: #489 merges before the revision bump, so main is a nonconforming producer until the bump lands. Holding the bump back is intentional here (coder A bumps it), so this is a merge-order constraint: land it with the bump or after it. It is not a code defect. | src/linking/composed/definition_source.rs:248; qsl-foundation/src/source.rs:340-353 |
 | FND-002 | low | `SourceIdentity::reference` reports provenance errors that have nothing to do with labels as `BlankLabel { label: Authority }`: `NotSourceBytes`, `ReversedRegion`, `NoRegion` and `DuplicateOccurrence`. `Source::read_typed` then refuses with "source authority must not be blank". The path is unreachable today, because provenance refuses only empty labels and the digest domain is fixed. If a future provenance rule is added, the refusal would give a false cause instead of reporting an internal fault. Prefer an established-invariant or internal-fault refusal over a made-up `blank-label`. | qsl-foundation/src/source.rs:118-126, 366-374 |
 | FND-003 | low | `Diagnostic::with_identity_cause` is a new `pub` builder with no caller and no test anywhere in the workspace. `main.rs` and `construction.rs` carry their causes on their own structs instead. Either wire it or remove it. | qsl-foundation/src/diagnostic.rs:465-470 |
 | FND-004 | low | The catalog tags `blank-label` and `empty-path` are spelled out in two places: `SourceReadCause::identity_tag` and `HostCause::tag`. `HostCause::tag` could return `self.identity_cause().and_then(SourceReadCause::identity_tag)` for those two variants, which would give one source of truth. | qsl-cst/src/diagnostic.rs:199-203; qsl-foundation/src/source.rs:228-236 |
@@ -72,20 +72,18 @@ Approve with findings. No finding blocks a merge. FND-001 is a merge-order
 constraint: land #489 together with the catalog revision bump, or after it.
 Mutation checks are in SR-733.
 
-The full gates were not re-run, as the brief instructed. Only the targeted tests were run: at
-237f6571, the 5 root `it` tests, 12 `qsl-foundation` `source::` unit tests
+The full gates were not re-run, as the brief instructed. Only the targeted tests were run: the 5 root `it` tests, 12 `qsl-foundation` `source::` unit tests
 and 1 `qsl-replay` TC-444 test pass.
 
 ## Dispositions
 
-Checked against `git diff 9f1be528..86cabd0e` (the fix commit alone, after the
-main merge 9f1be528) on 2026-09-26, with mutation checks run in a detached
-scratch worktree at 86cabd0e.
+Checked against the fix commit alone, after the main merge, on 2026-09-26,
+with mutation checks run in a detached scratch worktree.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | deferred | This finding still stands as a merge-order constraint. By leader ruling, the bump to `1-draft.8` lands in PR #490 (QSL-245 part 1), right after this PR. At 86cabd0e, FR-001 Status (spec/functional/FR-001-read-exact-source.md:229-235) says that the claim still reads `1-draft.7` and that the bump comes with #490. `definition_source.rs:248` is unchanged. |
-| FND-002 | fixed 86cabd0e | A private `ReferenceError { Blank, Provenance }` replaces the invented label (qsl-foundation/src/source.rs:112-137). A provenance refusal now becomes `SourceReadCause::ReferenceInvariant`, which maps to `Code::RuntimeInvariant` and to `CompleteCode::RuntimeInvariant`/`EstablishedInvariantBroken`. The path is still unreachable. A mutation back to `BlankLabel{Authority}` survives because no input can reach that path, and that is acceptable. |
-| FND-003 | fixed 86cabd0e | `with_identity_cause` is deleted. |
-| FND-004 | fixed 86cabd0e | `BLANK_LABEL_TAG`/`EMPTY_PATH_TAG` are defined once, in qsl-foundation/src/source.rs:230-232, and `HostCause::tag` reads them. No other non-test literal remains. A mutation of the constant fails 4 tests: qsl-cst, replay, CLI and run. |
-| FND-005 | fixed 86cabd0e | The CLI uses a typed `Line` struct (src/main.rs:30-66). A shared `IdentityCauseFields` is `#[serde(flatten)]`-ed into both the CLI and the run output. Removing either `flatten` fails the CLI and run tests. SR-735 FND-001 records a side effect: the CLI key order changed. |
+| FND-001 | deferred | This finding still stands as a merge-order constraint. By leader ruling, the bump to `1-draft.8` lands in PR #490 (QSL-245 part 1), right after this PR. After the fix, FR-001 Status (spec/functional/FR-001-read-exact-source.md:229-235) says that the claim still reads `1-draft.7` and that the bump comes with #490. `definition_source.rs:248` is unchanged. |
+| FND-002 | fixed | A private `ReferenceError { Blank, Provenance }` replaces the invented label (qsl-foundation/src/source.rs:112-137). A provenance refusal now becomes `SourceReadCause::ReferenceInvariant`, which maps to `Code::RuntimeInvariant` and to `CompleteCode::RuntimeInvariant`/`EstablishedInvariantBroken`. The path is still unreachable. A mutation back to `BlankLabel{Authority}` survives because no input can reach that path, and that is acceptable. |
+| FND-003 | fixed | `with_identity_cause` is deleted. |
+| FND-004 | fixed | `BLANK_LABEL_TAG`/`EMPTY_PATH_TAG` are defined once, in qsl-foundation/src/source.rs:230-232, and `HostCause::tag` reads them. No other non-test literal remains. A mutation of the constant fails 4 tests: qsl-cst, replay, CLI and run. |
+| FND-005 | fixed | The CLI uses a typed `Line` struct (src/main.rs:30-66). A shared `IdentityCauseFields` is `#[serde(flatten)]`-ed into both the CLI and the run output. Removing either `flatten` fails the CLI and run tests. SR-735 FND-001 records a side effect: the CLI key order changed. |

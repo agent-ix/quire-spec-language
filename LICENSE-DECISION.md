@@ -10,9 +10,8 @@ up to you!” This followed the explicit proposal of `AGPL-3.0-only`.
 Relicense, 2026-09-13: the owner decided that every agent-ix repository licensed
 `AGPL-3.0-only` becomes `AGPL-3.0-or-later`, matching the organization policy
 (#100). This supersedes the version-3-only selection above for this repository.
-Frozen digest-bound data keeps its original `AGPL-3.0-only` bytes because the
-notice is part of pinned identities: published `schemas/` (SCHEMA_SHA256
-constants), authored model sources and `.native` inputs under `examples/` and
+Some existing data keeps its original `AGPL-3.0-only` notice: published
+`schemas/`, authored model sources and `.native` inputs under `examples/` and
 `tests/fixtures/` and the Filament producer checkpoint. Their next deliberate
 regeneration adopts `AGPL-3.0-or-later`.
 
@@ -50,7 +49,7 @@ retains AGPL-3.0-or-later; its use does
 not change the AGPL-3.0-or-later selection for new repository source. No local trace
 macro implementation or external audit source was copied.
 
-Every release needs an included-file inventory, inbound rights, exact outbound license, dependency compatibility, notices and generated-content review. No implementation source is copied by this initialization. Repository visibility and license are separate decisions.
+No implementation source is copied by this initialization. Repository visibility and license are separate decisions.
 
 LC02 consumes quire-contract-ir
 under its existing MIT OR Apache-2.0 grant. Third-party packages, including

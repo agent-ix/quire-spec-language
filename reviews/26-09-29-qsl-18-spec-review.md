@@ -3,7 +3,7 @@ id: SR-786
 title: "Spec review of QSL-18 sum/case mapping (ADR-012 §16)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@c6e1e5ac; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§16 and the QSL-18 amendments to Status, §2, §3, §12.1, §14.1, Consequences); context read: ADR-011 §6.1 and §7.3, ADR-013, FR-057, FR-091, FR-092, docs/family-migration-recipe.md, the cited QSL code at HEAD, and QSpec origin/main (AD-015, FR-141, FR-143, FR-144, FR-146, TC-262 to TC-265, shared-grammar.md, native-diagnostics.md, value-accounting.md, checked-package-v2/schema.json)"
+scope: "agent-ix/quire-spec-language; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§16 and the QSL-18 amendments to Status, §2, §3, §12.1, §14.1, Consequences); context read: ADR-011 §6.1 and §7.3, ADR-013, FR-057, FR-091, FR-092, docs/family-migration-recipe.md, the cited QSL code at HEAD, and QSpec origin/main (AD-015, FR-141, FR-143, FR-144, FR-146, TC-262 to TC-265, shared-grammar.md, native-diagnostics.md, value-accounting.md, checked-package-v2/schema.json)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-012
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-18 (#221, ARCH-41). Branch `spec/18-arch41-mapping` at c6e1e5ac.
+Ticket: QSL-18 (#221, ARCH-41). Branch `spec/18-arch41-mapping`.
 The review subset is the base checklist adapted to an ADR section, plus the
 object, integrity, failure-domain, interface/scope-boundary and evidence
 analyses. Claims were measured against the tree at HEAD and QSpec
@@ -98,15 +98,15 @@ Per analysis:
 
 ## Verdict
 
-Accept at 15eb3f70. FND-001 to FND-017 are verified fixed (see
-"Re-review (c49eea84)" and "Re-review (15eb3f70)"). The mapping meets the
+Accept after the second fix. FND-001 to FND-017 are verified fixed (see
+"First re-review" and "Second re-review"). The mapping meets the
 ticket's acceptance criteria. One new low finding remains: FND-018, a
 wording contradiction in the §16.2 enum case. It does not block the mapping.
 Fix it in this PR if convenient, or as #187's first clarification.
 
-Verdict at c49eea84: changes requested, for FND-015.
+Verdict after the first fix: changes requested, for FND-015.
 
-Original verdict at c6e1e5ac: changes requested. The family assignment,
+Original verdict: changes requested. The family assignment,
 identity rows, S6a treatment and QSpec gap list were sound and measured. But
 the ticket's first acceptance criterion was not met: "#187 can implement …
 without inventing a new owner or bypass". FND-001 meant #187 would reopen
@@ -134,11 +134,11 @@ Every finding is fixed in ADR-012 (and in the recipe for FND-007).
 | FND-013 | §16.8 adds the missing rows: declaration duplicate member, limits, parse scrutinee, unknown-member body not checked, and admission. |
 | FND-014 | The scrutinee refusal reuses `CheckCause::IllTyped`, and `SumCaseCause` holds only the exhaustiveness refusal. The obligation reading cites TC-264 E03 and E04. |
 
-## Re-review (c49eea84)
+## First re-review
 
-Scope: `git diff c6e1e5ac c49eea84` (ADR-012 and
-`docs/family-migration-recipe.md`). Each fix was measured against the tree
-at c49eea84 and QSpec `origin/main`, not taken from the dispositions table.
+Scope: the first fix diff (ADR-012 and
+`docs/family-migration-recipe.md`). Each fix was measured against the fixed tree
+and QSpec `origin/main`, not taken from the dispositions table.
 
 Measured for the new text:
 - `typing.rs:646-656` is the `Expression::If` arm calling
@@ -184,10 +184,10 @@ Measured for the new text:
 | FND-016 | new, low | The §16.5 limit row's oracle is "limit kind work budget" (ADR-012:1615). The new §16.8 Limits test (ADR-012:1767) drives the checking depth bound on the FR-062-AC-7 pattern, which yields a nesting-depth limit. The row and the test name different limit kinds. Fix: have the row name both limit kinds (nesting depth from the `Typer`'s depth bound, work budget from a family meter charge), or make the test match the row. |
 | FND-017 | new, low | Two wording slips. (1) In the SC-Q1 recommendation cell (ADR-012:1854), "It reopens one O-14 cell ("…"), ADR-013's Status lets …" is a comma splice that joins two sentences, so it reads as garbled. (2) §16.7 (ADR-012:1719) names the host of the new seam function only as "the `check` core module that hosts `Typer`'s dispatch". Name the file (`check/check/typing.rs` or `check/check.rs`) so the change set is concrete. |
 
-## Re-review (15eb3f70)
+## Second re-review
 
-Scope: `git diff c49eea84 15eb3f70`, the ADR-012 lines only. I measured the
-touched lines against the tree at 15eb3f70.
+Scope: the second fix diff, the ADR-012 lines only. I measured the
+touched lines against the fixed tree.
 
 | ID | Status | Note |
 | --- | --- | --- |

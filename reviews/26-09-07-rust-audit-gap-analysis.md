@@ -39,7 +39,7 @@ tests/fixture_audit.rs and adjacent unit modules. Task/matrix completion updates
 already executed checks and do not amend requirements. This gap review only
 writes this review artifact; implementation/plan updates preceded the audit.
 
-Applied Quoin 0.20.0 gap-analysis steps for target, plan completion, actual
+Applied Quoin gap-analysis steps for target, plan completion, actual
 coverage, reverse ownership/stub discovery and the SpecReview artifact. Applied
 the shared implementation-gap-analysis discovery in Rust terms. No retro/global
 skill or other agent's repository was edited. The optional intent/test/code
@@ -47,19 +47,15 @@ semantic review was explicitly declined and skipped.
 
 ## Coverage
 
-Reconciliation: actual `quire coverage --scope . --json`, CLI 0.31.0
-/ engine 0.46.0, using the installed spec-artifacts-process
-traceability model. There was no grep fallback. Raw output and stderr are in
-spec/reviews/rust-verification/data/implementation-coverage.json and its
-companion .stderr file.
+Reconciliation: actual `quire coverage --scope . --json`, using the installed
+spec-artifacts-process traceability model. There was no grep fallback.
 
 - Tasks done: 2/2. Task-002 depends on completed Task-001; plan checkboxes and
   task table agree. The full native workflow is outside this bounded plan.
 - Overall tool totals: 20/78 backed targets; 68 criteria, 39 property-extractable,
   zero specific-shaped. The larger denominator includes earlier compiler work.
 - Scoped FR-012: 11/11 acceptance criteria backed. Matrix: 9/10 test cases
-  backed; the tenth, TC-010, is in no_symbol_rows with test_type Manual. Its
-  inspection is recorded in docs/rust-verification-remediation.md and TC-010.
+  backed; the tenth, TC-010, is in no_symbol_rows with test_type Manual.
   The skill explicitly exempts such rows from an impossible source-symbol gate.
 - Rust census: 35 candidates, 14 tagged, 14 bound. All 14 new symbols use the
   shared canonical attribute. No dangling tagged symbol or test-summary status

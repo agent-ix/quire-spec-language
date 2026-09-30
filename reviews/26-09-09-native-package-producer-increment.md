@@ -29,7 +29,7 @@ This author's review is not independent B/C acceptance or whole-epic closure.
 | FND-001 | medium | TC-090 still needs fixed complete canonical byte fixtures, including multiple clauses; current positive expectations are independently composed in Rust, while the old fixed header-only JSON is adverse data. | tests/package_construction_cases/vectors.rs:71; tests/fixtures/native-package/README.md; TC-090 |
 | FND-002 | medium | Complete lexical occurrence, ordered parameter/result, transitive skipped-input, static-mutation, runtime-independent identity and type-role controls remain before the producer claims all planned correspondence/identity coverage. | plan/Plan-007-native-packages/tasks/Task-016-package-construction.md:73; TC-079; TC-082; TC-090; TC-091 |
 | FND-003 | medium | The structural package schema has not been compiled/exercised with the reviewed Rust Draft 2020-12 development feature; Markdown/schema syntax inspection does not supply this evidence. | schemas/native-linked-package-1.schema.json; Task-016; TC-083 |
-| FND-004 | low | The installed trace engine lists NFR-007 metric obligations but does not mint their trace targets: 20 exact metric references remain reported as untracked. Preserve the diagnostic and reconcile the explicit TC-088 evidence rather than deleting the IDs or claiming zero untracked references. | data/native-packages/producer-coverage-final.json; src/package/encoding/tests.rs:10; tests/package_construction_cases/limits.rs |
+| FND-004 | low | The installed trace engine lists NFR-007 metric obligations but does not mint their trace targets: 20 exact metric references remain reported as untracked. Preserve the diagnostic and reconcile the explicit TC-088 evidence rather than deleting the IDs or claiming zero untracked references. | src/package/encoding/tests.rs:10; tests/package_construction_cases/limits.rs |
 
 ## Review scope and method
 
@@ -106,25 +106,22 @@ follow the first producer implementation; that sequence is explicit.
 
 ## Actual gate evidence
 
-All final commands below completed with exit 0 at the evaluated Rust source.
-The full command record and original failures are in
-[producer-verification.txt](data/native-packages/producer-verification.txt).
-Only terminal blank lines in saved logs were normalized for git diff --check.
+All final commands below completed with exit 0.
 Cargo phases ran serially at nice 10, one job, one test thread, locked/offline
 and using the existing target cache. No CI dispatch ran.
 
-| Gate | Actual result | Evidence |
-| --- | --- | --- |
-| Formatting | cargo fmt --all -- --check passed | data/native-packages/producer-format.txt |
-| Strict Clippy | all targets / no default features passed with -D warnings | data/native-packages/producer-clippy.txt |
-| Normal regression | 221 tests plus one compile-fail doctest passed; three named private tests selected separately | data/native-packages/producer-regression-final.txt |
-| Producer increment | 16 public tests and three private encoding controls included in the normal regression | data/native-packages/producer-regression-final.txt |
-| Cached minimal build | no-default-features build passed; no clean-cache claim | data/native-packages/producer-minimal-build.txt |
-| Rustdoc | no-deps/no-default-features passed with -D warnings | data/native-packages/producer-rustdoc.txt |
-| Audit controls | six content/digest controls, duplicate-key rejection and five historical model-byte checks passed | data/native-packages/producer-audit-self-test.txt; data/native-packages/producer-audit-model-bytes.txt |
-| Private audit lane | all three selected tests passed against an immutable archive of the adopted standard | data/native-packages/producer-private-audits.txt |
-| Trace inspection | 224/224 Rust candidates bound; 221/249 matrix rows backed; all package rows remain Planned | data/native-packages/producer-coverage-final.json |
-| Scoped document validation before this report | 253/253 grammar-clean | data/native-packages/producer-spec-validation.txt |
+| Gate | Actual result |
+| --- | --- |
+| Formatting | cargo fmt --all -- --check passed |
+| Strict Clippy | all targets / no default features passed with -D warnings |
+| Normal regression | 221 tests plus one compile-fail doctest passed; three named private tests selected separately |
+| Producer increment | 16 public tests and three private encoding controls included in the normal regression |
+| Cached minimal build | no-default-features build passed; no clean-cache claim |
+| Rustdoc | no-deps/no-default-features passed with -D warnings |
+| Audit controls | six content/digest controls, duplicate-key rejection and five historical model-byte checks passed |
+| Private audit lane | all three selected tests passed against an immutable archive of the adopted standard |
+| Trace inspection | 224/224 Rust candidates bound; 221/249 matrix rows backed; all package rows remain Planned |
+| Scoped document validation before this report | 253/253 grammar-clean |
 
 Trace output retains 22 catalog/classifier diagnostics, six registry diagnostics,
 three historical unmatched IT-004 tags and FND-004's 20 metric references. No

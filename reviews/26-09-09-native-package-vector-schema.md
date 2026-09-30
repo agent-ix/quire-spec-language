@@ -28,7 +28,7 @@ This is the author's review, not independent B/C acceptance.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Lexical/parameter/result/transitive correspondence, further static dependency mutations, runtime-independent identity and type-role controls remain. A producer omitting these claims could still pass the current fixed constant-clause vectors. | SR-109 FND-002; Task-016; tests/package_construction_cases/fixed.rs; TC-079; TC-082; TC-090; TC-091 |
-| FND-002 | low | The installed engine still reports 20 exact NFR metric references as untracked despite listing their obligations. A census alone cannot establish full metric qualification; preserve explicit evidence and the diagnostic. | SR-109 FND-004; data/native-packages/vector-schema-coverage.json; TC-088 |
+| FND-002 | low | The installed engine still reports 20 exact NFR metric references as untracked despite listing their obligations. A census alone cannot establish full metric qualification; preserve explicit evidence and the diagnostic. | SR-109 FND-004; TC-088 |
 
 ## Review method and scope
 
@@ -90,24 +90,21 @@ original setup failures remain recorded.
 
 ## Actual validation
 
-All final gates below completed with exit 0 at the evaluated source. The full
-commands, retained failures and limits are in
-[vector-schema-verification.txt](data/native-packages/vector-schema-verification.txt).
+All final gates below completed with exit 0.
 Cargo phases ran serially at nice 10, one job and one test thread, locked and
-offline. No hosted CI was dispatched. Saved logs normalize only final blank
-lines for git diff --check.
+offline. No hosted CI was dispatched.
 
-| Gate | Result | Evidence |
-| --- | --- | --- |
-| Formatting / strict Clippy | Passed, all targets and no default features | vector-schema-format.txt; vector-schema-clippy.txt |
-| Regression | 225 ordinary tests plus one compile-fail doctest passed | vector-schema-regression.txt |
-| Private audit lane | Three selected tests passed against the adopted standard's immutable archive | vector-schema-private-audits.txt |
-| Cached build / strict rustdoc | Passed; no clean-cache claim | vector-schema-build.txt; vector-schema-rustdoc.txt |
-| Audit self-test / model bytes | Six controls plus duplicate refusal and five historical digests passed | vector-schema-audit-self-test.txt; vector-schema-audit-model-bytes.txt |
-| Fixture author | All 14 candidate files match; existing/missing/extra-argument calls each refuse with exit 1 | vector-author-final.txt; vector-author-*-argument.txt; vector-author-existing-directory.txt |
-| Structural schema | Two focused tests pass; compiler setup failures retained separately | structural-schema-final.txt; structural-schema-tests.txt; structural-schema-result-setup.txt |
-| Trace census | 228/228 Rust candidates bound; 221/249 matrix rows backed | vector-schema-coverage.json |
-| Scoped document validation before this report | 234/234 grammar-clean | vector-schema-validation.txt |
+| Gate | Result |
+| --- | --- |
+| Formatting / strict Clippy | Passed, all targets and no default features |
+| Regression | 225 ordinary tests plus one compile-fail doctest passed |
+| Private audit lane | Three selected tests passed against the adopted standard's immutable archive |
+| Cached build / strict rustdoc | Passed; no clean-cache claim |
+| Audit self-test / model bytes | Six controls plus duplicate refusal and five historical digests passed |
+| Fixture author | All 14 candidate files match; existing/missing/extra-argument calls each refuse with exit 1 |
+| Structural schema | Two focused tests pass |
+| Trace census | 228/228 Rust candidates bound; 221/249 matrix rows backed |
+| Scoped document validation before this report | 234/234 grammar-clean |
 
 The trace census retains 22 catalog diagnostics, six registry diagnostics,
 three historical unmatched tags and the 20 metric references above. Package

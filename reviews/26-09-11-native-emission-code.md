@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Recheck of this review at `89bc4e3`, covering the corrections in `8cba7c6..89bc4e3`
+Recheck of this review after the correction, covering the corrections in the correction range
 (six source/spec files, 403 added test lines) against the initial findings and the
 seams they touch. Skills applied: `agent-skills/code-review`, which dispatches the
 Rust lane to `agent-skills/rust-review`, with `agent-skills/rust-style` as the
@@ -102,7 +102,7 @@ granularity and style notes with no failing scenario against the delivered code.
   are rebuilt from parser spans and authored mappings rather than read back from
   the emitted payload. `discharged()` asserts real `Typed`/`Discharged`
   dispositions rather than tolerating a partial report.
-- **Hygiene, re-confirmed at `89bc4e3`.** No `unwrap`, `expect`, `panic!`,
+- **Hygiene, re-confirmed after the correction.** No `unwrap`, `expect`, `panic!`,
   `todo!`, `unimplemented!`, `dbg!`, `#[allow]`, `TODO` or `FIXME` anywhere in
   `src/protocol_artifact/native/`; SPDX header and `//!` requirement citation on
   all ten files; `#![forbid(unsafe_code)]` intact.
@@ -119,7 +119,7 @@ granularity and style notes with no failing scenario against the delivered code.
 
 ## Gates
 
-Root-supplied local logs for this exact correction source at `89bc4e3`; inspected,
+Root-supplied local logs for this exact correction source; inspected,
 not re-run. Commands as recorded by root; the logs themselves do not echo them.
 
 - `cargo fmt --all -- --check` — `/tmp/quire-native-emission-corrections-fmt.log`, empty.

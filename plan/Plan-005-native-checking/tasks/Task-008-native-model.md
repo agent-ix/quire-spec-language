@@ -60,7 +60,6 @@ TC-040–043/045's role/carrier/operation mutations, model locus classes, artifa
 mutation/permutation families and model-limit controls. Every adverse IR input
 passes its actual constructors before native admission is judged. The complete
 suite passed 86 tests and the three selected private audits passed. Required
-local gates passed; exact logs are under reviews/data/native-checking/ with the
-model-qualification prefix. TC-044 retains its SR-084 linkage evidence and ran
+local gates passed. TC-044 retains its SR-084 linkage evidence and ran
 again in the full suite. Task-009 is now the next bounded work. Task-011 remains
 complete; the full model/checker plan and runtime workflow remain unfinished.

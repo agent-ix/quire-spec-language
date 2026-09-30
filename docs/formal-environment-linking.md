@@ -122,5 +122,6 @@ independent expected cases. TC-020–024 qualify resolution; TC-025–029 remain
 the separately planned static judgments. FR-013 adds the concrete API controls.
 
 Consume the IR dependency under its existing MIT OR Apache-2.0 grant.
-Hosted workflows remain workflow_dispatch only and are
+Existing Rust fixture audits and parser gates must pass after the dependency
+change. Hosted workflows remain workflow_dispatch only and are
 not dispatched. New native implementation remains AGPL-3.0-or-later.

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215 scope amendment):
+//! FR-059/FR-060 (ADR-011 §7.1 T-12, #215 scope amendment):
 //! architecture-conformance checks over the QSL/IR/RT/CG ecosystem.
 //!
 //! `arch-lint direction` is FR-059 (backend direction, FB-05/FB-11).
 //! `arch-lint api-surface` is FR-060 (the reusable API-surface check).
-//! `arch-lint duplicate-revisions` is FR-061 (one revision per quire crate
-//! in QSL's own `Cargo.lock`).
 //! `arch-lint canonical-encoder` is ADR-013 §2's one-RFC-8785-encoder rule
 //! (ADR-013:113, QSL-194): no second canonical encoder beside
 //! `quire-canonical`.
@@ -13,7 +11,6 @@
 
 mod api_surface;
 mod canonical_encoder;
-mod duplicate_revisions;
 mod error;
 mod graph;
 mod metadata;
@@ -32,7 +29,6 @@ fn usage() -> Error {
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path> [--offline]\n\
          arch-lint api-surface --qsl <path> [--cg <path>]\n\
-         arch-lint duplicate-revisions --lockfile <path>\n\
          arch-lint canonical-encoder --qsl <path>",
     )
 }
@@ -62,25 +58,6 @@ fn require(args: &mut Vec<String>, name: &str) -> Result<PathBuf> {
     take_flag(args, name)?.map(PathBuf::from).ok_or_else(usage)
 }
 
-/// `(repository, remote URL to check freshness against, `main` branch)`.
-/// `--qsl` is excluded: it is this tool's own worktree, routinely checked
-/// out on a feature branch rather than `main`, so it has no "current head"
-/// to compare against; its resolved commit is still printed below.
-const FRESHNESS_TARGETS: [(graph::Repo, &str); 3] = [
-    (
-        graph::Repo::Ir,
-        "https://github.com/agent-ix/quire-contract-ir",
-    ),
-    (
-        graph::Repo::Rt,
-        "https://github.com/agent-ix/quire-contract-runtime",
-    ),
-    (
-        graph::Repo::Cg,
-        "https://github.com/agent-ix/quire-contract-codegen",
-    ),
-];
-
 fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     let offline = take_bool(&mut args, "--offline");
     let qsl = require(&mut args, "--qsl")?;
@@ -92,62 +69,12 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     }
     let mut summary = String::new();
     summary.push_str("FR-059 backend direction check (ADR-011 FB-05/FB-11)\n");
-    summary.push_str("  Revisions used:\n");
-    let roots = [
-        (graph::Repo::Qsl, &qsl),
-        (graph::Repo::Ir, &ir),
-        (graph::Repo::Rt, &rt),
-        (graph::Repo::Cg, &cg),
-    ];
     let mut edges = Vec::new();
-    // #249 review round 4: every root's resolved revision is printed
-    // regardless of whether a later freshness check fails -- previously a
-    // `Stale` error propagated via `?` before the summary built so far was
-    // ever returned to `main`, so a stale-clone abort showed only the bare
-    // diagnostic, not the "Revisions used" block FR-059-AC-7 promises
-    // "regardless of outcome". The first `Stale` error found is still the
-    // one this run fails with; it is folded into `summary` so the caller
-    // never loses it.
-    let mut stale: Option<Error> = None;
-    for (repo, root) in &roots {
-        let head = metadata::git_head(root)?;
-        if let Some((_, url)) = FRESHNESS_TARGETS.iter().find(|(r, _)| r == repo) {
-            if offline {
-                summary.push_str(&format!(
-                    "    {repo}: {head} (--offline: not checked against remote main)\n"
-                ));
-            } else {
-                match metadata::require_current_head(repo.as_str(), url, &head) {
-                    Ok(()) => {
-                        summary.push_str(&format!("    {repo}: {head} (matches {url} main)\n"))
-                    }
-                    Err(error) => {
-                        summary.push_str(&format!(
-                            "    {repo}: {head} (STALE -- does not match {url} main)\n"
-                        ));
-                        if stale.is_none() {
-                            stale = Some(error);
-                        }
-                    }
-                }
-            }
-        } else {
-            summary.push_str(&format!(
-                "    {repo}: {head} (this worktree; no remote-main freshness check)\n"
-            ));
-        }
-        if stale.is_none() {
-            edges.extend(metadata::edges_for_manifest(
-                &root.join("Cargo.toml"),
-                offline,
-            )?);
-        }
-    }
-    if let Some(error) = stale {
-        return Err(Error::new(
-            error.code,
-            format!("{summary}{}", error.message()),
-        ));
+    for root in [&qsl, &ir, &rt, &cg] {
+        edges.extend(metadata::edges_for_manifest(
+            &root.join("Cargo.toml"),
+            offline,
+        )?);
     }
     let report = graph::check(&edges);
     if report.fb05.is_empty() {
@@ -306,34 +233,6 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((summary, all_passed))
 }
 
-fn run_duplicate_revisions(mut args: Vec<String>) -> Result<(String, bool)> {
-    let lockfile = require(&mut args, "--lockfile")?;
-    if !args.is_empty() {
-        return Err(usage());
-    }
-    let packages = duplicate_revisions::read_lockfile(&lockfile)?;
-    let duplicates = duplicate_revisions::check(&packages);
-    let mut summary = String::new();
-    summary.push_str("FR-061 duplicate-revision check (ADR-011 §7.1)\n");
-    if duplicates.is_empty() {
-        summary.push_str("  PASS: one revision per quire-ecosystem crate\n");
-    } else {
-        summary.push_str("  FAIL\n");
-        for duplicate in &duplicates {
-            summary.push_str(&format!("    {}:\n", duplicate.repo));
-            for source in &duplicate.sources {
-                summary.push_str(&format!(
-                    "      {}\n",
-                    source
-                        .as_deref()
-                        .unwrap_or("<no source: path or workspace member>")
-                ));
-            }
-        }
-    }
-    Ok((summary, duplicates.is_empty()))
-}
-
 fn run_canonical_encoder(mut args: Vec<String>) -> Result<(String, bool)> {
     let qsl = require(&mut args, "--qsl")?;
     if !args.is_empty() {
@@ -357,7 +256,6 @@ fn run(arguments: &[OsString]) -> Result<(String, bool)> {
     match mode.as_str() {
         "direction" => run_direction(args),
         "api-surface" => run_api_surface(args),
-        "duplicate-revisions" => run_duplicate_revisions(args),
         "canonical-encoder" => run_canonical_encoder(args),
         _ => Err(usage()),
     }

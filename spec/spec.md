@@ -62,8 +62,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-060
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-061
-    type: contains
   - target: ix://agent-ix/quire-spec-language/IT-013
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
@@ -487,14 +485,13 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | Implemented current-head cross-repository integration lane; #215 |
 | [FR-059](functional/FR-059-check-backend-dependency-direction.md) | FR | Implemented ADR-011 FB-05/FB-11 backend dependency-direction check (`arch-lint direction`); #215 |
 | [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B (`check` only) and T12-C (`model` only) live, each with a named debt list that only shrinks (amended 2026-09-22; gate rewrite pending), T12-D (kernel `PopulationId` constructor, `model` only) live and passing; #215 |
-| [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
 | [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | Implemented current-head lane contract test across QSL, Contract IR, Runtime and Codegen; #215 |
 | [FR-062](functional/FR-062-implement-checked-family-contract.md) | FR | Specified under #214; not yet implemented. AC-11 (package-wide expression-node limit, TC-381) is backed; AC-12 (a family limit's actual counter, TC-432) is backed; AC-4 (`requirements`, TC-160) is partly backed under QSL-140: the no-kind clause passes, the with-kind clause is pending QSL-42's first claim family |
 | [FR-063](functional/FR-063-exhaustive-family-extension-seam-probe.md) | FR | Specified under #214; not yet implemented |
 | [FR-064](functional/FR-064-restrict-string-dispatch-to-marked-edges.md) | FR | Implemented; `xtask string-edge` runs in `make ci` (QSL-145) |
 | [FR-065](functional/FR-065-migrate-function-application-to-checked-family.md) | FR | Specified under #214; not yet implemented; the first family slice to implement FR-062's contract. AC-4 (the application check's verdicts, TC-376) and AC-7 (the contract `check` hook's typing refusal, TC-380) are backed |
 | [FR-066](functional/FR-066-document-family-migration-recipe.md) | FR | Specified under #214; not yet implemented; waits on FR-065 for its worked-example citations |
-| [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; implemented in #261 (`836dc12`) — TC-167/168/169 |
+| [FR-067](functional/FR-067-add-s2-forms-and-retire-seam-5.md) | FR | Specified under QSL-138 (ADR-011 §7.3 M-3a), split from #214 by owner ruling 2026-09-20; implemented in #261 — TC-167/168/169 |
 | [FR-068](functional/FR-068-split-expression-checking-into-check-stage.md) | FR | Specified under QSL-139 (ADR-011 §7.3 M-5), split from #214 by owner ruling 2026-09-20; implemented, commit `9692382` — TC-170–176 (TC-175/176's FR-068-AC-7/AC-9 assertions retired by FR-074; see FR-074). Amended by FR-087 (owner ruling on QSL-158, 2026-09-21): AC-2/AC-6/AC-10 superseded in part for `CheckedPackage`, which relocates to `package`. AC-6 amended 2026-09-22: item-level import tiers replaced by a module-level layer rule (gate rewrite pending) |
 | [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Implemented under #231 (QSL-88); TC-177–179 pass locally — see `spec/tests.md` |
 | [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Implemented under #231 (QSL-88); TC-180–186 pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |

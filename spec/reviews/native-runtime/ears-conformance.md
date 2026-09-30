@@ -22,9 +22,8 @@ The changed requirement-bearing scope has four singular, named-subject obligatio
 ## Engine and semantic checks
 
 Run: quire validate --scope . 'spec/**/*.md' --summary.
-data/spec-validation.txt records 189/189 grammar-clean documents and zero
-grammar findings; full structural validation also exits zero. Quire is
-0.31.0 with engine 0.46.0, above the required split-scope CLI version.
+It records 189/189 grammar-clean documents and zero
+grammar findings; full structural validation also exits zero.
 
 FR-018 construction, FR-007 validation and FR-008 evaluation use event-triggered
 When statements: their triggers are API requests, not ongoing states. NFR-006
@@ -55,7 +54,6 @@ workflow. Implementation changes to this contract reopen specify/review.
 Reviewed the TC-055–057 setup correction. The only changed prose is
 TC-055–057 setup, outside this lens's requirement-bearing FR/NFR/StR scope.
 The four previously reviewed requirement statements are byte-unchanged.
-The fresh strict engine run in reviews/data/native-runtime/input-setup-validation.txt
-reports 204/204 grammar-clean documents and zero grammar findings; the six
+The fresh strict engine run reports 204/204 grammar-clean documents and zero grammar findings; the six
 existing registry duplicate notices remain visible. No EARS rewrite or new
 semantic judgment is inferred from test-procedure prose. PASS.

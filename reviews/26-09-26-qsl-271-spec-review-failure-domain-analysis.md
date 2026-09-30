@@ -39,7 +39,7 @@ Verdict: changes requested (two medium, one low).
 
 ## Dispositions
 
-Disposition pass ("QSL-271 spec: fix SR-646 to SR-649 findings on spine run"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

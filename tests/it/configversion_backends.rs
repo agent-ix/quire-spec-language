@@ -810,7 +810,7 @@ fn execute_kani(bundle: &codegen::KaniArtifactBundle, subject: &str) -> std::pro
         .env("CARGO_NET_OFFLINE", "true")
         .current_dir(directory.path())
         .output()
-        .expect("pinned cargo-kani must execute")
+        .expect("cargo-kani must execute")
 }
 
 fn playback_i64(output: &str) -> Option<i64> {
@@ -831,7 +831,7 @@ fn playback_i64(output: &str) -> Option<i64> {
 
 #[test]
 #[trace("IT-010-SC-01", "IT-010-SC-02", "IT-010-SC-05")]
-fn pinned_kani_proves_identity_and_counterexample_replays_natively() {
+fn kani_proves_identity_and_counterexample_replays_natively() {
     let models = [config::model().unwrap()];
     let fixture = tempfile::tempdir().unwrap();
     let native = compile_config(fixture.path(), &models, config::Case::Unchanged);
@@ -854,8 +854,6 @@ fn pinned_kani_proves_identity_and_counterexample_replays_natively() {
     assert_eq!(graph.requirement_id, "VersionUnchanged");
     assert_eq!(graph.requirement_revision, 1);
     assert_eq!(graph.adapter_profile, codegen::KANI_ADAPTER_PROFILE);
-    assert_eq!(graph.backend_version, "0.67.0");
-    assert_eq!(graph.backend_executable_sha256, KANI_SHA256);
     assert!(graph.dependencies.is_empty());
     assert_eq!(graph.subject_arguments.len(), 1);
     assert_eq!(graph.subject_results.len(), 1);

@@ -14,9 +14,8 @@ relationships:
 
 ## Summary
 
-Recheck of the example at correction source `56c1621`, which merges PR-54's
-separately reviewed `84aec59` into the handoff branch; the example correction
-itself is `fa73912..915f479`. Skills applied: the actual
+Recheck of the example at the correction source, which merges PR-54's
+separately reviewed source into the handoff branch. Skills applied: the actual
 `/home/peter/dev/agent-skills/code-review/SKILL.md`, which dispatches the Rust
 lane to `/home/peter/dev/agent-skills/rust-review/SKILL.md`, with
 `/home/peter/dev/agent-skills/rust-style/SKILL.md` as the portable idiom default
@@ -146,4 +145,4 @@ unwrap) states the invariant in the type.
 | Fixture re-verification | 67/67 dependency digests, package↔reference digest, binary↔`release/examples/native_protocol_handoff` identity, source/model digests and declaration spans recomputed in this recheck |
 | `quire validate --scope <worktree> "spec/**/*.md"` / grammar | 398/398 docs grammar-clean, only module-registry first-wins notices (`/tmp/quire-native-handoff-corrections-spec.log`) |
 | `cargo deny` | not applicable, no `deny.toml` in this repository |
-| Parent library/spec suites | 533/549 pass, 0 fail, 4 inherited ignored, 52 suites including doctests (`/tmp/quire-native-populations-corrections-test-{minimal,all}.log`); production source identical to `84aec59`, not rerun for example-only fixes |
+| Parent library/spec suites | 533/549 pass, 0 fail, 4 inherited ignored, 52 suites including doctests; production source identical to PR-54's, not rerun for example-only fixes |

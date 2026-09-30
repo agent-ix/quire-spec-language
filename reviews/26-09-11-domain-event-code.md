@@ -9,10 +9,9 @@ review_set: subset
 
 ## Summary
 
-Actual Claude CLI Opus reviewed the domain-event change against main `3b1dae7`,
+Actual Claude CLI Opus reviewed the domain-event change against main,
 including both initially untracked test files, then rechecked the shared-helper
-lint fix and the added commit-record refusal test. The reviewed implementation
-is checkpointed at `455b821`; no blocking code finding remains after the targeted
+lint fix and the added commit-record refusal test. No blocking code finding remains after the targeted
 rechecks. The added commit-record test subsequently passed the parent gate.
 
 ## Verdict
@@ -92,12 +91,3 @@ Logs: `/tmp/quire-domain-event-full-gates.log` and
 tests were integrated after the full-suite target inventory was selected;
 the subsequent all-targets Clippy checks include them. The separately named
 stripped-release producer check is recorded at PR handoff, not inferred here.
-
-## Review provenance
-
-Actual read-only Opus session: `b89c32ef-8447-47a7-92a4-6b97c5ad0d59`.
-The initial review and both narrow continuations completed successfully. Local
-transcripts are `/tmp/quire-domain-event-review-opus.jsonl`,
-`/tmp/quire-domain-event-review-recheck.jsonl`, and
-`/tmp/quire-domain-event-review-commit-recheck.jsonl`. These identify the actual
-review process; they are not runtime identity catalogs or substitutes for tests.

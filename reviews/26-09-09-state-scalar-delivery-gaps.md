@@ -64,7 +64,7 @@ alias candidates, the exact/one-short/retry budgets, the three-target
 Boolean/integer controls, the public predecessor refusals and the explicit
 instruction not to fabricate a validated context.
 
-Coverage reconciliation: actual `quire coverage --scope . --json`, Quire 0.31.0;
+Coverage reconciliation: actual `quire coverage --scope . --json`;
 no grep fallback. Global rollup 373/382 backed. No FR-034 or
 TC-112 row is unbacked, no unmatched tag and no untracked symbol occurs in
 `tests/state_scalar_lowering.rs`, and the three new tests carry resolving

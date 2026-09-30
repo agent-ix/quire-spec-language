@@ -86,9 +86,9 @@ Loom, mutation-adequacy or benchmark result is fabricated.
 
 ### Track A: Critical path, serial
 
-- Task-016 construction and static identity — Done at c195950 / SR-111; independent bytes and complete inventories agree, with measured producer limits. Original estimates and corrective sequence remain in the task/history.
-- Task-017 verified reconstruction — Done at eb97a87 / SR-112; strict intake and real compiler replay preserve authority, original bytes, failure stages and selected limits.
-- Task-018 integration and qualification — Done at eb97a87 / SR-112/113; reconstructed workflows and local gates pass. The gap audit retains the catalog's metric-target limitation.
+- Task-016 construction and static identity — Done / SR-111; independent bytes agree, with measured producer limits.
+- Task-017 verified reconstruction — Done / SR-112; strict intake and real compiler replay preserve authority, original bytes, failure stages and selected limits.
+- Task-018 integration and qualification — Done / SR-112/113; reconstructed workflows and local gates pass.
 
 A gate failure is fixed before dependent work proceeds; a changed contract
 reopens the specification review. There is one active writer and no parallel

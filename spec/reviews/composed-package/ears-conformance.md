@@ -20,7 +20,7 @@ found no trigger, subject or measurable-response defect in these statements.
 
 ## Engine evidence
 
-Quire is `0.31.0` (engine `0.46.0`). The scoped command
+The scoped command
 was `quire validate --scope /home/peter/dev/worktrees/quire-language-composed-spec
 'spec/functional/FR-035-parse-composed-native-units.md'
 'spec/functional/FR-036-link-composed-native-packages.md' --summary`.

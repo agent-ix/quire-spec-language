@@ -10,7 +10,7 @@ Scoped to [FR-009](../functional/FR-009-lower-qualified-projections.md).
 The Boolean, bounded-integer and primitive-state lowering tests pass. TC-094
 compiles a codegen-produced proptest strategy and observes exact LLVM 3.1.0
 source probes while retaining the reusable reader's explicit refusal. IT-010
-compiles the numeric/state oracle and all strategy populations, runs the pinned
+compiles the numeric/state oracle and all strategy populations, runs the
 Kani contract and replays its concrete counterexample through native execution.
 Historical code review is retained in SR-114/115; the completion delta receives
 its own PR-time specification, code, Rust and gap reviews.

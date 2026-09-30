@@ -30,7 +30,7 @@ stub gap.
 
 ## Coverage
 
-- Reconciliation: npm Quire 0.32.0 coverage fallback because native Quoin does
+- Reconciliation: npm Quire coverage fallback because native Quoin does
   not yet expose the gap-analysis coverage command (agent-ix/quoin#542).
 - Tasks done: 1 / 1.
 - Target rows backed by tagged tests: FR-053 acceptance criteria 6 / 6;

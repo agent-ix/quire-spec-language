@@ -24,7 +24,7 @@ finding prevents the owner-authorized private merge under local-only CI.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | Installed process catalog requires Coverage Status but its functional coverage reader selects Status; status checking is skipped on that table. Actual TC-summary statuses and execution are reconciled explicitly. Six duplicate registry diagnostics remain visible. | spec/native-readiness/tests.md:18; spec/reviews/native-readiness/data/implementation-coverage.json |
+| FND-001 | low | Installed process catalog requires Coverage Status but its functional coverage reader selects Status; status checking is skipped on that table. Actual TC-summary statuses and execution are reconciled explicitly. Six duplicate registry diagnostics remain visible. | spec/native-readiness/tests.md:18 |
 | FND-002 | low | A future hosted runner cannot fetch the private ix-trace-rs dependency without repository read access. No hosted run is an acceptance gate under the owner's current local-only policy; configure access before any later dispatch. | Cargo.toml:31; .github/workflows/ci.yml:3; NFR-002 |
 
 ## Scope and skills
@@ -48,7 +48,7 @@ multiline trace into two canonical attributes after Quire failed to bind it.
 | --- | --- |
 | FND-001: OS argument panic | args_os plus separate UTF-8 command/label validation; real FF arguments exit 2 before missing-file I/O, while an FF file path parses exact bytes and preserves valid labels. TC-017. |
 | FND-002: formatter ceiling | Additive format_with_limit checks every append with checked_add; zero/one-short/exact/above/default/usize::MAX boundaries execute. A 1 MiB admitted source that expands refuses. Existing format API remains. TC-016. |
-| FND-003: Error interoperability | Diagnostic implements Display/Error directly, preserving source provenance. Pinned thiserror 2.0.20 infers source as a nested error, so the reviewed compatibility exception avoids renaming fields or adding a false error cause. Actual boxed Diagnostic propagates through ?, downcasts intact and has no cause. TC-018. |
+| FND-003: Error interoperability | Diagnostic implements Display/Error directly, preserving source provenance. thiserror infers source as a nested error, so the reviewed compatibility exception avoids renaming fields or adding a false error cause. Actual boxed Diagnostic propagates through ?, downcasts intact and has no cause. TC-018. |
 | FND-004: untraced native tests | Nine real TC artifacts and TM-002 cover the native boundary. All 21 old native tests and six added tests have imported canonical trace attributes. Quire now binds 41/41 repository test candidates including LR02. |
 | FND-005: missing CLI outcomes | Real processes assert usage/missing-file/directory-read exit 2, resource exit 3, refusal exit 1 and parse exit 0 with an independently selected source digest. TC-015/017. |
 | FND-006: code catalog | Code all/from_code/Display and the owned native catalog retain all ten spellings. Enumeration, uniqueness, lookup and unknown-code refusal execute. TC-018. |

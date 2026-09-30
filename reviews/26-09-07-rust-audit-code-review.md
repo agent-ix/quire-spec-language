@@ -105,10 +105,9 @@ returned exit 3 under the actual binary test with no external runtime PATH.
 
 ## Traceability and remaining scope
 
-Quire CLI 0.31.0 / engine 0.46.0 reports 35 Rust candidates, 14 tagged and 14
+Quire reports 35 Rust candidates, 14 tagged and 14
 bound. FR-012 is 11/11 backed and the matrix 9/10; TC-010 is explicitly Manual
-and has recorded inspection rather than a source symbol. Raw coverage is in
-spec/reviews/rust-verification/data/implementation-coverage.json. No stale tagged
+and has recorded inspection rather than a source symbol. No stale tagged
 symbol or test-summary status lie is reported. This is trace binding, not a
 measured code-coverage percentage or optional semantic review.
 

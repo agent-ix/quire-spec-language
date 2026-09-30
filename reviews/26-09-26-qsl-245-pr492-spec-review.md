@@ -38,7 +38,7 @@ Checked and clean:
 
 ## Dispositions
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-747 pr=quire-spec-language#492 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-747 pr=quire-spec-language#492 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

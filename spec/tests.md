@@ -39,11 +39,9 @@ operational validation remains outside this audit-only plan.
 | TC-007 | Fixture root containment | Property | P1 | FR-012-AC-7 | ✅ Passed locally |
 | TC-008 | Audit resource ceilings | Property | P1 | FR-012-AC-9 | ✅ Passed locally |
 | TC-009 | CLI encoding and Rust-only execution | E2E | P1 | FR-012-AC-10, NFR-005-M-2 | ✅ Passed locally |
-| TC-010 | Owned verification language inventory | Manual | P1 | NFR-005-M-1 | ✅ Inspected locally |
-| TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
+| TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-6 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
-| TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
-| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 | ✅ Passed locally |
+| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1, FR-058-AC-3, FR-058-AC-4 | ✅ Passed locally |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5, QSL-266), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`, QSL-283), AC-7 backed by TC-378, AC-9 (step 8, QSL-283), AC-12, and AC-13 (steps 10 and 11, QSL-266); AC-3 (all three clauses, QSL-246, for `src/check` and `src/family`) and AC-6 (QSL-246: first sentence, an API-surface scan and a rename test); AC-1 (step 1, QSL-283: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case) |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`, QSL-152), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build, QSL-244); FR-063's other criteria per its own Status section (QSL-149) |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally; QSL-145, QSL-268 |
@@ -221,7 +219,7 @@ operational validation remains outside this audit-only plan.
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally (QSL-140) |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally (QSL-140) |
 | TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally (QSL-140) |
-| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed (QSL-140): agreeing fixtures pass; the ignored agreement test waits on IR-283 and IR-284; step 4 passes for the inner `+` and the records outside the agreement; its outer `+` waits on IR-283 |
+| TC-440 | QSL's extent agrees with IR's requires-bound | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed (QSL-140): agreeing fixtures pass; the ignored agreement test waits on IR-283 and IR-284; step 4 passes for the inner `+` and the records outside the agreement; its outer `+` waits on IR-283 |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Implemented; QSL-272 |
 | TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Implemented; QSL-272 |
@@ -476,15 +474,13 @@ local lane; the default local suite uses self-contained negative controls. No su
 ## Coverage gaps
 
 The preexisting 21 Rust tests and older FR/NFR obligations still need their own
-formal TC/evidence remediation. TC-010's inspection is recorded in
-[the remediation inventory](../docs/rust-verification-remediation.md); the module
-classifies Manual as no_source_symbol. Hosted CI is manual-dispatch only.
+formal TC/evidence remediation. Hosted CI is manual-dispatch only.
 
 ## Execution record
 
 The audit unit and default audit integration tests pass locally. All three named
 private-packet tests were explicitly executed and passed. Quire resolves every audit
-test symbol, every FR-012 AC and every executable TC. TC-010 has manual evidence. These counts establish
+test symbol, every FR-012 AC and every executable TC. These counts establish
 the selected scope; they are not full compiler or semantic qualification.
 
 ## Kernel population identity (FR-089) coverage

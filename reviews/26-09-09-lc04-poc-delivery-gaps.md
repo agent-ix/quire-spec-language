@@ -34,8 +34,7 @@ of full backend parity, production safety or complete LC04 acceptance follows.
 
 ## Coverage
 
-Reconciliation: quire coverage --scope . --json, CLI 0.31.0, engine
-0.46.0. The scoped TM-006 test-case group is 3/3 backed; all seven
+Reconciliation: quire coverage --scope . --json. The scoped TM-006 test-case group is 3/3 backed; all seven
 FR-009 criteria have actual trace attributes. There are no scoped unbacked rows
 or untracked tests. Source presence does not establish execution success: the
 generated activation lane remains explicitly ignored in the ordinary suite.

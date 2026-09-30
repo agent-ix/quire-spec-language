@@ -38,9 +38,7 @@ canonical formal-artifact selection, explicit self binding, retained source
 labels and structured declaration locations. Numeric source revision/anchor
 mapping is required by the later lowering API, not invented during linkage.
 The public IR interface already exists; this is native implementation work,
-not a request for another shared model service. Use exact IR and native pins.
-Record qualification with Rust 1.98.1 in accordance with the upstream FR-019
-policy; distinguish actual executed commands from proposed migration metadata.
+not a request for another shared model service.
 
 Missing native implementation leaves a case planned. Failure of an intentionally
 adverse input must be observed through the actual implementation, not substituted

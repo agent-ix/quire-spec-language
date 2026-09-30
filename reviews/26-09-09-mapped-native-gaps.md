@@ -30,7 +30,7 @@ The owner's POC direction permits this engineering PR to proceed.
 
 ## Coverage
 
-Quire CLI 0.31.0 coverage reports TM-007's two test cases backed by three actual
+Quire coverage reports TM-007's two test cases backed by three actual
 integration tests and all five FR-022 criteria tagged. No scoped unbacked rows
 or untracked symbols. Global rollup is 254/262 backed; unrelated gaps remain.
 The catalog requires Coverage Status while reconciliation expects Status;

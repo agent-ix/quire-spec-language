@@ -16,9 +16,7 @@ relationships:
 
 Actual Claude Sonnet code/Rust review inspected the new test file, repository
 instructions, the actual code-review and rust-review skills, shared test setup,
-wire records, decision implementation, FR-042 and TC-121. Its result is retained
-at `/tmp/quire-mixed-observation-review.jsonl` (session
-`9125689e-4c40-44d7-a33a-e87e4b972a32`). The reviewer ran no gates;
+wire records, decision implementation, FR-042 and TC-121. The reviewer ran no gates;
 execution results below came from the separate parent gate run.
 
 Both tests exercise actual parse, binding, type admission and proof discharge

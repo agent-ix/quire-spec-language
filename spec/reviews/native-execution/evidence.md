@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Actual integration tests establish aggregate truth, operation captures/frames, full retained requests and separate-stage outcome/counter correspondence. Quoin advise again exited 2 on CLI-version discovery despite installed Quire 0.31.0. Catalog integration and negative testing methods fit these composition obligations; Test is selected by author judgment for each criterion, not claimed as advisor output.
+Actual integration tests establish aggregate truth, operation captures/frames, full retained requests and separate-stage outcome/counter correspondence. Quoin advise again exited 2 on CLI-version discovery. Catalog integration and negative testing methods fit these composition obligations; Test is selected by author judgment for each criterion, not claimed as advisor output.
 
 Author PR-readiness review of `9c3e5ff`, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.

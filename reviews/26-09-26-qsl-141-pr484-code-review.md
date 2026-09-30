@@ -43,12 +43,12 @@ lets a real layering break through today.
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-19403785 (SR-707 dispositions).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-707 pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-707 pr=quire-spec-language#484 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
-| --- | --- | --- |
-| FND-001 | fixed | |
-| FND-002 | fixed | |
+| FND | Outcome |
+| --- | --- |
+| FND-001 | fixed |
+| FND-002 | fixed |
 
 Verified by mutation in a scratch worktree: appending `type _T = crate::syntax::TypeForm;` and `stringify!(crate::syntax::TypeForm)` to `qsl-forms/src/value.rs` keeps `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates` green (FND-001). Appending `const _M: &str = stringify!(crate::build_unit);` makes it fail with `"1627: crate::build_unit"`, so macro-body paths are judged (FND-002).
 

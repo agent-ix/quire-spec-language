@@ -3,7 +3,7 @@ id: SR-770
 title: "QSL-309 code review of PR 510 (FR-114 protocol attempt-to-frame binding)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@d2c1a5d389c8a94ef820fb66c74ad811586ac7e2; qsl-forms/src/lib.rs; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-replay/src/spine.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/state_clause.rs; src/command/output.rs; src/command/output/types.rs"
+scope: "agent-ix/quire-spec-language; qsl-forms/src/lib.rs; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-replay/src/spine.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/state_clause.rs; src/command/output.rs; src/command/output/types.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-114
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-309. PR: quire-spec-language#510 at d2c1a5d, base b43badd. This
+Ticket: QSL-309. PR: quire-spec-language#510. This
 file covers code-review with the rust-review lane folded in.
 
 The parts that work:
@@ -36,7 +36,7 @@ The parts that work:
 - **Contracts.** A missing entry refuses `MissingContract`. An invariant, or
   a clause on a different operation, refuses `WrongContractAnchor`. Neither
   case is skipped silently.
-- **Gate.** A fresh `make ci` at d2c1a5d, in its own
+- **Gate.** A fresh `make ci`, in its own
   `CARGO_TARGET_DIR=target-309`, exited 0: 93 `test result: ok`, 0 FAILED,
   `ci-docs` clean under `-D warnings`. Every added intra-doc link is either on
   an undocumented private/`pub(crate)` item or names a public target.
@@ -76,11 +76,11 @@ not met.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 005647d6 (plus fbb63d61 for the string-edge gate): `protocol_clause::content` refuses every uncovered node kind, construct and non-literal body, and checks the grammar-mandatory rest. The split was verified complete against the grammar (SR-772) |
-| FND-002 | fixed | 005647d6: the `Origin::ProtocolAttempt` arm and the `Boolean` `Type` record. Reverting either reproduces `UnlocatedOccurrence` (SR-772 FND-001 covers the population record) |
-| FND-003 | fixed | 005647d6: one `state_clause::frame_record` used by both the clause and the attempt |
-| FND-004 | fixed | 005647d6: one source-ordered lowering pass, tested by `anchor_occurrence_ordinals_follow_source_order` |
-| FND-005 | fixed | 005647d6: `let [clause_index] = indices[..] else` refuses `Ambiguous`, reached directly in `a_contract_entry_naming_two_clauses_of_one_name_refuses` |
-| FND-006 | fixed | 005647d6: clause and attempt assembly errors gathered into one refusal |
-| FND-007 | fixed | 005647d6: zips and `.get()` with an `InternalFault` for an empty slot; `attempt_spans` is `Option<Span>` |
-| FND-008 | fixed | 005647d6: `contracts` read between `contracts [` and `]`, role read after `by` |
+| FND-001 | fixed | (plus the string-edge gate fix): `protocol_clause::content` refuses every uncovered node kind, construct and non-literal body, and checks the grammar-mandatory rest. The split was verified complete against the grammar (SR-772) |
+| FND-002 | fixed | the `Origin::ProtocolAttempt` arm and the `Boolean` `Type` record. Reverting either reproduces `UnlocatedOccurrence` (SR-772 FND-001 covers the population record) |
+| FND-003 | fixed | one `state_clause::frame_record` used by both the clause and the attempt |
+| FND-004 | fixed | one source-ordered lowering pass, tested by `anchor_occurrence_ordinals_follow_source_order` |
+| FND-005 | fixed | `let [clause_index] = indices[..] else` refuses `Ambiguous`, reached directly in `a_contract_entry_naming_two_clauses_of_one_name_refuses` |
+| FND-006 | fixed | clause and attempt assembly errors gathered into one refusal |
+| FND-007 | fixed | zips and `.get()` with an `InternalFault` for an empty slot; `attempt_spans` is `Option<Span>` |
+| FND-008 | fixed | `contracts` read between `contracts [` and `]`, role read after `by` |

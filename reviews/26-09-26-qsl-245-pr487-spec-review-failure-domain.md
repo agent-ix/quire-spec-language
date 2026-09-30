@@ -3,7 +3,7 @@ id: SR-727
 title: "QSL-245 failure-domain analysis of PR 487 (catalog 1-draft.8 adoption)"
 type: SpecReview
 analysis: failure-domain
-scope: "agent-ix/quire-spec-language@913375e2255351626fdcb6f318b130938d351df9; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md (kernel value refusals, sum rule, OQ-2); spec/functional/FR-001-read-exact-source.md (blank label, OQ-1); code qsl-eval/src/value/expression/evaluate.rs, qsl-semantics/src/value/quantity.rs, qsl-cst/src/diagnostic.rs, qsl-foundation/src/diagnostic.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md (kernel value refusals, sum rule, OQ-2); spec/functional/FR-001-read-exact-source.md (blank label, OQ-1); code qsl-eval/src/value/expression/evaluate.rs, qsl-semantics/src/value/quantity.rs, qsl-cst/src/diagnostic.rs, qsl-foundation/src/diagnostic.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -40,9 +40,9 @@ adopted rules.
 
 ## Dispositions
 
-Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
+Verified against the fix diff on 2026-09-26.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | e0d028af: FR-096 now says `SumOutOfDomain` names no catalog undefined reason and builds no `UndefinedRecord`. Its new `sum-out-of-domain` spelling points at a missing FR-100 row; see SR-729. |
-| FND-002 | fixed | e0d028af: OQ-2 now says QSL cannot reach the unbounded case, and that the record SHALL render the declared `Int[lo, hi]`, not the `Decimal[lo, hi; 0, 0]` placement. |
+| FND-001 | fixed | FR-096 now says `SumOutOfDomain` names no catalog undefined reason and builds no `UndefinedRecord`. Its new `sum-out-of-domain` spelling points at a missing FR-100 row; see SR-729. |
+| FND-002 | fixed | OQ-2 now says QSL cannot reach the unbounded case, and that the record SHALL render the declared `Int[lo, hi]`, not the `Decimal[lo, hi; 0, 0]` placement. |

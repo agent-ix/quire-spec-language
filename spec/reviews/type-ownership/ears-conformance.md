@@ -42,8 +42,8 @@ Verdict: ACCEPT WITH FINDINGS
 ## Method
 
 1. Ran the deterministic engine check:
-   `quire validate --scope /home/peter/dev/worktrees/qsl-arch12 spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md --strict --summary`
-   (quire 0.32.0, engine 0.46.0). Result: grammar-clean.
+   `quire validate --scope /home/peter/dev/worktrees/qsl-arch12 spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md --strict --summary`.
+   Result: grammar-clean.
 2. Decided the scope. EARS pattern rules apply only to `shall` requirement
    statements; ADR-013 has none, so those rules are recorded as not applicable.
    The applicable checks are: singular statement, named subject, concrete and

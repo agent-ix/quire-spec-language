@@ -27,7 +27,7 @@ Explicit module roots replace ambient discovery.
 
 The check reports zero `status-column-matches-nothing` diagnostics and
 zero status lies on the real matrices. The trace rollup is 325/329; its
-`no_symbol_rows` explicitly exempts manual TC-010 and inspection FR-017-AC-2
+`no_symbol_rows` explicitly exempts inspection FR-017-AC-2
 from source-symbol status checks. The other two unbacked targets are StR-001's
 demonstration criteria; this check does not establish their demonstration
 evidence. The rollup is not a count of four missing automated tests.
@@ -40,7 +40,7 @@ evidence. The rollup is not a count of four missing automated tests.
 | native-readiness | 9/9 |
 | native-runtime | 23/23 |
 | native-workflow | 16/16 |
-| root tests | 9/10; TC-010 is Manual |
+| root tests | 9/9 |
 
 These counts establish trace binding. Status classification can detect a
 completion claim with unbacked references; it does not execute tests or prove

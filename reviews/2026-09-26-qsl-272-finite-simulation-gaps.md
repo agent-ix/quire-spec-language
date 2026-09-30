@@ -83,13 +83,12 @@ FND-003 and FND-004). The remaining gaps are low.
 
 ## Dispositions
 
-Disposition pass at 54732520 (rebased onto main with #465 / FR-096; fixes in
-e8c5f6c7 and 54732520).
+Disposition pass (rebased onto main with #465 / FR-096).
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | `cause` is implemented and asserted literally in `cancellation_stops_the_run_and_returns_the_frontier` and in `cancellation_frontier_keeps_fifo_order_not_key_order`. |
-| FND-002 | fixed | e8c5f6c7 and 54732520: `CatalogCoded for NotSimulated`. `GeneratorMismatch` gives `invalid_runtime_input`/`invalid-value`, asserted in the TC-454 step 8 test. `catalog_fields` follows the FR-096 key table: `Extent(Limit)` delegates to `LimitExceeded` (`kind`/`bound`/`actual` row), and every other variant returns `None`, since no key-table row exists for `invalid-value` or `runtime_invariant`. No new code or field is invented. See R1-FND-002 for the `RequiresBound` mapping. |
+| FND-002 | fixed | `CatalogCoded for NotSimulated`. `GeneratorMismatch` gives `invalid_runtime_input`/`invalid-value`, asserted in the TC-454 step 8 test. `catalog_fields` follows the FR-096 key table: `Extent(Limit)` delegates to `LimitExceeded` (`kind`/`bound`/`actual` row), and every other variant returns `None`, since no key-table row exists for `invalid-value` or `runtime_invariant`. No new code or field is invented. See R1-FND-002 for the `RequiresBound` mapping. |
 | FND-003 | fixed | the first iteration is tight (1/1/1) and the second generous. The test asserts domain key node `[7;32]`, path `[]` and `DomainKind::Integer`, and asserts `Extent(ClassifyFailure::Limit)` with `LimitKind::NodeCount` and zero calls. |
 | FND-004 | fixed | `several_initial_states_in_descending_order_stop_bounded_at_depth_zero` lists `c,b,a,a` with `max_states` 3 and `max_depth` 0, and expects `Bounded` at `Depth` with frontier a,b,c. |
 | FND-005 | fixed | the test asserts provenance seed 42, trace 0 and `sampler == sampler_ref()`, and `replay(&system, &first) == Ok(())`. |

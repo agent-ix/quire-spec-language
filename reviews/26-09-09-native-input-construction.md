@@ -102,32 +102,30 @@ and structural work, not allocator capacity, caller allocation cost or latency.
 
 ## Actual local gates
 
-Final commands below completed successfully against the source/test bytes in
-the evaluated commit. Cargo phases ran serially, nice 10, locked/offline, one
-job and one test thread, reusing the explicit existing target caches. Evidence
-paths are relative to reviews/data/native-runtime/.
+Final commands below completed successfully. Cargo phases ran serially, nice 10,
+locked/offline, one job and one test thread, reusing the explicit existing
+target caches.
 
-| Command | Result | Evidence |
-| --- | --- | --- |
-| `nice -n 10 cargo fmt --all -- --check` | Passed | input-fmt.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_inputs -- --test-threads=1` | 21 passed | input-complete-cases.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 131 ordinary tests and 1 compile-fail doctest passed; 3 named private tests ignored in this lane | input-default-tests.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --all-targets --all-features -- -D warnings` | Passed; the workspace has one member and no optional features | input-clippy-all-features.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed | input-rustdoc.txt |
-| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using existing cache | input-minimal-build.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private fixture audits passed | input-private-audits.txt |
+| Command | Result |
+| --- | --- |
+| `nice -n 10 cargo fmt --all -- --check` | Passed |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_inputs -- --test-threads=1` | 21 passed |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 131 ordinary tests and 1 compile-fail doctest passed; 3 named private tests ignored in this lane |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --all-targets --all-features -- -D warnings` | Passed; the workspace has one member and no optional features |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed |
+| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using existing cache |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private fixture audits passed |
 
 The initial missing-API test failure, private-interface warnings, useless_concat
 Clippy failure and old diagnostic-count assertion (18 rather than the reviewed
-19) are retained in the earlier logs. They were corrected before the final
-gates; no warning or acceptance assertion was suppressed. Raw command output
-retains its original trailing blank lines. The first template command omitted
+19) were corrected before the final
+gates; no warning or acceptance assertion was suppressed. The first template command omitted
 the current CLI's required repository argument; the corrected scoped command
 succeeded. These initial failures are not qualification successes.
 
 ## Traceability and remaining work
 
-Quire 0.31.0 / engine 0.46.0 binds 134/134 Rust test symbols, with
+Quire binds 134/134 Rust test symbols, with
 FR-018 7/7 criteria and TM-004 3/23 cases backed. Root backing is 141/208,
 not complete runtime coverage. No untracked symbols or reported status lies
 appear. Twenty catalog/classifier diagnostics, three preexisting unmatched

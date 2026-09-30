@@ -3,7 +3,7 @@ id: SR-728
 title: "QSL-245 gap analysis of PR 487 (catalog 1-draft.8 adoption)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@913375e2255351626fdcb6f318b130938d351df9; FR-001-AC-6, FR-001-AC-11, FR-010-AC-11, FR-018-AC-8, FR-026-AC-6, FR-096-AC-8, FR-096-AC-13, FR-096-AC-14; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-444, TC-500; code quire-exact/src/outcome.rs, qsl-foundation/src/diagnostic.rs, qsl-foundation/src/source.rs"
+scope: "agent-ix/quire-spec-language; FR-001-AC-6, FR-001-AC-11, FR-010-AC-11, FR-018-AC-8, FR-026-AC-6, FR-096-AC-8, FR-096-AC-13, FR-096-AC-14; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-444, TC-500; code quire-exact/src/outcome.rs, qsl-foundation/src/diagnostic.rs, qsl-foundation/src/source.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -45,9 +45,9 @@ in SR-724 FND-001.
 
 ## Dispositions
 
-Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
+Verified against the fix diff on 2026-09-26.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | e0d028af: TC-444 step 5 now expects `blank-label` with `label` `authority`, its Status and `tests.md` row are Partial, and the cause and field are marked planned. |
-| FND-002 | deferred | The `quire-exact` code is outside this spec-only PR. e0d028af records the stale TC-318 tag and comment in FR-096 Status, for the coder who builds AC-8 to retag and correct. |
+| FND-001 | fixed | TC-444 step 5 now expects `blank-label` with `label` `authority`, its Status and `tests.md` row are Partial, and the cause and field are marked planned. |
+| FND-002 | deferred | The `quire-exact` code is outside this spec-only PR. The fix records the stale TC-318 tag and comment in FR-096 Status, for the coder who builds AC-8 to retag and correct. |

@@ -15,10 +15,7 @@ relationships:
 ## Summary
 
 Actual Claude Opus code/Rust review and focused recheck using repository
-conventions and the actual `code-review` and `rust-review` skills. Session
-`249b16e1-c003-441b-a4a8-75bfae8a4dec`; retained outputs:
-`/tmp/quire-owned-attempt-opus-review.jsonl` and
-`/tmp/quire-owned-attempt-opus-recheck.jsonl`.
+conventions and the actual `code-review` and `rust-review` skills.
 No ownership, causal-flow, operand-loss or accounting defect was found in the
 exact-role Attempt eligibility arm. The existing model, field, formula and
 operation-contract authorities remain unchanged.

@@ -3,7 +3,7 @@ id: SR-724
 title: "QSL-245 spec review of PR 487 (catalog 1-draft.8 adoption)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@913375e2255351626fdcb6f318b130938d351df9; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-245 (PR agent-ix/quire-spec-language#487; also QSL-160, QSL-148).
-The diff is spec-only. It was measured against QSpec commit 84ed5298
+The diff is spec-only. It was measured against QSpec
 (`proposals/quire-v1/definitions/native-diagnostics.md` revision
 `1-draft.8`, FR-272, FR-044, FR-140, FR-145 and `value-accounting.md`) and
 against QSL code at the reviewed sha.
@@ -60,9 +60,9 @@ to rule on.
 
 ## Dispositions
 
-Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
+Verified against the fix diff on 2026-09-26.
 
 | FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | e0d028af: FR-096 Status, TC-428, `tests.md` and `spec.md` now say AC-8 is backed for `CardinalityOutOfBound` only, and that `ForeignReference`'s `cause()` returns `None`. |
-| FND-002 | fixed | e0d028af: FR-001-OQ-1 is replaced by the ruling. The three host causes now refuse with `invalid_source_map`, keep their host cause and name no region. New FR-001-AC-12 is backed by TC-424 step 7 and marked planned. It matches the catalog's retained `invalid_source_map` meaning and the three call sites. |
+| FND-001 | fixed | FR-096 Status, TC-428, `tests.md` and `spec.md` now say AC-8 is backed for `CardinalityOutOfBound` only, and that `ForeignReference`'s `cause()` returns `None`. |
+| FND-002 | fixed | FR-001-OQ-1 is replaced by the ruling. The three host causes now refuse with `invalid_source_map`, keep their host cause and name no region. New FR-001-AC-12 is backed by TC-424 step 7 and marked planned. It matches the catalog's retained `invalid_source_map` meaning and the three call sites. |

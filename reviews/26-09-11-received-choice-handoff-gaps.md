@@ -40,9 +40,7 @@ stripped-release focused test passed, including the final fixture assertions.
 ## Coverage
 
 Reconciliation: `quire coverage --scope
-/home/peter/dev/worktrees/quire-language-received-choice-handoff --json` (quire
-0.31.0, engine `ca7362d4`; raw report
-`/tmp/quire-received-choice-handoff-coverage.json`) reports 374/383 rows backed.
+/home/peter/dev/worktrees/quire-language-received-choice-handoff --json` reports 374/383 rows backed.
 TC-010 (Manual) and FR-017-AC-2 (Inspection) are `no_source_symbol` exemptions,
 not test-backing failures; the four rows in FND-001 are the remaining ordinary
 gaps. `status_lies` is empty. FR-042 is 9/10 backed corpus-wide and the changed

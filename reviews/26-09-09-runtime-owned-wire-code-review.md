@@ -3,7 +3,7 @@ id: SR-273
 title: "Code and Rust review of owned runtime wire decoding"
 type: SpecReview
 analysis: code-review
-scope: "3c6a0e6 against 8866239; runtime input/wire/reading, digest, runtime_reading tests"
+scope: "runtime input/wire/reading, digest, runtime_reading tests"
 review_set: subset
 ---
 ## Summary

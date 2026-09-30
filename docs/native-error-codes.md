@@ -29,7 +29,7 @@ reused; prose may change without changing classification.
 | extraction-requires-run | Source-only compile/lower commands do not admit extracted programs. |
 | extraction-package-conflict | Selected package bytes and extracted compilation were both requested. |
 | extraction-clause-count | Extracted compilation requires exactly one authored binding; details retain the actual count. |
-| invalid-quire-context | Pinned Quire rejected the semantic context; details identify its contract versions and original diagnostics. |
+| invalid-quire-context | Quire rejected the semantic context; details identify its contract versions and original diagnostics. |
 | invalid_source_identity | Required source identity, revision or display path is absent. |
 | invalid_source_map | Correspondence, source binding or queried range is invalid. |
 | source_digest_mismatch | Admitted source bytes differ from the supplied raw SHA-256 digest. |

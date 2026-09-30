@@ -121,7 +121,7 @@ issues.
 
 Disposition pass
 (renumbered from SR-641: main already held SR-641 and SR-642). Each
-outcome was checked against the code at that head, not against the
+outcome was checked against the code, not against the
 coder's claims.
 
 | FND | Outcome | Reason |

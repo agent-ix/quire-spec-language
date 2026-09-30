@@ -3,7 +3,7 @@ id: SR-752
 title: "Spec review of QSL-21a protocol frame and scoped anchor FRs"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@2f062e3b7f17d83c3970fa43660193c05dc6a464; spec/functional/FR-112-build-protocol-scoped-anchor-forms.md; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/functional/FR-116-replay-a-frame-counterexample.md; spec/functional/FR-088-clause-name-and-type-identity.md; spec/functional/FR-104-check-state-clauses.md; spec/functional/FR-105-emit-state-nodes.md; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-510 to TC-515; spec/spec.md; spec/tests.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; context read: ADR-012 §12.2, FR-072, FR-098, FR-106, src/linking/composed/scopes/protocol.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-112-build-protocol-scoped-anchor-forms.md; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/functional/FR-116-replay-a-frame-counterexample.md; spec/functional/FR-088-clause-name-and-type-identity.md; spec/functional/FR-104-check-state-clauses.md; spec/functional/FR-105-emit-state-nodes.md; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-510 to TC-515; spec/spec.md; spec/tests.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; context read: ADR-012 §12.2, FR-072, FR-098, FR-106, src/linking/composed/scopes/protocol.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-112
@@ -19,7 +19,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-296 (QSL-21a). PR: quire-spec-language#497 at 2f062e3b. The review
+Ticket: QSL-296 (QSL-21a). PR: quire-spec-language#497. The review
 covers integrity, scope and failure domain, interfaces, and evidence. It also
 checks each AC against its TC by hand. The TCs are Planned, which is expected
 for a spec-only PR.

@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-`quoin advise --json` was run and failed CLI version detection despite Quire 0.31.0 (engine 0.46.0@ca7362d4). The catalog was read; the choices below are author judgment, not deterministic recommendations.
+`quoin advise --json` was run and failed CLI version detection. The catalog was read; the choices below are author judgment, not deterministic recommendations.
 
 ## Findings
 

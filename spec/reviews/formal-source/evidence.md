@@ -20,7 +20,7 @@ Actual QUOIN advice agrees with the Test class for all five criteria; the concre
 
 ## Analysis
 
-The recorded advise.json was produced by quoin advise --json. The initial sandboxed run could not detect the installed Quire version; a permitted local retry completed. Quire reports CLI 0.31.0 and engine 0.46.0. All five advice records have mismatch=false, uncatalogued=false and inconclusive=false.
+quoin advise --json was run. The initial sandboxed run could not detect the installed Quire version; a permitted local retry completed. All five advice records have mismatch=false, uncatalogued=false and inconclusive=false.
     
 AC-1 receives property-based-testing from the universal shape. TC-035 varies selected positive revisions and TC-039 supplies the independently generated correspondence family. AC-2..4 receive unit-testing and bdd-spec-by-example from example shapes. They are integration cases here because failure is measured across actual native and IR source types. AC-5 receives metamorphic/property recommendations from round-trip shape plus golden-approval-testing from a serialization characteristic; the contract defines no wire serialization. By judgment, retain the generated oracle/round-trip test and explicit coordinate examples, not an invented serialized golden file.
     

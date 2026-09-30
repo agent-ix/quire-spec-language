@@ -34,7 +34,7 @@ reverse-trace gap remains.
 
 ## Coverage
 
-Quire 0.32.0 reports FR-049-AC-9, NFR-009-AC-4 and TC-142 backed, with no
+Quire reports FR-049-AC-9, NFR-009-AC-4 and TC-142 backed, with no
 targeted unbacked row, status lie, no-symbol row or unmatched trace. Plan-009 is
 15/15 done and the targeted Task-040 is 1/1 done. Repository-wide coverage is
 491/512 because of inherited criteria outside QSL #101; FR-049's older AC-1,

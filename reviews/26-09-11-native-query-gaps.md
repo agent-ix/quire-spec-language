@@ -18,9 +18,9 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` over the ordered-query increment at `667226b`, with a fresh
-`quire coverage --scope /home/peter/dev/worktrees/quire-language-native-query-proofs --json`
-(quire 0.31.0, engine 0.46.0). No plan bundle targets FR-040/FR-042 —
+QUOIN `gap-analysis` over the ordered-query increment, with a fresh
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-native-query-proofs --json`.
+No plan bundle targets FR-040/FR-042 —
 `plan/` holds Plan-001..009, none covering composed value checking — so Step 1
 (plan completion) is not applicable and matrix reconciliation is the operative
 gate. The corpus reconciliation is byte-identical to the previous run: 367/376
@@ -34,14 +34,14 @@ optional semantic review (Step 4) was declined by the requester.
 matrix Test Case with no backing tagged test fails the gate. TC-115 and three
 FR-036 acceptance rows, TC-010/NFR-005-M-1 and FR-017-AC-2 are still unbacked,
 inherited and untouched here. Read as a delivery signal this increment is now
-CONDITIONAL with no medium of its own: FND-001 is resolved at `baf93f5`, nothing
+CONDITIONAL with no medium of its own: FND-001 is resolved by the correction, nothing
 regressed, and the corpus reconciliation is byte-identical again.
 
 ## Findings
 
 | ID      | Severity | Summary                                                                                 | Refs                                                                    | Escape Cause                    |
 | ------- | -------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------- |
-| FND-001 | medium   | RESOLVED at `baf93f5` — `sum` at the declared 10,000 maximum is unverified and provably unreachable under clamped limits | src/checking/composed/proofs/engine/queries.rs:274; tests/composed_query_proofs.rs:492 | correct-requirement-no-evidence |
+| FND-001 | medium   | RESOLVED by the correction — `sum` at the declared 10,000 maximum is unverified and provably unreachable under clamped limits | src/checking/composed/proofs/engine/queries.rs:274; tests/composed_query_proofs.rs:492 | correct-requirement-no-evidence |
 | FND-002 | medium   | Six inherited unbacked matrix rows remain; none is in FR-040/FR-042 scope                | spec/model-linking/tests.md:107; spec/tests.md:45; spec/functional/FR-036-link-composed-native-packages.md:129 | missing-requirement             |
 | FND-003 | low      | Twenty inherited untracked NFR-007-M-* trace tags on package-encoding tests              | src/package/encoding/tests.rs:67; tests/package_construction_cases/limits.rs:55 | correct-requirement-no-evidence |
 | FND-004 | low      | FR-042-AC-10 real producer-to-B handoff is still unmet; library fixtures use a synthetic baseline | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:168; tests/support/native_protocol/mod.rs | correct-requirement-no-evidence |
@@ -71,7 +71,7 @@ Nine new `tests/composed_query_proofs.rs` cases tagged `TC-119` with
 `tests/composed_proofs.rs` case moved from `FR-040-AC-4` to `FR-040-AC-5`. Every
 cited id resolves; the binder minted no new unbacked row and no status lie.
 
-### Recheck at `baf93f5`
+### Recheck after the correction
 
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-query-proofs --json`
 re-run for this recheck is byte-identical again: 367/376 backed, the same six
@@ -98,7 +98,7 @@ requirement — FR-040-AC-4 now names unsupported rational sum-domain transfer a
 acceptance level, not only in narrative — and a backing test
 (`rational_sum_separates_supported_prefixes_from_missing_domain_transfer`). Its
 sibling `Unsupported::OrderedQuery`, the reverse case at the initial review, was
-removed at `baf93f5`; no reverse gap remains in the changed public surface.
+removed after the correction; no reverse gap remains in the changed public surface.
 
 No stub masquerading as complete was found in the changed source: `queries.rs`
 contains no `todo!`/`unimplemented!`/`TODO`/`FIXME`, no placeholder returns, and
@@ -111,5 +111,5 @@ Not inferable from these controls and still open: query runtime execution,
 B consumer conformance (FR-042-AC-10), recovery admission, general protocol
 decision proofs, broader rational sum-domain transfer, and full FR-040/FR-042
 acceptance. `sum` at N=10,000 (FND-001) was the one item this increment newly put
-in reach of a test; `baf93f5` supplies that test, so nothing this increment can
+in reach of a test; the correction supplies that test, so nothing this increment can
 reach is left untested.

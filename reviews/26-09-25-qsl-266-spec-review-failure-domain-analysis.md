@@ -53,7 +53,7 @@ Four defects:
 
 ## Dispositions
 
-Disposition pass ("QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

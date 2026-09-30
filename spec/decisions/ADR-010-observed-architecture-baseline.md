@@ -33,45 +33,28 @@ it names it only as the reference the observation is compared with. Nothing in
 this record states that an intended element exists unless the cited code
 contains it.
 
-### Revisions inspected
+### Repositories inspected
 
-All revisions are `origin/main` on 2026-09-19.
-
-| Repo | Short name | sha |
-|---|---|---|
-| agent-ix/quire-spec-language | QSL | de627b58a42c5d9f84700609bdced407360c026d |
-| agent-ix/quire-contract-ir | IR | 553b6d1527bf3158b0147b21a5061f2b71db2f66 |
-| agent-ix/quire-contract-runtime | RT | d97bc0b0186450ad3b7ca885ffe94248d3dca633 |
-| agent-ix/quire-contract-codegen | CG | a4b2a733fd341fc108cdb2ea926fdde6225ea4c1 |
-| agent-ix/quire-specification | QSpec | resolved per artifact tree: native-v1 at `782c1ce`, complete-value at `82f84d3` |
-| agent-ix/filament-core-data | FCD | 7dcb2f2c7466a770b2362561e70ed10a8f941c1f |
-| agent-ix/quire-integration | QI | its `main` on that date |
-
-Pull requests cited, at the heads the evidence was read at on 2026-09-19: QSL #200 `13b6687`,
-QSL #204 `6eee1f3`, QSL #228 `a43e951`, IR #139 `64982f1`, IR #138 `100208c`,
-FCD #200 `049d8c2`. QSL #204 advanced to `2b02528` and IR #139 to
-`417ec86` before 17:02Z; the cited claims hold at both heads. QSL #204 merged at
-2026-09-19T17:04:35Z as `ba9e33b`, after the Context revision de627b5; the
-PR-sensitive items (§8) name what it changes.
+The evidence was read from each repository's `origin/main` on 2026-09-19. The
+PR-sensitive items (§8) name what the cited open pull requests change.
 
 Issue bodies are cited as retrieved at 2026-09-19T17:02Z. Each cited body's
 `updatedAt` is at or before that time; §9.1 lists the ones L1-D1 depends on.
 
 ### Evidence convention
 
-Every positive evidence cell is `<prefix>:<path>:<line>` at the revision above.
+Every positive evidence cell is `<prefix>:<path>:<line>`.
 
 | Prefix | Expands to |
 |---|---|
-| `QSL:` | `quire-spec-language@de627b5:src/` (paths starting `tests/`, `examples/`, `resources/`, `.github/` or `Cargo.*` are repo-root relative) |
-| `QSpec:` | `quire-specification` content resolved into QSL at the revisions above (native-v1 `782c1ce`, complete-value `82f84d3`) |
-| `IR:` | `quire-contract-ir@553b6d1:` |
-| `RT:` | `quire-contract-runtime@d97bc0b:` |
-| `CG:` | `quire-contract-codegen@a4b2a73:` |
-| `FCD:` | `filament-core-data@7dcb2f2:` |
-| `QI:` | `quire-integration@40cff46:` |
-| `<prefix>@<sha>:` | the same repository at another named revision, for example `IR@a5154d3:Cargo.toml:24` |
-| `PR #n@<sha>:` | the named pull request at the named head, repo-root relative |
+| `QSL:` | `quire-spec-language:src/` (paths starting `tests/`, `examples/`, `resources/`, `.github/` or `Cargo.*` are repo-root relative) |
+| `QSpec:` | `quire-specification` content resolved into QSL |
+| `IR:` | `quire-contract-ir:` |
+| `RT:` | `quire-contract-runtime:` |
+| `CG:` | `quire-contract-codegen:` |
+| `FCD:` | `filament-core-data:` |
+| `QI:` | `quire-integration:` |
+| `PR #n:` | the named pull request, repo-root relative |
 
 Absence cells use the negative-evidence form `absent: <pattern> in <path>`,
 meaning `git grep -n -F '<pattern>' <sha> -- <path>` at the revision above

@@ -42,8 +42,7 @@ serde_json = "=1.0.151"
 # root Cargo.toml's own dev-dependency).
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
 
-# `tool/` is this lane's CLI (`prepare`, `revision-log`,
-# `check-incompatible-fixture`), deliberately kept in its own manifest; see
+# `tool/` is this lane's CLI (`prepare`, `check-incompatible-fixture`), deliberately kept in its own manifest; see
 # tool/Cargo.toml.
 
 # `current-head-lane prepare` clones/refreshes quire-contract-ir's default

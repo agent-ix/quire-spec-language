@@ -10,8 +10,7 @@ review_set: all
 ## Summary
 
 Attempted quoin advise --repo . --json. It exited 2 while determining the Quire
-version, although direct quire --version reports CLI 0.31.0, engine
-0.46.0@ca7362d4. No deterministic recommendation is claimed. quoin catalog
+version. No deterministic recommendation is claimed. quoin catalog
 methods --json succeeded; its integration-testing and negative-abuse-testing
 entries belong to Test, with Integration evidence.
 

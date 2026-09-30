@@ -22,7 +22,7 @@ its exact implementation ticket, central TestCase and qualification owner.
 
 ## Inputs
 
-- QSpec complete-V1 semantic baseline `d49bbdc4a97ae0dca27b4f1eec2826446520fc28` (the QSpec PR #75 merge, amending the QSpec #68 complete contracts after PRs #73 and #74 over the PR #64 baseline).
+- QSpec complete-V1 semantic baseline.
 - The accepted central capability inventory, delivery-ticket manifest and TM-009.
 - Current QSL default-branch code, tests, matrices, issues and retained L1–L6 evidence.
 
@@ -52,7 +52,6 @@ its exact implementation ticket, central TestCase and qualification owner.
 
 ## Dependencies
 
-The central QSpec gate is merged at
-`5a5f0d5f7598fccafcc2a4ddb84c2241a617274e`. [IT-011](../integration/IT-011-adopt-complete-v1-baseline.md)
+The central QSpec gate is merged. [IT-011](../integration/IT-011-adopt-complete-v1-baseline.md)
 checks that Plan-013 integrates the frozen central contract without assuming
 that a green planning audit is product qualification.

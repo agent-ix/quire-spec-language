@@ -26,7 +26,7 @@ close Plan-007/LC02 or establish independent B/C acceptance. PR #12 stays draft.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | The installed trace engine still lists NFR metric obligations without minting their targets, leaving 20 references untracked. Explicit producer metric evidence below closes the local producer measurement gate; reader metrics remain pending. The tool diagnostic is retained, not suppressed. | SR-109 FND-004; SR-110 FND-002; data/native-packages/correspondence-coverage.json; TC-088 |
+| FND-001 | low | The installed trace engine still lists NFR metric obligations without minting their targets, leaving 20 references untracked. Explicit producer metric evidence below closes the local producer measurement gate; reader metrics remain pending. The tool diagnostic is retained, not suppressed. | SR-109 FND-004; SR-110 FND-002; TC-088 |
 
 SR-109 FND-001/003 were resolved by SR-110. SR-109 FND-002 and
 SR-110 FND-001 are resolved by this increment's correspondence and identity evidence.
@@ -111,13 +111,11 @@ All final gates terminated with exit 0: formatting, strict
 all-target Clippy, 232 ordinary tests, three compile-fail doctests, three
 separately selected private audits against the adopted standard,
 cached minimal build, strict rustdoc, audit self-test/model bytes, and actual
-CLI parse/format commands. Complete commands and limitations are in
-[correspondence-verification.txt](data/native-packages/correspondence-verification.txt).
+CLI parse/format commands.
 Cargo used nice 10, one job, offline/locked dependencies and the existing cache;
 the final regression used one test thread. No hosted dispatch occurred.
 
-Applied QUOIN spec-matrix/SKILL.md to the existing TM-005. Quire 0.31.0 was
-verified, and the explicit-scope EARS precondition passed 227/227 spec documents
+Applied QUOIN spec-matrix/SKILL.md to the existing TM-005. The explicit-scope EARS precondition passed 227/227 spec documents
 before reconciliation. TC-078/079/080/090 are now qualified. Ten cases retain
 pending reader/integration portions; an individual passing producer assertion
 does not mark its shared case complete. The whole matrix is not Complete.

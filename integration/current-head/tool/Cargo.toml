@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 # FR-058 (#215): the current-head lane's own CLI tool (`prepare`,
-# `revision-log`, `check-incompatible-fixture`). Deliberately its own
+# `check-incompatible-fixture`). Deliberately its own
 # manifest with no cross-repository dependency and no `[patch]`: the lane
 # manifest one directory up (`../Cargo.toml`) patches quire-contract-ir to a
 # local clone that `prepare` itself creates, so this tool cannot

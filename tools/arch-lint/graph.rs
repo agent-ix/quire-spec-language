@@ -40,10 +40,8 @@ impl fmt::Display for Repo {
 }
 
 /// Classify a resolved package as one of the four ADR-011 ecosystem
-/// repositories, by package name or by its `source` string. Shared by the
-/// FR-059 direction check (`metadata::edges_for_manifest`) and the FR-061
-/// duplicate-revision check (`duplicate_revisions::check`), so QSL holds one
-/// definition of an ecosystem *repository* component, not two: a package
+/// repositories, by package name or by its `source` string, for the FR-059
+/// direction check (`metadata::edges_for_manifest`): a package
 /// published from the same git repository under a different crate name (for
 /// example IR's own workspace member, published as `quire-contract-model`)
 /// still classifies as that one repository, never a second, distinct one.
@@ -351,10 +349,8 @@ mod tests {
 
     /// tc_arch_lint_direction_009: `classify` maps a package published from
     /// IR's repository under a different crate name (`quire-contract-model`)
-    /// to the same `Repo::Ir` as the repository's own facade package name --
-    /// this is what lets FR-061's duplicate-revision check treat both as one
-    /// component (R2, #249 review).
-    #[trace("TC-156", "FR-061-AC-2")]
+    /// to the same `Repo::Ir` as the repository's own facade package name.
+    #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_direction_009_classify_shares_repo_across_package_names() {
         assert_eq!(classify("quire-contract-ir", None), Some(Repo::Ir));

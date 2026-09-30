@@ -34,15 +34,13 @@ It does not accept future shared model/semantic contracts.
 
 ## Methods and execution plan
 
-The actual Quoin advisor ran against the changed statements. FR method classes match. NFR-001 M-1/M-3/M-4/M-5 have true mismatch flags because quantified thresholds recommend performance-benchmarking; M-2 includes negative-abuse-testing among suggestions. Reviewer judgment retains negative-abuse-testing: these rows specify deterministic refusal ceilings, not latency/throughput. TC-016 enumerates exact/under/over output-byte boundaries; TC-019 enumerates malformed inputs; TC-015/017 execute real CLI processes; TC-018 uses actual Error propagation and catalog enumeration. Tags establish traceability, not semantic completeness. Randomized fuzzing, mutation-score campaigns and further fault injection remain recommendations; no Loom evidence is justified by absent concurrent production state. Raw advice is retained in data/advice.json.
-
+The actual Quoin advisor ran against the changed statements. FR method classes match. NFR-001 M-1/M-3/M-4/M-5 have true mismatch flags because quantified thresholds recommend performance-benchmarking; M-2 includes negative-abuse-testing among suggestions. Reviewer judgment retains negative-abuse-testing: these rows specify deterministic refusal ceilings, not latency/throughput. TC-016 enumerates exact/under/over output-byte boundaries; TC-019 enumerates malformed inputs; TC-015/017 execute real CLI processes; TC-018 uses actual Error propagation and catalog enumeration. Tags establish traceability, not semantic completeness. Randomized fuzzing, mutation-score campaigns and further fault injection remain recommendations; no Loom evidence is justified by absent concurrent production state.
 ## Provenance and validation
 
-Used the installed Quoin 0.20.0 specify/spec-review and the actual catalog
+Used the installed Quoin specify/spec-review and the actual catalog
 skeletons/schema pack (org agent-ix). The owner retained the full review set
 and declined the optional semantic gap comparison. No additional agent was
-spawned. Native runtime source remains unchanged at this reviewed revision.
-The source merge reconciles only upstream owner-policy documentation.
+spawned.
 74/74 requirement/TC/plan documents were grammar-clean before these eight reports;
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain

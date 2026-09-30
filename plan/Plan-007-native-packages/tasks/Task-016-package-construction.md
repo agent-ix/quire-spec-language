@@ -67,8 +67,6 @@ encoding controls. It includes independently composed minimal/Unicode/u64
 expectations, exact multi-owner invariant/pre/post records, all operator and
 builtin feature mappings, unused selected declarations and finite cycles,
 independently counted pass limits and admissible source/authored mutations.
-Original API-red, fixture-setup failures and the new-code vocabulary regression
-remain recorded in reviews/data/native-packages/.
 
 Fixed minimal/control/multiple-clause source, canonical content, complete
 manifest and digest files now pass public producer comparisons and a private

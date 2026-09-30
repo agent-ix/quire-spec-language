@@ -111,8 +111,7 @@ retagged tests also lost the property they exist to discriminate
 
 ## Dispositions
 
-Disposition pass at 54732520 (rebased; fixes in e8c5f6c7 and 54732520),
-checked against the code and re-run with `rv467/recompute.py`.
+Disposition pass, checked against the code and re-run with `rv467/recompute.py`.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

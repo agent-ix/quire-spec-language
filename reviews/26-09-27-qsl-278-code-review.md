@@ -72,9 +72,8 @@ fixed in this PR or deferred with a ticket.
 
 ## Dispositions
 
-Round 2. The caller's `make ci` log
-(qsl-278-ci-r10.log) has that SHA as its first line and exit 0 as its last. Every item
-below was checked against the code at that head, not taken from the coder's
+Round 2. The caller's `make ci` log ends with exit 0. Every item
+below was checked against the code, not taken from the coder's
 claims. Three items were checked by running scratch tests in a throwaway
 worktree, since removed: the dangling reference into an incomplete
 population, the empty key and `model` given as a string.
@@ -96,8 +95,7 @@ population, the empty key and `model` given as a string.
 
 ### Round 3
 
-The caller's `make ci` log (qsl-278-ci-r11.log) starts with the head SHA and
-ends `exit=0`. I checked every item against the code. FND-016 was confirmed
+The caller's `make ci` log ends `exit=0`. I checked every item against the code. FND-016 was confirmed
 by running a scratch test in a throwaway worktree, since removed.
 
 | ID | Disposition |
@@ -115,7 +113,7 @@ by running a scratch test in a throwaway worktree, since removed.
 
 ### Round 4
 
-The caller's qsl-278-ci-r12.log starts with the head SHA and ends `exit=0`,
+The caller's `make ci` log ends `exit=0`,
 and it lists every test named below as `ok`. The coder deleted the worktree's
 `target/`, so I did not rebuild. The FND-016 probe is now the test
 `a_reference_to_an_admitted_object_of_another_type_refuses_wrong_value_kind`,
@@ -131,7 +129,7 @@ which uses the same document as my round-3 probe.
 
 ### Round 5
 
-The caller's qsl-278-ci-r13.log starts with the head SHA and ends `exit=0`.
+The caller's `make ci` log ends `exit=0`.
 Both tests below appear in it as `ok`.
 
 | ID | Disposition |

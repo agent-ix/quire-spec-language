@@ -39,7 +39,7 @@ follow-up rather than changed in this source-release PR.
 ## Coverage
 
 - Target bundle: `plan/Plan-008-native-lowering/`; tasks done: 4 / 4.
-- Reconciliation: `quire coverage` with CLI 0.32.0.
+- Reconciliation: `quire coverage`.
 - Rows backed by a tagged test: 472 / 487. The four NFR-010 acceptance criteria
   are declared `Inspection` and appear in `no_symbol_rows`; they do not claim a
   missing executable test.

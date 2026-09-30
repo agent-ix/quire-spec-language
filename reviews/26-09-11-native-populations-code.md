@@ -14,9 +14,9 @@ relationships:
 
 ## Summary
 
-Recheck of this review's own findings at source commit `84aec59`, covering the
-correction range `195ded9..84aec59` (7 files, +132/-26) on top of the increment
-first reviewed at `8590407`. Skills applied unchanged:
+Recheck of this review's own findings, covering the
+correction range (7 files, +132/-26) on top of the increment
+first reviewed. Skills applied unchanged:
 `agent-skills/code-review`, dispatching the Rust lane to
 `/home/peter/dev/agent-skills/rust-review/SKILL.md`, with `rust-style` as the
 portable idiom default because this repository documents no Rust idiom skill of
@@ -110,7 +110,7 @@ in the delivered artifact.
 ## Gates
 
 Root-supplied serialized local gates for this exact correction source, inspected
-rather than re-run; the worktree is clean at `84aec59` and the logs complete
+rather than re-run; the worktree is clean and the logs complete
 between 02:40 and 02:45, immediately before the commit. No green heavy gate was
 re-run for ceremony, and no new reproduction was needed: FND-002 is settled by
 reading two call sites, FND-005 by reading the assertion helper, FND-006 by

@@ -75,5 +75,5 @@ Code inspection exposed omitted populations for nested structural references;
 the recorded failing regression now passes with bounded transitive input needs,
 including skipped context/parameter/result inputs and native reference cycles.
 The full local run passes 110 tests and the selected private audit lane passes 3.
-Evidence is under reviews/data/native-checking/checker-*. Task-010 owns the final
+Task-010 owns the final
 review and handoff. No runtime execution or full LC02 completion is claimed.

@@ -16,7 +16,7 @@ workflow in [IT-002](./IT-002-native-state-workflow.md).
 
 ## Target Integration
 
-Native parse/link/check/package/lower → existing IR wire binder → pinned codegen
+Native parse/link/check/package/lower → existing IR wire binder → codegen
 → generated Rust, generated proptest strategy and runtime operators. Native
 validation/evaluation supplies the reference result; actual LLVM coverage
 supplies generated activation for the exact admitted fixture profile.
@@ -38,7 +38,7 @@ and negation. Use independently specified truth and activation expectations.
 
 1. Produce and lower the actual checked native package.
    IT-008-SC-01: every authored clause and native source locus survives binding.
-2. Consume exact emitted wire through the code generator's pinned IR reader and
+2. Consume exact emitted wire through the code generator's IR reader and
    invoke its public bound generation API.
    IT-008-SC-02: complete generated clauses retain identities and source maps.
 3. Validate and evaluate each native runtime assignment; compile and execute the
@@ -46,7 +46,7 @@ and negation. Use independently specified truth and activation expectations.
    IT-008-SC-03: all native, independent and generated truth results agree.
 4. Measure generated execution with actual coverage and resolve the exact LLVM
    3.1.0 fixture segments through the generated source-map probes. Exercise the
-   pinned reusable reader separately and retain its profile refusal.
+   reusable reader separately and retain its profile refusal.
    IT-008-SC-04: generated consequent activation agrees with native source events,
    including skipped and entered nested consequents.
 

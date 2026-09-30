@@ -15,10 +15,7 @@ relationships:
 ## Summary
 
 Actual Claude Opus code/Rust review and focused finding recheck, using the actual
-`code-review` and `rust-review` skills and repository conventions. Session
-`df9d5a76-871b-4ee8-9329-c8f12ad19465`; retained outputs:
-`/tmp/quire-boolean-opus-review.jsonl` and
-`/tmp/quire-boolean-opus-recheck.jsonl`.
+`code-review` and `rust-review` skills and repository conventions.
 
 The reviewer found no soundness defect in receiver ownership, original
 atom/provenance identity, visibility, bounded independent-valuation partitions,

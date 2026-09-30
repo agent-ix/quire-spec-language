@@ -31,7 +31,7 @@ or the native profile's #30 admission inventory.
 
 ## Coverage
 
-Reconciliation: Quire 0.31.0, `quire coverage --scope . --json`.
+Reconciliation: `quire coverage --scope . --json`.
 Tasks done: 12/12; TM-007: 16/16 bound test cases; FR-024: 4/4 bound criteria.
 The repository-wide 325/329 rollup includes unrelated open assurance criteria.
 Seven status-column diagnostics remain across the repository. No unbacked

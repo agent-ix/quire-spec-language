@@ -46,7 +46,7 @@ Mutation results. Every claimed proof holds.
 
 ## Dispositions
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-746 pr=quire-spec-language#492 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-746 pr=quire-spec-language#492 date=2026-09-26 -->
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -55,7 +55,7 @@ Mutation results. Every claimed proof holds.
 | FND-003 | fixed | lowering test retagged `TC-427`/`FR-096-AC-16` |
 | FND-004 | fixed | AC-15 test asserts `catalog_code()` == `runtime_invariant`/`established-invariant-broken` |
 
-Verified by the reviewer, not from the coder's claims. The scratch worktree was detached at the fix head with its own `CARGO_TARGET_DIR`, and both were deleted afterwards.
+Verified by the reviewer, not from the coder's claims. The scratch worktree was detached with its own `CARGO_TARGET_DIR`, and both were deleted afterwards.
 
 - **FND-001 reaches `Typer`, not the family precheck.** The fixture is `g1` and `g2`, each `not not a` (3 nodes), under `CheckingLimits::new(4, 64)`. Each passes `check_node_count` on its own (3 <= 4). `nodes_used` is seeded with 3 from `g1` (check/mod.rs:911), so `Typer::enter` (check.rs:1142) refuses the second node of `g2`. The asserted fields rule out the family precheck: `region: None`, where the family precheck gives `Some(declaration span)`; actual `5 = g1_count+2`, where the preimage count would be 3; location `Body{g2,1} path [0]`; text `not a`.
 - **Mutation.** `if *self.nodes >= self.limits.nodes` was changed to `if false && ...`. With that change `a_typer_stop_reaches_the_package_wide_node_count` FAILED ("g2's Typer walk crosses the package-wide node bound": check returned Ok) and the other 4 region tests passed. The mutation was reverted and all 5 pass.

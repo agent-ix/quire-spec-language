@@ -21,11 +21,11 @@ tests, documentation, and a cycle-free production dependency. QSL's allocations
 within the umbrella owner-contract and cycle-break tasks have no remaining gap;
 the other repositories remain tracked by their own Plan-010 tasks.
 
-Promotion reconciliation merged QSL `main` at `93c411b` and retargeted the
-production dependency, lockfile, license inventory, documentation, and
-architecture test from the provisional Contract Model candidate to promoted
-merge `53cc03c639e2e26528132d34d96dc56449df78e8`. The full repository gate then
-passed on that exact graph, so the cycle-free dependency evidence is final
+Promotion reconciliation merged QSL `main` and retargeted the
+production dependency, lockfile, documentation, and
+architecture test from the provisional Contract Model candidate to the promoted
+merge. The full repository gate then
+passed, so the cycle-free dependency evidence is final
 rather than branch-relative.
 
 ## Verdict
@@ -42,7 +42,7 @@ remains.
 
 ## Coverage
 
-Quire 0.32.0 reports no targeted unbacked row, status lie, unmatched tag, or
+Quire reports no targeted unbacked row, status lie, unmatched tag, or
 no-symbol row for FR-051/TC-139. TC-139 binds four executing Rust tests covering
 canonical owner views, adverse/resource behavior, reachable temporal leaves,
 and the cycle-free dependency graph. Repository-wide coverage is 479/494; its

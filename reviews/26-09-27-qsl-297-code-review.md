@@ -3,7 +3,7 @@ id: SR-753
 title: "QSL-297 code review (with rust-review lane) of PR 500"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@6a093e9d0a531e9154a9f3d8c0e21075673aa5d6; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/src/dispatch.rs; qsl-forms/src/lib.rs; qsl-forms/src/value.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-forms/tests/it/value_forms.rs; qsl-semantics/src/check/assemble.rs"
+scope: "agent-ix/quire-spec-language; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/src/dispatch.rs; qsl-forms/src/lib.rs; qsl-forms/src/value.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-forms/tests/it/value_forms.rs; qsl-semantics/src/check/assemble.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-112
@@ -11,10 +11,10 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-297. PR: quire-spec-language#500 at 6a093e9d, base a62bd8b4.
+Ticket: QSL-297. PR: quire-spec-language#500.
 Methods: code-review with the rust-review lane folded in.
 
-Gates, run by the reviewer at 6a093e9d with a fresh `CARGO_TARGET_DIR`:
+Gates, run by the reviewer with a fresh `CARGO_TARGET_DIR`:
 `make ci` exit 0 (93 `test result: ok` blocks, 0 failures). `cargo fmt
 --check` clean. `cargo clippy -p qsl-forms -p qsl-semantics --all-targets
 --all-features -- -D warnings` clean. `cargo test -p qsl-forms -p

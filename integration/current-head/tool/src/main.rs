@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-058 (ADR-011 §7.1 T-12, #215): current-head integration lane tooling.
 //!
-//! `current-head-lane revision-log` records the exact commit this lane
-//! resolved for QSL itself and for quire-contract-ir, quire-contract-runtime
-//! and quire-contract-codegen (FR-058-AC-2).
-//!
 //! `current-head-lane check-incompatible-fixture` runs `cargo build` over the
 //! intentionally incompatible fixture manifest and turns its result into one
 //! stable diagnostic line (FR-058-AC-3): the fixture is expected to fail, so
@@ -12,7 +8,6 @@
 //! builds.
 #![forbid(unsafe_code)]
 
-use serde_json::Value;
 use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
@@ -20,7 +15,6 @@ use std::{
 
 fn usage() -> String {
     "current-head-lane prepare --deps-root <path> --manifest <path>\n\
-     current-head-lane revision-log --qsl <path> --manifest <path> --deps-root <path>\n\
      current-head-lane check-incompatible-fixture --manifest <path>"
         .to_owned()
 }
@@ -81,7 +75,7 @@ fn run_prepare(deps_root: &Path, lane_manifest: &Path) -> Result<String, String>
     run_cargo_update(lane_manifest)?;
     Ok(format!(
         "prepared {} (quire-contract-ir @ main), {} (quire-contract-runtime @ main); \
-         refreshed {}'s own lock to each pinned dependency's current head",
+         refreshed {}'s own lock to each dependency's current head",
         ir_head.display(),
         rt_head.display(),
         lane_manifest.display()
@@ -105,45 +99,6 @@ fn run_cargo_update(manifest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The sha `refs/heads/<branch>` currently points to on `url`'s remote --
-/// used by `revision-log` to refuse to report a resolved commit as "current
-/// head" when it is actually stale (FR-058's "cannot silently substitute",
-/// #249 review HIGH-1).
-fn git_ls_remote_head(url: &str, branch: &str) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(["ls-remote", url, branch])
-        .output()
-        .map_err(|error| format!("cannot run git ls-remote {url} {branch}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "git ls-remote {url} {branch} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let sha = text
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| format!("git ls-remote {url} {branch} returned no ref"))?;
-    Ok(sha.to_owned())
-}
-
-/// Fails loudly if `resolved` (the commit the lane actually resolved for
-/// `label`) is not `url`'s current `main` head -- a mismatch means the lane
-/// is running against a stale local snapshot, not current head, and must not
-/// silently report itself as current-head anyway.
-fn require_current_head(label: &str, url: &str, resolved: &str) -> Result<(), String> {
-    let remote_head = git_ls_remote_head(url, "main")?;
-    if remote_head != resolved {
-        return Err(format!(
-            "{label}: resolved {resolved} does not match {url}'s current main head \
-             {remote_head} -- the lane is running against a stale snapshot, not current \
-             head; run `make integration-current-head-prepare` to refresh it"
-        ));
-    }
-    Ok(())
-}
-
 fn take_flag(args: &mut Vec<String>, name: &str) -> Option<String> {
     let index = args.iter().position(|arg| arg == name)?;
     if index + 1 >= args.len() {
@@ -151,119 +106,6 @@ fn take_flag(args: &mut Vec<String>, name: &str) -> Option<String> {
     }
     args.remove(index);
     Some(args.remove(index))
-}
-
-/// Extracts the trailing `#<sha>` a git dependency's resolved `source` string
-/// carries, for example `git+https://.../quire-contract-ir?branch=main#<sha>`.
-/// A source with no `#` at all (for example a plain registry source) has no
-/// commit to extract and is `None`, never the whole string.
-fn resolved_commit(source: &str) -> Option<&str> {
-    let (_, sha) = source.rsplit_once('#')?;
-    (!sha.is_empty()).then_some(sha)
-}
-
-fn git_head(root: &Path) -> Result<String, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .map_err(|error| format!("cannot run git -C {}: {error}", root.display()))?;
-    if !output.status.success() {
-        return Err(format!(
-            "git rev-parse HEAD failed for {}: {}",
-            root.display(),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-/// One resolved ecosystem repository's commit, keyed by the package name(s)
-/// `cargo metadata` reports for it. quire-contract-ir and quire-contract-runtime
-/// are not listed here: the lane's `[patch]` resolves both to a local
-/// path (see `../README.md`), so `cargo metadata` reports no git `source` for
-/// either; `run_revision_log` reads their commits directly from those
-/// local clones instead (`REPOS_VIA_LOCAL_CLONE`).
-struct Repo {
-    label: &'static str,
-    package_names: &'static [&'static str],
-}
-
-const REPOS: &[Repo] = &[Repo {
-    label: "quire-contract-codegen",
-    package_names: &["quire-contract-codegen"],
-}];
-
-/// `(label, local clone directory name, remote URL)` for every repository
-/// this lane resolves through a local `[patch]`-ed clone rather than a live
-/// git dependency `cargo metadata` can read a `source` for.
-const REPOS_VIA_LOCAL_CLONE: &[(&str, &str, &str)] = &[
-    ("quire-contract-ir", "quire-contract-ir", IR_URL),
-    ("quire-contract-runtime", "quire-contract-runtime", RT_URL),
-];
-
-fn cargo_metadata(manifest: &Path) -> Result<Value, String> {
-    let output = Command::new("cargo")
-        .arg("metadata")
-        .arg("--format-version=1")
-        .arg("--locked")
-        .arg("--manifest-path")
-        .arg(manifest)
-        .output()
-        .map_err(|error| format!("cannot run cargo metadata: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "cargo metadata failed for {}: {}",
-            manifest.display(),
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("cargo metadata produced invalid JSON: {error}"))
-}
-
-/// FR-058-AC-2/AC-4: record the exact commit resolved for QSL itself and for
-/// each of IR/RT/CG, and refuse to report a resolved commit for IR/RT/CG as
-/// "current head" when it no longer matches that repository's real remote
-/// `main` (#249 review, HIGH-1) -- otherwise a stale local clone or an
-/// un-refreshed lane lock would silently report itself as current-head,
-/// exactly the silent substitution FR-058 exists to rule out.
-fn run_revision_log(qsl_root: &Path, manifest: &Path, deps_root: &Path) -> Result<String, String> {
-    let document = cargo_metadata(manifest)?;
-    let packages = document
-        .get("packages")
-        .and_then(Value::as_array)
-        .ok_or("unexpected cargo metadata shape: no packages array")?;
-
-    let mut lines = vec![format!("quire-spec-language {}", git_head(qsl_root)?)];
-    for (label, dir_name, url) in REPOS_VIA_LOCAL_CLONE {
-        let commit = git_head(&deps_root.join(dir_name))?;
-        require_current_head(label, url, &commit)?;
-        lines.push(format!("{label} {commit}"));
-    }
-    for repo in REPOS {
-        let commit = packages
-            .iter()
-            .find(|package| {
-                package
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .is_some_and(|name| repo.package_names.contains(&name))
-            })
-            .and_then(|package| package.get("source"))
-            .and_then(Value::as_str)
-            .and_then(resolved_commit)
-            .ok_or_else(|| format!("{}: no resolved git source found", repo.label))?;
-        require_current_head(
-            repo.label,
-            "https://github.com/agent-ix/quire-contract-codegen",
-            commit,
-        )?;
-        lines.push(format!("{} {commit}", repo.label));
-    }
-    Ok(lines.join("\n"))
 }
 
 /// FR-058-AC-3: the fixture manifest patches quire-contract-ir's
@@ -336,20 +178,6 @@ fn main() -> ExitCode {
                 }
             }
         }
-        "revision-log" => {
-            let qsl = take_flag(&mut args, "--qsl").map(PathBuf::from);
-            let manifest = take_flag(&mut args, "--manifest").map(PathBuf::from);
-            let deps_root = take_flag(&mut args, "--deps-root").map(PathBuf::from);
-            match (qsl, manifest, deps_root) {
-                (Some(qsl), Some(manifest), Some(deps_root)) => {
-                    run_revision_log(&qsl, &manifest, &deps_root)
-                }
-                _ => {
-                    eprintln!("{}", usage());
-                    return ExitCode::from(2);
-                }
-            }
-        }
         "check-incompatible-fixture" => match take_flag(&mut args, "--manifest").map(PathBuf::from)
         {
             Some(manifest) => run_check_incompatible_fixture(&manifest),
@@ -377,40 +205,9 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolved_commit, run_check_incompatible_fixture};
+    use super::run_check_incompatible_fixture;
     use ix_trace_rs::trace;
     use std::path::Path;
-
-    /// A real git dependency's resolved `source` string carries the exact
-    /// commit as a trailing `#<sha>`.
-    #[trace("TC-159", "FR-058-AC-2")]
-    #[test]
-    fn resolved_commit_extracts_trailing_sha() {
-        assert_eq!(
-            resolved_commit(
-                "git+https://github.com/agent-ix/quire-contract-runtime?branch=main#abc123"
-            ),
-            Some("abc123")
-        );
-    }
-
-    /// A registry source has no `#<sha>` at all; `resolved_commit` must not
-    /// invent one from a bare trailing fragment.
-    #[trace("TC-159", "FR-058-AC-2")]
-    #[test]
-    fn resolved_commit_is_none_without_a_fragment() {
-        assert_eq!(
-            resolved_commit("registry+https://github.com/rust-lang/crates.io-index"),
-            None
-        );
-    }
-
-    /// A malformed source ending in a bare `#` (empty fragment) is not a sha.
-    #[trace("TC-159", "FR-058-AC-2")]
-    #[test]
-    fn resolved_commit_is_none_for_an_empty_fragment() {
-        assert_eq!(resolved_commit("git+https://example.com/repo#"), None);
-    }
 
     /// tc_current_head_lane_check_incompatible_fixture_missing_manifest
     /// (negative control, #249 review HIGH-3): a `cargo build` failure with

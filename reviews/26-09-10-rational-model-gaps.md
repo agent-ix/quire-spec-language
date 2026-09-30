@@ -19,7 +19,7 @@ relationships:
 ## Summary
 
 Gap analysis of the rational native model producer slice on
-`agent-a/composed-value-checking` (40f6b43). The delivered FR-041 scope is
+`agent-a/composed-value-checking`. The delivered FR-041 scope is
 genuinely covered — all seven ACs and TC-120 are engine-backed by fourteen
 tagged, passing public tests, with zero status lies. The FAIL is the tracked
 half: TC-119 and all ten FR-040 ACs have no backing tagged test, which is the
@@ -49,8 +49,7 @@ requirements is being performed separately under `spec/reviews/composed-values`
 and is not duplicated here.
 
 Coverage was reconciled with
-`quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-checking --json`
-(quire 0.31.0, engine ca7362d4).
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-checking --json`.
 
 ## Findings
 
@@ -78,7 +77,7 @@ discharge over composed units, no rational arithmetic or ordering rules, no
 runtime rational execution, no composed `CheckedPackage` and no composed
 artifact. FR-040-AC-4's "rational normalization-before-bounds" has a real
 upstream capability to build on — the pinned IR normalizes at the literal
-boundary (`quire-contract-ir` 690bde7 `src/expression.rs:1682-1692`) and
+boundary (`quire-contract-ir` `src/expression.rs:1682-1692`) and
 implements rational arithmetic ranges — so the dependency is available and the
 gap is entirely on this crate's side. Issues #35/#36/#39/#40 remain open; this
 slice is their model producer prerequisite, not their completion.
@@ -207,11 +206,11 @@ producer prerequisite.
 4. Add the owning `FR-` id to `src/checking/variables.rs` before it acquires its
    second consumer (FND-005).
 
-## Correction disposition (a4344d0)
+## Correction disposition
 
-Re-reconciled at a4344d0 with
-`quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-checking --json`
-(quire 0.31.0, engine ca7362d4). Delivered scope remains the FR-041/TC-120
+Re-reconciled with
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-checking --json`.
+Delivered scope remains the FR-041/TC-120
 rational model producer and historical isolation; FR-040/TC-119 is subsequent-branch work.
 
 | ID | Disposition | Evidence |
@@ -224,7 +223,7 @@ rational model producer and historical isolation; FR-040/TC-119 is subsequent-br
 | FND-006 | residual low | `FromStr`/`TryFrom` still have no production caller; the correction added a second parse path rather than retiring surface (SR-323 FND-011) |
 | FND-007 | unchanged — pre-existing | same three IT-004 unmatched tags, 20 untracked symbols, one suspicion |
 
-| Measure (a4344d0) | Value |
+| Measure | Value |
 | --- | --- |
 | Matrix rows backed | 340 / 359 (unchanged) |
 | Status lies | 0 |

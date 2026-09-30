@@ -42,7 +42,7 @@ Task-008 completion dependency would create a cycle. Work remains serial.
 
 ## Notes
 
-Source borrowing uses the pinned serde_json raw_value development feature.
+Source borrowing uses the serde_json raw_value development feature.
 No new package, language, lexer or unsafe code. All checks run serially at nice
 10 with one build job/test thread and explicit cached target directory.
 
@@ -50,5 +50,4 @@ Completed. SR-083 records
 the actual code/Rust inspection and all four SR-074 dispositions. Local evidence
 includes 61 default tests, three selected private audit tests, strict Clippy,
 formatting, minimal build, strict rustdoc and documented CLI/audit commands.
-The quire-validated review is reviews/26-09-08-pipeline-code-review.md; actual
-command logs are retained under reviews/data/native-checking/.
+The quire-validated review is reviews/26-09-08-pipeline-code-review.md.

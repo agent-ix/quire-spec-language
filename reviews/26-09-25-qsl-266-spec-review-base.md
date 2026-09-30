@@ -50,7 +50,7 @@ their oracle depends on.
 
 ## Dispositions
 
-Disposition pass ("QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ New in this pass: FND-003 (low), recorded in `## Findings` above. It has no outc
 
 ## Dispositions (second pass)
 
-Second disposition pass ("QSL-266 spec: address spec review disposition pass"). It covers the findings the first pass left open. Each outcome was re-checked against the spec at that head.
+Second disposition pass. It covers the findings the first pass left open. Each outcome was re-checked against the spec.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

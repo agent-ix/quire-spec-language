@@ -40,7 +40,7 @@ oracle.
 
 ## Dispositions
 
-Disposition pass. I checked each outcome against the spec at the fix head and the code on main, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
 | FND | Outcome | sha/reason |
 | --- | --- | --- |

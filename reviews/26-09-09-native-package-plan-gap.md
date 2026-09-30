@@ -38,8 +38,7 @@ TM-005 at `spec/native-packages/tests.md`, using the
 
 - Tasks done: **3/3**, with satisfied producer → reader → qualification
   dependencies and reconciled plan checkboxes.
-- Reconciliation: **`quire coverage --scope . --json`**, Quire 0.31.0,
-  engine 0.46.0; no grep fallback.
+- Reconciliation: **`quire coverage --scope . --json`**; no grep fallback.
 - Targeted test cases: **14/14 backed**. FR-019/020/021 criteria:
   **10/10, 11/11, 6/6 backed**, respectively.
 - Repository census: **263/263 Rust candidates bound**, no status lies.

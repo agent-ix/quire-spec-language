@@ -25,7 +25,7 @@ Delta review of the fix round. It covers new tests added for SR-707 and SR-708.
 
 ## Reviewer comment (verbatim)
 
-<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 method=code-review lang=rust pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer repo=agent-ix/quire-spec-language visibility=public id=SR-712 method=code-review lang=rust pr=quire-spec-language#484 date=2026-09-26 -->
 
 Delta review of the fix round. It covers new tests added for SR-707 and SR-708.
 
@@ -122,13 +122,13 @@ findings:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-8fafb046.
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-712 pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-712 pr=quire-spec-language#484 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
-| --- | --- | --- |
-| FND-001 | fixed | |
-| FND-002 | fixed | |
-| FND-003 | fixed | |
+| FND | Outcome |
+| --- | --- |
+| FND-001 | fixed |
+| FND-002 | fixed |
+| FND-003 | fixed |
 
 Each fix was verified by mutation in a scratch worktree. Each mutation that the finding said went undetected now fails its test. At the unmutated head, the check::assemble tests passed 41 of 41, and the qsl-forms every_expression and value_module tests passed 3 of 3.
 

@@ -757,7 +757,7 @@ text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. A4b spells an integer literal as a decimal string and gives
 `quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is QSL-6 S1b, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The pinned IR reader
+TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The IR reader
 admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
 and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
 so a function with parameters and a recursive function are written whole

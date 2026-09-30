@@ -22,7 +22,7 @@ Recorded QUOIN advice covers all 15 new criteria with no mismatch or inconclusiv
 
 ## Deterministic advice and judgment
 
-data/advise.json is the actual completed quoin advise --json output; stderr is empty. It was refreshed for the corrected opaque-ID model contract. The subsequent evaluated revision only corrects matrix bookkeeping; the advised criterion statements are unchanged. All FR-015/016 records have mismatch=false, uncatalogued=false and inconclusive=false.
+quoin advise --json completed with empty stderr. It was refreshed for the corrected opaque-ID model contract. All FR-015/016 records have mismatch=false, uncatalogued=false and inconclusive=false.
 
 FR-015-AC-1 receives property-based-testing from a universal shape. Its independently inspected real producer and bounded variations qualify the mapping. AC-2 receives unit/example tests, negative-abuse-testing and fuzzing from untrusted-input/input-validation characteristics. TC-041 selects controlled valid-IR mutations first; a fuzz campaign is deferred and not needed to claim one was run. AC-3 also receives sca-sbom from supply-chain wording; this scope changes no dependency, and TC-042 checks actual artifact mutations/permutations. Existing dependency provenance remains applicable. AC-4/6 receive example/unit advice, strengthened by actual source and budget boundary controls.
 

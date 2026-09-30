@@ -31,11 +31,6 @@ cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
 # quire-contract-runtime's and quire-contract-codegen's default branch).
 cargo test --manifest-path integration/current-head/Cargo.toml
 
-# Record the exact commit resolved for QSL and for each of IR/RT/CG.
-cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-  revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-  --deps-root integration/current-head/.deps
-
 # Confirm the intentionally incompatible fixture still fails, with a stable
 # diagnostic (FR-058-AC-3).
 cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
@@ -64,8 +59,7 @@ supported mechanism for this, so `tool/`'s `prepare` subcommand keeps
 current head) fresh, and the lane's `[patch]` table points IR, RT and
 quire-spec-language itself (a direct path patch, since QSL's own manifest is
 already a path dependency of this lane) at those local sources. This is what
-converges the lane's own `Cargo.lock` to exactly one revision per repository
-(#249 review R3; `make arch-lint-duplicate-revisions-lane` checks it).
+converges the lane's own `Cargo.lock` to exactly one revision per repository.
 
 ## What it checks (FR-058)
 
@@ -83,9 +77,7 @@ converges the lane's own `Cargo.lock` to exactly one revision per repository
   is a lane failure, never a quiet substitution.
 - **Staleness**: `prepare` refreshes this lane's own `Cargo.lock` via `cargo
   update` on every run, so it never re-resolves a stale, previously-committed
-  revision (#249 review HIGH-1). `revision-log` additionally compares each
-  resolved sha against `git ls-remote <url> main` and fails on a mismatch, so
-  a `Cargo.lock` that fell behind head cannot silently pass as current.
+  revision (#249 review HIGH-1).
 - **Intentionally incompatible fixture**: `fixtures/incompatible/` patches
   quire-contract-ir's `quire-contract-model` package to
   `stub-quire-contract-model/`, a local, deliberately empty stand-in crate
@@ -103,7 +95,7 @@ converges the lane's own `Cargo.lock` to exactly one revision per repository
 
 This lane once failed at real current heads because quire-contract-codegen
 built `CounterexamplePacket { witness, .. }` after quire-contract-ir replaced
-`witness: Option<Witness>` with `source: ReplaySource` (IR commit `ef11217`).
+`witness: Option<Witness>` with `source: ReplaySource`.
 That was a CG/IR incompatibility, not CG/RT. CG main now builds
 `source: ReplaySource::Input(..)` (`src/bounded_kani_corpus.rs:403` in the CG
 repository), so that failure no longer applies. No recorded run of
@@ -148,15 +140,12 @@ rather than decided here:
 Owned by whoever owns ADR-011 T-12 (currently tracked under #215 and its
 successors). `prepare`'s `git clone --branch <branch> --single-branch` (no
 `--depth`) keeps `.deps/quire-contract-ir` and `.deps/quire-contract-runtime`
-at full history, so step 2 below (`git bisect` or an equivalent manual walk of
-either local clone) is executable against them directly; it is not blocked
-by a shallow clone (#249 review round 2 L-1). When a run fails:
+at full history, so `git bisect` or an equivalent manual walk of either local
+clone is executable against them directly. When a run fails:
 
 1. Read the failure: a compile error names the incompatible crate and symbol;
    a contract-test failure names which of the four repositories' surface
    changed.
-2. Check the revision log (`revision-log` above) against the last known-good
-   log to see which repository's head moved.
-3. Open an issue against the repository whose head introduced the break. The
+2. Open an issue against the repository whose head introduced the break. The
    exact-pin lane's pinned revisions are the source of truth for what QSL
    ships, and are never advanced solely because this lane failed.

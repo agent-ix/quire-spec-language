@@ -38,8 +38,7 @@ or hollow implementation was found in the changed scope.
 
 ## Coverage
 
-Reconciliation: actual `quire coverage --scope /home/peter/dev/worktrees/quire-language-domain-event-choices --json`, quire 0.31.0, engine 0.46.0@ca7362d4.
-The retained report is `/tmp/quire-domain-event-coverage.json`: 374/383 rows
+Reconciliation: actual `quire coverage --scope /home/peter/dev/worktrees/quire-language-domain-event-choices --json`: 374/383 rows
 backed, six raw unbacked rows of which two are method exemptions, zero reported
 status lies, twenty untracked symbols, and FR-042 9/10. Additional diagnostics
 include unmatched sections/archetypes, uncatalogued verification methods and

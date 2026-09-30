@@ -25,23 +25,23 @@ is installed in this spec scope — `spec/assurance/` does not exist and no docu
 declares `review_selection` — so the review set is the user-chosen base plus
 failure-domain, matching the parent-scope finding. ID formats, link integrity and
 the six coverage rules pass; the findings are wording precision, not structure.
-Rechecked at `baf93f5`, which rewrites FR-040-AC-4/AC-5, TC-119 step 5 and the
+Rechecked after the correction, which rewrites FR-040-AC-4/AC-5, TC-119 step 5 and the
 wire contract's availability and scope-locus sentences.
 
 ## Verdict
 
 **CONDITIONAL** (recheck) — both mediums and two of the three lows are resolved
-at `baf93f5`; FND-005 (no direct non-flattening assertion for TC-119 step 5's
+after the correction; FND-005 (no direct non-flattening assertion for TC-119 step 5's
 "preserved population roles") remains the only open item.
 
 ## Findings
 
 | ID      | Severity | Summary                                                                             | Refs                                              | Escape Cause        |
 | ------- | -------- | ------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------- |
-| FND-001 | medium   | RESOLVED at `baf93f5` — FR-040-AC-5 says N=0 is "checked against authored maxima"; the adopted behaviour refuses it at the model boundary | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
-| FND-002 | medium   | RESOLVED at `baf93f5` — FR-040-AC-5 asserts N=10,000 for all eight forms without bounding proof cost; `sum` cannot reach it | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
-| FND-003 | low      | RESOLVED at `baf93f5` — the rational sum-transfer carve-out lives only in FR-040 narrative, not in AC-4 or AC-5 | spec/functional/FR-040-check-composed-values.md:163 | missing-requirement |
-| FND-004 | low      | RESOLVED at `baf93f5` — the wire contract's binder-availability sentence does not name the value `scope` handle as the authority | docs/compiled-protocol-v1.md:533                  | wrong-requirement   |
+| FND-001 | medium   | RESOLVED by the correction — FR-040-AC-5 says N=0 is "checked against authored maxima"; the adopted behaviour refuses it at the model boundary | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
+| FND-002 | medium   | RESOLVED by the correction — FR-040-AC-5 asserts N=10,000 for all eight forms without bounding proof cost; `sum` cannot reach it | spec/functional/FR-040-check-composed-values.md:143 | wrong-requirement   |
+| FND-003 | low      | RESOLVED by the correction — the rational sum-transfer carve-out lives only in FR-040 narrative, not in AC-4 or AC-5 | spec/functional/FR-040-check-composed-values.md:163 | missing-requirement |
+| FND-004 | low      | RESOLVED by the correction — the wire contract's binder-availability sentence does not name the value `scope` handle as the authority | docs/compiled-protocol-v1.md:533                  | wrong-requirement   |
 | FND-005 | low      | TC-119 step 5 requires "preserved population roles" and no flattening; no assertion targets non-flattening directly | spec/test-cases/TC-119-check-composed-values.md:58 | correct-requirement-no-evidence |
 
 ### FND-001 — N=0 is refused, not checked
@@ -87,7 +87,7 @@ collection, because the region starts at the binder token. Name the handle as th
 authority in the same sentence, otherwise a consumer implementing availability
 from locus containment builds a conforming reader that disagrees with the emitter.
 
-### Recheck at `baf93f5`
+### Recheck after the correction
 
 The selected review set stayed base plus failure-domain; the optional semantic
 gap extension remained declined. The four documents changed as follows.

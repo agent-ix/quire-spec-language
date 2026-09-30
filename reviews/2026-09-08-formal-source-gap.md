@@ -30,12 +30,11 @@ gap. This report does not reinterpret the full workflow as source mapping.
 | --- | --- | --- | --- |
 | FND-001 | high | Task-007 remains in_progress pending reviewable PR and landing. | plan/Plan-004-formal-source/tasks/Task-007-formal-source.md |
 | FND-002 | high | Five declared native typing cases remain unbacked; source bridge evidence does not discharge them. | spec/model-linking/tests.md:TC-025–029; FR-006 |
-| FND-003 | low | Existing traceability diagnostics limit global counts: functional table status headers, unmatched declarations and historical NFR methods remain. | reviews/data/formal-source/coverage.json |
+| FND-003 | low | Existing traceability diagnostics limit global counts: functional table status headers, unmatched declarations and historical NFR methods remain. | - |
 
 ## Coverage
 
-Reconciliation: actual quire coverage --scope . --json, CLI 0.31.0 and engine
-0.46.0, using the installed traceability model. No grep fallback was used.
+Reconciliation: actual quire coverage --scope . --json, using the installed traceability model. No grep fallback was used.
 Source root is this compiler repository; spec root is spec/ and the selected
 matrix is spec/model-linking/tests.md (TM-003). URI prefix is
 ix://agent-ix/quire-spec-language. Target bundle is Plan-004-formal-source.

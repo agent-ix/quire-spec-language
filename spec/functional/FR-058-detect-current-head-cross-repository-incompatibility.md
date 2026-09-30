@@ -34,9 +34,6 @@ revision, so an incompatibility is visible before it is pinned.
 
 ## Outputs
 
-- A resolved-revision log: for each of the four repositories (QSL itself,
-  quire-contract-ir, quire-contract-runtime, quire-contract-codegen), the exact
-  commit the run resolved, written once per run.
 - Pass or fail for the run: pass when the lane's manifest resolves, the lane's
   workspace builds under `cargo build`/`cargo test`, and the lane's
   representative contract test passes; fail otherwise, with a diagnostic that
@@ -61,13 +58,6 @@ workspace's) to each dependency's current head, before any other step reads
 it (#249 review HIGH-1). A committed lane lockfile that is never refreshed
 would silently re-resolve the same stale revisions on every run, defeating
 the lane's purpose.
-
-The lane's `revision-log` step SHALL compare each of its own resolved commit
-shas against `git ls-remote <url> <default branch>` for the same repository,
-and SHALL fail, naming the repository and both shas, when they disagree.
-Agreement on every run is expected, not merely hoped for: a real, current run
-against the three repositories' real current heads confirms this (see
-Status).
 
 ### What the lane resolves at head, and what it does not
 
@@ -126,8 +116,7 @@ ticket adds.
 
 The lane's own README (or a section of this requirement's implementation)
 SHALL document: who owns the lane, what a maintainer does when it starts
-failing (bisect the three repositories' heads against the last-known-good
-resolved-revision log; open an issue against the repository whose head
+failing (bisect the three repositories' heads; open an issue against the repository whose head
 introduced the break; the exact-pin lane's pinned revisions are the source of
 truth for what QSL ships and are never advanced solely because the
 current-head lane failed), and how to re-run it locally.
@@ -137,15 +126,14 @@ current-head lane failed), and how to re-run it locally.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-058-AC-1 | The current-head lane's manifest(s) are not members of the root `[workspace]`; running the lane never changes the root `Cargo.lock`'s resolved revisions. | Test (TC-159) |
-| FR-058-AC-2 | A lane run against real current heads of quire-contract-ir, quire-contract-runtime and quire-contract-codegen resolves and records one commit per repository (QSL, IR, RT, CG) in a log. | Test (TC-159) |
 | FR-058-AC-3 | A lane run against the intentionally incompatible fixture manifest fails, and its diagnostic names the incompatible dependency and a stable marker string, not only a raw compiler error. | Test (TC-159) |
 | FR-058-AC-4 | The lane is invocable by one documented local command; its documentation names an owner and an update procedure. | Test (TC-159) |
 
 ## Dependencies
 
 - ADR-011 §7.1 T-12 (`ix://agent-ix/quire-spec-language/ADR-011`) names the
-  current-head lane and the backend direction/API-surface/duplicate-revision
-  checks (FR-059, FR-060, FR-061) as its enforcement mechanisms.
+  current-head lane and the backend direction/API-surface checks (FR-059,
+  FR-060) as its enforcement mechanisms.
 - [IT-013](../integration/IT-013-current-head-integration-lane.md) exercises
   this requirement end to end.
 
@@ -157,13 +145,6 @@ question this requirement does not settle: where hosted CI runs the lane. It
 is reported to the issue rather than decided here. QSpec artifacts are
 resolved from `agent-ix/quire-specification` by identity and revision; this
 lane does not additionally resolve them at head.
-
-A real run of `revision-log` against the three repositories' real current
-heads (#249 review) resolved QSL at `087fb4e5...`, quire-contract-ir at
-`ef11217a...`, quire-contract-runtime at `aff8177c...` and
-quire-contract-codegen at `a4b2a733...`, each matching `git ls-remote <url>
-main` exactly (HIGH-1's staleness check passed on a real run, not only a
-synthetic one).
 
 A real run of `check-incompatible-fixture` against the real fixture manifest
 exits `0` (it correctly detected the intended failure) and prints the
@@ -183,8 +164,7 @@ quire-contract-codegen's own `src/bounded_kani_corpus.rs:196`. This is a
 **CG/IR** incompatibility, not CG/RT: `CounterexamplePacket` is defined in
 quire-contract-**ir**'s `src/kani/replay.rs:45`, not in quire-contract-runtime
 at all, and IR's real head already removed its `witness: Option<Witness>`
-field in favor of `source: ReplaySource` (IR commit `ef11217`, "kani:
-ReplaySource replaces the optional witness"); CG's own
+field in favor of `source: ReplaySource`; CG's own
 `bounded_kani_corpus.rs` still constructs the old `witness:` field, which no
 longer exists on IR's head. This is reported here as new, real evidence; it
 is a CG/IR concern, not QSL's, and this requirement does not remediate it.

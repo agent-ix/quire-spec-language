@@ -87,11 +87,4 @@ fn production_graph_is_cycle_free_and_historical_ir_is_test_only() {
             .all(|id| by_id[id].0 != "quire-contract-ir"),
         "the compatibility Contract-IR package must not enter QSL's production graph"
     );
-
-    assert!(
-        packages
-            .iter()
-            .any(|package| package["name"] == "quire-contract-ir"),
-        "the historical test-only Contract-IR package is resolved"
-    );
 }

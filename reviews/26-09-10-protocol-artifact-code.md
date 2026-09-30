@@ -15,8 +15,8 @@ relationships:
 ## Summary
 
 Code, rust-review and rust-style recheck of the `protocol_artifact` reader,
-encoder and wire records at 23a5892, against the original review at 51506ed. The
-corrections (08e401c, c531056, 23a5892) add 1,350 test lines and 102 source
+encoder and wire records, against the original review. The
+corrections add 1,350 test lines and 102 source
 lines. Three of the five original findings are fixed with regression tests, one
 is withdrawn on shared-requirement evidence, and the evidence finding drops from
 high to medium: the fixtures now exercise all four declaration bodies, all eight

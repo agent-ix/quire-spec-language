@@ -3,12 +3,12 @@ id: SR-770
 title: "QSL-311 code review (with rust-review lane) of PR 511"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@6307caf29145a05eedf251a428f6e40b0a8b069d; qsl-replay/src/spine/clause/tests.rs (new: config_version_domain_document_with_operations, config_version_probe_operation, config_version_step3_domain_document, config_version_step3_unit_and_packages, config_version_step3_model_digest_hex, config_version_step3_request, config_version_step3_snapshot, config_version_step3_object, config_version_step3_chain_objects, config_version_step3_loop_objects, config_version_probe_invocation_bytes, run_config_version_probe, evaluate_step3_case_a_with_meter, assert_step3_denial_is_incomplete, ten tc466_step3_* tests; read unchanged: no_cycle_completes_true_with_the_expected_reaches_charge_log, boolean_outcome, boolean_disposition, config_version_request_for); qsl-replay/src/spine/clause.rs (run_clause admission/evaluation, unchanged); quire-exact/src/accounting.rs (Meter, InjectedDenial, Incomplete, unchanged); qsl-semantics/tests/it/state_clauses.rs (existing probe_operation fixture, unchanged)"
+scope: "agent-ix/quire-spec-language; qsl-replay/src/spine/clause/tests.rs (new: config_version_domain_document_with_operations, config_version_probe_operation, config_version_step3_domain_document, config_version_step3_unit_and_packages, config_version_step3_model_digest_hex, config_version_step3_request, config_version_step3_snapshot, config_version_step3_object, config_version_step3_chain_objects, config_version_step3_loop_objects, config_version_probe_invocation_bytes, run_config_version_probe, evaluate_step3_case_a_with_meter, assert_step3_denial_is_incomplete, ten tc466_step3_* tests; read unchanged: no_cycle_completes_true_with_the_expected_reaches_charge_log, boolean_outcome, boolean_disposition, config_version_request_for); qsl-replay/src/spine/clause.rs (run_clause admission/evaluation, unchanged); quire-exact/src/accounting.rs (Meter, InjectedDenial, Incomplete, unchanged); qsl-semantics/tests/it/state_clauses.rs (existing probe_operation fixture, unchanged)"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-311. PR: quire-spec-language#511 at 6307caf2, base f8b89a9b.
+Ticket: QSL-311. PR: quire-spec-language#511.
 Methods: code-review with the rust-review lane folded in. The diff is
 test-only: +567/-33 in `qsl-replay/src/spine/clause/tests.rs`. The 33
 deletions move `attemptUpdate`'s operation JSON out of the envelope into a
@@ -59,7 +59,7 @@ What I checked, and what I found:
 Rust-review lane: test-only. The `expect`/`unwrap`/`panic!` calls are in
 test code, there are no casts or `unsafe`, and no production code changed.
 
-Gate, run fresh by me (not taken from the PR body): at 6307caf2, `make ci`
+Gate, run fresh by me (not taken from the PR body): `make ci`
 exited 0 with the worktree's own `CARGO_TARGET_DIR`. The log has 93
 `test result: ok` lines and no FAILED or panic lines. All 10 new
 `tc466_step3_*` tests and the NoCycle charge-log test ran and passed in both

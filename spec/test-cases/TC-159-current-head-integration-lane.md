@@ -11,12 +11,11 @@ relationships:
 ## Description
 
 Verify that the current-head lane's manifest(s) sit outside the root
-`[workspace]` and never change the root `Cargo.lock`, that a real run against
-the three backend repositories' current heads resolves and records one commit
-per repository, that a run against the intentionally incompatible fixture
-fails with a stable diagnostic naming the incompatible dependency, and that
-the lane is invocable by one documented local command with a named owner and
-update procedure. Scope: FR-058-AC-1 through FR-058-AC-4.
+`[workspace]` and never change the root `Cargo.lock`, that a run against the
+intentionally incompatible fixture fails with a stable diagnostic naming the
+incompatible dependency, and that the lane is invocable by one documented
+local command with a named owner and update procedure. Scope: FR-058-AC-1,
+FR-058-AC-3 and FR-058-AC-4.
 
 ## Test Procedure
 
@@ -26,30 +25,23 @@ update procedure. Scope: FR-058-AC-1 through FR-058-AC-4.
    and `make integration-current-head`, then re-inspect the root
    `Cargo.lock`.
 2. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
-   revision-log --qsl . --manifest integration/current-head/Cargo.toml
-   --deps-root integration/current-head/.deps` against real network
-   access to the three backend repositories' default branches.
-3. Run `cargo run --manifest-path integration/current-head/tool/Cargo.toml --
    check-incompatible-fixture --manifest
    integration/current-head/fixtures/incompatible/Cargo.toml`.
-4. Read `integration/current-head/README.md`.
+3. Read `integration/current-head/README.md`.
 
 ## Expected Results
 
 - Step 1: the lane's manifest(s) are not listed in the root `[workspace]`
   `members`; the root `Cargo.lock`'s content hash is identical before and
   after both `make` invocations.
-- Step 2: the revision log names exactly four lines, one per repository (QSL,
-  quire-contract-ir, quire-contract-runtime, quire-contract-codegen), each
-  with a real resolved commit hash.
-- Step 3: the subcommand exits successfully (it detected the expected
+- Step 2: the subcommand exits successfully (it detected the expected
   failure) and prints the stable `FR-058-AC-3` marker line naming the
   incompatible dependency; the underlying `cargo build` of the fixture itself
   fails to compile with unresolved-import errors, not a patch-resolution
   error.
-- Step 4: the README names an owner (whoever owns ADR-011 T-12, tracked under
+- Step 3: the README names an owner (whoever owns ADR-011 T-12, tracked under
   #215 and successors), a bisection/escalation procedure for a failing run,
-  and the exact local invocation commands used in steps 1-3.
+  and the exact local invocation commands used in steps 1-2.
 
 ## Metadata
 

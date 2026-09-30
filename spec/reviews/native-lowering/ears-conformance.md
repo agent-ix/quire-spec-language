@@ -9,7 +9,7 @@ review_set: all
 
 ## Summary
 
-Ran quire validate --scope . 'spec/**/*.md' --summary with Quire 0.31.0:
+Ran quire validate --scope . 'spec/**/*.md' --summary:
 232/232 documents grammar-clean; zero grammar findings. The known duplicate
 registry notices are separate from requirement grammar.
 
