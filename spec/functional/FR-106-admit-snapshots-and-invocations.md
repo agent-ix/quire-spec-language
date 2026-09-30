@@ -252,7 +252,9 @@ required; check 10 settles it.
     value resolves against the pre snapshot's objects for a parameter (the
     `PreCall` snapshot, or the invocation's `pre`) and against the post
     snapshot's for a result. If one names a key absent from its complete
-    population, then admission SHALL refuse `dangling_reference`/
+    population, or names a population that snapshot does not list (a
+    population the package does not declare included), then
+    admission SHALL refuse `dangling_reference`/
     `absent-target-in-complete-population`, naming it and its population
     (check 8's closure rule).
 11. Frame and delta check. For an invocation, admission SHALL run the frame

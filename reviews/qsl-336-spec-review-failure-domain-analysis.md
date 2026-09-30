@@ -65,6 +65,13 @@ member's reading is unstated.
 | FND-009 | medium | FR-106-AC-8's new case adds "a second population `archive` of `ConfigVersion` objects" to the `probe` unit. Two unbounded populations whose member type is `ConfigVersion` make every clause on `ConfigVersion` refuse `ambiguous_declaration`/`ambiguous-name` at S3 (FR-104's context-population rule, FR-104-AC-5), so `ReachesTarget` never compiles and the case cannot reach admission. TC-465 hit the same trap and declares `archive`'s member type as `Sub` for that reason (TC-465 notes under row 43). Declare `archive` over `Sub` with `a1` a `Sub` object, in FR-106-AC-8 and TC-464 step 5. | spec/functional/FR-106-admit-snapshots-and-invocations.md:306; spec/test-cases/TC-464-snapshots-and-invocations-admit.md:37-39 |
 | FND-010 | low | Check 7 now reads reference-valued parameters to find required populations, but check 10 validates parameters later. A parameter reference naming a population the package does not declare becomes a required population "absent from its snapshot", so admission returns `Incomplete` where check 10's value rule would refuse it. State that only a parameter reference to a declared population of the package makes it required (or that check 10's value check on reference parameters runs first). | spec/functional/FR-106-admit-snapshots-and-invocations.md:157-162, 229 |
 
+
+## New findings (disposition pass 6)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | low | The FND-010 fix says a parameter reference naming no declared population "makes no population required; check 10 settles it", but check 10's text refuses only "a key absent from its complete population". It says nothing about a population the package does not declare. The code refuses that case `dangling_reference`/`absent-target-in-complete-population` (a population the snapshot does not list is not tolerated, `References::check_closure`, `qsl-semantics/src/model/observation/document.rs:863-884`), and check 6's value rule could also be read as `wrong-value-kind`. State the code in check 10. | spec/functional/FR-106-admit-snapshots-and-invocations.md:157-164, 243-255 |
+
 ## Dispositions
 
 | FND | outcome | sha/reason |
@@ -77,3 +84,5 @@ member's reading is unstated.
 | FND-006 | fixed | 82e69a12 |
 | FND-007 | fixed | 82e69a12 |
 | FND-008 | fixed | 0bedd077 |
+| FND-009 | fixed | 9ac01b61 |
+| FND-010 | fixed | 9ac01b61 |
