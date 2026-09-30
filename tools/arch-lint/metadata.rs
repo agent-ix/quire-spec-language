@@ -214,8 +214,8 @@ mod tests {
     use serde_json::json;
 
     /// tc_arch_lint_metadata_001: a minimal synthetic `cargo metadata`
-    /// document with an IR -> QSL normal edge is parsed into exactly that
-    /// edge, matching ADR-011 OBS-029's real, currently observed shape.
+    /// document with a synthetic IR -> QSL normal edge, the edge the FB-05
+    /// check exercises, is parsed into exactly that edge.
     #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_metadata_001_parses_ir_to_qsl_edge() {

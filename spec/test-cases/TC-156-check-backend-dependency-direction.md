@@ -13,7 +13,8 @@ relationships:
 Verify that `arch-lint direction` classifies resolved packages by repository,
 reports every FB-05 edge into QSL other than CG's normal dependency, reports
 every FB-11 cycle over the combined normal+dev edge graph exactly once, and
-reports no IR → QSL edge and no QSL ⇄ IR cycle when run against
+reports no IR → QSL edge and no QSL ⇄ IR cycle, while classifying QSL's real
+edge on `quire-contract-model` as QSL → IR, when run against
 quire-contract-ir's real current-head `cargo metadata` output, and
 that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
 even built. Scope: FR-059-AC-1 through FR-059-AC-7.
@@ -58,8 +59,12 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
 - Step 6: the FB-05 report names no edge from quire-contract-ir into QSL,
   and the FB-11 report names no cycle between QSL and quire-contract-ir,
   because neither IR manifest declares a QSL dependency (ADR-011 OBS-029);
-  step 2's seeded IR → QSL edge is still reported. This output is captured
-  for the PR body as real, not synthetic, evidence.
+  step 2's seeded IR → QSL edge is still reported. The resolved edge set
+  contains QSL's normal edge on the git-sourced `quire-contract-model`,
+  classified as QSL → IR (the permitted direction); an edge set without it
+  fails the step, since it shows the classifier no longer recognises a real
+  git-sourced IR crate. This output is captured for the PR body as real, not
+  synthetic, evidence.
 - Step 7: the mismatched-revision call fails distinctly (`Code::Stale`), and
   the error names both the stale local revision and the remote's current
   head; the matched-revision call passes; the end-to-end run's report prints
