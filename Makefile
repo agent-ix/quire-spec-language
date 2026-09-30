@@ -17,20 +17,20 @@ check-index-completeness:
 # qsl-eval and qsl-replay under `RUSTFLAGS=--cfg seam_probe`) on their own, independent
 # of whatever feature set the caller's own `cargo build`/`clippy` steps used.
 seam-probe:
-	cargo xtask seam-probe
+	cargo run --package xtask -- seam-probe
 
 # QSL#214 (FR-064, QSL-145): scans the QSL crates' non-test source for a
 # string comparison or string `match` outside a `#[string_edge]`-marked
 # function. Part of `ci:` -- the lint gate FR-064 requires it to run in.
 string-edge:
-	cargo xtask string-edge
+	cargo run --package xtask -- string-edge
 
 # QSL-46 (FR-080-AC-3): scans the #185 registry crate (every file under
 # qsl-route/src) for a static, OnceLock or thread_local! item -- ADR-012
 # §5.3's registry evidence requires the registry stay an ordinary value,
 # never ambient state.
 route-lint:
-	cargo xtask route-lint
+	cargo run --package xtask -- route-lint
 
 # QSL-46 (FR-080-AC-2): denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
@@ -59,6 +59,55 @@ cargo-deny-bans:
 		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked --version 0.19.8\` to install it" >&2; \
 		exit 1; \
 	fi
+
+# =============================================================================
+# Local development against sibling checkouts (one-copy-deps, agent-ix
+# org-wide: IR #225, RT #88, CG #196). `use-local` writes a gitignored
+# .cargo/config.toml that patches each first-party git dependency to its
+# working tree at $(SIBLINGS)/<repo>, uncommitted edits included. `use-remote`
+# deletes it. Format: <repo>:<crate>:<crate-dir>; entries of one repo must be
+# adjacent (they share one [patch] table). SIBLINGS is the directory holding
+# the sibling clones: the parent of the main checkout, so it is also right
+# from a linked worktree. Override to relocate.
+#
+# Note: this repo's own `ci:`/`ci-*` targets below still pass `--locked`
+# unconditionally (unlike CG's `LOCKED` variable) -- `make use-local` and
+# `make ci` together will fail on the lockfile mismatch a local patch
+# introduces. Run confined `cargo build`/`cargo test` (no `--locked`) under
+# `use-local`; switching every `ci:` invocation to a conditional `LOCKED`
+# variable is a separate change, not folded in here.
+# =============================================================================
+
+SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
+LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
+	quire-canonical:quire-canonical:.
+
+.PHONY: use-local
+use-local:
+	@set -e; mkdir -p .cargo; : > .cargo/config.toml; \
+	for spec in $(LOCAL_PATCHES); do \
+	  if [ "$$(printf '%s' "$$spec" | tr -cd ':' | wc -c)" != 2 ] || printf '%s' "$$spec" | grep -q '::\|^:\|:$$'; then \
+	    rm -f .cargo/config.toml; echo "use-local: malformed LOCAL_PATCHES entry '$$spec' (want repo:crate:dir)" >&2; exit 1; \
+	  fi; \
+	  repo=$${spec%%:*}; rest=$${spec#*:}; crate=$${rest%%:*}; dir=$${rest#*:}; \
+	  if [ ! -f "$(SIBLINGS)/$$repo/$$dir/Cargo.toml" ]; then \
+	    rm -f .cargo/config.toml; \
+	    echo "use-local: $(SIBLINGS)/$$repo is not cloned (no Cargo.toml at $(SIBLINGS)/$$repo/$$dir); clone agent-ix/$$repo next to this repo" >&2; exit 1; \
+	  fi; \
+	  if [ "$$repo" != "$$prev" ]; then \
+	    [ -z "$$prev" ] || printf '\n' >> .cargo/config.toml; \
+	    printf '[patch."https://github.com/agent-ix/%s"]\n' "$$repo" >> .cargo/config.toml; prev=$$repo; \
+	  fi; \
+	  printf '%s = { path = "%s/%s/%s" }\n' "$$crate" "$(SIBLINGS)" "$$repo" "$$dir" >> .cargo/config.toml; \
+	done; echo "wrote .cargo/config.toml"; \
+	if cargo metadata --format-version 1 2>&1 >/dev/null | grep -q 'patch .* was not used'; then \
+	  rm -f .cargo/config.toml; echo "use-local: a patch was not used; the sibling's version does not satisfy the requirement" >&2; exit 1; \
+	fi
+
+.PHONY: use-remote
+use-remote:
+	rm -f .cargo/config.toml
+	git checkout -- Cargo.lock
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below.

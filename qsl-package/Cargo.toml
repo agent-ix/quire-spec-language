@@ -33,7 +33,7 @@ qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { path = "../quire-exact" }
 # The v2 wire vocabulary: the identity-preimage types the emitter builds and
 # IR's `checked_package` v2 reader the I2 byte reader delegates to.
-quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", rev = "2a286437f6926dbefa9963dae196b22912114dc1" }
+quire-contract-ir = { package = "quire-contract-model", git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation; the
 # `package_id` preimage encodes through it (QSL-194).
 quire-canonical = { workspace = true }

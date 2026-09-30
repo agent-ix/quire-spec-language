@@ -1286,7 +1286,10 @@ mod tests {
     }
 
     /// FR-064-AC-6: the real `Makefile` names `string-edge` as a prerequisite
-    /// of `ci` and its recipe runs `cargo xtask string-edge`.
+    /// of `ci` and its recipe runs the `xtask` binary's `string-edge`
+    /// subcommand. One-copy-deps (`make use-local`) moved the `cargo xtask`
+    /// alias out of the tracked `.cargo/config.toml`, so the recipe spells
+    /// this out as `cargo run --package xtask --`.
     #[trace("TC-162", "FR-064-AC-6")]
     #[test]
     fn the_real_makefile_wires_string_edge_into_ci() {
@@ -1310,8 +1313,8 @@ mod tests {
         );
         assert_eq!(
             lines.next(),
-            Some("\tcargo xtask string-edge"),
-            "the recipe must run `cargo xtask string-edge`"
+            Some("\tcargo run --package xtask -- string-edge"),
+            "the recipe must run `cargo run --package xtask -- string-edge`"
         );
     }
 

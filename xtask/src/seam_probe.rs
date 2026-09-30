@@ -1309,9 +1309,14 @@ mod tests {
     /// FR-063-AC-5 (QSL-155 correction), part one: the real gate invokes
     /// `xtask seam-probe`. A grep-shaped check over the real `Makefile` --
     /// `ci:`'s own prerequisite list names `seam-probe`, and the
-    /// `seam-probe:` target's own recipe runs `cargo xtask seam-probe` --
-    /// not a stub of a Rust-level gate-target-list abstraction the merged
-    /// spec presumed and that does not exist (QSL-155's own correction).
+    /// `seam-probe:` target's own recipe runs the `xtask` binary's
+    /// `seam-probe` subcommand -- not a stub of a Rust-level
+    /// gate-target-list abstraction the merged spec presumed and that does
+    /// not exist (QSL-155's own correction). One-copy-deps (`make
+    /// use-local`) moved the `cargo xtask` alias out of the tracked
+    /// `.cargo/config.toml` (it now holds `make use-local`'s own
+    /// `[patch]` tables instead), so the recipe now spells this out as
+    /// `cargo run --package xtask --`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-5")]
     #[test]
     fn the_full_gate_invokes_seam_probe() {
@@ -1335,10 +1340,10 @@ mod tests {
             .skip_while(|line| !line.starts_with("seam-probe:"))
             .skip(1)
             .take_while(|line| line.starts_with('\t'))
-            .any(|line| line.trim() == "cargo xtask seam-probe");
+            .any(|line| line.trim() == "cargo run --package xtask -- seam-probe");
         assert!(
             recipe_runs_xtask,
-            "the seam-probe: target's own recipe does not run `cargo xtask seam-probe`"
+            "the seam-probe: target's own recipe does not run `cargo run --package xtask -- seam-probe`"
         );
     }
 
