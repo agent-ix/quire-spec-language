@@ -50,6 +50,10 @@ payload.
     creation or deletion, or an object reference and its pre and post types
     for a retyping (the four change kinds of FR-106's check 11, which
     FR-115 runs).
+- The envelope's members for a frame packet: its `clause_node` is the
+  frame node, its `occurrence_key` is the frame's `generated` occurrence,
+  and its `obligation_identity` is the O-09 obligation identity of the
+  frame's `operation-contract` record (ADR-017 PF-4).
 - A check-time FR-115 frame witness decodes to the `change` it claims:
   the witness's population and object key, and its field or types,
   without the frame permission.
@@ -65,8 +69,15 @@ payload.
 
 ## Behavior
 
+- The executor SHALL decode the request by FR-098's rules first, refusing
+  by FR-098's decode refusals.
+- If the envelope's `clause_node` differs from the payload's `frame`, or its
+  `occurrence_key` from the payload's `occurrence`, then the executor SHALL
+  refuse `stale_dependency`/`revision-mismatch` after the request decodes
+  and before it recompiles, naming the envelope's and the payload's
+  identity.
 - The executor SHALL recompile and check the package by FR-098's rules, in
-  FR-098's order, before it reads the payload.
+  FR-098's order, before it resolves the payload's operation.
 - If the recompiled `package_id` differs from the request's or the
   envelope's, then the executor SHALL refuse by FR-098's stale `package_id`
   rule.
@@ -111,6 +122,7 @@ payload.
 | FR-116-AC-3 | Stale identity: an envelope whose frame node identity is taken from a package whose `attemptUpdate` frame also modifies `parent` refuses `stale_dependency`/`revision-mismatch` naming both frame identities, with no admission; a source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule; an `operation` naming `missing` refuses `missing_declaration`/`missing-name`. | Test (TC-515) |
 | FR-116-AC-4 | An envelope whose pre snapshot is absent from the byte provision refuses with FR-106's `unavailable_observation` record, and one whose invocation bytes differ from their digest refuses with `stale_dependency`/`byte-digest-mismatch`; neither settles a result. | Test (TC-515) |
 | FR-116-AC-5 | Replaying one envelope twice gives equal results. `FrameCounterexample` implements `FamilyPayload`, and the envelope carries it as its generic parameter with no string-keyed field. | Test (TC-515) |
+| FR-116-AC-6 | Envelope consistency: the step-1 envelope with its `clause_node` replaced by another package's frame node refuses `stale_dependency`/`revision-mismatch` naming the envelope's clause node and the payload's frame node; with its `occurrence_key` at another ordinal it refuses the same way naming both occurrences. Each refuses before the recompile: the request's source does not compile, and the consistent envelope over the same request refuses at the recompile. | Test (TC-515) |
 
 ## Dependencies
 
@@ -123,7 +135,7 @@ payload.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Implemented by QSL-301 (QSL-21f):
+Specified under QSL-296 (QSL-21a). Implemented by
 `qsl_replay::replay_frame` over FR-098's request and a
 `WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
 the same path as FR-109's `Frame` selection, verified by TC-515. The decode

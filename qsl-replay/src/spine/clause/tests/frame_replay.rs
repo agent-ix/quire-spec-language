@@ -291,14 +291,28 @@ fn request(
     }
 }
 
-/// The envelope carrying `payload` at `package_id`, from `source_bytes`.
+/// The envelope carrying `payload` at `package_id`, from `source_bytes`,
+/// its `clause_node` and `occurrence_key` the payload's frame node and
+/// frame occurrence.
 fn envelope(
     source_bytes: &[u8],
     package_id: DigestRecord,
     source: ReplaySource,
     payload: FrameCounterexample,
 ) -> WitnessEnvelope<FrameCounterexample> {
-    let packet = WitnessPacket {
+    envelope_with(source_bytes, package_id, source, payload, |_| {})
+}
+
+/// [`envelope`], with `adjust` applied to the packet before it
+/// reconstructs.
+fn envelope_with(
+    source_bytes: &[u8],
+    package_id: DigestRecord,
+    source: ReplaySource,
+    payload: FrameCounterexample,
+    adjust: impl FnOnce(&mut WitnessPacket<FrameCounterexample>),
+) -> WitnessEnvelope<FrameCounterexample> {
+    let mut packet = WitnessPacket {
         obligation_identity: Some([1; 32]),
         occurrence_key: Some(payload.occurrence.clone()),
         clause_node: Some(payload.frame),
@@ -333,6 +347,7 @@ fn envelope(
         source: Some(source),
         family_payload: Some(payload),
     };
+    adjust(&mut packet);
     WitnessEnvelope::reconstruct(packet).expect("a complete packet reconstructs")
 }
 
@@ -614,6 +629,112 @@ fn a_stale_anchor_or_occurrence_refuses_revision_mismatch() {
         ),
         "{refusal:?}"
     );
+}
+
+/// A request whose source does not compile, for the ConfigVersion unit's
+/// `package_id`, and the step-1 payload built from the compiled unit.
+fn uncompilable_request() -> (Unit, ReplayRequestWire, FrameCounterexample) {
+    let unit = config_version_unit();
+    let input = forbidden_parent_change();
+    let (anchor, frame, occurrence) = identities(&unit);
+    let payload = FrameCounterexample {
+        operation: operation("attemptUpdate"),
+        anchor,
+        frame,
+        occurrence,
+        invocation: input.invocation.clone(),
+        change: child_change("parent"),
+    };
+    let package_id = package_digest(unit.compiled.emitted.package_id());
+    let broken = b"this is not a QSL unit\n".to_vec();
+    let wire = request(&broken, &unit.domain_document, package_id, &input.documents);
+    (unit, wire, payload)
+}
+
+/// TC-515 step 3 (FR-116-AC-6): an envelope whose `clause_node` is not its
+/// payload's frame node refuses `stale_dependency`/`revision-mismatch`
+/// naming both, before recompiling: the request's source does not compile,
+/// and the same request with a consistent envelope refuses at the
+/// recompile.
+#[trace("TC-515", "FR-116-AC-6")]
+#[test]
+fn an_envelope_clause_node_other_than_the_frame_refuses_before_recompiling() {
+    let (unit, wire, payload) = uncompilable_request();
+    let package_id = package_digest(unit.compiled.emitted.package_id());
+    let consistent = envelope(&unit.bytes, package_id, witness_source(), payload.clone());
+    let refusal = replay_frame(uncompilable_request().1, &consistent).unwrap_err();
+    assert!(
+        matches!(refusal, ReplayRefusal::Recompile(_)),
+        "{refusal:?}"
+    );
+
+    let (_, other_frame, _) = identities(&parent_modifying_unit());
+    assert_ne!(other_frame, payload.frame);
+    let frame = payload.frame;
+    let stale = envelope_with(
+        &unit.bytes,
+        package_id,
+        witness_source(),
+        payload,
+        |packet| {
+            packet.clause_node = Some(other_frame);
+        },
+    );
+    let refusal = replay_frame(wire, &stale).unwrap_err();
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::FrameIdentity(mismatch)
+                if matches!(**mismatch, FrameIdentityMismatch::EnvelopeFrame { envelope, payload }
+                    if envelope == other_frame && payload == frame)
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
+    let message = refusal.to_string();
+    assert!(message.starts_with("stale_dependency/revision-mismatch"));
+    assert!(message.contains(&other_frame.to_string()), "{message}");
+    assert!(message.contains(&frame.to_string()), "{message}");
+}
+
+/// TC-515 step 3 (FR-116-AC-6): an envelope whose `occurrence_key` is not
+/// its payload's frame occurrence refuses `stale_dependency`/
+/// `revision-mismatch` naming both, before recompiling.
+#[trace("TC-515", "FR-116-AC-6")]
+#[test]
+fn an_envelope_occurrence_other_than_the_frame_occurrence_refuses_before_recompiling() {
+    let (unit, wire, payload) = uncompilable_request();
+    let package_id = package_digest(unit.compiled.emitted.package_id());
+    let origin = payload.occurrence.origin();
+    let other = OccurrenceKey::new(
+        payload.occurrence.node(),
+        quire_exact::Origin::new(origin.role().clone(), origin.ordinal() + 1),
+    );
+    let occurrence = payload.occurrence.clone();
+    let stale = envelope_with(
+        &unit.bytes,
+        package_id,
+        witness_source(),
+        payload,
+        |packet| {
+            packet.occurrence_key = Some(other.clone());
+        },
+    );
+    let refusal = replay_frame(wire, &stale).unwrap_err();
+    assert!(
+        matches!(
+            &refusal,
+            ReplayRefusal::FrameIdentity(mismatch)
+                if matches!(&**mismatch, FrameIdentityMismatch::EnvelopeOccurrence { envelope, payload }
+                    if *envelope == other && *payload == occurrence)
+        ),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::StaleDependency);
+    let message = refusal.to_string();
+    assert!(message.starts_with("stale_dependency/revision-mismatch"));
+    assert!(message.contains(&format!("{other:?}")), "{message}");
+    assert!(message.contains(&format!("{occurrence:?}")), "{message}");
 }
 
 /// TC-515 step 3 (FR-116-AC-3): a source edit that changes the
