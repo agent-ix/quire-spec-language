@@ -248,7 +248,7 @@ operational validation remains outside this audit-only plan.
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally; QSL-310, QSL-311 |
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned; QSL-273 |
 | TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned; QSL-273 |
-| TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | 🚧 Planned; QSL-273 |
+| TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | ✅ Passed locally; QSL-273 |
 | TC-470 | runtime_invariant exits 30 and outranks other diagnostics | Unit | P1 | FR-096-AC-12 | ✅ Implemented; QSL-282 |
 | TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned; QSL-274 |
 | TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-13 | 🚧 Planned; QSL-274, ADR-016 G-4 |
@@ -649,8 +649,7 @@ operations and frames at I1 and E3 (FR-103), the S3 `ProtocolClause` check
 and its requirement records (FR-104), S4 `state` node emission (FR-105), the
 snapshot and invocation input (FR-106), S6a clause evaluation (FR-107), the
 ConfigVersion spine corpus (FR-108) and the layer-6 run entry (FR-109).
-TC-456 to TC-469 back every AC. TC-463 and TC-466 have passed locally; the rest are
-`🚧 Planned`. TC-469's native parity step retires when M-6c retires the
+TC-456 to TC-469 back every AC; each row above carries its own status. TC-469's native parity step retires when M-6c retires the
 `0-draft` native path (ADR-012 §15.8); its check against the independent
 expected dispositions stays.
 
