@@ -39,7 +39,7 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use call_site::{
-    call_site, CallSite, CallSiteRefusal, CallSiteSelection, CallSiteTarget, ClauseSite,
+    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseSite, FunctionSite,
     OperationSite,
 };
 // The inputs `call_site` takes and the typed operation name it and FR-115

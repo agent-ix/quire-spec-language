@@ -29,42 +29,58 @@ use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
 use crate::spine::{self, DependencyInput, OperationName};
 
-/// What [`call_site`] locates in the compiled package.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallSiteSelection {
-    /// A function, by the one-segment name FR-098's selection resolves.
-    Function(QualifiedName),
-    /// An operation `M::T::op`, resolved as FR-115's `Frame` selection
-    /// resolves it: model alias `M` to its domain package, `T` to that
-    /// package's object type, and `op` in `T`'s effective view.
-    Operation(OperationName),
+/// What [`call_site`] can locate in the compiled package, and what it
+/// answers for each: a [`QualifiedName`] selects a function, by the
+/// one-segment name FR-098's selection resolves, and locates a
+/// [`FunctionSite`]; an [`OperationName`] `M::T::op` selects an operation,
+/// resolved as FR-115's `Frame` selection resolves it, and locates an
+/// [`OperationSite`]. Sealed: those two are the only selections.
+pub trait CallSiteSelection: sealed::Locate {}
+
+impl CallSiteSelection for QualifiedName {}
+impl CallSiteSelection for OperationName {}
+
+mod sealed {
+    use qsl_foundation::digest::DigestRecord;
+    use qsl_package::CheckedPackage;
+
+    use super::CallSiteRefusal;
+
+    /// How a selection locates itself in a compiled package.
+    pub trait Locate {
+        /// What the selection locates.
+        type Site;
+
+        /// Locate `self` in `package`, whose `package_id` is `package_id`.
+        fn locate(
+            &self,
+            package: &CheckedPackage,
+            package_id: DigestRecord,
+        ) -> Result<Self::Site, Box<CallSiteRefusal>>;
+    }
 }
 
 /// What [`call_site`] returns: the compiled package's own content-addressed
-/// identity and the located selection.
+/// identity and what the selection located, a [`FunctionSite`] or an
+/// [`OperationSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallSite {
+pub struct CallSite<S> {
     /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
     /// digest record -- the same shape `ReplayRequestWire::package_id` and
     /// a witness envelope's package identity carry.
     pub package_id: DigestRecord,
     /// The located function or operation.
-    pub target: CallSiteTarget,
+    pub site: S,
 }
 
-/// The located selection, one arm per [`CallSiteSelection`] arm.
+/// A function's parameters in the compiled package.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallSiteTarget {
-    /// A [`CallSiteSelection::Function`]'s parameters, in declared order.
-    /// Each pair is the parameter's declared name and the `WireNodeId` a
-    /// `CanonicalAssignment::parameter` or a witness transcript names to
-    /// bind that parameter's argument (ADR-013 O-25, C-11).
-    Function {
-        /// The parameters, in declared order.
-        parameters: Vec<(Identifier, WireNodeId)>,
-    },
-    /// A [`CallSiteSelection::Operation`]'s identities.
-    Operation(OperationSite),
+pub struct FunctionSite {
+    /// The parameters, in declared order. Each pair is the parameter's
+    /// declared name and the `WireNodeId` a `CanonicalAssignment::parameter`
+    /// or a witness transcript names to bind that parameter's argument --
+    /// joined by declared identity, never by position (ADR-013 O-25, C-11).
+    pub parameters: Vec<(Identifier, WireNodeId)>,
 }
 
 /// An operation's identities in the compiled package (FR-104, FR-105): the
@@ -141,14 +157,14 @@ pub enum CallSiteRefusal {
 /// the documents of its byte provision -- as I1's package input and
 /// `dependencies` as the dependency input, and locate `selection` in the
 /// result.
-pub fn call_site<'a>(
+pub fn call_site<'a, S: CallSiteSelection>(
     source: SourceIdentity,
     path: &str,
     bytes: &[u8],
     packages: impl IntoIterator<Item = &'a [u8]>,
     dependencies: &DependencyInput,
-    selection: &CallSiteSelection,
-) -> Result<CallSite, Box<CallSiteRefusal>> {
+    selection: &S,
+) -> Result<CallSite<S::Site>, Box<CallSiteRefusal>> {
     let compiled = spine::compile(
         source,
         path,
@@ -159,62 +175,73 @@ pub fn call_site<'a>(
     )
     .map_err(|refusal| Box::new(CallSiteRefusal::Compile(refusal.to_string())))?;
     let package_id = compiled.emitted.package_id().record();
-    let target = match selection {
-        CallSiteSelection::Function(function) => {
-            function_site(&compiled.package, function, package_id)?
-        }
-        CallSiteSelection::Operation(operation) => {
-            let graph = compiled.package.graph();
-            let (_, frame) = graph
-                .resolve_operation(&operation.model, &operation.object, &operation.operation)
-                .and_then(|resolved| graph.operation_frame(&resolved))
-                .ok_or_else(|| {
-                    Box::new(CallSiteRefusal::UnknownOperation {
-                        selection: operation.clone(),
-                        package: package_id,
-                    })
-                })?;
-            CallSiteTarget::Operation(operation_site(graph, frame)?)
-        }
-    };
-    Ok(CallSite { package_id, target })
+    let site = selection.locate(&compiled.package, package_id)?;
+    Ok(CallSite { package_id, site })
 }
 
-/// `function`'s parameters in `package`, each paired with its own node id,
-/// by the one-segment name lookup and node-key derivation `replay`'s own
-/// selection uses.
-fn function_site(
-    package: &CheckedPackage,
-    function: &QualifiedName,
-    package_id: DigestRecord,
-) -> Result<CallSiteTarget, Box<CallSiteRefusal>> {
-    let unknown = || {
-        Box::new(CallSiteRefusal::UnknownFunction {
-            selection: function.clone(),
-            package: package_id,
-        })
-    };
-    let [segment] = function.segments() else {
-        return Err(unknown());
-    };
-    let callable = package
-        .graph()
-        .callable(segment.as_str())
-        .ok_or_else(unknown)?;
-    let keys = callable_parameter_keys(package, &callable)
-        .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
-    let parameters = callable
-        .parameters
-        .iter()
-        .zip(keys)
-        .map(|((name, _value_type), key)| {
-            Ok((
-                identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
-                wire_id(key),
-            ))
-        })
-        .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
-    Ok(CallSiteTarget::Function { parameters })
+impl sealed::Locate for QualifiedName {
+    type Site = FunctionSite;
+
+    /// `self`'s parameters in `package`, each paired with its own node id,
+    /// by the one-segment name lookup and node-key derivation `replay`'s own
+    /// selection uses.
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<FunctionSite, Box<CallSiteRefusal>> {
+        let unknown = || {
+            Box::new(CallSiteRefusal::UnknownFunction {
+                selection: self.clone(),
+                package: package_id,
+            })
+        };
+        let [segment] = self.segments() else {
+            return Err(unknown());
+        };
+        let callable = package
+            .graph()
+            .callable(segment.as_str())
+            .ok_or_else(unknown)?;
+        let keys = callable_parameter_keys(package, &callable)
+            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?;
+        let parameters = callable
+            .parameters
+            .iter()
+            .zip(keys)
+            .map(|((name, _value_type), key)| {
+                Ok((
+                    identifier(name, "declared-parameter-name-is-a-valid-identifier")?,
+                    wire_id(key),
+                ))
+            })
+            .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
+        Ok(FunctionSite { parameters })
+    }
+}
+
+impl sealed::Locate for OperationName {
+    type Site = OperationSite;
+
+    /// `self`'s frame in `package`, resolved as FR-115's `Frame` selection
+    /// resolves it, with its identities.
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<OperationSite, Box<CallSiteRefusal>> {
+        let graph = package.graph();
+        let (_, frame) = graph
+            .resolve_operation(&self.model, &self.object, &self.operation)
+            .and_then(|resolved| graph.operation_frame(&resolved))
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownOperation {
+                    selection: self.clone(),
+                    package: package_id,
+                })
+            })?;
+        operation_site(graph, frame)
+    }
 }
 
 /// `frame`'s identities in `graph`, with every state clause whose operation
@@ -264,11 +291,11 @@ fn wire_id(key: NodeKey) -> WireNodeId {
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+    use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord};
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Identifier, ScalarLimits};
 
-    use super::{call_site, CallSite, CallSiteRefusal, CallSiteSelection, CallSiteTarget};
+    use super::{call_site, CallSite, CallSiteRefusal, FunctionSite};
     use crate::identity::QualifiedName;
     use crate::request::{ReplayRequestWire, StageLimits, StateEnvironment};
     use crate::spine::DependencyInput;
@@ -295,25 +322,18 @@ mod tests {
 
     /// `call_site` over `bytes`, a standalone unit with no domain package
     /// and no dependency, selecting the function `function`.
-    fn function_site(bytes: &[u8], function: &str) -> Result<CallSite, Box<CallSiteRefusal>> {
+    fn function_site(
+        bytes: &[u8],
+        function: &str,
+    ) -> Result<CallSite<FunctionSite>, Box<CallSiteRefusal>> {
         call_site(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             bytes,
             [],
             &DependencyInput::default(),
-            &CallSiteSelection::Function(name(function)),
+            &name(function),
         )
-    }
-
-    /// A function selection's parameters.
-    fn parameters(site: &CallSite) -> &[(Identifier, WireNodeId)] {
-        match &site.target {
-            CallSiteTarget::Function { parameters } => parameters,
-            CallSiteTarget::Operation(operation) => {
-                panic!("a function selection locates a function, got {operation:?}")
-            }
-        }
     }
 
     fn scalar_limits(seed: u64) -> ScalarLimits {
@@ -405,7 +425,7 @@ mod tests {
     fn call_site_names_the_parameter_pair_the_real_replay_executor_accepts() {
         let bytes = PREDICATE_UNIT.as_bytes();
         let site = function_site(bytes, "p").expect("the fixture unit compiles and names p");
-        let [(identifier, node_id)] = parameters(&site) else {
+        let [(identifier, node_id)] = &site.site.parameters[..] else {
             panic!("p declares one parameter: {site:?}");
         };
         assert_eq!(identifier.as_str(), "x");

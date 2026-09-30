@@ -1069,7 +1069,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
             importing.unit.as_bytes(),
             [],
             dependencies,
-            &crate::CallSiteSelection::Function(name(&["q"])),
+            &name(&["q"]),
         )
     };
     let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
@@ -1081,11 +1081,8 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     }])
     .unwrap();
     let site = locate(&dependencies).expect("the importing unit compiles against test/units");
-    let crate::CallSiteTarget::Function { parameters } = &site.target else {
-        panic!("a function selection locates a function: {site:?}");
-    };
-    let [(parameter, node)] = &parameters[..] else {
-        panic!("q declares one parameter: {parameters:?}");
+    let [(parameter, node)] = &site.site.parameters[..] else {
+        panic!("q declares one parameter: {site:?}");
     };
     assert_eq!(parameter.as_str(), "x");
 

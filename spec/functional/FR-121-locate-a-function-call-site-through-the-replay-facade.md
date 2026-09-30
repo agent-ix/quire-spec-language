@@ -72,17 +72,18 @@ declaration by declared identity, never by position.
   documents of its byte provision.
 - `dependencies`: the `DependencyInput` of supplied libraries (ADR-015
   D-1), built by `DependencyInput::new`.
-- `selection`: `CallSiteSelection::Function(QualifiedName)` or
-  `CallSiteSelection::Operation(OperationName)`, the operation `M::T::op`
-  as model alias, object type and operation identifiers.
+- `selection`: a `QualifiedName` naming a function, or an `OperationName`
+  naming an operation `M::T::op` as model alias, object type and operation
+  identifiers. `CallSiteSelection` is the sealed trait both implement; no
+  other type selects.
 
 ## Outputs
 
-- A `CallSite` on success: `package_id` (`DigestRecord`) and `target`, one
-  of
-  - `CallSiteTarget::Function { parameters }`: `Vec<(Identifier,
-    WireNodeId)>`, in declared order;
-  - `CallSiteTarget::Operation(OperationSite)`: `anchor` and `frame`
+- A `CallSite` on success: `package_id` (`DigestRecord`) and `site`, whose
+  type the selection decides:
+  - for a `QualifiedName`, a `FunctionSite`: `parameters`,
+    `Vec<(Identifier, WireNodeId)>`, in declared order;
+  - for an `OperationName`, an `OperationSite`: `anchor` and `frame`
     (`WireNodeId`), `frame_occurrence` (`OccurrenceKey`) and `clauses`
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
     `occurrence: OccurrenceKey`, in declaration order);
@@ -96,30 +97,30 @@ declaration by declared identity, never by position.
   model selection, import or dependency input refusal -- as
   `CallSiteRefusal::Compile`, its rendered message, with no `spine` type
   reaching the public error.
-- For a `Function` selection, `call_site` SHALL resolve the name by
+- For a function selection, `call_site` SHALL resolve the name by
   one-segment name lookup in the compiled package's declarations (OQ-5). A
   name with zero or more than one segment, or naming no declared function,
   SHALL refuse `CallSiteRefusal::UnknownFunction`, pairing the
   `QualifiedName` with the compiled package's own `package_id` -- never a
   bare `QualifiedName` (FR-088-AC-6, TC-258).
-- For a `Function` selection, `call_site` SHALL pair each of the resolved
+- For a function selection, `call_site` SHALL pair each of the resolved
   function's declared parameters, in declared order, with its own node id,
   derived the same way `replay`'s own executor derives it (FR-098), so the
   same parameter always gets the same node id from either entry.
-- For an `Operation` selection, `call_site` SHALL resolve the model alias
+- For an operation selection, `call_site` SHALL resolve the model alias
   to its domain package, the object type in that package and the operation
   in the object type's effective view, exactly as FR-115's `Frame`
   selection resolves them, and SHALL return the operation's FR-105
   `operation_anchor` and `frame` node ids and the frame's `generated`
   occurrence key (FR-104-AC-5) -- the identities an FR-116 frame
   counterexample carries.
-- For an `Operation` selection, `call_site` SHALL return every `pre` and
+- For an operation selection, `call_site` SHALL return every `pre` and
   `post` clause of the unit whose operation resolves to the same
   (declaring object type, operation) as the selected frame, in declaration
   order, each with its declared name, its `state_clause` node id and its
   `claim` occurrence key (ADR-013 O-07). An invariant names no operation
   and is never returned.
-- An `Operation` selection whose model alias or object type does not
+- An operation selection whose model alias or object type does not
   resolve, whose operation resolves to no single operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
   refuse `CallSiteRefusal::UnknownOperation`, pairing the `OperationName`
@@ -136,10 +137,10 @@ declaration by declared identity, never by position.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-121-AC-1 | For a unit declaring one Boolean predicate `p(x: Int[0, 9]): Boolean`, `call_site` over `p` returns `parameters` holding exactly one pair, its `Identifier` equal to `x`, and its `WireNodeId` is the one `replay` accepts: a `ReplayRequestWire` keyed by that exact pair does not refuse `UnknownParameter` or `UnboundParameter`. | Test (TC-516) |
-| FR-121-AC-2 | A `Function` selection naming no declared function of the compiled package refuses `CallSiteRefusal::UnknownFunction`, pairing the `QualifiedName` with the compiled package's own `package_id`, never a bare `QualifiedName`. | Test (TC-516) |
-| FR-121-AC-3 | For FR-108's ConfigVersion unit with its domain package supplied, an `Operation` selection of `Config::ConfigVersion::attemptUpdate` returns the compiled package's `package_id`, the unit's one `operation_anchor` and one `frame` node id, a `frame_occurrence` equal to the key built through the facade as `OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))`, and exactly one clause: `VersionUnchanged`, at its `postcondition` `state_clause` node and that node's `claim` occurrence at ordinal 0. Neither invariant of the unit is returned. | Test (TC-516) |
+| FR-121-AC-2 | A function selection naming no declared function of the compiled package refuses `CallSiteRefusal::UnknownFunction`, pairing the `QualifiedName` with the compiled package's own `package_id`, never a bare `QualifiedName`. | Test (TC-516) |
+| FR-121-AC-3 | For FR-108's ConfigVersion unit with its domain package supplied, an operation selection of `Config::ConfigVersion::attemptUpdate` returns the compiled package's `package_id`, the unit's one `operation_anchor` and one `frame` node id, a `frame_occurrence` equal to the key built through the facade as `OccurrenceKey::new(frame, Origin::new(Role::new("generated"), 0))`, and exactly one clause: `VersionUnchanged`, at its `postcondition` `state_clause` node and that node's `claim` occurrence at ordinal 0. Neither invariant of the unit is returned. | Test (TC-516) |
 | FR-121-AC-4 | For a unit importing a library, `call_site` with a `DependencyInput` supplying that library returns a `package_id` and parameter pair such that a `ReplayRequestWire` carrying the library as its `dependencies` entry, keyed only by that `package_id` and pair, replays and agrees; with no dependency input the same unit refuses `CallSiteRefusal::Compile` naming `missing_import`. | Test (TC-516) |
-| FR-121-AC-5 | An `Operation` selection whose model alias, object type or operation does not resolve refuses `CallSiteRefusal::UnknownOperation`, pairing the `OperationName` with the compiled package's own `package_id`. | Test (TC-516) |
+| FR-121-AC-5 | An operation selection whose model alias, object type or operation does not resolve refuses `CallSiteRefusal::UnknownOperation`, pairing the `OperationName` with the compiled package's own `package_id`. | Test (TC-516) |
 
 ## Dependencies
 
@@ -152,9 +153,9 @@ declaration by declared identity, never by position.
   `call_site` is a second entry of, and the parameter node id derivation it
   shares.
 - [FR-105](FR-105-emit-state-nodes.md): the `state_clause`,
-  `operation_anchor` and `frame` nodes an `Operation` selection names.
+  `operation_anchor` and `frame` nodes an operation selection names.
 - [FR-115](FR-115-run-an-operation-frame-over-an-invocation.md): the
-  typed `OperationName` resolution an `Operation` selection shares.
+  typed `OperationName` resolution an operation selection shares.
 - [FR-116](FR-116-replay-a-frame-counterexample.md): the frame
   counterexample whose anchor, frame and occurrence an `Operation`
   selection supplies.

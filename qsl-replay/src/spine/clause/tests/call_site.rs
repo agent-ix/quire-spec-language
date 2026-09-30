@@ -14,8 +14,7 @@ use super::frame::identifier;
 use super::*;
 use crate::spine::OperationName;
 use crate::{
-    call_site, CallSite, CallSiteRefusal, CallSiteSelection, CallSiteTarget, OccurrenceKey,
-    OperationSite, Origin, Role, WireNodeId,
+    call_site, CallSite, CallSiteRefusal, OccurrenceKey, OperationSite, Origin, Role, WireNodeId,
 };
 
 fn wire(node: NodeKey) -> WireNodeId {
@@ -32,7 +31,9 @@ fn operation(model: &str, object: &str, operation: &str) -> OperationName {
 
 /// `call_site` over the ConfigVersion unit, its domain package supplied,
 /// selecting `operation`.
-fn operation_site(operation: OperationName) -> Result<CallSite, Box<CallSiteRefusal>> {
+fn operation_site(
+    operation: OperationName,
+) -> Result<CallSite<OperationSite>, Box<CallSiteRefusal>> {
     let (unit, _) = config_version_unit_and_packages();
     let document = config_version_domain_document();
     call_site(
@@ -41,17 +42,8 @@ fn operation_site(operation: OperationName) -> Result<CallSite, Box<CallSiteRefu
         unit.as_bytes(),
         [document.as_slice()],
         &DependencyInput::default(),
-        &CallSiteSelection::Operation(operation),
+        &operation,
     )
-}
-
-fn located(site: &CallSite) -> &OperationSite {
-    match &site.target {
-        CallSiteTarget::Operation(operation) => operation,
-        CallSiteTarget::Function { parameters } => {
-            panic!("an operation selection locates an operation, got {parameters:?}")
-        }
-    }
 }
 
 /// FR-121-AC-3: `attemptUpdate`'s selection returns the compiled package's
@@ -69,7 +61,7 @@ fn call_site_locates_an_operations_anchor_frame_and_clauses() {
     assert_eq!(site.package_id, compiled.emitted.package_id().record());
 
     let graph = compiled.package.graph();
-    let operation = located(&site);
+    let operation = &site.site;
     let frame = wire(single_state_node_key(graph, "frame"));
     assert_eq!(
         operation.anchor,
