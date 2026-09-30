@@ -2,7 +2,9 @@
 //! FR-116 (ADR-012 §12.2 Witness and replay row, ADR-013 O-25 to O-27):
 //! [`replay_frame`], the replay facade's entry for a frame counterexample.
 //!
-//! It recompiles the request's package by FR-098's rules ([`recompile`]),
+//! It checks the envelope's clause node and occurrence key against the
+//! payload's frame node and occurrence, recompiles the request's package by
+//! FR-098's rules ([`recompile`]),
 //! resolves the payload's operation in the recompiled package, refuses a
 //! payload whose frame, occurrence or anchor identity is not the recompiled
 //! one before any admission, then runs FR-115's frame run -- the very
@@ -39,9 +41,30 @@ use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplayS
 use crate::WitnessEnvelope;
 
 /// FR-116's `stale_dependency`/`revision-mismatch`: one payload identity
-/// that is not the recompiled package's, naming both.
+/// that is not the recompiled package's, or one envelope identity that is
+/// not the payload's, naming both.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum FrameIdentityMismatch {
+    /// The envelope's `clause_node`, which for a frame packet is the
+    /// payload's frame node.
+    #[error(
+        "the envelope names clause node {envelope} but its payload names frame node {payload}"
+    )]
+    EnvelopeFrame {
+        /// The envelope's clause node.
+        envelope: WireNodeId,
+        /// The payload's frame node.
+        payload: WireNodeId,
+    },
+    /// The envelope's `occurrence_key`, which for a frame packet is the
+    /// payload's frame occurrence.
+    #[error("the envelope names occurrence {envelope:?} but its payload names frame occurrence {payload:?}")]
+    EnvelopeOccurrence {
+        /// The envelope's occurrence key.
+        envelope: OccurrenceKey,
+        /// The payload's frame occurrence key.
+        payload: OccurrenceKey,
+    },
     /// The operation's `state`/`operation_anchor` node.
     #[error(
         "the payload names anchor node {payload} but the package recompiles it as {recompiled}"
@@ -153,8 +176,10 @@ impl FrameReplayResult {
 /// members, which a frame replay does not read: its selection is the
 /// payload and its result arm the envelope's.
 ///
-/// Refuses, with no partial result, by FR-098's rules (in FR-098's order,
-/// before the payload is read), when the recompiled `package_id` is not the
+/// Refuses, with no partial result, when the request does not decode, then
+/// when the envelope's `clause_node` or `occurrence_key` is not the
+/// payload's frame node or frame occurrence (before recompiling), then by
+/// FR-098's rules (in FR-098's order), when the recompiled `package_id` is not the
 /// envelope's, when the payload's operation names no operation frame, when
 /// a payload identity is stale (before any admission), and when FR-106
 /// admission fails. The counterexample refuted the frame, so the proved
@@ -169,6 +194,7 @@ pub fn replay_frame(
     envelope: &WitnessEnvelope<FrameCounterexample>,
 ) -> Result<FrameReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
+    check_envelope(envelope).map_err(ReplayRefusal::FrameIdentity)?;
     let compiled = recompile(&request)?;
     let package_id = compiled.emitted.package_id();
     if !package_id.matches(&envelope.package_id()) {
@@ -354,6 +380,30 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
         object: object.clone(),
         operation: operation.operation.clone(),
     })
+}
+
+/// FR-116: a frame packet carries its frame node and frame occurrence
+/// twice, as the envelope's `clause_node` and `occurrence_key` and as the
+/// payload's `frame` and `occurrence`; the two must agree. The frame goes
+/// first, as in [`check_identities`], because the occurrence key is
+/// derived from it. The envelope's `selected_function` is not read.
+fn check_envelope(
+    envelope: &WitnessEnvelope<FrameCounterexample>,
+) -> Result<(), Box<FrameIdentityMismatch>> {
+    let payload = envelope.family_payload();
+    if envelope.clause_node() != payload.frame {
+        return Err(Box::new(FrameIdentityMismatch::EnvelopeFrame {
+            envelope: envelope.clause_node(),
+            payload: payload.frame,
+        }));
+    }
+    if *envelope.occurrence_key() != payload.occurrence {
+        return Err(Box::new(FrameIdentityMismatch::EnvelopeOccurrence {
+            envelope: envelope.occurrence_key().clone(),
+            payload: payload.occurrence.clone(),
+        }));
+    }
+    Ok(())
 }
 
 /// FR-116: the payload's frame, occurrence and anchor identities, each

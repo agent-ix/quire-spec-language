@@ -183,8 +183,9 @@ pub enum ReplayRefusal {
         package: PackageId,
     },
     /// FR-116: a frame counterexample's anchor, frame or occurrence
-    /// identity is not the recompiled package's. Refused before any
-    /// admission.
+    /// identity is not the recompiled package's (refused before any
+    /// admission), or its envelope's clause node or occurrence key is not
+    /// the payload's frame node or occurrence (refused before recompiling).
     #[error("stale_dependency/revision-mismatch: {0}")]
     FrameIdentity(Box<FrameIdentityMismatch>),
     /// FR-116: FR-106 admission of the frame counterexample's invocation

@@ -264,7 +264,7 @@ operational validation remains outside this audit-only plan.
 | TC-512 | S3 refuses ambiguous, shadowing, wrong-kind and wrong-channel names, in builder order | Unit | P1 | FR-113-AC-4, FR-113-AC-5, FR-113-AC-6, FR-113-AC-7 | 🚧 Planned; QSL-296 |
 | TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; QSL-296; emitted-node assertions pending STD-111 |
 | TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5, FR-115-AC-6 | ✅ Passed locally; QSL-300 |
-| TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5 | ✅ Passed locally; QSL-301 |
+| TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5, FR-116-AC-6 | ✅ Passed locally; QSL-301 |
 | TC-516 | call_site names a function's parameters by declared identity, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2 | ✅ Passed locally; QSL-317 |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
