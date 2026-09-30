@@ -62,52 +62,76 @@ cargo-deny-bans:
 
 # =============================================================================
 # Local development against sibling checkouts (one-copy-deps, agent-ix
-# org-wide: IR #225, RT #88, CG #196). `use-local` writes a gitignored
-# .cargo/config.toml that patches each first-party git dependency to its
-# working tree at $(SIBLINGS)/<repo>, uncommitted edits included. `use-remote`
-# deletes it. Format: <repo>:<crate>:<crate-dir>; entries of one repo must be
-# adjacent (they share one [patch] table). SIBLINGS is the directory holding
-# the sibling clones: the parent of the main checkout, so it is also right
-# from a linked worktree. Override to relocate.
+# org-wide: IR #225, RT #88, CG #196).
+#
+# `use-local` writes a gitignored .cargo/config.toml that patches each
+# first-party git dependency to its working tree at $(SIBLINGS)/<repo>,
+# uncommitted edits included. It validates every entry before writing
+# anything, so a bad entry leaves an existing config untouched. It first
+# snapshots Cargo.lock to the gitignored .cargo/Cargo.lock.pre-local (only if
+# no snapshot exists); `use-remote` deletes the config and restores the lock
+# from that snapshot (and does nothing to the lock if there is none). So the
+# lock returns to its state before the first `use-local`; lock changes made
+# while a patch is active are discarded, and a `cargo update -p` made without
+# a patch is kept.
+# Format: <repo>:<crate>:<crate-dir>; entries are grouped by repo here, in
+# any order, so each repo gets exactly one [patch] table.
+# SIBLINGS is the directory holding the sibling clones: the parent of the main
+# checkout, so it is also right from a linked worktree. Override to relocate.
 #
 # Note: this repo's own `ci:`/`ci-*` targets below still pass `--locked`
-# unconditionally (unlike CG's `LOCKED` variable) -- `make use-local` and
-# `make ci` together will fail on the lockfile mismatch a local patch
-# introduces. Run confined `cargo build`/`cargo test` (no `--locked`) under
-# `use-local`; switching every `ci:` invocation to a conditional `LOCKED`
-# variable is a separate change, not folded in here.
+# unconditionally -- `make use-local` and `make ci` together will fail on the
+# lockfile mismatch a local patch introduces. Run confined `cargo build`/
+# `cargo test` (no `--locked`) under `use-local`.
 # =============================================================================
 
 SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
-	quire-canonical:quire-canonical:.
+	quire-canonical:quire-canonical:. \
+	ix-trace-rs:ix-trace-rs:.
 
 .PHONY: use-local
 use-local:
-	@set -e; mkdir -p .cargo; : > .cargo/config.toml; \
+	@set -e; mkdir -p .cargo; \
 	for spec in $(LOCAL_PATCHES); do \
 	  if [ "$$(printf '%s' "$$spec" | tr -cd ':' | wc -c)" != 2 ] || printf '%s' "$$spec" | grep -q '::\|^:\|:$$'; then \
-	    rm -f .cargo/config.toml; echo "use-local: malformed LOCAL_PATCHES entry '$$spec' (want repo:crate:dir)" >&2; exit 1; \
+	    echo "use-local: malformed LOCAL_PATCHES entry '$$spec' (want repo:crate:dir)" >&2; exit 1; \
 	  fi; \
-	  repo=$${spec%%:*}; rest=$${spec#*:}; crate=$${rest%%:*}; dir=$${rest#*:}; \
+	  repo=$${spec%%:*}; rest=$${spec#*:}; dir=$${rest#*:}; \
 	  if [ ! -f "$(SIBLINGS)/$$repo/$$dir/Cargo.toml" ]; then \
-	    rm -f .cargo/config.toml; \
 	    echo "use-local: $(SIBLINGS)/$$repo is not cloned (no Cargo.toml at $(SIBLINGS)/$$repo/$$dir); clone agent-ix/$$repo next to this repo" >&2; exit 1; \
 	  fi; \
-	  if [ "$$repo" != "$$prev" ]; then \
-	    [ -z "$$prev" ] || printf '\n' >> .cargo/config.toml; \
-	    printf '[patch."https://github.com/agent-ix/%s"]\n' "$$repo" >> .cargo/config.toml; prev=$$repo; \
-	  fi; \
-	  printf '%s = { path = "%s/%s/%s" }\n' "$$crate" "$(SIBLINGS)" "$$repo" "$$dir" >> .cargo/config.toml; \
+	done; \
+	[ -f .cargo/Cargo.lock.pre-local ] || cp Cargo.lock .cargo/Cargo.lock.pre-local; \
+	: > .cargo/config.toml; \
+	repos=$$(for spec in $(LOCAL_PATCHES); do printf '%s\n' "$${spec%%:*}"; done | awk '!seen[$$0]++'); \
+	first=1; \
+	for repo in $$repos; do \
+	  [ "$$first" = 1 ] || printf '\n' >> .cargo/config.toml; first=0; \
+	  printf '[patch."https://github.com/agent-ix/%s"]\n' "$$repo" >> .cargo/config.toml; \
+	  for spec in $(LOCAL_PATCHES); do \
+	    [ "$${spec%%:*}" = "$$repo" ] || continue; \
+	    rest=$${spec#*:}; crate=$${rest%%:*}; dir=$${rest#*:}; \
+	    printf '%s = { path = "%s/%s/%s" }\n' "$$crate" "$(SIBLINGS)" "$$repo" "$$dir" >> .cargo/config.toml; \
+	  done; \
 	done; echo "wrote .cargo/config.toml"; \
-	if cargo metadata --format-version 1 2>&1 >/dev/null | grep -q 'patch .* was not used'; then \
-	  rm -f .cargo/config.toml; echo "use-local: a patch was not used; the sibling's version does not satisfy the requirement" >&2; exit 1; \
-	fi
+	meta=$$(mktemp); \
+	if ! cargo metadata --format-version 1 >/dev/null 2>"$$meta"; then \
+	  cat "$$meta" >&2; rm -f "$$meta" .cargo/config.toml; \
+	  [ ! -f .cargo/Cargo.lock.pre-local ] || { cp .cargo/Cargo.lock.pre-local Cargo.lock; rm -f .cargo/Cargo.lock.pre-local; }; \
+	  echo "use-local: cargo metadata failed under the patch" >&2; exit 1; \
+	fi; \
+	if grep -q 'patch .* was not used' "$$meta"; then \
+	  cat "$$meta" >&2; rm -f "$$meta" .cargo/config.toml; \
+	  [ ! -f .cargo/Cargo.lock.pre-local ] || { cp .cargo/Cargo.lock.pre-local Cargo.lock; rm -f .cargo/Cargo.lock.pre-local; }; \
+	  echo "use-local: a patch was not used; the sibling's version does not satisfy the requirement" >&2; exit 1; \
+	fi; \
+	rm -f "$$meta"
 
 .PHONY: use-remote
 use-remote:
 	rm -f .cargo/config.toml
-	git checkout -- Cargo.lock
+	@if [ -f .cargo/Cargo.lock.pre-local ]; then mv .cargo/Cargo.lock.pre-local Cargo.lock; echo "restored Cargo.lock from the pre-local snapshot"; fi
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below.
