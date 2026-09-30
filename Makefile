@@ -152,7 +152,7 @@ ci-all-features:
 # resolves, not that its object code is produced.
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir target/clean
-	cargo check --locked --manifest-path Cargo.toml --lib --no-default-features --features handoff-writer --target-dir target/clean
+	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
 	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
@@ -162,7 +162,7 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder
+ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
 # QSL-156 A4a: the FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
@@ -244,11 +244,14 @@ conformance:
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
-# checks over the QSL/IR/RT/CG ecosystem. Not part of `ci:` -- FR-059
-# reports real, already-tracked findings against QSL's own current head
-# (ADR-011 OBS-029), owned by #213, not by this target's caller.
-# `arch-lint-direction` needs real local checkouts of the three backend
-# repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+# checks over the QSL/IR/RT/CG ecosystem.
+#
+# `arch-lint-duplicate-revisions` (FR-061) needs only this repository's
+# `Cargo.lock` and is part of `ci:`: one copy of each first-party crate.
+#
+# `arch-lint-direction` (FR-059, FB-05/FB-11) needs real local checkouts of
+# the three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
+# It is not part of `ci:` for that reason.
 #
 # FR-060 T12-B/T12-C: `NodeKey`'s and `EffectiveId`'s mints outside
 # `check`/`model` (ADR-013 OBS-018 and FB-13) are a named, shrinking debt
@@ -258,17 +261,11 @@ conformance:
 # Without CG_CLONE, T12-A reports NOT EVALUATED, T12-B, T12-C and T12-D still
 # run and report, and the target exits 2 (usage) for the missing input.
 #
-# `arch-lint` (this repo's own checks: api-surface, duplicate-revisions on
-# QSL's own root lock, and duplicate-revisions on the current-head lane's own
-# lock) exits non-zero today: QSL's own root Cargo.lock's deliberate double
-# pin of the IR repository (`quire-contract-ir` vs. `quire-contract-model`,
-# #249 review R2) makes `arch-lint-duplicate-revisions` fail, and
+# `arch-lint` runs this repo's own checks: api-surface, duplicate-revisions on
+# QSL's own root lock, duplicate-revisions on the current-head lane's own lock
+# (it converges via the lane's own [patch] table) and canonical-encoder.
 # `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
-# above. `arch-lint-duplicate-revisions-lane`
-# passes (R3: the lane's own lock converges via its own [patch] table) and is
-# included here so that convergence is routinely enforced, not merely
-# checkable on request. `arch-lint` joins `ci:` once #211 remediates the
-# lockfile pin and a `CG_CLONE` checkout is routinely available.
+# above.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
