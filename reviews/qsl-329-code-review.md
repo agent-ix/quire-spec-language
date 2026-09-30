@@ -47,3 +47,9 @@ I04 test is ignored (FND-001).
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | The doc on `tc_469_step_6_package_id_is_pinned_across_every_case` still says the I04 read half is "a separate, currently-`#[ignore]`d test below, blocked on IR-370 (the pinned `quire-contract-model` reader's gap)" and cites a pin bump to `2a28643`. This PR un-ignored that test, so the doc is now false and carries pin wording. Fix: say the I04 half is the test below, and drop the IR-370/pin history. | tests/it/config_version_spine.rs:844-851 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10b12bbd |

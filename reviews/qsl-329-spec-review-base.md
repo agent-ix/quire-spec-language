@@ -52,3 +52,14 @@ two tests were not updated, so the spec now contradicts itself.
 | FND-004 | medium | TC-469's Status still says "Step 6's I04 `read` half is pending IR-370". It now runs and passes. | spec/test-cases/TC-469-configversion-spine-corpus-matches-native.md:77-78 |
 | FND-005 | low | The sentence this PR edited says "TC-463 and TC-466 have passed locally; the rest are `🚧 Planned`". TC-459, TC-460, TC-461 and TC-462 in the same range are also passed or covered (tests.md:242-245), and TC-469 is too once FND-002 is fixed. | spec/tests.md:652-653 |
 | FND-006 | low | TK-4 now ends "Done." inside a table introduced as "These are proposed; the team lead files them." A proposed-ticket table carrying a done row mixes status into a proposal list. Either drop the TK-4 row (the Tests bullet and summary row already say TC-463 passes) or leave the row without the status word. | spec/decisions/ADR-017-protocol-refinement-abstraction-boundaries.md:749 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10b12bbd |
+| FND-002 | fixed | 10b12bbd |
+| FND-003 | fixed | 10b12bbd |
+| FND-004 | fixed | 10b12bbd |
+| FND-005 | fixed | 10b12bbd |
+| FND-006 | fixed | 10b12bbd |
