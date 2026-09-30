@@ -30,9 +30,11 @@ use qsl_forms::DeclaredClauseKind;
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and
 /// its effective view's `type_identities`, read from `EffectiveId` to
-/// `DeclarationKey`.
+/// `DeclarationKey`; and the alias of the `model` declaration that selects
+/// it, when one does.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedModel {
+    alias: Option<String>,
     selection: DomainPackageRef,
     records: BTreeMap<DeclarationKey, DomainPackageRecord>,
     types: BTreeMap<EffectiveId, DeclarationKey>,
@@ -71,6 +73,7 @@ impl AdmittedModel {
 
     fn assemble(domain_package: &DomainPackage, view: &EffectiveView) -> Self {
         Self {
+            alias: None,
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -94,6 +97,7 @@ impl AdmittedModel {
         types: impl IntoIterator<Item = (EffectiveId, DeclarationKey)>,
     ) -> Self {
         Self {
+            alias: None,
             selection: domain_package.model_selection.clone(),
             records: domain_package
                 .records
@@ -104,9 +108,37 @@ impl AdmittedModel {
         }
     }
 
+    /// This package admitted for the `model` declaration `alias`: FR-115's
+    /// `Frame` selection resolves `alias` to this package.
+    #[must_use]
+    pub fn with_alias(mut self, alias: impl Into<String>) -> Self {
+        self.alias = Some(alias.into());
+        self
+    }
+
+    /// The alias of the `model` declaration this package is admitted for,
+    /// if any.
+    pub(crate) fn alias(&self) -> Option<&str> {
+        self.alias.as_deref()
+    }
+
     /// The domain package's model selection.
     pub fn selection(&self) -> &DomainPackageRef {
         &self.selection
+    }
+
+    /// Every object type of this package: its declaration key and its
+    /// effective identity.
+    pub(crate) fn object_types(&self) -> impl Iterator<Item = (&DeclarationKey, EffectiveId)> {
+        self.types
+            .iter()
+            .filter(|(_, key)| {
+                matches!(
+                    self.records.get(*key),
+                    Some(DomainPackageRecord::ObjectType(_))
+                )
+            })
+            .map(|(id, key)| (key, *id))
     }
 
     /// The record `key` names in this package.

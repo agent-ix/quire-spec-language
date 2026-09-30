@@ -6,7 +6,7 @@
 //! domain package and the invocation documents in the byte provision.
 //! `attemptUpdate`'s frame modifies exactly `versionNumber`.
 
-use super::frame::{object, snapshot};
+use super::frame::{identifier, object, snapshot};
 use super::*;
 use crate::spine::OperationName;
 use crate::{
@@ -78,11 +78,16 @@ fn wire(node: quire_exact::NodeKey) -> WireNodeId {
 /// `attemptUpdate`'s anchor node, frame node and frame occurrence in
 /// `unit`'s compiled package.
 fn identities(unit: &Unit) -> (WireNodeId, WireNodeId, OccurrenceKey) {
-    let (_, frame) = unit
-        .compiled
-        .package
-        .graph()
-        .operation_frame("Config::ConfigVersion", "attemptUpdate")
+    let graph = unit.compiled.package.graph();
+    let selection = graph
+        .resolve_operation(
+            &identifier("Config"),
+            &identifier("ConfigVersion"),
+            &identifier("attemptUpdate"),
+        )
+        .expect("Config::ConfigVersion resolves");
+    let (_, frame) = graph
+        .operation_frame(&selection)
         .expect("attemptUpdate is named by VersionUnchanged");
     (
         wire(frame.anchor()),
@@ -797,9 +802,9 @@ fn a_check_time_frame_violation_replays_to_the_same_witness() {
     let input = forbidden_parent_change();
     let mut clause_request = config_version_request(ClauseRunSelection::Frame {
         operation: OperationName {
-            model: "Config".to_owned(),
-            object: "ConfigVersion".to_owned(),
-            operation: "attemptUpdate".to_owned(),
+            model: identifier("Config"),
+            object: identifier("ConfigVersion"),
+            operation: identifier("attemptUpdate"),
         },
         invocation: input.invocation.clone(),
     });

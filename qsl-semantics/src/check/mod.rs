@@ -176,7 +176,7 @@ pub use field_refinement::check_field_refinement_obligation;
 pub use region::DeclarationRegions;
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
-    ProtocolClauseFamily, StateClauseDeclaration,
+    OperationSelection, ProtocolClauseFamily, StateClauseDeclaration,
 };
 pub use type_form::TypeFormFault;
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
@@ -361,6 +361,13 @@ pub struct CheckedGraph {
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
+    /// FR-115: each `model` alias's object types, by artifact id: the table
+    /// [`Self::resolve_operation`] resolves a `Frame` selection's alias and
+    /// type in.
+    model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    /// FR-115: every admitted object type's effective identity, by its
+    /// declaration key.
+    object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
     /// FR-096/QSL-309: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -792,6 +799,7 @@ impl PackageDeclarations {
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
+        let (model_objects, object_types) = model_object_tables(&models);
         let mut model_selections: Vec<_> = models
             .iter()
             .map(|model| model.selection().clone())
@@ -1618,9 +1626,42 @@ impl PackageDeclarations {
             state_clauses,
             protocols: checked_protocols,
             operation_frames,
+            model_objects,
+            object_types,
             attempt_spans: regions.attempt_spans,
         })
     }
+}
+
+/// FR-115: the tables [`CheckedGraph::resolve_operation`] and
+/// [`CheckedGraph::operation_frame`] read, from the admitted models: each
+/// `model` alias's object types by artifact id (the `T` of `ix://<package>/T`),
+/// and every object type's effective identity by declaration key. The
+/// artifact id is derived once here, so a selection resolves by map lookup.
+fn model_object_tables(
+    models: &[AdmittedModel],
+) -> (
+    BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+) {
+    let mut by_alias = BTreeMap::new();
+    let mut identities = BTreeMap::new();
+    for model in models {
+        let mut objects = BTreeMap::new();
+        for (key, id) in model.object_types() {
+            identities.insert(key.clone(), id);
+            if let Some(artifact) =
+                crate::model::intake::type_identity_segment(&key.package, &key.node)
+                    .and_then(|artifact| Identifier::new(artifact).ok())
+            {
+                objects.insert(artifact, key.clone());
+            }
+        }
+        if let Some(alias) = model.alias() {
+            by_alias.insert(alias.to_owned(), objects);
+        }
+    }
+    (by_alias, identities)
 }
 
 impl CheckedGraph {
@@ -1794,29 +1835,53 @@ impl CheckedGraph {
         self.protocols.iter().find(|protocol| protocol.name == name)
     }
 
-    /// FR-115: the frame of operation `operation` on object type `context`
-    /// (`M::T`, spelled as the unit spells a clause's context), and the
-    /// context type's identity. `operation` resolves in `context`'s
+    /// FR-115 (ADR-017 PF-3): the operation `model::object::operation`
+    /// names, resolved once against this package: `model` to the domain
+    /// package selection its `model` declaration binds, and `object` to the
+    /// object type of that package whose artifact id it is. `operation`
+    /// stays an identifier, looked up under the resolved declaration key by
+    /// [`Self::operation_frame`]. `None` when the alias or the type does not
+    /// resolve; the entry then reports `missing_declaration`/`missing-name`.
+    pub fn resolve_operation(
+        &self,
+        model: &Identifier,
+        object: &Identifier,
+        operation: &Identifier,
+    ) -> Option<OperationSelection> {
+        let object = self.model_objects.get(model.as_str())?.get(object)?;
+        Some(OperationSelection {
+            object: object.clone(),
+            operation: operation.clone(),
+        })
+    }
+
+    /// FR-115: the frame of the operation `selection` names, and its object
+    /// type's identity. The operation resolves in the object type's
     /// effective view exactly as FR-104's Resolution resolves a clause's
     /// operation (`TypeEnvironment::operation`), so an inherited operation
-    /// yields its declaring type's frame. `None` when `context` names no
-    /// object type, `operation` resolves to no single operation, or no
-    /// clause or attempt of this unit names the operation (the package then
-    /// holds no frame node for it, FR-105).
+    /// yields its declaring type's frame. `None` when the operation
+    /// resolves to no single operation, or no clause or attempt of this unit
+    /// names it (the package then holds no frame node for it, FR-105).
+    ///
+    /// Only [`Self::resolve_operation`] builds a selection; a formatted name
+    /// does not select:
+    /// ```compile_fail,E0308
+    /// # fn select(graph: &qsl_semantics::check::CheckedGraph) {
+    /// graph.operation_frame(&format!("Config::ConfigVersion::attemptUpdate"));
+    /// # }
+    /// ```
     pub fn operation_frame(
         &self,
-        context: &str,
-        operation: &str,
+        selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
-        let types = self.scope.types();
-        let context = types
-            .object_types()
-            .find(|object| object.name() == context)?
-            .key();
+        let context = *self.object_types.get(&selection.object)?;
         let crate::value::declaration::OperationLookup::Declared {
             declaring,
             operation,
-        } = types.operation(context, operation)
+        } = self
+            .scope
+            .types()
+            .operation(context, selection.operation.as_str())
         else {
             return None;
         };

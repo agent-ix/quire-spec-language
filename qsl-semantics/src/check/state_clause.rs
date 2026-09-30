@@ -24,7 +24,7 @@ use qsl_forms::{ClauseKind, DeclarationSpans, Expression, StateClauseKind};
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::{StageFailure, Staged};
 use qsl_foundation::selection::ProfileSelection;
-use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
+use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
@@ -50,6 +50,37 @@ pub struct ClauseOperation {
     pub declaring: EffectiveId,
     /// The operation.
     pub declaration: OperationDeclaration,
+}
+
+/// FR-115 (ADR-017 PF-3): a `Frame` selection's operation, resolved once
+/// against a checked package by
+/// [`CheckedGraph::resolve_operation`](super::CheckedGraph::resolve_operation):
+/// the object type's declaration key, which carries its domain package, and
+/// the operation's identifier, looked up under that key. Its fields are
+/// private, so no other path builds one:
+/// ```compile_fail,E0451
+/// # use qsl_semantics::check::OperationSelection;
+/// let forged = OperationSelection {
+///     object: todo!(),
+///     operation: todo!(),
+/// };
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OperationSelection {
+    pub(super) object: DeclarationKey,
+    pub(super) operation: Identifier,
+}
+
+impl OperationSelection {
+    /// The object type's declaration key.
+    pub fn object(&self) -> &DeclarationKey {
+        &self.object
+    }
+
+    /// The operation's identifier.
+    pub fn operation(&self) -> &Identifier {
+        &self.operation
+    }
 }
 
 /// FR-115: one operation that a state clause or a protocol attempt of the

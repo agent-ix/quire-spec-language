@@ -1179,7 +1179,7 @@ impl PackageDeclarations {
                 }
                 Err(refused) => errors.extend(refused),
             }
-            admitted.push(AdmittedModel::from_view(&model.view));
+            admitted.push(AdmittedModel::from_view(&model.view).with_alias(&selection.alias));
         }
         let object_names: BTreeMap<String, EffectiveId> = object_types
             .iter()

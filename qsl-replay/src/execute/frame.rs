@@ -350,9 +350,9 @@ fn operation_name(operation: &FrameOperation) -> Option<OperationName> {
         return None;
     };
     Some(OperationName {
-        model: model.as_str().to_owned(),
-        object: object.as_str().to_owned(),
-        operation: operation.operation.as_str().to_owned(),
+        model: model.clone(),
+        object: object.clone(),
+        operation: operation.operation.clone(),
     })
 }
 
