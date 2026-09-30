@@ -263,7 +263,7 @@ mod tests {
             name("p"),
             vec![CanonicalAssignment {
                 parameter: node_id,
-                value: 3,
+                value: crate::witness::WitnessValue::Integer(3),
             }],
         );
         let result = crate::replay(request);

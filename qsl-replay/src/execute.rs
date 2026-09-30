@@ -43,7 +43,9 @@ use crate::spine::{
     compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
     SuppliedLibrary,
 };
-use crate::witness::{DecodeRefusal, FrameOperation, ReplaySource};
+use crate::witness::{
+    DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
+};
 use qsl_semantics::model::observation::AdmissionFailure;
 
 mod frame;
@@ -147,8 +149,9 @@ pub enum ReplayRefusal {
     Witness(DecodeRefusal),
     /// An argument refused admission as `WrongValueKind`: its value is not
     /// of the parameter's declared type, whether that is found before the
-    /// call (an integer bound to a Boolean parameter other than 0 or 1, or
-    /// to a parameter of a kind an integer never is) or by S6a admission in
+    /// call (an integer bound to a Boolean parameter, a Boolean to an
+    /// integer one, or any value to a parameter of a kind no witness value
+    /// is) or by S6a admission in
     /// `CheckedPackage::call` (a value outside the declared domain, such as
     /// `12` for `Int[0, 9]`) -- carried as ADR-011 §2.3's
     /// `StageFailure::Refused` cause.
@@ -615,7 +618,8 @@ fn select(compiled: &Compiled, name: &QualifiedName) -> Result<Selected, ReplayR
 
 /// The call's arguments in declared parameter order (ADR-013 O-25, C-11):
 /// an `Input` source's assignments joined by parameter node id, or a
-/// `Witness` source's transcript decoded by each parameter's node id.
+/// `Witness` source's transcript decoded against one binding per
+/// parameter, each naming the parameter's node id and declared type.
 fn arguments(
     package: &CheckedPackage,
     call: &Selected,
@@ -623,7 +627,7 @@ fn arguments(
 ) -> Result<Vec<Value>, ReplayRefusal> {
     let values = match source {
         ReplaySource::Input(assignments) => {
-            let mut values: Vec<Option<i64>> = vec![None; call.parameters.len()];
+            let mut values: Vec<Option<WitnessValue>> = vec![None; call.parameters.len()];
             for assignment in assignments {
                 let position = package
                     .graph()
@@ -647,12 +651,19 @@ fn arguments(
                 .collect::<Result<Vec<_>, _>>()?
         }
         ReplaySource::Witness(witness) => {
-            let order: Vec<String> = call
+            let bindings = call
                 .parameters
                 .iter()
-                .map(|parameter| wire_id(*parameter).to_string())
-                .collect();
-            witness.decode(&order).map_err(ReplayRefusal::Witness)?
+                .zip(&call.types)
+                .enumerate()
+                .map(|(position, (parameter, value_type))| {
+                    Ok(WitnessBinding {
+                        parameter: wire_id(*parameter),
+                        value_type: witness_type(position, value_type)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, ReplayRefusal>>()?;
+            witness.decode(&bindings).map_err(ReplayRefusal::Witness)?
         }
     };
     values
@@ -663,20 +674,16 @@ fn arguments(
         .collect()
 }
 
-/// A canonical integer assignment as a value of its parameter's declared
-/// type: an integer for an integer type, and `0` or `1` for `Boolean`
-/// (`false`, `true`). Any other value, or a type no integer is a value of,
-/// refuses `WrongValueKind` before the call -- the refusal S6a admission
-/// gives an argument of the wrong kind.
-fn argument(parameter: usize, value: i64, value_type: &ValueType) -> Result<Value, ReplayRefusal> {
-    let wrong = || ReplayRefusal::Input(InputRefusal::WrongValueKind { parameter });
+/// The witness type a parameter of `value_type` is read as: `Boolean` for
+/// `Boolean`, `I64` for an integer type. A type no witness value is a value
+/// of refuses `WrongValueKind` before the call.
+fn witness_type(
+    parameter: usize,
+    value_type: &ValueType,
+) -> Result<WitnessValueType, ReplayRefusal> {
     match value_type {
-        ValueType::Boolean => match value {
-            0 => Ok(Value::Boolean(false)),
-            1 => Ok(Value::Boolean(true)),
-            _ => Err(wrong()),
-        },
-        ValueType::Integer | ValueType::Int(_) => Ok(Value::Integer(Integer::from(value))),
+        ValueType::Boolean => Ok(WitnessValueType::Boolean),
+        ValueType::Integer | ValueType::Int(_) => Ok(WitnessValueType::I64),
         ValueType::Rational(_)
         | ValueType::Decimal(_)
         | ValueType::Float(_)
@@ -687,7 +694,32 @@ fn argument(parameter: usize, value: i64, value_type: &ValueType) -> Result<Valu
         | ValueType::Composite(_)
         | ValueType::Collection(_)
         | ValueType::Reference(_)
-        | ValueType::Population(_) => Err(wrong()),
+        | ValueType::Population(_) => Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+            parameter,
+        })),
+    }
+}
+
+/// A typed argument value as a value of its parameter's declared type: a
+/// Boolean for `Boolean`, and an integer, widened without loss, for an
+/// integer type. Any other pairing refuses `WrongValueKind` before the call
+/// -- the refusal S6a admission gives an argument of the wrong kind.
+fn argument(
+    parameter: usize,
+    value: WitnessValue,
+    value_type: &ValueType,
+) -> Result<Value, ReplayRefusal> {
+    match (witness_type(parameter, value_type)?, value) {
+        (WitnessValueType::Boolean, WitnessValue::Boolean(value)) => Ok(Value::Boolean(value)),
+        (WitnessValueType::I64, WitnessValue::Integer(value)) => {
+            Ok(Value::Integer(Integer::from(value)))
+        }
+        (WitnessValueType::Boolean, WitnessValue::Integer(_))
+        | (WitnessValueType::I64, WitnessValue::Boolean(_)) => {
+            Err(ReplayRefusal::Input(InputRefusal::WrongValueKind {
+                parameter,
+            }))
+        }
     }
 }
 

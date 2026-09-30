@@ -452,8 +452,8 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
             .sum::<usize>()
         + match &wire.source {
             ReplaySource::Witness(witness) => witness.transcript().len(),
-            // A 32-byte node id plus an 8-byte integer value per entry
-            // (QC-1's digest-addressed shape), a fixed size independent of
+            // A 32-byte node id plus a value of at most 8 bytes per entry
+            // (QC-1's digest-addressed shape), a fixed bound independent of
             // any `Debug`-rendered text.
             ReplaySource::Input(assignments) => assignments.len() * (32 + 8),
         }
@@ -726,7 +726,7 @@ mod tests {
             .unwrap(),
             source: ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
                 parameter: WireNodeId::from_digest([9; 32]),
-                value: 42,
+                value: crate::witness::WitnessValue::Integer(42),
             }]),
             originating_counterexample_identity: [1; 32],
             backend: (
@@ -1171,7 +1171,7 @@ mod tests {
         let distinctive_value: i64 = 918_273_645;
         request_wire.source = ReplaySource::Input(vec![crate::witness::CanonicalAssignment {
             parameter: WireNodeId::from_digest([42; 32]),
-            value: distinctive_value,
+            value: crate::witness::WitnessValue::Integer(distinctive_value),
         }]);
         let request = ReplayRequest::decode(request_wire).unwrap();
 
@@ -1195,7 +1195,10 @@ mod tests {
         assert_eq!(looked_up, distinctive.as_slice());
         match request.source() {
             ReplaySource::Input(assignments) => {
-                assert_eq!(assignments[0].value, distinctive_value);
+                assert_eq!(
+                    assignments[0].value,
+                    crate::witness::WitnessValue::Integer(distinctive_value)
+                );
             }
             ReplaySource::Witness(_) => panic!("expected the Input arm"),
         }
