@@ -85,6 +85,7 @@ they do not verify.
 | --- | --- | --- |
 | FND-001 | fixed | af8acf1d: FR-115-AC-6 was added (inherited selection, and per-alias resolution over two packages), with TC-514 step 6. `an_inherited_operation_selects_its_declaring_frame_through_the_resolver` and the new `each_model_alias_resolves_its_own_packages_object_type` are tagged `#[trace("TC-514", "FR-115-AC-6")]`, and each verifies what AC-6 states. |
 | FND-002 | fixed | af8acf1d: FR-115-AC-4 and TC-514 step 4 now name `Nope::ConfigVersion::attemptUpdate` (unbound alias) and `Config::Missing::attemptUpdate` (undeclared type). Expected result: "four times". The existing AC-4 tag on `an_unresolved_model_alias_or_object_type_refuses_at_select` is now honest. |
+| FND-003 | fixed | ef71acbb: the TC-514 status cell in spec/tests.md:266 now reads "✅ Passed locally; QSL-300"; the `, QSL-330` append is gone. The rebase onto a8e15b77 is patch-identical (`git range-diff`: 62a311d3 = 3f036591, af8acf1d = a256d1a7). |
 
 ## New findings (disposition pass 1)
 
