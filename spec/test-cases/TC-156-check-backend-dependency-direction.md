@@ -13,9 +13,10 @@ relationships:
 Verify that `arch-lint direction` classifies resolved packages by repository,
 reports every FB-05 edge into QSL other than CG's normal dependency, reports
 every FB-11 cycle over the combined normal+dev edge graph exactly once, and
-reports no IR → QSL edge and no QSL ⇄ IR cycle, while classifying QSL's real
-edge on `quire-contract-model` as QSL → IR, when run against
-quire-contract-ir's real current-head `cargo metadata` output, and
+reports no IR → QSL edge and no QSL ⇄ IR cycle when run against
+quire-contract-ir's real current-head `cargo metadata` output, that resolving
+QSL's own manifest classifies its real edge on `quire-contract-model` as
+QSL → IR, and
 that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
 even built. Scope: FR-059-AC-1 through FR-059-AC-7.
 
@@ -36,6 +37,8 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
    originates from QSL or CG). Run the check.
 6. Run `arch-lint direction` against real `cargo metadata` output for QSL's
    own manifest and a real local checkout of quire-contract-ir's current head.
+   Separately, resolve QSL's own workspace manifest through
+   `edges_for_manifest`, the path `direction` uses for `--qsl` (automated).
 7. Call the freshness comparison directly with a resolved revision that does
    not match a captured remote `main` head (the reviewer's real repro:
    quire-contract-codegen resolved at local main `bda01f1...`, remote main at
@@ -59,12 +62,13 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
 - Step 6: the FB-05 report names no edge from quire-contract-ir into QSL,
   and the FB-11 report names no cycle between QSL and quire-contract-ir,
   because neither IR manifest declares a QSL dependency (ADR-011 OBS-029);
-  step 2's seeded IR → QSL edge is still reported. The resolved edge set
-  contains QSL's normal edge on the git-sourced `quire-contract-model`,
-  classified as QSL → IR (the permitted direction); an edge set without it
-  fails the step, since it shows the classifier no longer recognises a real
-  git-sourced IR crate. This output is captured for the PR body as real, not
-  synthetic, evidence.
+  step 2's seeded IR → QSL edge is still reported. This output is captured
+  for the PR body as real, not synthetic, evidence. Separately, an automated
+  test resolves QSL's own workspace manifest through the edge-resolution
+  path `direction` uses for `--qsl` and asserts that the edge set contains
+  QSL's normal edge on the git-sourced `quire-contract-model`, classified as
+  QSL → IR (the permitted direction); a classifier that no longer recognises
+  the real IR crate drops that edge and fails the test.
 - Step 7: the mismatched-revision call fails distinctly (`Code::Stale`), and
   the error names both the stale local revision and the remote's current
   head; the matched-revision call passes; the end-to-end run's report prints
@@ -76,7 +80,7 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/graph.rs`, `tools/arch-lint/metadata.rs`
-- Automation: Automated Rust unit tests plus one manual real-data run (step 6)
+- Automation: Automated Rust unit tests, including step 6's resolution of QSL's own manifest, plus one manual real-data `direction` run (step 6)
 
 ## Dependencies
 

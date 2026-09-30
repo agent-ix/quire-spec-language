@@ -305,6 +305,29 @@ mod tests {
         .unwrap();
     }
 
+    /// tc_arch_lint_metadata_006 (positive control on real data): resolving
+    /// QSL's own workspace manifest through `edges_for_manifest`, the path
+    /// `direction` takes for `--qsl`, yields QSL's normal edge on the
+    /// git-sourced `quire-contract-model`, classified QSL -> IR. A classifier
+    /// that stopped recognising the real IR crate would drop the edge and
+    /// fail here.
+    #[trace("TC-156", "FR-059-AC-6")]
+    #[test]
+    fn tc_arch_lint_metadata_006_real_qsl_manifest_yields_qsl_to_ir_model_edge() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let edges = edges_for_manifest(&workspace.join("Cargo.toml"), false).unwrap();
+        let expected = Edge {
+            from: Repo::Qsl,
+            to: Repo::Ir,
+            kind: EdgeKind::Normal,
+            via_crate: "quire-contract-model".to_owned(),
+        };
+        assert!(
+            edges.contains(&expected),
+            "expected {expected:?} among {edges:?}"
+        );
+    }
+
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four
     /// ADR-011 repositories (for example `serde`) contributes no edge.
     #[trace("TC-156")]

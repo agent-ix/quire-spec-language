@@ -39,3 +39,10 @@ that cites it.
 Changes requested for FND-001. The edge claims themselves are correct and
 measured; the M-6d row and the ADR-017 cross-reference still describe the edge
 and IR's QSL-typed admission as outstanding.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 17b7269c |
+| FND-002 | fixed | 17b7269c |

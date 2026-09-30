@@ -52,3 +52,13 @@ currently observed violation.
 Changes requested. The ADR-013 edits are internally consistent and match the
 measured IR and CG manifests. ADR-011 still assigns the packet and witness to
 IR in §2, FB-08 and OBS-028, which contradicts the ruling this PR records.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 17b7269c |
+| FND-002 | fixed | 17b7269c |
+| FND-003 | fixed | 17b7269c |
+| FND-004 | fixed | 17b7269c |
+| FND-005 | fixed | 17b7269c |

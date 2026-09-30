@@ -34,3 +34,16 @@ removes two inherited SHAs from touched rows.
 
 Approve with one low finding. The AC and test case are consistent and
 testable.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The amended FR-059-AC-6 says "the same run's resolved edge set contains QSL's normal edge on the git-sourced `quire-contract-model` … a run whose edge set lacks it fails", and TC-156 step 6 fails the step on an edge set without it. `arch-lint direction` does neither: `run_direction` prints only the revisions and the FB-05/FB-11 violations, never the resolved edge set, and passes whenever both reports are empty (`tools/arch-lint/main.rs:152-180`). So the operator running step 6 cannot see whether the QSL → IR edge was classified, and a classifier regression still prints two PASS lines. FR-059's Status says the check is implemented, so the AC now claims behaviour the code lacks. Fix: either add the behaviour (print the classified edge set, or fail when `--qsl`'s resolved edges contain no QSL → IR edge) with a test, or reword AC-6 and step 6 to a check the current output supports, such as a unit test over `metadata::edges_for_manifest` on QSL's real `Cargo.toml` asserting the QSL → IR edge. | FR-059:97, TC-156:59-67, tools/arch-lint/main.rs:152 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 17b7269c |
+| FND-002 | still-open | New this round: AC-6 and TC-156 step 6 require the run to show or fail on the QSL → IR edge; arch-lint direction prints only violations and passes when both reports are empty. |
