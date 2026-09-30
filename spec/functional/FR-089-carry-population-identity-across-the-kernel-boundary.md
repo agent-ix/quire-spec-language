@@ -60,7 +60,9 @@ carries an opaque identity, and `model` keeps the binding.
 
 `model` SHALL compute a binding's `PopulationId` as a 32-byte digest over the
 binding's own preimage: the domain package identity it was admitted against,
-the `population_key` declaring it, and a closed three-state admission-role
+the `population_key` declaring it, the binding's declared maximum, its
+member set, the `PopulationId` of its pre binding when it is a `Post`
+binding, and a closed three-state admission-role
 discriminator applied to every admission, not only the ones
 `admit_invocation` attaches: `Direct` for a binding `admit_binding` mints
 standalone, and `Pre`/`Post` for the two bindings `admit_invocation`
@@ -72,6 +74,32 @@ in any of them SHALL NOT collide -- including a standalone `Direct`
 admission and an invocation's `Post` binding that share the same domain
 package and `population_key`, which would otherwise carry an identical
 preimage under a two-state (`pre`/`post`-only) discriminator.
+
+The preimage is exactly this RFC 8785 object, encoded through
+`quire-canonical` and digested with SHA-256 under the unchanged
+`POPULATION_ID_DOMAIN` version label ([ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
+ID-5):
+
+- `version`: `POPULATION_ID_DOMAIN`;
+- `domain_package_selection`: the full `DomainPackageRef` header;
+- `population_key`: the `$defs.DeclarationKey` preimage object;
+- `admission_role`: `"direct"`, `"pre"` or `"post"`;
+- `declared_maximum`: the maximum as a decimal string, or `null` when the
+  population declares none;
+- `members`: an array with one object per member,
+  `{"universe": <64 lowercase hex>, "type": <64 lowercase hex of the
+  EffectiveId>, "object": <the authored object identity>, "declaration":
+  <$defs.DeclarationKey preimage object>}`, in ascending order of each
+  object's RFC 8785 bytes; `[]` for an empty population;
+- `pre`: for a `Post` binding, the 64 lowercase hex of its pre binding's
+  `PopulationId`; otherwise `null`.
+
+A binding's field values are not in its preimage: a `PopulationBinding`
+carries membership only, and field values belong to the `ObjectEnvironment`
+entries its references key. `ObjectEnvironment::with_population` keeps its
+typed `PopulationConflict` refusal for a second, unequal binding under an id
+already recorded; with this preimage it is reached only by two bindings that
+differ in their admission limits (`ancestor_steps`).
 `PopulationId` SHALL have exactly one public constructor, taking this
 preimage digest, defined in `quire-exact` and callable only from QSL
 `model` -- mirroring `EffectiveId`'s O-05 constructor discipline (ADR-011
@@ -123,11 +151,12 @@ key of its own: it calls `quire_exact::member_equal` and
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key` and domain package identity, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
+| FR-089-AC-1 | Given two `Direct` admissions of the same `PopulationDocument` against the same `population_key`, domain package identity and declared maximum, both admissions mint the same `PopulationId`; given a second admission that differs in `population_key`, domain package identity, or admission-role (`Direct`, `Pre` or `Post`), the minted `PopulationId` differs from the first; in particular, a standalone `Direct` admission and an `admit_invocation`-attached `Post` binding that share the same domain package and `population_key` mint distinct identities. | Test (TC-291, TC-296) |
 | FR-089-AC-2 | The kernel `Value::Population` variant's payload type is `PopulationId`; no kernel source file imports `PopulationBinding` or any other `model::population` type to define, construct or match this variant. | Inspection (TC-292): crate DAG, `quire-exact/Cargo.toml` has no workspace dependency (ADR-011 §6.1) |
 | FR-089-AC-3 | Given a `Value::Population(population_id)` whose `population_id` was minted for an admitted binding earlier in the same evaluation, evaluating an expression that consumes it (the `evaluate.rs:921`/`:934` sites) resolves the same `PopulationBinding` that admission produced, by lookup in the recorded correspondence, never by a payload the `Value` itself carries. | Test (TC-293) |
 | FR-089-AC-4 | Given a `Value::Population(population_id)` whose `population_id` names no binding recorded in the current evaluation's correspondence, evaluation produces a typed refusal naming the unresolved identity, not a panic and not `Undefined`. | Test (TC-294) |
 | FR-089-AC-5 | Given a `ValueType::Population(maximum)` and a `Value::Population(population_id)`, the QSL layer resolves `population_id` to its `PopulationBinding` through the recorded correspondence and admits the value when that binding's declared maximum equals `maximum`, and refuses it when the declared maximum differs. | Test (TC-295) |
+| FR-089-AC-7 | Given two `Direct` admissions that agree on domain package, `population_key` and declared maximum and differ only in one member, the two `PopulationId`s differ; given two that agree on everything except the declared maximum (3 and 7), they differ; given two `Post` bindings with equal post members whose pre bindings differ, they differ; one fixed preimage in the test, encoded independently of `population_id_preimage`, yields the expected digest. | Test (TC-291) |
 | FR-089-AC-6 | Given any `ValueType::Population(maximum)` and any `Value::Population(population_id)`, kernel `ValueType::admits` returns false; given two `Value::Population` operands, kernel `equality::plan_pairs` returns `Err(Refusal::CheckedInvariant)` and kernel `key::compare_keys` returns `None`. | Test (TC-297) |
 
 ## Dependencies
@@ -165,16 +194,11 @@ evaluator's own `Machine::resolve_population` (`qsl-eval/src/value/expression/
 evaluate.rs`) performs the identical resolution at its `allInstances`/
 `lookup` consumption sites, kept as defence in depth.
 
-FR-089's own admission preimage (domain package selection, `population_key`,
-admission role) does not distinguish two bindings that differ only in
-document content or declared maximum, admitted under the same
-package/key/role within one evaluation -- an open spec question (Linear
-QSL-131) this Slice records rather than resolves.
-`ObjectEnvironment::with_population` is the interim guard: it refuses to
-record a second, unequal binding under an id already bound, rather than
-silently letting the later admission overwrite the earlier one.
-
-Decided by [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
-ID-5: the preimage gains `members`, the RFC 8785 digest of the admitted
-member set, and the unequal re-record becomes an internal fault. The declared
-maximum needs no member. Remaining work: ADR-016 G-3 (QSL-68, #120).
+The code still mints over the three-fact preimage (domain package
+selection, `population_key`, admission role), so two bindings that differ
+only in members, declared maximum or pre binding share an id today, and
+`ObjectEnvironment::with_population` refuses the second with
+`PopulationConflict`. [ADR-016](../decisions/ADR-016-state-model-finite-execution-mapping.md)
+ID-5 decided the seven-member preimage the Behavior section now states.
+AC-1 as amended and AC-7 are pending. Remaining work: ADR-016 G-3 (QSL-68,
+#120).

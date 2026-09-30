@@ -394,9 +394,12 @@ each candidate with none. A candidate is a successor when some pair's
 effective postcondition is `true`, and the first such result is the
 transition's result.
 
-Each expansion counts the (candidate, result) pairs it evaluates, over all
-its applications. When the count would exceed `max_candidates`, the
-expansion stops with `resource_exhausted`/`insufficient-next-charge`.
+Candidates are generated lazily, one at a time in canonical order; no
+expansion materializes its candidate set. Each expansion counts every
+candidate it generates, including one the frame check or closure rejects,
+and every (candidate, result) pair it evaluates, over all its applications
+(ADR-016 G-4). When the count would exceed `max_candidates`, the expansion
+stops with `resource_exhausted`/`insufficient-next-charge`.
 
 ### Invariants
 
@@ -502,6 +505,7 @@ identity text of operation `op`.
 | FR-120-AC-10 | With `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0) }`), `v0` has one `isZero` successor, `v0`, whose step effect has result `{"type":"boolean","value":true}`, and `v1` has one, `v1`, with result `false`; the `isZero` result root is in `domains()`. | Test (TC-473) |
 | FR-120-AC-11 | For `increment` (post `Inc`), `spawn` and `remove` over `s0` and state `w` = {`c1` (`value` 0), `c2` (`value` 0)}: the step `increment` from `v0` has effect `created: []`, `deleted: []`, `changed: [{object: c1, field: value, pre: {"type":"integer","value":"0"}, post: {"type":"integer","value":"1"}}]`, result none; `spawn` from `s0` to `s0` plus `c2` (`value` 1, `label` 0, `next` absent) has `created: [<c2>]` and `changed: []`; `remove` with receiver `c1` from `w` to {`c2`} has `deleted: [<c1>]`. Exploring the AC-5 package twice, the second time in a child process started in an empty temporary directory, gives equal `Exploration`s, and `s0`'s key bytes are equal before and after exploring. | Test (TC-473) |
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
+| FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 
 ## Dependencies
 
