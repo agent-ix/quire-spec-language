@@ -38,7 +38,6 @@ use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     DomainKind, FamilyContract, Requirements,
 };
-use crate::model::domain_package::DomainPackageRef;
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
 
@@ -56,31 +55,24 @@ pub struct ClauseOperation {
 /// FR-115 (ADR-017 PF-3): a `Frame` selection's operation, resolved once
 /// against a checked package by
 /// [`CheckedGraph::resolve_operation`](super::CheckedGraph::resolve_operation):
-/// the domain package its model alias selects, the object type's
-/// declaration key in that package, and the operation's identifier, looked
-/// up under that key. Its fields are private, so no other path builds one:
+/// the object type's declaration key, which carries its domain package, and
+/// the operation's identifier, looked up under that key. Its fields are
+/// private, so no other path builds one:
 /// ```compile_fail,E0451
 /// # use qsl_semantics::check::OperationSelection;
 /// let forged = OperationSelection {
-///     package: todo!(),
 ///     object: todo!(),
 ///     operation: todo!(),
 /// };
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationSelection {
-    pub(super) package: DomainPackageRef,
     pub(super) object: DeclarationKey,
     pub(super) operation: Identifier,
 }
 
 impl OperationSelection {
-    /// The selection of the domain package the model alias binds.
-    pub fn package(&self) -> &DomainPackageRef {
-        &self.package
-    }
-
-    /// The object type's declaration key in that package.
+    /// The object type's declaration key.
     pub fn object(&self) -> &DeclarationKey {
         &self.object
     }

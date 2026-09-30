@@ -568,12 +568,12 @@ fn an_unresolved_model_alias_or_object_type_refuses_at_select() {
     }
 }
 
-/// TC-514 step 4 (FR-115-AC-4, ADR-017 PF-3): over a package where `Sub`
+/// TC-514 step 6 (FR-115-AC-6, ADR-017 PF-3): over a package where `Sub`
 /// specializes `ConfigVersion` and declares no operation, the resolver
-/// takes `Config::Sub::attemptUpdate` to the `Config` selection and `Sub`'s
-/// declaration key, and that selection picks `ConfigVersion`'s frame, the
+/// takes `Config::Sub::attemptUpdate` to `Sub`'s declaration key in the
+/// `Config` package, and that selection picks `ConfigVersion`'s frame, the
 /// operation's declaring type, with `Sub` as the context.
-#[trace("TC-514", "FR-115-AC-4")]
+#[trace("TC-514", "FR-115-AC-6")]
 #[test]
 fn an_inherited_operation_selects_its_declaring_frame_through_the_resolver() {
     let (unit, packages) =
@@ -592,10 +592,6 @@ fn an_inherited_operation_selects_its_declaring_frame_through_the_resolver() {
     let via_sub = resolve("Sub");
     let via_config_version = resolve("ConfigVersion");
 
-    let [selection] = graph.model_selections() else {
-        panic!("one model selection: {:?}", graph.model_selections());
-    };
-    assert_eq!(via_sub.package(), selection);
     assert_eq!(
         via_sub.object(),
         &qsl_semantics::model::key::DeclarationKey {
@@ -614,4 +610,64 @@ fn an_inherited_operation_selects_its_declaring_frame_through_the_resolver() {
     assert_ne!(sub, config_version, "the context is Sub itself");
     assert_eq!(sub_frame, declaring_frame);
     assert_eq!(sub_frame.operation().declaring, config_version);
+}
+
+/// TC-514 step 6 (FR-115-AC-6): a unit selecting two domain packages that
+/// both declare `ConfigVersion`, as `Config` and `Copy`. Each alias
+/// resolves `ConfigVersion` to its own package's declaration key and
+/// selects that package's `attemptUpdate` frame.
+#[trace("TC-514", "FR-115-AC-6")]
+#[test]
+fn each_model_alias_resolves_its_own_packages_object_type() {
+    const COPY_PACKAGE_IDENTITY: &str = "test/config-copy";
+    let original = config_version_domain_document();
+    let copy = String::from_utf8(original.clone())
+        .expect("the document is UTF-8")
+        .replace(CONFIG_VERSION_PACKAGE_IDENTITY, COPY_PACKAGE_IDENTITY)
+        .into_bytes();
+    let (unit, mut packages) = config_version_unit_and_packages_for(original);
+    let copy_packages = qsl_semantics::model::intake::package_input([copy.as_slice()]);
+    let [(copy_digest, _)] = copy_packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let (header, declarations) = unit
+        .split_once("invariant ParentOrder")
+        .expect("the unit declares ParentOrder after its selections");
+    let unit = format!(
+        "{header}model Copy = {COPY_PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         invariant ParentOrder{declarations}\
+         post CopyUnchanged using v on Copy::ConfigVersion::attemptUpdate {{ \
+         self.versionNumber = pre(self.versionNumber) }}\n",
+        hex(copy_digest)
+    );
+    packages.extend(copy_packages);
+    let compiled = compile_config_version_unit(&unit, &packages);
+    let graph = compiled.package.graph();
+
+    let mut frames = Vec::new();
+    for (alias, package) in [
+        ("Config", CONFIG_VERSION_PACKAGE_IDENTITY),
+        ("Copy", COPY_PACKAGE_IDENTITY),
+    ] {
+        let selection = graph
+            .resolve_operation(
+                &identifier(alias),
+                &identifier("ConfigVersion"),
+                &identifier("attemptUpdate"),
+            )
+            .unwrap_or_else(|| panic!("{alias}::ConfigVersion resolves"));
+        assert_eq!(
+            selection.object(),
+            &qsl_semantics::model::key::DeclarationKey {
+                package: package.to_owned(),
+                node: format!("ix://{package}/ConfigVersion"),
+            },
+            "{alias} resolves in its own package"
+        );
+        let (_, frame) = graph
+            .operation_frame(&selection)
+            .unwrap_or_else(|| panic!("{alias}'s attemptUpdate has a frame"));
+        frames.push(frame.frame());
+    }
+    assert_ne!(frames[0], frames[1], "each package's own frame");
 }

@@ -361,9 +361,10 @@ pub struct CheckedGraph {
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
-    /// FR-115: the domain package selection each admitted `model` alias
-    /// binds, the table [`Self::resolve_operation`] resolves an alias in.
-    model_aliases: BTreeMap<String, DomainPackageRef>,
+    /// FR-115: each `model` alias's object types, by artifact id: the table
+    /// [`Self::resolve_operation`] resolves a `Frame` selection's alias and
+    /// type in.
+    model_objects: BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
     object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
@@ -798,12 +799,7 @@ impl PackageDeclarations {
         let owner = node_key::SourceOwner::from(&source);
         let lock_evidence = self.lock_evidence;
         let models = self.models;
-        let model_aliases = self.model_aliases;
-        let object_types = models
-            .iter()
-            .flat_map(AdmittedModel::object_types)
-            .map(|(key, id)| (key.clone(), id))
-            .collect();
+        let (model_objects, object_types) = model_object_tables(&models);
         let mut model_selections: Vec<_> = models
             .iter()
             .map(|model| model.selection().clone())
@@ -1630,11 +1626,42 @@ impl PackageDeclarations {
             state_clauses,
             protocols: checked_protocols,
             operation_frames,
-            model_aliases,
+            model_objects,
             object_types,
             attempt_spans: regions.attempt_spans,
         })
     }
+}
+
+/// FR-115: the tables [`CheckedGraph::resolve_operation`] and
+/// [`CheckedGraph::operation_frame`] read, from the admitted models: each
+/// `model` alias's object types by artifact id (the `T` of `ix://<package>/T`),
+/// and every object type's effective identity by declaration key. The
+/// artifact id is derived once here, so a selection resolves by map lookup.
+fn model_object_tables(
+    models: &[AdmittedModel],
+) -> (
+    BTreeMap<String, BTreeMap<Identifier, crate::model::key::DeclarationKey>>,
+    BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+) {
+    let mut by_alias = BTreeMap::new();
+    let mut identities = BTreeMap::new();
+    for model in models {
+        let mut objects = BTreeMap::new();
+        for (key, id) in model.object_types() {
+            identities.insert(key.clone(), id);
+            if let Some(artifact) =
+                crate::model::intake::type_identity_segment(&key.package, &key.node)
+                    .and_then(|artifact| Identifier::new(artifact).ok())
+            {
+                objects.insert(artifact, key.clone());
+            }
+        }
+        if let Some(alias) = model.alias() {
+            by_alias.insert(alias.to_owned(), objects);
+        }
+    }
+    (by_alias, identities)
 }
 
 impl CheckedGraph {
@@ -1821,14 +1848,8 @@ impl CheckedGraph {
         object: &Identifier,
         operation: &Identifier,
     ) -> Option<OperationSelection> {
-        let package = self.model_aliases.get(model.as_str())?;
-        let object = self.object_types.keys().find(|key| {
-            key.package == package.identity
-                && crate::model::intake::type_identity_segment(&key.package, &key.node)
-                    == Some(object.as_str())
-        })?;
+        let object = self.model_objects.get(model.as_str())?.get(object)?;
         Some(OperationSelection {
-            package: package.clone(),
             object: object.clone(),
             operation: operation.clone(),
         })
@@ -1844,9 +1865,9 @@ impl CheckedGraph {
     ///
     /// Only [`Self::resolve_operation`] builds a selection; a formatted name
     /// does not select:
-    /// ```compile_fail,E0061
+    /// ```compile_fail,E0308
     /// # fn select(graph: &qsl_semantics::check::CheckedGraph) {
-    /// graph.operation_frame("Config::ConfigVersion", "attemptUpdate");
+    /// graph.operation_frame(&format!("Config::ConfigVersion::attemptUpdate"));
     /// # }
     /// ```
     pub fn operation_frame(

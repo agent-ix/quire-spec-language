@@ -15,7 +15,7 @@ succeeds, a change outside the frame is a violation with its frame witness,
 and stale or
 missing inputs refuse before evaluation.
 
-Scope: FR-115-AC-1 to FR-115-AC-5.
+Scope: FR-115-AC-1 to FR-115-AC-6.
 
 ## Test Procedure
 
@@ -30,9 +30,18 @@ Config::ConfigVersion::attemptUpdate, invocation: ... }` unless stated.
    invocation bytes edited after the digest was taken; with another
    `revision` label; with another `model` digest; with `operation` `probe`.
 4. `operation: Config::ConfigVersion::missing`; a package operation that no
-   clause or attempt names; changed-version with its pre snapshot removed
-   from the provision.
+   clause or attempt names; `operation: Nope::ConfigVersion::attemptUpdate`,
+   an alias no `model` declaration binds; `operation:
+   Config::Missing::attemptUpdate`, a type the selected package does not
+   declare; changed-version with its pre snapshot removed from the
+   provision.
 5. changed-version twice.
+6. Resolve and select over the compiled package: `Config::Sub::attemptUpdate`
+   over the package where `Sub` specializes `ConfigVersion` and declares no
+   operation; `Config::ConfigVersion::attemptUpdate` and
+   `Copy::ConfigVersion::attemptUpdate` in a unit selecting the
+   ConfigVersion package as `Config` and a copy of it under another identity
+   as `Copy`, each with a clause naming `attemptUpdate`.
 
 Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
 
@@ -50,6 +59,10 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   `revision-mismatch`; `admit`, `invalid_model_binding`/
   `wrong-model-selection`; `admit`, `wrong_snapshot`/`wrong-invocation`.
   None reaches `evaluate`.
-- Step 4: `select`, `missing_declaration`/`missing-name`, twice; `admit`,
-  `incomplete`, `unavailable_observation`.
+- Step 4: `select`, `missing_declaration`/`missing-name`, four times;
+  `admit`, `incomplete`, `unavailable_observation`.
 - Step 5: equal reports, including usage.
+- Step 6: `Config::Sub::attemptUpdate` resolves to `Sub`'s `DeclarationKey`
+  and selects `ConfigVersion`'s frame with `Sub` as context; each of
+  `Config` and `Copy` resolves `ConfigVersion` to its own package's
+  `DeclarationKey` and selects that package's frame.
