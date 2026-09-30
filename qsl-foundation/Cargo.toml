@@ -17,7 +17,7 @@ sha2 = "=0.10.9"
 thiserror = "=2.0.20"
 
 [dev-dependencies]
-ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", rev = "2ce4ebf47f726b9d76388220545cd0abda8a5cfb" }
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 
 [lints.rust]
 unsafe_code = "forbid"

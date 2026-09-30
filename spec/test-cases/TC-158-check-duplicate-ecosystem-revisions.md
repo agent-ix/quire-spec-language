@@ -17,9 +17,7 @@ non-ecosystem crate resolved to two sources), reports exactly one finding
 naming both sources for an ecosystem repository resolved to two distinct
 sources whether or not its two packages share one crate name, treats a
 path/workspace-member package (no `source` field) as its own distinct source,
-reports no duplicate against QSL's real root `Cargo.lock`, and reports no
-duplicate against the current-head lane's own, separately converged
-`Cargo.lock`. Scope: FR-061-AC-1 through FR-061-AC-4.
+and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-1 through FR-061-AC-4.
 
 ## Test Procedure
 
@@ -37,10 +35,7 @@ duplicate against the current-head lane's own, separately converged
    names (`quire-contract-ir`, `quire-contract-model`) that both classify to
    the IR repository, at two distinct sources (#249 review R2).
 5. Run `arch-lint duplicate-revisions --lockfile Cargo.lock` against QSL's
-   real root `Cargo.lock`. Run `arch-lint duplicate-revisions --lockfile
-   integration/current-head/Cargo.lock` (`make
-   arch-lint-duplicate-revisions-lane`) against the current-head lane's own,
-   separately converged `Cargo.lock` (#249 review R3).
+   real root `Cargo.lock`.
 
 ## Expected Results
 
@@ -58,15 +53,13 @@ duplicate against the current-head lane's own, separately converged
   component.
 - Step 5: against the real root `Cargo.lock`, the check reports no duplicate
   and `arch-lint duplicate-revisions --lockfile Cargo.lock` exits `0`; `make
-  ci` runs it. Against the current-head lane's own `Cargo.lock`, the check
-  reports no duplicate: the lane's `[patch]` table converges every QSL/IR/RT node in its graph to one
-  revision per repository, and `arch-lint-duplicate-revisions-lane` exits `0`.
+  ci` runs it.
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/duplicate_revisions.rs`
-- Automation: Automated Rust unit tests; step 5 runs in `make ci` (root lock) and `make arch-lint-duplicate-revisions-lane` (lane lock)
+- Automation: Automated Rust unit tests; step 5 runs in `make ci`
 
 ## Dependencies
 

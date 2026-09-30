@@ -43,9 +43,8 @@ standard error traits directly to preserve its source-identity field, as
 specified in FR-010. Use
 tempfile 3.27.0 only for isolated Rust test
 fixtures; all offer MIT OR Apache-2.0 and retain their original grants.
-Use the existing shared ix-trace-rs marker as a dev-dependency at commit
-2ce4ebf47f726b9d76388220545cd0abda8a5cfb (release tag v0.1.1; crate version
-0.1.0), retaining its AGPL-3.0-or-later grant. No local marker implementation or
+Use the existing shared ix-trace-rs marker as a dev-dependency tracking its
+`main` branch, retaining its AGPL-3.0-or-later grant. No local marker implementation or
 second trace grammar is introduced.
 
 ## Dependencies

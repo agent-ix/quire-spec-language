@@ -62,52 +62,76 @@ cargo-deny-bans:
 
 # =============================================================================
 # Local development against sibling checkouts (one-copy-deps, agent-ix
-# org-wide: IR #225, RT #88, CG #196). `use-local` writes a gitignored
-# .cargo/config.toml that patches each first-party git dependency to its
-# working tree at $(SIBLINGS)/<repo>, uncommitted edits included. `use-remote`
-# deletes it. Format: <repo>:<crate>:<crate-dir>; entries of one repo must be
-# adjacent (they share one [patch] table). SIBLINGS is the directory holding
-# the sibling clones: the parent of the main checkout, so it is also right
-# from a linked worktree. Override to relocate.
+# org-wide: IR #225, RT #88, CG #196).
+#
+# `use-local` writes a gitignored .cargo/config.toml that patches each
+# first-party git dependency to its working tree at $(SIBLINGS)/<repo>,
+# uncommitted edits included. It validates every entry before writing
+# anything, so a bad entry leaves an existing config untouched. It first
+# snapshots Cargo.lock to the gitignored .cargo/Cargo.lock.pre-local (only if
+# no snapshot exists); `use-remote` deletes the config and restores the lock
+# from that snapshot (and does nothing to the lock if there is none). So the
+# lock returns to its state before the first `use-local`; lock changes made
+# while a patch is active are discarded, and a `cargo update -p` made without
+# a patch is kept.
+# Format: <repo>:<crate>:<crate-dir>; entries are grouped by repo here, in
+# any order, so each repo gets exactly one [patch] table.
+# SIBLINGS is the directory holding the sibling clones: the parent of the main
+# checkout, so it is also right from a linked worktree. Override to relocate.
 #
 # Note: this repo's own `ci:`/`ci-*` targets below still pass `--locked`
-# unconditionally (unlike CG's `LOCKED` variable) -- `make use-local` and
-# `make ci` together will fail on the lockfile mismatch a local patch
-# introduces. Run confined `cargo build`/`cargo test` (no `--locked`) under
-# `use-local`; switching every `ci:` invocation to a conditional `LOCKED`
-# variable is a separate change, not folded in here.
+# unconditionally -- `make use-local` and `make ci` together will fail on the
+# lockfile mismatch a local patch introduces. Run confined `cargo build`/
+# `cargo test` (no `--locked`) under `use-local`.
 # =============================================================================
 
 SIBLINGS ?= $(abspath $(shell git rev-parse --path-format=absolute --git-common-dir)/../..)
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
-	quire-canonical:quire-canonical:.
+	quire-canonical:quire-canonical:. \
+	ix-trace-rs:ix-trace-rs:.
 
 .PHONY: use-local
 use-local:
-	@set -e; mkdir -p .cargo; : > .cargo/config.toml; \
+	@set -e; mkdir -p .cargo; \
 	for spec in $(LOCAL_PATCHES); do \
 	  if [ "$$(printf '%s' "$$spec" | tr -cd ':' | wc -c)" != 2 ] || printf '%s' "$$spec" | grep -q '::\|^:\|:$$'; then \
-	    rm -f .cargo/config.toml; echo "use-local: malformed LOCAL_PATCHES entry '$$spec' (want repo:crate:dir)" >&2; exit 1; \
+	    echo "use-local: malformed LOCAL_PATCHES entry '$$spec' (want repo:crate:dir)" >&2; exit 1; \
 	  fi; \
-	  repo=$${spec%%:*}; rest=$${spec#*:}; crate=$${rest%%:*}; dir=$${rest#*:}; \
+	  repo=$${spec%%:*}; rest=$${spec#*:}; dir=$${rest#*:}; \
 	  if [ ! -f "$(SIBLINGS)/$$repo/$$dir/Cargo.toml" ]; then \
-	    rm -f .cargo/config.toml; \
 	    echo "use-local: $(SIBLINGS)/$$repo is not cloned (no Cargo.toml at $(SIBLINGS)/$$repo/$$dir); clone agent-ix/$$repo next to this repo" >&2; exit 1; \
 	  fi; \
-	  if [ "$$repo" != "$$prev" ]; then \
-	    [ -z "$$prev" ] || printf '\n' >> .cargo/config.toml; \
-	    printf '[patch."https://github.com/agent-ix/%s"]\n' "$$repo" >> .cargo/config.toml; prev=$$repo; \
-	  fi; \
-	  printf '%s = { path = "%s/%s/%s" }\n' "$$crate" "$(SIBLINGS)" "$$repo" "$$dir" >> .cargo/config.toml; \
+	done; \
+	[ -f .cargo/Cargo.lock.pre-local ] || cp Cargo.lock .cargo/Cargo.lock.pre-local; \
+	: > .cargo/config.toml; \
+	repos=$$(for spec in $(LOCAL_PATCHES); do printf '%s\n' "$${spec%%:*}"; done | awk '!seen[$$0]++'); \
+	first=1; \
+	for repo in $$repos; do \
+	  [ "$$first" = 1 ] || printf '\n' >> .cargo/config.toml; first=0; \
+	  printf '[patch."https://github.com/agent-ix/%s"]\n' "$$repo" >> .cargo/config.toml; \
+	  for spec in $(LOCAL_PATCHES); do \
+	    [ "$${spec%%:*}" = "$$repo" ] || continue; \
+	    rest=$${spec#*:}; crate=$${rest%%:*}; dir=$${rest#*:}; \
+	    printf '%s = { path = "%s/%s/%s" }\n' "$$crate" "$(SIBLINGS)" "$$repo" "$$dir" >> .cargo/config.toml; \
+	  done; \
 	done; echo "wrote .cargo/config.toml"; \
-	if cargo metadata --format-version 1 2>&1 >/dev/null | grep -q 'patch .* was not used'; then \
-	  rm -f .cargo/config.toml; echo "use-local: a patch was not used; the sibling's version does not satisfy the requirement" >&2; exit 1; \
-	fi
+	meta=$$(mktemp); \
+	if ! cargo metadata --format-version 1 >/dev/null 2>"$$meta"; then \
+	  cat "$$meta" >&2; rm -f "$$meta" .cargo/config.toml; \
+	  [ ! -f .cargo/Cargo.lock.pre-local ] || { cp .cargo/Cargo.lock.pre-local Cargo.lock; rm -f .cargo/Cargo.lock.pre-local; }; \
+	  echo "use-local: cargo metadata failed under the patch" >&2; exit 1; \
+	fi; \
+	if grep -q 'patch .* was not used' "$$meta"; then \
+	  cat "$$meta" >&2; rm -f "$$meta" .cargo/config.toml; \
+	  [ ! -f .cargo/Cargo.lock.pre-local ] || { cp .cargo/Cargo.lock.pre-local Cargo.lock; rm -f .cargo/Cargo.lock.pre-local; }; \
+	  echo "use-local: a patch was not used; the sibling's version does not satisfy the requirement" >&2; exit 1; \
+	fi; \
+	rm -f "$$meta"
 
 .PHONY: use-remote
 use-remote:
 	rm -f .cargo/config.toml
-	git checkout -- Cargo.lock
+	@if [ -f .cargo/Cargo.lock.pre-local ]; then mv .cargo/Cargo.lock.pre-local Cargo.lock; echo "restored Cargo.lock from the pre-local snapshot"; fi
 
 # QSL #154: default-feature build of `--all-targets` (including `tests/`) is
 # its own gate, separate from the `--all-features` one below.
@@ -262,15 +286,14 @@ conformance:
 # run and report, and the target exits 2 (usage) for the missing input.
 #
 # `arch-lint` runs this repo's own checks: api-surface, duplicate-revisions on
-# QSL's own root lock, duplicate-revisions on the current-head lane's own lock
-# (it converges via the lane's own [patch] table) and canonical-encoder.
+# QSL's own root lock and canonical-encoder.
 # `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
 # above.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -282,63 +305,17 @@ arch-lint-api-surface:
 arch-lint-duplicate-revisions:
 	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
 
-# FR-061 (#249 review R3): the current-head lane's own Cargo.lock is in scope
-# too -- it converges on one revision per ecosystem repository via the lane's
-# own [patch] table (integration/current-head/Cargo.toml), independent of the
-# root workspace's lock this target above checks.
-arch-lint-duplicate-revisions-lane:
-	cargo run --locked -p arch-lint -- duplicate-revisions \
-		--lockfile integration/current-head/Cargo.lock
-
 # ADR-013 §2 (ADR-013:113, QSL-194): no second canonical encoder beside
 # `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
 # a hash fails, named files excepted with their reason. Needs only this
-# repository and passes on it, so unlike the checks above it is part of `ci:`.
+# repository and passes on it, so it is part of `ci:`.
 arch-lint-canonical-encoder:
 	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
 
-# Runs the four checks that need only this repository (#249 review round 2
-# L-2: `arch-lint-duplicate-revisions-lane` was previously checkable only on
-# request, with no target routinely enforcing R3's convergence).
+# Runs the three checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
 # run separately.
-arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-duplicate-revisions-lane arch-lint-canonical-encoder
-
-# FR-058 (ADR-011 §7.1 T-12, #215): the current-head integration lane. Not
-# part of `ci:` -- it needs network access to fetch each repository's
-# default branch head, and it is a separate lane from the exact-pin build
-# `ci:` verifies. See integration/current-head/README.md.
-.PHONY: integration-current-head-prepare integration-current-head integration-current-head-revision-log integration-current-head-incompatible-fixture
-
-# Refreshes the local clones the lane's [patch] entries need, then runs
-# `cargo update` against the lane's own manifest so its committed Cargo.lock
-# picks up each dependency's current head (#249 review, HIGH-1) -- this never
-# touches the root workspace's Cargo.lock. Run this first, and again any time
-# a dependency's head should be picked up again.
-integration-current-head-prepare:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		prepare --deps-root integration/current-head/.deps \
-		--manifest integration/current-head/Cargo.toml
-
-# #249 review round 2 L-2: a test run must not silently execute against a
-# local checkout that fell behind head -- previously only the separate
-# `integration-current-head-revision-log` target caught that (HIGH-1's
-# `require_current_head` guard), so a plain `make integration-current-head`
-# could test a stale snapshot with no warning. `revision-log`'s freshness
-# check now gates every test run too, and fails loudly (non-zero exit) before
-# `cargo test` runs at all if any local clone or CG's resolved head is
-# stale.
-integration-current-head: integration-current-head-revision-log
-	cargo test --manifest-path integration/current-head/Cargo.toml
-
-integration-current-head-revision-log:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		revision-log --qsl . --manifest integration/current-head/Cargo.toml \
-		--deps-root integration/current-head/.deps
-
-integration-current-head-incompatible-fixture:
-	cargo run --manifest-path integration/current-head/tool/Cargo.toml -- \
-		check-incompatible-fixture --manifest integration/current-head/fixtures/incompatible/Cargo.toml
+arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-canonical-encoder
 
 # QSL-197: the whole 30,000-input parser differential against
 # tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
