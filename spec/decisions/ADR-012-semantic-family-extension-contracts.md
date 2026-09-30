@@ -33,7 +33,10 @@ analyses, SR-474 to SR-481) is in
 Amended 2026-09-26 by QSL-273 (A05-3): §15 maps state clauses, frames,
 operation anchors and observations onto this contract. It is the state share
 of the #220 (QSL-19) mapping that §14.1 hands to #120, #121 and #164, and it
-is the design FR-102 to FR-109 implement.
+is the design FR-102 to FR-109 implement. The rest of the #220 mapping (the
+model graph, the static/runtime boundary, identity across phases, finite
+exploration and the owner of each gap) is
+[ADR-016](ADR-016-state-model-finite-execution-mapping.md).
 
 ## Context
 
@@ -222,7 +225,7 @@ The shared contract is the minimum every family implements. It has six parts.
 | Typing context | A family's `check` receives `&mut CheckContext`. Resolved declarations, the type environment and limits are read-only through it. The meter, the diagnostic sink and the scope stack are the only mutable parts. Nothing is read from global or thread-local state. | contents: this record; placement: the QSL `check` core (ADR-011, #209) |
 | Requirements | A pure function of a checked item, `requirements()`, returns one claim per claim site the item carries: a clause, or a scalar operation application in a `Value` function body (FR-062 "Requirement records of a value function"). Each claim holds its site, its one capability kind (FR-057, FR-290) and its extent, classified by `check` with each domain keyed by the binder that carries it. A claim form whose FR-057 kind is none yields no claim and requests no backend (§7.2). After lowering, S3 keys each claim by its site's occurrence key, renames each binder to its parameter node, and derives the record's `Requirements`: the kind, the extent and any authored bound (§13.5). | kinds from agent-ix/quire-specification#134 (FR-290); each family records the Requirements of its own claim forms, by the claim form → kind table of FR-057 (QSL PR #237); Rust type in #213; extent and bound decided in #222 |
 | Structured outcome | A family `check` returns the checked node or a refusal with a family-typed cause. A family `check` that reaches a limit or exhausts the meter returns `StageFailure::Limit(LimitExceeded)` with limit kind work budget (ADR-013 T-4); `Incomplete` is an S6a outcome only. Each cause maps to a stable catalog code through one exhaustive `catalog_code()`. | ADR-013 O-16 (outcomes) and O-17 (refusals): each family has its own `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
-| Stage hooks | The family implements a hook for each stage in §8 that it takes part in: `check` and `requirements` at S3, and `evaluate` at S6a for every family except `Relation`. Every hook takes checked input; none takes CST, tokens or display strings. S4 has no family hook ("Packaging" below). | this record |
+| Stage hooks | The family implements a hook for each stage in §8 that it takes part in: `check` and `requirements` at S3, and `evaluate` at S6a for every family except `Relation` and `StateModel` (ADR-016 FP-3). Every hook takes checked input; none takes CST, tokens or display strings. S4 has no family hook ("Packaging" below). | this record |
 
 Design-level shape of the contract:
 
@@ -263,7 +266,9 @@ through closed enums (§5). Each family is reached through a `match` on a closed
 enum, so the set of families is fixed at compile time.
 
 `ReferenceEvaluation` is implemented by every family except `Relation`, whose
-gates run over compiled corpora. The S1 evaluation seam (ADR-011 S6a)
+gates run over compiled corpora, and `StateModel`, whose model forms are
+always nested in another family's body and evaluate inside that family's
+`evaluate` hook through `value::model_query` (ADR-016 FP-3). The S1 evaluation seam (ADR-011 S6a)
 dispatches over the families that implement `ReferenceEvaluation`: its input
 type has no `Relation` variant, so it has no `Relation` arm. The seam's
 outcome is a QSL layer-3 `check`-core type,
@@ -446,7 +451,7 @@ The per-family assignment:
 | Family | Parsing forms | Validation and normalization | Evaluation and lowering | Distinct diagnostics |
 |---|---|---|---|---|
 | `Value` | literals, operators, `let`, `if`, calls, records, collections, function declarations | typing, coercion, `Int[..]` range obligations, termination (`Value`'s whole-package `check::termination` pass over the call graph's recursive components; §14.1, QSL-148 row) | `value::expression` evaluator; v2 value and expression nodes; IR `Operator`; RT exact ops; CG oracle arm | ill-typed, operator-ineligible, range, termination |
-| `StateModel` | model declarations, populations, lookups, inheritance, dispatched calls | population extent, redefinition conflicts, dispatch preconditions, query-only restriction | model normalize and population evaluation; v2 `model` and `relation` nodes | missing-name, redefinition, dispatch-ineligible |
+| `StateModel` | model declarations, populations, lookups, inheritance, dispatched calls | population extent, redefinition conflicts, dispatch preconditions, query-only restriction | model normalize; population evaluation through `value::model_query`, called from the enclosing family's `evaluate` hook (no `evaluate` hook of its own, ADR-016 FP-3); v2 `model` and `relation` nodes | missing-name, redefinition, dispatch-ineligible |
 | `SumCase` | variant type declarations, variant construction, `case` with arms | arm pattern typing per arm; exhaustiveness as its own obligation | `case` evaluation; v2 variant and case nodes | non-exhaustive, unreachable arm, wrong variant |
 | `TemporalTrace` | temporal formulas, intervals, clock roles, profiles; the control-to-temporal mapping over checked protocol operations | interval and window typing, profile facet admission | temporal evaluation over a trace; v2 temporal nodes | unbounded without facet, clock role, interval |
 | `ProtocolClause` | protocols, operation clauses, frames, scoped anchors | clause ordering, frame target eligibility (FR-340), anchor scoping | protocol and state evaluation; v2 `state`/`frame` and clause nodes | frame target, anchor scope, clause order |
@@ -554,7 +559,7 @@ listed seam.
 
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
-| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` has no evaluation arm (§2, FR-090-AC-4). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
+| S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` and `StateModel` have no evaluation arm (§2, FR-090-AC-4, ADR-016 FP-3). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
 | S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
 | S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
@@ -1073,7 +1078,7 @@ item settles `invalid-request` with no preference order
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation`, including the simulation lane): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation` and `StateModel`, including the simulation lane; a `StateModel` cause travels in the enclosing family's result, ADR-016 FP-3): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on

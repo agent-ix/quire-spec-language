@@ -1,0 +1,45 @@
+---
+id: SR-793
+title: "EARS conformance review of ADR-016 and its FR-089 amendment"
+type: SpecReview
+analysis: ears-conformance
+scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md (normative decision sentences and the §9 G-table acceptance criteria); spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md (amended Status against its Behavior and ACs)"
+review_set: all
+relationships:
+  - target: ix://agent-ix/quire-spec-language/ADR-016
+    type: reviews
+---
+# SR-793: EARS conformance review of ADR-016 and its FR-089 amendment
+
+## Summary
+
+Reviewed commit `47b1b806` (branch `spec/19-arch40-mapping`). The engine
+check (`quire validate --summary` over ADR-016 and FR-089) reports 2/2 docs
+grammar-clean with 0 grammar findings, so every finding below is semantic.
+As in SR-630, EARS is applied to the ADR's normative decision sentences and
+to the bounded acceptance criteria in the §9 G-table. Three of the seven
+G-rows are clean: G-1, G-4 and G-7. G-2 and G-3 pack several checks into one
+criterion, and G-3 includes a spec edit as a criterion. The main defect is
+in FR-089: the amended Status says the preimage gains `members`, while its
+Behavior SHALL and FR-089-AC-1 still state the three-fact preimage.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | FR-089 contradicts itself. The amended Status says "the preimage gains `members`" and "the unequal re-record becomes an internal fault". The Behavior SHALL is unchanged: "`model` SHALL compute a binding's `PopulationId` as a 32-byte digest over ... the domain package identity ..., the `population_key` ... and a closed three-state admission-role discriminator", and "Two admissions ... that share every one of these facts SHALL share a `PopulationId`". FR-089-AC-1 tests only those three facts. Status is not a normative section, so an implementer who follows the SHALL builds the old preimage. Fix: amend the Behavior paragraph and FR-089-AC-1 to add `members`, and add a criterion that two admissions differing only in members mint different ids (TC-291). Add a criterion for the `with_population` internal fault. Then shorten the Status note to point at the Behavior text. | FR-089 Behavior "PopulationId is opaque and content-addressed over the admission", FR-089-AC-1, Status; ADR-016 ID-5 |
+| FND-002 | high | "equal content gets equal ids" in G-3 does not say what content means, and the choice changes the preimage. ID-5 and FR-089 Status add only `members`, because "The declared maximum needs no member". But `admit_binding` takes `declared_maximum` from its caller (`qsl-semantics/src/model/population.rs:811`) and stores it in the binding (`:559`), so two bindings with equal members can differ in their maximum (SR-792 FND-002). One implementer will hash members only. Another will hash members and maximum. Fix: define content in ID-5 as a closed list of preimage members, the declared maximum included or its parameter removed, and use that list in G-3 and FR-089. | ADR-016 §2 ID-5, §9 G-3; FR-089 Status; `population.rs:559`, `:811` |
+| FND-003 | medium | G-3's criterion is not singular and is not all testable. It packs three items: ids differ when members differ; equal content gives equal ids; "FR-089 amended to match". The third is a spec edit, not an observable behavior, and it hands the identity text to the implementation ticket. The Interface column also says "`with_population`'s unequal re-record becomes an `InternalFault`", but no criterion and no test covers that. Fix: split G-3 into G-3a (differing members give different ids), G-3b (equal preimage members give equal ids) and G-3c (when `with_population` is given an unequal binding under an id already bound, it returns `InternalFault`). Give each its own test. Delete "FR-089 amended to match" and make that edit in this change (see FND-001). | ADR-016 §9 G-3 |
+| FND-004 | medium | ID-5 does not say how to encode the new member, so G-3 can only test inequality and has no fixed vector. The text says "the RFC 8785 JCS digest, taken through `quire-canonical`, of the admitted binding's member set", made of "`(ReferenceKey, DeclarationKey)` pairs in ascending `ReferenceKey` order". It leaves open: the digest algorithm and form (raw SHA-256 hex, or a `sha256-jcs` digest record); the JSON shape of a pair and of `ReferenceKey`'s `universe`, `type_identity` and `object`; and whether `POPULATION_ID_DOMAIN` (the preimage `version`) changes. Fix: give the JSON shape of one member entry, the digest form, and the new domain version string. Add one fixed input and its expected `PopulationId` hex as a G-3 criterion. | ADR-016 §2 ID-5, §9 G-3; `population.rs` `population_id_preimage` |
+| FND-005 | medium | G-2's criterion packs three checks and one referent is unclear. The three are: "The model forms are typed only through `StateModel`'s `check`", "the `Value` typer's arms each make one call" and "seam probe lists them". "The model forms" is not listed in G-2; FP-1 lists them. "Them" could mean the arms or the forms. OR-2 promises "a new agreement test in G-2 over every pair of an FR-082 fixture's types", but G-2's criterion and Test column leave it out. G-2's Interface says "ADR-012 S1 to S3 seams gain the `StateModel` arms". The S1 row includes the S6a family-kind dispatch, which FP-3 says gets no `StateModel` variant. Fix: split G-2 into (a) each `infer_form` arm for `Attribute`, `AllInstances`, `Lookup`, `Reaches`, `Deref` and dispatched calls makes exactly one call into `check::state_model` (seam probe); (b) the FR-063 seam probe lists those `StateModel` arms at S2 and S3; (c) for every pair of types in an FR-082 fixture, `TypeEnvironment::conforms` equals the S6a `lookup` walk (OR-2). Say that S1 gains a `StateModel` arm only in `catalog_code()` and the stage-participation table, not in the S6a seam. | ADR-016 §9 G-2, §7 FP-1, FP-3, §10 OR-2; ADR-012 §5.1 S1 row |
+| FND-006 | low | G-5's criterion "FR-085's ACs" and test "FR-085's TCs" do not name which ones. The Context also says only the relationship-end data type and its intake reader exist. FR-085 Dependencies says `model/systems.rs::classify` already resolves ends, without the `missing_declaration`/`missing-name` cause, and that "FR-085-AC-1 does not ship today". Fix: write "FR-085-AC-1 to AC-3" and "TC-230 to TC-232". Correct the Context bullet to match FR-085's description of `systems.rs::classify`. | ADR-016 §9 G-5, Context "Not implemented"; FR-085 Acceptance Criteria, Dependencies |
+| FND-007 | low | G-6's criterion cites "ADR-012 §15.8 step 2" and then lists fewer items than that step. It leaves out FR-100's `0-draft` route of CLI `run` and native `compile` and `lower`, and ADR-011 M-6c's `lowering`, IT-010 and dev dependencies. A reviewer cannot tell which list the "one PR" check uses (SR-792 FND-007). Fix: make the criterion "every module and path ADR-012 §15.8 step 2 and ADR-011 M-6c list is deleted in one PR", with no second list. | ADR-016 §9 G-6; ADR-012 §15.8 step 2; ADR-011 M-6c |
+| FND-008 | low | EX-9's "Two results compare only when these are equal" has no responder and no observable response. No function, refusal or test is named, so the sentence cannot be verified (SR-792 FND-009). Fix: either name the function that refuses to compare results with unequal requests, and the refusal it returns, with a G-4 criterion; or rewrite EX-9 as a scope statement with no `compare` obligation. | ADR-016 §3 EX-9 |
+| FND-009 | low | Several replay and admission rules name a condition but no response. ID-1 Replay: "must be equal". ID-4 Replay: "the universe must equal the recomputed one". ID-7 Replay: "bytes must match". ID-2 Replay: "refuses at value admission", with no code. ID-6 names `FrameIdentityMismatch`, so the pattern is available. Fix: rewrite each as "If ..., then <component> refuses with <catalog code>/<cause>". For example, ID-7: if the supplied bytes do not match the digest, replay admission refuses `stale_dependency` (ADR-012 §15.6). Or cite the FR row that already fixes the code. | ADR-016 §2 ID-1, ID-2, ID-4, ID-7; ADR-012 §15.6 |
+| FND-010 | low | Two decision sentences pick their response through a parenthesis or a vague word. EX-7: "It gives an `InvariantUndetermined` finding (invariant) or an `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge` (contract clause, candidate cap)". SC-2: "a deep chain refuses as `stage_limit_exceeded`". Fix: EX-7 as two conditional sentences, "If the exhausted meter belongs to an invariant evaluation, then ... ; if it belongs to a contract-clause evaluation or the candidate cap is reached, then ...". SC-2: "a walk past `TypeEnvironmentLimits.ancestor_steps` refuses as `stage_limit_exceeded`". | ADR-016 §3 EX-7, §1 SC-2 |
+
+## Disposition
+
+Every finding above is fixed on `spec/19-arch40-mapping` in the ADR-016 rewrite and its listed amendments (ADR-011 M-6c and §8; ADR-012 §2, §3, §5.1, §13.5; ADR-013 O-13, T-6, QC-21, O-16, §6; FR-089; FR-120; `spec/tests.md`), except as noted below.
+
+No finding is declined.

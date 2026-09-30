@@ -153,7 +153,7 @@ operational validation remains outside this audit-only plan.
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
 | TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial; QSL-158: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
-| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1 | ✅ Passed locally; QSL-131 |
+| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1, FR-089-AC-7 | ✅ Passed locally for the three-fact preimage (QSL-131); 🚧 Planned for ADR-016 ID-5's seven-member preimage (AC-1 as amended, AC-7), ADR-016 G-3 |
 | TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
 | TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally; QSL-131 |
 | TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally; QSL-131 |
@@ -251,7 +251,7 @@ operational validation remains outside this audit-only plan.
 | TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | 🚧 Planned; QSL-273; step 6 pending STD-111 |
 | TC-470 | runtime_invariant exits 30 and outranks other diagnostics | Unit | P1 | FR-096-AC-12 | ✅ Implemented; QSL-282 |
 | TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned; QSL-274 |
-| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9 | 🚧 Planned; QSL-274 |
+| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-13 | 🚧 Planned; QSL-274, ADR-016 G-4 |
 | TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned; QSL-274 |
 | TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | 🚧 Planned; QSL-274 |
 | TC-480 | S2 builds enum and predicate forms | Unit | P1 | FR-091-AC-25, FR-091-AC-26 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |

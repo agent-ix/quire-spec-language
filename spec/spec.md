@@ -190,6 +190,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-015
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-016
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -546,3 +548,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented under QSL-216, QSL-218 and QSL-222: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (QSL-17, #222) |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names (QSL-255) |
+| [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (QSL-19, #220) |
