@@ -82,3 +82,13 @@ No correctness bug found. The API is the minimal honest surface for CG's
 IR-412 slice, arch-lint passes, and the tests use an independent oracle.
 FND-001 should be fixed in this PR (a small test addition). FND-002 and
 FND-003 are low.
+
+## Dispositions
+
+Round 1, reviewed at 5bac0589a6fa5754e5eaf0033385b5c308d94651 (rebased onto bad4944c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5bac0589: `call_site_returns_only_the_selected_operations_clauses_in_declaration_order` (two-operation unit, pre then post on `attemptUpdate`, post on `probe`); the `clause.operation().is_some()` mutant now fails it at tests/call_site.rs:220 (reviewer's mutant-m1.log, exit 101) |
+| FND-002 | fixed | 5bac0589: the comment now sits directly above `pub use spine::{...}` (lib.rs:58-64) |
+| FND-003 | fixed | 5bac0589: `CallSiteRefusal` gains `ModelIntake{alias,message}`, `DependencyInput(DependencyInputRefusal)`, `Import(String)`, `Dependency{path,message}` via an exhaustive `From<CompileRefusal>`; AC-4 now matches `Import(_)` rather than a substring |

@@ -35,3 +35,12 @@ ticket ids there were ceremony.
 ## Verdict
 
 The spec edits are sound and match the code. Two low wording findings.
+
+## Dispositions
+
+Round 1, reviewed at 5bac0589a6fa5754e5eaf0033385b5c308d94651 (rebased onto bad4944c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5bac0589: the sentence now covers "the types a caller constructs a call_site input from or matches a refusal on" and says `LibraryName`, catalog code and host cause are read through `LibraryName::as_str`, `DependencyInputRefusal::code` and `host_cause` |
+| FND-002 | fixed | 5bac0589: both negative sentences removed; the selection types are stated as "exactly the three implementors of the sealed trait" |

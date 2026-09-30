@@ -165,6 +165,8 @@ declaration by declared identity, never by position.
 | FR-121-AC-7 | For the same domain package with no clause of the unit naming `probe`, the `Config::ConfigVersion::probe` selection refuses `CallSiteRefusal::UnknownOperation`, pairing the `OperationName` with the compiled package's own `package_id`. | Test (TC-516) |
 | FR-121-AC-8 | For the AC-6 unit, a clause selection of `ParentOrder`, `NoCycle`, `AttemptPre` and `VersionUnchanged` each returns the compiled package's `package_id` and the clause's own `state_clause` node -- the two invariant nodes for the invariants, the precondition node for `AttemptPre`, a postcondition node for `VersionUnchanged` equal to the `attemptUpdate` selection's entry -- at `OccurrenceKey::new(node, Origin::new(Role::new("claim"), 0))`. `Absent` and the function name `sameIdentity` each refuse `CallSiteRefusal::UnknownClause`, pairing the `ClauseName` with the package. | Test (TC-516) |
 | FR-121-AC-9 | The AC-6 unit with no domain package supplied refuses `CallSiteRefusal::ModelIntake` with the alias `Config`. | Test (TC-516) |
+| FR-121-AC-10 | For the AC-4 unit, a `DependencyInput` supplying the imported library from a source with the unit's own authority and identity refuses `CallSiteRefusal::DependencyInput`, carrying `DependencyInputRefusal::SharedOwner` with `first` the unit, `second` the library and that shared authority and identity. | Test (TC-516) |
+| FR-121-AC-11 | For the AC-4 unit, a `DependencyInput` supplying the imported library from source bytes that do not parse refuses `CallSiteRefusal::Dependency`, its `path` exactly that library's identity. | Test (TC-516) |
 
 ## Dependencies
 

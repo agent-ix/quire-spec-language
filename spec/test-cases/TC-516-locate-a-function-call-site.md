@@ -23,9 +23,10 @@ against occurrence keys built through the facade's own `OccurrenceKey`,
 declaration order, and locates a named state clause of any kind. It
 refuses a function, operation or clause resolving to nothing, pairing it
 with the package it was looked up in, and an unsupplied domain package as
-`ModelIntake`.
+`ModelIntake`, and a refused dependency input or an uncompilable supplied
+library as `DependencyInput` or `Dependency`.
 
-Scope: FR-121-AC-1 to FR-121-AC-9.
+Scope: FR-121-AC-1 to FR-121-AC-11.
 
 ## Test Procedure
 
@@ -67,6 +68,10 @@ Scope: FR-121-AC-1 to FR-121-AC-9.
    step 6 `attemptUpdate` answer, and with `claim` occurrence keys built
    through the facade.
 9. Compile the step 6 unit through `call_site` with no domain package.
+10. Compile the step 4 unit through `call_site` with `test/units` supplied
+    from a source with the unit's own authority and identity.
+11. Compile the step 4 unit through `call_site` with `test/units` supplied
+    from source bytes that do not parse.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -101,3 +106,8 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   paired with the package.
 - Step 9: `call_site` refuses `CallSiteRefusal::ModelIntake` with the alias
   `Config`.
+- Step 10: `call_site` refuses `CallSiteRefusal::DependencyInput` with
+  `DependencyInputRefusal::SharedOwner`: `first` the unit, `second`
+  `test/units`, and the unit's authority and identity.
+- Step 11: `call_site` refuses `CallSiteRefusal::Dependency` whose `path`
+  is exactly `test/units`.

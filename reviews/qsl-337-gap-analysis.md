@@ -47,3 +47,18 @@ Ticket and scope-comment items are all delivered and tested. FND-001 is a
 spec statement with no AC or test and should be closed in this PR. FND-002
 is a gap for the next consumer, FR-122; it can be deferred to QSL-336 with a
 note.
+
+## Dispositions
+
+Round 1, reviewed at 5bac0589a6fa5754e5eaf0033385b5c308d94651 (rebased onto bad4944c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5bac0589: FR-121-AC-7 and `call_site_refuses_an_operation_no_clause_names`; `probe` is proved present in the same domain document by AC-6's successful `probe` selection, so the refusal comes from the frame arm, not the type lookup |
+| FND-002 | fixed | 5bac0589: third sealed selection `ClauseName(pub Identifier)` -> `ClauseSite`, `UnknownClause{selection,package}`; FR-121-AC-8 test locates both invariants, the precondition and the postcondition against graph nodes scanned by kind, and refuses `Absent` and the declared function `sameIdentity` |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The new Behavior SHALLs routing a dependency-input refusal to `CallSiteRefusal::DependencyInput` and a supplied library's own refusal to `Dependency{path,..}` have no AC and no test. Mapping both arms of `From<CompileRefusal>` to `Compile(..)` leaves all 9 TC-516 tests green (reviewer's mutant-m2.log). CG branches on exactly these variants to tell its own supply mistake from a broken library. Two small tests close it: a library sharing the unit's source owner, and a supplied library whose source does not compile. | spec/functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md:107-111; qsl-replay/src/call_site.rs:251-256 |
