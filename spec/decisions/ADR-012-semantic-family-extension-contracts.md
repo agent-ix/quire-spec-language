@@ -270,10 +270,13 @@ Both traits are static contracts, implemented once per family and dispatched
 through closed enums (§5). Each family is reached through a `match` on a closed
 enum, so the set of families is fixed at compile time.
 
-`ReferenceEvaluation` is implemented by every family except `Relation`, whose
-gates run over compiled corpora, and `StateModel`, whose model forms are
-always nested in another family's body and evaluate inside that family's
-`evaluate` hook through `value::model_query` (ADR-016 FP-3). The S1 evaluation seam (ADR-011 S6a)
+`ReferenceEvaluation` is implemented by every family whose declarations S6a
+calls or selects. It is not implemented by `Relation`, whose gates run over
+compiled corpora; by `StateModel`, whose model forms are always nested in
+another family's body and evaluate inside that family's `evaluate` hook
+through `value::model_query` (ADR-016 FP-3); or by `SumCase`, whose `case`
+and construction nodes evaluate inside the enclosing declaration's
+evaluation (§16.6). The S1 evaluation seam (ADR-011 S6a)
 dispatches over the families that implement `ReferenceEvaluation`: its input
 type has no `Relation` variant, so it has no `Relation` arm. The seam's
 outcome is a QSL layer-3 `check`-core type,
@@ -901,7 +904,7 @@ holds for #185's own exit criterion.
 | Ticket | Waits on #185? | Waits instead on | Reason |
 |---|---|---|---|
 | #186 (A09) | No, relaxed | #231 | State `forall` witness on `native-run-result/2`, produced by the native reference runtime. No solver, no routing. The witness payload is the FR-351 record unchanged. |
-| #187 (A10) | No, relaxed | #212, #213, #214, agent-ix/quire-specification#115 | Sum types and `case` are semantic admission and reference evaluation in `SumCase`. Exhaustiveness is a checker obligation with its own refusal, not a backend claim. It needs the S1–S4 seams from #214. Proof lowering of sum/case is later work. |
+| #187 (A10) | No, relaxed | #212, #213, #214, agent-ix/quire-specification#115 | Sum types and `case` are semantic admission in `SumCase`, with reference evaluation inside the enclosing declaration's evaluation (§16.6). Exhaustiveness is a checker obligation with its own refusal, not a backend claim. It needs the S1–S4 seams from #214. Proof lowering of sum/case is later work. |
 | #188 (A11) | Yes, kept | n/a | Its exit criterion "with no backend registered it settles `unsupported` with the warning" needs the empty candidate set from #185 and the CG `negotiate_*` change. Profile and facet work may start earlier; closure waits. Its boundedness is decided in #222. |
 | #189 (A12) | Yes, kept | n/a | Its exit criterion "a claim over an unbounded collection settles `unsupported` with the warning" needs a #185 candidate set and the §1.1 extent rule in CG `negotiate_*`. Declaration admission may start earlier; closure waits. Its bound semantics are decided in #222. |
 | #191 (A13) | No, relaxed | #212 | Corpus-differential `xtask` gate; no family hook, no solver, no routing. It shares agent-ix/quire-specification#116 with #185 but does not consume #185. |
@@ -947,7 +950,7 @@ their `origin/main` on 2026-09-19 and are cited as `RT:`, `CG:`, `IR:` and
 | Canonical type | a sum type is a checked type node; the kernel `ValueType` gains a sum shape (ADR-013 O-14, DA-05) | `quire-exact` `ValueType`; checked type node in the `check` core | type `match`es at S3 and S6 |
 | Kernel consumers | a sum arm in every exhaustive `match` over the kernel `ValueType` (ADR-013 O-13 consumers), and in IR's own `ValueType` (C-05) | kernel: `RT:src/exact/composite.rs`, `RT:src/exact/equality.rs`; `CG:src/oracle.rs`, `CG:src/composite_equality.rs`, `CG:src/kani.rs`, `CG:src/bound_strategy/generation.rs`. IR, over IR's own `ValueType` (C-05), not the kernel: `IR:crates/quire-contract-model/src/expression.rs`, `IR:crates/quire-contract-model/src/wire.rs`, `IR:src/kani/witness.rs` | compile-forced arms. Until its operation exists, an RT evaluation arm returns the kernel `Refused` with a named cause, and an IR or CG lowering or proof arm returns `unsupported` with a catalog code. |
 | Parse | `SumCase` productions: variant declaration and `case` with arms; one leading-token kind and one entry in the parser entry table | `token` (leading-token kind); `forms` core (entry table); `forms::sum_case` | S2 |
-| Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { pattern, body }` typed subnodes | `forms::sum_case` | S2 |
+| Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { member, binders, body, span }` typed subnodes (§16.4) | `forms::sum_case` | S2 |
 | Check | builder: scrutinee → each arm (pattern typed against the scrutinee's variants, independently) → `finish` runs the exhaustiveness obligation as its own check with its own cause | `check::sum_case`; `check` core dispatch arm | S1, S4 |
 | Diagnostics | none new. The catalog already has `undefined_expression`/`unproved-exhaustiveness` (revision `1-draft.4`) and `ill_typed`/`type-mismatch` (§16.5) | none | S4 (`SumCaseCause`) |
 | Checked node | `Case` variant in the checked node enum | `check` core | S3 |
@@ -958,10 +961,11 @@ their `origin/main` on 2026-09-19 and are cited as `RT:`, `CG:`, `IR:` and
 | IR | tag and form enum variants decoded at v2 intake; an explicit `unsupported` lower arm until the IR form exists | `IR:crates/quire-contract-model/src/checked_package/v2/mod.rs`, `IR:crates/quire-contract-model/src/checked_package/v2/lower.rs` | S6 |
 | CG | explicit `negotiate_*` arm returning `unsupported` with a catalog code until a harness exists | `CG:src/kani_obligations.rs` | S6 |
 | RT | variant value operation, when lowering lands | `RT:src/exact/composite.rs` | S6 |
-| Witness, replay | none while the item settles `unsupported`. When a harness exists: the variant witness bindings, built by CG over the IR-owned `WitnessBinding` type (AD-016), and replay through the `SumCase` `evaluate` arm via the ADR-011 layer-6 `replay` facade | `IR:src/kani/witness.rs` (`WitnessBinding`); CG binding construction; `value::expression::sum_case` | S8 |
+| Witness, replay | none while the item settles `unsupported`. When a harness exists: the variant witness bindings, built by CG over the IR-owned `WitnessBinding` type (AD-016), and replay through the enclosing `Value` function's `evaluate` via the ADR-011 layer-6 `replay` facade; `SumCase` has no `evaluate` hook (§16.6) | `IR:src/kani/witness.rs` (`WitnessBinding`); CG binding construction; `value::expression::sum_case` | S8 |
 
-Tests: arm-level unit tests; the non-exhaustive `case` refusal; the
-unreachable-arm refusal; builder diagnostic order; `case` evaluation on each
+Tests (§16.8 is the bounded plan): arm-level unit tests; the non-exhaustive
+`case` refusal; the duplicate-arm refusal, which covers unreachable arms
+(§16.5); builder diagnostic order; `case` evaluation on each
 variant; the agent-ix/quire-specification#115 sum and `case` vectors (FR-143,
 FR-146); a v2 round trip; one typed `unsupported` ledger case downstream. The
 QSL modules changed are the ones in the table; every other family module is
@@ -1092,7 +1096,7 @@ item settles `invalid-request` with no preference order
 | ADR-013 Q210-1: does a selected capability travel in the packet or replay request? | No. Capability values cross only in FR-331 negotiation: the provider manifest, the request with its candidate set, and the dispositions. The counterexample packet and the replay request carry the `backend` member (O-19) and the tool pin, which identify the backend that settled `supported`, and the obligation identity. They do not carry a capability. Replay needs none: it runs the family's `evaluate` hook, which selects no backend. |
 | ADR-013 Q210-2: does §1.1 need anything beyond O-20? | Confirmed: nothing beyond O-20 once #222 fixes the mode and extent vocabulary (Q222-3). QSL records the declared extent and bound as data. Backends advertise (capability kind, mode). CG `negotiate_*` settles the mode. |
 | ADR-013: how RT obtains `NodeKey`s | RT holds no `NodeKey`. It sees only `WireNodeId`s from the wire (ADR-013 O-04), in the CG-generated harnesses built from IR wire data. Only QSL converts a `WireNodeId` to a `NodeKey`: ADR-011 E4 and the `replay` facade. |
-| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family except `Relation` and `StateModel`, including the simulation lane; a `StateModel` cause travels in the enclosing family's result, ADR-016 FP-3): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
+| ADR-013 Q210-3: family results → the eight O-16 categories | `check`: a refusal is `refusal`, a `StageFailure::Limit(LimitExceeded)` is `incomplete`; a checked node is not an outcome. `evaluate` (every family that implements `ReferenceEvaluation`, per §2 and §16.6, including the simulation lane; a `StateModel` cause travels in the enclosing family's result, ADR-016 FP-3): the kernel `Outcome<T>` maps by O-16's evaluation column: `Completed` → `success` or `violation`, `Undefined` → `undefined`, `Refused` → `refusal`, `Incomplete` → `incomplete`. `Relation` gates: pass → `success`, differential mismatch → `violation`, gate refusal → `refusal`. `Relation` has no S6a result (§2). `FamilyOutcome::Evaluated` carries the kernel `Outcome` unchanged. A family-owned evaluation cause is `FamilyOutcome::FamilyEvaluated`: `FamilyResult::Refused` → `refusal`, `FamilyResult::Undefined` → `undefined` (O-16's refusal and undefined rows). Dispositions and proof results use O-16's own columns. No family adds a category, and no family maps to `internal failure` except through the executor's runtime-invariant rule. |
 | ADR-013 Q210-4: FR-351 unchanged for family witnesses? | Confirmed. Every family witness, including #186's state `forall`, is the FR-351 record unchanged. A family contributes only its witness binding schema (§8), so O-25 needs no family-specific envelope. |
 
 ## 14. Work this record hands on
@@ -1401,16 +1405,18 @@ Code citations are at QSL `99e9b6c7`.
 
 ### 16.1 Normative inputs
 
-QSpec merged the sum/case design as agent-ix/quire-specification#115
-(commit `d70cd64` on QSpec `main`). It has these parts:
+QSpec merged the sum/case design for agent-ix/quire-specification#115 in
+QSpec PR #121 (commit `d70cd64` on QSpec `main`). It has these parts:
 
 - the design record, QSpec AD-015 (accepted);
 - the `union-decl`, `union-member`, `case` and `case-arm` productions in
   `proposals/quire-v1/shared-grammar.md`;
-- FR-143 "Declarations and identity", FR-143-AC-12 (construction and
+- FR-143 ("Evaluate records, tuples and finite recursive values"): its
+  section "Declarations and identity", FR-143-AC-12 (construction and
   equality) and FR-143-AC-13 (recursion);
-- FR-146 "Case exhaustiveness", FR-146-AC-10 (obligations) and FR-146-AC-11
-  (evaluation);
+- FR-146 ("Check total pure functions and recursion"): its section "Case
+  exhaustiveness", FR-146-AC-10 (obligations) and FR-146-AC-11 (evaluation),
+  with QSpec TC-264 and TC-265 as their test cases;
 - the catalog cause `undefined_expression`/`unproved-exhaustiveness`, from
   revision `1-draft.4` of `native-diagnostics.md`.
 
@@ -1451,26 +1457,44 @@ QSpec states this in shared-grammar.md ("the parser does not duplicate those
 token strings into `enum-value`, `tuple-value`, `union-value` and call
 alternatives"). S2 therefore builds no construction form. `U::m(e, ...)`
 reaches S3 as `Expression::Call` and a nullary `U::m` as `Expression::Name`.
-The S3 seam handles them in three steps:
+Neither a resolver nor a resolved-target enum exists in the `check` core
+today. The `Call` arm of `Typer::infer_form`
+(`qsl-semantics/src/check/check/typing.rs:783-794`) calls `Value`'s
+`Application::resolve` (`qsl-semantics/src/check/family.rs:795`) directly.
+That function tries an import qualifier first, then a declared function,
+then a tuple constructor. It returns `Application { Function, Tuple,
+Imported }` (`family.rs:739`). A bare qualified name reaches `Typer::name`
+(`typing.rs:637`), which resolves enum members (`check/check.rs:1367`).
+#187 adds the following:
 
-1. The `Call` and `Name` arms of `Typer::infer_form`
-   (`qsl-semantics/src/check/check/typing.rs:613`; arms at `:783` and
-   `:637`) make one call to a `check`-core resolver. The resolver classifies
-   the qualified name against the resolved declarations that `CheckContext`
-   holds read-only (§2).
-2. The resolver returns a closed `check`-core enum of resolved-target kinds.
-   #187 adds its union-member variant.
-3. The arm matches on that enum with one arm per variant and no `_` arm. Each
-   arm makes one call into its owning family: `Value`'s `Application` for a
-   function, `Value`'s name check for a value or enum member, and
-   `check::sum_case` for a union member.
+1. **One `check`-core call-target seam function** (for example
+   `check::call_target`). The `Call` arm and the `Name` arm each call it
+   exactly once, with no branch of their own. The function performs S3 name
+   binding (ADR-011 §1) and returns a closed `check`-core enum of resolved
+   targets. The enum has one union-member variant, and one variant that
+   carries `Value`'s existing resolution for everything else.
+2. **Resolution precedence.** A qualified name `q::m` is a union member when
+   `q` names a declared union and no import alias. It is an import member
+   when `q` names an import alias and no declared union. When `q` names
+   both, the name refuses `ambiguous_declaration`/`ambiguous-name`, naming
+   both declarations. Every other name resolves exactly as it does today:
+   through `Application::resolve` for a call, and `Typer::name` for a bare
+   name. Unions and enums share the type-declaration namespace, so a union
+   and an enum with one name are already a duplicate declaration.
+3. **Dispatch inside the seam function.** The seam function matches its
+   resolved target with one arm per variant and no `_` arm. Each arm makes
+   one call into the owning family: `check::sum_case::construct` for a union
+   member, and `Value`'s unchanged `Application` or name check otherwise.
+   The seam function and the resolved-target enum are seam-probe locations
+   (§16.6).
 
-This dispatch is on a pair: the form and the resolved kind. The evaluator
-already uses the same seam shape: `evaluate_declaration`
-(`qsl-eval/src/value/expression/mod.rs:273-315`) matches the pair (family,
-`EvaluationTarget`) and makes one call per arm. The resolution is S3 name
-binding (ADR-011 §1), not family logic, so §4.3's thin-arm rule holds. This
-is the one `Value`-owned seam function that #187 changes.
+The arm makes one call and holds no logic, so §4.3's thin-arm rule holds.
+The resolution sits in the `check` core, not in a family, so no
+`Value`→`SumCase` family edge exists. `Application` gains no variant.
+`evaluate_declaration` (`qsl-eval/src/value/expression/mod.rs:273-315`) is
+the precedent for a seam matching a resolved pair and making one call per
+arm. The `Call` and `Name` arms are the only `Value`-owned seam code that
+#187 changes.
 
 ### 16.3 Identity
 
@@ -1482,11 +1506,11 @@ Every identity below follows an ADR-013 row. None needs a new identity scheme.
 | Union member | (union node id, member identifier) (FR-143) | declared | O-06 |
 | Kernel member identity | a `VariantId` (QC-15: "`VariantId` (enum and sum)"), computed by QSL from the member identity. Its preimage is SC-G3 (§16.10). | normalized | O-14, C-26, C-30 |
 | Union value | the pair (active member identity, payload values in declared position order). Two union values are equal exactly when their active members are equal and each payload position compares equal (FR-143-AC-12). Values of different unions are never equal, even with the same member shape. | semantic | O-13 |
-| `case` expression, union construction | an undeclared `expression` node, or a `value` node, keyed by content with no owner (FR-093). Each source occurrence is keyed by (node id, role, ordinal). | normalized | O-04, O-07 |
+| `case` expression, union construction | an undeclared `expression` node, or a `value` node, keyed by content with no owner (FR-092, FR-093). An admitted `case` has exactly one arm per member of `U`. It lowers its arms in `U`'s declared member order, not in source order, so the arm order in source does not reach the preimage. The SC-G1 proposal carries this rule. Each source occurrence is keyed by (node id, role, ordinal). | normalized | O-04, O-07 |
 | Arm binder | a parameter-like binder scoped to its arm's body. It has no declaration and no wire node beyond its uses. | not an identity | none |
 
 The checked union type node is new. It is a `CheckedTypeNode` variant beside
-today's `Sum` (`qsl-semantics/src/check/identity.rs:541`). Today's `Sum` is
+today's `Sum` (`qsl-semantics/src/check/identity.rs:538`). Today's `Sum` is
 the enum node, despite its name. Its variant list is `SumVariant{name}`
 (`:414`), which has no payload, and it maps to the kernel
 `ValueType::Enum(EnumShape)` at `to_kernel_value_type` (`:578`). #187 adds a
@@ -1499,13 +1523,14 @@ acceptance criterion with a test.
 | ID | Requirement |
 | --- | --- |
 | SC-R1 | A union's node id and every member identity are the same after S4 emission and the I2 read (the `WireNodeId` equals the emitted id), and after replay's S1 to S4 recompile of the digest-addressed source (E9). The replay executor's recompiled `package_id` equals the proved package's `package_id` (O-26). |
-| SC-R2 | A presentation-only edit changes no union node id and no `VariantId`. Examples are whitespace, comments, and an arm order that keeps the arm set. Renaming a member, adding a member or changing a payload type changes the union's node id. It also changes the identity of every value, expression and function node that names the union (O-04 content addressing). |
-| SC-R3 | A kernel union value converts to its v2 literal and FR-323 typed-value spelling and back without loss (C-07 extended to unions). A supplied union value whose union node id is not a node of the evaluating package refuses `invalid_runtime_input`/`wrong-value-kind` before evaluation (FR-143). |
+| SC-R2 | A presentation-only edit changes no union node id, no `VariantId`, no `case` node id and no `package_id`. Examples are whitespace, comments, and reordering the arms of a `case` (arms lower in member order, per the row above). Renaming a member, adding a member or changing a payload type changes the union's node id. It also changes the identity of every value, expression and function node that names the union (O-04 content addressing). |
+| SC-R3 | A kernel union value converts to its v2 literal and FR-323 typed-value spelling and back without loss (C-07 extended to unions). Argument admission refuses a supplied union value with `invalid_runtime_input`/`wrong-value-kind`, before evaluation or any charge, in four cases (FR-143): its union node key is not a union of the evaluating package; its `VariantId` is not a member of that union; its payload count differs from the member's declared arity; or a payload value is not admitted by the member's declared position type. Admission walks union payloads for nested references exactly as it walks record slots. Kernel `ValueType::admits` checks only a composite's key (`quire-exact/src/value.rs:221-242`), so these member and payload checks belong to QSL argument admission (`qsl-eval/src/value/expression/mod.rs:176-229`), which reads the type environment. A value that passes admission therefore always matches an arm. |
 | SC-R4 | The `VariantId` computed at check time (C-26) and the one computed at argument admission for the same member are equal. A `VariantId` of another union, or of an enum, never selects an arm (C-30 extended). |
 | SC-R5 | Two constructions of the same member with equal payloads are equal values. The same member name and payload shape under two different unions give values that are not equal (FR-143-AC-12). |
 
-SC-R1 and SC-R3 need the QSpec spellings in SC-G1 and SC-G2. SC-R2, SC-R4
-and SC-R5 can be tested in process before those spellings land.
+SC-R1, and SC-R3's wire round trip, need the QSpec spellings in SC-G1 and
+SC-G2. SC-R3's admission refusals, SC-R2, SC-R4 and SC-R5 can be tested in
+process before those spellings land.
 
 ### 16.4 Stage table
 
@@ -1518,35 +1543,68 @@ they have an arm.
 | S1 | a `union` keyword in the token vocabulary (`qsl-cst/src/token.rs:138`, `vocabulary!`); the `union-decl` production; the expression `case` production. `case` is already a keyword (`token.rs:159`) and the protocol `choice` production uses it (`qsl-cst/src/grammar.rs:1205-1213`). The two productions differ by syntactic context (shared-grammar.md). | `qsl-cst` | none | none |
 | S2 | the leading-token kind `Union` (`qsl-forms/src/dispatch.rs:159`, spelling table `:460-472`) with one entry, `sum_case::union_declaration`, in `dispatch` (`:415`); `DeclarationForm::Union(UnionForm)` (`qsl-forms/src/syntax.rs:1496`); `Expression::Case(CaseForm)` (`syntax.rs:253-480`) with `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { member, binders, body, span }`. There is no construction form (§16.2). | `forms` core; new `qsl-forms/src/sum_case.rs` | S2 | none |
 | S3 declaration | the assembler's `DeclarationForm::Union` arm (`qsl-semantics/src/check/assemble.rs:476-477` region) registers the union in the type environment. `SumCaseFamily: FamilyContract` checks the declaration: duplicate member names, payload type resolution, and the FR-143-AC-13 recursion rule. Payload positions join the existing record and tuple recursion graph, `value::declaration::check_recursion` (`qsl-semantics/src/value/declaration.rs:1160`), as named edges. That call site is shared code, not a family's internals. | new `qsl-semantics/src/check/sum_case.rs`; `check::assemble`; `value::declaration` | S1 (first real `FamilyKind::SumCase` implementer), S3 | none |
-| S3 construction | resolved-target dispatch (§16.2), then `check::sum_case::construct`. The member is resolved against the union, and each payload argument is checked against its declared position type. FR-143's four construction refusals are the existing `CheckCause::IllTyped` with tag `type-mismatch` (§16.5). | `check::sum_case`; the `Call` and `Name` arms of `Typer::infer_form` | S3 | none |
+| S3 construction | the `check`-core call-target seam function (§16.2), then `check::sum_case::construct`. The member is resolved against the union, and each payload argument is checked against its declared position type. FR-143's four construction refusals are the existing `CheckCause::IllTyped` with tag `type-mismatch` (§16.5). | `check::sum_case`; the `check`-core call-target seam function; the `Call` and `Name` arms of `Typer::infer_form` | S3 | none |
 | S3 `case` | the `Case` arm of `Typer::infer_form` makes one call to `check::sum_case::check_case`. That function is a §4 staged builder with states Scrutinee, then Arms (§16.5). Each arm is a clause with independent meaning (§4.1). | `check::sum_case`; `check` core dispatch arm | S3, S4 | none |
 | S3 checked nodes | `NodeKind` (`qsl-semantics/src/check/ir.rs:294-547`) gains a union-construction variant and a `Case` variant. The compiler forces one arm at each existing match over `NodeKind`. `Pre` (QSL-277) forced the same sites: `check/check/typing.rs`, `check/lowering.rs` (`Lowering::lower_node`, `:2739`), `check/claims.rs`, `check/facts.rs`, `check/observation.rs`, `ir.rs` children (`:590`) and the evaluator's `Machine::apply` (`qsl-eval/src/value/expression/evaluate.rs:929`). Each forced arm walks children or makes one call into `sum_case`. | `check` core; each listed site | S3 | none |
+| S3 collection element types | until SC-G5 gives unions an FR-144 canonical key, a set, bag or ordered set whose element type contains a union refuses `ill_typed`/`operator-ineligible` at S3. It takes the same path as an IEEE-bearing element type: `value::declaration::type_refusal` (`qsl-semantics/src/value/declaration.rs:1055-1060`, beside `contains_ieee`). A `Sequence<U>` needs no key and is admitted. The kernel's forced key arm for a union value yields no key, exactly as the kernel does for a population pair (ADR-013 O-13 Population row): it never invents an order. When SC-G5 lands, the refusal is deleted in the change that adds the key. | `value::declaration`; `quire-exact` `key.rs` | none | SC-G5 lifts it |
 | S3 requirements | none new. A clause containing `case` records the clause's own kind, `value-validity`, through that clause's family. A scalar operation application in an arm body is a `Value` claim site found by the existing walk (`check/claims.rs`), which only gains the forced child-walk arm. `SumCaseFamily::requirements()` returns no claim (FR-057; recipe "A note on `requirements()`"). | none | none | none |
 | S3 lowering | FR-093 lowering of the union type node, a union construction and a `case` expression to v2 nodes. This needs the wire vocabulary `NodeTag`, `SemanticTerm` and `Operator` (`qsl-semantics/src/check/node_key/mod.rs:288`, `:324`, `:631`), and a member variant (`qsl-semantics/src/value/member.rs:96` region), each with QSpec's spelling. | `check::lowering`, `check::node_key`, `value::member` | S3, S5 wire totality | spelling proposed with SC-G1 to SC-G3 (§16.10) |
-| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:319-330`). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the pinned IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
+| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the QSL-279 precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the pinned IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
 | I2 | none. `library` exposes exported declarations as data and classifies no node kind (ADR-013 T-2, QC-19). | none | none | none |
-| S6a | `case` arm selection and construction. `Machine::apply` gets one arm per new `NodeKind` variant, each making one call into `value::expression::sum_case`. Selection evaluates the scrutinee, selects the arm whose member identity equals the value's active member, binds the payload positionally and evaluates the body (FR-146-AC-11). A scrutinee outcome other than `Completed` propagates unchanged. A checked `case` is exhaustive, so a value whose member matches no arm is `Err(InternalFault)`, an S6a invariant break (O-16), and never a refusal. Argument admission refuses a supplied union value per SC-R3 (`InputRefusal`, T-4). There is no `S6aFamilyKind` variant (§16.6). | new `qsl-eval/src/value/expression/sum_case.rs`; `evaluate.rs`; argument admission in `qsl-eval/src/value/expression/mod.rs` | S3 | charge points: SC-G4 |
+| S6a | `case` arm selection and construction. `Machine::apply` gets one arm per new `NodeKind` variant, each making one call into `value::expression::sum_case`. Selection evaluates the scrutinee, selects the arm whose member identity equals the value's active member, binds the payload positionally and evaluates the body (FR-146-AC-11). A scrutinee outcome other than `Completed` propagates unchanged. Argument admission refuses every ill-formed supplied union value before S6a, per SC-R3 (`InputRefusal`, T-4). A checked `case` is exhaustive, so a value that reaches S6a and matches no arm can only come from a QSL defect. That is `Err(InternalFault)`, an S6a invariant break (O-16), and never a refusal. There is no `S6aFamilyKind` variant (§16.6). | new `qsl-eval/src/value/expression/sum_case.rs`; `evaluate.rs`; argument admission in `qsl-eval/src/value/expression/mod.rs` | S3 | charge points: SC-G4 |
 | Route, E7 | none in QSL. No `SumCase` claim requests a kind. For a `value-validity` item whose function body contains `case`, IR decodes the new tag and form at v2 intake and returns an explicit `unsupported` lower arm until an IR form exists. CG `negotiate_*` settles it `unsupported` with a catalog code (§12.1 IR and CG rows, unchanged). | IR, CG | S6 | IR, CG tickets |
-| Witness, replay | none while every such item settles `unsupported`. Replay of a function that contains `case` needs no `SumCase` hook: it runs through `ValueFunctionFamily::evaluate`, reached by the `replay` facade (`qsl-replay/src/execute.rs:259`), and the `case` node evaluates inside it. Decoding a union-typed witness argument needs IR `WitnessBinding` support, which arrives with the first backend that proves such an item (§12.1 row, unchanged). | `qsl-replay` unchanged | none | IR, CG tickets |
+| Witness, replay | none while every such item settles `unsupported`. Replay of a function that contains `case` needs no `SumCase` hook: it runs through `ValueFunctionFamily::evaluate`, reached by the `replay` facade (`qsl-replay/src/execute.rs:259`), and the `case` node evaluates inside it. Decoding a union-typed witness argument needs IR `WitnessBinding` support, which arrives with the first backend that proves such an item. §12.1's Witness row is amended to match (§16.6). | `qsl-replay` unchanged | none | IR, CG tickets |
 
 ### 16.5 Refusals, oracles and provenance
 
 FR-146 fixes the order of the exhaustiveness obligations and says only the
-first failure is reported. The builder keeps that order as follows:
+first failure is reported. FR-146 also checks typing before reachability.
 
-- `accept(Scrutinee)` types the scrutinee and resolves its static type to a
-  declared union `U`.
-- Each `accept(Arm)` resolves the arm's member against `U` and records the
-  result: a resolved member, `unknown`, or an arity mismatch. When the arm
-  resolved with the right arity, it types the arm's binders from the member's
-  payload types and checks the body against the `case` result type.
-- `finish` runs the four FR-146 obligations over the recorded arm set, in
-  FR-146 order, and returns at most one exhaustiveness refusal.
-- A body refusal is the body's own refusal and is reported beside it. An arm
-  whose member is unknown, or whose arity mismatches, has untyped binders. Its
-  body is not checked, so its only refusal is the exhaustiveness refusal.
-- Diagnostics are ordered by builder state, then by source position (§4.2).
-- A `case` with any refusal emits no checked node (AD-016 arrow 1).
+**One refusal per `case`.** The S3 `Typer` fails fast.
+`Typer::infer_form` returns `Result<Step, CheckRefusal>`
+(`qsl-semantics/src/check/check/typing.rs:613-619`), and a family `check`
+returns one refusal (`qsl-semantics/src/family/contract.rs:370-373`). A
+`case` therefore yields at most one refusal, and it is the first refusal in
+this order:
+
+1. `accept(Scrutinee)` types the scrutinee and resolves its static type to a
+   declared union `U`. A scrutinee refusal, including "scrutinee not a
+   union", ends the builder: no arm is resolved and `finish` does not run.
+2. Each `accept(Arm)`, in source order, resolves the arm's head (its member
+   name and binder count) against `U` and records the result: a resolved
+   member, `unknown`, or an arity mismatch. Recording a head refuses nothing.
+   When the head resolved with the right arity, it types the arm's binders
+   from the member's payload types and checks the body. The first body
+   refusal is the `case`'s refusal (typing before reachability, FR-146). An
+   arm whose head is unknown, or whose arity mismatches, has untyped binders,
+   so its body is not checked.
+3. `finish` reads only the recorded arm heads, never the arm bodies, so
+   §4.2's rule holds: every clause it reads was checked. It runs the four
+   FR-146 obligations in FR-146 order and returns the first failure as the
+   one exhaustiveness refusal.
+
+This is §4.2's builder with the engine's fail-fast outcome. The builder still
+checks each arm with its own clause function and advances in clause order.
+It returns the first refusal instead of accumulating them, because the S3
+outcome type carries one refusal. A `case` with a refusal emits no checked
+node (AD-016 arrow 1).
+
+**Result type.** The grammar gives `case` no result annotation
+(shared-grammar.md `case` production). FR-146 checks each arm body against
+"the `case` expression's declared result type" without defining where that
+type comes from (SC-G6). QSL types `case` by the rule it already uses for
+`if`, the other expression with several branches: `Self::conditional` with
+`Branches::Inferred(hint)` (`qsl-semantics/src/check/check/typing.rs:646-656`).
+The arm bodies are the branches, checked in source order (step 2).
+Lowering orders them by member (§16.3), but checking does not. The
+expected type is the enclosing expectation where one exists; otherwise it is
+inferred from the branches as for `if`. An arm body that fails is reported at
+that body, as an `if` branch is.
+
+FR-146's text (`:72-74`) can be read as sending an unknown member or a wrong
+arity through FR-143's construction refusal. QSpec TC-264 cases E03 and E04
+settle both as the obligations `unknown-member` and `arm-arity`, and this
+section follows TC-264.
 
 | Behaviour | Owner and stage | Oracle: catalog code and cause | Payload (catalog row) | Locus |
 | --- | --- | --- | --- | --- |
@@ -1555,8 +1613,8 @@ first failure is reported. The builder keeps that order as follows:
 | Unknown member: the arm names no member of `U`, including a member of another union | `SumCase`, S3 `finish`, obligation 2 | `undefined_expression`/`unproved-exhaustiveness`, obligation `unknown-member` | as above | the first such arm |
 | Arm arity: binder count differs from the member's payload arity | `SumCase`, S3 `finish`, obligation 3 | `undefined_expression`/`unproved-exhaustiveness`, obligation `arm-arity` | as above | the first such arm |
 | Missing arm (non-exhaustive): the arm set is a strict subset of `U`'s members | `SumCase`, S3 `finish`, obligation 4 | `undefined_expression`/`unproved-exhaustiveness`, obligation `missing-arm` | as above | the `case` expression |
-| Scrutinee not a union | `SumCase`, S3 `accept(Scrutinee)` | `ill_typed`/`type-mismatch` | expected "a declared union", actual type | the scrutinee |
-| Arm body not of the `case` result type | the body's family, S3 | `ill_typed`/`type-mismatch` | expected and actual type | the body |
+| Scrutinee not a union | `SumCase`, S3 `accept(Scrutinee)`. FR-146 does not name this case. `ill_typed`/`type-mismatch` is QSL's choice: the catalog's nearest code, the one FR-143 uses for a construction naming the wrong shape. | the existing `CheckCause::IllTyped`, tag `type-mismatch` | expected "a declared union", actual type | the scrutinee |
+| Arm body not of the `case` result type | the body's family, S3, under the `if` rule above | `ill_typed`/`type-mismatch` | expected and actual type | the body |
 | Construction: undeclared member, payload on a nullary member, missing call on a payload member, or wrong argument count | `SumCase`, S3 construction | `ill_typed`/`type-mismatch` (FR-143) | expected and actual shape | the construction expression |
 | Union recursion that does not escape | `SumCase` declaration check, through the shared recursion graph. Payload positions are named edges (FR-143), so they enter the `NonEscaping` subgraph and not the `Unnamed` (tuple-position) one. | `ill_typed`, from the existing `DeclarationCause::Recursion { edges: NonEscaping, cycle }` (`qsl-semantics/src/value/declaration.rs:682-694`) | the cycle | the union declaration |
 | Duplicate member name in one union | `SumCase` declaration check | `invalid_semantic_graph`, from the existing `DeclarationCause::DuplicateMember` (same function) | the member name | the union declaration |
@@ -1570,17 +1628,18 @@ which is `duplicate-arm`. An arm naming a member of another union is
 wrong-variant code, and O-17 forbids inventing one. The three separate codes
 that §3 and §12.1 planned are replaced by this table.
 
-**Cause type.** A new `SumCaseCause` enum in `check::sum_case` holds the
-exhaustiveness refusal (`ExhaustivenessObligation { DuplicateArm,
-UnknownMember, ArmArity, MissingArm }` with its payload) and the
-scrutinee-not-a-union refusal. It has its own exhaustive `code()` and
-`tag()` with no `_` arm. It is carried as one boxed `CheckCause` arm, exactly
-as `ProtocolAnchorCause` is (`qsl-semantics/src/check/refusal.rs:19`, `:234`;
-wired at `:668`, `:884`, `:926`). `CheckCause::UnprovedDecrease` (`:591`,
-`:874`) is the catalog precedent: one `undefined_expression` cause whose
-payload names the failed obligation. Construction refusals reuse
-`CheckCause::IllTyped` (`:561`). No `Code` variant is added to
-`qsl-foundation/src/diagnostic.rs`.
+**Cause type.** A new `SumCaseCause` enum in `check::sum_case` holds only
+the exhaustiveness refusal: `UnprovedExhaustiveness { union, arms,
+obligation: ExhaustivenessObligation }`, where the obligation is one of
+`DuplicateArm`, `UnknownMember`, `ArmArity` or `MissingArm`. It has its own
+exhaustive `code()` and `tag()` with no `_` arm. It is carried as one boxed
+`CheckCause` arm, exactly as `ProtocolAnchorCause` is
+(`qsl-semantics/src/check/refusal.rs:19`, `:234`; wired at `:668`, `:884`,
+`:926`). `CheckCause::UnprovedDecrease` (`:591`, `:874`) is the catalog
+precedent: one `undefined_expression` cause whose payload names the failed
+obligation. The scrutinee refusal and the construction refusals reuse
+`CheckCause::IllTyped` (`:561`), so each (code, cause) pair has one cause
+path. No `Code` variant is added to `qsl-foundation/src/diagnostic.rs`.
 
 **Provenance.** Every refusal's locus is a `check::Location` resolved through
 the unit's S2 form spans to `Locus::Region` (O-12, T-5, FR-096). `ArmForm`
@@ -1591,23 +1650,23 @@ source map (C-14).
 
 ### 16.6 Exhaustive core dispatch
 
-The §5.1 closed seams are the extension points #187 uses. Each one already
-exists:
+The §5.1 closed seams are the extension points #187 uses. All but the last
+row exist today:
 
 | Seam | Where it is today | What #187 adds |
 | --- | --- | --- |
-| S1 `FamilyKind` | `qsl-semantics/src/family/mod.rs:90`. `SumCase` is already a variant (`:96`). Its matches are `catalog_code_prefix` (`:124-149`, prefix `"sum-case"` at `:128`) and `S6aFamilyKind::family` (`qsl-eval/src/value/expression/s6a/mod.rs:121-137`). | the first `FamilyContract` implementer for `SumCase`. `FamilyKind` gets no new variant, so no S1 site changes. |
+| S1 `FamilyKind` | `qsl-semantics/src/family/mod.rs:90`. `SumCase` is already a variant (`:96`). Its one match is `catalog_code_prefix` (`:124-149`, prefix `"sum-case"` at `:128`), beside the const prefix-distinctness assertion (`:198-219`). `S6aFamilyKind::family` (`qsl-eval/src/value/expression/s6a/mod.rs:121-137`) maps the S6a kind to `FamilyKind` and does not match over `FamilyKind`. | the first `FamilyContract` implementer for `SumCase`. `FamilyKind` gets no new variant, so no S1 site changes. |
 | S2 `LeadingTokenKind`, `Expression`, `DeclarationForm` | `qsl-forms/src/dispatch.rs:159`, `:415`; `qsl-forms/src/syntax.rs:253-480`, `:1496` | `Union`, `Expression::Case`, `DeclarationForm::Union` |
 | S3 `NodeKind` | `qsl-semantics/src/check/ir.rs:294` | the construction and `Case` variants |
 | S4 family causes | `CheckCause::code` (`qsl-semantics/src/check/refusal.rs:868`) | the boxed `SumCaseCause` arm and its own `code()` |
-| resolved-target kind (§16.2) | `check` core | the union-member variant, matched with no `_` arm under the §5.1 lint rules |
+| resolved-target kind and the call-target seam function (§16.2) | new in the `check` core; nothing exists today | the enum, its union-member variant, and the seam function's match with no `_` arm under the §5.1 lint rules |
 
 The **representative variant mechanism** that validates these seams exists
 and is test-only. It is the FR-063 seam probe. Each S1 to S4 enum carries a
 `#[cfg(seam_probe)]` (or `seam_probe_forms`) `__SeamProbe` variant.
 `xtask seam-probe` builds with those cfgs and compares the rustc E0004
 locations against `checked_in_locations()` (`xtask/src/seam_probe.rs:179-251`,
-16 entries). It already proves that a new variant of `FamilyKind`,
+15 entries). It already proves that a new variant of `FamilyKind`,
 `LeadingTokenKind`, `Expression`, `NodeKind` or `CheckCause` fails to compile
 at every listed seam, including `Typer::infer_form`, `Lowering::lower_node`,
 `Machine::apply` and `qsl-forms` `dispatch`. It proves nothing about sum/case
@@ -1618,7 +1677,8 @@ not claim #187 complete.
 
 - a `SeamLocation` for the new `sum_case` family match functions, and for
   `SumCaseCause::code` if that function matches over an enum of its own;
-- a probe variant on the resolved-target kind;
+- a probe variant on the resolved-target kind, and a `SeamLocation` for the
+  call-target seam function;
 - the resolved-target kind in `closed_enums_carry_no_non_exhaustive_attribute`
   (`xtask/src/seam_probe.rs:1122`).
 
@@ -1638,19 +1698,42 @@ declaration that the run entry selects by name.
 
 ### 16.7 Allowed change set for #187
 
-#187's landing PRs change only the paths below. Any other path is a defect
-in this mapping and reopens #221.
+#187's change set has four parts. A change outside them is a defect in this
+mapping and reopens #221. A change inside the Excluded list below always
+reopens #221.
+
+1. **Family modules and seam code:** the paths in the table.
+2. **Compile-forced arms.** An arm that the compiler forces, in any file of
+   the crates in the table, because of the new variants of
+   `LeadingTokenKind`, the CST `Production` inventory, `Expression`,
+   `DeclarationForm`, `NodeKind`, `CheckedTypeNode`, `CheckCause`, the
+   resolved-target kind or the kernel `Value`. Each such arm walks children,
+   passes a value through, refuses explicitly, or makes one call into
+   `sum_case`. It holds no sum/case semantics of its own. This covers the
+   exhaustive walks named in the table and any the compiler finds beyond
+   them.
+3. **Tests and evidence:** each crate's `tests/`, unit-test modules, and
+   `xtask/src/seam_probe.rs`.
+4. **Specification and docs:** #187's own FR and TC files, their rows in
+   `spec/spec.md` and `spec/tests.md`, and `docs/native-error-codes.md` if
+   it lists causes.
 
 | Crate | Paths | Nature |
 | --- | --- | --- |
-| `qsl-cst` | `token.rs` (the `union` keyword), `grammar.rs` (`union-decl`, expression `case`) | S1 productions |
-| `qsl-forms` | new `sum_case.rs`; `dispatch.rs` (one kind, one entry, one table row); `syntax.rs` (the `Case`, `CaseForm`, `ArmForm`, `Union` and `UnionForm` variants and types); `lib.rs` (the module) | S2 family module and forms-core variants |
-| `qsl-semantics` | new `check/sum_case.rs`; `check/mod.rs` (the module and the family wiring); `check/assemble.rs` (the `Union` arm); `check/identity.rs` (the union `CheckedTypeNode` variant and its `to_kernel_value_type` arm); `check/check/typing.rs` (the `Case` arm, and the `Call` and `Name` arms per §16.2); `check/ir.rs` (the `NodeKind` variants and children); the forced `NodeKind` arms in `check/lowering.rs`, `check/lowering/*`, `check/claims.rs`, `check/facts.rs` and `check/observation.rs`; `check/refusal.rs` (the boxed `SumCaseCause` arm); `check/region.rs` (the locus arm); `check/node_key/mod.rs` and `value/member.rs` (wire vocabulary, after SC-G1 and SC-G2); `value/declaration.rs` (the union in the type environment and in `check_recursion`) | S3 family module and compiler-forced arms |
-| `qsl-package` | `emit.rs` (`BodyNames::of` arms) | S4 arm |
-| `qsl-eval` | new `value/expression/sum_case.rs`; `value/expression/evaluate.rs` (the `Machine::apply` arms); `value/expression/mod.rs` (union argument admission) | S6a arms |
-| `quire-exact` | only as SC-Q1 rules: the union value shape, and the kernel arms the compiler forces in `value.rs`, `equality.rs` and `key.rs` | kernel value |
-| `xtask` | `seam_probe.rs` (locations and the closed-enum list) | evidence |
-| other QSL crates | only arms the compiler forces by the kernel or `NodeKind` change (for example `qsl-replay/src/execute.rs` and `spine/call.rs` value conversions), each a pass-through or explicit refusal arm with no semantic logic | compile-forced |
+| `qsl-cst` | `token.rs` (the `union` keyword); `grammar.rs` (`union-decl` and expression `case`); `cst.rs` (the `Production` inventory). The expression production takes a name distinct from the protocol `Production::Case` (`grammar.rs:1206`), because the two share only the `case` keyword. | S1 productions |
+| `qsl-forms` | new `sum_case.rs`; `dispatch.rs` (one kind, one entry, one table row); `syntax.rs` (the `Case`, `CaseForm`, `ArmForm`, `Union` and `UnionForm` variants and types); `value.rs` (its CST-to-`Expression` builder builds `Expression::Case`, as it builds `Expression::If`, and its exhaustive `Production` matches get forced arms); `lib.rs` (the module) | S2 family module and forms-core variants |
+| `qsl-semantics` | new `check/sum_case.rs`; `check/mod.rs` (the module and the family wiring); the new `check`-core call-target seam function and resolved-target enum (§16.2), in the `check` core module that hosts `Typer`'s dispatch; `check/assemble.rs` (the `Union` arm); `check/identity.rs` (the union `CheckedTypeNode` variant and its `to_kernel_value_type` arm); `check/check/typing.rs` (the `Case` arm, and the `Call` and `Name` arms per §16.2); `check/check.rs` (the scope member index, so the seam function can see union members); `check/ir.rs` (the `NodeKind` variants and children); `check/checked_dispatch.rs` (its FR-151 `Expression` rewrite gets a forced `Case` arm, which renames inside the scrutinee and the arm bodies but never renames an arm binder); `check/family.rs` (forced `Expression` walk arms only; `Application` is unchanged, §16.2); the forced `NodeKind` arms in `check/lowering.rs`, `check/lowering/*`, `check/claims.rs`, `check/facts.rs` and `check/observation.rs`; `check/refusal.rs` (the boxed `SumCaseCause` arm); `check/region.rs` (the locus arm); `check/node_key/mod.rs` and `value/member.rs` (wire vocabulary, with the §16.10 proposed spelling); `value/declaration.rs` (the union in the type environment, in `check_recursion`, and in the collection element rule of §16.4) | S3 family module, seam code and compile-forced arms |
+| `qsl-package` | `emit.rs` (`BodyNames::of` arms); any forced arm in `emit/*` | S4 arm |
+| `qsl-eval` | new `value/expression/sum_case.rs`; `value/expression/evaluate.rs` (the `Machine::apply` arms); `value/expression/mod.rs` (union argument admission, SC-R3) | S6a arms and admission |
+| `quire-exact` | only as SC-Q1 rules: the union value shape and its admission, equality and key arms (`value.rs`, `equality.rs`, `key.rs`; the key arm yields no key, §16.4) | kernel value |
+| `qsl-replay`, root crate | only compile-forced arms (part 2), for example value conversions in `qsl-replay/src/execute.rs` and `spine/call.rs` | compile-forced |
+| docs | `docs/family-migration-recipe.md` is amended by this PR (§16.6), not by #187 | none for #187 |
+
+If SC-Q1 is ruled (a) and unions join the record and tuple composites in the
+type environment, every exhaustive match over the composite shape gets a
+forced arm under part 2. Those matches are in `family/requirements.rs`,
+`check/lowering.rs`, `qsl-eval` `evaluate.rs` and `qsl-package`
+`emit/extent_agreement.rs`.
 
 **Excluded.** #187 changes no `StateModel`, `TemporalTrace`,
 `ProtocolClause` or `Relation` family module:
@@ -1680,13 +1763,18 @@ to the named cases.
 | Class | Cases | Stage | Oracle |
 | --- | --- | --- | --- |
 | Positive | a union with nullary and payload members; a recursive union that escapes (`union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }`, FR-143); construction of a nullary and of a payload member; `case` selecting each member of a two-member union; a nested `case` in an arm body; `case` inside a state clause body and inside a `decreases` measure, each under its clause kind (FR-065-AC-5 pattern) | S2 to S6a | the checked node, then `Completed` with the expected value |
-| Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order) | S3 | §16.5 rows, with payload and locus |
+| Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order); an `unknown-member` arm whose body is ill-typed, asserting only `unknown-member` (its body is not checked) | S3 | §16.5 rows, with payload and locus |
+| Refusal order | one `case` with an ill-typed body in a resolved arm and a missing arm, asserting only `ill_typed` at that body (typing first); a scrutinee that is not a union, followed by arms naming unknown members, asserting only the scrutinee's `ill_typed` (a scrutinee refusal ends the builder) | S3 | §16.5 "One refusal per `case`" |
 | Adverse, typing | a scrutinee of enum type and one of `Integer`; an arm body of the wrong type | S3 | `ill_typed`/`type-mismatch` |
 | Adverse, construction | FR-143's four construction refusals, one case each | S3 | `ill_typed`/`type-mismatch` at the construction |
-| Adverse, recursion | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses. The same union with `Option<L>` is admitted (AD-015 decision row). | S3 | the existing recursion code |
+| Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `invalid_semantic_graph` | S3 | §16.5 declaration rows |
+| Adverse, parse | a `case` whose scrutinee is an unparenthesized record value is not parsed as a scrutinee; the parenthesized form parses (shared-grammar.md `case` rule) | S1 | parse diagnostic, and the admitted form |
+| Adverse, collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union refuse `ill_typed`/`operator-ineligible`; `Sequence<U>` is admitted (§16.4, until SC-G5) | S3 | §16.4 collection row |
+| Limits | a `case` nested past the checking depth bound returns `StageFailure::Limit` with its limit kind, and the same depth minus one is admitted (FR-062-AC-7 pattern) | S3 | §16.5 limit row |
+| Adverse, admission | one supplied union argument for each SC-R3 refusal case: a foreign union key, a non-member `VariantId`, a wrong payload count, and a payload of the wrong type; and a union payload holding a dangling reference, refused by the reference walk | argument admission | `invalid_runtime_input`/`wrong-value-kind` before any charge |
 | Builder | out-of-order clause submission refuses with a clause-order refusal, and in-order submission admits (recipe item 2); diagnostic order by builder state, then source position | S3 | §4.2 |
 | Evaluation | `case` on each member with payload binding (FR-146-AC-11); a scrutinee that evaluates `Undefined` propagates `Undefined`; an injected invariant break yields `InternalFault` (§16.4 S6a row), not a refusal | S6a | O-16 categories |
-| Identity | SC-R2, SC-R4 and SC-R5 in process; SC-R1 and SC-R3 once SC-G1 and SC-G2 land | S3, S4, E9 | §16.3 |
+| Identity | SC-R2 (including the `case` node id under arm reordering), SC-R4, SC-R5 and SC-R3's admission half in process; SC-R1 and SC-R3's wire half once SC-G1 and SC-G2 land and the pinned IR decodes them | S3, S4, E9 | §16.3 |
 | Seam probe | `xtask seam-probe` passes with the §16.6 additions | build | FR-063 |
 | Wire totality | every new `NodeKind` variant has a lowering and emitter arm; every `SumCaseCause` variant has a catalog code with no `_` arm (recipe item 4) | S3, S4 | C-03, C-15 |
 | QSpec cases | the cases of QSpec TC-262 (construction and equality), TC-263 (recursion), TC-264 (exhaustiveness obligations) and TC-265 (evaluation). Where QSpec publishes vectors for them, they run over `QSPEC_DIR` like the existing conformance targets (`Makefile:120-181`). Otherwise they are QSL tests citing those TCs. | S3, S6a | QSpec |
@@ -1708,24 +1796,31 @@ disposition: none"; ADR-013 R-08 and §5).
 - **The v2 wire.** QSpec revises the v2 node-kind set in place while v2 is
   prerelease, with no version bump (ADR-013 O-14, QC-19; §12.1 QSpec wire
   row). A reader built before the union spelling refuses a union node as an
-  unknown node kind, with QSpec's named code. That refusal is the whole
+  unknown node kind, with a named code. That rule is the owner ruling recorded
+  in §9 (the v2 reader row) and in §12.1's QSpec wire row; QSpec itself has no
+  unknown-node-kind code yet (ADR-013 QC-19). That refusal is the whole
   treatment.
 - **Editions.** Unions and `case` are `1-draft` forms (`qsl_cst::EDITION`,
   `qsl-cst/src/lib.rs:38`). The `0-draft` native lane gets nothing; it
   retires under M-6c. There is no per-feature edition gate.
-- **Profiles.** AD-015 extends AD-005's complete value system inside the same
-  record, tuple and union composite family. A union is therefore admitted
-  under the value-profile selections that admit records and tuples today.
-  There is no new profile identity and no profile version.
+- **Profiles.** This bullet is QSL's inference, not a QSpec statement. AD-015
+  extends AD-005's complete value system inside the same record, tuple and
+  union composite family, so QSL admits a union under the value-profile
+  selections that admit records and tuples today. No QSpec profile names
+  `union` explicitly (SC-G7). There is no new profile identity and no profile
+  version.
 - **Catalog.** `unproved-exhaustiveness` is in revision `1-draft.4`, which is
   earlier than the revision QSL claims (`1-draft.8`). No catalog re-pin is
   needed.
 
 ### 16.10 Gaps outside #187
 
-These gaps block parts of #187 named in §16.3 and §16.4. None needs a new
-QSL owner or a bypass. Each belongs to QSpec, which owns the wire (ADR-013
-R-02), and each is filed there. None is decided here.
+SC-G1 to SC-G5 block the parts of #187 named in §16.3 and §16.4. SC-G6 and
+SC-G7 block nothing: QSL states its reading of each. None needs a new
+QSL owner or a bypass. Each belongs to QSpec, which owns the wire and the
+language text (ADR-013 R-02). None is decided here. None is filed in QSpec
+yet. #187 files SC-G1 to SC-G3 as its spelling proposal (below). Remaining
+work: a QSpec ticket for SC-G4 to SC-G7, which the team lead opens.
 
 | ID | Gap | Blocks |
 | --- | --- | --- |
@@ -1733,7 +1828,9 @@ R-02), and each is filed there. None is decided here.
 | SC-G2 | The v2 `OperationMember` union has no union-member kind. It has only `field`, `position`, `element`, `relationship_end`, `operation`, `type_argument`, `profile_operator` and `state_clause`. v2 literals and FR-323 typed values have no union `value_kind`. | the O-06 union member on the wire, C-18 for unions, SC-R3 |
 | SC-G3 | No preimage for a union member's `VariantId`. FR-143 makes member identity the declared pair (union node key, member identifier). QC-15 and O-14 make the kernel carrier a `VariantId`. FR-141 defines a preimage for enum members only (`quire.enum-member-node/v1`). | the kernel carrier of member identity (SC-R4) |
 | SC-G4 | `value-accounting.md` has no charge point for union construction (its "composite construction" row names record fields and tuple arguments) and none for `case` selection. | the exact S6a meter charges for construction and `case` |
-| SC-G5 | FR-144's canonical-key table has no union row, although FR-143 gives unions `=` and FR-144-AC-6 requires a key for every type with `=`. | union values as set, bag or ordered-set elements, and union map keys. #187's other exit cases do not depend on it. |
+| SC-G5 | FR-144's canonical-key table has no union row, although FR-143 gives unions `=` and FR-144-AC-6 requires a key for every type with `=`. | union values as set, bag or ordered-set elements, which #187 refuses at S3 until the key exists (§16.4). #187's other exit cases do not depend on it. |
+| SC-G6 | FR-146 checks arm bodies against "the `case` expression's declared result type", but the grammar has no annotation that declares it. | nothing in #187: QSL applies the `if` rule (§16.5). QSpec may define another rule; if it differs, #187's rule changes with it. |
+| SC-G7 | No QSpec value-profile definition names `union` among the forms it admits. | nothing in #187: QSL admits unions wherever records and tuples are admitted (§16.9). |
 
 Node ids are minted at S3 lowering over the node's (tag, form) spelling
 (FR-093), so SC-G1 to SC-G3 are needed before any union node has an id. They
@@ -1760,7 +1857,21 @@ treatment (§16.9).
 
 | ID | Question | Options | Recommendation |
 | --- | --- | --- | --- |
-| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the active member's `VariantId` and the payload values. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a). It admits FR-143-AC-13 and reuses the record precedent. It changes no `ValueType` variant, so RT and CG get compile-forced arms for the new `Value` variant only. It reopens one O-14 cell ("The kernel `ValueType` gains one sum shape"), which ADR-013's Status allows a #210-line decision to do. The ruling belongs to the ADR-013 owner. |
+| SC-Q1 | How does the union type reach the kernel? ADR-013 O-14 says "the kernel `ValueType` gains one sum shape whose variants are opaque `VariantId` digests". The kernel implemented that sum shape as the enum-only `EnumShape` (`quire-exact/src/value.rs:87`). QSpec accepted AD-015 after ADR-013, and FR-143-AC-13 admits recursive unions (`Tree`). An inline shape that holds each member's payload `ValueType`s cannot represent a recursive union. The kernel already solves this for records and tuples: `ValueType::Composite(NodeKey)` (`value.rs:175-206`) with `Value::Composite(CompositeValue { declaration: NodeKey, slots })` (`value.rs:767`). | (a) The union type is `ValueType::Composite(union node key)`, and its member list lives in the layer-3 type environment, as for records. `Value` gains one union variant carrying the union node key, the active member's `VariantId` and the payload values. The key lets admission check SC-R3's foreign-union case, as `CompositeValue.declaration` does for records. (b) An inline sum shape per O-14, with union recursion refused until the kernel gains named-type indirection. That contradicts FR-143-AC-13. | (a). It admits FR-143-AC-13 and reuses the record precedent. It changes no `ValueType` variant, so RT and CG get compile-forced arms for the new `Value` variant only. It reopens one O-14 cell ("The kernel `ValueType` gains one sum shape"), ADR-013's Status lets a #209, #210, #222 or #229 decision reopen a cell. #221 is not in that list, so whether this #210-line mapping may reopen the cell is the ADR-013 owner's call, as is the ruling itself. |
+
+
+These parts of §16 depend on SC-Q1's answer. Each is written for option (a)
+and changes with the ruling:
+
+- SC-R3's foreign-union admission check, which needs the union node key in
+  the value;
+- the §16.4 S6a row's argument admission and the §16.7 `quire-exact` row;
+- whether unions join the type environment's composites, which decides the
+  shared `check_recursion` graph (§16.4) and the extra forced composite-shape
+  arms (§16.7);
+- the kernel key arm of §16.4's collection row.
+
+Nothing else in §16 depends on it.
 
 ## Consequences
 

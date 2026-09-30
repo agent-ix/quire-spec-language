@@ -49,15 +49,25 @@ FR-066-AC-2's three categories, per family:
 
 1. **The v2 emitter**: the family's checked-node variant's conversion into
    `quire.checked-package/v2` bytes (ADR-013 O-17).
-2. **The evaluator**: the family's `evaluate` hook (`ReferenceEvaluation`),
-   converting a checked node plus its typing-context `Env` into the
-   family's `Observed` outcome, or the family's `Refused` reason. In the
-   same change, reach it from S6a: add the family's `S6aFamilyKind` variant
-   to the `s6a_family_kinds!` list in `qsl-eval/src/value/expression/s6a.rs` (which also puts
-   it in `S6aFamilyKind::ALL`), its `S6aFamilyKind::family` arm, its
-   `evaluate_declaration` arm in `qsl-eval/src/value/expression/mod.rs`, and its arm
-   in TC-385's `s6a_family_name` match. `Relation` has no evaluator: S6a's
-   input type has no `Relation` variant (ADR-012 §2, FR-090-AC-4).
+2. **The evaluator.** A family whose declarations S6a calls or selects
+   implements the `evaluate` hook (`ReferenceEvaluation`). The hook converts
+   a checked node plus its typing-context `Env` into the family's `Observed`
+   outcome, or into the family's `Refused` reason. In the same change, reach
+   it from S6a:
+   - add the family's `S6aFamilyKind` variant to the `s6a_family_kinds!`
+     list in `qsl-eval/src/value/expression/s6a/mod.rs`, which also puts it
+     in `S6aFamilyKind::ALL`;
+   - add its `S6aFamilyKind::family` arm;
+   - add its `evaluate_declaration` arm in
+     `qsl-eval/src/value/expression/mod.rs`;
+   - add its arm in TC-385's `s6a_family_name` match.
+
+   Two families have no evaluator hook. `Relation` has none because S6a's
+   input type has no `Relation` variant (ADR-012 §2, FR-090-AC-4). `SumCase`
+   has none because its `case` and construction nodes evaluate inside the
+   enclosing declaration's evaluation. Its evaluator conversion is one
+   `Machine::apply` arm per checked-node variant, each making one call into
+   `value::expression::sum_case` (ADR-012 §16.6).
 3. **Requirement derivation**: the family's pure `requirements()` function
    from a checked node to one `Self::Claim` per claim site it carries, and
    none for a form with no FR-057 kind (FR-062-AC-4);
