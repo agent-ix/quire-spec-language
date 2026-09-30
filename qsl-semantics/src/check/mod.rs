@@ -188,9 +188,8 @@ pub use type_form::TypeFormFault;
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use identity::{
-    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, Frame, FrameSubjects,
-    InvalidSumVariants, ModelCorrespondence, ResolvedFrameSubjects, ScalarShape, SumVariant,
-    SumVariants,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, InvalidSumVariants,
+    ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
