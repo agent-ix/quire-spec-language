@@ -4908,27 +4908,9 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
 
 /// TC-463 step 1 (FR-105-AC-3): the emitted package reads back through
 /// QSL's I2 reader (`read_import_view`), including its frame step, with its
-/// recomputed `package_id` equal to the emitted one.
-///
-/// **Still blocked, a different gap than the one QSL-307 was filed against**:
-/// the pin bump to `2a28643` (IR-89) does absorb STD-111's `state_clause`
-/// member of the closed `ApplicationOperator` vocabulary -- the read no
-/// longer refuses `invalid_semantic_graph` at the `state_clause` node's
-/// `body` for that reason. But `ParentOrder`'s cycle-safety predicate lowers
-/// to a `reaches` (`quire.op.model.reaches_field`) application, and IR's own
-/// `checked_package/v2/operations.rs::check_operands` refuses every
-/// `reaches` application outright: its `OperationConstraintKind::
-/// ReferenceEdge` arm is `return ineligible(indices.first().copied())`, with
-/// the comment "The reference edge a `reaches_field` application requires is
-/// not decided by this reader, so an operation constrained by it is refused
-/// rather than admitted unchecked." This is IR's own, currently
-/// unconditional refusal of the operator (`ill_typed`/`operator-ineligible`
-/// at the `reaches` node's own `body.arguments[0]`, confirmed by running
-/// this test against `2a28643`), in a separate pinned dependency this ticket
-/// does not own. This is tracked as IR-370. Remove this `#[ignore]` once IR
-/// implements the `reference_edge` check (no QSL-side workaround exists: the
-/// wire shape is already correct, IR just refuses any use of the operator).
-#[ignore = "blocked on IR-370: quire-contract-model implementing the reaches_field reference_edge check (see doc comment); not the STD-111 gap QSL-307 was filed against"]
+/// recomputed `package_id` equal to the emitted one. `ParentOrder`'s
+/// cycle-safety predicate lowers to a `quire.op.model.reaches_field`
+/// application, so the read also checks that application's reference edge.
 #[trace("TC-463", "FR-105-AC-3")]
 #[test]
 fn s4_state_package_reads_back_through_i2() {
