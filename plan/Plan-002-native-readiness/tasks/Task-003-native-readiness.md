@@ -40,7 +40,7 @@ relationships:
 
 ## Scope
 
-Implemented reviewed a10ec80 CLI/formatter/error refinements, API documentation and canonical tracing of existing/new native tests. FR-010's compatibility amendment was specified at 5d0c9de and reviewed across all eight analyses at 03dfc72 before replacing the failed derive attempt. No model linker/evaluator changes.
+Implemented reviewed CLI/formatter/error refinements, API documentation and canonical tracing of existing/new native tests. FR-010's compatibility amendment was specified and reviewed across all eight analyses before replacing the failed derive attempt. No model linker/evaluator changes.
 
 ## Subtasks
 

@@ -10,7 +10,7 @@ review_set: all
 
 The previous quoin advise attempt failed while detecting installed Quire, yielding no recommendations. From the installed catalog, author judgment selects integration-testing (Test): actual native compilation, both pinned IR readers, explicit expected operator/type/source assertions, exact limit controls and command/backend refusal. Runnable integer files produce true/false natively and identical IR bytes. Numeric backend execution and independent assurance remain unclaimed.
 
-Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 The focused correction suite passes 60 tests: actual integer/native/command

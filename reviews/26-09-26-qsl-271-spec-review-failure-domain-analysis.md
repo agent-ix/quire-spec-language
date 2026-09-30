@@ -41,7 +41,7 @@ Verdict: changes requested (two medium, one low).
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Spellings and a catalog map are now stated: kernel refusals map to `invalid_runtime_input`/20 with a kebab `cause`, and kernel undefined reasons are kebab spellings (FR-100:109-139). The table is incomplete and conflicts with `Refusal::code()`; see new FND-004. |
 | FND-002 | fixed | `function` is now segments separated by `.` with an identifier rule (FR-100:56-59). The empty string, an empty segment, a non-identifier and a multi-segment name each refuse `missing_declaration` at `call` with `details` `{"function"}`. AC-5 and TC-451 step 5 test `""`, `seven.`, `7x` and `module.seven`. |

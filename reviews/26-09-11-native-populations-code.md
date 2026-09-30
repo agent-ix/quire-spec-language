@@ -56,8 +56,7 @@ in the delivered artifact.
   reaches the population validator rather than failing earlier. Non-tautological:
   root ran this exact final vector against the pre-correction reader and it
   failed with `expected Invalid(Binding), admission succeeded` at
-  `tests/native_population_emission.rs:472`
-  (`/tmp/quire-native-populations-surplus-red.log`). Earlier intermediate red
+  `tests/native_population_emission.rs:472`. Earlier intermediate red
   vectors had an ordering defect and are not treated as evidence.
 - **FND-003 (low, raw indexing) — resolved at all three cited sites.**
   `native/runtime.rs:602` and `models/populations.rs:221-222` are now
@@ -116,18 +115,15 @@ re-run for ceremony, and no new reproduction was needed: FND-002 is settled by
 reading two call sites, FND-005 by reading the assertion helper, FND-006 by
 inspection.
 
-- `cargo fmt` — `/tmp/quire-native-populations-corrections-fmt.log`, empty.
-- Clippy, all targets, `--no-default-features` and `--all-features` —
-  `-corrections-clippy-minimal.log`, `-corrections-clippy-all.log`; both contain
-  only `Checking`/`Finished`, no diagnostics.
-- Focused — `-corrections-focused.log`: `native_population_emission` 5/5,
+- `cargo fmt` — empty.
+- Clippy, all targets, `--no-default-features` and `--all-features` — both
+  contain only `Checking`/`Finished`, no diagnostics.
+- Focused — `native_population_emission` 5/5,
   `native_protocol_emission` 15/15, `protocol_artifact` 24/24,
   `protocol_number` 9/9.
-- Full — `-corrections-test-minimal.log` 533 passed and
-  `-corrections-test-all.log` 549 passed; 52 suites each including 5 doctests,
+- Full — 533 passed minimal and 549 passed all-features; 52 suites each including 5 doctests,
   0 failed, 4 inherited `#[ignore]`d.
-- `quire validate ... spec` — `-corrections-spec.log`, 398/398 docs
+- `quire validate ... spec` — 398/398 docs
   grammar-clean, 0 grammar findings.
-- Red evidence — `/tmp/quire-native-populations-surplus-red.log`, the final
-  surplus vector failing on the pre-correction reader.
+- Red evidence — the final surplus vector failing on the pre-correction reader.
 - No `deny.toml` exists, so `cargo deny` does not apply.

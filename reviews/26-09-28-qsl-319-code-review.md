@@ -97,7 +97,7 @@ Reviewed at the fix commit.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | all four spots now say `expression` and cite QSpec FR-341-AC-10 (FR-093 binder bullet and AC-9, TC-416 step 4, ADR-013 QC-24). No residual `anchor` occurrence wording for parameter nodes remains in FR-092, FR-093 or TC-416. The remaining `anchor` occurrences in FR-105/FR-114 belong to `operation_anchor` nodes, which is correct. |
 | FND-002 | fixed | FR-093 now says ordinals follow insertion order, which matches `OccurrenceMap::record` (family.rs:1220-1235: ordinal = length of the (identity, role) vec before push). The extra "always ordinal 0" sentence added with it is wrong for shared parameter nodes. That is recorded separately as FND-003. |

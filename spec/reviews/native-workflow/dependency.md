@@ -10,7 +10,7 @@ review_set: all
 
 FR-004 and FR-019 are implemented prerequisites exercised by the mapped API. C's Quire producer adoption under FR-011/IT-003 is a later integration dependency, not a prerequisite for this compiler API. Boolean backend activation qualification is deferred assurance under the owner's POC direction.
 
-PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
+PR-readiness review of implementation baseline; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

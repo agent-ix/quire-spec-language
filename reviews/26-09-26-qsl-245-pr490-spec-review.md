@@ -49,7 +49,7 @@ On the interim state for `sum-out-of-domain`: it is not described honestly, but 
 
 Round 1, re-checked after the fix.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-096 Behavior and Status both say FR-100's kernel undefined-reason table owns the `sum-out-of-domain` spelling (FR-100-AC-10) |
 | FND-002 | fixed | FR-093-AC-17 reads `1-draft.8` |

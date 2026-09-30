@@ -45,7 +45,7 @@ against their own decision text.
 
 Disposition pass.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-162 step 3/6/7 procedure and expected results rewritten to the current tests. |
 | FND-002 | fixed | FR-064 Status is 'Partial' and names the unbuilt string-value clause with known instances. |

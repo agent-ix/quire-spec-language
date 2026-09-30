@@ -39,8 +39,8 @@ Today QSL emits no `state` node. `NodeTag::State` appears only in the tag map
 (`qsl-package/src/emit.rs:254`) and the declaration-absent rule
 (`emit.rs:388-396`); `CheckedClauseKind::StateTransition` is identity
 vocabulary with no emitter (`qsl-semantics/src/check/identity.rs:150-195`).
-The pinned IR vocabulary already decodes all five `StateForm`s
-(`quire-contract-model` 48ab5dc, `checked_package/v2/vocabulary.rs:238-246`).
+The IR vocabulary already decodes all five `StateForm`s
+(`quire-contract-model`, `checked_package/v2/vocabulary.rs:238-246`).
 
 The wire spellings of these bodies, the (object type, member name) frame
 entry, `quire.op.model.reaches_field` and `quire.op.state.clause` are QSpec
@@ -149,7 +149,7 @@ source map (FR-095).
   application; a frame carries no clause application). Only this FR's
   emission criteria and FR-108's reading of the emitted package wait on it;
   FR-102 to FR-104 and FR-106 to FR-109 read the in-process `CheckedPackage`.
-- IR `lower` returns no form for any `state` node at 48ab5dc, so these nodes
+- IR `lower` returns no form for any `state` node, so these nodes
   reach no backend. That is IR's own work (ADR-012 §8, §15.7).
 
 ## Status

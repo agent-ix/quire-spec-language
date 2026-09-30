@@ -10,7 +10,7 @@ review_set: all
 
 FR-009 complete projection/binding and FR-029 standalone export precede FR-033 (feature). Existing FR-016/017/019 checked types and packages are implemented prerequisites, so this order is acyclic. Both current pinned IR readers accept the new artifacts. C's numeric codegen implementation is needed for generated numeric execution; the compiler-owned IR delivery can proceed independently. Task-020 activation assurance is separately retained.
 
-Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 ## Findings

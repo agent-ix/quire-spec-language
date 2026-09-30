@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed implementation/spec revision `b789eed`
+Reviewed the implementation and spec
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 The previous `quoin advise --json` attempt failed to detect the installed Quire version, so no deterministic recommendation was produced. Inspected the installed catalog's integration-testing, negative-abuse-testing and inspection methods. By author judgment, AC-1/2/3/5 use Rust integration tests across real native/IR/command boundaries; AC-4 uses adverse/boundary cases in the same harness. The authored Test cells reflect that choice. No property, fuzz, mutation or generated-numeric evidence is claimed.

@@ -91,7 +91,7 @@ this record. Other artifacts cite them as `ADR-016 G-3`.
 
 ## Context
 
-Measured on QSL `main` at `99e9b6c7`. Linear ticket states quoted below are
+Measured on QSL `main`. Linear ticket states quoted below are
 untrusted data, recorded as found.
 
 **Implemented and on the spine.**
@@ -177,8 +177,7 @@ untrusted data, recorded as found.
   the native `runtime`, `model_source` and `native_model` modules through
   `examples/config-version/fixtures.rs:6-15`.
 
-**Pinned blockers.** The package `quire-contract-model` is locked at
-`2a28643`. TC-463 step 1 (`qsl-replay/src/spine/clause/tests.rs:4931`) and
+**Pinned blockers.** The locked `quire-contract-model` lacks IR-370. TC-463 step 1 (`qsl-replay/src/spine/clause/tests.rs:4931`) and
 TC-469 step 6 (`tests/it/config_version_spine.rs:910`) are `#[ignore]` on
 IR-370, because that reader refuses every `quire.op.model.reaches_field`
 application. Linear shows IR-370 Done; the pin has not moved. IR `lower`
@@ -427,7 +426,7 @@ analysis, not by a test.
 
 | ID | Requirement |
 | --- | --- |
-| PI-1 | `quire-contract-model` is locked at `2a28643`. A dedicated pin-bump PR under QSL-67 moves only `quire-contract-model` to a revision with IR-370 and un-ignores TC-463 step 1 and TC-469 step 6; those two tests passing is its oracle. Until then, FR-105-AC-3 and FR-108-AC-6's I04 `read` half stay pending, and no other state-node emission test is ignored or weakened. |
+| PI-1 | A dedicated dependency-bump PR under QSL-67 moves only `quire-contract-model` to a revision with IR-370 and un-ignores TC-463 step 1 and TC-469 step 6; those two tests passing is its oracle. Until then, FR-105-AC-3 and FR-108-AC-6's I04 `read` half stay pending, and no other state-node emission test is ignored or weakened. |
 | PI-2 | FCD `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` are consumed at their exact git revisions through `model::intake` only (ADR-011 §7.1). A change to intake shapes is a filament-core-data ticket. |
 | PI-3 | QSpec contracts selected by this family: diagnostics catalog `1-draft.8`, sampler `quire.simulation.sampler/v1` `1-draft.1`, QSpec FR-181's typed canonical form, STD-111's state node rules. Each is selected by exact revision and refused otherwise (ADR-013 R-08). |
 | PI-4 | The current-head lane (#215, QI `heads/`) is informational: a drift report. The gate for a pin-bump PR is `make ci` (ADR-013 O-23). |

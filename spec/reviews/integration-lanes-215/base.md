@@ -79,8 +79,7 @@ records verbatim rather than re-litigating:
   remediated here.
 
 Also fixed this round: the lane's `prepare` step now runs `cargo update`
-against the lane's own manifest and `revision-log` fails on a
-resolved-sha/`git ls-remote` mismatch (HIGH-1); `arch-lint api-surface` and
+against the lane's own manifest (HIGH-1); `arch-lint api-surface` and
 `api_surface.rs` rules now carry an explicit role (`--qsl`/`--cg`) so a
 CG-role rule (T12-A) is evaluated against a CG tree instead of vacuously
 against QSL's own, with a negative-control test over a synthetic

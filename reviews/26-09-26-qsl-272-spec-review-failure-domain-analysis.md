@@ -36,7 +36,7 @@ What holds:
 
 Disposition pass. I re-checked each outcome against the spec. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `sample_request` compares identity and version with `quire.simulation.sampler/v1` / `1-draft.1` first, and refuses any other with `NotSimulated::GeneratorMismatch` before any draw. AC-10 and TC-454 step 8 cover this with sampler/v2 and `1-draft.2` on a system that records calls. QSL pins no raw-byte digest, and FR-101 says so; I accept that, since my fix made the digest conditional on QSL pinning one. |
 | FND-002 | fixed | FR-101 now defines `s` as the 0-based transition index, advancing whether or not a digest was computed. AC-3 and TC-454 step 3 carry the mixed-n vector, index 4 at step 2, which I recomputed. |

@@ -134,7 +134,7 @@ Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent
 
 Second disposition pass. This updates FND-002 only. FND-001, FND-003 and FND-004 stay fixed, as recorded in the earlier SR-708 dispositions comment.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-002 | fixed | This supersedes the earlier still-open outcome. A `pub type` alias gap remains and is a low finding in SR-721 FND-001. |
 

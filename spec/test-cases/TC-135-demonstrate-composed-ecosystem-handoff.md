@@ -24,7 +24,7 @@ without making A's local evidence claim B/F semantics.
    split shipments, retry, refund, compensation and a temporal deadline. Select
    the admitted domain package by identity and `sha256-jcs` digest and merged L5
    PR #70's
-   FR-043/044/045 Rust-interface baseline at `72507f8`. Require the reviewed
+   FR-043/044/045 Rust-interface baseline. Require the reviewed
    `quire.compiled-protocol/2` extension carrying every selected temporal
    definition identity/revision/raw-byte digest/artifact and exactly one tagged
    clock configuration; do not pass the timed subject through `/1`.

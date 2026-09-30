@@ -54,9 +54,7 @@ Before the fixes, terminal full local gates passed 580 minimal/596 all-feature
 tests plus five doctests each, with four inherited ignored tests each. Both
 strict Clippy lanes, formatting, minimal bins/examples, warnings-denied rustdoc,
 both audits, the actual stripped producer and 435-document validation passed.
-Evidence: `/tmp/quire-boolean-final-gates.log`.
-Focused final fix gates passed in `/tmp/quire-boolean-review-fixes.log` (terminal
-exit zero): eleven choice tests, fifteen protocol tests, formatting and both
+Focused final fix gates passed (terminal exit zero): eleven choice tests, fifteen protocol tests, formatting and both
 strict Clippy configurations. The full baseline suites were not rerun for this
 defensive invariant guard, added tests and documentation-only fix set.
 Strict gap FAIL and broader B/related-instance acceptance remain separate.

@@ -10,7 +10,7 @@ review_set: all
 
 quoin advise --json remains unavailable because CLI-version detection fails. Author judgment from the installed method catalog selects integration/contract testing for AC-1 and negative-abuse testing for AC-2/3. Actual command bytes pass both pinned IR readers and complete backend generation. The tests inspect generated Rust/source maps but do not claim new generated execution or activation assurance.
 
-Author PR-readiness review of `d1fcf16`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

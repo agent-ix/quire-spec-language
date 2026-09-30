@@ -64,7 +64,7 @@ these can be fixed inside this PR. Code defects are in SR-736.
 
 Round 2, checked on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The test now asserts `Attribute` nodes of `Integer` and `Option<Reference<ConfigVersion>>`, a `Pre` over an `Attribute`, `NoCycle`'s `Reaches` node, and all-`current` reads (state_clauses.rs:163-219). Still open, low: the FR-104-AC-1 row (FR-104:221) has no "Unverified: `Int[0, 1000]` pending QSL-289" note like FR-103-AC-1's, and spec/tests.md:241 marks TC-459 "Passed locally" without qualification. |
 | FND-002 | still-open | `one_requirement_record_per_clause_and_frame` is unchanged (state_clauses.rs:598-621). It checks the count and capability kind only. The new tests check only `to_wire()` "unbounded"/"bounded". Nothing asserts exactly one domain, kind `Population`, `DomainKey{ConfigVersion node, [config_history ordinal]}`, or that the clause and frame records are keyed by the `claim` and frame occurrences. Step 5 does not assert the names `archive`/`config_history` or the `on` span. |
@@ -88,7 +88,7 @@ Two of the coder's claims were checked against the round-2 tree:
 
 The round-2 dispositions stand as written.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The FR-104-AC-1 row now has an "Unverified ... QSL-289" note (FR-104:229). The TC-459 row at tests.md:241 says "AC-1's `Int[0, 1000]` half unverified, QSL-289". |
 | FND-002 | fixed | Step 1 asserts, for each record, `Unbounded` with exactly one domain of kind `Population` and finite kind `Cardinality`, one `DomainKey` equal across all four records, and occurrence roles of 3 `claim` and 1 `generated` (state_clauses.rs:626-686). Step 5 asserts `AmbiguousPopulation{context: "Config::ConfigVersion", populations: [archive, config_history]}` in order, with a span that slices to `Config::ConfigVersion` (state_clauses.rs:769-803). |
@@ -98,6 +98,6 @@ The round-2 dispositions stand as written.
 
 Checked on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-004 | fixed | The round-3 leftovers are closed. Rows 4 and 9 assert exact `Location`s: `StateClause{ParentOrder, 0/1}`, and `Body{ParentOrder, 0}` plus `StateClause{ParentOrder, 0}`, each with an empty path (state_clauses.rs:468-525). Row 2 asserts `UnresolvedOperation{Config::ConfigVersion, missing}` with a span that slices to `missing` (:539-560). Row 10 asserts `Body{r, 0}` with an empty path (:664-684). Every TC-460 row now has an exact locus. |

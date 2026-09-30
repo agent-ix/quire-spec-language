@@ -40,7 +40,7 @@ Checked and clean:
 
 <!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-747 pr=quire-spec-language#492 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | still-open (narrowed) | The rewording fixes the contradiction for `Typer` and lowering. It keeps it for the declaration input-bytes ceiling, through a new table row whose producer does not exist in code |
 | FND-002 | fixed | new locus row for lowering's own work charge (node-located), plus FR-096-AC-16 |

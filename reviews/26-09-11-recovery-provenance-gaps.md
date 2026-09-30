@@ -51,8 +51,7 @@ delivery signal the increment is clean at medium, and the FAIL is corpus debt.
 `totals`: backed 367, total 376, criteria 258, property-shaped 83,
 specific-shaped 13. `status_lies` 0. `binding_census`: 572 Rust candidates, 572
 tagged, 572 bound, 62 self-named and bound. Two of the six unbacked rows are in
-the module's `no_source_symbol` vocabulary. Raw report retained at
-`/tmp/quire-recovery-provenance-review-coverage.json`.
+the module's `no_source_symbol` vocabulary.
 
 ### FND-002 — the one new obligation with no evidence
 

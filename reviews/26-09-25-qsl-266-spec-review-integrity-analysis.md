@@ -60,7 +60,7 @@ What conflicts:
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-075 now has the driver hand CG "each routed item's request index, occurrence key, node and result bound, with the package's requirement records keyed by occurrence key (ADR-011 E7)". The ADR-011 E7 row now lists the result bound and the path condition. The ADR-013 obligation identity now uses the application's own occurrence key, so the `g(x + 1)` and `h(x + 1)` records are two obligations. Records and items carry the result bound, and RR-16 pins [0, 10] and [0, 20] (FR-075:142-152, ADR-011:260, ADR-013:277, FR-062:260-262). |
 | FND-002 | fixed | "Wraps" is now used in FR-057, FR-062 and ADR-014. A narrow over anything other than a scalar operation application gives no claim, and `check`'s `Coerce` range obligation discharges it. RR-10 and RR-11 pin this (FR-057:171-172, FR-062:213-216, 234-237, ADR-014:250-257). |
@@ -75,7 +75,7 @@ New in this pass: FND-007 (medium), FND-008 (medium) and FND-009 (low), recorded
 
 Second disposition pass. It covers the findings the first pass left open. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-007 | fixed | The agreement is now limited per the leader's ruling. QSL's record is the authority for the extent, and IR's per-node predicate must agree only for records "whose roots are all reachable from the application node through its operands". A record rooted through a `let`'s bound value or read only by a guard is outside the agreement and uses the record's extent. ADR-014 "IR's predicate" and FR-097-AC-6 say the same. FR-097-AC-6 and TC-440 step 4 name both excluded shapes: RR-7's `*` is asserted `Bounded`, and `k`'s `+` is asserted `Unbounded` at `n`, with IR's predicate not compared for them (ADR-014:286-296, FR-097:74, TC-440 step 4). |
 | FND-008 | fixed | Settled per the leader's ruling. The follow-up is a new FR-331 request written by a fresh `RequestWriter`, whose single item has index 0 and carries the original item's occurrence key. The driver joins the follow-up's settlement to the original record by occurrence key. This matches ADR-014 §4 ("submitting a new request", "its own `request_index`"). FR-075-AC-8 and TC-449 step 2 now expect index 0 and the occurrence key (FR-075:145-152, 243; TC-449 steps 2 and expected 2). How that key enters the item is the new FND-010. |
@@ -87,7 +87,7 @@ New in this pass: FND-010 (low), recorded in `## Findings` above. It has no outc
 
 Third disposition pass. It covers FND-010 only, re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-010 | fixed | Both parts are addressed. (1) Where the key enters: `RequestWriter::bounded_item` SHALL take the originating occurrence key as a parameter, with the design-level signature `bounded_item(occurrence: OccurrenceKey, node: WireNodeId, requirements: &Requirements, bounds: BTreeMap<DomainKey, FiniteBound>) -> Result<RequestIndex, BoundRefusal>`, and the written item SHALL carry that key (FR-075:148-153). (2) Multiple follow-ups: the driver writes at most one bounded follow-up per record, so each record has at most one follow-up settlement, joined by occurrence key. Writing several bounded items with different bounds stays a capability of the writer (FR-097-AC-3, unchanged); the driver uses one (FR-075:153-158). FR-075-AC-8 and TC-449 step 2 now pass the key to `bounded_item` and assert that the follow-up request holds exactly one item for it. Per the leader's ruling, the driver-level rule is tested in quire-driver when QSL-1 drops `RequestedItem`. That trace is not written into AC-8; see the new FND-011. |
 
@@ -97,7 +97,7 @@ New in this pass: FND-011 (low), recorded in `## Findings` above. It has no outc
 
 Fourth disposition pass. It covers FND-011 only, re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-011 | fixed | The driver clause is gone from FR-075-AC-8. The AC now asserts only what TC-449 observes: "the follow-up request holds exactly one item for that occurrence key" (FR-075:250). The driver rule now lives in FR-075's driver prose, "the driver uses one and writes no second follow-up for a record. That driver rule is tested in agent-ix/quire-driver (QSL-1)" (FR-075:157-159). QSL-1 is the Linear ticket for the orchestrating driver crate, and it is in the Coding state. AC-8's Verification (TC-449) now matches what TC-449 step 2 asserts. |
 

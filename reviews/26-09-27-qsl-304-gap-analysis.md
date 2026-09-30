@@ -62,6 +62,6 @@ is stale code comments, fixed with SR-765.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | the stale code-comment deferrals are removed (SR-765 FND-001/FND-002), so code and spec now agree |

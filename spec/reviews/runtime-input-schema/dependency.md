@@ -3,7 +3,7 @@ id: SR-279
 title: "Dependency review of the runtime input schema"
 type: SpecReview
 analysis: dependency
-scope: "Task-036 prerequisites at f4679ef"
+scope: "Task-036 prerequisites"
 review_set: all
 ---
 ## Summary

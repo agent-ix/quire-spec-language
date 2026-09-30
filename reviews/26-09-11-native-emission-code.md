@@ -122,17 +122,17 @@ granularity and style notes with no failing scenario against the delivered code.
 Root-supplied local logs for this exact correction source; inspected,
 not re-run. Commands as recorded by root; the logs themselves do not echo them.
 
-- `cargo fmt --all -- --check` — `/tmp/quire-native-emission-corrections-fmt.log`, empty.
+- `cargo fmt --all -- --check` — empty.
 - `cargo clippy --locked --all-targets --no-default-features -- -D warnings` —
-  `-clippy-minimal.log`, no diagnostics.
-- Same with `--all-features` — `-clippy-all.log`, no diagnostics.
+  no diagnostics.
+- Same with `--all-features` — no diagnostics.
 - `cargo test --locked --no-default-features -- --test-threads=1` —
-  `-test-minimal.log`, 51 suites plus doctests, 528 passed, 0 failed, 4 ignored.
-- Same with `--all-features` — `-test-all.log`, 544 passed, 0 failed, 4 ignored
+  51 suites plus doctests, 528 passed, 0 failed, 4 ignored.
+- Same with `--all-features` — 544 passed, 0 failed, 4 ignored
   (3 `fixture_audit` IT-004 private-packet lane, 1 `native_backend` LC04 activation
   gate — both inherited, both carrying a named reason), `native_protocol_emission`
   15/15, 5 doctests including the `native::emit` `compile_fail,E0308` case.
-- Focused — `-focused.log`, `native_protocol_emission` 15/15,
+- Focused — `native_protocol_emission` 15/15,
   `protocol_artifact` 24/24, `protocol_number` 9/9.
 - No `deny.toml` exists, so `cargo deny` does not apply.
 - No gate was re-run: every unresolved finding above is an evidence-granularity or

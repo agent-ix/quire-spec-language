@@ -42,7 +42,7 @@ oracle.
 
 Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-452 step 4 now gives literal inputs and exact `fields` objects, and FR-100's record row says each field is a JSON string. Checked against main: `kernel_refusal_record` gives `{"collection": "set", "bound": "[1, 3]", "count": "4"}` (`"0"` for below-minimum). `AbsentKey` gives `{"binding": "people", "key": "p7"}` (`render_identity`). `ForeignUniverse` gives `required` = hex(expected) = `"02"`x32 and `supplied` = hex(actual) = `"01"`x32. |
 | FND-002 | fixed | Step 4 adds `ForeignUniverse` (record) and `AncestorSteps` (no record, `resource_exhausted`/`ancestor-steps`, exit 22 through `Code::from_code`/`Code::exit_code`), and `TypeMismatch` keeps exit 20 (`ill_typed`). |

@@ -76,7 +76,7 @@ Changes requested. FND-001 blocks FR-104-AC-1 and most of FR-108.
 
 Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-104's "Definedness facts" extends presence and interval facts to model read paths keyed by (observation, path); AC-1 now fixes each read's observation, and AC-4 pins `undefined_expression`/`unproved-presence`. The rule fits facts.rs: see the report. |
 | FND-002 | fixed | FR-106 now orders the conditions inside each check, walks populations, objects and fields in a stated order, digests before reading members (1.3 before 1.4 to 1.8, as FR-056), orders check 11's violations, and adds AC-7 with TC-465 rows 29 to 31. |
@@ -91,6 +91,6 @@ Disposition pass. Each outcome was re-checked against the spec and code. `quire 
 
 Second disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and the reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-009 | fixed | TC-465 rows 32 to 38 add the object-type half of 6.1, both halves of 6.4 and the four check 10 conditions, over the `probe` variant. |

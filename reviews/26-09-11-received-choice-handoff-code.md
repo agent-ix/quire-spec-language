@@ -44,8 +44,8 @@ The notes concern assertion granularity in this new fixture delta; they do not
 identify a concrete producer defect.
 
 Formatting, both strict Clippy configurations, the explicit ignored stripped
-release producer test and a fresh producer invocation passed in
-`/tmp/quire-received-handoff-gates.log`; the parent verified terminal exit zero.
+release producer test and a fresh producer invocation passed; the parent
+verified terminal exit zero.
 The reviewer inspected evidence rather than rerunning commands. QUOIN base and
 gap outcomes remain in SR363/364; full parent suites and actual B consumer
 acceptance are not claimed by this fixture review.

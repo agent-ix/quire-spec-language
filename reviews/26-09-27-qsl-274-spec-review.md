@@ -79,7 +79,7 @@ the S4-only scope are all sound.
 Round 2. Each outcome below was checked against the spec text at the fix
 head and, where the fix cites code, against that code on main.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-120 Dependencies :512-516 and Status :533-535 name QSL-289 (PR #498). TC-471 to TC-473 are marked runnable once QSL-289 lands. Linear shows QSL-289 blocks QSL-274. |
 | FND-002 | fixed | FR-101 carries the trait, `Exploration`, `Trace<T, F>`, "Findings and stopped expansions" and AC-12 to AC-14. FR-097-AC-5 maps `Stopped`. |
@@ -111,7 +111,7 @@ one-line edits for the same round.
 Round 3. This file was renumbered from SR-753 to SR-758, because #498
 merged SR-753 on main. Its round-2 findings are listed here as R2-FND-nnn.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | R2-FND-001 | fixed | FR-120-AC-7 (:499) and TC-472 step 3 now expect `invalid_runtime_input`/`wrong-value-kind` with field `anchor` for anchor kind `other`, citing `document.rs:525-528`. That matches `wrong_kind` at `document.rs:401-403`. |
 | R2-FND-002 | fixed | in AC-4 and TC-471 step 4, `<U>` and `<E>` now come from the `ObjectReference` that `StateModel::admit_initial` gives `c1`, which is independent of the simulator's key encoding. |

@@ -52,7 +52,7 @@ What is wrong:
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `ClaimSite` is now defined in FR-062 "Claim sites" as a design name holding the checked `Location`, the result bound and the path condition. S3 pairs each site with the occurrence recorded at its own `Location`, "never by the order in which sites or occurrences were produced". Two occurrences are two regions, so two sites. The ADR-012 sketch comment points there (FR-062:205-226, 239-249; ADR-012:234-238). |
 | FND-002 | fixed | The item is now named `RequirementItem` (a design name). It carries the request index, occurrence key, node, kind, extent classification, unbounded domains (`DomainKey` and kind), result bound (a type-node `WireNodeId`) and candidate outcome (FR-075:77-80, 117-133). Whether it wraps or replaces `RequestItem` is left to the implementing ticket, which is acceptable for a design name. |

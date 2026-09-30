@@ -65,6 +65,6 @@ Reviewed at the fix commit.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `s4_emits_exactly_the_fr_105_state_nodes` (TC-462, now also traced to FR-341-AC-10) iterates every `value`/`parameter` node of the real ConfigVersion compile (`compiled.package.graph()`) and asserts that every one of its `graph.occurrences()` entries has role `expression`, with at least one entry per node. State-clause `self`/`result` go through `parameter()` in state.rs:162, so reverting lowering.rs:2169 to `Anchor` makes the assertion fail on their ordinal-0 entry. `make ci` passes it. |

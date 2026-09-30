@@ -1034,7 +1034,7 @@ fn bound_integer_value_type_admits_and_assembles() {
 /// the package refuses `missing_declaration`/`missing-name` at that entry,
 /// and no declaration is admitted.
 ///
-/// The pinned FCD schema validator (`agent-ix-semantic-ir`, rev `033e228`)
+/// The FCD schema validator (`agent-ix-semantic-ir`)
 /// has its own, coarser frame-path resolution rule
 /// (`UNRESOLVED_FRAME_PATH`), which would otherwise preempt this reader's
 /// own, strictly finer classification (`resolve_pending_frames`) for every
@@ -1247,8 +1247,8 @@ fn only_the_modifies_refusal_is_reported_when_both_members_are_invalid() {
 /// a package-declared operation parameter/result.
 ///
 /// `Text` itself cannot be used through the real pipeline at all: the
-/// pinned FCD schema validator's own native-scalar vocabulary
-/// (`agent-ix-semantic-ir`, rev `033e228`,
+/// FCD schema validator's own native-scalar vocabulary
+/// (`agent-ix-semantic-ir`,
 /// `crates/semantic-ir/src/rules.rs`'s `NATIVE_SCALARS`) has no `Text`
 /// entry -- it spells the same concept `String` -- so
 /// `validate_with_semantic_ir` refuses any `ix://quire/native/Text`

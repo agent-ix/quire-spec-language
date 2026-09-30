@@ -75,7 +75,7 @@ including "30 frame-body mutation vectors matched".
 
 ## Dispositions
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | the comment now names `qsl_semantics::value::NodeOwner::Model`, says a model-owned nominal node can be built, and names `owner_is_locked` / `UnlockedOwner` as the guard. Verified: `owner_is_locked` matches only `NodeOwner::Source` equal to the unit's source, `omissions` drops the node, `emit_package_inner` calls `wire_node` only on kept candidates, and `nominal_preimage` (the only caller of `nominal_owner`) is called only from `wire_node`. |
 | FND-002 | fixed | the TC-463 `#[ignore]` reason and doc comment now name IR-370. |

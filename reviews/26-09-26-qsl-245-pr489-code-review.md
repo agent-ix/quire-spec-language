@@ -80,7 +80,7 @@ and 1 `qsl-replay` TC-444 test pass.
 Checked against the fix commit alone, after the main merge, on 2026-09-26,
 with mutation checks run in a detached scratch worktree.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | deferred | This finding still stands as a merge-order constraint. By leader ruling, the bump to `1-draft.8` lands in PR #490 (QSL-245 part 1), right after this PR. After the fix, FR-001 Status (spec/functional/FR-001-read-exact-source.md:229-235) says that the claim still reads `1-draft.7` and that the bump comes with #490. `definition_source.rs:248` is unchanged. |
 | FND-002 | fixed | A private `ReferenceError { Blank, Provenance }` replaces the invented label (qsl-foundation/src/source.rs:112-137). A provenance refusal now becomes `SourceReadCause::ReferenceInvariant`, which maps to `Code::RuntimeInvariant` and to `CompleteCode::RuntimeInvariant`/`EstablishedInvariantBroken`. The path is still unreachable. A mutation back to `BlankLabel{Authority}` survives because no input can reach that path, and that is acceptable. |

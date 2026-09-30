@@ -51,6 +51,6 @@ Request changes on FND-001 only. AC-6 is fully traced and tested otherwise.
 
 Round 2.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `run_clause_refuses_an_extracted_fence_that_is_not_ix_native` (qsl-replay/src/spine/clause/tests.rs:2546-2581, feature-gated, traced to TC-468 and FR-109-AC-6) extracts the same unit from an `ix:formal` fence. It asserts `UnknownLanguage { language: "ix:formal" }`, stage `compile`, `Refusal`, no truth, exit 20, no `package_id`, the body as the source, the original identity and digest as the extraction, and no documents. It passed in qsl-295-ci-r2.log. |

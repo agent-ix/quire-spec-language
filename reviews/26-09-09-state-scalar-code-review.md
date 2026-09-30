@@ -90,7 +90,7 @@ and a new FR-034 behavior line state it.
 
 Current correction evidence (root's runs, not this reviewer's):
 
-- Focused suite log `/tmp/quire-backlog-26-focused.log`: 26 tests passed, 0
+- Focused suite: 26 tests passed, 0
   failed, across integer_lowering (7), lower_command (6), native_lowering (5)
   and state_scalar_lowering (8), including the three new traced tests. This is a
   focused subset, not a feature or qualification suite.
@@ -99,7 +99,7 @@ Current correction evidence (root's runs, not this reviewer's):
   zero failures and four inherited assurance ignores per lane, including five
   doctests. Both strict all-targets Clippy configurations, fmt, minimal
   binary/example build, warnings-denied rustdoc, both Rust fixture audits and
-  scoped Quire validation (432/432) pass. Logs: `/tmp/quire-backlog-final-*.log`.
+  scoped Quire validation (432/432) pass.
   The initial integration run exposed two newer composed tests expecting a
   10,001-element model to reach type checking. PR31's integration correction
   now asserts the earlier typed native-admission refusal and preserves the real

@@ -17,7 +17,7 @@ relationships:
 
 ## Summary
 
-Reviewed state: branch `task/212-arch-g1-gate` at 457a131, plus the
+Reviewed state: branch `task/212-arch-g1-gate`, plus the
 uncommitted ADR-011 edits of this PR (#245 rule 8 and the O-03 alignment).
 The four records are read together as one architecture. Line anchors follow
 SR-498: `ADR-011:134` is line 134 of the ADR-011 file at this PR's head.

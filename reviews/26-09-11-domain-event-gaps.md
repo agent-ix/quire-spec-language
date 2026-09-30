@@ -54,10 +54,9 @@ proof/admit/emit/read interfaces; the qualified event includes an admitted
 no-choice baseline. No runtime activation or effect is manufactured.
 Optional semantic review was explicitly not selected.
 
-Parent evidence `/tmp/quire-domain-event-gates.log` records 41 focused tests
+Parent evidence records 41 focused tests
 passed (18+4+4+15). Its initial unused-helper Clippy failure was corrected;
-`/tmp/quire-domain-event-full-gates.log` subsequently records both strict Clippy
-phases finished. Parent terminal reconciliation subsequently records 597 minimal
+both strict Clippy phases subsequently finished. Parent terminal reconciliation subsequently records 597 minimal
 and 614 all-feature tests passed, five doctests each and four inherited ignores
 each. The latest commit-record negative also passed in a focused five-test
 minimal run and the all-feature full run; both strict Clippy configurations

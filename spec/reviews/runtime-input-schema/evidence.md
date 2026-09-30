@@ -3,7 +3,7 @@ id: SR-280
 title: "Evidence review of the runtime input schema"
 type: SpecReview
 analysis: evidence
-scope: "New FR-024-AC-5 obligation at f4679ef"
+scope: "New FR-024-AC-5 obligation"
 review_set: all
 ---
 ## Summary

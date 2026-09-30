@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit `cd4f71a` (branch `task/229-capability-spec`), the diff against
+Reviewed branch `task/229-capability-spec`, the diff against
 `origin/main`. EARS scope is FR-057 and the one changed FR-036 statement. The
 TCs, `tests.md` and `spec.md` are out of EARS scope, but are read for the
 statement each one verifies. `quire validate --strict` reports 2/2 docs
@@ -46,7 +46,7 @@ Verdict: ACCEPT WITH FINDINGS
 
 ## Round 2 dispositions
 
-Checked against the current tree: cd4f71a plus the uncommitted edits.
+Checked against the current tree, including the uncommitted edits.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |

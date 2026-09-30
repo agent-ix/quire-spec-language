@@ -93,7 +93,7 @@ and duplication fixes that belong in this PR.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | header now states `versionNumber` is the bound `VersionNumber` scalar and out-of-bound values refuse at admission (TC-465 rows 20/30) |
 | FND-002 | fixed | module doc now says `delta` is typed by the same `VersionNumber` declaration; the dedicated test's doc no longer cites a removed scope note or a substitution |

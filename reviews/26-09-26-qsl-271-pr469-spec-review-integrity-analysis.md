@@ -62,7 +62,7 @@ FND-002 contradicts itself on the exit status.
 
 Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-109 adds category `internal-failure` (stage `evaluate`, the fault's stage and invariant, no `outcome` member), an If statement, and an `exit_code()` arm, and FR-109-AC-5 covers it. TC-468 step 5 constructs `CheckedInvariant` and `CallFailure::Fault` with that oracle. |
 | FND-002 | fixed | The row moved to a new "Internal failure at S6a" section with `details` `{"stage", "invariant"}` and exit 30. The second fix states that the path exits 30 directly and not through `Code::exit_code`. That `Code::RuntimeInvariant.exit_code()` is 20 elsewhere is ruled out of scope by the team leader and routed to the core lane. |

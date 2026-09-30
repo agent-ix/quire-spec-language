@@ -335,7 +335,7 @@ disposition of each existing test is in the table below.
 
 ## Existing test disposition
 
-The tests in `qsl-eval/tests/it/finite_simulation.rs` at `6938db3d`:
+The tests in `qsl-eval/tests/it/finite_simulation.rs`:
 
 | Test | Disposition |
 | --- | --- |

@@ -64,6 +64,6 @@ one job and one test thread:
 | Warnings-denied all-feature rustdoc; fmt | Pass |
 | Rust fixture-audit self-test/model-bytes; CLI parse example | Pass; historical producer bytes only |
 
-No deny.toml is installed. Logs are /tmp/agent-a-owned-wire-*. Hosted CI was
+No deny.toml is installed. Hosted CI was
 not dispatched. SR-265–272 carry the required QUOIN all-set review; #28 and the
 advisor's version-detection failure limit assurance claims, not these run results.

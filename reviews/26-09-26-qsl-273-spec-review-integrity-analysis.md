@@ -116,7 +116,7 @@ Items 1 to 6 above are the QSpec ticket.
 
 Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The three new kinds spell (`state`, `state_clause`) plus `quire.op.state.clause` and a kind member; FR-088-AC-4 and ADR-013 O-10 are amended; `StateTransition` moves to (`state`, `transition`), and (`state`, `frame`) decodes to no kind. The QSpec side is not in STD-111's text yet: see new FND-009. |
 | FND-002 | fixed | No `field_declaration` or `operation_declaration` node is emitted; members are (object type node, name); FR-094 stays true and needs no amendment. The frame-entry pair needs QSpec FR-340's FrameBody to change, which STD-111 item 3 carries. |
@@ -131,7 +131,7 @@ Disposition pass. Each outcome was re-checked against the spec and code. `quire 
 
 Second disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and the reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-009 | fixed | STD-111 is rewritten: item 1 is the `quire.op.state.clause` application, and item 5 adds the operator class, the `state_clause` member kind and the node-form rule. FR-105, FR-088 and ADR-012 §15.4 cite STD-111 item 5 for (`state`, `transition`) and name the TC-250 table update. |
 | FND-010 | fixed | FR-105-AC-4 and TC-463 steps 2 and 3 are marked pending STD-111, with the reason stated in FR-105 Status, tests.md and spec.md. |

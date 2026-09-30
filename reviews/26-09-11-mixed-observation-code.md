@@ -43,8 +43,7 @@ breadth remains outside this test-only increment.
 ## Validation
 
 Parent gates completed with 2 focused tests passed, 0 failed; formatting and
-both strict Clippy configurations passed. The output is retained at
-`/tmp/quire-mixed-observation-gates.log`. The subsequent source change removes
+both strict Clippy configurations passed. The subsequent source change removes
 only the incorrect trace tag; its direct rustfmt check passed. Quire validated
 both review artifacts: 2/2 grammar-clean, zero grammar findings, exit 0. Its
 loader also emitted duplicate-archetype and duplicate-inverse-edge diagnostics;

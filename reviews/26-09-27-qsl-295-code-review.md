@@ -56,7 +56,7 @@ Round 2. Gate log
 scratchpad/qsl-295-ci-r2.log: last line `exit=0`, and
 `string-edge` is clean.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `run_clause` decodes `extracted.language()` through `NativeLanguage::of` before compiling. A non-`ix:native` fence reports `ClauseDisposition::UnknownLanguage` at stage `compile`, `Refusal`, with exit `Code::UnknownLanguage.exit_code()` = 20. The extraction stays in provenance (qsl-replay/src/spine/clause.rs:506-517). The decoder moved unchanged, still `#[string_edge]`, from src/mapped.rs to qsl-foundation/src/source_map.rs:6-20. `mapped::compile` makes the same `NativeLanguage::of(language).is_none()` call, so the CLI path is unchanged. No Cargo.toml or Cargo.lock change: qsl-foundation already depends on qsl-attrs, and qsl-replay and the root already depend on qsl-foundation. |
 | FND-002 | fixed | `ClauseRunSource` is `#[non_exhaustive]` (qsl-replay/src/spine/clause.rs:82-83). |

@@ -105,7 +105,7 @@ sight. The rest are low.
 
 Disposition pass.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | valid_digest/valid_adapter deleted; CanonicalizationDomain (FromStr) + ByteDigest-typed CanonicalDigest, AdapterArtifact via TryFrom, each the one marked conversion. ByteDigest::from_hex keeps the old 64-lowercase-hex rule. |
 | FND-002 | fixed | clock: read once per admission into ClockNames (v1/v2 intake, temporal_v2 admit; v3 has no temporal evaluator); the three runtime re-parses are gone; clock_binding_name compares the literal and is back in the real-site test. The ADR-012 typed clock-role variant stays unbuilt and is now stated as partial in ADR-012 (SR-722 FND-003 asks for an owner). |

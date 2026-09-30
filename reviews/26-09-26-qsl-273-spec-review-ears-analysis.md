@@ -53,7 +53,7 @@ report.
 
 Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Checks 1 and 6 are split into ordered If/then sub-conditions (1.1 to 1.8, 6.1 to 6.5). |
 | FND-002 | fixed | Check 7 is an If/then statement, and "required population" is defined by the references read from `self`'s population, with TC-465 row 25 as its adverse case. |

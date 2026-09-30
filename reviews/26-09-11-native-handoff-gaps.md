@@ -75,8 +75,6 @@ owns generated Boolean execution and is unrelated to this example.
 | Status lies | 0 | — |
 | FR-042 acceptance criteria | 9 / 10 backed | `FR-042-AC-10` unbacked, pending quire-protocol IT-001 |
 
-Raw report retained at `/tmp/quire-native-handoff-recheck-coverage.json`.
-
 ## Step 3 — underspecified code (reverse gap)
 
 Unchanged and still fully owned: both example files carry `FR-042/TC-121` module

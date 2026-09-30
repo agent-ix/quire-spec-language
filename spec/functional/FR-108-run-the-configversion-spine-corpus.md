@@ -136,7 +136,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 - FR-032 (the native corpus and its catalog), FR-031 (native extracted run).
 - QSpec FR-180 and TC-209. QSL's share is the reference dispositions; the
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
-  IR's, and IR admits no `state` node at 48ab5dc (ADR-012 §15.7).
+  IR's, and IR admits no `state` node (ADR-012 §15.7).
 - STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
   bodies, frame entries and `reaches_field` member; AC-1 to AC-6's
   `package_id` half run over the in-process `CheckedPackage` and need none of
@@ -150,5 +150,5 @@ half, are implemented (QSL-314). AC-6's I04 `read` half is pending IR-370:
 the pinned `quire-contract-model` reader unconditionally refuses any
 `reaches_field` application (`ill_typed`/`operator-ineligible`), which the
 FR-108 unit's `ParentOrder` cycle predicate lowers to. QSL-315's earlier
-`modifies` frame-entry rejection is fixed by the `quire-contract-ir` pin
-bump to `2a28643`.
+`modifies` frame-entry rejection is fixed by the `quire-contract-ir` dependency
+bump.

@@ -49,8 +49,8 @@ fixture has a real `#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4",
 
 No plan bundle covers protocol-artifact emission (SR-355 precedent), so plan
 completion is inapplicable. The optional semantic review was not selected. The
-focused ignored stripped-release test passed in the final parent-owned log
-`/tmp/quire-received-handoff-gates.log`, alongside formatting, strict minimal
+focused ignored stripped-release test passed in the final parent-owned run,
+alongside formatting, strict minimal
 and all-feature Clippy, and a fresh stripped-release producer invocation.
 This review does not claim corpus or release acceptance.
 

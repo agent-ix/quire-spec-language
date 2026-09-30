@@ -59,7 +59,7 @@ witness, not only a missing one.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `a_deletion_outside_the_frame_is_a_violation_naming_it` asserts a `Deleted` witness naming `c2`, its type and an empty `deletes`, exit 10 |
 | FND-002 | accepted-no-change | The note is in the PR body only, so nothing in the repo is wrong. FR-116 stays with QSL-301. QSL-301's QSL side is unblocked once #513 merges, and only the IR witness decode waits on IR#109/CG#49. |

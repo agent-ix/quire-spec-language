@@ -19,7 +19,7 @@ relationships:
 
 Resolve all four demonstrated/supported architecture findings in SR-074 before
 qualification handoff. Apply the repair first, then complete its producer
-qualification with Task-008's actual NativeModel API. Contract a350754 has all eight actual
+qualification with Task-008's actual NativeModel API. The contract has all eight actual
 selected reviews, SR-075–082. This task is added under QUOIN spec-to-plan.
 
 ## Subtasks

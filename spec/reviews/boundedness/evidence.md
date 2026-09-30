@@ -3,7 +3,7 @@ id: SR-627
 title: "Evidence analysis of ADR-014 temporal, trace and boundedness architecture"
 type: SpecReview
 analysis: evidence
-scope: "spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (new); its amendments to ADR-012 §1.1, ADR-013 (O-20, O-21, S-6, Q222 table), FR-057, FR-082 and spec/spec.md, at bbe92fec on spec/17-boundedness-adr"
+scope: "spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (new); its amendments to ADR-012 §1.1, ADR-013 (O-20, O-21, S-6, Q222 table), FR-057, FR-082 and spec/spec.md, on spec/17-boundedness-adr"
 review_set: all
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-014
@@ -13,8 +13,8 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit bbe92fec against `origin/main` (`fc27aacc`), with
-QSpec at `eb4234f` as the read-only authority. ADR-014 is a design record and
+Round 1. Reviewed against `origin/main`, with
+QSpec as the read-only authority. ADR-014 is a design record and
 has no AC rows. Its obligations are the rulings in §1 to §9, and the ticket
 lists in §11 (QSL-140, QSL-42, QSL-43) that implement them. This review asks
 three things of each ruling: is it verifiable, which method verifies it, and

@@ -50,7 +50,7 @@ Verdict: changes requested (one medium, three low).
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-026's Description, exit contract and Inputs now scope themselves to `0-draft` or no edition and route `1-draft` to FR-100. A Behavior SHALL admits FR-100's members at decode and applies the member rules for the edition after the header is read. An FR-100 `references` edge was added. "No edition" routes native, as `Edition::of` does in code (src/command.rs:398-403). |
 | FND-002 | fixed | TC-450 step 2 now cites the TC-103 and TC-104 requests and assertions in `tests/it/standalone.rs`. |

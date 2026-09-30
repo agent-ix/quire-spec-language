@@ -34,9 +34,8 @@ comparison and be materialized into the IR proof as a Boolean.
 
 ## Gates
 
-All run in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`. Exit
+All run in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`. Exit
 statuses captured directly; no gate piped through `tail`/`head`.
 
 | Gate | Result |
@@ -318,10 +317,8 @@ the residue is low and latent. All five gates re-run and pass.
 
 ### Gates
 
-Whole sequential batch under one `flock /tmp/quire-heavy-check.lock`, with
-`CARGO_BUILD_JOBS=1`, `CARGO_TARGET_DIR=/tmp/formalization-a-language-target`,
-`nice -n 10`, `--locked`; `src/lib.rs` mtime touched once under the lock
-(content unchanged) to defeat cross-worktree reuse. Exit statuses captured
+Whole sequential batch with `CARGO_BUILD_JOBS=1`, `nice -n 10`, `--locked`;
+`src/lib.rs` mtime touched once (content unchanged) to defeat cross-worktree reuse. Exit statuses captured
 directly, no pipes.
 
 | Gate | Result |

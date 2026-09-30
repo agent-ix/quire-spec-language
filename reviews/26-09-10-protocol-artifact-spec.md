@@ -89,4 +89,4 @@ provenance; and the await paragraph matches the `Progress`/`Closure` +
 `Subject::Control` + `requires`-contains-clock rule the reader enforces.
 
 `quire spec` gate: 398/398 docs grammar-clean, 0 grammar findings; 83/258 criteria
-property-extractable (`/tmp/quire-artifact-corrections-spec.log`).
+property-extractable.

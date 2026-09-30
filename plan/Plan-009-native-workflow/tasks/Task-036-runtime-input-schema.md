@@ -21,7 +21,7 @@ code/Rust reviews occur at PR readiness; no producer edits or hosted CI.
 
 ## Delivery
 
-Implementation f4679ef publishes the schema with four Rust controls. Local suites
+The implementation publishes the schema with four Rust controls. Local suites
 pass with 357/341 ordinary tests (all/minimal features), plus three compile-fail
 doctests in each. SR-276–283 record QUOIN all-set review; SR-284/285 record
 code/Rust and plan-gap review. Independent PR review remains the merge gate.

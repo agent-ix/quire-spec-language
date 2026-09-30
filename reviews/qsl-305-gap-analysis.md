@@ -68,7 +68,7 @@ ticket rather than block this PR.
 
 ## Dispositions
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | still-open | The fix re-reasons only the `#[ignore]` string and doc on `tc_469_step_6_the_emitted_package_admits_via_i04`. The finding also required the FR-108-AC-6 verification cell (FR-108:131), the FR-108 Dependencies and Status notes (FR-108:143, :149) and the TC-469 Status line (TC-469:77) to move from QSL-315 to IR-370. All four still say "pending QSL-315", and so does the sibling `tc_469_step_6_package_id_is_pinned_across_every_case` doc (tests/it/config_version_spine.rs:848). They now contradict the test's own ignore reason, which says QSL-315's gap is fixed. |
 | FND-002 | deferred | Filed as QSL-325 (Backlog): QSL's ModelSubject has no version field; QSpec's model owner requires a non-empty one. Out of scope for a dependency bump; the emit placeholder cannot reach the wire today (see SR-784 FND-001). |

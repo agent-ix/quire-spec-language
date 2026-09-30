@@ -78,7 +78,7 @@ low status-text defects.
 Disposition pass
 (renumbered from SR-642).
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-160 step 11 and its expected result now describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed application, and two sites of one node in both orders. Each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. The `None`-identity clause is gone. Step 10 adds the guard, scope and `fold`/`reduce`/`flatMap` units, each matching a test. |
 | FND-002 | fixed | FR-062 now reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three … partly". The TC-160 row in `spec/tests.md` is separated correctly. |

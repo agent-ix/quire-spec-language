@@ -50,7 +50,7 @@ the scan reports", and real post-edge dispatch is invisible to it.
 
 Disposition pass.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Real-site test scans the workspace with marks ignored over CanonicalizationDomain::from_str, AdapterArtifact::try_from and clock_binding_name. Reviewer mutations: &&/// widening off fails it (AdapterArtifact::try_from); strip_prefix widening off fails it (clock_binding_name). The profile string is now registry data, allocation is gone. |
 | FND-002 | deferred | QSL-287 (https://linear.app/agent-ix/issue/QSL-287), child of QSL-145, Backlog, carries the scope (const-resolving detector on branch task/145-268-string-edge-consts, ~53 sites, conversions for NARROW/FUNCTION_PARAMETERS/ENUM_VALUE_FORM). FR-064 Status now reads Partial and names the unbuilt clause and the known instances, so the deferral is recorded, not silent. Status should name QSL-287 (SR-722 FND-003). |

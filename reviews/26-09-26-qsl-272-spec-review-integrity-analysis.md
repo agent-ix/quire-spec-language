@@ -53,7 +53,7 @@ What holds:
 
 Disposition pass. I re-checked each outcome against the spec. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The new paragraph "Traces and frontiers record digests" says `Trace.initial`, `Step.key`, `Frontier` and the `ReplayError` key fields are `DigestRecord`s, and that replay compares recomputed digests. AC-5, TC-454 step 7 and TC-453 step 5 now say digest. The Status section lists the trace change. |
 | FND-002 | fixed | ADR-014 TR-1 now reads `SampleProvenance{seed, trace, sampler}`. TR-7 reads `Bounded{stats, frontier, limit}` and `Cancelled{stats, frontier, cause}`, with a digest frontier. The §7 cancellation row names the F `CatalogCode` cause. |

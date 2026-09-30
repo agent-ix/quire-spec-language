@@ -43,7 +43,7 @@ cases; readback/refusal portions remain pending until Task-017.
 
 ## Subtasks
 
-- [x] Retain the genuine pre-API failure and independently authored canonical-content/complete-manifest fixtures and public Rust assertions. Corrected positive fixtures follow the first producer under the reviewed 2c6b9b8/1c3aa50 correction; preserve that actual sequence.
+- [x] Retain the genuine pre-API failure and independently authored canonical-content/complete-manifest fixtures and public Rust assertions. Corrected positive fixtures follow the first producer under the reviewed correction; preserve that actual sequence.
 - [x] Introduce focused package modules for the typed manifest, bounded traversal/encoding, error/usage records and role-specific public package/reference/identity types.
 - [x] Derive complete source, model, authored clause, occurrence and runtime inventories from actual retained inputs, including the minimum admitted unit, multiple aliases and unused selected declarations. Empty source inventories are adverse parser inputs, not successful setup.
 - [x] Derive the exact feature set with exhaustive source/operator/type mapping and cycle-safe model identity visits; do not infer semantics from carrier spelling.
@@ -77,7 +77,7 @@ invariant/pre/post manifests plus missing/unknown/type/selector controls.
 These follow the initial producer; the original pre-API and failed-setup
 history is retained, not retroactively marked as successful prior fixtures.
 
-Source c195950 completes lexical/parameter/result/transitive correspondence,
+The source completes lexical/parameter/result/transitive correspondence,
 static-dependency mutations, runtime-independent bytes/identity and type-role
 controls. SR-111 records the passing producer gate: 25 public package tests,
 five private package controls, 232 ordinary regression tests, three compile-fail
@@ -92,5 +92,4 @@ limitations; no shared module is changed to hide them.
 Use src/checking.rs, src/linking.rs, src/native_model.rs and existing source/
 runtime reference patterns. Do not export the proof graph as executable or
 copy the historical audit visitor's different numeric/depth semantics.
-The package remains a module of this crate. Review gate: specification
-41da6e5, SR-101–108 at 69588ad. No new shared repository or TypeScript helper.
+The package remains a module of this crate. Review gate: SR-101–108. No new shared repository or TypeScript helper.

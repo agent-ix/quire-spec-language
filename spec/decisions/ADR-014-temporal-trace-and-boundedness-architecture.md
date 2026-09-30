@@ -57,10 +57,9 @@ requirement.
 
 ## Context
 
-Measured on QSpec `main` at `eb4234f`, QSL `main` at `fc27aacc` and
-quire-contract-codegen (CG) `main` at `e2a5671`.
+Measured on QSpec `main`, QSL `main` and quire-contract-codegen (CG) `main`.
 
-- **QSpec, unbounded declarations** (QSpec#113, merged as `5413ba6`). QSpec
+- **QSpec, unbounded declarations** (QSpec#113). QSpec
   FR-144: the collection cardinality bound is optional, an absent bound means
   unbounded, and bound presence is part of collection type identity (QSpec
   FR-144-AC-9, AC-12, AC-13). QSpec AD-013 (accepted) states one rule with no

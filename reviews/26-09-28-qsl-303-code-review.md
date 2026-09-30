@@ -67,7 +67,7 @@ FND-003 is a follow-up ticket, not a blocker.
 
 Round 1.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | README.md's two paragraphs on `checked_predicate`/`temporal_subject`/`native_temporal` are removed; docs/checked-native-handoffs.md and docs/native-temporal-owner.md are deleted; `git grep` finds no link to either doc outside historical `reviews/` records |
 | FND-002 | fixed | all six schema files are deleted (schemas/ now holds only native-linked-package-1, native-run-result-1, native-state-input-1); `git grep` finds no remaining reference in src, tests, tools, xtask, Makefile, Cargo.toml or .github |

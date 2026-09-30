@@ -85,7 +85,7 @@ FND-003 and FND-004). The remaining gaps are low.
 
 Disposition pass (rebased onto main with #465 / FR-096).
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `cause` is implemented and asserted literally in `cancellation_stops_the_run_and_returns_the_frontier` and in `cancellation_frontier_keeps_fifo_order_not_key_order`. |
 | FND-002 | fixed | `CatalogCoded for NotSimulated`. `GeneratorMismatch` gives `invalid_runtime_input`/`invalid-value`, asserted in the TC-454 step 8 test. `catalog_fields` follows the FR-096 key table: `Extent(Limit)` delegates to `LimitExceeded` (`kind`/`bound`/`actual` row), and every other variant returns `None`, since no key-table row exists for `invalid-value` or `runtime_invariant`. No new code or field is invented. See R1-FND-002 for the `RequiresBound` mapping. |
@@ -104,7 +104,7 @@ New findings, round 1:
 
 ## R1 Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | R1-FND-002 | fixed | `NotSimulated` no longer implements `CatalogCoded` (that trait is documented as always `Category::Refusal`); `catalog_code`/`catalog_fields` are inherent `Option`-returning methods, `None` for `RequiresBound`. Neither the diagnostics catalog nor `qsl-route`'s `Disposition` types define a requires-bound code (`qsl-route`'s own `Disposition::RequiresBound` carries none either), so none is invented. FR-101:143-158 states the rule; the TR-2 analogy now covers only `EmptyInitial` and `KeyEncoding`. |
 | R1-FND-003 | fixed | `GeneratorMismatch`'s catalog-code sentence moved from AC-11 to AC-10 and into TC-454 step 8's expected results. `not_simulated_catalog_code_and_fields_cover_every_variant` asserts `catalog_code`/`catalog_fields` for every `NotSimulated` variant, including `Extent(Limit)`'s delegation to `LimitExceeded`'s `kind`/`bound`/`actual` fields. |

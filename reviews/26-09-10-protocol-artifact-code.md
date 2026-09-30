@@ -116,10 +116,9 @@ are the pre-existing IT-004 and LC04 lanes, each with a stated reason.
 
 ## Gates
 
-Root-supplied frozen-tree results, serialized under `flock /tmp/quire-heavy-check.lock`
-with `CARGO_BUILD_JOBS=1`, `CARGO_TARGET_DIR=/tmp/formalization-a-language-target`,
-`nice -n10`, `--locked` and one test thread; source lib mtime touched inside the
-lock. All green, verified by reading the logs rather than assuming:
+Root-supplied frozen-tree results, serialized with `CARGO_BUILD_JOBS=1`,
+`nice -n10`, `--locked` and one test thread; source lib mtime touched first.
+All green, verified by reading the logs rather than assuming:
 
 | Gate | Result | Log |
 | --- | --- | --- |
@@ -130,7 +129,7 @@ lock. All green, verified by reading the logs rather than assuming:
 | `cargo fmt --check` | clean (empty) | `fmt` |
 | focused `protocol_artifact` + `protocol_number` | 24 + 9 passed / 0 failed | `focused` |
 
-Logs are `/tmp/quire-artifact-corrections-*.log`. No `deny.toml` exists, so
+No `deny.toml` exists, so
 cargo-deny was not run. No gate was re-run for this recheck: every open finding
 was resolvable by reading source, spec and the frozen logs. Green gates confirm
 the exercised paths only; they are not evidence against FND-001.

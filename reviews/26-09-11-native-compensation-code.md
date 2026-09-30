@@ -46,7 +46,7 @@ a genuine package and a set of newly load-bearing refusals with no adverse case.
 ## Dispositions of the SR-347 findings
 | Prior   | Disposition                                                                                                                                |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| FND-001 | **Resolved.** `validate.rs:620` dispatches on `kind` alone. `compensation_effect_identity` runs the full operation/subject/slot/attempt/retry-anchor chain first and only then returns `Unsupported::Export` for a non-null type. Red-then-green: `/tmp/quire-native-compensation-review-red.log` fails this exact assertion on the pre-correction build. |
+| FND-001 | **Resolved.** `validate.rs:620` dispatches on `kind` alone. `compensation_effect_identity` runs the full operation/subject/slot/attempt/retry-anchor chain first and only then returns `Unsupported::Export` for a non-null type. Red-then-green: the pre-correction build fails this exact assertion. |
 | FND-002 | **Resolved.** `compensation_recovery` (control.rs:898) pins clock, snapshot, progress, closure and exact `recovery_bindings` membership. Residual is FND-001/FND-002 above. |
 | FND-003 | **Resolved.** `adding_a_payload_type_cannot_bypass_compensation_effect_authority` covers both directions; TC-121 step 6 now names the mutations. |
 | FND-004 | **Resolved.** `compensations.rs:44` sets the locus before `visit()` and restores the declaration locus after the loop; an early `Err` correctly keeps the control locus. |
@@ -130,10 +130,9 @@ condition here is exactly the kind that refuses a genuine package silently.
 
 ### What the corrections establish
 
-- Three new tests, ten compensation tests total, all passing
-  (`/tmp/quire-native-compensation-corrections-focused.log`).
-- Two of the three are genuine regressions: `/tmp/quire-native-compensation-review-red.log`
-  records `7 passed; 2 failed` on the pre-correction build, failing at
+- Three new tests, ten compensation tests total, all passing.
+- Two of the three are genuine regressions: the pre-correction build
+  records `7 passed; 2 failed`, failing at
   `native_compensation_emission.rs:1036` (`Some(Unsupported(Export))` expected,
   `None` observed) and `:1145` (`Some(Invalid(Binding))` expected, `None`
   observed). That is the previous FND-001 and FND-002 reproduced before the fix.
@@ -195,23 +194,20 @@ authored literals.
 
 ### Gates inspected
 
-Frozen root logs read, not rerun; no new Cargo reproduction was needed, so
-`/tmp/quire-heavy-check.lock` was not taken.
+Frozen root logs read, not rerun; no new Cargo reproduction was needed.
 
-- `/tmp/quire-native-compensation-corrections-fmt.log` — empty.
-- `/tmp/quire-native-compensation-corrections-clippy-minimal.log` and
-  `-clippy-all.log` — both `Finished`, no warning lines.
-- `/tmp/quire-native-compensation-corrections-focused.log` — 58 cases, all
+- fmt — empty.
+- Clippy minimal and all-features — both `Finished`, no warning lines.
+- Focused — 58 cases, all
   passing: 10 `native_compensation_emission`, 5 `native_population_emission`,
   15 `native_protocol_emission`, 4 `native_query_emission`, 24
   `protocol_artifact`.
-- `/tmp/quire-native-compensation-corrections-test-minimal.log` — 55 `test
+- Tests minimal — 55 `test
   result` lines, **557 passed, 0 failed**, 4 ignored.
-  `-test-all.log` — 55 lines, **573 passed, 0 failed**, 4 ignored (3 ×
+  All features — 55 lines, **573 passed, 0 failed**, 4 ignored (3 ×
   `fixture_audit` IT-004, 1 × `required_generated_activation_parity` LC04). Both
   include the 5 `Doc-tests quire_spec_language` compile-fail cases.
-- `/tmp/quire-native-compensation-review-red.log` — pre-correction baseline,
-  `7 passed; 2 failed`.
+- Pre-correction baseline — `7 passed; 2 failed`.
 - No `deny.toml` in this repo, so no `cargo deny` lane.
 - `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-compensation --json`
   re-run here: 367/376 backed, 0 status lies, 20 untracked symbols, 3 unmatched

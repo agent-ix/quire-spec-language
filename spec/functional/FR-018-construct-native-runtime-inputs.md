@@ -65,7 +65,7 @@ can select an exact digest. Limits and accounting follow
 
 FR-018-AC-8 is implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-431. Its `invalid_source_identity` code, `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are backed (QSL-245).
 
-Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
+Qualified construction API, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware
 validation and reference execution are qualified by SR-097 and SR-098;
 Task-015 owns the native API review/handoff. B retains portable ArtifactRef

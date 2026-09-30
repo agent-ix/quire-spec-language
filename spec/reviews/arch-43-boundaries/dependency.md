@@ -13,9 +13,9 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (QSL
-`main` at `99e9b6c7`), its amendment pointers in ADR-011, ADR-012, ADR-013
-and `spec/spec.md`, against QSpec `origin/main` at `4634f5f`. Linear
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping`, its
+amendment pointers in ADR-011, ADR-012, ADR-013
+and `spec/spec.md`, against QSpec `origin/main`. Linear
 relations for QSL-16, QSL-15, QSL-36, QSL-39, QSL-40, IR-32, IR-33, IR-93,
 IR-339, IR-370 and IR-89 were read as data. The review checked each edge the
 ADR states or implies. It asked whether the edge is real, whether the graph

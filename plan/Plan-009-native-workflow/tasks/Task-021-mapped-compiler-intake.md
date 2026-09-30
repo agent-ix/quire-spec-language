@@ -17,5 +17,5 @@ Implement the mapped compiler entry point using existing source-map, native
 compiler and package APIs. Exercise successful runtime workflow and typed
 refusals; preserve producer ownership and make the completed PR reviewable.
 
-Implemented at 22d4e9a; three mapped integration tests pass. PR-readiness
+Implemented; three mapped integration tests pass. PR-readiness
 spec/code reviews are SR-125 through SR-133. Full LC05 remains open.

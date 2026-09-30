@@ -26,9 +26,8 @@ relationships:
 ## Requirements Summary
 
 This plan executes the reviewed LC03 slice owned by private language issue #4.
-The exact specification is 045025f843346001a91919b8d0816a519e2df337. The eight
-actual QUOIN reviews are SR-088–095, committed at 1603f97 with the EARS document
-format repair and passing validation at f7ed193. No runtime implementation was
+The eight actual QUOIN reviews are SR-088–095, with the EARS document
+format repair and passing validation. No runtime implementation was
 written before that gate. Plan-005's checker work is done and remains intact.
 
 - [ ] StR-001: advance trustworthy concrete assessment; full backend/Quire acceptance remains.
@@ -42,9 +41,9 @@ written before that gate. Plan-005's checker work is done and remains intact.
 
 The detailed criterion-to-test mapping remains in
 [TM-004](../../spec/native-runtime/tests.md). TC-055–057 are qualified in SR-096;
-the validation portions of TC-058–066 are qualified at 45ed1b4 by SR-097.
-TC-061's evaluation portion and TC-067–076 are qualified at 48f53ae by SR-098.
-TC-077 is qualified at 4ac3597 by SR-099. Task-015's qualification and private
+the validation portions of TC-058–066 are qualified by SR-097.
+TC-061's evaluation portion and TC-067–076 are qualified by SR-098.
+TC-077 is qualified by SR-099. Task-015's qualification and private
 handoff are complete; SR-100 records the final plan audit. The ready-PR merge
 follows that audit; this plan status does not assert a merge or broader closure.
 A native API milestone does not replace IT-002's compiled ConfigVersion and

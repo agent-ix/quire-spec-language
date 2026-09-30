@@ -43,7 +43,7 @@ dependency) is resolved.
 
 Round 2.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-101-AC-12 to AC-14 and TC-474 steps 1 to 6 cover `Stopped` with both causes and their categories, a two-entry frontier `[<1>, <2>]`, `StopReason::Stopped`, both `ReplayError::Stopped` directions and `FindingMismatch`. The frontier and depth expectations match `explore.rs` (depth check at :195). The `runtime_invariant` case is tested at engine level only. Reaching it through `ModelSystem` needs a fault the construction rules out, so an engine-level test is enough. |
 | FND-002 | fixed | FR-120-AC-9 and TC-472 step 6 test `ContractUndetermined` for pre and post, the candidate digest and independence from clause names. The `SumOutOfDomain` undefined value exists in `quire-exact/src/outcome.rs:114`. FR-120-AC-10 and TC-473 step 1 test the result order, the first result, `StepEffect.result` and the result root. |
@@ -62,7 +62,7 @@ FR-101-AC-12 to AC-14 are concrete apart from R2-FND-001.
 Round 3. This file was renumbered from SR-754 to SR-759, because #499
 merged SR-754 on main.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | R2-FND-001 | fixed | TC-474 step 6 pins seed `424243`, trace `0`, `max_steps` 2, and expects the trace `0 → 2` and `FindingMismatch { step: 1 }`. Spot-checked with hashlib: the preimage for `424242` hashes to FR-101-AC-3's `cb7d4b3b…6682622`. The preimage for `424243` hashes to `cc49cc1a…0eecd395`, which is odd, so with `n = 2` it selects index 1. `n = 2` never rejects, since `2 * floor(2^256 / 2) = 2^256`. |
 

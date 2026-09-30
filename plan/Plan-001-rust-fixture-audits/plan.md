@@ -18,8 +18,8 @@ relationships:
 
 US-004/StR-001 supply the existing evidence/integration need; the full native
 assessment workflow is not owned or marked complete by this bounded plan.
-Readiness comes from the [scoped review](../../spec/reviews/rust-verification/base.md)
-at specification revision 11a9128. Fresh producer approval is not assumed.
+Readiness comes from the [scoped review](../../spec/reviews/rust-verification/base.md).
+Fresh producer approval is not assumed.
 
 ## Dependency Graph
 

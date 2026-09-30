@@ -89,7 +89,7 @@ on 2026-09-26. Probes were run in a detached scratch worktree, since removed. `c
 `output.rs` intact: `git diff origin/main HEAD` on those files shows only
 this PR's additions (the `Reaches` arm and the `StateClause` origin).
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Each frame record is keyed by (frame node, an occurrence minted once per operation identity (declaring, name)), in `Lowering::frame_occurrence` (lowering.rs:1305-1324, lowering/state.rs:218-219). Both probes are now tests, and each gives 4 records (state_clauses.rs:723-770). The `Occupied(_)` fault is now unreachable. Clause keys are (state_clause node, claim ordinal), unique per clause. Frame keys are unique per operation. Clauses that name one operation build equal records, because roots, `frame_population` and the Boolean node all come from the operation. A probe with `post` clauses on `ConfigVersion::attemptUpdate` and on the inherited `Sub::attemptUpdate` gives 3 records and no fault. The ordinal is order-dependent, which is recorded as a new finding, FND-008. |
 | FND-002 | fixed | `populations_of` covers by `conforms` (lowering/model.rs:117-150). FR-104 states conformance and the no-population case. Tested at state_clauses.rs:778-810. See the new FND-010 on domain keying. |
@@ -115,7 +115,7 @@ warnings` is clean. The `qsl-277-ci-r6.log` file's last line is `exit=0`.
 The diff of `evaluate.rs` and `output.rs`
 against origin/main is still this PR's additions only.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-008 | fixed | `register_frame_occurrences` (lowering/state.rs:263-286) dedups the named operations by (EffectiveId, name). It sorts them by (declaring `DeclarationKey`, name) and mints every frame occurrence before any clause is lowered (mod.rs:1117-1134). A later per-clause `frame_occurrence` call only reads the cache. `frame_node` adds no occurrences of its own (`object_node`, `frame_field` and `text_literal` record none). If registration fails, the refusal is pushed, so a source-order mint afterwards cannot reach a checked graph. The test compares the whole key-to-record map across clause orders (state_clauses.rs:871-917), and would fail on the round-2 source-order mint. FR-104:176-189 is amended. |
 | FND-009 | fixed | The frame occurrence is `OccurrenceRole::Generated` (lowering.rs:1325), recorded at `generated_location()`. `finish` then adds no second `generated` occurrence, because `has(frame)` is true. FR-105:67 is amended. The test asserts role `generated` with ordinals {0, 1}. |
@@ -134,6 +134,6 @@ Checked on 2026-09-26. The 27 `state_clauses` and
 --all-targets -D warnings` is clean. The `qsl-277-ci-r7.log` file's last
 line is `exit=0`.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-011 | fixed | `populations_of` keeps a population when any declared member covers the target. It keys the domain by the least declared member by `DeclarationKey`, whichever member covers (lowering/model.rs:135-168). FR-104:197-210 states this. `population_with_several_members_has_one_canonical_domain_key` (state_clauses.rs:1072-1099) declares members [Sub, ConfigVersion] and asserts one equal key across `Sub` and `ConfigVersion` clauses. The round-3 first-covering-member code would give `Sub` and `ConfigVersion` there, so the test catches a regression. Note, not a finding: the `?` on `min()` and on the canonical `find_map` (:160-164) would silently drop a covered population if the canonical member were not an admitted object type of this package. Normalization refuses missing and native members, so this cannot be reached today. |

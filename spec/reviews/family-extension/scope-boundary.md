@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit: 048deb3 (branch `task/210-family-extension`), file
+Round 1. Reviewed branch `task/210-family-extension`, file
 `spec/decisions/ADR-012-semantic-family-extension-contracts.md` and its
 `contains` edge and index row in `spec/spec.md`.
 
@@ -54,8 +54,8 @@ states. Several work-hand-off rows name tickets whose scope excludes that work.
 In two places the ADR decides a #229 question and then asks #229 the same
 question. Cross-repository interface changes have no named QSpec contract owner.
 
-Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
-at 048deb3 was REJECT, because FND-001 (high) contradicted AD-016 and PR #133.
+Verdict: ACCEPT WITH FINDINGS (round 2). The round-1 verdict
+was REJECT, because FND-001 (high) contradicted AD-016 and PR #133.
 Round 2 finds FND-001 resolved; see Round 2.
 
 ## Method
@@ -67,7 +67,7 @@ checked that owner against the ticket bodies and the fixed chains. Sources:
 - issue bodies of #210, #205, #209, #211, #212, #213, #214, #185, #222, #229,
   #218, #220, #221, #223, #188 and #189 (`gh issue view`), and QSpec #116
   (state only);
-- ADR-010 at 8170101 (§7 map, §9 items OBS-003/004/012/013/014/033, DA-11,
+- ADR-010 (§7 map, §9 items OBS-003/004/012/013/014/033, DA-11,
   L1-D1);
 - QSpec AD-016 at `origin/main`: arrows 1, 4, 5 and 7, the Shared-type
   strategy, "Frames and unbounded constructs", and Decisions;
@@ -106,9 +106,9 @@ Boundary allocation used:
 
 ## Round 2
 
-Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
+Reviewed branch `task/210-family-extension` against the
 round-1 findings above, using
-`git diff 048deb3 8fb238b -- spec/decisions/`. The revision was checked
+`git diff -- spec/decisions/`. The revision was checked
 against the fixed ownership chains (#209, #211, #229, #213, #185 and #222),
 against QSpec AD-016, against FR-290 and AD-010 as amended by merged QSpec PR
 #133, and against the #214 issue body and ADR-010 §7. Round-1 verdict: REJECT
@@ -150,12 +150,12 @@ names the owner that holds the remaining work.
 | ID | Closure |
 | --- | --- |
 | FND-002 | Fixed: the arrow-7 key is a typed `QualifiedName` (ADR-013 O-11, by owner ruling), and AD-016 arrow 7 is kept, so there is no QSpec amendment (§8, §13.2 Q1). The candidate-set field is QSpec's (§13.4). The CG and IR tickets are Codegen #86 and Contract IR #141. |
-| FND-004 | Fixed in 6b9a603: the QSL `negotiate_*` copy removal belongs to #185 in §14.1, §14.2 and OBS-004, matching ADR-010 §7. |
+| FND-004 | Fixed: the QSL `negotiate_*` copy removal belongs to #185 in §14.1, §14.2 and OBS-004, matching ADR-010 §7. |
 
-## PR review (QSL PR #234, delta 43677c9..10664aa)
+## PR review (QSL PR #234)
 
-The PR reviewer checked the author-closure lines above against ADR-012 at
-10664aa. FND-002 and FND-004 are confirmed fixed. One new scope finding is
+The PR reviewer checked the author-closure lines above against ADR-012.
+FND-002 and FND-004 are confirmed fixed. One new scope finding is
 open: ADR-012 assigns the capability vocabulary to #229, while ADR-011 and
 ADR-013 assign it to QSpec #134 (FR-290), with #229 aligning QSL to it
 (SR-474 PR-N1). The open PR findings are in SR-474.

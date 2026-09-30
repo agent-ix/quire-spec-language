@@ -45,7 +45,7 @@ accurate against FR-042 and still understate rather than overstate coverage; one
 | FR quality: description, inputs, outputs, behavior, error conditions, criteria | pass — Inputs now owns the cross-repository inventory transfer as well as the three caller-supplied revision namespaces; typed refusal vocabulary still named, not paraphrased |
 | Six coverage rules | pass — every AC maps to TC-121, and AC-10's distinct open state is now expressible: it reads `backed: false` in the FR-042 criterion group (9/10) because its verification cell cites quire-protocol IT-001 alongside TC-121 |
 | Cross-referencing, terminology | pass — FR-042 ↔ US-004 ↔ TC-121 ↔ IT-001 all resolve, and TC-121 step 1 now also resolves to the delivered recipe |
-| Grammar corpus | 398/398 docs grammar-clean (`/tmp/quire-native-handoff-corrections-spec.log`) |
+| Grammar corpus | 398/398 docs grammar-clean |
 
 ## Claims checked against the corrected requirement
 

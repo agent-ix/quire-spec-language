@@ -37,7 +37,7 @@ follow-up ticket under QSL-291's parent.
 
 Round 2.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-452 step 4 gives each of the ten refusals a concrete payload and step 4's expected results give each exact `fields` object |
 | FND-002 | deferred | QSL-292, a code ticket blocked by QSL-291 |

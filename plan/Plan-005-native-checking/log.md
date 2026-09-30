@@ -11,12 +11,12 @@ description: "Native model/checker lifecycle and evidence."
   SR-087. All four task statuses and deliverables are complete; TM-003 is
   35/35 backed with actual execution evidence. The private handoff at PR #10
   is pushed and ready for review. Final report/status changes contain no code
-  or test changes from qualified cdb6560. Explicit-root final spec/plan/review
+  or test changes. Explicit-root final spec/plan/review
   validation passes. LC02 and the full assignment remain open for the strict
   package/projection and runtime/backend/Quire work; this milestone is not
   relabeled as full workflow completion. No hosted CI was dispatched.
 
-- **2026-09-09** — Task-009 is implemented and qualified at cdb6560. SR-086
+- **2026-09-09** — Task-009 is implemented and qualified. SR-086
   records the actual code/Rust review and its PASS disposition. Twenty-four
   checker tests execute all thirteen cases; the full suite passes 110 tests and
   the selected private audit lane passes three. Every documented local gate
@@ -30,7 +30,7 @@ description: "Native model/checker lifecycle and evidence."
   Task-010 remains in progress for the final gap report and private PR handoff;
   runtime validation/evaluation, backend and Quire integration remain required.
 
-- **2026-09-08** — Started Task-009 after Task-008's completed gate at ac36598.
+- **2026-09-08** — Started Task-009 after Task-008's completed gate.
   Initial seven real native checker tests retain TC-025–029 and add TC-047/048
   controls. The preimplementation run fails because the checking API and its
   new phase/codes do not yet exist; checker-before-implementation.txt retains
@@ -38,7 +38,7 @@ description: "Native model/checker lifecycle and evidence."
   judgment and no typing criterion is marked passed. The existing reviewed
   FR-006/016 contract continues to govern implementation.
 
-- **2026-09-08** — Completed Task-008 qualification at 0cd679c with actual
+- **2026-09-08** — Completed Task-008 qualification with actual
   code/Rust review SR-085. Seventeen new tests complete the model mutation,
   provenance, deterministic identity and limit families; the full suite passed
   86 tests and all three selected private audits passed. Strict Clippy, fmt,
@@ -52,7 +52,7 @@ description: "Native model/checker lifecycle and evidence."
   remain in the full assignment. No new requirements or production interfaces
   were introduced by this qualification; no hosted CI was dispatched.
 
-- **2026-09-08** — Implemented native linkage at 667bf07 under the existing
+- **2026-09-08** — Implemented native linkage under the existing
   reviewed FR-015 contract. TC-044 is qualified by actual code/Rust review
   SR-084; Task-008 remains in progress. Shared exact import/lexical stages now
   resolve explicit native references and operations, retain model/operation
@@ -65,12 +65,12 @@ description: "Native model/checker lifecycle and evidence."
   artifact/limit qualification precedes the still-pending checker task. Work
   remains on draft PR #10 under LC02 #3, with no hosted dispatch.
 
-- **2026-09-08** — Completed Task-011 at 08a4fe7 with actual code/Rust review
+- **2026-09-08** — Completed Task-011 with actual code/Rust review
   SR-083 and validated evidence. All four SR-074 findings are resolved. The
   full local suite passed 61 tests; all three selected private audits passed;
   formatting, strict Clippy/rustdoc, cached minimal build and documented CLI/
   audit commands passed. Existing regressions now carry explicit FR-017 tags.
-  New native admission at d1168dd qualifies the repaired producer through a
+  New native admission qualifies the repaired producer through a
   real API. Five initial model tests pass, but full TC-040–045 qualification,
   native linkage and checking remain open in Tasks 008/009. Removed an artificial
   Task-008 → Task-011 completion edge: repaired producer qualification consumes
@@ -82,7 +82,7 @@ description: "Native model/checker lifecycle and evidence."
 - **2026-09-08** — The owner challenged the dense producer conversion and asked
   to resolve repeated patterns in scope. SR-074 records a real source-locus
   defect and three related construction/orchestration findings. Specified
-  FR-017/TC-054 at a350754 and applied all selected reviews SR-075–082 before
+  FR-017/TC-054 and applied all selected reviews SR-075–082 before
   repair. Added Task-011 ahead of continued native model work. The initial
   model tests at 4798508 still fail because NativeModel is not implemented;
   they are not hidden or reported as completed qualification.
@@ -91,7 +91,7 @@ description: "Native model/checker lifecycle and evidence."
   recovery found a clean preserved specification branch and no active Cargo or
   rustc process. Reaffirmed serial low-priority one-job/one-thread checks.
 - **2026-09-08** — Actual QUOIN specify/all-review cycle completed before code:
-  contract ceccabb, SR-066–073 at 3cdeb59, 152/152 grammar-clean documents and
+  contract, SR-066–073, 152/152 grammar-clean documents and
   zero grammar findings. Review artifacts and deterministic advice are retained.
   The private branch was pushed for the required LC02 preimplementation handoff.
   Created this plan using QUOIN spec-to-plan. Tests remain planned.

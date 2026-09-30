@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit: 660aa25 (branch `task/211-type-ownership`), file
+Round 1. Reviewed branch `task/211-type-ownership`, file
 `spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md` and its
 index row in `spec/spec.md`.
 
@@ -63,7 +63,7 @@ concrete fix.
 
 ## Method
 
-- Read ADR-013 at 660aa25 in full, and the `spec/spec.md` diff.
+- Read ADR-013 in full, and the `spec/spec.md` diff.
 - Read the bodies of #211, #209, #210, #213, #229, #231, #185, #222, #186,
   #212, #215, #226, #131, #217 and #188 (`gh issue view`).
 - Read accepted AD-016 at `quire-specification` `origin/main`: the System
@@ -97,9 +97,9 @@ concrete fix.
 | FND-008 | low | O-01 and C-01 do not name the authority of the FCD → QSL wire. The Serialized-authority row names FR-321 and the v2 lock, which are QSL outputs. It does not name the semantic IR 2.0.0 schema that FCD produces, or the QSpec FR-154 admission table that AD-016's intake typestate cites. The FCD edge is the one cross-repository input where R-02 (authored in QSpec) needs an explicit statement. Fix: in O-01, name the semantic IR schema and its owning repository, name FR-154 as the admission authority, and say whether R-02 applies to it. | ADR-013 O-01, C-01, R-02; AD-016 Domain-package intake boundary, Shared-type "FCD identities" row |
 | FND-009 | low | O-04 places `NodeKey` in the `quire-exact` kernel and cites the AD-016 kernel row. But AD-016 also has a row "Semantic identities: `DeclarationKey`, checked node id — Layer-owned — QSL `model::key`". AD-016 therefore names two owners for the checked node id, and ADR-013 picks one without saying so. OQ-3 asks QSpec to amend AD-016 for the kernel contents (c) but not for this row. Fix: add an OQ-3 item asking QSpec to remove the checked node id from the AD-016 "Semantic identities" row, so the kernel row is its only owner. | ADR-013 O-04, §8 OQ-3; AD-016 Shared-type strategy kernel row and Semantic identities row |
 
-## Round 2 (commit 0042691)
+## Round 2
 
-Reviewed commit: 0042691 (branch `task/211-type-ownership`). Each round-1
+Reviewed branch `task/211-type-ownership`. Each round-1
 finding was re-checked against the revised ADR-013, and the new text was read
 for scope-boundary problems. The review applies the coordinator ruling that
 #231 owns the common typed proof-result, witness and replay envelopes on the
@@ -129,11 +129,10 @@ New finding introduced by the revision:
 Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-010
 (medium) is new.
 
-## Round 3 (commit 4152eb8)
+## Round 3
 
-PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
-and ADR-012 at 10664aa. The full finding table is in
-[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
+PR #236 re-review of the delta, against ADR-011 and ADR-012. The full
+finding table is in [base.md](base.md) Round 3.
 
 - FND-010 stays resolved. QC-8 now lists the `ReplaySource` variant, the
   `QualifiedName`, the #231 envelope members and the executor pin.

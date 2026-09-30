@@ -113,7 +113,7 @@ retagged tests also lost the property they exist to discriminate
 
 Disposition pass, checked against the code and re-run with `rv467/recompute.py`.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `Outcome::Cancelled` gains `cause: CatalogCode` and is set to `CANCELLED_CAUSE` = `cancelled`/`caller-cancelled` (explore.rs). Both cancellation tests assert it literally. |
 | FND-002 | fixed | `state_key` and `canonical_bytes` return `Result<_, EncodingRefusal>`, surfaced as `NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding`. FR-101-AC-11 and TC-453 step 9 were added, with a test using the key `2^53 + 1`. `plain_digest` still panics, but it encodes only the engine-built `DrawPreimage`, which is acceptable. |
@@ -132,6 +132,6 @@ New findings, round 1:
 
 ## R1 Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | R1-FND-001 | fixed | `accepts(v, quotient, n64, always_accepts)` split out of `PinnedSampler::next_index`; a new test asserts it at the real `n = 7` threshold `floor(2^256/7)*7` and one below it. The `u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls the synthetic `98` the sampler's rejection bound. |

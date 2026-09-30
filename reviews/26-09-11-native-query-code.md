@@ -202,9 +202,7 @@ re-destructures a node `walk.rs` matched, and `element()` still returns a bare
 
 ### Gates inspected
 
-Read from the root's completed logs at
-`/tmp/quire-native-query-corrections-{fmt,focused,clippy-minimal,clippy-all,test-minimal,test-all,spec}.log`;
-green heavy checks were not rerun. `cargo fmt --all -- --check` (empty),
+Read from the root's completed logs; green heavy checks were not rerun. `cargo fmt --all -- --check` (empty),
 `cargo clippy --locked --all-targets --no-default-features -- -D warnings` and
 `--all-features` (both `Finished`, no warnings), `cargo test --locked
 --no-default-features` and `--all-features` (54 suites each, 0 failures, 3

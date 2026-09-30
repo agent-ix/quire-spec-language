@@ -62,7 +62,7 @@ one-word fix. FND-004 is a recommendation for the owner.
 Round 2, reviewed at the fix commit, rebased onto origin/main. The author's
 gate log `qsl-291-ci-r2.log` ends `exit=0`.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-100:202-205 makes an empty `sum` whose `N` does not admit `0` `sum-out-of-domain` at the `sum` node (owner ruling); FR-100-AC-10 and TC-452 step 5 test it |
 | FND-002 | fixed | FR-106:174-179 scopes the label order "within this check" and drops the `empty-path` sentence |

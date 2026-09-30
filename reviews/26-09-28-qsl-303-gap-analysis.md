@@ -54,14 +54,14 @@ the spec still states the deleted handoffs as required and implemented. Per
 
 Round 1.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | still-open | The fix retires the AC tables correctly: FR-051-AC-1..5, all FR-052 and FR-053 ACs, and TC-140/TC-141 follow the FR-078-AC-1/2 and TC-172/TC-201 RETIRED-by-ticket convention with ids kept; the matrix and index rows are updated; and the amended FR-051-AC-6 matches what tests/it/contract_model_architecture.rs:11 asserts. But FR-051's requirement body is untouched. Its Description (line 20) still says the compiler SHALL derive `quire.checked-predicate/v1`/`quire.checked-temporal-subject/v1`, and "Contract set and public API" (lines 22-40) still SHALLs `protocol_artifact::checked_predicate::{...}` and `temporal_subject::{...}`. The envelope, predicate, temporal and admission sections (lines 42-104) have no retirement marker either. The only live criterion, AC-6, has no body statement at all. Fix: mark those body sections RETIRED in place, following FR-068:391-406, and add one live sentence for the production-graph fact AC-6 verifies. FR-052 and FR-053 have the same issue in a milder form: the retirement appears only in a trailing Status note while the Description still SHALLs the surface, so each also needs a one-line RETIRED banner under Description. |
 | FND-002 | still-open | New this round (see New findings); no fix yet. A one-line reword of spec/native-temporal/tests.md:20-21. |
 
 Round 2.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-051's Description and all five body sections (Contract set and public API, Common closed envelope, Predicate document, Temporal-subject document, Admission/reading/limits) carry a "(RETIRED by QSL-303 M-6d)" heading and a bold retirement note in the FR-068:391-406 style, with the old text kept as history. A new live paragraph states the AC-6 fact, and it matches what tests/it/contract_model_architecture.rs:11-103 asserts: the `quire_contract_ir` alias resolves to `quire-contract-model` as a normal dependency, and no `quire-contract-ir` package is in the normal-dependency closure. FR-052:18 and FR-053:15 each have the one-line RETIRED banner under Description that round 1 asked for. |
 | FND-002 | fixed | spec/native-temporal/tests.md:20-21 now reads "deletes the handoff modules and their tests, formerly in `tests/it/compiled_protocol_v2.rs`", which agrees with line 59-60. |

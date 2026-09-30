@@ -48,7 +48,7 @@ catalog code that is available.
 
 Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | A family cause with no record renders `code`/`cause` from `catalog_code()` with no `fields` member and exits by that code (`AncestorSteps` 22). The bare form is now kernel-only. |
 | FND-002 | fixed | `locus` and `location` are rendered. The shapes match the types on main. `Evaluation.location` is `qsl_semantics::check::Location {origin, path: Vec<usize>}`, and `Origin` is `Body{function, index}`, `Measure{function, index}`, `Expression` or `TypeDeclaration{name}`, which is exactly FR-100's four `origin` kinds. `Evaluation::refusal_record` builds only `Locus::Region`. `SourceRegion` is `{RawSourceRef, start, end}` (bytes), and the `RawSourceRef` digest (`quire.source.bytes/v1`) holds the raw SHA-256 of the bytes, so `sha256:` is derivable. The byte/line/column span form is `LocatedSpan`, computed by `Source::locate`. |

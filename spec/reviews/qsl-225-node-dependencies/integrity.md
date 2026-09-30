@@ -3,7 +3,7 @@ id: SR-616
 title: "Integrity review of the QSL-225 node dependencies rule and the v2 fixture comparison"
 type: SpecReview
 analysis: integrity
-scope: "Uncommitted QSL-225 diff on 3c0eea23: FR-093 Node dependencies (rules 1 to 5, the type-annotation paragraph, the recursion-group paragraph, the FR-322 correspondence paragraph, the per-node-kind table), Comparison with QSpec's v2 positive fixtures, AC-12, AC-13, and ADR-013 QC-27"
+scope: "Uncommitted QSL-225 diff: FR-093 Node dependencies (rules 1 to 5, the type-annotation paragraph, the recursion-group paragraph, the FR-322 correspondence paragraph, the per-node-kind table), Comparison with QSpec's v2 positive fixtures, AC-12, AC-13, and ADR-013 QC-27"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-093

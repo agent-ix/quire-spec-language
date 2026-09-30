@@ -45,7 +45,7 @@ low-severity findings blocks a merge.
 
 Checked against the fix diff on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-001 Status says the revision claim still reads `1-draft.7` and that the bump lands with #490. The merge-order constraint stays open under SR-732 FND-001. |
 | FND-002 | fixed | The FR-001 S0 bullet (lines 95-98) now reads "A blank label or an empty path ... no complete, non-blank label set to name the source by, and an empty path names no location." |

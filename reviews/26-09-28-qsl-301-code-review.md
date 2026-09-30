@@ -72,7 +72,7 @@ test now takes all three identities from the other package. The shared
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `check_identities` checks frame, occurrence, anchor; AC-3 test takes anchor, frame and occurrence from the parent-modifying package and asserts the anchors differ |
 | FND-002 | fixed | spec.md FR-116 row: implemented under QSL-301 (QSL-21f), TC-515 passed locally |

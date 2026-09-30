@@ -7,10 +7,10 @@ type: TestMatrix
 ## Overview
 
 LC03 covers FR-018 input construction, FR-007 validation and FR-008 evaluation
-under NFR-006. TC-055–057 are qualified at c8fa41f by SR-096. The validation
-portions of TC-058–066 are qualified at 45ed1b4 by SR-097. TC-061's evaluation
-portion and TC-067–076 are qualified at 48f53ae by SR-098; TC-077 is qualified
-at 4ac3597 by SR-099. TM-001–003 keep their existing scopes and qualification.
+under NFR-006. TC-055–057 are qualified by SR-096. The validation
+portions of TC-058–066 are qualified by SR-097. TC-061's evaluation
+portion and TC-067–076 are qualified by SR-098; TC-077 is qualified
+by SR-099. TM-001–003 keep their existing scopes and qualification.
 US-003 traces these functions to StR-001; IT-006 exercises the real native API.
 IT-002 still owns the full compiled-model/backend workflow.
 
@@ -179,8 +179,7 @@ Twenty-one constructor tests and a role-separation compile-fail doctest qualify
 TC-055–057 in SR-096. Thirty-five runtime tests qualify FR-007 validation
 and the validation portions of TC-058–066 in SR-097. Twenty-nine public evaluation
 tests and two private invariant controls qualify TC-061's evaluation portion and
-TC-067–076 in SR-098. Five public pipeline tests qualify TC-077/IT-006 at
-4ac3597 in SR-099. All 23 runtime cases are backed by actual Rust tests;
+TC-067–076 in SR-098. Five public pipeline tests qualify TC-077/IT-006 in SR-099. All 23 runtime cases are backed by actual Rust tests;
 Task-015's qualification and private handoff are complete; SR-100 owns the
 final plan audit. The complete assignment retains the downstream gates below.
 Root CLI syntax/audit/linker/checker results do not themselves qualify runtime truth. LC02 strict linked-package/projection and FS03 acceptance remain

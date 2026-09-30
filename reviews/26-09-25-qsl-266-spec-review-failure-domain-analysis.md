@@ -55,7 +55,7 @@ Four defects:
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The claim is now "defined and its result lies in its result bound, for every assignment of its extent roots under which its path condition holds". The path condition is made of the enclosing `if` conditions (true in `then`, false in `otherwise`) and the short-circuit left operands (true for `and` and `implies`, false for `or`), outermost first. Parameters and binders read by a guard are roots. FR-057, FR-062 and ADR-014 agree, and RR-11, RR-12 and RR-13 pin it: the `+` in RR-12 has guard `n >= 0 and n < 10` and is `Unbounded` at `n`. Filters stay out, per the leader's ruling that a path condition equals what `check::facts` relies on (FR-057:171, FR-062:217-232, 251-259, ADR-014:236-248). |
 | FND-002 | fixed | FR-062 now says `check` "SHALL pair each site with the occurrence recorded at that site's own `Location`, never by the order in which sites or occurrences were produced". Each record carries its own occurrence's extent, result bound and path condition. RR-15 is the sibling-`let` fixture, and TC-160 step 10 checks it in both operand orders (FR-062:239-249, 263-266, 304; TC-160:72-76, 125-128). |

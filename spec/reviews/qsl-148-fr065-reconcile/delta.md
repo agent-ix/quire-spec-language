@@ -3,7 +3,7 @@ id: SR-621
 title: "Integrity review of the QSL-148 FR-065 resolution delta and the FR-067-AC-3 restatement"
 type: SpecReview
 analysis: integrity
-scope: "Uncommitted changes over bd1eba54 on spec/148-fr065-reconcile: FR-067-AC-3, FR-067-CON-4 and the FR-067 Status note; TC-167 step 4; the ADR-012 §14.1 QSL-148 row; docs/family-migration-recipe.md Removal condition; FR-065 and TC-376 Status; comment and trace-tag edits in qsl-forms/src/dispatch.rs, qsl-semantics/src/check/check.rs, check/typing.rs and family.rs"
+scope: "Uncommitted changes on spec/148-fr065-reconcile: FR-067-AC-3, FR-067-CON-4 and the FR-067 Status note; TC-167 step 4; the ADR-012 §14.1 QSL-148 row; docs/family-migration-recipe.md Removal condition; FR-065 and TC-376 Status; comment and trace-tag edits in qsl-forms/src/dispatch.rs, qsl-semantics/src/check/check.rs, check/typing.rs and family.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-065

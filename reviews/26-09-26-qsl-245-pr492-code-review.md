@@ -35,7 +35,7 @@ Ticket: QSL-245. PR: quire-spec-language#492. Code review with the Rust lane (ru
 
 <!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-745 pr=quire-spec-language#492 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `stopped` doc now cites FR-096-AC-15 |
 | FND-002 | fixed | `Machine::run` and `CheckedPackageEvaluation::call`/`evaluate` docs name the CheckedInvariant `Err` path |

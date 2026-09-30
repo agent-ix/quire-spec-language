@@ -3,7 +3,7 @@ id: SR-267
 title: "Integrity review of owned runtime decoding"
 type: SpecReview
 analysis: integrity
-scope: "FR-024 amendment; TC-099/100; Task-035; implementation 3c6a0e6"
+scope: "FR-024 amendment; TC-099/100; Task-035"
 review_set: all
 ---
 ## Summary

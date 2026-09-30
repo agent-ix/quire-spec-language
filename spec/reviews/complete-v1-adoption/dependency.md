@@ -27,7 +27,7 @@ qualification consumes all merged results last.
 
 | Stage | Class | Prerequisite |
 | --- | --- | --- |
-| Task-046 adoption | Enablement | QSpec Task-010 / frozen revision `8d0fbad` |
+| Task-046 adoption | Enablement | QSpec Task-010 |
 | Task-047 source/package | Enablement | Task-046 |
 | Task-048 scalar semantics | Enablement | Task-047 |
 | Task-049 composite/functions | Feature | Task-048 |

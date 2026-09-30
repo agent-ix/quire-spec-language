@@ -50,7 +50,7 @@ under integrity (SR-638 FND-003).
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The rule is now an unwanted-condition SHALL: "If `check` cannot pair a claim site with an `expression` occurrence at its `Location`, including an application that has only a `generated` occurrence, then `check` SHALL return `KeyFault::UnkeyableRequirements` and SHALL produce no checked package." (FR-062:268-273). |
 | FND-002 | fixed | Now reads "`route`'s request builder (design name …) SHALL take … It SHALL return one `RequirementItem` …". "provide" is gone (FR-075:117-123). |

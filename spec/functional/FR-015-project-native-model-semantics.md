@@ -104,8 +104,8 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 
 ## Status
 
-Model admission and native linkage are implemented through 667bf07. All six
-original criteria were qualified at 0cd679c by TC-040–045 and SR-084/085. The
+Model admission and native linkage are implemented. All six
+original criteria were qualified by TC-040–045 and SR-084/085. The
 sequence-ceiling amendment is implemented by Task-034 under compiler issue #30;
 SR-263 records its new boundary tests. The older checks alone do not qualify
 this amendment, and broader ruling conformance remains open. Neither NativeModel

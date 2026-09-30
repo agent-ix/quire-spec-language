@@ -3,7 +3,7 @@ id: SR-606
 title: "Base review of the QSL-210 model-owned, StateModel and quantity node-key requirements"
 type: SpecReview
 analysis: base
-scope: "Commit ac4f974f: FR-094, TC-417 to TC-419, and the FR-092, FR-093, ADR-013 (O-04, QC-3, QC-25, QC-26), spec.md, tests.md and US-005 edits"
+scope: "FR-094, TC-417 to TC-419, and the FR-092, FR-093, ADR-013 (O-04, QC-3, QC-25, QC-26), spec.md, tests.md and US-005 edits"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
@@ -46,8 +46,7 @@ the vector it names:
 - C1, C3 and C4 cite P7, FR-092's L1, T1 and T3. C2 cites P7, FR-092's L2,
   T2 and T3.
 - U1, U2 and U4 cite QSpec's `unit-metre` key (`79637623…`), and U2 also
-  `unit-second` (`d0f0c5d2…`). Both match `node-identity-vectors.json` at
-  `e72756f`.
+  `unit-second` (`d0f0c5d2…`). Both match `node-identity-vectors.json`.
 
 FR-092's 30 vectors still recompute.
 

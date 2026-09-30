@@ -43,8 +43,8 @@ private PR. Merge only when ready under existing owner authorization.
 This task does not close the full native runtime/backend/Quire objective.
 No hosted CI dispatch or additional agents are authorized.
 
-Completed for source cdb6560 with actual code/Rust review SR-086 and final
+Completed with actual code/Rust review SR-086 and final
 Plan-005 gap reconciliation SR-087. All local gates pass; TM-003 is 35/35 backed
-and 113/113 Rust test symbols bind. Private PR #10 was pushed at 5eb2332 and
+and 113/113 Rust test symbols bind. Private PR #10 was pushed and
 marked ready for review; its body records actual scope, results and downstream
 work. The final report/status commit adds no production or test changes.

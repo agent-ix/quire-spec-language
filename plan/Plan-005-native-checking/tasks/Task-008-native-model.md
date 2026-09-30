@@ -48,14 +48,14 @@ fixture, traced model/link tests and actual focused evidence.
 No runtime object IDs are enumerated in model metadata. Every unused declaration
 and role is admitted and source-corresponded. No partial model/package escapes.
 
-Admission and the repaired source-derived producer are implemented at d1168dd.
+Admission and the repaired source-derived producer are implemented.
 Five initial model tests pass through the real API. Native linkage is implemented
-at 667bf07 and TC-044 is qualified by SR-084. Eight new link tests cover exact
+and TC-044 is qualified by SR-084. Eight new link tests cover exact
 selection, inventory conflicts, reference/operation/enum/parameter correspondence,
 legacy compatibility and native-link limits. The default suite passed 69 tests;
 the three selected private audits and required local gates passed.
 
-Completed at 0cd679c with SR-085. Seventeen additional public-API tests complete
+Completed with SR-085. Seventeen additional public-API tests complete
 TC-040–043/045's role/carrier/operation mutations, model locus classes, artifact
 mutation/permutation families and model-limit controls. Every adverse IR input
 passes its actual constructors before native admission is judged. The complete

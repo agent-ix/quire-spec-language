@@ -48,7 +48,7 @@ Mutation results. Every claimed proof holds.
 
 <!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-746 pr=quire-spec-language#492 date=2026-09-26 -->
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `a_typer_stop_reaches_the_package_wide_node_count`, reviewer-mutation-proved |
 | FND-002 | fixed | `call_failure_to_replay_refusal` extracted and tested (Fault -> `ReplayRefusal::Fault`) |

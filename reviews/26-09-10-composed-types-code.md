@@ -33,10 +33,8 @@ accepted as delivered, and FR-040/TC-119 remain open as a whole (see SR-326).
 
 ## Gates
 
-Executed sequentially under `flock /tmp/quire-heavy-check.lock`,
-each `CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=/tmp/formalization-a-language-target
-nice -n10 cargo ... --locked`, tests `-- --test-threads=1`. Log:
-`/tmp/quire-composed-types-review-gates.log`.
+Executed sequentially, each `CARGO_BUILD_JOBS=1 nice -n10 cargo ... --locked`,
+tests `-- --test-threads=1`.
 
 | Gate | Result |
 | --- | --- |

@@ -105,5 +105,4 @@ model that has an operation. This is the `StateModel` share of ADR-012 §15.3.
   (population records).
 - QSpec FR-154, FR-340 and `model-complete.md`'s Frames row.
 - filament-core-data's Semantic IR reader already validates an operation's
-  `frame` shape at the pinned revision 033e228
-  (`crates/semantic-ir/src/schema.rs:1656-1663`).
+  `frame` shape (`crates/semantic-ir/src/schema.rs`).

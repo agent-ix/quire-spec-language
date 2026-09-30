@@ -104,6 +104,6 @@ the existing Rust cache, without timing sleeps or concurrency stress.
 ## Status
 
 Reviewed draft. Qualified Task-016 tests measure derive/canonical/encode limits,
-including isolated hard-ceiling controls (c195950 / SR-111).
+including isolated hard-ceiling controls (SR-111).
 All reader/reconstruction passes remain pending; no runtime or backend budget
 result is inferred from these package counters.

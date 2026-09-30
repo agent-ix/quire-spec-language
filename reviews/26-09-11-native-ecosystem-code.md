@@ -79,12 +79,10 @@ the receipt/target comparisons as the real recovery conditions.
 
 ## Evidence verified
 
-Re-verified against the final integrated fixture
-`/tmp/quire-native-ecosystem-fixture-integrated-20260911`; the corrected and earlier
+Re-verified against the final integrated fixture; the corrected and earlier
 reviewed fixtures are retained historical output and were not re-read. All 67
 dependency digests re-checked with `sha256sum --check`; `dependencies/0.bin`
-is byte-identical to the live main executable
-`/tmp/formalization-a-language-target/release/examples/native_protocol_handoff`; the
+is byte-identical to the live main executable; the
 output seal equals SHA-256 of `compiled-protocol.json` (`424e4942…`). Four isolated
 source identities/formal documents, six declarations with `pre`/`post` on
 `before_apply`/`after_apply`, `Full` commit → control `Committed` and `Partial`
@@ -121,8 +119,7 @@ tree and still holds.
   (`src/protocol_artifact/wire.rs:523`) distinguishes `commit never` from absence, so
   the README's Full/Partial claim is backed by the bytes.
 - **Bytes are real.** All 67 dependency digests recomputed and matched;
-  `dependencies/0.bin` is byte-identical to the live executable
-  `/tmp/formalization-a-language-target/release/examples/native_protocol_handoff`;
+  `dependencies/0.bin` is byte-identical to the live executable;
   contract bytes equal `docs/compiled-protocol-v1.md`; the output seal equals
   SHA-256 of `compiled-protocol.json`.
 - **No second parser, no shell path.** The reader path is `artifact::read` only;
@@ -241,11 +238,9 @@ review does not convert that deferred acceptance into a prototype engineering ga
 ## Gates
 
 Executed by the root on the integrated tree, inspected here, not re-run
-(no green heavy-check repeats):
-`/tmp/quire-native-ecosystem-integrated-{fmt,clippy-minimal,clippy-all,release-test,run,spec}.log`.
+(no green heavy-check repeats).
 `fmt` clean; both Clippy lanes finish clean; 398/398 specs grammar-clean. The named
-release test log records `Running unittests examples/native_protocol_handoff.rs
-(/tmp/formalization-a-language-target/release/examples/native_protocol_handoff-6f7d642293608482)`
+release test log records `Running unittests examples/native_protocol_handoff.rs`
 and `1 passed; 0 failed; 0 ignored`, confirming it ran against actual ELF test-executable
 bytes. The release main example run emits the integrated fixture. As before, the logs
 record outcomes but not the invoked flag sets, so `--all-targets -D warnings` with

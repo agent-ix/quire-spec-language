@@ -111,8 +111,7 @@ this plan does not schedule their builds or edit their repositories.
 ## Coordination Rules
 
 The worktree is /home/peter/dev/worktrees/formalization-a-language, branch
-agent-a/lc02-linked-packages, based on merged runtime 789c636. Keep the private
-owning issue and PR concrete with source/review/evidence pins. No public
+agent-a/lc02-linked-packages. No public
 posting, producer-language invocation or shared-repository change is included.
 
 Use local serial Cargo phases at nice 10, one build job/test thread and existing

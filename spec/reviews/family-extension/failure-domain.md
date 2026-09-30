@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-012 at commit 048deb3 on `task/210-family-extension`, plus the
+Reviewed ADR-012 on `task/210-family-extension`, plus the
 uncommitted one-sentence citation note in the Context section, which changes no
 decision. The review checked ADR-012 against #210's acceptance bullets, the #212
 gate scenarios, accepted QSpec AD-016, QSpec PR #133 (CG `negotiate_*` is the
@@ -42,7 +42,7 @@ behaviour after a refused clause, overlapping parser entries, unknown wire tags
 under cross-repository version skew, a named but unregistered backend, the line
 between absence and run failure, and partial package emission.
 
-Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). Round 1 was REJECT
+Verdict: ACCEPT WITH FINDINGS (round 2). Round 1 was REJECT
 because FND-001 made `requires-bound` unreachable. The revision resolves
 FND-001. One new medium finding (FND-012) and some low residue remain; see
 "Round 2".
@@ -104,7 +104,7 @@ FND-001. One new medium finding (FND-012) and some low residue remain; see
 
 ## Round 2
 
-Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: REJECT.
+Reviewed the ADR-012 diff from round 1. Round-1 verdict: REJECT.
 
 | ID | Round-1 severity | Status | Note |
 | --- | --- | --- | --- |
@@ -145,10 +145,10 @@ names the owner that holds the remaining work.
 | FND-013 | Fixed: §5.2 separates the paths. A CLI argument naming an unknown backend is refused at the edge and forms no request. A request that names one settles `invalid-request`. |
 | FND-014 | Fixed: §12.3 states the mixed-mode case, and QSpec #134 records `invalid-request` with no preference order as the rule. |
 
-## PR review (QSL PR #234, delta 43677c9..10664aa)
+## PR review (QSL PR #234)
 
-The PR reviewer checked the author-closure lines above against ADR-012 at
-10664aa. FND-008, FND-009 and FND-011 to FND-014 are confirmed fixed. For
+The PR reviewer checked the author-closure lines above against ADR-012.
+FND-008, FND-009 and FND-011 to FND-014 are confirmed fixed. For
 FND-009, the `Relation` arm is `Refused(FamilyNotNativelyEvaluable)`, category
-`refusal`, which agrees with ADR-013 O-16 at 4152eb8. ADR-011 22fa948:801-804
+`refusal`, which agrees with ADR-013 O-16. ADR-011:801-804
 still says `unsupported` (SR-474 PR-N3). The open PR findings are in SR-474.

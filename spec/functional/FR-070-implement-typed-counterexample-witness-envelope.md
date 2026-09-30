@@ -123,7 +123,7 @@ requires an already-admitted `Witness`).
 - **Upstream**: [US-010](../usecase/US-010-carry-a-proof-witness-or-replay-outcome-without-a-shadow-type.md);
   ADR-013 O-25 (witness/counterexample carrier), QC-13 (transcript-only
   storage), QC-6/QC-8 (FR-331 `counterexamples` shape); IR `Witness`
-  (`src/kani/witness.rs`, IR PR #139, merged at `954c2f2`) and its admission
+  (`src/kani/witness.rs`, IR PR #139) and its admission
   rule (agent-ix/quire-contract-ir#144); QSpec
   [FR-331](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/interfaces/FR-331-backend-provider-envelope.md)
   AC-9 (`counterexamples` entry shape) and

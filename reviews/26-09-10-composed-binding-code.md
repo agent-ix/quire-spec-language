@@ -45,9 +45,8 @@ the first-correction paragraph the record of that correction.
 
 ## Gates
 
-All run in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`.
+All run in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`.
 
 | Gate | Result |
 | --- | --- |
@@ -59,7 +58,7 @@ All run in this session from the worktree, one heavy command at a time under
 | `cargo deny check` | not applicable — no `deny.toml` in the repo |
 
 The four `#[ignore]`d tests are pre-existing named lanes documented in
-`README.md`, not new. The implementation agent's logs in `/tmp/quire-binding-*.log`
+`README.md`, not new. The implementation agent's logs
 agree with these outcomes; its `quire-binding-fmt.log` and
 `quire-binding-first-check.log` record two failures (module ordering, a missing
 `flow` file) that were fixed before the commit under review.
@@ -295,9 +294,8 @@ registry that may grow, but it is currently dead and should be labelled as such.
 Targeted re-review of the remediation commit against this review's findings.
 Read-only over source, tests, spec and Git; the only writes are this section,
 the current-verdict paragraph and rows FND-015..017. All four gates were re-run
-in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`.
+in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`.
 
 | Gate | Result |
 | --- | --- |
@@ -309,7 +307,7 @@ in this session from the worktree, one heavy command at a time under
 | `cargo deny check` | not applicable — no `deny.toml` in the repo |
 
 Counts rose from 401/417 to 419/435; the four `#[ignore]`d tests are the same
-pre-existing named lanes. Logs are `/tmp/quire-binding-rereview-*.log`.
+pre-existing named lanes.
 
 ### Disposition of the original findings
 
@@ -401,11 +399,9 @@ fourteen original findings stay as dispositioned above and were not re-opened.
 Read-only over source, tests, spec and Git; the only writes are this section,
 the current-verdict paragraph and rows FND-018..020. Every gate was executed in
 this session from the worktree — not read from the implementation agent's logs
-— one heavy command at a time, the whole batch under a single
-`flock /tmp/quire-heavy-check.lock`, with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10` and
-`--locked`. `src/lib.rs` was touched (mtime only, no content change) under that
-lock immediately before the first gate so the shared target could not reuse
+— one heavy command at a time, with `CARGO_BUILD_JOBS=1`, `nice -n 10` and
+`--locked`. `src/lib.rs` was touched (mtime only, no content change)
+immediately before the first gate so the shared target could not reuse
 another worktree's same-package library.
 
 | Gate | Result |
@@ -420,7 +416,7 @@ another worktree's same-package library.
 Counts rose 419 → 422 and 435 → 438; the three added tests are the two
 `arena::tests` unit tests and `large_admitted_model_...`, and all three ran in
 both feature configurations. The four `#[ignore]`d tests are the same
-pre-existing named lanes. Logs are `/tmp/quire-binding-final-review-*.log`.
+pre-existing named lanes.
 
 ### Disposition of the residual findings
 

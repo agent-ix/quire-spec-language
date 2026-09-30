@@ -29,8 +29,8 @@ generated provenance and the exact downstream capability boundary.
 - [x] Deliver the reviewable compiler PR and concrete downstream handoff.
 
 Truth parity and implication activation pass for all eight assignments under the
-explicit historical source profile. The fixture compiles the pinned generator's
+explicit historical source profile. The fixture compiles the generator's
 finite proptest strategy and observes its exact LLVM 3.1.0 source probes. Codegen
-`240fad84` still refuses that LLVM profile through its reusable reader, and the
+still refuses that LLVM profile through its reusable reader, and the
 same test retains that refusal instead of widening downstream capability. C's
 public issues retain reusable proptest, coverage and conformance ownership.

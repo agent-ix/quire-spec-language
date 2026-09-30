@@ -32,7 +32,7 @@ satisfied. No further review campaign is required for this increment.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | Resolved: exhaustive Send/Effect/Event refusal arm and three real typed/discharged negative scenarios establish exact FamilyProof outcomes. | received.rs:152; tests/native_choice_emission.rs:25 |
-| FND-002 | medium | Resolved: prior full/supplemental gates and final focused fix gates are terminal pass. No deny.toml exists, so no cargo-deny lane was invented. | /tmp/quire-owned-attempt-gates.log; /tmp/quire-owned-attempt-supplemental.log; /tmp/quire-owned-attempt-review-fixes.log |
+| FND-002 | medium | Resolved: prior full/supplemental gates and final focused fix gates are terminal pass. No deny.toml exists, so no cargo-deny lane was invented. | - |
 | FND-003 | low | Closed as scoped: absence-of-Effect assertions describe output boundaries, not mutation coverage of the new eligibility arm. The explicit effect-record refusal tests that admission boundary. | tests/native_choice_emission.rs |
 | FND-004 | low | Resolved: sibling availability test explicitly names inherited linker/type-flow refusal, not new-arm coverage. | tests/native_choice_emission.rs:515 |
 | FND-005 | low | Resolved: observed-Boolean terminology, module ownership note and document wrapping aligned without unnecessary renames. | families.rs:3; received.rs:3; FR-042; compiled-protocol-v1.md |

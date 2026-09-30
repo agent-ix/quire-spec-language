@@ -19,7 +19,7 @@ relationships:
 
 ## Scope
 
-Complete QSL #116 by installing Plan-013 against QSpec `8d0fbad`, reconciling
+Complete QSL #116 by installing Plan-013 against QSpec, reconciling
 all 83 Agent-A rows and existing L1–L6 evidence, and preserving the accepted
 issue/test dependency graph without changing central semantics.
 

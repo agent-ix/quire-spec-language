@@ -39,7 +39,7 @@ Gates run on this head: `cargo test -p qsl-replay spine` (32 passed), `cargo tes
 
 Round 2, reviewed after the fix commit. Gates run: `cargo test -p qsl-replay` (97 passed), `cargo test -p quire-spec-language --lib output` (8 passed), `cargo test -p quire-spec-language --test it family_outcome_layering` (5 passed), and `cargo clippy -p qsl-replay -p quire-spec-language --all-targets -- -D warnings` (clean).
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | the new test `convert_refusal_with_no_record_and_no_fallback_is_a_typed_fault` asserts stage `call` and invariant `kernel-refusal-with-no-record` (qsl-replay/src/spine/call/tests.rs:931-945, fn at :937) |
 | FND-002 | fixed | `SpineOutcome::Refused` now has plain `code: &'static str` and `cause: &'static str`, and the type's doc comment is rewritten to match (src/command/output/types.rs:247-262; src/command/output.rs:428-429, 438-439) |

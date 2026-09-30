@@ -53,7 +53,7 @@ universe in force: equality's left, or membership's collection or kept member),
 lowercase hex like the family row, and agreement with FR-100, apart from the
 FND-005 wording.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | kernel `Refusal::ForeignReference` row added to FR-096's key table, approved by the FR-096 owner (qsl-lead2) as relayed by the team leader |
 | FND-002 | fixed | the Status sentence moved into its own "Implemented under QSL-281" group |
@@ -62,6 +62,6 @@ FND-005 wording.
 
 Round 2, re-checked. Against main, FR-096 still changes only in the kernel row and the QSL-281 Status group.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-005 | fixed | the row reads "`supplied`: the universe of the value tested against it, as lowercase hex", agreeing with FR-100 |

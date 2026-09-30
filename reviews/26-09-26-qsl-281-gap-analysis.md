@@ -42,7 +42,7 @@ owning requirement (FND-001).
 
 Round 1, re-checked.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-096's key table gains a kernel `Refusal::ForeignReference` row owning the operand rule (code order corrected in the fix round; FR-100 states it too) |
 | FND-002 | fixed | `c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member` drives a checked `Contains` through `evaluate`; killed the membership-swap mutant |

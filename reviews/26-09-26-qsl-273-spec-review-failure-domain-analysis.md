@@ -57,7 +57,7 @@ contract.
 
 Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Edges are reference, option or sequence only; snapshot values have no set, bag or ordered-set form, and a set-typed field refuses at admission (FR-106 6.2, TC-465 row 17). |
 | FND-002 | fixed | Snapshots and `Current` selections carry an `anchor` (`initialization` or `handler`), checked at admission (check 3, TC-465 row 12). |
@@ -71,7 +71,7 @@ Disposition pass. Each outcome was re-checked against the spec and code. `quire 
 
 Second disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and the reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-008 | fixed | The population domain key is `DomainKey{node: member object_type node, path: [population ordinal]}`. A bounded population adds no domain, and two unbounded populations of the context type refuse `ambiguous_declaration` at `on` (FR-104-AC-5, TC-461 step 5). The comparator behind the ordinal is new FND-013. |
 | FND-009 | fixed | FR-104 now states a qualification for parameter references (pre, not retaggable) with AC-8 and TC-459 step 5. The rule chosen conflicts with QSpec's wording: new FND-011. |

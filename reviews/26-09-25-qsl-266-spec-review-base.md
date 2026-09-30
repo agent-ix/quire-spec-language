@@ -52,7 +52,7 @@ their oracle depends on.
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The fixture table RR-1 to RR-17 adds the three missing cases. RR-14 reads a `forall` binder, with roots keyed by the binder. RR-10 is a narrow over a literal and gives no record. RR-15 (the sibling `let`s, `Bounded` and `Unbounded` at one node) and RR-16 (one `+` node under two narrows) are two occurrences with different extents or bounds. TC-160 step 10 checks each one, and RR-15 in both operand orders (FR-062:283-306, TC-160:72-76, 114-130). |
 | FND-002 | fixed | Every RR unit is a full declaration with its result type. RR-1 is `-z` into `Int[-9, 0]` and RR-4 is `x = y` into `Boolean` (FR-062:290-306). |
@@ -63,6 +63,6 @@ New in this pass: FND-003 (low), recorded in `## Findings` above. It has no outc
 
 Second disposition pass. It covers the findings the first pass left open. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-003 | fixed | Every fixture that has records now names each record's result bound. RR-5, RR-7, RR-8, RR-14 (`+`), RR-15 and RR-17 give `Integer`. RR-11 and RR-12 (`ge`, `le`, `lt`), RR-13 (`ne`) and RR-14 (`gt`) give `Boolean`. RR-13's `/` gives `Rational[-9, 9; 1, 9]`. RR-9 and RR-10 have no records (FR-062:294-306). RR-13's bound is consistent with the rule. `Coerce` exists only for integer narrowing (FR-093), so no narrow wraps the `/`. Integer `/` takes its type from context (`contextual`, qsl-semantics/src/check/check.rs:814-824), and the expected type flows through the `if` into the `then` branch. So the `/`'s own result type, and therefore its result bound, is the declared `Rational[-9, 9; 1, 9]`. |

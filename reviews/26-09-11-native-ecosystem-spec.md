@@ -135,7 +135,6 @@ Base checklist only. The seven optional analyses (failure-domain, integrity,
 dependency, evidence, risk-complexity, scope-boundary, ears-conformance) were not
 selected and were not run; the optional semantic gap extension remains declined at the
 recheck. Spec grammar was validated by the root's completed integrated gate — 398/398
-documents grammar-clean, 0 grammar findings
-(`/tmp/quire-native-ecosystem-integrated-spec.log`) — and was not re-run for ceremony.
+documents grammar-clean, 0 grammar findings — and was not re-run for ceremony.
 The three review artifacts were revalidated here with
 `quire validate --scope /home/peter/dev/worktrees/quire-language-native-ecosystem-handoff "reviews/26-09-11-native-ecosystem-*.md"`.

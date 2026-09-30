@@ -66,7 +66,7 @@ guard, and update the Status text.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | the AC-1 emission test asserts the attempt's anchor and frame on the wire, `contracts == [VersionUnchanged]`, `modifies == [versionNumber]` and one frame record |
 | FND-002 | fixed | `an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record` |

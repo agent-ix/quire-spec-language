@@ -100,7 +100,7 @@ to this record; other artifacts cite them as `ADR-017 PF-n`.
 
 ## Context
 
-Measured on QSL `main` at `99e9b6c7` and QSpec `main` at `4634f5fd`.
+Measured on QSL `main` and QSpec `main`.
 External ticket text is quoted as data, not verified in its repository.
 
 **Layer 3 decisions this record consumes, not reopens.** ADR-011 (stage DAG,

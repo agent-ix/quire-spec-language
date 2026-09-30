@@ -13,8 +13,8 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-014 and its amendments at commit bbe92fec on
-`spec/17-boundedness-adr`, against QSpec `main` at eb4234f (FR-090, FR-144,
+Reviewed ADR-014 and its amendments on
+`spec/17-boundedness-adr`, against QSpec `main` (FR-090, FR-144,
 FR-153, FR-161, FR-228, FR-255, FR-290, FR-341, FR-346, FR-347, FR-348, AD-016,
 native-diagnostics `1-draft.7`) and QSL code. The checklist covered failure
 behaviour at trust boundaries (negotiation, `route`, replay), identity keys

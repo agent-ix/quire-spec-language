@@ -36,6 +36,6 @@ Three items are named without an owner or a signature.
 
 Disposition pass. I re-checked each outcome against the spec. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-101 now gives the signatures of `explore_request` and `sample_request` (domains, `TypeEnvironment`, `position_limit`), plus `enum NotSimulated{RequiresBound, Extent(ClassifyFailure), GeneratorMismatch, EmptyInitial}` and `struct RequiresBound{domains: UnboundedDomains}`. The cause is `CatalogCode::new("cancelled", "caller-cancelled")`. Every type named can be reached under the X-8 set, and FR-101 states that `qsl-eval` gains no `qsl-replay` or `qsl-cst` dependency. |

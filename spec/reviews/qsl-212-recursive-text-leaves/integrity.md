@@ -3,7 +3,7 @@ id: SR-613
 title: "Integrity review of the QSL-212 recursive text-leaf list and the Pre ownership change"
 type: SpecReview
 analysis: integrity
-scope: "Commit 2a931a10: FR-093 Text leaves (rules 1 to 6, reachability, the optional-field inner, the expanded leaf set and the four properties), the Pre paragraph and AC-8, FR-094's postcondition paragraph, and ADR-013 QC-24's text-leaf clauses"
+scope: "FR-093 Text leaves (rules 1 to 6, reachability, the optional-field inner, the expanded leaf set and the four properties), the Pre paragraph and AC-8, FR-094's postcondition paragraph, and ADR-013 QC-24's text-leaf clauses"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-093

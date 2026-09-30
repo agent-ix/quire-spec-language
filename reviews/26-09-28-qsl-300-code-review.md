@@ -92,7 +92,7 @@ are shared code, not copies. Clause-run behaviour is unchanged.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `run_frame` maps `witness: None` with `Completed(Boolean(false))` to `EvaluateFault("frame-false-verdict-without-a-witness")` |
 | FND-002 | fixed | FR-115 Inputs names the spine-owned `OperationName` |

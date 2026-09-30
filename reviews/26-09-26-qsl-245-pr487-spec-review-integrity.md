@@ -39,7 +39,7 @@ can go in this PR. FND-002 needs routing, not an edit here.
 
 Verified against the fix diff on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-096-AC-7 and TC-428 step 3 now cover only the `CatalogCoded` rows; AC-8 covers the twelve kernel rows. |
 | FND-002 | deferred | FR-106 is in agent-a's lane and this PR correctly leaves it alone. The move of condition 7 to `invalid_source_identity`/`blank-label` still needs routing to the FR-106 owner. |

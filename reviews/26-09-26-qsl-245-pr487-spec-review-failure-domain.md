@@ -42,7 +42,7 @@ adopted rules.
 
 Verified against the fix diff on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-096 now says `SumOutOfDomain` names no catalog undefined reason and builds no `UndefinedRecord`. Its new `sum-out-of-domain` spelling points at a missing FR-100 row; see SR-729. |
 | FND-002 | fixed | OQ-2 now says QSL cannot reach the unbounded case, and that the record SHALL render the declared `Int[lo, hi]`, not the `Decimal[lo, hi; 0, 0]` placement. |

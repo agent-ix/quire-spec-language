@@ -66,8 +66,8 @@ All branches are typed; only potentially evaluated operations need definedness.
 An initializer cannot borrow later guards. Proof carriers never invent native
 object/enum identity facts.
 
-Started after Task-008 completion at ac36598; seven initial public-API tests
-recorded the missing checker API at 8eb8761. The final 24 checker tests execute
+Started after Task-008 completion; seven initial public-API tests
+recorded the missing checker API. The final 24 checker tests execute
 TC-025–029 and TC-046–053, including exact authored bindings, actual IR proofs,
 nominal/observation/lexical constraints, all lowered budgets, shared expansion,
 depth exactly 64, accumulated goals and 202 independently evaluated guard formulas.

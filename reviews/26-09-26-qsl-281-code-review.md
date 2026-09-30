@@ -72,7 +72,7 @@ worktree. Log: scratchpad/rv479/make-ci.log (`exit=` last). Result: exit 0. Muta
 
 Round 1, re-checked after the fix round (rebased on main after #481) in a fresh worktree. The reviewer re-ran two mutants. Reverting `member_equal_stop` to `plan_pairs(candidate, member)` fails c06b and c10. Swapping the fields in `kernel_refusal_record` fails the TC-428 test, qsl-replay TC-452 step 4 and the CLI `refused_foreign_reference_renders_record_and_exits_20`.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `member_equal_stop` calls `plan_pairs(member, candidate)`; c10 expects required=u1 supplied=u2; c06b covers `Contains` |
 | FND-002 | fixed | `tc_322_foreign_reference_universes_are_not_swapped` deleted |

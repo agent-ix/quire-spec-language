@@ -50,7 +50,7 @@ The empty-sum path can be reached. A scratch test ran `sum<Int[1, 3]>(x in q: x)
 
 Round 1, re-checked after the fix.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `tc_500_an_empty_sum_whose_domain_excludes_zero_is_undefined_at_the_sum_node` checks `sum<Positive = Int[1, 3]>` over an empty `Sequence<Int[1, 3]>[0, 2]` under `CheckMode::Kernel`: `SumOutOfDomain` at the `sum` node, with no arithmetic and no retain charge. Disabling the empty-sum check now makes it fail. |
 | FND-002 | fixed | the replay loop and the CLI test each list five reasons, including `sum-out-of-domain`. The CLI test feeds the string in directly, so it checks rendering only; the replay test checks the mapping. |

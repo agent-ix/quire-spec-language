@@ -44,8 +44,8 @@ set of newly load-bearing refusals with no adverse case.
 ## Dispositions of the SR-350 findings
 | Prior   | Disposition                                                                                                                                   |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| FND-001 | **Resolved.** See "Identity" below. Reproduced red at `/tmp/quire-native-compensation-review-red.log`.                                          |
-| FND-002 | **Resolved.** See "Recovery" below. The clock swap was reproduced red in the same log.                                                          |
+| FND-001 | **Resolved.** See "Identity" below. Reproduced red.                                          |
+| FND-002 | **Resolved.** See "Recovery" below. The clock swap was reproduced red.                                                          |
 | FND-003 | **Resolved by specification, with a residual.** `1..=9223372036854775807` is now the stated authored bound in FR-042 and the wire contract, and `compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond` shows `i64::MAX` surviving source→emit→independent read and `9223372036854775808` refusing as `NumberError::ComponentOutOfRange { component: Decimal }`. Residual carried above as FND-003: the ceiling is the decoder's, not a compensation check, and no work dimension is charged against the value. |
 | FND-004 | **Open**, unchanged. Carried above as FND-004.                                                                                                  |
 | FND-005 | **Open**, unchanged. Carried above as FND-005.                                                                                                  |

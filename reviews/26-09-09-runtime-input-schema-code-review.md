@@ -59,7 +59,7 @@ Locked/offline Cargo reused target, nice 10, one job and one test thread:
 | Cached minimal binaries/config_version_fixtures build | Pass |
 | Formatting | Pass |
 
-No deny.toml is installed. Logs: /tmp/agent-a-runtime-schema-*. Optional ignored
+No deny.toml is installed. Optional ignored
 assurance lanes were not claimed as executed; no hosted CI ran. SR-276–283 carry
 the all-set specification review. The advisor failure and pending installed
 catalog adoption do not negate the actual Rust run results.

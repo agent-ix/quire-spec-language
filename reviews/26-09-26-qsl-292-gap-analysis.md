@@ -40,7 +40,7 @@ Ticket: QSL-292. PR: quire-spec-language#494. This checks the coder's three clai
 
 Round 2, reviewed at the fix commit.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | all ten records (twelve cases, counting the three `DivisionPairOutOfDomain` flag pairs) now assert the exact code, cause, exact `fields` with TC-452's payloads, the locus digest and byte span, and the location (qsl-replay/src/spine/call/tests.rs:432-598) |
 | FND-002 | fixed | `tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes` (qsl-replay/src/spine/call/tests.rs:793) is traced `TC-452`/`FR-100-AC-10`. It checks `sum<Pos>` for `Pos = Int[1, 9]` under `CheckMode::Kernel` and evaluates it for real: the empty `q` and `[9, 9]` each give `SumOutOfDomain` at the `sum` node, which `convert_outcome` maps to `sum-out-of-domain`; `[4]` completes `"4"`. The render and exit 20 compose with `undefined_kernel_reasons_render_and_exit_20` (src/command/output.rs:678). Not going through `spine::run` is correct: see FND-004. The `qsl-semantics` `test-support` dev-dependency follows the workspace pattern (qsl-eval, qsl-package and the root crate do the same) and is guarded by `no_shipped_dependency_enables_test_support`, which passes. |
@@ -49,6 +49,6 @@ Round 2, reviewed at the fix commit.
 
 Round 3. The change is spec text only; `quire validate` on FR-100 is clean.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-004 | fixed | FR-100:207-211 now states that `run` never yields `sum-out-of-domain`, that linked checking refuses with `unproved-range` (FR-096), that the row keeps the mapping total, and that only a `CheckMode::Kernel` expression evaluated at S6a reaches it (FR-100-AC-10). This matches `Definedness`/`prefix_sums` in qsl-semantics/src/check/facts.rs. |

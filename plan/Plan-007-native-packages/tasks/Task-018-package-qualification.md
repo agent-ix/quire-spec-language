@@ -61,6 +61,6 @@ Run one Cargo phase at a time with nice 10, -j 1, --locked --offline,
 No additional agents, hosted dispatch, public publication or overlapping
 B/C/TL/Filament edits. Review meaning changes through specify/spec-review again.
 
-Qualification: implementation eb97a87; PR code/Rust review SR-112 and final
+Qualification: PR code/Rust review SR-112 and final
 Plan-007 gap audit SR-113. Broader LC02/FS05 and LC04/05 acceptance is tracked
 in those separate, own-owned tickets.

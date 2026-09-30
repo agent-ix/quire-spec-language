@@ -10,7 +10,7 @@ review_set: all
 
 The description and conditional failures use named runtime subjects with When/shall and If/then/shall forms. Remaining normative statements have one concrete response each. Input/output and ownership paragraphs define the contract without introducing ambiguous additional obligations.
 
-Author PR-readiness review of `9c3e5ff`, following implementation as directed.
+Author PR-readiness review, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

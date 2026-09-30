@@ -74,7 +74,7 @@ not met.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | (plus the string-edge gate fix): `protocol_clause::content` refuses every uncovered node kind, construct and non-literal body, and checks the grammar-mandatory rest. The split was verified complete against the grammar (SR-772) |
 | FND-002 | fixed | the `Origin::ProtocolAttempt` arm and the `Boolean` `Type` record. Reverting either reproduces `UnlocatedOccurrence` (SR-772 FND-001 covers the population record) |

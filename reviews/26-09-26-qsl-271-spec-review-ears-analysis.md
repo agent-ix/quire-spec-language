@@ -35,7 +35,7 @@ Verdict: pass with low findings.
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Behavior now has If/then SHALLs for the unknown edition, a malformed call or `work_units`, a bad `function`, a name that resolves to nothing, an unsupported result, the join refusals and `WrongValueKind`. |
 | FND-002 | fixed | "If the program declares `0-draft` or no edition, then the run command shall run the program through FR-026's native run" was added, and AC-2 now points at the TC-103 and TC-104 results. |

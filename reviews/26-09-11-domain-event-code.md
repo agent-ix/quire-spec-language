@@ -86,8 +86,7 @@ ignored tests per configuration. The added commit refusal was present in the
 all-feature run; the later focused minimal run passed all five domain-identity
 tests. Both strict Clippy configurations, formatting, bins/examples build,
 warning-free rustdoc and fixture-audit self-test/model-byte checks passed.
-Logs: `/tmp/quire-domain-event-full-gates.log` and
-`/tmp/quire-domain-event-supplemental.log`. PR-63's separately validated mixed
+PR-63's separately validated mixed
 tests were integrated after the full-suite target inventory was selected;
 the subsequent all-targets Clippy checks include them. The separately named
 stripped-release producer check is recorded at PR handoff, not inferred here.

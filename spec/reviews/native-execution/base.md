@@ -10,7 +10,7 @@ review_set: all
 
 Four FR-023 criteria define truth/provenance, failed validation, stopped/retried work and operations. TC-097/098 and TM-007 supply tagged public integration tests for all four. The six coverage rules were checked for this composition boundary; existing stages retain their detailed domain/budget coverage.
 
-Author PR-readiness review of `9c3e5ff`, following implementation as directed.
+Author PR-readiness review, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

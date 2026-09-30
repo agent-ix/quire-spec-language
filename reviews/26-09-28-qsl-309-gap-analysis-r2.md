@@ -55,7 +55,7 @@ Approve after FND-001, which the reviewer fixed in-PR together with FND-002.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-113 and FR-114 Status say that the protocol itself is not emitted, and FR-113 lists the duplicate-role refusal |
 | FND-002 | fixed | `a_valid_attempt_does_not_let_garbage_content_through` covers `using Config`, `by Q`, a duplicate role and a `relationship`. A mutation that removes the `Relationship` capture turns it red |

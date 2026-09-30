@@ -55,7 +55,7 @@ deferred.
 
 Round 2.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-103-AC-1/AC-3 and TC-458 mark the bound-scalar half **Unverified**, citing QSL-289 (Backlog, "FR-056: read quire.meaning.model.value-type/v1 bound scalars"). The test module doc cites QSL-289. |
 | FND-002 | deferred | QSL-279 owns the FR-108 fixture, and should repoint the TC-458 tests at it when it lands. |
@@ -75,7 +75,7 @@ Round 2.
 
 Round 3.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Unverified, QSL-289 |
 | FND-002 | deferred | QSL-279 |
@@ -90,6 +90,6 @@ Round 3.
 
 Round 4.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-008 | fixed | TC-457 step 3 now builds `d - 1` nested `not`s (depth `d`), then `d`, which matches the expected result and protocol_clause_forms.rs:261-264. The change is spec text only. |

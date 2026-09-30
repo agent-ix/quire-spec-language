@@ -42,7 +42,7 @@ These parts are sound:
 
 Round 1, re-checked against the fix diff. Mutants were re-run in a scratch worktree, which was then deleted.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | (with the asymmetric rational domain): the new `qsl-eval/tests/it/kernel_refusal_payloads.rs` raises each value refusal through the real kernel entry point and checks every rendered field. `coerce_and_count_refusals_carry_the_declared_domain` covers Coerce and count, and the quantity integer sites now compare the domain. Four mutants that previously survived or were never checked are now killed: the NaN target/source swap, `IeeeNotExact` hard-wired to Binary32, modulo hard-wired to `Int[0, 0]`, and Coerce hard-wired to `Int[0, 0]`. |
 | FND-002 | fixed | `stage.rs:19` reads "the four `1-draft.7` kinds" |

@@ -49,7 +49,7 @@ readings.
 
 Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | One node per distinct clause node id, with one `claim` occurrence per declaration in source order; FR-105-AC-4 adds `ParentOrder2` (no new node, a second occurrence at ordinal 1). |
 | FND-002 | fixed | One anchor and one frame per (declaring object type, operation name); FR-105-AC-4 adds the `Sub` case. |

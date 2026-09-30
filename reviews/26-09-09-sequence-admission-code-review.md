@@ -63,7 +63,7 @@ stub was found. Original frozen model/package vectors remain in the full suite.
   formatting and both Rust fixture-audit commands: exit 0.
 
 Commands use the locked offline dependencies, worktree target cache, nice 10,
-one Cargo job and one test thread. Logs are /tmp/agent-a-sequence-*.txt. Quire
+one Cargo job and one test thread. Quire
 validation/coverage is recorded by SR-262/264. The workflow diff is empty;
 existing CI remains workflow_dispatch-only with both feature lanes, and no run
 was dispatched. No dependency or license changed. Broader ruling reconciliation,

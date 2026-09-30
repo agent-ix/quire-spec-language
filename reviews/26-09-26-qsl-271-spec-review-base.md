@@ -45,7 +45,7 @@ be reached through the checker.
 
 Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `inv` is gone from the undefined case: TC-451 step 7 is now `seven` with `work_units` 0 only, and AC-6 has no undefined clause. The undefined row is covered below the CLI by the total mapping table (FR-100:109-116) and by AC-9 and TC-452 step 4, which construct each `Outcome::Undefined` and `FamilyResult::Undefined`. `inv` is kept as a check-stage fixture; see new FND-006 for its unpinned code. |
 | FND-002 | fixed | The `refused` outcome now has mapping rows for kernel and family refusals with exit statuses (FR-100:113-114), and AC-9 and TC-452 step 4 construct each one. The kernel spelling table this relies on is incomplete; see SR-649 FND-004. |

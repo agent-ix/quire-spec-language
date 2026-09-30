@@ -47,7 +47,7 @@ in SR-724 FND-001.
 
 Verified against the fix diff on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-444 step 5 now expects `blank-label` with `label` `authority`, its Status and `tests.md` row are Partial, and the cause and field are marked planned. |
 | FND-002 | deferred | The `quire-exact` code is outside this spec-only PR. The fix records the stale TC-318 tag and comment in FR-096 Status, for the coder who builds AC-8 to retag and correct. |

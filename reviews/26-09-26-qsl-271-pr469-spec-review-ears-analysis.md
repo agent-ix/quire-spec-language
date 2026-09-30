@@ -35,6 +35,6 @@ Approve with a nit: no statement changes meaning.
 
 Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The kernel table's "until" cells are gone. The normative text states the rule at `1-draft.7`, and the STD-110, QSL-281 and "later record" notes are in Status. |

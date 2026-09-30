@@ -73,7 +73,7 @@ qsl-semantics -p qsl-replay` in the worktree's own target dir: all passed.
 
 Round 2.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | `AssemblyCause::UnsupportedStateClause` refuses each clause at its declaration span (assemble.rs:258, 453-459, 1133-1141; qsl-replay spine.rs:371). No test guards it; see FND-009. |
 | FND-002 | fixed | two genuinely reordered documents (the `AuditLog` type before and after `ConfigVersion`, a cross-type frame entry), with the assembled declarations of both types compared (model_operations.rs:798-951). |
@@ -94,7 +94,7 @@ are kept. The reviewer ran `cargo test -p qsl-forms -p qsl-semantics -p
 qsl-replay` with `CARGO_TARGET_DIR` set to the worktree's own `target/`: all
 passed, including the two new tests.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | guarded now by FND-009's test |
 | FND-002 | fixed | |
