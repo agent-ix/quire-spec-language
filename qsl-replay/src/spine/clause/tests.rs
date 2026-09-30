@@ -4934,5 +4934,6 @@ fn s4_state_package_reads_back_through_i2() {
     let _ = view;
 }
 
+mod call_site;
 mod frame;
 mod frame_replay;

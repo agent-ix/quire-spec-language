@@ -1053,6 +1053,68 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     );
 }
 
+/// FR-121-AC-4 (TC-516): `call_site` compiles TC-444 step 7's importing
+/// unit against a dependency input supplying `test/units`, and a request
+/// carrying that dependency, keyed only by `call_site`'s own `package_id`
+/// and parameter pair, replays and agrees. Without the dependency input the
+/// same unit refuses `Compile` at its import.
+#[trace("TC-516", "FR-121-AC-4")]
+#[test]
+fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
+    let importing = Importing::new();
+    let locate = |dependencies: &crate::DependencyInput| {
+        crate::call_site(
+            SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            IDENTITY,
+            importing.unit.as_bytes(),
+            [],
+            dependencies,
+            &crate::CallSiteSelection::Function(name(&["q"])),
+        )
+    };
+    let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
+        identity: "test/units".to_owned(),
+        version: "2".to_owned(),
+        source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        path: UNITS_IDENTITY.to_owned(),
+        bytes: importing.units.clone().into_bytes(),
+    }])
+    .unwrap();
+    let site = locate(&dependencies).expect("the importing unit compiles against test/units");
+    let crate::CallSiteTarget::Function { parameters } = &site.target else {
+        panic!("a function selection locates a function: {site:?}");
+    };
+    let [(parameter, node)] = &parameters[..] else {
+        panic!("q declares one parameter: {parameters:?}");
+    };
+    assert_eq!(parameter.as_str(), "x");
+
+    let mut wire = importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]);
+    wire.package_id = (
+        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+        site.package_id.hex(),
+    );
+    wire.source = input(*node, 3);
+    let ReplayResult::Input(result) = replay(wire).expect("the replay runs") else {
+        panic!("Input arm");
+    };
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+
+    let refusal = locate(&crate::DependencyInput::default())
+        .expect_err("no library is supplied as test/units");
+    let crate::CallSiteRefusal::Compile(message) = *refusal else {
+        panic!("expected Compile, got {refusal:?}");
+    };
+    assert!(
+        message.contains("missing_import"),
+        "the refusal names the unsupplied import: {message}"
+    );
+}
+
 /// FR-098-AC-7 (TC-444 step 7): the `dependencies` entries' order, extent
 /// and sources refuse by ADR-015 D-4's rules, each with no verdict.
 #[trace("TC-444", "FR-098-AC-7")]
