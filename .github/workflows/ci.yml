@@ -11,7 +11,7 @@ jobs:
     # installs cargo-deny 0.19.8 from source (a cold-cache release build
     # measured locally at ~2 minutes with a warm crates.io index; a fresh
     # runner with a cold index and no local download cache is slower), on
-    # top of installing cargo-llvm-cov, two clippy passes, two test passes,
+    # top of two clippy passes, two test passes,
     # a docs build and a clean build. 10 minutes did not have margin for
     # that even before this change.
     timeout-minutes: 45
@@ -22,9 +22,7 @@ jobs:
       - name: Spec index completeness (FR/TC master index)
         run: tools/check-index-completeness.sh
       - name: Install pinned toolchain
-        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy --component llvm-tools-preview
-      - name: Install pinned coverage reporter
-        run: cargo install cargo-llvm-cov --version 0.9.0 --locked
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
       - name: Install pinned cargo-deny
         run: cargo install cargo-deny --version 0.19.8 --locked
       - name: Formatting
