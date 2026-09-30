@@ -1,4 +1,0 @@
-[alias]
-# `cargo xtask seam-probe` / `cargo xtask string-edge` wrap the `xtask`
-# workspace crate.
-xtask = "run --package xtask --"

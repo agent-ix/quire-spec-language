@@ -7,3 +7,8 @@ target/
 target-*/
 .fixtarget/
 .worktrees/
+
+# one-copy-deps: `make use-local` writes this to patch first-party git deps
+# to sibling checkouts; `make use-remote` deletes it. Never tracked -- it
+# names absolute paths and would rewrite everyone else's build.
+/.cargo/config.toml
