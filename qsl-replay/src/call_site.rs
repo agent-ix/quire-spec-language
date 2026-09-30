@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! A thin CG-facing cut of [`crate::spine::compile`]: the facts a client
-//! needs to key a `ReplayRequestWire` or a frame counterexample by node id
+//! needs to key a `ReplayRequestWire` or a frame or state-clause
+//! counterexample by node id
 //! and package id (ADR-013 O-25, C-11), without reaching
 //! `qsl_replay::spine` itself, which CG may not call (ADR-011 §3 FB-05,
 //! T-12 rule (a): `spine` is public only for `command`).
@@ -8,11 +9,11 @@
 //! [`call_site`] compiles one unit against the supplied domain package
 //! documents and dependency input, under the default spine stage limits,
 //! and locates one selection in the result: the compiled package's own
-//! `package_id` and either a named function's parameters, each paired with
-//! its own node id, or a named operation's anchor, frame and state clause
-//! identities. Every node id is the same `WireNodeId` a
-//! `CanonicalAssignment`, a witness transcript or a frame counterexample
-//! names, joined by declared identity, never by position (ADR-013 O-25).
+//! `package_id` and a named function's parameters, each paired with its own
+//! node id, a named operation's anchor, frame and state clause identities,
+//! or a named state clause's identities. Every node id is the same
+//! `WireNodeId` a `CanonicalAssignment`, a witness transcript or a
+//! counterexample names, joined by declared identity, never by position (ADR-013 O-25).
 //! It builds no [`crate::execute::replay`] call and no
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
@@ -21,24 +22,43 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame};
+use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::package_input;
 use quire_exact::{Identifier, NodeKey};
 
 use crate::execute::callable_parameter_keys;
 use crate::identity::QualifiedName;
-use crate::spine::{self, DependencyInput, OperationName};
+use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal, OperationName};
 
 /// What [`call_site`] can locate in the compiled package, and what it
-/// answers for each: a [`QualifiedName`] selects a function, by the
-/// one-segment name FR-098's selection resolves, and locates a
-/// [`FunctionSite`]; an [`OperationName`] `M::T::op` selects an operation,
-/// resolved as FR-115's `Frame` selection resolves it, and locates an
-/// [`OperationSite`]. Sealed: those two are the only selections.
+/// answers for each:
+/// - a [`QualifiedName`] selects a function, by the one-segment name
+///   FR-098's selection resolves, and locates a [`FunctionSite`];
+/// - an [`OperationName`] `M::T::op` selects an operation, resolved as
+///   FR-115's `Frame` selection resolves it, and locates an
+///   [`OperationSite`];
+/// - a [`ClauseName`] selects a state clause -- an invariant, a
+///   precondition or a postcondition -- by its declared name, as FR-106's
+///   `ClauseSelection` names it, and locates a [`ClauseSite`].
+///
+/// Sealed: these three are the selections.
 pub trait CallSiteSelection: sealed::Locate {}
 
 impl CallSiteSelection for QualifiedName {}
 impl CallSiteSelection for OperationName {}
+impl CallSiteSelection for ClauseName {}
+
+/// A state clause of the unit, by its declared name: the name FR-106's
+/// `ClauseSelection` and a state-clause counterexample name it by.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClauseName(pub Identifier);
+
+impl std::fmt::Display for ClauseName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0.as_str())
+    }
+}
 
 mod sealed {
     use qsl_foundation::digest::DigestRecord;
@@ -61,8 +81,8 @@ mod sealed {
 }
 
 /// What [`call_site`] returns: the compiled package's own content-addressed
-/// identity and what the selection located, a [`FunctionSite`] or an
-/// [`OperationSite`].
+/// identity and what the selection located, a [`FunctionSite`], an
+/// [`OperationSite`] or a [`ClauseSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
     /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
@@ -115,12 +135,42 @@ pub struct ClauseSite {
 /// Why [`call_site`] named no call site.
 #[derive(Debug, thiserror::Error)]
 pub enum CallSiteRefusal {
-    /// S1 to S4 refused the source, a domain package selection, an import
-    /// or the dependency input. Carries the refusal's own rendered message;
-    /// the stage and region detail live only in `qsl_replay::spine`, which
-    /// this facade does not expose.
+    /// The unit's own source did not compile: S1, S2, a header profile, the
+    /// assembler, the checker, the link step or the emitter refused it.
+    /// Carries the refusal's own rendered message; the stage and region
+    /// detail live only in `qsl_replay::spine`, which this facade does not
+    /// expose.
     #[error("the source did not compile: {0}")]
     Compile(String),
+    /// A `model` declaration of the unit selects a domain package that the
+    /// supplied `packages` do not admit (I1).
+    #[error("domain package intake refused `model {alias}`: {message}")]
+    ModelIntake {
+        /// The `model` declaration's alias.
+        alias: String,
+        /// The intake refusal's rendered message.
+        message: String,
+    },
+    /// The supplied `dependencies` refused against the unit: a library
+    /// shares the unit's source owner (ADR-013 O-04).
+    #[error("the dependency input refused: {0}")]
+    DependencyInput(DependencyInputRefusal),
+    /// One of the unit's own `import`s did not resolve against the supplied
+    /// `dependencies` (ADR-015 D-1): no library is supplied under its
+    /// identity, its version or digest disagrees, or the imports form a
+    /// cycle or a diamond. Carries the resolution's rendered message.
+    #[error("{0}")]
+    Import(String),
+    /// A supplied library, resolved through the unit's imports, did not
+    /// compile.
+    #[error("the library {} refused: {message}", display_path(.path))]
+    Dependency {
+        /// The library identities from the unit's import down to the
+        /// library that refused, that library last.
+        path: Vec<LibraryName>,
+        /// The library's own refusal's rendered message.
+        message: String,
+    },
     /// `selection` names no function of the compiled `package`. Never a
     /// bare `QualifiedName` (FR-088-AC-6, TC-258): paired with the package
     /// it was looked up in, mirroring `ReplayRefusal::UnknownFunction`.
@@ -140,6 +190,15 @@ pub enum CallSiteRefusal {
     UnknownOperation {
         /// The operation `call_site` was given.
         selection: OperationName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
+    /// `selection` names no state clause of the compiled `package`. Paired
+    /// with the package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("missing_declaration/missing-name: package {} declares no state clause {selection}", .package.hex())]
+    UnknownClause {
+        /// The clause name `call_site` was given.
+        selection: ClauseName,
         /// The compiled package's own `package_id`.
         package: DigestRecord,
     },
@@ -173,10 +232,46 @@ pub fn call_site<'a, S: CallSiteSelection>(
         dependencies,
         spine::SpineLimits::default(),
     )
-    .map_err(|refusal| Box::new(CallSiteRefusal::Compile(refusal.to_string())))?;
+    .map_err(|refusal| Box::new(CallSiteRefusal::from(*refusal)))?;
     let package_id = compiled.emitted.package_id().record();
     let site = selection.locate(&compiled.package, package_id)?;
     Ok(CallSite { package_id, site })
+}
+
+impl From<CompileRefusal> for CallSiteRefusal {
+    /// Sort a spine compile refusal by whose input it concerns: the unit's
+    /// own source, the domain packages, the dependency input, an import, or
+    /// a supplied library.
+    fn from(refusal: CompileRefusal) -> Self {
+        match refusal {
+            CompileRefusal::Intake { refusal, .. } => Self::ModelIntake {
+                message: spine::intake_message(&refusal.cause),
+                alias: refusal.alias,
+            },
+            CompileRefusal::DependencyInput(input) => Self::DependencyInput(input),
+            CompileRefusal::Import { refusal, .. } => Self::Import(refusal.to_string()),
+            CompileRefusal::Dependency { path, refusal } => Self::Dependency {
+                path,
+                message: refusal.to_string(),
+            },
+            refusal @ (CompileRefusal::Source(_)
+            | CompileRefusal::Forms { .. }
+            | CompileRefusal::Profile { .. }
+            | CompileRefusal::Assembly { .. }
+            | CompileRefusal::Check { .. }
+            | CompileRefusal::Link(_)
+            | CompileRefusal::Emit(_)
+            | CompileRefusal::Omitted(_)) => Self::Compile(refusal.to_string()),
+        }
+    }
+}
+
+/// A dependency path written `a -> b -> c`.
+fn display_path(path: &[LibraryName]) -> String {
+    path.iter()
+        .map(LibraryName::as_str)
+        .collect::<Vec<_>>()
+        .join(" -> ")
 }
 
 impl sealed::Locate for QualifiedName {
@@ -244,6 +339,28 @@ impl sealed::Locate for OperationName {
     }
 }
 
+impl sealed::Locate for ClauseName {
+    type Site = ClauseSite;
+
+    /// The state clause of `package` declared `self`, with its identities.
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<ClauseSite, Box<CallSiteRefusal>> {
+        let clause = package
+            .graph()
+            .state_clause(self.0.as_str())
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownClause {
+                    selection: self.clone(),
+                    package: package_id,
+                })
+            })?;
+        clause_site(clause)
+    }
+}
+
 /// `frame`'s identities in `graph`, with every state clause whose operation
 /// is `frame`'s operation -- the same (declaring type, operation) identity
 /// [`CheckedGraph::operation_frame`] selects the frame by.
@@ -255,14 +372,7 @@ fn operation_site(
         .state_clauses()
         .iter()
         .filter(|clause| clause.operation() == Some(frame.operation()))
-        .map(|clause| {
-            let node = wire_id(clause.identity());
-            Ok(ClauseSite {
-                name: identifier(clause.name(), "declared-clause-name-is-a-valid-identifier")?,
-                node,
-                occurrence: OccurrenceKey::new(node, clause.claim().clone()),
-            })
-        })
+        .map(clause_site)
         .collect::<Result<Vec<_>, Box<CallSiteRefusal>>>()?;
     let frame_node = wire_id(frame.frame());
     Ok(OperationSite {
@@ -270,6 +380,16 @@ fn operation_site(
         frame: frame_node,
         frame_occurrence: OccurrenceKey::new(frame_node, frame.frame_origin().clone()),
         clauses,
+    })
+}
+
+/// `clause`'s declared name, `state_clause` node and `claim` occurrence.
+fn clause_site(clause: &CheckedStateClause) -> Result<ClauseSite, Box<CallSiteRefusal>> {
+    let node = wire_id(clause.identity());
+    Ok(ClauseSite {
+        name: identifier(clause.name(), "declared-clause-name-is-a-valid-identifier")?,
+        node,
+        occurrence: OccurrenceKey::new(node, clause.claim().clone()),
     })
 }
 

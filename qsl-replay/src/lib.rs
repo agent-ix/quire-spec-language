@@ -39,13 +39,9 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use call_site::{
-    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseSite, FunctionSite,
+    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FunctionSite,
     OperationSite,
 };
-// The inputs `call_site` takes and the typed operation name it and FR-115
-// select by. They are defined in `spine` because the spine compile reads
-// them; re-exported at the root so CG names them without naming `spine`,
-// which it may not (ADR-011 §3 FB-05, T-12 rule (a)).
 pub use execute::{
     replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
     LimitAboveReader, ReplayRefusal,
@@ -59,6 +55,10 @@ pub use proof_result::{
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
+// The inputs `call_site` takes and the typed operation name it and FR-115
+// select by. They are defined in `spine` because the spine compile reads
+// them; re-exported at the root so CG names them without naming `spine`,
+// which it may not (ADR-011 §3 FB-05, T-12 rule (a)).
 pub use spine::{
     DependencyInput, DependencyInputRefusal, OperationName, SourceHolder, SuppliedLibrary,
 };

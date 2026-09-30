@@ -1,12 +1,12 @@
 ---
 id: TC-516
-title: "call_site names a function's parameters and an operation's identities, matching what replay accepts"
+title: "call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-121
     type: verifies
 ---
-# TC-516: call_site names a function's parameters and an operation's identities, matching what replay accepts
+# TC-516: call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts
 
 ## Description
 
@@ -19,10 +19,13 @@ compiled against a dependency input. It locates a named operation's anchor,
 frame and state clause identities in a unit compiled against a domain
 package, read back against the compiled graph's nodes by semantic form and
 against occurrence keys built through the facade's own `OccurrenceKey`,
-`Origin` and `Role`. It refuses a function or operation resolving to
-nothing, pairing it with the package it was looked up in.
+`Origin` and `Role`, keeping only the selected operation's clauses in
+declaration order, and locates a named state clause of any kind. It
+refuses a function, operation or clause resolving to nothing, pairing it
+with the package it was looked up in, and an unsupplied domain package as
+`ModelIntake`.
 
-Scope: FR-121-AC-1 to FR-121-AC-5.
+Scope: FR-121-AC-1 to FR-121-AC-9.
 
 ## Test Procedure
 
@@ -51,6 +54,19 @@ Scope: FR-121-AC-1 to FR-121-AC-5.
 5. Compile the step 3 unit through `call_site` selecting
    `Nope::ConfigVersion::attemptUpdate`, `Config::Nope::attemptUpdate` and
    `Config::ConfigVersion::nope`.
+6. Build the two-operation unit: the step 3 domain package with `probe`
+   added, the step 3 invariants, a precondition `AttemptPre` on
+   `attemptUpdate`, then `VersionUnchanged`, then a postcondition
+   `ProbeUnchanged` on `probe`, and the function `sameIdentity`. Select
+   `attemptUpdate` and `probe`.
+7. Build the same unit with no `AttemptPre` and no `ProbeUnchanged`, and
+   select `Config::ConfigVersion::probe`.
+8. Over the step 6 unit, select the clauses `ParentOrder`, `NoCycle`,
+   `AttemptPre`, `VersionUnchanged`, `Absent` and `sameIdentity`. Compare
+   the answers with the graph's `state_clause` nodes of each kind, with the
+   step 6 `attemptUpdate` answer, and with `claim` occurrence keys built
+   through the facade.
+9. Compile the step 6 unit through `call_site` with no domain package.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -69,6 +85,19 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   absent.
 - Step 4: with the dependency input, the parameter is `x` and the replay
   reproduces without a witness with the value `false`; without it,
-  `call_site` refuses `CallSiteRefusal::Compile` naming `missing_import`.
+  `call_site` refuses `CallSiteRefusal::Import`.
 - Step 5: each refuses `CallSiteRefusal::UnknownOperation`, pairing the
   given `OperationName` with the compiled package's own `package_id`.
+- Step 6: `attemptUpdate`'s clauses are exactly `AttemptPre`, then
+  `VersionUnchanged`; `probe`'s are exactly `ProbeUnchanged`, at a
+  different frame node.
+- Step 7: `call_site` refuses `CallSiteRefusal::UnknownOperation`, pairing
+  the `OperationName` with the compiled package's own `package_id`.
+- Step 8: the invariants' answers are the two invariant nodes,
+  `AttemptPre`'s the precondition node, `VersionUnchanged`'s a
+  postcondition node equal to the `attemptUpdate` answer's entry, each at
+  its `claim` occurrence at ordinal 0 and with the compiled `package_id`;
+  `Absent` and `sameIdentity` each refuse `CallSiteRefusal::UnknownClause`
+  paired with the package.
+- Step 9: `call_site` refuses `CallSiteRefusal::ModelIntake` with the alias
+  `Config`.

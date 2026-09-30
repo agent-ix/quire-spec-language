@@ -1057,7 +1057,7 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
 /// unit against a dependency input supplying `test/units`, and a request
 /// carrying that dependency, keyed only by `call_site`'s own `package_id`
 /// and parameter pair, replays and agrees. Without the dependency input the
-/// same unit refuses `Compile` at its import.
+/// same unit refuses `Import`.
 #[trace("TC-516", "FR-121-AC-4")]
 #[test]
 fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
@@ -1103,12 +1103,9 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
 
     let refusal = locate(&crate::DependencyInput::default())
         .expect_err("no library is supplied as test/units");
-    let crate::CallSiteRefusal::Compile(message) = *refusal else {
-        panic!("expected Compile, got {refusal:?}");
-    };
     assert!(
-        message.contains("missing_import"),
-        "the refusal names the unsupplied import: {message}"
+        matches!(*refusal, crate::CallSiteRefusal::Import(_)),
+        "an unsupplied import refuses Import, got {refusal:?}"
     );
 }
 

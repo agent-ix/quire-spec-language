@@ -278,7 +278,7 @@ fn forms_message(failure: &FormsFailure) -> String {
 }
 
 /// A readable account of an I1 refusal.
-fn intake_message(cause: &UnitIntakeCause) -> String {
+pub(crate) fn intake_message(cause: &UnitIntakeCause) -> String {
     match cause {
         UnitIntakeCause::ArtifactDigest => {
             "a `sha256:` digest selects a compiled-model artifact, not a domain package".to_owned()
