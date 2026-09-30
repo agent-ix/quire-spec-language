@@ -167,7 +167,9 @@ fn run_cases() {
     })
     .unwrap();
     let root = tempfile::tempdir().unwrap();
-    let source_root = root.path().join("package");
+    // Canonical, so paths reported by cargo-llvm-cov compare equal on hosts
+    // whose temporary directory is reached through a symlink.
+    let source_root = fs::canonicalize(root.path()).unwrap().join("package");
     codegen::write_bundle_atomic(generated_clauses.bundle(), &source_root).unwrap();
     fs::write(
         source_root.join(&strategy.rust.path),

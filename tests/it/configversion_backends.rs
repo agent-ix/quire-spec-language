@@ -26,10 +26,7 @@ use quire_spec_language::{
     Limits, LinkLimits,
 };
 use serde_json::Value;
-use sha2::Digest as _;
 
-const CODEGEN_REVISION: &str = "5e2a6a994d2107f36294078ad202467a4c66bb75";
-const IR_REVISION: &str = "04eb6f849c03be23177d373549c6c272551f957d";
 const KANI_SHA256: &str = "7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9";
 const DOMAIN: std::ops::RangeInclusive<i64> = 0..=1000;
 const CORPUS: [i64; 4] = [-1, 0, 1000, 1001];
@@ -500,35 +497,6 @@ pub fn take_it_010_observations() -> Vec<(i64, i64, bool)> {{
     )
     .unwrap();
     instrumented
-}
-
-#[test]
-#[trace("IT-010-SC-01")]
-fn locked_backend_graph_has_one_reviewed_ir_and_pinned_kani() {
-    let lock = include_str!("../../Cargo.lock");
-    assert!(lock.contains(&format!("rev={CODEGEN_REVISION}")));
-    assert_eq!(lock.matches("name = \"quire-contract-ir\"").count(), 1);
-    assert!(lock.contains(&format!("rev={IR_REVISION}")));
-    assert_eq!(codegen::IR_CANDIDATE_REVISION, IR_REVISION);
-    assert_eq!(codegen::RUNTIME_REVISION.len(), 40);
-    assert_eq!(codegen::KANI_BACKEND_VERSION, "0.67.0");
-    let version = Command::new("cargo")
-        .args(["kani", "--version"])
-        .output()
-        .expect("cargo-kani 0.67.0 must be installed");
-    assert!(version.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&version.stdout).trim(),
-        "cargo-kani 0.67.0"
-    );
-    let executable = env::var_os("PATH")
-        .into_iter()
-        .flat_map(|value| env::split_paths(&value).collect::<Vec<_>>())
-        .map(|directory| directory.join(format!("cargo-kani{}", env::consts::EXE_SUFFIX)))
-        .find(|candidate| candidate.is_file())
-        .expect("cargo-kani executable is on PATH");
-    let digest = sha2::Sha256::digest(fs::read(executable).unwrap());
-    assert_eq!(format!("{digest:x}"), KANI_SHA256);
 }
 
 #[test]

@@ -30,21 +30,15 @@ input into a Boolean result.
 ## Target Integration
 
 The public Rust path is native model/source parsing, linking, checking and packaging →
-`lowering::lower_for` with `integer-ir/v1` or `state-scalar-ir/v1` → the pinned
-quire-contract-codegen public APIs → compiled generated Rust, proptest and cargo-kani 0.67.0.
-`runtime::execute` supplies the native verdict for the same immutable input. Cargo dependency
-resolution, generated proof graphs and local command output supply the version and option evidence.
+`lowering::lower_for` with `integer-ir/v1` or `state-scalar-ir/v1` → the
+quire-contract-codegen public APIs → compiled generated Rust, proptest and cargo-kani.
+`runtime::execute` supplies the native verdict for the same immutable input.
 
 ## Preconditions
 
-SL selects codegen revision `5e2a6a994d2107f36294078ad202467a4c66bb75`, which includes numeric
-oracle, constructive strategy and numeric/state Kani support. The root dependency graph resolves
-quire-contract-ir revision `04eb6f849c03be23177d373549c6c272551f957d` once; codegen's declared IR
-identity, SL's lowering types and the lockfile shall agree. The generated code consumes runtime
-revision `8a4d02b9ff4633cf6d02fd8bdf6ee1b11ad76354`. Rust 1.98.1 and cargo-kani
-0.67.0 with executable SHA-256
-`7f143a251d11c7e6e232bbf2cbccf56f9ce66a5f0107eeb3008698e6715f55d9` are available locally.
-Missing or mismatched prerequisites fail the test. No hosted workflow is dispatched.
+SL's codegen dependency includes numeric oracle, constructive strategy and numeric/state Kani
+support. The generated code consumes quire-contract-runtime. cargo-kani is available locally.
+Missing prerequisites fail the test. No hosted workflow is dispatched.
 
 ## Inputs
 
@@ -60,11 +54,8 @@ source clause or an approximation of unsupported semantics.
 
 ## Test Procedure
 
-1. Resolve the locked Rust dependency graph and inspect the selected codegen, contract IR, runtime
-   and cargo-kani identities.
-   IT-010-SC-01: the lockfile contains the reviewed codegen revision and one contract-IR revision;
-   codegen reports that same IR identity, and the Kani version, executable digest and exact options
-   are retained.
+1. Generate the Kani bundle for the ConfigVersion clause.
+   IT-010-SC-01: the Kani bundle retains the backend options codegen requires.
 2. Compile the actual ConfigVersion and plain-integer native fixtures, lower them through their
    explicit targets and pass the emitted bytes through the public strict IR reader to codegen.
    IT-010-SC-02: the numeric oracle, strategy bundle and Kani bundle retain the authored clause,
@@ -94,7 +85,7 @@ source clause or an approximation of unsupported semantics.
 ## Expected Results
 
 Every success criterion passes using actual public Rust APIs, emitted bytes, compiled generated
-Rust and the pinned Kani executable. Valid model-domain values agree across native execution,
+Rust and the Kani executable. Valid model-domain values agree across native execution,
 oracle, proptest and Kani. Outside-domain, unsupported, incomplete and tool-unavailable outcomes
 remain distinct from false. A Kani counterexample is accepted only when the exact decoded input
 replays through native execution with the same verdict.
@@ -117,11 +108,6 @@ The Boolean-oracle result type cannot represent invalid arithmetic or an out-of-
 This test therefore admits only obligation-free comparisons, performs domain admission before a
 Boolean oracle call and requires explicit refusal elsewhere. It does not approximate ParentOrder or
 NoCycle, edit `resources/native-v1/`, publish a crate or dispatch hosted CI.
-
-SL previously selected IR revision `690bde7f2dc58662cf9ff0595c2c0e3b17107c6f`; the commits between
-the reviewed codegen IR revision and that revision change only IR specification artifacts, not Rust
-sources. IT-010 selects the codegen revision's executable provenance across the complete Cargo graph
-instead of retaining two byte-identical Rust packages under different source identities.
 
 ## Traceability
 

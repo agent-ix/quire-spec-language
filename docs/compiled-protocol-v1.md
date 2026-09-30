@@ -16,7 +16,7 @@ selected definitions and producer contracts own the meanings represented here.
 
 The encoding is UTF-8 JSON without BOM, whitespace between tokens or a final
 newline. Object members occur in the order specified below. Strings use the
-existing `serde_json` `CompactFormatter` spelling: quote/backslash and
+existing `serde_json` 1.0.151 `CompactFormatter` spelling: quote/backslash and
 backspace/tab/newline/form-feed/carriage-return use their short escapes; other
 U+0000–001F scalars use lowercase `\u00xx`; other Unicode scalars, including `/`,
 remain literal UTF-8. There is no Unicode normalization. No float conversion or

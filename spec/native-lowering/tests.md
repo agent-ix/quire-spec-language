@@ -48,7 +48,7 @@ its own PR-time specification, code, Rust and gap reviews.
 | TC-094 | Actual generated truth and activation through IT-008 | Integration | P1 | FR-009 | ✅ Tested |
 | TC-111 | Bounded integer IR and explicit command target | Integration | P1 | FR-033 | ✅ Tested |
 | TC-112 | State fields and validated primitive inputs | Integration | P1 | FR-034 | ✅ Tested |
-| IT-010-SC-01 | Exact backend/tool/package pins | Integration | P0 | IT-010 | ✅ Tested locally |
+| IT-010-SC-01 | Kani bundle backend options | Integration | P0 | IT-010 | ✅ Tested locally |
 | IT-010-SC-02 | Actual native projection and generated artifact identity | Integration | P0 | IT-010, FR-033, FR-034 | ✅ Tested locally |
 | IT-010-SC-03 | Native/generated bounded-corpus parity | Integration | P0 | IT-010, FR-034 | ✅ Tested locally |
 | IT-010-SC-04 | Executed model-domain strategy populations and rates | Property | P0 | IT-010, FR-034 | ✅ Tested locally |

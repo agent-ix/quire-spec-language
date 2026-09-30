@@ -184,7 +184,7 @@ invocation and object provenance. For the concrete update example, run
 This binds `self.versionNumber = pre(self.versionNumber)` with separate pre/post
 inputs; native population and frame validation still precedes materialization.
 IT-010 runs the ConfigVersion state comparison through compiled generated Rust,
-all four generated strategy populations and cargo-kani 0.67.0, and checks the
+all four generated strategy populations and cargo-kani, and checks the
 shared bounded corpus against `runtime::execute`. Values outside `0..=1000`
 produce no Boolean oracle verdict, while object/graph expressions refuse at the
 earliest source-owned boundary without a substitute IR expression.
