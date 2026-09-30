@@ -36,3 +36,9 @@ There is no other spec defect in the diff.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | medium | OQ-H content conflict with PR #534. This PR keeps the old Ruling ("IR deletes its copies and names QSL's; ... IR keeps `KaniOutcome` and maps it into `TerminalValue` (C-09)") and changes the Reason's last sentence to "QSL builds every one of these types (FR-069 to FR-072, O-25)". PR #534 rewrites both cells: the Ruling becomes "IR names no QSL type. CG ... maps IR's `KaniOutcome` into `TerminalValue` (C-09), builds the O-25 packet ...", with a new Reason. Its Reason still ends "except the three `decode` types, which QSL-322 adds (O-25)". The correct merged row is #534's Ruling and Reason with this PR's last sentence. Taking either side whole either restores the stale "QSL-322 adds" claim or drops the QSL-323 ruling. This PR's new identity.rs and lib.rs docs (SR-813 FND-001) already contradict #534's ruling. Fix: whichever PR lands second rebases and hand-merges the OQ-H row as above. Better, this PR stops touching the Ruling-adjacent text and #534 carries the sentence change. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:1221 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b417e178 (rebased onto main e4ac2e8d, which has #534 merged): the OQ-H row keeps #534's Ruling and Reason word for word and changes only the Reason's last sentence, to "QSL builds every one of these types (FR-069 to FR-072), including the three `decode` types (O-25)". That is the merge SR-815 asked for. The O-25 paragraph keeps #534's wording and adds only the decode-shape sentences. |
