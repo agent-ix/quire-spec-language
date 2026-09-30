@@ -98,10 +98,13 @@ Per analysis:
 
 ## Verdict
 
-Changes requested at c49eea84, with one medium item left: FND-015. FND-001
-to FND-014 are verified fixed (see "Re-review (c49eea84)"). Fix FND-015 in
-this PR. FND-016 and FND-017 are low and can go in the same pass. Once
-FND-015 is fixed, the mapping meets the ticket's acceptance criteria.
+Accept at 15eb3f70. FND-001 to FND-017 are verified fixed (see
+"Re-review (c49eea84)" and "Re-review (15eb3f70)"). The mapping meets the
+ticket's acceptance criteria. One new low finding remains: FND-018, a
+wording contradiction in the §16.2 enum case. It does not block the mapping.
+Fix it in this PR if convenient, or as #187's first clarification.
+
+Verdict at c49eea84: changes requested, for FND-015.
 
 Original verdict at c6e1e5ac: changes requested. The family assignment,
 identity rows, S6a treatment and QSpec gap list were sound and measured. But
@@ -180,3 +183,26 @@ Measured for the new text:
 | FND-015 | new, medium | The §16.2 precedence rule claims "Unions and enums share the type-declaration namespace, so a union and an enum with one name are already a duplicate declaration". That is false. The scope index keeps a `Vec` per type name (`check.rs:572-574`, `index.types`), and so does the enum-member index (`check.rs:579-591`). Same-named types are admitted, and a use refuses as ambiguous only at that point (`type_form.rs:124-133`; `Typer::name` `check.rs:1396-1402`). So `q::m` can name a union member and an enum member at once, or members of two unions named `q`, and §16.2 resolves neither. The seam function would silently prefer one, depending on the order in which it checks. Fix: state that `q::m` refuses `ambiguous_declaration`/`ambiguous-name` whenever `q` names more than one of: a union, an enum, an import alias (including two unions). Drop the duplicate-declaration sentence and add one adverse test (a union and an enum sharing a name, with `q::m` naming a member of both). Refs: spec/decisions/ADR-012-semantic-family-extension-contracts.md:1470-1478; qsl-semantics/src/check/check.rs:572-591; qsl-semantics/src/check/type_form.rs:124-133. |
 | FND-016 | new, low | The §16.5 limit row's oracle is "limit kind work budget" (ADR-012:1615). The new §16.8 Limits test (ADR-012:1767) drives the checking depth bound on the FR-062-AC-7 pattern, which yields a nesting-depth limit. The row and the test name different limit kinds. Fix: have the row name both limit kinds (nesting depth from the `Typer`'s depth bound, work budget from a family meter charge), or make the test match the row. |
 | FND-017 | new, low | Two wording slips. (1) In the SC-Q1 recommendation cell (ADR-012:1854), "It reopens one O-14 cell ("…"), ADR-013's Status lets …" is a comma splice that joins two sentences, so it reads as garbled. (2) §16.7 (ADR-012:1719) names the host of the new seam function only as "the `check` core module that hosts `Typer`'s dispatch". Name the file (`check/check/typing.rs` or `check/check.rs`) so the change set is concrete. |
+
+## Re-review (15eb3f70)
+
+Scope: `git diff c49eea84 15eb3f70`, the ADR-012 lines only. I measured the
+touched lines against the tree at 15eb3f70.
+
+| ID | Status | Note |
+| --- | --- | --- |
+| FND-015 | verified | §16.2 item 2 no longer claims the duplicate-declaration premise. It cites the multi-type scope (`check.rs:572-591`, `type_form.rs:124-133`) and states that `q::m` refuses `ambiguous_declaration`/`ambiguous-name`, naming every candidate, when `q` names more than one union, enum or import alias, two unions included. §16.8 has an "Adverse, resolution" row covering union and enum, two unions, and union and import alias. |
+| FND-016 | verified | The §16.5 limit row names both limit kinds: nesting depth for the checking depth bound and work budget for meter exhaustion. The §16.8 Limits test asserts the nesting-depth kind and cites the row's nesting-depth half. |
+| FND-017 | verified | The comma splice in SC-Q1 is gone. The seam function's module is named: new `qsl-semantics/src/check/call_target.rs`, declared in `check/mod.rs`, in both §16.2 and §16.7. |
+| FND-018 | new, low | The new rule decides ambiguity by the qualifier `q` alone, which contradicts "as today" for enums. Today `Typer::name` collects the enum *members* named by `q::m` (`check.rs:1375-1377`, `enum_members_named` at :579-591), and it refuses only when more than one member matches (:1396-1402). Take two enums both named `E`, where only one declares `m`. Today `E::m` resolves. Under the new bullet, `q` "names more than one" enum, so it refuses. Yet the first bullet says enum members resolve "through `Typer::name`, as today". Fix: key ambiguity on the candidate members that `q::m` names (union members plus enum members plus import members), not on how many declarations `q` names. Or state the tightening for enums explicitly and add it to the "Adverse, resolution" row. Refs: spec/decisions/ADR-012-semantic-family-extension-contracts.md:1470-1481; qsl-semantics/src/check/check.rs:1375-1402. |
+
+Nothing else in the touched lines broke. The new §16.8 row and the new
+`call_target.rs` path agree with §16.6. §16.6 already lists a
+`SeamLocation` for the call-target seam function and a probe variant on the
+resolved-target enum. The SC-Q1 cell's content is unchanged apart from the
+punctuation fix.
+
+FND-018 disposition: fixed in this PR. §16.2 decides ambiguity over the
+candidates that declare `m`, not over the qualifier alone, which keeps
+today's enum-member resolution (`check/check.rs:1375-1402`). §16.8 adds the
+resolving case: two unions named `q`, only one of which declares `m`.

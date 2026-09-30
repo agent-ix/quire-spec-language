@@ -1476,13 +1476,17 @@ Imported }` (`family.rs:739`). A bare qualified name reaches `Typer::name`
 2. **Resolution precedence.** The scope admits several types under one
    name and refuses only an ambiguous use (`check/check.rs:572-591`,
    `check/type_form.rs:124-133`). `q::m` follows that rule:
-   - When `q` names exactly one of a declared union, a declared enum or an
-     import alias, `q::m` resolves against that one: a union member, an enum
-     member (through `Typer::name`, as today) or an import member (through
-     `Application::resolve`, as today).
-   - When `q` names more than one of them, including two unions both named
-     `q`, `q::m` refuses `ambiguous_declaration`/`ambiguous-name`, naming
-     every candidate declaration.
+   - The candidates are the declared unions, declared enums and import
+     aliases named `q` that have a member `m`. Ambiguity is decided over
+     these candidates, not over the qualifier alone, which is how enum
+     members resolve today (`check/check.rs:1375-1402`).
+   - Exactly one candidate: `q::m` resolves against it, as a union member,
+     an enum member (through `Typer::name`, as today) or an import member
+     (through `Application::resolve`, as today).
+   - More than one candidate, for example two unions named `q` that both
+     declare `m`: `q::m` refuses `ambiguous_declaration`/`ambiguous-name`,
+     naming every candidate.
+   - No candidate: `q::m` refuses exactly as an unresolved name does today.
 
    Every unqualified name resolves exactly as it does today.
 3. **Dispatch inside the seam function.** The seam function matches its
@@ -1767,7 +1771,7 @@ to the named cases.
 | Class | Cases | Stage | Oracle |
 | --- | --- | --- | --- |
 | Positive | a union with nullary and payload members; a recursive union that escapes (`union Tree { Leaf, Node(Integer, Option<Tree>, Option<Tree>) }`, FR-143); construction of a nullary and of a payload member; `case` selecting each member of a two-member union; a nested `case` in an arm body; `case` inside a state clause body and inside a `decreases` measure, each under its clause kind (FR-065-AC-5 pattern) | S2 to S6a | the checked node, then `Completed` with the expected value |
-| Adverse, resolution | `q::m` where `q` names both a union and an enum, and where `q` names two unions, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; `q::m` where `q` names a union and an import alias, refusing the same way | S3 | §16.2 precedence |
+| Adverse, resolution | `q::m` where a union and an enum named `q` both declare `m`, and where two unions named `q` both declare `m`, each refusing `ambiguous_declaration`/`ambiguous-name` with every candidate named; `q::m` where a union named `q` declares `m` and an import alias `q` exports `m`, refusing the same way; and two unions named `q` where only one declares `m`, which resolves to that one | S3 | §16.2 precedence |
 | Adverse, exhaustiveness | one `case` per obligation (`duplicate-arm`, `unknown-member` naming a member of a second union, `arm-arity`, `missing-arm`); one `case` that violates two obligations at once (`duplicate-arm` and `missing-arm`), asserting only `duplicate-arm` is reported (FR-146 order); an `unknown-member` arm whose body is ill-typed, asserting only `unknown-member` (its body is not checked) | S3 | §16.5 rows, with payload and locus |
 | Refusal order | one `case` with an ill-typed body in a resolved arm and a missing arm, asserting only `ill_typed` at that body (typing first); a scrutinee that is not a union, followed by arms naming unknown members, asserting only the scrutinee's `ill_typed` (a scrutinee refusal ends the builder) | S3 | §16.5 "One refusal per `case`" |
 | Adverse, typing | a scrutinee of enum type and one of `Integer`; an arm body of the wrong type | S3 | `ill_typed`/`type-mismatch` |
