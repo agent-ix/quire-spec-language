@@ -366,7 +366,6 @@ exit criteria map to the PRs that own each deletion:
 | --- | --- | --- |
 | M-6d SEAM-3 handoffs to IR | deleted | QSL-303 (PR #515) |
 | M-6d composed emission B8, B9 and the composed `ProtocolClause` checker (`src/linking/composed/scopes/protocol*`) | present, not on the spine | QSL-316 (M-6e) |
-| M-6d IR predicate and temporal admission over QSL types, IR root → QSL edge | IR-owned | agent-ix/quire-contract-ir#153 (split from #141) |
 | SEAM-3 reads feeding `state` and `temporal`; `protocol_artifact` native and writer | present, root crate only | M-6c (QSL-5, #188, #189) |
 | M-6e `Relation` composed code | none exists | none: #191, #192 and #198 delete nothing |
 

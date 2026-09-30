@@ -214,8 +214,8 @@ mod tests {
     use serde_json::json;
 
     /// tc_arch_lint_metadata_001: a minimal synthetic `cargo metadata`
-    /// document with an IR -> QSL normal edge is parsed into exactly that
-    /// edge, matching ADR-011 OBS-029's real, currently observed shape.
+    /// document with a synthetic IR -> QSL normal edge, the edge the FB-05
+    /// check exercises, is parsed into exactly that edge.
     #[trace("TC-156")]
     #[test]
     fn tc_arch_lint_metadata_001_parses_ir_to_qsl_edge() {
@@ -303,6 +303,29 @@ mod tests {
             "ef11217ad803502dd4bbd967f701a717c72693d0",
         )
         .unwrap();
+    }
+
+    /// tc_arch_lint_metadata_006 (positive control on real data): resolving
+    /// QSL's own workspace manifest through `edges_for_manifest`, the path
+    /// `direction` takes for `--qsl`, yields QSL's normal edge on the
+    /// git-sourced `quire-contract-model`, classified QSL -> IR. A classifier
+    /// that stopped recognising the real IR crate would drop the edge and
+    /// fail here.
+    #[trace("TC-156", "FR-059-AC-6")]
+    #[test]
+    fn tc_arch_lint_metadata_006_real_qsl_manifest_yields_qsl_to_ir_model_edge() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let edges = edges_for_manifest(&workspace.join("Cargo.toml"), false).unwrap();
+        let expected = Edge {
+            from: Repo::Qsl,
+            to: Repo::Ir,
+            kind: EdgeKind::Normal,
+            via_crate: "quire-contract-model".to_owned(),
+        };
+        assert!(
+            edges.contains(&expected),
+            "expected {expected:?} among {edges:?}"
+        );
     }
 
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four

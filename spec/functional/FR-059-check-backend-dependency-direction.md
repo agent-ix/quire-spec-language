@@ -94,7 +94,7 @@ unstated clone state.
 | FR-059-AC-3 | A *dev* edge from CG into QSL is reported as an FB-05 violation; the stated exception covers only CG's normal edge. | Test (TC-156) |
 | FR-059-AC-4 | A 2-repository or longer cycle over normal and/or dev edges among the four repositories is reported exactly once as an FB-11 violation, however many repositories the search starts from. | Test (TC-156) |
 | FR-059-AC-5 | An acyclic graph with edges only running toward QSL and CG reports no FB-11 violation. | Test (TC-156) |
-| FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reproduces ADR-011 OBS-029's real, currently observed FB-05 violation (IR depends on QSL) and the corresponding FB-11 cycles. | Test (TC-156) |
+| FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
 | FR-059-AC-7 | A local `--ir`/`--rt`/`--cg` clone whose head does not match that repository's remote `main` fails distinctly, naming both revisions and the url; a clone that matches passes; `--offline` skips the comparison; every resolved revision, including `--qsl`'s, is printed regardless of outcome. | Test (TC-156) |
 
 ## Dependencies

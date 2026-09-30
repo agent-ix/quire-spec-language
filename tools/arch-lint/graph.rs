@@ -243,9 +243,9 @@ mod tests {
         assert!(report.is_clean(), "{report:?}");
     }
 
-    /// tc_arch_lint_direction_002 (negative control): IR depending on QSL is
-    /// the real, currently observed FB-05 violation (ADR-011 OBS-029): the
-    /// only permitted edge into QSL is CG's normal dependency.
+    /// tc_arch_lint_direction_002 (negative control): a synthetic IR -> QSL
+    /// normal edge exercises the FB-05 check and is reported: the only
+    /// permitted edge into QSL is CG's normal dependency.
     #[trace("TC-156", "FR-059-AC-2")]
     #[test]
     fn tc_arch_lint_direction_002_ir_to_qsl_is_fb05_violation() {
