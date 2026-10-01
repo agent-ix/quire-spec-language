@@ -9,7 +9,7 @@ description = "ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf -- 
 
 [dependencies]
 quire-exact = { path = "../quire-exact" }
-thiserror = { version = "=2.0.20", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"
