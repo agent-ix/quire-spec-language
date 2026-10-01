@@ -16,7 +16,8 @@
 //! already-computed `Ordering`, so exposing it exposes no unmetered
 //! computation.
 
-use std::cmp::Ordering;
+use alloc::boxed::Box;
+use core::cmp::Ordering;
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::decimal::{sbits, sdigits, Decimal};

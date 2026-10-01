@@ -51,7 +51,8 @@
 //!   own registry -- mirroring [`OptionValue::from_admitted`]'s identical
 //!   role, which is likewise widened from `pub(crate)` to `pub` here.
 
-use std::sync::Arc;
+use alloc::sync::Arc;
+use alloc::{boxed::Box, string::String, vec::Vec};
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::collection::{CollectionType, CollectionValue};
@@ -597,8 +598,8 @@ pub enum FieldExpression<'a> {
     Null,
 }
 
-impl std::fmt::Debug for FieldExpression<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for FieldExpression<'_> {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Evaluate(_) => formatter.write_str("Evaluate(..)"),
             Self::Null => formatter.write_str("Null"),
@@ -694,8 +695,8 @@ fn refuse<T>(component: Component, cause: ConstructionCause) -> Result<T, Constr
 fn match_members<T>(
     declared: &[FieldDeclaration],
     supplied: Vec<(MemberId, T)>,
-) -> Result<std::collections::BTreeMap<MemberId, T>, ConstructionRefusal> {
-    let mut by_member = std::collections::BTreeMap::new();
+) -> Result<alloc::collections::BTreeMap<MemberId, T>, ConstructionRefusal> {
+    let mut by_member = alloc::collections::BTreeMap::new();
     for (member, entry) in supplied {
         let component = || Component::Field(member);
         if !declared.iter().any(|field| field.member == member) {

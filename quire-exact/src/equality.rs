@@ -31,6 +31,7 @@ use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::integer::Integer;
 use crate::outcome::{Outcome, Refusal, Stop};
 use crate::value::{FieldValue, Value};
+use alloc::vec;
 
 /// The complete occurrence-pair plan of one planned equality.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

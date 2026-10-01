@@ -96,7 +96,15 @@
 //! two bound tests do not (a floor-law `mod` and a byte-counted length both
 //! pass them too), so they carry no tag.
 
+#![no_std]
 #![forbid(unsafe_code)]
+
+extern crate alloc;
+// Unit tests use `std` (e.g. `HashSet` hash-consistency checks); the library
+// itself links only `core` and `alloc`.
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 mod accounting;
 mod collection;

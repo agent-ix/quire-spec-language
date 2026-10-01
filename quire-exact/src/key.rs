@@ -35,7 +35,8 @@
 //! comparison this file carried (`quire-exact/src/key.rs:103` before this
 //! change), which did not conform to FR-144 (ADR-013 O-14).
 
-use std::cmp::Ordering;
+use alloc::{vec, vec::Vec};
+use core::cmp::Ordering;
 
 use crate::value::{FieldValue, Value};
 
