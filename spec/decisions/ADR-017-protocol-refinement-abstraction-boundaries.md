@@ -397,10 +397,24 @@ away from QSpec FR-177 and TC-208.
 
 **Pair.** A pair is two complete-V1 units: the prior and the superseding
 revision of one specification. Both have the same FR-001 authority and
-identity and differ in their revision label. The corpus states each pair's
-direction explicitly: revision labels are compared lexically and never
-ordered by parsing. Both revisions compile in the running build, against the
-same domain packages and libraries. No recorded outcome is needed.
+identity. The corpus states each pair's direction explicitly, by which unit
+it names `prior` and which `superseding`; the gate reads no order from, and
+compares nothing about, the revision labels. Both revisions compile in the
+running build, against the same domain packages and libraries. No recorded
+outcome is needed.
+
+**Corpus** (amended 2026-10-01, FR-340). A corpus is one directory. Each
+pair is one subdirectory holding a `pair.json` file and the files it names.
+`pair.json` names, by path relative to its own directory, every byte the
+pair's runs read: the `prior` and `superseding` sources, each with its four
+FR-001 labels; the pair's domain packages (FR-056 input) and dependency
+input (FR-099); and its `cases`, each a selection, the snapshot and
+invocation files it reads, and any of the four limit sets it states. The
+file is the gate's input, not a record of anything: it holds
+no expected outcome. A pair file that cannot be read, holds an unknown or
+missing member, names a path outside its directory, or names two sources
+whose authority or identity differ is one tool-failure result naming the
+file and the defect; the other pairs still run.
 
 **Case.** A case is one FR-109 `ClauseRunRequest` selection and its input
 (`Clause` with its snapshot or invocation, `Function` with its arguments and
@@ -462,7 +476,7 @@ superseding revision's. Rows are matched in order; the first match wins.
 | --- | --- | --- |
 | tool failure | any | tool failure |
 | any | tool failure | tool failure |
-| incomplete, at stage `compile` or `select` | any | unresolved (incomplete) |
+| incomplete, at any stage (amended 2026-10-01) | any | unresolved (incomplete) |
 | any other class, at stage `compile` or `select` | any | tool failure (the prior revision must compile and select; the case is malformed) |
 | admitted | admitted | holds |
 | admitted | absent, for a `Clause` or `Frame` selection | holds: the constraint was dropped (a frame exists only while a clause or attempt names its operation, FR-105) |
@@ -511,6 +525,10 @@ FR-301's order, and its exit code is QSpec FR-301's code for it:
 | any unresolved (incomplete) | incomplete | 22 |
 | any regression | violation | 10 |
 | otherwise | success | 0 |
+
+A case whose class on either side is incomplete names, in the report, the
+limit it reached, that limit's value and the case member that raises it
+(amended 2026-10-01, FR-344).
 
 Every regression is listed whatever the verdict, so an unsupported case never
 hides a regression from the report. An unresolved case is never promoted to
@@ -783,6 +801,13 @@ Ticket-text corrections for the owner (all ticket text read as data):
   and its expected results; the FR-057-AC-10 row of
   `spec/model-linking/tests.md` (RF-1).
 - `spec/spec.md`: index row.
+- 2026-10-01, with FR-340 to FR-345: RF-2's pair direction is the corpus's
+  `prior`/`superseding` naming alone (the lexical revision-label comparison
+  is deleted); RF-2 gains the corpus layout; a prior class `incomplete` at
+  any stage, not only `compile` or `select`, is unresolved, so a prior
+  run that reaches a limit at `admit` or `evaluate` is never `not
+  applicable`; RF-4 names the reached limit
+  of an incomplete case. RF-3's pair source still waits on Q-5.
 
 ### 8. Open dependencies and ticket edges
 
