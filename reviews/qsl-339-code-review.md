@@ -68,3 +68,9 @@ Round 1, reviewed at bd660f04c13517e9735b98f2941c90556f9f7036 (fix commit a03268
 | FND-005 | fixed | a0326826: the probe output, assert message, fault strings, arch-lint reasons and output, and the qsl-bench and quire-exact descriptions carry no QSL-NNN id |
 | FND-006 | fixed | a0326826: qsl-bench/BASELINE.md, examples/config-version/README.md and tests/fixtures/native-package/README.md carry no QSL-NNN id |
 | FND-007 | fixed | a0326826: the code comments in qsl-eval/Cargo.toml, dispatch_calls.rs, emit/tests.rs, family/contract.rs, api_surface.rs and typestate_scan.rs no longer use a bare G2 |
+
+Round 2, reviewed at dffebe8741536681fa0484ad4ea25e07b7533b4e (fix commit dffebe87). Coordinator's cargo check --workspace: clean (not re-run). The only code change is the three `reason` strings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | dffebe87: all three dead-code reasons name "ADR-011 §4's round trip (QSL-347)". QSL-347 is open (Backlog) and owns that round trip |

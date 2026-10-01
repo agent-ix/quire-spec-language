@@ -92,3 +92,9 @@ Round 1, reviewed at bd660f04c13517e9735b98f2941c90556f9f7036 (fix commits a0326
 | FND-007 | fixed | a0326826: the replay-facade row reads "`TC-166` is Planned and has zero tests | Planned; no owner". #243 is gone. QSL-346 was filed afterwards; see FND-010 |
 | FND-008 | fixed | a0326826: ADR-016 Open dependencies item 2, ADR-017's QSL-16 link corrections and "QSL-20 blocks QSL-16" are deleted. The open QSL-36/39/40 edge notes remain |
 | FND-009 | fixed | a0326826: FR-060 describes the change ("deleting qsl-eval's second v2 producer (`checked-function-package/v2`)"). No bare G2 remains outside the FR-092 vector names |
+
+Round 2, reviewed at dffebe8741536681fa0484ad4ea25e07b7533b4e (fix commit dffebe87). Coordinator's cargo check --workspace: clean (not re-run). No "Planned; no owner" text remains in spec/.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-010 | fixed | dffebe87: the ADR-012 §14.1 replay-facade cell reads "Planned; QSL-346", and FR-062 (:580, :606) and FR-065's AC-6 line read "Planned; QSL-346." QSL-346 (Back TC-166) is open, in Coding |
