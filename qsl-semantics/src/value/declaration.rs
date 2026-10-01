@@ -339,8 +339,11 @@ fn match_names<'n, F: AsRef<FieldDeclaration>, T>(
 
 /// Declaration-ordered slots of a record or object from supplied fields. An
 /// object's `declared` is its type's effective attribute set
-/// ([`TypeEnvironment::attributes`]), so an inherited field has a slot.
+/// ([`TypeEnvironment::attributes`]), so an inherited field has a slot. A
+/// present value must be admitted by its field's type under `types`'
+/// conformance ([`TypeEnvironment::admits`]).
 pub(crate) fn fill_slots<F: AsRef<FieldDeclaration>>(
+    types: &TypeEnvironment,
     declared: &[F],
     supplied: Vec<(&str, FieldValue)>,
 ) -> Result<Box<[FieldValue]>, ConstructionRefusal> {
@@ -359,7 +362,7 @@ pub(crate) fn fill_slots<F: AsRef<FieldDeclaration>>(
             (FieldValue::Null, Presence::Required) => {
                 return refuse(component(), ConstructionCause::NullForRequiredField)
             }
-            (FieldValue::Present(value), _) if !field.value_type.admits(value) => {
+            (FieldValue::Present(value), _) if !types.admits(&field.value_type, value) => {
                 return refuse(component(), ConstructionCause::TypeMismatch)
             }
             (FieldValue::Present(_) | FieldValue::Absent | FieldValue::Null, _) => {}
@@ -965,6 +968,19 @@ impl TypeEnvironment {
     /// outside this environment's own admitted object types, never a panic.
     pub fn conforms(&self, sub: EffectiveId, sup: EffectiveId) -> bool {
         sub == sup || self.ancestry.is_ancestor(sub, sup)
+    }
+
+    /// Whether `value_type` admits `value` under this environment's
+    /// conformance: a `Reference<T>` admits a reference whose object's
+    /// most-specific type conforms to `T` (QSpec FR-151, [`Self::conforms`]);
+    /// every other pair is [`ValueType::admits`].
+    pub(crate) fn admits(&self, value_type: &ValueType, value: &Value) -> bool {
+        match (value_type, value) {
+            (ValueType::Reference(declared), Value::Reference(reference)) => {
+                self.conforms(reference.object_type(), *declared)
+            }
+            _ => value_type.admits(value),
+        }
     }
 
     /// Check a type named outside a declaration (a parameter or result type):
@@ -1721,7 +1737,7 @@ impl TypeEnvironment {
         let Some(CompositeShape::Record(declared)) = self.shape(declaration) else {
             return refuse(Component::Value, ConstructionCause::UnknownDeclaration);
         };
-        let slots = fill_slots(declared, fields)?;
+        let slots = fill_slots(self, declared, fields)?;
         Ok(composite(declaration, slots))
     }
 

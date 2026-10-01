@@ -1064,8 +1064,10 @@ fn admit_invocation_documents(
     // reference result against the post snapshot's; either one naming a key
     // absent from its complete population refuses `dangling_reference`
     // (check 8's closure rule, SR-771 FND-001).
-    let mut parameter_references = document::References::over(views, &pre_snapshot.populations);
-    let mut result_references = document::References::over(views, &post_snapshot.populations);
+    let mut parameter_references =
+        document::References::over(views, types, &pre_snapshot.populations);
+    let mut result_references =
+        document::References::over(views, types, &post_snapshot.populations);
     let parameters = document::admit_parameters(
         &mut parameter_references,
         &operation.declaration,
@@ -1172,7 +1174,8 @@ fn admit_pre_call(
 
     // Check 10: parameters, resolved against the pre snapshot. A pre-call
     // observation carries no result.
-    let mut references = document::References::over(context.views, &snapshot.populations);
+    let mut references =
+        document::References::over(context.views, context.types, &snapshot.populations);
     let parameters =
         document::admit_parameters(&mut references, &context.operation.declaration, &parameters)?;
 
