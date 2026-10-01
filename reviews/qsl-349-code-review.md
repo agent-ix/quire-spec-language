@@ -63,3 +63,12 @@ Correct. The fix is in the anchoring rule, where the root cause is. It places ex
 the nodes that used to be refused, and no node that used to emit changes region. Two low
 doc-accuracy findings. Mergeable once the gap-analysis medium findings (SR-930) are
 handled in the fix round.
+
+## Dispositions
+
+Round 1, reviewed at 2774b8784124bbe9556d60116ae66d1b3bad6b17 (fix commit 2774b878 on top of the rebased original fix 06234a12, base a28a5578). I compared by content against the review-pass text. The coder's make ci on 2774b878 reports exit 0 (scratchpad/qsl-349-ci.log, not re-run). The rebase keeps #548's FR-093-AC-17 row and TC-416 step 9 and its expected result. Against a28a5578, the PR's FR-093 and TC-416 changes are purely additive.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2774b878: the doc now says a node no function body, measure, state clause or protocol attempt reaches, when this is the least declared name that reaches it |
+| FND-002 | fixed | 2774b878: the region.rs doc names function body, measure, state clause and protocol attempt roots for the first tier |

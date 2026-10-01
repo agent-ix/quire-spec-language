@@ -59,3 +59,17 @@ AC-18's placement clauses are backed by exact, non-tautological tests that fail 
 base. The ignore really was IR-482, and IR has since fixed it, so it should be lifted in
 the rebase. The fix's no-move invariant and its tie-break have no test. Not mergeable
 until FND-001 and FND-002 are fixed or dispositioned.
+
+## Dispositions
+
+Round 1, reviewed at 2774b8784124bbe9556d60116ae66d1b3bad6b17 (fix commit 2774b878). The coder's make ci on 2774b878 reports exit 0 (not re-run). Focused run on 2774b878: all six QSL-349 tests pass, with nothing ignored. Mutation runs in a throwaway worktree, since removed:
+- Deleting the pass-2 `placed` guard fails `a_node_a_state_clause_places_does_not_move_to_a_type_name`, with region `["R"]` in place of `["1 < 2"]`. This also confirms the review-pass reasoning that the guard is observable.
+- Making pass 2 pick the greatest anchor (`anchor > *current` when `placed` is non-empty) fails `a_node_two_unnamed_types_share_is_placed_at_the_least_name`, with region `["Q"]`.
+
+The new tests carry `#[trace("FR-093-AC-18", "TC-416")]`. Those are QSL's own ids, so they are bare, as #547's rule requires. Only quire-specification ids take the `QSpec-` prefix.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2774b878: Cargo.lock moves quire-contract-model to ea634884; the `#[ignore]` is gone and the `<` read-back passes; FR-093 and TC-416 no longer mention IR-482 |
+| FND-002 | fixed | 2774b878: `a_node_a_state_clause_places_does_not_move_to_a_type_name` pins the guard; the mutant without the guard fails it |
+| FND-003 | fixed | 2774b878: `a_node_two_unnamed_types_share_is_placed_at_the_least_name` pins `P` over `Q`; a greatest-name mutant fails it |

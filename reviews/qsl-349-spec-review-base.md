@@ -35,3 +35,12 @@ tests. It states what is and does not name unsupported alternatives.
 The rule and the AC are sound, testable and consistent with the code. There are two
 medium gaps: the ordering the rule depends on is unstated, and the matrix row was not
 updated. Both are spec-only fixes for the fix round.
+
+## Dispositions
+
+Round 1, reviewed at 2774b8784124bbe9556d60116ae66d1b3bad6b17 (fix commit 2774b878). The stated order matches the derived `Ord` of `Origin`: variant order Body, Measure, (Expression), TypeDeclaration, StateClause, ProtocolAttempt; then the name `String`; then the index. A protocol attempt orders by protocol index, then attempt index. AC-18 now also states the `Q`/`P` and `R`/`VersionUnchanged` cases, and TC-416 step 10 and its expected result match.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2774b878: FR-093 defines "least" by kind, then declared name in UTF-8 byte order, then declaration index, and says source order plays no part |
+| FND-002 | fixed | 2774b878: the spec/tests.md TC-416 row lists FR-093-AC-18 with "passes locally" |
