@@ -26,11 +26,12 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Design for review; the QSL requirements that implement
-it follow review. The owning ticket and related work are listed under
+Proposed, 2026-10-01. Owner rulings on the four design questions are
+recorded under Rulings and folded into the rules below. FR-270 to FR-273
+implement this record. The owning ticket and related work are listed under
 References.
 
-Item ids `CK-`, `DT-` and `Q-` are local to this record. Other artifacts cite
+Item ids `CK-`, `DT-` and `R-` are local to this record. Other artifacts cite
 them as `ADR-032 CK-3`.
 
 ## Context
@@ -84,9 +85,11 @@ Measured on main at the time of writing:
 
 Both gates are `xtask` subcommands built on the scanners already in
 `xtask` (`typestate_scan` and `definition_scan`, both `syn`-based, both
-reading shipped code only). Both run as prerequisites of `make ci`, as
-`seam-probe`, `string-edge` and `route-lint` do, and each reports every
-finding with its file and line and exits non-zero when it reports any.
+reading shipped code only). Each reports every finding with its file and
+line and exits non-zero when it reports any. `checked-input` is a
+prerequisite of `make ci`, as `seam-probe`, `string-edge` and `route-lint`
+are. `canonical-types` runs on demand and joins `make ci` once the
+namesakes DT-7 resolves are gone (R-1).
 
 ### 1. Checked-input gate (`cargo xtask checked-input`)
 
@@ -119,36 +122,37 @@ the change that builds it.
 
 | ID | Rule |
 | --- | --- |
-| DT-1 | **The canonical set is declared at the definition.** A canonical public type carries the `#[canonical]` marker attribute at its definition. The marker comes from `qsl-attrs`, beside `#[string_edge]`. It is an identity transform that takes no arguments and changes nothing in the compiled item. A type is marked when an ADR-013 §3 owner row names it as its owner's public type; the marker is the code-side form of that row. The gate reads the canonical set from the markers in every crate it scans, so no list of type names is kept anywhere. |
-| DT-2 | **Identifier rule, inside the owning repository.** In the shipped code of the QSL workspace, any `struct`, `enum`, `union`, `trait` or `type` alias whose identifier equals a canonical type's identifier, defined in any module other than the canonical definition, is a finding, whatever its visibility or shape. A `pub use` of a canonical type from a crate other than its owner is also a finding: one public path per canonical type, as ADR-011 §7.2 states for moved items. A namesake is resolved by deleting it or renaming it. |
+| DT-1 | **The canonical set is declared at the definition.** A canonical public type carries the doc-comment tag `/// quire:canonical`, a doc line holding exactly `quire:canonical`, on its definition (R-3). The tag is documentation: it adds no dependency and changes nothing in the compiled item, so `quire-exact` and `quire-semantic-value` carry it with their dependency lists unchanged. A type is tagged when an ADR-013 §3 owner row names it as its owner's public type; the tag is the code-side form of that row. The gate reads the canonical set from the tags in every crate it scans, so no list of type names is kept anywhere. A tag on anything other than a `pub` `struct`, `enum`, `union`, `trait` or `type` alias, or two tagged definitions of one identifier, is a finding. |
+| DT-2 | **Identifier rule, inside the owning repository.** In the shipped code of the QSL workspace, any `struct`, `enum`, `union`, `trait` or `type` alias whose identifier equals a canonical type's identifier, defined as a module-level item in any module other than the canonical definition, is a finding, whatever its visibility or shape. An associated type inside an `impl` or `trait` block (serde's `type Value = …`) is not a definition. A `pub use` of a canonical type from a crate other than its owner is also a finding: one public path per canonical type, as ADR-011 §7.2 states for moved items. A namesake is resolved by DT-7. |
 | DT-3 | **Copy rule, across repositories.** In an ecosystem dependency, a definition is a finding when its identifier equals a canonical type's identifier and its shape matches: the same item kind and the same member names in the same order (field names for a struct, variant names for an enum, method names for a trait), ignoring documentation, attributes, visibility and the paths of member types. A same-named type with a different shape across a repository boundary is a boundary type, which ADR-013 §4 converts and AD-016 records (the IR and RT `CheckedPackage`s, IR's wire `ValueType`). |
 | DT-4 | **Scanned set.** The workspace crates and the ecosystem dependencies both come from `cargo metadata`: every workspace member's `src/`, and every resolved package that FR-061's shared `graph::classify` assigns to an ecosystem repository, read from its manifest directory. No directory list is written into the tool. Test code is excluded as `definition_scan` excludes it today. |
-| DT-5 | **Backends run it too.** RT and CG run the same subcommand in their own lint gates, as they run the T-12 API-surface check. In a backend's workspace, QSL's `quire-exact`, `quire-semantic-value` and `qsl-replay` are ecosystem dependencies. Their markers give the canonical set, and DT-3 applies to the backend's own code: a backend's copy of a QSL canonical type fails in the backend's gate. |
-| DT-6 | **Reuse of the definition scan.** `definition_scan`'s `DefScanner` and `scan_dirs` already record each item's identifier and location and skip test code. The gate extends them to record traits, unions, `pub use` items, the marker and each item's member names, and takes its directories from DT-4. The per-test name lists and the `SEMANTIC_VALUE_NAMESAKES` list in `definition_scan.rs` are replaced by DT-1 and DT-2. |
+| DT-5 | **Backends run it too.** RT and CG run the same subcommand in their own lint gates, as they run the T-12 API-surface check. In a backend's workspace, QSL's `quire-exact`, `quire-semantic-value` and `qsl-replay` are ecosystem dependencies. Their tags give the canonical set, and DT-3 applies to the backend's own code: a backend's copy of a QSL canonical type fails in the backend's gate. |
+| DT-6 | **Reuse of the definition scan.** `definition_scan`'s `DefScanner` and `scan_dirs` already record each item's identifier and location and skip test code. The gate extends them to record traits, unions, `pub use` items, the tag and each item's member names, and takes its directories from DT-4. The per-test name lists and the `SEMANTIC_VALUE_NAMESAKES` list in `definition_scan.rs` are replaced by DT-1 and DT-2. |
+| DT-7 | **Delete or rename, per type (R-2).** A namesake with the same meaning as the canonical type is a copy: it is deleted and its uses take the canonical type. A namesake with a different meaning is renamed to say what it is. FR-273 lists the verdict for each namesake measured on main. |
 
 Each finding names the canonical type, its definition's file and line, the
 second definition's file and line, and the rule (identifier, re-export or
 copy).
 
-A type joins the canonical set when its owner marks it, and from then on the
+A type joins the canonical set when its owner tags it, and from then on the
 scan finds any other definition of it, so the gate needs no upkeep as types
 move between crates.
 
-## Open questions
+## Rulings
 
-| ID | Question | Proposed answer |
+Owner rulings, 2026-10-01, recorded on the owning ticket.
+
+| ID | Question | Ruling |
 | --- | --- | --- |
-| Q-1 | Marking the ADR-013 O-row types makes DT-2 report every seam-module namesake of a marked type (for example the native-v1 `Value` types and the lane-private `CheckedPackage`, both deleted with SEAM-1 in M-6c). Does `canonical-types` join `make ci` before or after M-6c? | Build it now and run it on demand; it joins `make ci` in the change where it reports nothing. Its findings until then are the deletion and rename work list. |
-| Q-2 | Layer-crate public namesakes with a different meaning would need renames, for example `qsl-semantics`'s model-normalization `LimitKind`, `ChargePoint`, `Incomplete` and `Meter` beside `quire-exact`'s value-accounting types of those names, if the latter are marked. | Rename the non-canonical namesakes, subject to the owner's approval of the rename churn. |
-| Q-3 | `quire-exact` and `quire-semantic-value` need `qsl-attrs` as a dependency to carry the marker, and ADR-011's FB-05 row lists SV's dependencies exactly. | Amend the FB-05 row to admit `qsl-attrs`, a dependency-free proc-macro with no runtime code, in K and SV. The alternative, treating every `pub` type of K and SV as canonical with no marker, reserves 24 names workspace-wide, most of them generic (Context). |
-| Q-4 | The owning ticket asks for a QSpec half. | None. Both gates check QSL's own code structure, which no QSpec contract governs. |
+| R-1 | Tagging the ADR-013 owner-row types makes DT-2 report every seam-module namesake of a tagged type. When does `canonical-types` join `make ci`? | It runs on demand now and joins `make ci` once the namesakes are gone. Its findings until then are the DT-7 work list. |
+| R-2 | Layer-crate namesakes such as `qsl-semantics`'s `LimitKind`, `ChargePoint`, `Incomplete` and `Meter` sit beside `quire-exact`'s types of those names. | Decide per type (DT-7). A namesake with the same meaning is a copy: delete it and use the canonical type. A namesake with a different meaning is renamed to say what it is. The spec lists the verdict for each type (FR-273). |
+| R-3 | A marker attribute from `qsl-attrs` would need a new dependency in `quire-exact` and `quire-semantic-value` and an FB-05 change. | No new dependency and no reserved-name list, since a list is a ledger. Canonical types carry the doc-comment tag `/// quire:canonical`, which the xtask parses (DT-1). FB-05 is unchanged. |
+| R-4 | The owning ticket asks for a QSpec half. | There is no QSpec half: both gates check QSL's own code structure. |
 
 ## Amendments to make on acceptance
 
-- ADR-011 §3 FB-05 row: SV's dependency list admits `qsl-attrs` (Q-3), and
-  so does K's.
 - ADR-011 §4: the two bullets on checking precedence and one type per stage
-  output cite CK-1 to CK-5 and DT-1 to DT-6 as their running checks.
+  output cite CK-1 to CK-5 and DT-1 to DT-7 as their running checks.
 - `spec/spec.md`: the index rows for the requirements that implement this
   record.
 
@@ -169,10 +173,12 @@ move between crates.
 - **A table of canonical type names and owner crates in the tool**, like
   FR-060's rule table. Rejected. It is a second statement of ADR-013's rows
   that goes stale without failing, and a new canonical type is missed until
-  someone edits the table. The marker cannot drift from the type it sits on.
-- **Every `pub` type of K and SV is canonical.** Rejected for now (Q-3): it
-  reserves generic names such as `Value`, `Outcome` and `Refusal`, and the
-  measured collisions are mostly unrelated namesakes.
+  someone edits the table. The tag cannot drift from the type it sits on.
+- **Every `pub` type of K and SV is canonical.** Rejected: it reserves all
+  161 names workspace-wide, most of them unrelated to an ADR-013 owner row.
+- **A `#[canonical]` attribute from `qsl-attrs`.** Rejected (R-3): it adds a
+  dependency to K and SV and changes FB-05, where a doc-comment tag does the
+  same work with neither.
 - **Name-only matching across repositories.** Rejected. It reports the
   boundary types ADR-013 §4 converts and AD-016 keeps, such as IR's wire
   `ValueType`.
@@ -194,5 +200,8 @@ move between crates.
 - Owning ticket: Linear QSL-391. Implementation: Linear QSL-13.
 - The S-3 typestate scans this builds on: TC-243, TC-244 (FR-087).
 - The definition scan this extends: QSL-358 slice 5 (`xtask/src/definition_scan.rs`).
+- Requirements: FR-270 (checked-input gate), FR-271 (the canonical tag),
+  FR-272 (the canonical-types gate), FR-273 (namesake verdicts); US-009 and
+  US-028.
 - The T-12 gates beside it: FR-059 to FR-061, run by RT and CG under
   agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89.
