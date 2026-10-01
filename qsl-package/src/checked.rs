@@ -541,7 +541,7 @@ mod tests {
         };
         use qsl_semantics::model::key::DeclarationKey;
         use qsl_semantics::model::normalize::{normalize, NormalizeOutcome};
-        use qsl_semantics::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+        use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
         let declaration = DeclarationKey::fixture("model.A");
         let domain_package = DomainPackage::new(

@@ -24,16 +24,11 @@ const CAUSE_TYPES: [&str; 4] = [
 ];
 
 /// The modules ordered below the `check` core (ADR-011 §6.1, §6.2): layer 1
-/// `qsl-cst`, layer 2 `qsl-forms`, and the layer-3 `semantic_value`, `model` and
-/// `library` modules, plus the layer-3 `value` module that sits beside the
-/// evaluator (`value::model_query`). `value::outcome` left this list when its
-/// module was deleted (it was layer K, a byte-identical
-/// `quire_exact` copy). `value::reference` left it under X-6a, which
-/// moved its `ObjectEnvironment` into `model` (`qsl-semantics/src/model`
-/// covers it). X-6b moved every layer-3 module into
-/// `qsl-semantics`. X-11 moved `value::stop`, `value::quantity` and the
-/// runtime half of `value::unit` into the layer-SV crate
-/// `quire-semantic-value`, which is below the core as a whole.
+/// `qsl-cst`, layer 2 `qsl-forms`, the layer-SV crate `quire-semantic-value`,
+/// and the layer-3 `semantic_value`, `model` and `library` modules, plus the
+/// layer-3 `value` modules that sit beside the evaluator
+/// (`value::model_query`) and the type environment
+/// (`value::environment_stage`).
 const BELOW_CORE: [&str; 10] = [
     "qsl-cst/src",
     "qsl-forms/src",
@@ -43,8 +38,8 @@ const BELOW_CORE: [&str; 10] = [
     "qsl-semantics/src/value/definition.rs",
     "qsl-semantics/src/value/enumeration.rs",
     "qsl-semantics/src/value/unit.rs",
-    "qsl-semantics/src/value/declaration.rs",
     "qsl-semantics/src/value/model_query.rs",
+    "qsl-semantics/src/value/environment_stage.rs",
 ];
 
 fn workspace_root() -> PathBuf {

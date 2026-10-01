@@ -30,7 +30,7 @@ use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::OperationDeclaration;
+use crate::model::operation::OperationDeclaration;
 use crate::value::member::Member;
 use qsl_forms::StateClauseKind;
 

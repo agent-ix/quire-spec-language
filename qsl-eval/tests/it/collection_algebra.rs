@@ -3,11 +3,6 @@
 
 use ix_trace_rs::trace;
 use qsl_semantics::family::FamilyOutcome;
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
-    ObjectTypeDeclaration, TypeEnvironment,
-};
-use qsl_semantics::value::enumeration::EnumMemberIndex;
 use quire_exact::EffectiveId;
 use quire_exact::FloatType;
 use quire_exact::NodeKey;
@@ -23,6 +18,11 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, Integer, LimitKind, Meter, ObjectId,
     ObjectReference, Outcome, Refusal, ScalarLimits, UniverseId,
 };
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, EqualityOperand, EqualityOperator, FieldDeclaration,
+    ObjectTypeDeclaration, TypeEnvironment,
+};
+use quire_semantic_value::enumeration::EnumMemberIndex;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

@@ -19,12 +19,12 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::declaration::{
-    FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_exact::{
     EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
     Presence, ScalarLimits, UniverseId, Value, ValueType,
+};
+use quire_semantic_value::declaration::{
+    FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use sha2::{Digest, Sha256};
 

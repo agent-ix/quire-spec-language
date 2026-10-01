@@ -49,7 +49,7 @@ use super::state_clause::{
     AttemptDeclaration, ClauseOperation, PopulationDomain, StateClauseDeclaration,
 };
 use super::{Scope, Signatures};
-use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`] (FR-113
@@ -760,7 +760,7 @@ mod tests {
     use crate::model::intake::SelectedModel;
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::{normalize, NormalizeOutcome};
-    use crate::value::declaration::TypeEnvironment;
+    use quire_semantic_value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\" version \"1\" digest \
@@ -864,6 +864,7 @@ mod tests {
         (
             Scope::new(
                 TypeEnvironment::default(),
+                crate::model::operation::OperationTable::default(),
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),

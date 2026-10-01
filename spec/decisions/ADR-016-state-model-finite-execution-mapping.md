@@ -110,11 +110,11 @@ untrusted data, recorded as found.
   (`check/mod.rs:334`), and resolves it through
   `CheckedGraph::resolve_declaration` (`check/mod.rs:1656`).
 - Static model typing at S3. Field reads resolve through
-  `TypeEnvironment::attribute` (`value/declaration.rs:884`, from
+  `quire_semantic_value::declaration::TypeEnvironment::attribute` (from
   `check/check.rs:1659`). `allInstances` is typed from
   `ValueType::Population(Option<u64>)` (`check/check.rs:2164`). `lookup`
   checks `S` against `T` with `TypeEnvironment::conforms`
-  (`check/check.rs:2214`, `value/declaration.rs:966`). #164's three items
+  (`check/check.rs:2214`). #164's three items
   are delivered: an inherited field read through `deref`
   (`qsl-eval/tests/it/inherited_attributes.rs:152`), upcast reference
   equality (TC-198 L08, `qsl-eval/tests/it/equality_matrix.rs:1028`), and

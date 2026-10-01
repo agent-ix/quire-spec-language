@@ -16,14 +16,14 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
-};
 use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
     NODE_KEY_DOMAIN,
+};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};

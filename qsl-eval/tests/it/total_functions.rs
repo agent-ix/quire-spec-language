@@ -15,9 +15,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-};
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
 use quire_exact::EffectiveId;
 use quire_exact::FloatType;
@@ -30,6 +27,9 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, RationalDomain, Value
 use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
+};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 
 use sha2::{Digest, Sha256};

@@ -54,12 +54,9 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     StageLimitCause,
 };
-use crate::value::declaration::{
-    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
-    FieldDeclaration, TypeEnvironment,
-};
+use crate::model::operation::OperationTable;
 use crate::value::definition::AdmittedIeeeProfile;
-use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
+use crate::value::enumeration::{mint_variant_id, EnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -75,6 +72,11 @@ use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::declaration::{
+    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
+    FieldDeclaration, TypeEnvironment,
+};
+use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
@@ -277,6 +279,9 @@ pub struct PackageDeclarations {
     pub lock_evidence: super::lowering::LockEvidence,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
+    /// The model object types' own declared operations (FR-103), resolved
+    /// through [`Self::types`]' effective view.
+    pub operations: OperationTable,
     /// Enum declarations.
     pub enums: Vec<EnumBinding>,
     /// `type Name = T;` aliases, which create no declaration identity.
@@ -375,6 +380,7 @@ impl PackageDeclarations {
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
+            operations: OperationTable::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
             alias_names: std::collections::BTreeMap::new(),
@@ -433,6 +439,8 @@ pub struct Scope {
     types: TypeEnvironment,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
+    /// The model object types' own declared operations (FR-103).
+    operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
@@ -527,6 +535,7 @@ impl Scope {
     /// A scope over these declarations, with its by-name lookups built once.
     pub(crate) fn new(
         types: TypeEnvironment,
+        operations: OperationTable,
         enums: Vec<EnumBinding>,
         aliases: Vec<(String, ValueType)>,
         model_operations: Vec<String>,
@@ -537,6 +546,7 @@ impl Scope {
         Self {
             types,
             enums,
+            operations,
             ieee_profile,
             dispatch_operations,
             index,
@@ -633,6 +643,11 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// The package's model object types' declared operations (FR-103).
+    pub fn operations(&self) -> &OperationTable {
+        &self.operations
     }
 
     /// The package's admitted IEEE profile, if it selects one.
@@ -2208,7 +2223,7 @@ impl<'a> Typer<'a> {
     /// `ill_typed`/`type-mismatch` at check time when `S` does not conform to
     /// `T` (TC-198 L03's last case, "before any charge"): decided here from
     /// the package's own admitted generalization graph
-    /// ([`crate::value::declaration::TypeEnvironment::conforms`]), whose
+    /// ([`quire_semantic_value::declaration::TypeEnvironment::conforms`]), whose
     /// admission bound makes it agree with the model's own walk at
     /// evaluation (`crate::model::population::lookup`), which still decides
     /// `S` against `T` for a runtime binding.

@@ -8,21 +8,21 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`](quire_exact::Text), [`EnumValue`](enumeration::EnumValue) and FR-142
+//!    [`Text`](quire_exact::Text), `quire_semantic_value::enumeration::EnumValue` and FR-142
 //!    `quire_exact::Quantity` values read against a
 //!    `quire_semantic_value::quantity::UnitTable` over an admitted
 //!    `quire_semantic_value::unit::UnitGraph`;
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
 //!    (FR-140), [`divide`] and [`modulo`] (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
-//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`](enumeration::compare_enum)
+//!    [`compare_text`](quire_exact::compare_text) and `quire_semantic_value::enumeration::compare_enum`
 //!    (FR-141), `quire_semantic_value::quantity`'s `evaluate_quantity` and
 //!    `convert_quantity` (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive
 //!    [`Value`](quire_exact::Value)s over a
-//!    [`TypeEnvironment`](declaration::TypeEnvironment), the FR-149 equality matrix
-//!    ([`TypeEnvironment::check_equality`](declaration::TypeEnvironment::check_equality)) and FR-144 bounded
+//!    `quire_semantic_value::declaration::TypeEnvironment`, the FR-149 equality matrix
+//!    (`TypeEnvironment::check_equality`) and FR-144 bounded
 //!    [`CollectionValue`](quire_exact::CollectionValue)s
 //!    ([`construct_collection`](quire_exact::construct_collection)) (QSL #119); FR-307
 //!    library resolution relocated to the top-level `library` module
@@ -113,19 +113,18 @@
 // evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
 // module and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
-// it imports by submodule path: `declaration`, `enumeration` and
-// `model_query`; `quantity` and `stop` are in the `quire-semantic-value`
-// crate (ADR-011 layer SV). `definition` and `semantic_node` stay
+// it imports by submodule path: `enumeration`, `environment_stage` and
+// `model_query`; `declaration`, `containment`, `quantity` and `stop` are in
+// the `quire-semantic-value` crate (ADR-011 layer SV). `definition` and `semantic_node` stay
 // `pub(crate)`: their consumers outside `value` are `check`, `model` and
 // `library`, all in this crate. `decimal`, `ieee`,
 // `numeric` and `text` are deleted; their former items are imported from `quire_exact`
 // directly.
 
-mod containment;
-pub mod declaration;
 pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;
+pub mod environment_stage;
 pub(crate) mod member;
 pub mod model_query;
 pub(crate) mod semantic_node;
@@ -147,7 +146,6 @@ pub(crate) mod unit;
 // The kernel's `Value`, `ValueType`, collection, equality and rational items
 // (ADR-011 §6.1's K row) are not re-exported here: every consumer imports
 // them from `quire_exact`, the one definition (ADR-011 §7.2).
-pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
 // `DecimalType`, `DecimalLoss`, `DecimalResult` and
 // `evaluate_decimal` were this module's own `decimal` submodule, a
 // byte-identical duplicate of `quire_exact`'s (V4 had already moved unit
@@ -156,14 +154,10 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
-// `declaration` and `enumeration` are `pub` modules, so their
+// `enumeration` and `environment_stage` are `pub` modules, so their
 // items have one public path, the submodule one
-// (`value::declaration::TypeEnvironment`); this module does not re-export
+// (`value::environment_stage::stage_failure`); this module does not re-export
 // them flat as well (the same one-path rule as for the kernel's items).
-// `declaration` owns the FR-143 registry, the FR-149 check-level equality
-// layer and QSL's name-keyed `FieldDeclaration`/`Component`/
-// `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
-// (ADR-011 §6.1).
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError,

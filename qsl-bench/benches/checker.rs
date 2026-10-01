@@ -27,7 +27,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criteri
 use qsl_bench::check::{
     admit_object_types, call_chain, check, enum_binding, enum_members, independent, object_chain,
 };
-use qsl_semantics::value::declaration::DEFAULT_WORK_UNITS;
+use quire_semantic_value::declaration::DEFAULT_WORK_UNITS;
 use std::time::Duration;
 
 const CHAIN: [usize; 3] = [250, 1_000, 2_000];

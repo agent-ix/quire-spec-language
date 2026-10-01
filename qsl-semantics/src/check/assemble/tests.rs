@@ -20,7 +20,7 @@ use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::FieldDeclaration;
+use quire_semantic_value::declaration::FieldDeclaration;
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\" version \"1\" digest \
     \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
@@ -923,7 +923,7 @@ fn every_record_refusal_is_reported() {
             matches!(
                 &error.cause,
                 AssemblyCause::InvalidTypeDeclaration(invalid)
-                    if matches!(invalid.cause, crate::value::declaration::DeclarationCause::DuplicateMember(_))
+                    if matches!(invalid.cause, quire_semantic_value::declaration::DeclarationCause::DuplicateMember(_))
             ),
             "{error:?}"
         );

@@ -20,10 +20,10 @@ use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
 };
-use crate::value::declaration::{EqualityOperator, FieldRef};
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
+use quire_semantic_value::declaration::{EqualityOperator, FieldRef};
 
 /// One step of a stable path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

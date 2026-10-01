@@ -407,14 +407,14 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::definition",
     "value::enumeration",
     "value::unit",
-    "value::containment",
     "value::semantic_node",
-    "value::declaration",
     // ADR-013 O-06's structured member identity, which the FR-093
     // lowering's operation members name (ADR-011 §6.2: 3 `semantic_value`).
     "value::member",
     "model",
     "value::model_query",
+    // The type environment's stage-limit mapping (F and SV imports only).
+    "value::environment_stage",
     "library",
     // Layer 3, `check` core itself.
     "check",

@@ -28,8 +28,9 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::value::declaration::ObjectTypeDeclaration;
+use qsl_semantics::model::operation::OperationDeclaration;
 use quire_exact::{Integer, IntegerInterval, Presence, ValueType};
+use quire_semantic_value::declaration::ObjectTypeDeclaration;
 use serde_json::{json, Value};
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";
@@ -945,8 +946,9 @@ fn an_operation_and_its_frame_admit_and_assemble() {
     );
     assert_eq!(parent.presence(), Presence::Optional);
 
-    let operation = declared
-        .operations()
+    let operation = declarations
+        .operations
+        .declared_by(config_version_id)
         .iter()
         .find(|operation| operation.name() == "attemptUpdate")
         .expect("attemptUpdate is declared on ConfigVersion");
@@ -1313,12 +1315,13 @@ fn a_version_number_typed_parameter_admits_and_is_typed_bound_integer() {
         node: format!("ix://{PACKAGE_IDENTITY}/ConfigVersion"),
     };
     let config_version_id = views[0].view.type_identities()[&config_version_key];
-    let declared = declarations
+    declarations
         .types
         .object_type(config_version_id)
         .expect("ConfigVersion is declared");
-    let operation = declared
-        .operations()
+    let operation = declarations
+        .operations
+        .declared_by(config_version_id)
         .iter()
         .find(|operation| operation.name() == "attemptUpdate")
         .expect("attemptUpdate is declared");
@@ -1466,7 +1469,8 @@ fn admission_is_deterministic_regardless_of_document_order() {
         "the two documents are genuinely reordered"
     );
 
-    let assembled_of = |document: &[u8]| -> (ObjectTypeDeclaration, ObjectTypeDeclaration) {
+    type Assembled = (ObjectTypeDeclaration, Vec<OperationDeclaration>);
+    let assembled_of = |document: &[u8]| -> (Assembled, Assembled) {
         let declarations = admit_and_assemble(document).expect("the fixture admits and assembles");
         let (unit, packages) = config_unit(document);
         let built = parse_and_build(&unit);
@@ -1485,17 +1489,17 @@ fn admission_is_deterministic_regardless_of_document_order() {
             package: PACKAGE_IDENTITY.to_owned(),
             node: audit_log.clone(),
         }];
-        let config_version_declared = declarations
-            .types
-            .object_type(config_version_id)
-            .expect("ConfigVersion is declared")
-            .clone();
-        let audit_log_declared = declarations
-            .types
-            .object_type(audit_log_id)
-            .expect("AuditLog is declared")
-            .clone();
-        (config_version_declared, audit_log_declared)
+        let declared = |id| {
+            (
+                declarations
+                    .types
+                    .object_type(id)
+                    .expect("the object type is declared")
+                    .clone(),
+                declarations.operations.declared_by(id).to_vec(),
+            )
+        };
+        (declared(config_version_id), declared(audit_log_id))
     };
 
     let (config_version_a, audit_log_a) = assembled_of(&forward);
@@ -1510,9 +1514,8 @@ fn admission_is_deterministic_regardless_of_document_order() {
         "AuditLog's assembled declaration agrees regardless of document order"
     );
 
-    let effect = |declared: &ObjectTypeDeclaration| {
-        declared
-            .operations()
+    let effect = |(_, operations): &Assembled| {
+        operations
             .iter()
             .find(|operation| operation.name() == "attemptUpdate")
             .expect("attemptUpdate is declared")

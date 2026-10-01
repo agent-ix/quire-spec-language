@@ -335,8 +335,8 @@ pub(crate) fn resolve_type_form(
 mod tests {
     use super::*;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
-    use crate::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
     use quire_exact::{CollectionKind, EffectiveId};
+    use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 

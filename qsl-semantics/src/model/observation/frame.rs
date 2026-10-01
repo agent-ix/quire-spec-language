@@ -27,8 +27,8 @@ use crate::model::domain_package::OperationEffect;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::population::{decide_frame, FrameDecision, FrameObject};
-use crate::value::declaration::TypeEnvironment;
 use qsl_foundation::diagnostic::{Code, InternalFault};
+use quire_semantic_value::declaration::TypeEnvironment;
 
 /// What check 11 reads besides the documents: the re-derived model views,
 /// the checked type environment, and the operation's frame.

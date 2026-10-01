@@ -683,6 +683,7 @@ impl PackageDeclarations {
         // before dispatch validation, which compares resolved types.
         let scope = Scope::new(
             self.types,
+            self.operations,
             self.enums,
             self.aliases,
             self.model_operations,
@@ -1857,7 +1858,7 @@ impl CheckedGraph {
     /// FR-115: the frame of the operation `selection` names, and its object
     /// type's identity. The operation resolves in the object type's
     /// effective view exactly as FR-104's Resolution resolves a clause's
-    /// operation (`TypeEnvironment::operation`), so an inherited operation
+    /// operation (`OperationTable::resolve`), so an inherited operation
     /// yields its declaring type's frame. `None` when the operation
     /// resolves to no single operation, or no clause or attempt of this unit
     /// names it (the package then holds no frame node for it, FR-105).
@@ -1874,13 +1875,14 @@ impl CheckedGraph {
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
         let context = *self.object_types.get(&selection.object)?;
-        let crate::value::declaration::OperationLookup::Declared {
+        let crate::model::operation::OperationLookup::Declared {
             declaring,
             operation,
-        } = self
-            .scope
-            .types()
-            .operation(context, selection.operation.as_str())
+        } = self.scope.operations().resolve(
+            self.scope.types(),
+            context,
+            selection.operation.as_str(),
+        )
         else {
             return None;
         };
@@ -2075,9 +2077,11 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
-        use crate::value::declaration::FieldDeclaration;
-        use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
+        use quire_semantic_value::declaration::FieldDeclaration;
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, TypeEnvironment,
+        };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x11; 32]);
@@ -2123,9 +2127,11 @@ mod tests {
     #[trace("TC-252", "FR-088-AC-9")]
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
-        use crate::value::declaration::FieldDeclaration;
-        use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
+        use quire_semantic_value::declaration::FieldDeclaration;
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, TypeEnvironment,
+        };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x22; 32]);

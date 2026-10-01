@@ -4080,7 +4080,7 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
     let parent = types
         .attribute(child.object_type(), "parent")
         .expect("ConfigVersion declares parent");
-    let field = qsl_semantics::value::declaration::FieldRef::new(parent.owner(), "parent");
+    let field = quire_semantic_value::declaration::FieldRef::new(parent.owner(), "parent");
     let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) =
         current.environment.attribute(types, child, &field)
     else {

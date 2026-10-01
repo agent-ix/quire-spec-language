@@ -21,17 +21,19 @@
 //! [`PopulationBinding`] correspondence, and the `PopulationBinding` a
 //! `PopulationId` names is `model`'s (ADR-011 §6.1, "K is a leaf"). ADR-011
 //! §6.1 orders layer 3 `semantic_value < model`, so the module sits in
-//! `model`, above the `value::declaration` registry it reads, instead of
+//! `model`, above SV's `declaration` registry it reads, instead of
 //! importing `model` upward from `semantic_value`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
-use crate::value::declaration::{fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment};
 use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
 use quire_exact::{FieldValue, Value};
+use quire_semantic_value::declaration::{
+    fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment,
+};
 
 /// Why an object environment is not closed.
 ///

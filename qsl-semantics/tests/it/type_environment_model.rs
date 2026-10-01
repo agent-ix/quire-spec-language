@@ -35,14 +35,15 @@ use qsl_semantics::model::population::{
     admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
     PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
 };
-use qsl_semantics::value::declaration::{
-    Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
-    TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
-};
+use qsl_semantics::value::environment_stage::stage_failure;
 use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
     UniverseId, Value, ValueType,
+};
+use quire_semantic_value::declaration::{
+    Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
+    TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
 };
 use sha2::{Digest, Sha256};
 
@@ -384,8 +385,7 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
 
     // Check time: a stage limit (ADR-014 B-3), node count, the ceiling
     // plus one, and no locus (FR-082).
-    let limit = environment_of(&view, CEILING)
-        .unwrap_err()
+    let limit = stage_failure(environment_of(&view, CEILING).unwrap_err())
         .into_refused()
         .unwrap_err();
     assert_eq!(
@@ -404,7 +404,7 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
 #[trace("TC-220", "FR-082-AC-6")]
 #[test]
 fn check_and_evaluation_share_one_default_ancestor_ceiling() {
-    use qsl_semantics::value::declaration::DEFAULT_ANCESTOR_STEPS;
+    use quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS;
     assert_eq!(
         ModelNormalizationLimits::default().ancestor_steps,
         DEFAULT_ANCESTOR_STEPS
@@ -1101,8 +1101,7 @@ fn chain_slots(depth: u64) -> u64 {
 /// B-3): the refused charge's cumulative total passes the bound, and it
 /// carries no locus.
 fn work_limit(admission: Admission<TypeEnvironment>) -> LimitExceeded {
-    let limit = admission
-        .unwrap_err()
+    let limit = stage_failure(admission.unwrap_err())
         .into_refused()
         .expect_err("a work-budget stage limit, not a refusal");
     assert_eq!(limit.kind(), LimitKind::WorkBudget);

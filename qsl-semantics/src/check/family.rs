@@ -76,13 +76,13 @@ use super::AdmittedImport;
 use super::{CheckingLimits, DeclarationRegions, DispatchTable, Origin as CheckOrigin, Scope};
 use crate::family::ClassifyFailure;
 use crate::library::PackageNodeKey;
-use crate::value::declaration::CompositeShape;
 use quire_exact::IeeeWidth;
 use quire_exact::IllTypedCause;
 use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
+use quire_semantic_value::declaration::CompositeShape;
 
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
@@ -1609,10 +1609,12 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
 mod tests {
     use super::fixtures::{empty_scope, fixture_source, root_location};
     use super::*;
-    use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
     use ix_trace_rs::trace;
     use qsl_forms::{BuiltinType, TypeForm};
     use quire_exact::{Presence, TextType};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, FieldDeclaration, TypeEnvironment,
+    };
 
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
 
@@ -1828,17 +1830,25 @@ pub mod fixtures {
     /// one real definition, re-exported rather than duplicated.
     pub fn empty_scope() -> Scope {
         scope_with(
-            crate::value::declaration::TypeEnvironment::default(),
+            quire_semantic_value::declaration::TypeEnvironment::default(),
             Vec::new(),
         )
     }
     /// A scope declaring only `types` and `aliases`, its by-name lookups
     /// built over them (a `Scope` is built once, never mutated).
     pub fn scope_with(
-        types: crate::value::declaration::TypeEnvironment,
+        types: quire_semantic_value::declaration::TypeEnvironment,
         aliases: Vec<(String, quire_exact::ValueType)>,
     ) -> Scope {
-        Scope::new(types, Vec::new(), aliases, Vec::new(), None, Vec::new())
+        Scope::new(
+            types,
+            crate::model::operation::OperationTable::default(),
+            Vec::new(),
+            aliases,
+            Vec::new(),
+            None,
+            Vec::new(),
+        )
     }
     /// A [`ValueDeclarations`] for tests exercising `check_declaration_body`
     /// or `ValueFunctionFamily::check` directly (PR #303 review round 3,

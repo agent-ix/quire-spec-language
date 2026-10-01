@@ -52,7 +52,7 @@ use qsl_foundation::InternalFault;
 use quire_exact::{NodeKey, ValueType};
 
 use crate::check::Capability;
-use crate::value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
 
 /// The kind of one unbounded domain (ADR-014 §4's table).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -351,11 +351,11 @@ fn child<'t>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value::declaration::{CompositeDeclaration, FieldDeclaration};
     use ix_trace_rs::trace;
     use quire_exact::{
         CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, Presence,
     };
+    use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration};
 
     const LIMIT: u64 = 1_000;
 

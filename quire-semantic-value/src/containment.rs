@@ -6,9 +6,13 @@
 //! one shared immutable value (a DAG), and a containment back-edge refuses at
 //! the node that closes the cycle. Sharing never creates object identity.
 
-use std::collections::{BTreeMap, BTreeSet};
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 
-use super::declaration::{Component, ConstructionCause, ConstructionRefusal, TypeEnvironment};
+use crate::declaration::{Component, ConstructionCause, ConstructionRefusal, TypeEnvironment};
 use quire_exact::{FieldValue, NodeKey, Value};
 
 /// A graph-local node name.

@@ -42,12 +42,12 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
 use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::family::{classify_extent, ClaimExtent, DomainKind};
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
-};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey, Presence,
     ValueType,
+};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 
 use super::tests::{metre_units, METRE};

@@ -21,8 +21,8 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef};
 use qsl_foundation::{ByteDigest, CatalogCode, CatalogCoded, InternalFault};
 use qsl_semantics::family::{ClassifyFailure, DomainKind};
-use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::{Integer, IntegerInterval, ValueType};
+use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
 /// A `{"type":"transition","operation":"<qualified-name>",

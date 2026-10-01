@@ -67,12 +67,12 @@ use super::refusal::{
     StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::{
-    CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
-};
 use crate::value::definition::DefinitionReference;
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
+use quire_semantic_value::declaration::{
+    CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
+};
 use quire_semantic_value::quantity::UnitTable;
 
 mod model;

@@ -61,7 +61,7 @@
 //! reference it is called with, well-formed or not.
 //!
 //! The checker decides the same relation over the package's own admitted
-//! object types: `crate::value::declaration::TypeEnvironment` carries their
+//! object types: `quire_semantic_value::declaration::TypeEnvironment` carries their
 //! generalization graph (`conforms`), their flattened attribute sets
 //! (inherited and redefined fields), and admits them only within the
 //! `ancestor_steps` ceiling the model walks under, so `lookup<T>(p, r)`'s
