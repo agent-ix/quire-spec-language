@@ -43,3 +43,12 @@ Ticket: QSL-355. PR: quire-spec-language#556 at bd6ceb71.
 The spec side matches the code. Retire-in-place is the right mechanism here.
 Two low findings: a wrong status glyph, and one leftover pin line in FR-007.
 Neither blocks the deletion. Both are quick to fix in this PR.
+
+## Dispositions
+
+Round 1, reviewed at bb0af37e896554e915c43236f8eb0de439aadd16.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a762f54e (⛔ in native-packages/tests.md:25 and native-temporal/tests.md:101-104,134-135) |
+| FND-002 | fixed | a762f54e (pin SHAs removed from FR-007, spec.md, IT-005, README.md, docs/spec-workflow.md; adoption and ADR-0054 facts kept) |

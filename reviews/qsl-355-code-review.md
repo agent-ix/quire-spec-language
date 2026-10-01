@@ -58,3 +58,11 @@ and the three live vector families. One medium finding: the two hand-edited
 canonical files are dead and the README makes a false claim about them. They
 should be deleted in this PR rather than maintained. Not mergeable until
 FND-001 is fixed.
+
+## Dispositions
+
+Round 1, reviewed at bb0af37e896554e915c43236f8eb0de439aadd16.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a762f54e (files and README lines 3-10 deleted); bb0af37e also drops the README's commit-SHA provenance (2c6b9b8, 1c3aa50) |
