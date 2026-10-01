@@ -46,6 +46,7 @@ Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
   step and the recorded digest.
 - Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`;
   `inconclusive`, `Verdicts`.
-- Step 3: each refuses as FR-128-AC-3 states, with no result.
+- Step 3: each refuses as FR-128-AC-3 states, with no result, the
+  `Observed` envelope before recompiling.
 - Step 4: `inconclusive`, `Verdicts`; FR-098's stale `package_id` refusal;
   `stale_dependency`/`revision-mismatch`; equal results.

@@ -237,8 +237,9 @@ automaton states and the depth reached.
   product state. A deadlock counterexample SHALL be the canonical path to
   the first deadlocked state (ADR-018 DL-4).
 - The counterexample SHALL be a `TemporalCounterexample` over the model
-  subject: the index of its initial state in `subject.initial`; each step as
-  its FR-120 transition identity and its post-state's
+  subject: the index of its initial state in `subject.initial`; its steps in
+  the `CounterexampleSteps::Model` arm (FR-128), each step as its FR-120
+  transition identity and its post-state's
   `quire.simulation.state-key/v1` digest, which selects the step's
   successor among the post-states of its transition identity; the loop
   entry, when there is a loop; the terminal stutter marker, when the loop

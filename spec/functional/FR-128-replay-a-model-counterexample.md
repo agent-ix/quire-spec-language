@@ -66,9 +66,12 @@ refusal order and its results.
   digest; the request names the subject's universes.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070) whose payload is a
   `TemporalCounterexample` over a model subject: `initial` (index into the
-  subject's initial states), `prefix` and `loop` as `Vec<ModelStep>`, each
-  `ModelStep{transition: ModelTransition, post_state: DigestRecord}`, the
-  terminal stutter marker, the `over` binding, the fairness set, `interval`
+  subject's initial states); `steps: CounterexampleSteps`, which is
+  `Model{prefix: Vec<ModelStep>, loop: Vec<ModelStep>}`, each
+  `ModelStep{transition: ModelTransition, post_state: DigestRecord}` (the
+  ADR-018 CX-2 model steps), or `Observed{prefix, loop}`, observed documents
+  by digest for FR-331 replay over an observed trace (ADR-014 §10 scenario
+  5); the terminal stutter marker, the `over` binding, the fairness set, `interval`
   and `kind: CounterexampleKind::{Formula, Deadlock}`. Its
   `trace_position` names the failing position (ADR-014 TR-2), and its
   `clause_node` and `occurrence_key` name the clause, or the deadlock-
@@ -96,8 +99,12 @@ refusal order and its results.
   byte provision and the request's universes, and refuse with FR-106's
   record when admission fails. An `initial` index outside the subject's
   initial states SHALL refuse `invalid_runtime_input`/`invalid-value`.
-- The executor SHALL re-execute the prefix, then the loop, from the indexed
-  initial state with FR-101 `replay`:
+- If the payload's steps are `Observed`, then the executor SHALL refuse
+  `invalid_runtime_input`/`invalid-value` before recompiling, since an
+  observed trace replays through FR-331 replay over that trace and not
+  through `ModelSystem`.
+- The executor SHALL re-execute the `Model` arm's prefix, then its loop,
+  from the indexed initial state with FR-101 `replay`:
   - if a step's transition is not enabled at its pre-state, then the
     executor SHALL refuse `invalid_runtime_input`/`invalid-value`, naming
     the step;
@@ -140,7 +147,7 @@ refusal order and its results.
 |----|----------|--------------|
 | FR-128-AC-1 | FR-126-AC-1's lasso under the weak constraint with no granularity replays to `reproduced-with-evaluated-witness` with `trace_position` 0. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. Over the `Branch` subject (one object `x`, field `v: Int[0, 2]`, initial 0, and operation `step` with no precondition and postcondition `self.v != pre(self.v)`, so `step` from 0 has the two post-states 1 and 2 under one transition identity), for the clause `always holds(x.v != 2)`, a prefix whose one step records the digest of `v = 2` replays through that successor and reproduces with `trace_position` 1, and one recording a digest that no successor of `step` has refuses `stale_dependency`/`revision-mismatch` naming the step and that digest. | Test (TC-523) |
 | FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `Verdicts`. The original payload truncated to end at value 2 settles `inconclusive`, `Verdicts`, since `inc` is enabled there. | Test (TC-523) |
-| FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop. | Test (TC-523) |
+| FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop; AC-1's envelope with its steps given as `Observed{prefix, loop}` (refused before recompiling). | Test (TC-523) |
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `Verdicts`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`revision-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
 
 ## Dependencies
