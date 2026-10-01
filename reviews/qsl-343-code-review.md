@@ -85,3 +85,9 @@ Round 1, reviewed at 985bb85bcfd85683f898a4131f3dceebc52678fb (rebased onto a486
 | FND-002 | fixed | 05051fa3: the `own_evidence` doc is "each of the lock's required features, declared as supported", with no attest/pairing sentence |
 | FND-003 | fixed | 05051fa3: the `read_fixture_wire` doc is rewrapped under 100 columns |
 | FND-004 | fixed | 05051fa3: the test comment now states IR's `StaleDependency` covers a `package_id` that does not recompute; `map_refusal_code`'s "known-wrong mapping" paragraph is reworded the same way |
+
+Round 2, reviewed at c0991f5d6fe6cf914bcac23ba5a1ca489a64f447 (IR main a0fd8e7, no patch; caller's `make ci` exit 0 on c0991f5d). No new findings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | c0991f5d: emit.rs:115 now reads "The raw-byte SHA-256 of the catalog's definition, a required `CheckedArtifactRef` member", and emit.rs:647-649 says each digest is the catalog row's raw-byte SHA-256 and that a law's digest feeds application-node keys through its `DefinitionRef` |

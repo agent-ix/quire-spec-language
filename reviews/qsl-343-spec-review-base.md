@@ -39,3 +39,5 @@ Clean. The deletions leave no dangling references.
 ## Dispositions
 
 Round 1, reviewed at 985bb85bcfd85683f898a4131f3dceebc52678fb. There were no findings to dispose of. Re-checked after the rebase: the FR-093, TC-416 and tests.md conflict resolutions keep main's (#544) ticket-id strip, and the diff adds no `QSL-NNN` text to spec/. The new FR-093 paragraph, AC-17, TC-416 Scope, step 9, its expected result, its Status line and the tests.md row agree with one another and with the test. New AC-17 is testable, and it is tested.
+
+Round 2, reviewed at c0991f5d6fe6cf914bcac23ba5a1ca489a64f447. The commit touches no spec file, and the spec text still agrees with the test. There is nothing to dispose of.

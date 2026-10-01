@@ -53,3 +53,9 @@ Round 1, reviewed at 985bb85bcfd85683f898a4131f3dceebc52678fb.
 | FND | outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | 05051fa3: FR-093 states the emitted `diagnostics.catalog`, new FR-093-AC-17 and TC-416 step 9 back it, and `the_lock_selects_the_catalog_definitions` (traced TC-416, FR-093-AC-7, FR-093-AC-17) asserts the wire member and the Verified read-back. Reusing the id AC-17 is acceptable: the old AC was never released, no live spec or code references it, and the new AC pins the same catalog-revision value the old AC's last sentence asserted. |
+
+Round 2, reviewed at c0991f5d6fe6cf914bcac23ba5a1ca489a64f447. No new findings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | c0991f5d: `the_lock_selects_the_catalog_definitions` asserts `authority`, `identity`, `revision` and `digest_domain` separately, which are exactly AC-17's members. The digest literal is gone. |
