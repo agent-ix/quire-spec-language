@@ -138,3 +138,37 @@ impl Default for CheckingLimits {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A depth above [`MAX_CHECKING_DEPTH`] is refused naming it; the
+    /// maximum itself is admitted with the default byte and work ceilings.
+    #[test]
+    fn new_refuses_a_depth_above_the_maximum() {
+        assert_eq!(
+            CheckingLimits::new(10, MAX_CHECKING_DEPTH + 1),
+            Err(DepthAboveMaximum {
+                depth: MAX_CHECKING_DEPTH + 1
+            })
+        );
+        let limits = CheckingLimits::new(10, MAX_CHECKING_DEPTH).expect("maximum admitted");
+        assert_eq!(limits.nodes(), 10);
+        assert_eq!(limits.depth(), MAX_CHECKING_DEPTH);
+        assert_eq!(limits.input_bytes(), DEFAULT_CHECKING_INPUT_BYTES);
+        assert_eq!(limits.work_budget(), DEFAULT_CHECKING_WORK_BUDGET);
+    }
+
+    /// The builders set only their own ceiling.
+    #[test]
+    fn builders_set_only_their_own_ceiling() {
+        let limits = CheckingLimits::default()
+            .with_input_bytes(7)
+            .with_work_budget(9);
+        assert_eq!(limits.input_bytes(), 7);
+        assert_eq!(limits.work_budget(), 9);
+        assert_eq!(limits.nodes(), DEFAULT_CHECKING_NODES);
+        assert_eq!(limits.depth(), MAX_CHECKING_DEPTH);
+    }
+}

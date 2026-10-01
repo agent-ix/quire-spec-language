@@ -89,3 +89,26 @@ impl Location {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    /// A child keeps its origin and extends the path by one index, leaving
+    /// the parent unchanged.
+    #[test]
+    fn child_extends_the_path_and_keeps_the_origin() {
+        let parent = Location {
+            origin: Origin::Body {
+                function: String::from("f"),
+                index: 2,
+            },
+            path: vec![1],
+        };
+        let child = parent.child(3);
+        assert_eq!(child.origin, parent.origin);
+        assert_eq!(child.path, vec![1, 3]);
+        assert_eq!(parent.path, vec![1]);
+    }
+}

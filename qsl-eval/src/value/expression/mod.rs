@@ -536,6 +536,46 @@ mod tests {
     use quire_exact::{Integer, NodeKey};
     use quire_semantic_value::checking::CheckingLimits;
 
+    /// Each admission refusal maps to its catalog code: a missing name to
+    /// `missing_declaration`, a wrong argument or role mapping to
+    /// `invalid_runtime_input`, a dangling reference to `dangling_reference`.
+    #[test]
+    fn input_refusal_code_maps_each_refusal_to_its_catalog_code() {
+        use qsl_foundation::diagnostic::Code;
+        let cases = [
+            (
+                InputRefusal::UnknownFunction("f".to_owned()),
+                Code::MissingDeclaration,
+            ),
+            (
+                InputRefusal::UnknownClause("c".to_owned()),
+                Code::MissingDeclaration,
+            ),
+            (
+                InputRefusal::Arity {
+                    declared: 1,
+                    supplied: 2,
+                },
+                Code::InvalidRuntimeInput,
+            ),
+            (
+                InputRefusal::WrongValueKind { parameter: 0 },
+                Code::InvalidRuntimeInput,
+            ),
+            (
+                InputRefusal::DanglingReference { parameter: 0 },
+                Code::DanglingReference,
+            ),
+            (
+                InputRefusal::ObservationsMismatch,
+                Code::InvalidRuntimeInput,
+            ),
+        ];
+        for (refusal, code) in cases {
+            assert_eq!(input_refusal_code(&refusal), code, "{refusal:?}");
+        }
+    }
+
     /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
     fn identity_function() -> FunctionDeclaration {
         let bound = || {

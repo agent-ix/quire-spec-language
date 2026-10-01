@@ -63,3 +63,42 @@ impl InputRefusal {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each refusal names its closed cause tag.
+    #[test]
+    fn each_refusal_names_its_cause() {
+        let cases = [
+            (
+                InputRefusal::UnknownFunction(String::from("f")),
+                "missing-name",
+            ),
+            (
+                InputRefusal::UnknownClause(String::from("c")),
+                "missing-name",
+            ),
+            (
+                InputRefusal::Arity {
+                    declared: 1,
+                    supplied: 2,
+                },
+                "wrong-value-kind",
+            ),
+            (
+                InputRefusal::WrongValueKind { parameter: 0 },
+                "wrong-value-kind",
+            ),
+            (
+                InputRefusal::DanglingReference { parameter: 0 },
+                "absent-target-in-complete-population",
+            ),
+            (InputRefusal::ObservationsMismatch, "wrong-role-mapping"),
+        ];
+        for (refusal, cause) in cases {
+            assert_eq!(refusal.cause(), cause, "{refusal:?}");
+        }
+    }
+}
