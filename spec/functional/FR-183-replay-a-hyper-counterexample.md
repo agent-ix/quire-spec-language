@@ -68,6 +68,7 @@ pub struct HyperCounterexample {
     pub traces: Vec<HyperTrace>,          // one per universal variable, in quantifier order
     pub loop_entry: Option<u64>,          // joint position; Lockstep and WitnessExhausted
     pub instance: Vec<(Name, Key)>,       // object parameter binding
+    pub undefined: Option<UndefinedEvaluation>, // ADR-018 UE-2; `where` names the tuple
 }
 
 pub enum HyperCounterexampleKind {
@@ -114,6 +115,16 @@ pub struct HyperTrace {
   traces of unequal step counts for `Lockstep` and `WitnessExhausted`; a
   joint step at which `μ_U` is false; a trace that is unfair under its own
   fairness set on its own loop.
+
+### Undefined evaluation
+
+- For a counterexample whose `undefined` member is set, of any kind, the
+  executor SHALL re-execute and check the traces as above, then evaluate
+  `μ` and the body along the tuple in joint-position order (ADR-018 UE-5,
+  ADR-023 HV-8). When the first undefined evaluation is at `where`, with an
+  undefined cause equal to the payload's, the executor SHALL settle
+  `reproduced-with-evaluated-witness`, the `UndefinedEvaluation` being the
+  arm's value. Any other result SHALL settle `inconclusive`, `Verdicts`.
 
 ### Lockstep (HP-2)
 
@@ -173,6 +184,7 @@ pub struct HyperTrace {
 | FR-183-AC-2 | FR-178-AC-2's `Projected` counterexample and FR-179-AC-2's `StepTuple` counterexample each reproduce. | Test (TC-608) |
 | FR-183-AC-3 | Refusals settle no result: §8.1's counterexample with one trace one step shorter; with `b`'s first input changed to 1 (`μ_U` false); with one post-state digest altered; a `Projected` counterexample with a `step` marked skipped. An HP-2 counterexample under `fair { weak V::Vault::reset }` on `a` whose loop never takes or disables `reset` refuses as unfair. | Test (TC-608) |
 | FR-183-AC-4 | A hand-built `Lockstep` envelope over the leaky vault with `a` and `b` both from `(0, 0)` taking `step(0)`, loop entry 1, on which `l` stays equal, settles `inconclusive`, `Verdicts`; a hand-built `WitnessExhausted{position: 1}` envelope for `Opaque` over the secure vault, with `a`'s lasso `(0, 0) -step(0)-> (0, 0)`, recomputes a non-empty `X_1` and settles `inconclusive`, `Verdicts`; §8.2's leaky counterexample replayed with `max_witness_set` 0 refuses. Replaying one envelope twice gives equal results. | Test (TC-608) |
+| FR-183-AC-5 | FR-179-AC-4's `StepTuple` counterexample, with `undefined` set, replays to `reproduced-with-evaluated-witness` with its `UndefinedEvaluation` as the value; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `Verdicts`. | Test (TC-610) |
 
 ## Dependencies
 

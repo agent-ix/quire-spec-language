@@ -29,7 +29,8 @@ relation (ADR-023 HM-9, HC-3) by exploring each subject's reachable graph
 once, retaining edges, and evaluating the relation's body over every tuple
 of reachable transitions, one per execution variable, each labelled with
 that variable's operation. The first tuple, in canonical order, on which
-the body is false is the counterexample. `max_relation_tuples` bounds the
+the body is false or undefined is the counterexample (ADR-018 UE-1,
+ADR-023 HV-8). `max_relation_tuples` bounds the
 number of tuples a run evaluates (FR-184).
 
 ## Use case
@@ -49,10 +50,9 @@ each with a path from an initial state to its pre-state.
 ## Outputs
 
 - FR-126's `ModelCheckOutcome`, with `Violated` carrying a
-  `HyperCounterexample` of kind `StepTuple` (FR-183), and with
-  `Undefined { tuple, cause }` added: the first undefined tuple in canonical
-  order, as a `StepTuple` of its executions, and the undefined cause the
-  evaluator gave for it (ADR-013 O-16 category undefined).
+  `HyperCounterexample` of kind `StepTuple` (FR-183), whose `undefined`
+  member holds `UndefinedEvaluation{where, cause}` when the body evaluated
+  undefined on the tuple.
 
 ## Behavior
 
@@ -65,25 +65,20 @@ each with a path from an initial state to its pre-state.
   edge orders (FR-101) in variable order, the engine SHALL evaluate the body
   through the one clause evaluator (FR-107) over the executions'
   observations: arguments, the receiver's pre-state, post-state and result.
-- The first tuple on which the body evaluates `false` SHALL return
-  `Violated`, each execution carrying the canonical breadth-first path from
-  an initial state to its pre-state followed by its transition.
-- If the body evaluates to no value on a tuple, then the engine SHALL record
-  that tuple as undefined, with the evaluator's undefined cause, and
-  continue the enumeration. An undefined tuple SHALL count neither as a pass
-  nor as a refutation.
-- A refuting tuple SHALL return `Violated` whether or not other tuples are
-  undefined.
-- When the enumeration ends with no refuting tuple and at least one
-  undefined tuple, the engine SHALL return `Undefined` naming the first
-  undefined tuple in canonical order and its cause.
+- The first tuple on which the body evaluates `false` or `Undefined` SHALL
+  return `Violated`, each execution carrying the canonical breadth-first
+  path from an initial state to its pre-state followed by its transition.
+- If the body evaluates `Undefined` on that tuple, then the counterexample's
+  `undefined` member SHALL hold `UndefinedEvaluation{where, cause}`, with
+  `where` the tuple and `cause` the evaluator's undefined cause (ADR-018
+  UE-1, UE-2).
 - When every tuple evaluated `true`, the engine SHALL return
   `Holds{Exhaustive}`.
 - When the next tuple would pass `max_relation_tuples`, the engine SHALL
   stop and return `Stopped(ResourceExhausted, MaxRelationTuples)`.
 - The engine SHALL enumerate only transitions that leave states at depth
   below `max_depth`.
-- When a run reaches `max_depth` with no `false` tuple, the engine SHALL
+- When a run reaches `max_depth` with no `false` or undefined tuple, the engine SHALL
   return `BoundReached{depth: max_depth}` (ADR-023 HV-3).
 
 ## Acceptance Criteria
@@ -93,8 +88,8 @@ each with a path from an initial state to its pre-state.
 | FR-179-AC-1 | FR-171-AC-3's `Det` over ADR-023 §8's secure vault returns `Holds{Exhaustive}` after evaluating every pair of the 8 reachable `step` edges (64 tuples). | Test (TC-604) |
 | FR-179-AC-2 | `Det` over a vault variant whose `step` postcondition is `self.l = i or self.l = 1 - i` (a nondeterministic post-state) returns `Violated` with a `StepTuple` counterexample: two executions of `step` with equal pre-states and inputs and unequal post-states, each with a path from an initial state to its pre-state. | Test (TC-604) |
 | FR-179-AC-3 | AC-1's request with `max_relation_tuples` 10 returns `Stopped(ResourceExhausted, MaxRelationTuples)` after 10 tuples, naming the limit and its value; with `max_depth` 1 it enumerates only the 4 transitions from the two initial states (16 tuples) and returns `BoundReached{depth: 1}`. Running AC-2's request twice gives byte-equal counterexamples. | Test (TC-604) |
-| FR-179-AC-4 | Over a `Cell` model (field `d: Int[0, 1]`, operation `set(k: Int[0, 1])` with postcondition `self.d = k`, initial `d = 0`), `relation R using v over (x: C::Cell::set, y: C::Cell::set) { 1 / x.k >= y.k }` evaluates every tuple with `x.k = 1` `true` and every tuple with `x.k = 0` undefined, and returns `Undefined` naming the first tuple in canonical order with `x.k = 0` and the evaluator's division-by-zero cause; it never returns `Holds`. | Test (TC-610) |
-| FR-179-AC-5 | Over the same `Cell` model, `relation R2 using v over (x: C::Cell::set, y: C::Cell::set) { 1 / x.k > y.k }`, whose tuples with `x.k = 0` are undefined and whose tuple with `x.k = 1` and `y.k = 1` is false, returns `Violated` with a `StepTuple` counterexample on that refuting tuple. | Test (TC-611) |
+| FR-179-AC-4 | Over a `Cell` model (field `d: Int[0, 1]`, operation `set(k: Int[0, 1])` with postcondition `self.d = k`, initial `d = 0`), `relation R using v over (x: C::Cell::set, y: C::Cell::set) { 1 / x.k >= y.k }` evaluates every tuple with `x.k = 1` `true` and every tuple with `x.k = 0` undefined, and returns `Violated` with a `StepTuple` counterexample on the first tuple in canonical order, which has `x.k = 0`, whose `undefined` member is `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; it never returns `Holds`. | Test (TC-610) |
+| FR-179-AC-5 | Over the same `Cell` model, `relation R2 using v over (x: C::Cell::set, y: C::Cell::set) { 1 / (1 - x.k) > y.k }`, where every tuple with `x.k = 0` precedes every tuple with `x.k = 1` in canonical order, is true on the first tuple (`x.k = 0`, `y.k = 0`), false on the next (`x.k = 0`, `y.k = 1`) and undefined on every tuple with `x.k = 1`. It returns `Violated` with a `StepTuple` counterexample on the false tuple, with no `undefined` member. | Test (TC-611) |
 
 ## Dependencies
 

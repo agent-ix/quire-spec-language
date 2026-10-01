@@ -82,9 +82,12 @@ public outputs differ.
   automaton successor. A joint step's identity is the tuple of component
   identities.
 - `μ_U` SHALL be evaluated through the one clause evaluator (FR-107) over
-  the joint step's labels. If it evaluates undefined, refused or incomplete
-  at a reachable joint step, then the engine SHALL return
-  `Undecided(MatchUndetermined)`.
+  the joint step's labels. If it evaluates `Undefined` at a reachable
+  joint step, then the engine SHALL return `Violated` with a `Lockstep`
+  counterexample ending at that joint step, with no `loop_entry`, whose
+  `undefined` member is `UndefinedEvaluation{where, cause}` (ADR-023
+  HV-8). If it evaluates refused or incomplete there, then the engine SHALL
+  return `Undecided(MatchUndetermined)`.
 
 ### Phases
 
@@ -121,7 +124,7 @@ public outputs differ.
 | FR-176-AC-1 | ADR-023 §8.1, no reduction: the leaky product has 14 reachable states and two accepting SCCs, and returns `Violated` with a `Lockstep` counterexample of the §8.1 table's shape, `a` from `(0, 0)`, `b` from `(1, 0)`, joint steps `(step(0), step(0))`, loop entry 1. The secure product has 8 states and returns `Holds{Exhaustive}`. | Test (TC-601) |
 | FR-176-AC-2 | `NonInterference` with its `match` block removed returns `Violated` over the secure model. `match { a.step.op = V::Vault::step and b.step.op = stutter }` over the vault, which has no terminal state, returns `Undecided(VacuousMatch)`. | Test (TC-601) |
 | FR-176-AC-3 | The secure vault with an added `reset` operation (no precondition, postcondition `self.l = 0`, frame `[l]`) and the one-variable clause `forall trace a of V { always eventually holds(v.l @ a = 0) }`: under `fair { weak V::Vault::reset }` on `a` it returns `Holds`, and with the empty fairness set `Violated` with a loop of `step(1)` steps. In a two-variable clause over a subject where `a` can reach a terminal state, `μ` `a.step.op = b.step.op` pairs `a`'s stutter step only with `b`'s stutter step. | Test (TC-601) |
-| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. A `match` conjunct that the clause evaluator evaluates undefined at a reachable joint step (an integer division by an argument that is 0 there) returns `Undecided(MatchUndetermined)`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
+| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. A `match` conjunct that the clause evaluator evaluates undefined at a reachable joint step (an integer division by an argument that is 0 there) returns `Violated` with a `Lockstep` prefix ending at the first such joint step in canonical order and `undefined` set to `UndefinedEvaluation` with cause `division-by-zero`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
 
 ## Dependencies
 

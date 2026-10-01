@@ -47,7 +47,8 @@ the first position where the outputs differ.
 
 - The body's value on the joint behaviour (`true`, `false` or no value, as
   SM-1's evaluator returns), with the first joint position at which a
-  `false` is fixed, for `trace_position`.
+  `false` is fixed, or at which the body evaluates undefined with its
+  undefined cause (ADR-018 UE-1), for `trace_position`.
 
 ## Behavior
 

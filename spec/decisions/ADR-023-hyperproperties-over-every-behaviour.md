@@ -286,12 +286,13 @@ Every verdict is one of ADR-018 V-1 to V-8. No label, basis, category or
 | ID | Rule |
 | --- | --- |
 | HV-1 | **Proved.** EN-1 completes with no violation: HP-1 every tuple evaluated true, HP-2 no fair accepting cycle, HP-3 no reachable empty `X` with a fair universal cycle, HP-6 no reachable rejecting monitor state. V-1, `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, or `Proved{basis: Reduced{…}}` under ADR-021 RV-1, which names copy-swap when it applied (CS-5). EN-3 proves HP-2 as V-3. |
-| HV-2 | **Refuted.** A counterexample (§7) that replay reproduces. V-4, `refuted`, `decisive-counterexample`, `Refuted`. |
+| HV-2 | **Refuted.** A counterexample (§7) that replay reproduces, including one that ends where the claim evaluated undefined (HV-8). V-4, `refuted`, `decisive-counterexample`, `Refuted`. |
 | HV-3 | **Bounded.** A run that completes every depth up to `max_depth` with no violation settles V-5 `BoundReached{depth}`. For HP-2 and HP-3 this is "no counterexample whose universal lasso has length at most `k`", lockstep length being the shared number of joint steps (ADR-018 §1 "Length"). For HP-1 it is "no counterexample whose executions all leave states at depth below `k`". |
-| HV-4 | **Inconclusive causes.** `InconclusiveCause` gains `MatchUndetermined`: `μ` evaluated undefined, refused or incomplete at a reachable joint step. It gains `VacuousMatch`: the HM-7 case. `UndecidedSuccessor`, `NoInitialState`, `ReplayParity` and `ReplayRefused` apply as ADR-018 V-6 states. All are V-6. |
+| HV-4 | **Inconclusive causes.** `InconclusiveCause` gains `MatchUndetermined`: `μ` evaluated refused or incomplete at a reachable joint step. It gains `VacuousMatch`: the HM-7 case. `UndecidedSuccessor`, `NoInitialState`, `ReplayParity` and `ReplayRefused` apply as ADR-018 V-6 states. All are V-6. |
 | HV-5 | **Stopped.** Reaching a run limit of HC-10, a meter, time or cancellation settles V-7. |
 | HV-6 | **Unsupported.** HP-4, and a clause over `behaviours` under a profile other than infinite-trace (HS-7), settle V-8, `unsupported-requested-capability`. |
 | HV-7 | **Identity.** The obligation identity (ADR-013 O-09) binds every subject in alias order, the quantifier prefix with each variable's alias in order, each variable's fairness set, `μ`, and the object parameters' instance. Reversing two quantifiers, or moving a constraint from one variable to another, gives a different obligation (QSpec FR-191-AC-2, AC-4). |
+| HV-8 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply to every hyper form EN-1 decides. When the body or `μ` evaluates undefined on a tuple, the item settles `refuted`, V-4, with cause `UndefinedEvaluation{where, cause}`. `where` names the tuple: one trace per quantified variable, ending at the joint position where the claim evaluated undefined, which is `trace_position`; for HP-1, the tuple of executions. `cause` is the evaluator's undefined cause. The engine reports the first refuting evidence in canonical order: for HP-1 the first tuple, in the product of canonical edge orders, on which the body is false or undefined; for HP-2, HP-3 and HP-6 the first product state, in canonical breadth-first order, at which a letter is undefined or a violation is reached, as ADR-018 UE-4 states. The counterexample is a finite prefix with no `loop_entry`, and its `undefined` member holds the `UndefinedEvaluation`. |
 
 ### 7. Counterexamples and replay
 
@@ -301,7 +302,7 @@ Every verdict is one of ADR-018 V-1 to V-8. No label, basis, category or
 | HX-2 | **Replay of `Lockstep`.** E9 recompiles the package (FR-098) and re-admits each subject. For each trace it re-executes the steps through its subject's `ModelSystem` with FR-101 `replay`, with ADR-018 CX-3's refusals (no successor of a step's identity with the recorded post-state, a step not enabled, a loop that does not close at `loop_entry`). It then checks `μ_U` at every joint step, the loop's closing step included, and each trace's fairness set on its own loop (ADR-018 CX-3, ADR-019 SR-8), refusing an unmatched tuple or an unfair trace with `invalid_runtime_input`/`invalid-value`. It evaluates the body over the tuple by HM-4. False settles `reproduced-with-evaluated-witness` and the item `refuted`; true settles `inconclusive`, `ReplayParity`. |
 | HX-3 | **Replay of `WitnessExhausted`.** Replay re-executes and checks the universal traces as HX-2 does, without evaluating the body. It then recomputes `X_0` to `X_position` along the universal traces from the existential subjects' `ModelSystem`s and the safety automaton, by HC-2's rule, under the request's `max_witness_set`. `X_position` empty and every earlier `X` non-empty settles `reproduced-with-evaluated-witness` and the item `refuted`. A non-empty `X_position` settles `inconclusive`, `ReplayParity`; reaching `max_witness_set` during replay settles `inconclusive`, `ReplayRefused`. |
 | HX-4 | **What an HP-3 refutation proves.** It names a fair tuple of universal behaviours and a joint position by which every existential tuple matched with it has violated the body. `X` is a function of the universal prefix, the existential subjects and the body, so replay recomputes it with no engine present and checks the absence of a witness exhaustively over the existential subject, along a finite prefix. That is why the refutation's basis is `decisive-counterexample`: the evidence is the universal tuple, and the existential half is a closed computation over it. |
-| HX-5 | **Replay of `StepTuple`.** Replay re-executes each prefix, checks the final transition is enabled with the recorded post-state, and evaluates the body over the tuple of executions through the one clause evaluator. False reproduces; true settles `ReplayParity`. |
+| HX-5 | **Replay of `StepTuple`.** Replay re-executes each prefix, checks the final transition is enabled with the recorded post-state, and evaluates the body over the tuple of executions through the one clause evaluator. False reproduces; true settles `ReplayParity`. A counterexample whose `undefined` member is set replays, for every kind, by ADR-018 UE-5 over the tuple: it reproduces when the first undefined evaluation along the tuple is at `where` with an equal cause. |
 | HX-6 | **Engine independence.** EN-2 reads each component's transition identities from selector variables in its encoding and produces a `Lockstep` counterexample that replays by HX-2 with no solver present (ADR-018 CX-4). A counterexample found under symmetry is concretised by ADR-021 EI-6 per component with the one diagonal permutation, so no counterexample carries a canonical state. |
 
 ### 8. Worked examples
@@ -474,7 +475,8 @@ entry `replay_model_trace_tuple`.
 
 ### 12. Rulings on the draft's questions
 
-The owner ruled on the four questions the draft left open, on 2026-10-01.
+The owner ruled on the four questions the draft left open, and on undefined
+tuples (RU-5), on 2026-10-01.
 
 | ID | Question | Ruling | Rationale | Where it lands |
 | --- | --- | --- | --- | --- |
@@ -482,6 +484,7 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 | RU-2 | Reachable or declared-type step relations | **Both, by subject.** A model claim runs on EN-1 over reachable transitions; a code claim runs as a two-call Kani harness over every pre-state that satisfies the declared invariants | The model claim covers what the model can reach and needs exploration. Code has no explored state graph, so its premise is the declared invariants, which every reachable state satisfies once they are proved. The two are separate obligations: each settles on its own evidence | HP-1, §14 (XC-1 to XC-5) |
 | RU-3 | Who owns single-existential prefixes, and the basis of an exhaustive refutation | **Routed to ADR-022's possible family.** A witness proves the claim (ADR-022 GV-1, V-9); an exhaustive search of a trap's closure that finds none refutes it (ADR-022 GV-2, V-10); a partial search stays inconclusive (ADR-022 GV-5). The refutation's basis is `closed-scope`, settled by exhaustive exploration, with trap evidence that replay re-explores | A single existential asks whether some behaviour exists, which is a possibility question; one family keeps one witness shape, one trap shape and one verdict map for every possibility claim. A refutation shows that no trace exists, so it has no trace to carry: its evidence is the closed scope it examined | HP-5, §15 (SE-1 to SE-5) |
 | RU-4 | Copy-swap symmetry in v1 | **Admitted when the compiler verifies it; authors never declare it** | Swapping two universal runs over one subject leaves a symmetric body and match unchanged, so the pair product holds every pair twice. S3 checks the swap on the checked clause, so a symmetry the clause does not have is never applied | §16 (CS-1 to CS-5), PH-5 |
+| RU-5 | How an undefined tuple settles | **Refuted**, cause `UndefinedEvaluation{where, cause}` naming the tuple, as ADR-018 RU-5 rules for every proof engine; the tuple is the first refuting evidence in canonical order | One reading of an undefined claim across every engine: an undefined claim does not hold, the tuple replays, and no result kind is added | HV-2, HV-4, HV-8, HX-5 |
 
 ### 13. Projection alignment
 
@@ -592,6 +595,10 @@ is CG's.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered
+
+- **An undefined tuple settling `undefined`, counting as neither pass nor
+  refutation.** Rejected by RU-5: every proof engine refutes an undefined
+  claim (ADR-018 RU-5).
 
 - **Hand-written self-composition in the model.** Rejected. It doubles every
   field and operation, hides the property, and its counterexample is a

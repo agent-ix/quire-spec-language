@@ -1,31 +1,35 @@
 ---
 id: TC-610
-title: "An HP-1 relation with undefined tuples and no refuting tuple settles undefined"
+title: "An HP-1 relation whose first refuting tuple is undefined settles refuted with UndefinedEvaluation"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-179
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-182
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-183
+    type: verifies
 ---
-# TC-610: An HP-1 relation with undefined tuples and no refuting tuple settles undefined
+# TC-610: An HP-1 relation whose first refuting tuple is undefined settles refuted with UndefinedEvaluation
 
 ## Description
 
-Verify that tuples on which a step relation's body has no value count neither as passes nor as refutations, and that an item with undefined tuples and no refuting tuple settles `undefined`, naming the first undefined tuple in canonical order and its cause.
+Verify that a tuple on which a step relation's body is undefined refutes the item with cause `UndefinedEvaluation` naming the tuple, that the tuple is the first refuting evidence in canonical order, and that replay reproduces the undefined value at that tuple.
 
-Scope: FR-179-AC-4, FR-182-AC-5.
+Scope: FR-179-AC-4, FR-182-AC-5, FR-183-AC-5.
 
 ## Test Procedure
 
 Fixture: the `Cell` model of FR-179-AC-4 and the relation `R` (`1 / x.k >= y.k`).
 
 1. Run `R` through EN-1.
-2. Settle its outcome.
+2. Replay its counterexample, then the same payload with its cause changed to `precondition-false`.
+3. Settle the outcome with step 2's first replay result.
 
 Tag the tests `#[trace("TC-610", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: `Undefined` naming the first tuple in canonical order with `x.k = 0` and the division-by-zero cause; never `Holds`.
-- Step 2: `undefined`, O-16 category undefined, with a record naming that tuple, its two executions and the cause; never `proved`.
+- Step 1: `Violated` with a `StepTuple` on the first tuple in canonical order, which has `x.k = 0`, and `undefined` set to `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; never `Holds`.
+- Step 2: `reproduced-with-evaluated-witness` with the `UndefinedEvaluation` as its value; then `inconclusive`, `Verdicts`.
+- Step 3: `refuted`, `decisive-counterexample`, category violation, with a record carrying the `UndefinedEvaluation`, the tuple's two executions and the cause; never `proved`.

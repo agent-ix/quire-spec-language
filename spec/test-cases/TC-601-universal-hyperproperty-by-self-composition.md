@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify HP-2 checking on ADR-023 §8.1, without `match`, with a vacuous match, with per-variable fairness, with terminal stutter, the pre-check, `MatchUndetermined`, and determinism.
+Verify HP-2 checking on ADR-023 §8.1, without `match`, with a vacuous match, with per-variable fairness, with terminal stutter, the pre-check, an undefined `match`, and determinism.
 
 Scope: FR-176-AC-1 to FR-176-AC-4.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-601", "FR-176-AC-n")]`.
 - Step 1: 14 states, `Violated` with the §8.1 `Lockstep` shape; 8 states, `Holds{Exhaustive}`.
 - Step 2: `Violated`; `Undecided(VacuousMatch)`.
 - Step 3: `Holds` and `Violated` with a `step(1)` loop; `a`'s stutter pairs only with `b`'s stutter.
-- Step 4: `Stopped(ResourceExhausted, MaxStates)` before the product; `Undecided(MatchUndetermined)`; byte-equal counterexamples.
+- Step 4: `Stopped(ResourceExhausted, MaxStates)` before the product; `Violated` with a `Lockstep` prefix ending at the first undefined joint step and `undefined` set to `UndefinedEvaluation` with cause `division-by-zero`; byte-equal counterexamples.
