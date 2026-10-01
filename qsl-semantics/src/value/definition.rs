@@ -523,11 +523,6 @@ impl DefinitionLock {
         self.revision
     }
 
-    /// The lock's `trigger_vocabulary`, in lock order.
-    pub fn triggers(&self) -> &[&'static str] {
-        &self.triggers
-    }
-
     /// The closed qualification catalog, in lock order.
     pub fn catalog(&self) -> &[CatalogEntry] {
         &self.catalog
