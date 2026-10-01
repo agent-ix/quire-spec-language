@@ -80,11 +80,11 @@ use crate::model::population::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 
-use super::stop::Stop;
 use quire_exact::{
     from_admitted, CollectionType, Incomplete, Meter, ObjectId, ObjectReference, OptionValue,
     PopulationId, Refusal, Value, ValueType,
 };
+use quire_semantic_value::stop::Stop;
 
 /// Why a population query stopped without a value. The evaluator
 /// (`value::expression`, layer 5) turns `Refused` and `AbsentKey` into the

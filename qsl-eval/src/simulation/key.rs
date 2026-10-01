@@ -12,17 +12,9 @@ use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
-/// The limits every simulation preimage encodes under: `quire-canonical`'s
-/// own depth ceiling and no byte ceiling of this module's own, matching the
-/// established identity-preimage convention (`qsl_semantics::value::
-/// semantic_node::IDENTITY_LIMITS`; ADR-013 §2, ADR-013:113).
-const LIMITS: quire_canonical::Limits =
-    match quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH) {
-        Ok(limits) => limits,
-        // `Limits::MAX_DEPTH` is by definition within `Limits::MAX_DEPTH`;
-        // this arm is evaluated at compile time and is unreachable.
-        Err(_) => panic!("Limits::MAX_DEPTH is within Limits::MAX_DEPTH"),
-    };
+// Every simulation preimage encodes under the one identity-preimage limit
+// (ADR-013 §2, ADR-013:113).
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// The full canonical state-key bytes a `TransitionSystem` implies for one
 /// state, through `quire-canonical`. Two states are the same state to the

@@ -18,8 +18,9 @@ quire-contract-ir's real current-head `cargo metadata` output, that resolving
 QSL's own manifest classifies its real edge on `quire-contract-model` as
 QSL → IR, and
 that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
-even built, and that the kernel leaf `quire-exact` classifies as no
-ecosystem repository. Scope: FR-059-AC-1 through FR-059-AC-8.
+even built, and that the shared leaves `quire-exact` and
+`quire-semantic-value` classify as no ecosystem repository. Scope: FR-059-AC-1
+through FR-059-AC-9.
 
 ## Test Procedure
 
@@ -51,6 +52,9 @@ ecosystem repository. Scope: FR-059-AC-1 through FR-059-AC-8.
 8. Parse a synthetic `cargo metadata` document in which RT depends on
    `quire-exact` and on `qsl-eval`, both sourced from the QSL repository's
    git url, and run the check on the resulting edges.
+9. Parse a synthetic `cargo metadata` document in which RT depends on
+   `quire-semantic-value`, `qsl-semantics` and `qsl-eval`, all sourced from
+   the QSL repository's git url, and run the check on the resulting edges.
 
 ## Expected Results
 
@@ -81,6 +85,9 @@ ecosystem repository. Scope: FR-059-AC-1 through FR-059-AC-8.
   `--offline`.
 - Step 8: the only edge is RT → QSL via `qsl-eval`, and the FB-05 report
   names exactly that edge; the `quire-exact` dependency contributes no edge.
+- Step 9: the edges are RT → QSL via `qsl-eval` and via `qsl-semantics`, and
+  the FB-05 report names exactly those two; the `quire-semantic-value`
+  dependency contributes no edge.
 
 ## Metadata
 

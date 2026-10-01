@@ -21,17 +21,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
-    is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalNodeId,
-    CanonicalOwner, InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner,
-    OwnerSelection, SemanticGraphCause,
+    is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalOwner,
+    NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
 };
-use super::stop::{outcome_from_stop, Stop};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NodeKey;
 use quire_exact::Outcome;
 use quire_exact::VariantId;
 use quire_exact::{is_identifier, Charge, ChargePoint, LimitKind, Meter};
 use quire_exact::{ComparisonOperator, IllTyped, IllTypedCause};
+use quire_semantic_value::semantic_node::{
+    CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
+};
+use quire_semantic_value::stop::{outcome_from_stop, Stop};
 
 const DECLARATION_VERSION: &str = "quire.enum-declaration-node/v1";
 const MEMBER_VERSION: &str = "quire.enum-member-node/v1";
@@ -235,7 +237,7 @@ impl NodeIdentityPreimage for EnumMemberPreimage {
     fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
         preimage_digest(&CanonicalMember {
             case: &self.case,
-            declaration_node_id: self.declaration.into(),
+            declaration_node_id: CanonicalNodeId::from(*self.declaration.as_bytes()),
             version: MEMBER_VERSION,
         })
     }

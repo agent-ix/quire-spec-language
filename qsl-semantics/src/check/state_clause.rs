@@ -293,7 +293,7 @@ pub struct TypedStateClause {
     pub(crate) slots: usize,
     pub(crate) slot_names: Vec<String>,
     pub(crate) observations: Observations,
-    pub(crate) formed_units: crate::value::quantity::UnitTable,
+    pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
     pub nodes_used: u64,
     /// The object types whose population domains the claims name, the
     /// context's first.

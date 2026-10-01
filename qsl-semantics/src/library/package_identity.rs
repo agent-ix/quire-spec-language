@@ -15,9 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value};
 
 use crate::value::semantic_node::is_qualified_name;
-use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NODE_KEY_DOMAIN;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// The identity preimage version constant.
 pub const PACKAGE_ID_VERSION: &str = "quire.checked-package-id/v2";

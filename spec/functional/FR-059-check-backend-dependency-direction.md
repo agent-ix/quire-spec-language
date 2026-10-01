@@ -43,13 +43,16 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 The check SHALL classify a resolved package as one of the four repositories by
 package name and dependency source URL, treating `quire-contract-model` (the
 crate name quire-contract-ir's workspace member publishes under) as
-`quire-contract-ir`. When it extracts edges, the check SHALL give the package
-`quire-exact` no ecosystem repository, wherever it is sourced from: it is the
-kernel leaf (ADR-011 §6.1 "K is a leaf", FB-05), so an edge into it closes no
-cycle. Every other package sourced from the QSL repository classifies as QSL.
-This exemption is local to edge extraction; the shared `graph::classify`, and
-so [FR-061](FR-061-check-duplicate-ecosystem-revisions.md), classifies a QSL-sourced
-`quire-exact` as QSL.
+`quire-contract-ir`. When it extracts edges, the check SHALL give each package in
+the named shared-leaf set, `quire-exact` and `quire-semantic-value`, no
+ecosystem repository, wherever it is sourced from. These are ADR-011 FB-05's
+shared `no_std` leaf crates: the kernel K (§6.1 "K is a leaf") and the
+semantic-value leaf SV, whose dependencies are K, ADR-013's one RFC 8785
+encoder `quire-canonical`, `serde` and `thiserror`. Neither depends on a QSL
+layer or on an IR, RT or CG crate, so an edge into either closes no cycle. Every other package sourced from the QSL repository classifies as
+QSL. This exemption is local to edge extraction; the shared `graph::classify`,
+and so [FR-061](FR-061-check-duplicate-ecosystem-revisions.md), classifies a
+QSL-sourced shared leaf as QSL.
 
 The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
@@ -103,6 +106,7 @@ unstated clone state.
 | FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
 | FR-059-AC-7 | A local `--ir`/`--rt`/`--cg` clone whose head does not match that repository's remote `main` fails distinctly, naming both revisions and the url; a clone that matches passes; `--offline` skips the comparison; every resolved revision, including `--qsl`'s, is printed regardless of outcome. | Test (TC-156) |
 | FR-059-AC-8 | A resolved RT dependency on the git-sourced `quire-exact` yields no edge and no finding; a resolved RT dependency on another crate sourced from the QSL repository, such as `qsl-eval`, yields an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
+| FR-059-AC-9 | A resolved RT dependency on the git-sourced `quire-semantic-value` yields no edge and no finding; resolved RT dependencies on `qsl-eval` and on `qsl-semantics`, from the same QSL source, each yield an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 
 ## Dependencies
 

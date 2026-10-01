@@ -20,7 +20,7 @@ default = []
 # dependency that does.
 test-support = []
 
-# ADR-011 §6.1 layer 3 depends on "2, F, K" only; the FCD crates are named by
+# ADR-011 §6.1 layer 3 depends on "2, F, SV, K" only; the FCD crates are named by
 # `model::intake` alone. The root crate's `tests/it/family_outcome_layering.rs`
 # (TC-390) asserts that this table names no other workspace crate.
 [dependencies]
@@ -28,11 +28,14 @@ qsl-attrs = { path = "../qsl-attrs" }
 qsl-forms = { path = "../qsl-forms" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }
+# ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
+quire-semantic-value = { path = "../quire-semantic-value" }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation. Every QSL
 # normalized identity encodes through it; arch-lint's
 # `canonical-encoder` check refuses a second encoder.
-quire-canonical = { workspace = true }
+# `std` for `model::key`'s `WriteSink` over `io::sink`.
+quire-canonical = { workspace = true, features = ["std"] }
 # QSpec's `complete-value-lock.json` and `native-diagnostics.md` bytes:
 # `value::definition` reads its catalog and the diagnostics catalog's
 # `DefinitionRef` from them instead of holding a copy.

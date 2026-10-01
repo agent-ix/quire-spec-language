@@ -3,11 +3,14 @@
 //! affine conversion through the canonical root and the named `unit.*`
 //! charges of `quire.value.accounting/v1`.
 
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::cmp::Ordering;
 
-use super::stop::{outcome_from_stop, Stop};
-use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
+use crate::stop::{outcome_from_stop, Stop};
+use crate::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
 use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
 use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
 use quire_exact::{
@@ -48,7 +51,7 @@ impl QuantityUnit {
 
     /// Whether an operation requiring equal dimensions admits `self` and
     /// `other`: their normalized base-dimension maps are equal.
-    pub(crate) fn has_dimension_of(&self, other: &Self) -> bool {
+    pub fn has_dimension_of(&self, other: &Self) -> bool {
         self.dimension() == other.dimension()
     }
 
@@ -56,7 +59,7 @@ impl QuantityUnit {
     /// declared units need one dimension node, so equal base-dimension maps
     /// under distinct nodes (torque and energy) are not enough; a compound
     /// side compares base-dimension maps.
-    pub(crate) fn converts_to(&self, target: &Self) -> bool {
+    pub fn converts_to(&self, target: &Self) -> bool {
         match (self, target) {
             (Self::Declared(source), Self::Declared(target)) => {
                 source.dimension_node() == target.dimension_node()
@@ -86,6 +89,35 @@ impl QuantityUnit {
     }
 }
 
+/// A [`QuantityUnit`] with its kernel [`UnitId`], computed once. A compound
+/// unit's id is a SHA-256 over its RFC 8785 preimage, so a caller that has
+/// already computed it passes this along rather than recomputing it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentifiedUnit {
+    id: UnitId,
+    unit: QuantityUnit,
+}
+
+impl IdentifiedUnit {
+    /// `unit` with its id.
+    pub fn new(unit: QuantityUnit) -> Self {
+        Self {
+            id: unit.id(),
+            unit,
+        }
+    }
+
+    /// The unit's kernel id.
+    pub fn id(&self) -> UnitId {
+        self.id
+    }
+
+    /// The unit.
+    pub fn unit(&self) -> &QuantityUnit {
+        &self.unit
+    }
+}
+
 /// The unit graph over kernel [`UnitId`]s: each id's [`QuantityUnit`]. A
 /// kernel [`Quantity`] carries only its unit's id, so every FR-142 operation
 /// reads its operands through a table (ADR-013 T-6: the unit graph stays in
@@ -104,7 +136,12 @@ impl UnitTable {
 
     /// Record `unit` under its id and return the id.
     pub fn insert(&mut self, unit: QuantityUnit) -> UnitId {
-        let id = unit.id();
+        self.insert_identified(IdentifiedUnit::new(unit))
+    }
+
+    /// Record a unit whose id is already computed and return the id.
+    fn insert_identified(&mut self, unit: IdentifiedUnit) -> UnitId {
+        let IdentifiedUnit { id, unit } = unit;
         self.0.entry(id).or_insert(unit);
         id
     }
@@ -124,7 +161,7 @@ impl UnitTable {
 
 impl IntoIterator for UnitTable {
     type Item = QuantityUnit;
-    type IntoIter = std::collections::btree_map::IntoValues<UnitId, QuantityUnit>;
+    type IntoIter = alloc::collections::btree_map::IntoValues<UnitId, QuantityUnit>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_values()
@@ -168,15 +205,16 @@ impl<'a> UnitScope<'a> {
         }
     }
 
-    pub(crate) fn get(&self, id: UnitId) -> Option<&QuantityUnit> {
+    /// The unit with this id: the package's, then a stage-formed one.
+    pub fn get(&self, id: UnitId) -> Option<&QuantityUnit> {
         self.package.get(id).or_else(|| self.formed.get(id))
     }
 
     /// Record a unit this stage formed and return its id.
-    pub fn form(&mut self, unit: QuantityUnit) -> UnitId {
+    pub fn form(&mut self, unit: IdentifiedUnit) -> UnitId {
         let id = unit.id();
         if self.package.get(id).is_none() {
-            self.formed.insert(unit);
+            self.formed.insert_identified(unit);
         }
         id
     }
@@ -312,13 +350,14 @@ pub fn evaluate_quantity(
     evaluate_quantity_unit(operation, meter).map(|(outcome, _)| outcome)
 }
 
-/// [`evaluate_quantity`] with the result's unit, formed once at type time
-/// and carried by the result quantity's id, for a caller that records it.
+/// [`evaluate_quantity`] with the result's unit and its id, formed once at
+/// type time and carried by the result quantity's id, for a caller that
+/// records it ([`UnitScope::form`]).
 pub fn evaluate_quantity_unit(
     operation: QuantityOperation<'_>,
     meter: &mut Meter,
-) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {
-    let unit = type_check(operation)?;
+) -> Result<(Outcome<Quantity>, IdentifiedUnit), IllTyped> {
+    let unit = IdentifiedUnit::new(type_check(operation)?);
     let outcome = outcome_from_stop(evaluate(operation, unit.id(), meter));
     Ok((outcome, unit))
 }
@@ -477,10 +516,14 @@ fn type_check(operation: QuantityOperation<'_>) -> Result<QuantityUnit, IllTyped
 
 /// A binary quantity operation, before its operand values exist.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum UnitOperation {
+pub enum UnitOperation {
+    /// `a + b`.
     Add,
+    /// `a - b`.
     Subtract,
+    /// `a * b`.
     Multiply,
+    /// `a / b`.
     Divide,
 }
 
@@ -488,7 +531,7 @@ pub(crate) enum UnitOperation {
 /// cause order: incompatible dimensions, affine-unit arithmetic, distinct
 /// units. Addition and subtraction keep the identical unit; multiplication
 /// and division form the canonical compound unit.
-pub(crate) fn result_unit(
+pub fn result_unit(
     operation: UnitOperation,
     left: &QuantityUnit,
     right: &QuantityUnit,
@@ -524,7 +567,7 @@ pub(crate) fn result_unit(
 
 /// Whether quantities in `left` and `right` may be compared: equal dimensions,
 /// then the identical unit.
-pub(crate) fn check_comparable(left: &QuantityUnit, right: &QuantityUnit) -> Result<(), IllTyped> {
+pub fn check_comparable(left: &QuantityUnit, right: &QuantityUnit) -> Result<(), IllTyped> {
     if !left.has_dimension_of(right) {
         return Err(ill_typed(IllTypedCause::IncompatibleDimensions));
     }

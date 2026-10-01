@@ -199,8 +199,11 @@ pub fn document(shape: ModelShape) -> Vec<u8> {
     });
     // The document's RFC 8785 bytes, from the one encoder (ADR-013 §2,
     // ADR-013:113), so `offer`'s digest over them is its `sha256-jcs` digest.
-    quire_canonical::to_vec(&document, qsl_semantics::value::IDENTITY_LIMITS)
-        .expect("a json! document of strings and small integers has an RFC 8785 encoding")
+    quire_canonical::to_vec(
+        &document,
+        quire_semantic_value::semantic_node::IDENTITY_LIMITS,
+    )
+    .expect("a json! document of strings and small integers has an RFC 8785 encoding")
 }
 
 /// A domain package selection and the byte map FR-154's admission table

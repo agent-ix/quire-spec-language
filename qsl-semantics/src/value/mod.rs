@@ -9,13 +9,15 @@
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
 //!    [`Text`](quire_exact::Text), [`EnumValue`](enumeration::EnumValue) and FR-142
-//!    `quire_exact::Quantity` values read against a [`UnitTable`](quantity::UnitTable) over an
-//!    admitted [`UnitGraph`];
+//!    `quire_exact::Quantity` values read against a
+//!    `quire_semantic_value::quantity::UnitTable` over an admitted
+//!    `quire_semantic_value::unit::UnitGraph`;
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
 //!    (FR-140), [`divide`] and [`modulo`] (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
 //!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`](enumeration::compare_enum)
-//!    (FR-141), [`evaluate_quantity`](quantity::evaluate_quantity) and [`convert_quantity`](quantity::convert_quantity) (FR-142), after
+//!    (FR-141), `quire_semantic_value::quantity`'s `evaluate_quantity` and
+//!    `convert_quantity` (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;
 //! 3. FR-143 records, tuples and finite recursive
 //!    [`Value`](quire_exact::Value)s over a
@@ -111,8 +113,9 @@
 // evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
 // module and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
-// it imports by submodule path: `declaration`, `enumeration`, `quantity`,
-// `model_query` and `stop`. `definition` and `semantic_node` stay
+// it imports by submodule path: `declaration`, `enumeration` and
+// `model_query`; `quantity` and `stop` are in the `quire-semantic-value`
+// crate (ADR-011 layer SV). `definition` and `semantic_node` stay
 // `pub(crate)`: their consumers outside `value` are `check`, `model` and
 // `library`, all in this crate. `decimal`, `ieee`,
 // `numeric` and `text` are deleted; their former items are imported from `quire_exact`
@@ -125,9 +128,7 @@ mod diagnostics_catalog;
 pub mod enumeration;
 pub(crate) mod member;
 pub mod model_query;
-pub mod quantity;
 pub(crate) mod semantic_node;
-pub mod stop;
 pub(crate) mod unit;
 
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
@@ -155,7 +156,7 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
-// `declaration`, `enumeration` and `quantity` are `pub` modules, so their
+// `declaration` and `enumeration` are `pub` modules, so their
 // items have one public path, the submodule one
 // (`value::declaration::TypeEnvironment`); this module does not re-export
 // them flat as well (the same one-path rule as for the kernel's items).
@@ -201,9 +202,11 @@ pub use member::Member;
 // narrowed to `pub(crate)` since its only consumers are inside
 // `value::expression` (rust-review "narrow API" bar: `pub` only for what
 // consumers outside the crate use).
+// `InvalidSemanticGraph` and `SemanticGraphCause` are
+// `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
+// import them from there, not through a re-export here.
 pub use semantic_node::{
-    InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    OwnerSubject, SemanticGraphCause, IDENTITY_LIMITS,
+    ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a
@@ -219,7 +222,9 @@ pub use semantic_node::{
 // test-local helper, calling the kernel's new
 // `quire_exact::TextPayload::from_source_literal(text, spelling)`
 // constructor (infallible, over already-decoded text) to tag the result.
-pub use unit::{
-    CompoundUnit, CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage,
-    InvalidCompoundUnit, NotAUnitKey, Unit, UnitEdge, UnitGraph, UnitPreimage,
-};
+// `value::unit` keeps the compile-side half of the unit graph: the preimage
+// readers and admission. The runtime half (`Dimension`, `Unit`, `UnitEdge`,
+// `UnitGraph`, `CompoundUnit`, `compound_unit_id`, `InvalidCompoundUnit`,
+// `CompoundUnitCause`, `NotAUnitKey`) is `quire_semantic_value::unit`, which
+// every caller names directly.
+pub use unit::{admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, UnitPreimage};

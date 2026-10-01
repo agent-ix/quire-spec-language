@@ -33,10 +33,10 @@ reasons in full.
 
 Verify that `check`'s shipped (non-`#[cfg(test)]`) imports stay inside
 FR-068-AC-6's module-level layer rule. `check` may import any item of a
-permitted module: `quire_exact`, `qsl_foundation`, `forms`, `check` and
+permitted module: `quire_exact`, `quire_semantic_value`, `qsl_foundation`, `forms`, `check` and
 `family`, `model` and `value::model_query`, `library`, the §6.2
 `semantic_value` modules (`value::definition`, `value::enumeration`,
-`value::unit`, `value::quantity`, `value::containment`,
+`value::unit`, `value::containment`,
 `value::semantic_node`, `value::declaration`). There
 is no `value` K-copy module; `check` reaches every kernel item through
 `quire_exact`. Every `value` import names its submodule. The later-layer
@@ -89,7 +89,7 @@ an already-permitted module is not a failure. Scope: FR-068-AC-6, FR-068-AC-7 (r
    - a path rooted at `qsl_semantics` is classified the same as one rooted
      at `crate`;
    - an additional item from a permitted module (for example a new name from
-     `crate::value::quantity`) does not fail step 2.
+     `crate::value::unit`) does not fail step 2.
 
 ## Expected Results
 

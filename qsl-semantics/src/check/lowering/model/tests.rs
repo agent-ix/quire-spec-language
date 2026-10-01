@@ -439,7 +439,7 @@ fn check_declarations(declarations: PackageDeclarations) -> CheckedGraph {
 /// A lowering over the admitted `models`, for keying a node directly.
 fn lower<T>(
     models: &[AdmittedModel],
-    units: crate::value::quantity::UnitTable,
+    units: quire_semantic_value::quantity::UnitTable,
     build: impl FnOnce(&mut Lowering<'_>) -> T,
 ) -> (T, SemanticGraph) {
     let scope = empty_scope();
@@ -957,9 +957,9 @@ fn a_redefining_candidates_clauses_key_once_under_its_own_owner() {
 
 mod quantities {
     use super::*;
-    use crate::value::quantity::UnitTable;
     use crate::value::semantic_node::{NodeOwner, OwnerSelection, OwnerSubject};
-    use crate::value::unit::{DimensionPreimage, UnitGraph, UnitPreimage};
+    use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
+    use quire_semantic_value::quantity::UnitTable;
 
     fn owner_json() -> Json {
         json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"})
@@ -1010,7 +1010,7 @@ mod quantities {
     /// refuses a stale key, so the keys are QSpec's vector keys FR-094
     /// names).
     fn units() -> UnitTable {
-        let graph = UnitGraph::admit(
+        let graph = admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
                 (dimension("Time"), node_key(TIME)),
@@ -1084,7 +1084,7 @@ mod quantities {
         assert_eq!(product.len(), 1);
         assert_eq!(product[0].semantic_type(), Some(vector_key("U1")));
 
-        use crate::value::quantity::{result_unit, UnitOperation};
+        use quire_semantic_value::quantity::{result_unit, UnitOperation};
         let table = units();
         let unit = |hex: &str| {
             table
@@ -1139,7 +1139,7 @@ mod quantities {
         }))
         .expect("a derived unit");
         let km = NodeKey::from_digest(kilometre.digest().expect("the unit digests"));
-        let graph = UnitGraph::admit(
+        let graph = admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
                 (dimension("Time"), node_key(TIME)),

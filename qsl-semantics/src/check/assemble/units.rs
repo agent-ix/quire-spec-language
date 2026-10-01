@@ -16,8 +16,10 @@ use quire_exact::{Integer, NodeKey, Rational};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
 use crate::check::lowering::strongly_connected;
 use crate::check::node_key::{nominal_key, SourceOwner};
-use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
-use crate::value::unit::{DimensionPreimage, UnitGraph, UnitPreimage};
+use crate::value::semantic_node::OwnerSelection;
+use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
+use quire_semantic_value::unit::UnitGraph;
 
 /// The admitted graph and the span of each declared name by its key.
 pub(super) struct Assembled {
@@ -364,7 +366,7 @@ pub(super) fn assemble(
                 .and_then(|dimension| dimension_keys[dimension])
                 .ok_or_else(|| {
                     fault(InvalidSemanticGraph {
-                        cause: crate::value::semantic_node::SemanticGraphCause::UnknownDimension,
+                        cause: SemanticGraphCause::UnknownDimension,
                     })
                 })?;
             let target = unit_edges[index]
@@ -384,7 +386,7 @@ pub(super) fn assemble(
             unit_nodes.push((preimage, key));
         }
     }
-    let graph = UnitGraph::admit(dimension_nodes, unit_nodes, owners).map_err(fault)?;
+    let graph = admit_unit_graph(dimension_nodes, unit_nodes, owners).map_err(fault)?;
     let mut spans = BTreeMap::new();
     for (key, span) in dimension_keys.iter().zip(&dimension_spans) {
         if let Some(key) = key {

@@ -1,9 +1,12 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-bench"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-bench"]
 resolver = "2"
 
 [workspace.dependencies]
-quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main" }
+# `default-features = false`: the encoder builds `no_std` + `alloc`, so the
+# layer-SV leaf `quire-semantic-value` can mint the compound-unit id
+# through it; a crate that writes through `io::Write` turns on `std`.
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", default-features = false }
 # QSpec's authored definition documents (the complete value lock and the
 # native diagnostics catalog), read by reference rather than copied.
 quire-specification = { package = "quire-specification-qualification", git = "https://github.com/agent-ix/quire-specification", branch = "main" }
@@ -92,6 +95,10 @@ qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # beside the SEAM-1 lowering pipeline. This crate re-exports none of its
 # items (ADR-011 §7.2).
 qsl-route = { path = "qsl-route" }
+# ADR-011 §6.1 layer SV: the refusal vocabulary (`InvalidSemanticGraph`,
+# `SemanticGraphCause`) the enum identity tests assert. Dev-only: no shipped
+# module of this crate names it.
+quire-semantic-value = { path = "quire-semantic-value" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }

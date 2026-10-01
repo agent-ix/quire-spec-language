@@ -1014,7 +1014,7 @@ fn admit_selections_refuses_a_second_selection_of_the_same_identity() {
     // RFC 8785 encoding, from the one encoder (ADR-013:113).
     let document = quire_canonical::to_vec(
         &serde_json::json!({"package": {"identity": "acme/orders", "version": "1"}}),
-        qsl_semantics::value::IDENTITY_LIMITS,
+        quire_semantic_value::semantic_node::IDENTITY_LIMITS,
     )
     .expect("a document of strings encodes");
     let digest: [u8; 32] = Sha256::digest(&document).into();

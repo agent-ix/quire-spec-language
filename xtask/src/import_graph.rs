@@ -74,7 +74,7 @@ pub struct UseEdge {
     /// The file this edge was found in, relative to the workspace root.
     pub file: String,
     /// The full path's segments, in source order (e.g. `["crate", "value",
-    /// "quantity"]` for `use crate::value::quantity::QuantityUnit;`).
+    /// "unit"]` for `use crate::value::unit::Dimension;`).
     pub path: Vec<String>,
     /// The bound name -- the imported item's own name, not a local rename
     /// (a `use a::b::C as D;` records `leaf: "C"`, the name that matters for
@@ -370,8 +370,8 @@ fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, S
 const LAYER3_SRC: &str = "qsl-semantics/src";
 
 /// That crate's own Rust name. A path rooted at it (`qsl_semantics::value::
-/// quantity::UnitTable`, as a doctest or an `extern crate self` alias would
-/// write one) is the same crate-relative path as `crate::value::quantity::
+/// unit::UnitTable`, as a doctest or an `extern crate self` alias would
+/// write one) is the same crate-relative path as `crate::value::unit::
 /// UnitTable`. Every scan here treats it as a crate root, the same as
 /// `crate`: [`strip_leading_crate`] (TC-262), [`resolve_relative_path`]
 /// and inline-path resolution (TC-175).
@@ -396,8 +396,9 @@ const LAYER3_CRATE: &str = "qsl_semantics";
 /// layer-2 entries are workspace crates, named by their Rust crate name;
 /// [`in_layer_rule_scope`] reads them from here.
 const LAYER_PERMITTED_MODULES: &[&str] = &[
-    // K, F.
+    // K, SV, F.
     "quire_exact",
+    "quire_semantic_value",
     "qsl_foundation",
     // Layer 2: the `qsl-forms` crate (ADR-011 §7.3 X-5).
     "qsl_forms",
@@ -406,7 +407,6 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::definition",
     "value::enumeration",
     "value::unit",
-    "value::quantity",
     "value::containment",
     "value::semantic_node",
     "value::declaration",
@@ -485,8 +485,8 @@ fn in_layer_rule_scope(workspace_root: &Path, top: &str) -> bool {
 /// is a real module segment because the source syntax itself guarantees it
 /// (a `use` edge's own path, where every segment but the bound leaf is a
 /// module by construction); it is `false` for an inline path, where syntax
-/// alone cannot tell a submodule segment (`quantity` in
-/// `crate::value::quantity::UnitTable`) apart from a flat aggregate item
+/// alone cannot tell a submodule segment (`unit` in
+/// `crate::value::unit::UnitTable`) apart from a flat aggregate item
 /// (`UnitTable` in `crate::value::UnitTable`) -- that case falls
 /// back to a filesystem check and then `value::mod.rs`'s own re-export
 /// table, the same two-step resolution the flat-`use` case already needed.
@@ -549,7 +549,7 @@ pub struct LayerEdge {
     pub file: String,
     /// 1-based source line.
     pub line: usize,
-    /// The resolved module label (e.g. `"value::quantity"`, `"model"`).
+    /// The resolved module label (e.g. `"value::unit"`, `"model"`).
     pub module: String,
     /// Permitted or unlisted.
     pub class: LayerClass,
@@ -565,7 +565,7 @@ impl LayerEdge {
     /// or it is a `value` edge that does not name its submodule. The flat
     /// form fails even when the submodule it actually reaches is itself
     /// permitted (TC-175: `crate::value::UnitTable` still fails, though
-    /// `value::quantity` is a permitted `semantic_value` module).
+    /// `value::unit` is a permitted `semantic_value` module).
     pub fn is_violation(&self) -> bool {
         self.class != LayerClass::Permitted || !self.submodule_qualified
     }
@@ -610,7 +610,7 @@ fn classify_resolved(
 /// crate::{complete, model};` and `use super::super::complete;`, which bind a
 /// module by name, are classified on that module. Every resolved segment but
 /// a named leaf is a module by syntax; a named leaf may itself be a module
-/// (`use crate::value::quantity;`), which [`resolve_layer_module`] tells
+/// (`use crate::value::unit;`), which [`resolve_layer_module`] tells
 /// apart from a flat aggregate item.
 fn classify_use_edge(
     workspace_root: &Path,
@@ -1128,7 +1128,6 @@ mod tests {
             "definition",
             "enumeration",
             "unit",
-            "quantity",
             "containment",
             "semantic_node",
             "model_query",
@@ -1206,7 +1205,7 @@ mod tests {
     /// rooted at its own name is classified exactly as a `crate::` one would
     /// be, not skipped as an external crate: `qsl_semantics::value::stop`
     /// is unlisted, a flat `qsl_semantics::value::UnitTable` names no
-    /// submodule, `qsl_semantics::value::quantity` is permitted, and an
+    /// submodule, `qsl_semantics::value::unit` is permitted, and an
     /// inline `qsl_semantics::complete::..` path is unlisted.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1215,14 +1214,14 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/value/mod.rs",
-            "pub use quantity::UnitTable;\n",
+            "pub use unit::UnitTable;\n",
         );
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
             "use qsl_semantics::value::stop::SomeThing;\n\
              use qsl_semantics::value::UnitTable;\n\
-             use qsl_semantics::value::quantity::QuantityUnit;\n\
+             use qsl_semantics::value::unit::QuantityUnit;\n\
              pub fn f(_: qsl_semantics::complete::ReaderAuthority) {}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
@@ -1234,8 +1233,8 @@ mod tests {
             summary,
             vec![
                 (1, "value::stop", true),
-                (2, "value::quantity", true),
-                (3, "value::quantity", false),
+                (2, "value::unit", true),
+                (3, "value::unit", false),
                 (4, "complete", true),
             ]
         );
@@ -1283,7 +1282,7 @@ mod tests {
     }
 
     /// TC-175 step 6: a shipped `use crate::value::UnitTable;` (the flat
-    /// aggregate) fails even though `value::quantity` -- the submodule it
+    /// aggregate) fails even though `value::unit` -- the submodule it
     /// actually reaches -- is itself a permitted `semantic_value` module.
     /// The flat form itself is what FR-068-AC-6 forbids, independent of the
     /// target.
@@ -1294,7 +1293,7 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/value/mod.rs",
-            "pub use quantity::UnitTable;\n",
+            "pub use unit::UnitTable;\n",
         );
         write(
             dir.path(),
@@ -1303,14 +1302,14 @@ mod tests {
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::quantity");
+        assert_eq!(edges[0].module, "value::unit");
         assert_eq!(edges[0].class, LayerClass::Permitted);
         assert!(!edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
     }
 
     /// TC-175's own flat-inline-path fixture: a shipped inline flat path
-    /// `crate::value::UnitTable` fails, resolved to `value::quantity` (the
+    /// `crate::value::UnitTable` fails, resolved to `value::unit` (the
     /// module `UnitTable` actually belongs to) through `value::mod.rs`'s own
     /// re-export table.
     #[trace("TC-175", "FR-068-AC-6")]
@@ -1320,7 +1319,7 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/value/mod.rs",
-            "pub use quantity::UnitTable;\n",
+            "pub use unit::UnitTable;\n",
         );
         write(
             dir.path(),
@@ -1329,7 +1328,7 @@ mod tests {
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::quantity");
+        assert_eq!(edges[0].module, "value::unit");
         assert!(!edges[0].submodule_qualified);
         assert!(edges[0].is_violation());
     }
@@ -1372,7 +1371,7 @@ mod tests {
     }
 
     /// TC-175 step 6: an additional item from a permitted module (a new
-    /// name from `crate::value::quantity`) does not fail -- the number of
+    /// name from `crate::value::unit`) does not fail -- the number of
     /// items imported from a permitted module is not checked.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1381,11 +1380,11 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::value::quantity::BrandNewQuantityItem;\n",
+            "use crate::value::unit::BrandNewUnitItem;\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0].module, "value::quantity");
+        assert_eq!(edges[0].module, "value::unit");
         assert_eq!(edges[0].class, LayerClass::Permitted);
         assert!(edges[0].submodule_qualified);
         assert!(!edges[0].is_violation());
@@ -1478,7 +1477,7 @@ mod tests {
     }
 
     /// TC-175 step 6: `{self}` imports bind the module they name.
-    /// `use crate::complete::{self};` fails; `use crate::value::quantity::
+    /// `use crate::complete::{self};` fails; `use crate::value::unit::
     /// {self};` names a permitted `semantic_value` submodule and passes.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
@@ -1487,20 +1486,20 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::complete::{self};\nuse crate::value::quantity::{self as q};\n",
+            "use crate::complete::{self};\nuse crate::value::unit::{self as q};\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         assert_eq!(edges.len(), 2, "{edges:?}");
         assert_eq!(edges[0].module, "complete");
         assert!(edges[0].is_violation());
-        assert_eq!(edges[1].module, "value::quantity");
+        assert_eq!(edges[1].module, "value::unit");
         assert!(!edges[1].is_violation());
     }
 
     /// TC-175 step 6: `use crate::value;` binds `value`'s flat aggregate. The
     /// `use` fails (it names no submodule), and so does a later
     /// `value::UnitTable::foo`, resolved through the tracked binding to
-    /// `value::quantity` without naming it.
+    /// `value::unit` without naming it.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn use_binding_value_and_later_flat_paths_are_violations() {
@@ -1508,7 +1507,7 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/value/mod.rs",
-            "pub use quantity::UnitTable;\n",
+            "pub use unit::UnitTable;\n",
         );
         write(
             dir.path(),
@@ -1517,14 +1516,14 @@ mod tests {
         );
         assert_eq!(
             violations_of(dir.path()),
-            vec![("value".to_owned(), 1), ("value::quantity".to_owned(), 3)]
+            vec![("value".to_owned(), 1), ("value::unit".to_owned(), 3)]
         );
     }
 
     /// TC-175 step 6: a module bound by a `use`, renamed or not, is tracked:
     /// `use crate::complete as cp;` then `cp::ReaderAuthority::new()` fails
-    /// on both lines, while `use crate::value::quantity;` then
-    /// `quantity::UnitTable` resolves to the permitted, named submodule.
+    /// on both lines, while `use crate::value::unit;` then
+    /// `unit::UnitTable` resolves to the permitted, named submodule.
     #[trace("TC-175", "FR-068-AC-6")]
     #[test]
     fn later_paths_through_a_bound_module_are_classified() {
@@ -1532,8 +1531,8 @@ mod tests {
         write(
             dir.path(),
             "qsl-semantics/src/check/fixture.rs",
-            "use crate::complete as cp;\nuse crate::value::quantity;\n\
-             pub fn f() {\n    let _ = cp::ReaderAuthority::new();\n    let _ = quantity::UnitTable::default();\n}\n",
+            "use crate::complete as cp;\nuse crate::value::unit;\n\
+             pub fn f() {\n    let _ = cp::ReaderAuthority::new();\n    let _ = unit::UnitTable::default();\n}\n",
         );
         let edges = check_layer_edges(dir.path()).expect("scan runs");
         let lines = |module: &str| -> Vec<(usize, bool)> {
@@ -1544,7 +1543,7 @@ mod tests {
                 .collect()
         };
         assert_eq!(lines("complete"), vec![(1, true), (4, true)]);
-        assert_eq!(lines("value::quantity"), vec![(2, false), (5, false)]);
+        assert_eq!(lines("value::unit"), vec![(2, false), (5, false)]);
     }
 
     /// TC-175 step 6: a `use` inside a function body is shipped code and is

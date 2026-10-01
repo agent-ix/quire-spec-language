@@ -60,7 +60,6 @@ use crate::value::declaration::{
 };
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
-use crate::value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -76,6 +75,9 @@ use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::quantity::{
+    check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
+};
 
 /// The largest expression nesting depth a checker may declare. The typing,
 /// facts and lowering walks run over explicit heap stacks, so this bounds the
@@ -338,7 +340,7 @@ pub struct PackageDeclarations {
     pub embedding: Option<std::sync::Arc<qsl_foundation::source_map::SourceMap>>,
     /// The `UnitGraph` the assembler admitted over the unit's dimension and
     /// unit declarations (FR-091). Empty when the unit declares none.
-    pub units: crate::value::unit::UnitGraph,
+    pub units: quire_semantic_value::unit::UnitGraph,
     /// The span of each dimension's and unit's declared name, by its node
     /// key (FR-096).
     pub nominal_spans: BTreeMap<quire_exact::NodeKey, qsl_foundation::Span>,
@@ -387,7 +389,7 @@ impl PackageDeclarations {
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
             embedding: None,
-            units: crate::value::unit::UnitGraph::default(),
+            units: quire_semantic_value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
@@ -993,7 +995,7 @@ impl<'a> Typer<'a> {
 
     /// Every compound unit this pass formed (FR-094: kept until lowering
     /// keys each one's type node).
-    pub(crate) fn into_formed_units(self) -> crate::value::quantity::UnitTable {
+    pub(crate) fn into_formed_units(self) -> quire_semantic_value::quantity::UnitTable {
         self.units.into_formed()
     }
 
@@ -1590,7 +1592,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 (
                     NodeKind::Quantity(operator, left_box, right_box),
-                    ValueType::Quantity(self.units.form(unit)),
+                    ValueType::Quantity(self.units.form(IdentifiedUnit::new(unit))),
                 )
             }
             _ => return Err(mismatch(location)),

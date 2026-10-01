@@ -10,19 +10,23 @@ use serde_json::Value;
 use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Edge, EdgeKind, Repo};
 
-/// The package name of the kernel crate K (ADR-011 §6.1), published from the
-/// QSL repository and depended on by RT and CG (ADR-011 §7.1).
-const KERNEL_LEAF: &str = "quire-exact";
+/// The package names of ADR-011 FB-05's shared `no_std` leaf crates,
+/// published from the QSL repository and depended on by RT and CG (ADR-011
+/// §7.1): the kernel K (`quire-exact`) and the semantic-value leaf SV
+/// (`quire-semantic-value`, which depends on K and ADR-013's one RFC 8785
+/// encoder `quire-canonical`, and on no QSL layer).
+const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
 
 /// The ecosystem repository a resolved package contributes to the FR-059
-/// edge graph: `classify`'s answer, except that the kernel leaf
-/// [`KERNEL_LEAF`] contributes none. K depends on no QSL module and no
-/// ecosystem crate (ADR-011 §6.1 "K is a leaf"), so an edge into it closes no
-/// FB-11 cycle, and ADR-011 FB-05 places it outside the bypass. The exemption
-/// is local to edge extraction: FR-061's duplicate-revision check still
-/// classifies a QSL-sourced `quire-exact` as QSL through `classify`.
+/// edge graph: `classify`'s answer, except that a shared leaf in
+/// [`SHARED_LEAVES`] contributes none. A shared leaf depends on no QSL module
+/// above it and on no IR, RT or CG crate (ADR-011 §6.1 "K is a leaf" and the
+/// SV row), so an edge into it closes no FB-11 cycle, and ADR-011 FB-05 places
+/// it outside the bypass. The exemption is local to edge extraction: FR-061's
+/// duplicate-revision check still classifies a QSL-sourced shared leaf as QSL
+/// through `classify`.
 fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
-    if name == KERNEL_LEAF {
+    if SHARED_LEAVES.contains(&name) {
         None
     } else {
         classify(name, source)
@@ -389,6 +393,63 @@ mod tests {
         let report = crate::graph::check(&edges);
         assert_eq!(report.fb05.len(), 1, "{report:?}");
         assert_eq!(report.fb05[0].edge, expected);
+        assert!(report.fb11.is_empty(), "{report:?}");
+    }
+
+    /// tc_arch_lint_metadata_008: the shared leaf `quire-semantic-value`,
+    /// git-sourced from the QSL repository, contributes no repository to the
+    /// edge graph, so an RT dependency on it yields no edge and no finding.
+    /// RT's dependencies on `qsl-eval` and `qsl-semantics`, from the same QSL
+    /// git source, are still RT -> QSL edges and FB-05 violations.
+    #[trace("TC-156", "FR-059-AC-9")]
+    #[test]
+    fn tc_arch_lint_metadata_008_semantic_value_leaf_is_exempt_but_layers_are_not() {
+        let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let normal = json!([{"kind": null, "target": null}]);
+        let document = json!({
+            "packages": [
+                {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": qsl_git},
+                {"id": "sv 0.1.0", "name": "quire-semantic-value", "source": qsl_git},
+                {"id": "sem 0.1.0", "name": "qsl-semantics", "source": qsl_git},
+                {"id": "eval 0.1.0", "name": "qsl-eval", "source": qsl_git},
+            ],
+            "resolve": {
+                "nodes": [
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_semantic_value", "pkg": "sv 0.1.0", "dep_kinds": normal},
+                        {"name": "qsl_semantics", "pkg": "sem 0.1.0", "dep_kinds": normal},
+                        {"name": "qsl_eval", "pkg": "eval 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "exact 0.1.0", "deps": []},
+                    {"id": "sv 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "sem 0.1.0", "deps": [
+                        {"name": "quire_semantic_value", "pkg": "sv 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "eval 0.1.0", "deps": [
+                        {"name": "qsl_semantics", "pkg": "sem 0.1.0", "dep_kinds": normal},
+                        {"name": "quire_semantic_value", "pkg": "sv 0.1.0", "dep_kinds": normal}
+                    ]}
+                ]
+            }
+        });
+        let edges = parse_edges(&document).unwrap();
+        let rt_to = |via: &str| Edge {
+            from: Repo::Rt,
+            to: Repo::Qsl,
+            kind: EdgeKind::Normal,
+            via_crate: via.to_owned(),
+        };
+        assert_eq!(edges, vec![rt_to("qsl-eval"), rt_to("qsl-semantics")]);
+        let report = crate::graph::check(&edges);
+        let flagged: Vec<_> = report
+            .fb05
+            .iter()
+            .map(|v| v.edge.via_crate.as_str())
+            .collect();
+        assert_eq!(flagged, ["qsl-eval", "qsl-semantics"], "{report:?}");
         assert!(report.fb11.is_empty(), "{report:?}");
     }
 

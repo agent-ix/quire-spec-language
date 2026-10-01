@@ -24,8 +24,8 @@ use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
-use crate::value::quantity::QuantityUnit;
 use qsl_forms::DeclaredClauseKind;
+use quire_semantic_value::quantity::QuantityUnit;
 
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and

@@ -229,6 +229,31 @@ source = "git+https://github.com/agent-ix/quire-spec-language?tag=v0.1.0"
         assert_eq!(duplicates[0].sources.len(), 2);
     }
 
+    /// tc_arch_lint_duplicate_revisions_008 (negative control): the shared
+    /// leaf `quire-semantic-value`, exempt from FR-059's edge graph like
+    /// `quire-exact`, is still a QSL-repository package here, so two QSL git
+    /// revisions of it are reported -- two copies would split its types.
+    #[trace("TC-158", "FR-061-AC-5")]
+    #[test]
+    fn tc_arch_lint_duplicate_revisions_008_semantic_value_at_two_revisions_is_a_violation() {
+        let lockfile = r#"
+[[package]]
+name = "quire-semantic-value"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-spec-language?branch=main"
+
+[[package]]
+name = "quire-semantic-value"
+version = "0.1.0"
+source = "git+https://github.com/agent-ix/quire-spec-language?tag=v0.1.0"
+"#;
+        let packages = parse_lockfile(lockfile);
+        let duplicates = check(&packages);
+        assert_eq!(duplicates.len(), 1);
+        assert_eq!(duplicates[0].repo, crate::graph::Repo::Qsl);
+        assert_eq!(duplicates[0].sources.len(), 2);
+    }
+
     /// tc_arch_lint_duplicate_revisions_004: a crate name outside the
     /// `quire-` ecosystem is never reported, even with two distinct sources
     /// (for example an unrelated crate resolved at two different versions

@@ -16,9 +16,7 @@ use qsl_semantics::value::enumeration::{
     compare_enum, EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage, EnumValue,
 };
 use qsl_semantics::value::NodeIdentityPreimage;
-use qsl_semantics::value::{
-    InvalidSemanticGraph, NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause,
-};
+use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
 use quire_exact::NodeKey;
 use quire_exact::{
     admit_text, compare_text, ComparisonOperator, EmptyTextBounds, IllTyped, IllTypedCause,
@@ -28,6 +26,7 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits,
 };
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;

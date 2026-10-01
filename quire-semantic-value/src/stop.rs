@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The layer-3 `semantic_value` early-exit carrier (ADR-011 §6.2), always
+//! The `semantic_value` early-exit carrier (ADR-011 §6.1 layer SV), always
 //! converted into a [`quire_exact::Outcome`] by [`outcome_from_stop`], and
 //! back by [`outcome_into_stop`]. It is not a kernel type and not a
 //! spec-owned type, which is why it holds no catalog code of its own and is
 //! not part of ADR-013 O-16/O-17's outcome or refusal families. It is shared
-//! by the `semantic_value` computations (`declaration`, `enumeration`,
-//! `quantity`), by `value::model_query` and by the layer-5 evaluator
-//! (`value::expression`), which all convert through
-//! [`outcome_from_stop`]/[`outcome_into_stop`], which is why an
-//! `?`-friendly shape earns its own module rather than inline handling at
-//! each call site. It is `pub` because the evaluator reads it across the
-//! layer-3/layer-5 crate boundary once X-6 extracts
-//! `qsl-semantics`.
+//! by the `semantic_value` computations (this crate's `quantity`, and
+//! `qsl-semantics`' `declaration` and `enumeration`), by `qsl-semantics`'
+//! `value::model_query` and by the layer-5 evaluator (`value::expression`),
+//! which all convert through [`outcome_from_stop`]/[`outcome_into_stop`],
+//! which is why an `?`-friendly shape earns its own module rather than
+//! inline handling at each call site.
 //!
 //! `quire_exact::Outcome<T>` is foreign to this crate (K is a leaf, ADR-011
 //! §6.1), so `outcome_from_stop`/`outcome_into_stop` cannot be an inherent

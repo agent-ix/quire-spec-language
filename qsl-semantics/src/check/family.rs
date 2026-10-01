@@ -979,7 +979,7 @@ pub(crate) struct CheckedDeclarationBody {
     /// The name each measure slot was bound under, indexed by slot.
     pub(crate) measure_slot_names: Vec<String>,
     /// Every compound unit the body's and measure's typing formed (FR-094).
-    pub(crate) formed_units: crate::value::quantity::UnitTable,
+    pub(crate) formed_units: quire_semantic_value::quantity::UnitTable,
     /// Every call reachable from the body (not the measure -- unchanged
     /// from the pre-migration behavior, see the call site's own doc), for
     /// `check::mod`'s whole-package termination pass.

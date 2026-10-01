@@ -37,7 +37,8 @@ and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-
 5. Run `arch-lint duplicate-revisions --lockfile Cargo.lock` against QSL's
    real root `Cargo.lock`.
 6. Run the check on a fixture lockfile with `quire-exact` resolved to two
-   distinct QSL git sources.
+   distinct QSL git sources, and separately on one with
+   `quire-semantic-value` resolved to two distinct QSL git sources.
 
 ## Expected Results
 
@@ -56,8 +57,8 @@ and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-
 - Step 5: against the real root `Cargo.lock`, the check reports no duplicate
   and `arch-lint duplicate-revisions --lockfile Cargo.lock` exits `0`; `make
   ci` runs it.
-- Step 6: exactly one finding is reported, for the QSL repository, naming both
-  sources; FR-059's edge-extraction exemption does not reach this check.
+- Step 6: for each of the two lockfiles, exactly one finding is reported, for
+  the QSL repository, naming both sources; FR-059's edge-extraction exemption does not reach this check.
 
 ## Metadata
 
