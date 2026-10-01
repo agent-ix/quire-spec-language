@@ -65,3 +65,29 @@ finding: the completeness guard is not closed over a real enumeration, so it doe
 meet the ticket's "fails when a new family is emitted without a row". Two low
 oracle-tightening findings. Not mergeable until the gap-analysis high finding (SR-939)
 and FND-001 are fixed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The `NOT_EMITTED_BY_QSL` reason for `value/collection_value` says "a collection literal lowers to an expression/collection node". That is only true of a collection constructor expression. A constant collection value (`Value::Collection`) is refused as `UnbuiltLiteral` (lowering.rs:3710-3718), the same reason `option_value` gives. The classification is right, but the reason is incomplete. Name both paths. | qsl-package/src/emit/tests/admission_corpus.rs:394-396 |
+
+## Dispositions
+
+Round 1, reviewed at c29e7b3397a0cb9bcec144a5ec4db210c170ff10 (fix commit c29e7b33 on 940aa601, rebased onto 8b0c1ffe). The coder's make ci log on c29e7b33 reports `exit=0`; I did not re-run it. The fix changes no existing test: `golden::float_add` now delegates to `float_add_of(Float64, mode)`, which builds the same package, and `modelled` is local to the corpus. `tests/fixtures/systems-interface.semantic-ir.json` is a fresh fixture: its `acme/systems` identity appears in no other checkout under ~/dev. The `reviews/` files the coder committed are byte-identical to the review-pass SR files.
+
+I spot-checked the 48 `NOT_EMITTED_BY_QSL` reasons against `qsl-semantics/src/check`:
+- `option_value`: confirmed. `Value::Option` is refused as `UnbuiltLiteral` (lowering.rs:3714).
+- `alias`: confirmed. No lowering arm writes `alias`.
+- `collection_value`: the classification holds, but the reason is incomplete (FND-004).
+- `dimension`/`unit`: no lowering writes either form. The only `unit` string is a binding name inside `compound_unit` (lowering/model.rs:423).
+- Every `NO_TAG` kind (temporal, protocol, claim, correspondence, state transition and snapshot): no production `insert` of those tags. `CheckedClauseKind::node_tag_and_semantic_form` in identity.rs only classifies; it builds no node.
+- The model and relation `NO_RECORD_FORM` kinds: `record_form` (lowering/model.rs:233) maps only object types, systems interfaces and relationships.
+
+A residual limit, not a finding: `NOT_EMITTED_BY_QSL` is a claim the test cannot prove. If QSL starts writing a kind listed there and no fixture emits it, the test still passes. QSL forms are `&'static str`, so there is no QSL-side closed enumeration to check against. Every IR kind now needs an explicit decision, and a fixture that emits a listed kind fails. That is as closed as the code allows.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c29e7b33: the test walks `CheckedNodeKind::all()` and requires each kind to be exactly one of an admitted row, a gap row or a `NOT_EMITTED_BY_QSL` entry with a reason. Fixtures come from `Fixture::ALL`, a fixture backing no row fails, and an emitted family with no row fails even when it is listed as not emitted |
+| FND-002 | fixed | c29e7b33: the STD-129 row requires `refusal.cause == Some(OperationLawMissing)` only |
+| FND-003 | fixed | c29e7b33: `units_named_by` reads the compound unit's own `unit` bindings, and the row requires `NamesAbsentNode(absent)` with `absent` among them |

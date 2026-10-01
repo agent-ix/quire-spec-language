@@ -34,3 +34,12 @@ and the tests.md TC-416 row.
 The TC and the tracking changes are sound. AC-19 is too weak to carry the ticket's
 intent (medium), and one wording inaccuracy (low). Fix both in the same round as SR-939
 FND-001.
+
+## Dispositions
+
+Round 1, reviewed at c29e7b3397a0cb9bcec144a5ec4db210c170ff10. TC-416 step 11 and its expected result were updated to match: classification over `CheckedNodeKind::all()`, the new fixtures, and `operation-law-missing` at the equality node.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c29e7b33: AC-19 now classifies every IR node kind exactly once, as written by QSL or not written by QSL with a reason, and requires admission for each family QSL writes |
+| FND-002 | fixed | c29e7b33: AC-19 says the STD-129 equality is refused by IR's reader and the compound unit is omitted by the emission, with every node that names it, and IR never reads it. The "until QSpec or QSL rules" clause is gone |

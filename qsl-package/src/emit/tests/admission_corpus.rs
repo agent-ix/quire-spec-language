@@ -392,7 +392,8 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         ),
         (
             K::Value(ValueForm::CollectionValue),
-            "a collection literal lowers to an expression/collection node",
+            "a collection literal lowers to an expression/collection node, and a constant \
+             Value::Collection is refused as UnbuiltLiteral",
         ),
         (
             K::Value(ValueForm::OptionValue),
