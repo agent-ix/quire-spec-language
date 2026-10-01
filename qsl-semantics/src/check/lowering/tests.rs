@@ -714,7 +714,7 @@ fn keying_a_recursion_group_is_charged_to_the_work_budget() {
     assert!(keying > members * members, "keying charged {keying}");
 }
 
-/// QSL-236 (L1): `charge_work`'s refusal reports `actual` as exactly the
+/// `charge_work`'s refusal reports `actual` as exactly the
 /// meter's already-consumed work plus this one denied charge, not the
 /// configured bound. Mutating `charge_work` to report `limit` as `actual`
 /// (the bug this guards) fails this assertion, since the budget here is
@@ -2005,7 +2005,7 @@ fn tc_441_an_unbounded_collection_is_its_composite_node_alone() {
     assert_eq!(unbounded.content.semantic_form, "sequence");
 }
 
-/// TC-441 (ADR-014 N-3; QSL-140 review M2): a population with no declared
+/// TC-441 (ADR-014 N-3): a population with no declared
 /// maximum refuses to lower with `UnrepresentableBound`, before any node
 /// is written, since its bare set node would be an unbounded
 /// `Set<Reference<T>>`.

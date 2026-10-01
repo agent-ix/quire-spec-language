@@ -5,12 +5,12 @@ publish = false
 edition = "2021"
 rust-version = "1.98"
 license = "AGPL-3.0-or-later"
-description = "QSL-196: the committed performance benchmarks (parser, checker, CST identity hashing, model layer, evaluator) and the probe that records their baseline counts."
+description = "The committed performance benchmarks (parser, checker, CST identity hashing, model layer, evaluator) and the probe that records their baseline counts."
 
 # A benchmark-only crate: no workspace crate depends on it. It reaches the
 # layer crates through their public API only, so an internal rewrite behind
-# that API needs no bench change; a change to the API itself does (QSL-201
-# changed `intake::admit`'s return type). Every model-intake call goes
+# that API needs no bench change; a change to the API itself does (for
+# example a change to `intake::admit`'s return type). Every model-intake call goes
 # through `src/model.rs` so such a change is one edit there.
 [dependencies]
 qsl-cst = { path = "../qsl-cst" }

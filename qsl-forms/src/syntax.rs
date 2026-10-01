@@ -244,7 +244,7 @@ impl From<DeclaredClauseKind> for ClauseKind {
 /// One value expression.
 ///
 /// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
-/// S2, FR-063, QSL-143): under `--cfg seam_probe`, every closed `match` over
+/// S2, FR-063): under `--cfg seam_probe`, every closed `match` over
 /// this type below this module's own [`Expression::children`],
 /// `detach_children` and `is_childless` becomes non-exhaustive (`E0004`)
 /// unless it has its own probe arm. Never constructed outside the probe
@@ -472,7 +472,7 @@ pub enum Expression {
         /// The span of the edge member name.
         edge_span: Span,
     },
-    /// FR-063/S2 (QSL-143): exists only so `--cfg seam_probe` makes every
+    /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `Expression` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
     #[cfg(seam_probe)]
@@ -1349,12 +1349,12 @@ pub struct BinderForm {
     /// The named controls enclosing the binder, outermost first.
     pub scope: Vec<ScopeName>,
     /// The binder's declared type (`x: T`'s `T`), as spelled: S3 resolves
-    /// it against the package scope (QSL-309).
+    /// it against the package scope.
     pub value_type: TypeForm,
 }
 
 /// One `role R on M::T;` or `role R each M::T from ...;` declaration of a
-/// protocol (QSL-309): its declared name and the object type it is `on`
+/// protocol: its declared name and the object type it is `on`
 /// (or replicated `each` over), spelled and unresolved.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoleForm {
@@ -1366,7 +1366,7 @@ pub struct RoleForm {
 
 /// A part of a protocol declaration that is neither a static node (a
 /// [`ProtocolNodeDeclaration`]), a binder, a role, nor an attempt's own
-/// operation and `contracts` list (QSL-309). S2 records only that it is
+/// operation and `contracts` list. S2 records only that it is
 /// present and where, so S3 can tell a protocol it checks in full from one
 /// holding content it does not check yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1412,7 +1412,7 @@ pub struct ProtocolConstructForm {
 }
 
 /// The `{ e }` body block of an event node, a `commit`, a `check` or the
-/// `finish` node (QSL-309), recorded by the index of the static declaration
+/// `finish` node, recorded by the index of the static declaration
 /// that owns it. `constant` is `Some(b)` exactly when the body is the bare
 /// Boolean literal `b` (`{ true }` or `{ false }`), `None` for any other
 /// body; S2 builds no expression tree for it.
@@ -1455,7 +1455,7 @@ pub struct AttemptForm {
 /// `protocol Name using p over (params) activation { ... run Control
 /// Finish }` (FR-112 "Outputs", ADR-012 §12.2). S2 builds the scoped
 /// anchors and the declaration collection FR-113 resolves them against,
-/// and (QSL-309) the parts S3 needs to tell a protocol it checks in full
+/// and the parts S3 needs to tell a protocol it checks in full
 /// from one it does not: the `using` alias, the roles, each body block, and
 /// every other construct present ([`Self::constructs`]).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1483,10 +1483,10 @@ pub struct ProtocolDeclarationForm {
     /// source order (FR-113 Inputs).
     pub declarations: Vec<ProtocolNodeDeclaration>,
     /// Every binder the declaration holds, in source order (FR-113
-    /// "Refusals" binder no-shadowing rule; QSL-306).
+    /// "Refusals" binder no-shadowing rule).
     pub binders: Vec<BinderForm>,
     /// Every `attempt`'s operation name and `contracts` list, in source
-    /// order (FR-114 "Inputs"; QSL-309).
+    /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
 }
 

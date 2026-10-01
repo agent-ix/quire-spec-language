@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 O-04, O-09 to O-11, O-14 and C-26 (FR-088, QSL-158 S-3b): model
+//! ADR-013 O-04, O-09 to O-11, O-14 and C-26 (FR-088): model
 //! correspondence, clause identity, clause kind, qualified names and checked
 //! type descriptors. Frame identity (the former O-08) lived here as a third,
 //! dead representation nothing but its own test read; ADR-017 §6 TK-3
@@ -77,7 +77,7 @@ use crate::value::enumeration::mint_variant_id;
 // ---------------------------------------------------------------------
 
 /// ADR-013 O-10: one closed checked clause-kind enum, defined once in the
-/// layer-3 `check` core (FR-088-AC-1, amended by FR-105/QSL-279). See this
+/// layer-3 `check` core (FR-088-AC-1, amended by FR-105). See this
 /// module's own doc for why it is not named `ClauseKind`.
 ///
 /// FR-105 splits the frame-anchored `state`/`frame` spelling this enum used

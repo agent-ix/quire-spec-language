@@ -82,6 +82,6 @@ Tag each test `#[trace("TC-453", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-✅ Implemented (QSL-272). FR-101's "Existing test disposition" table maps
-each existing test to its step here. Step 9 (FR-101-AC-11) was added in the
-QSL-272 review round (SR-672 FND-002, SR-673 FND-002).
+✅ Implemented. FR-101's "Existing test disposition" table maps
+each existing test to its step here. Step 9 (FR-101-AC-11) was added in
+review (SR-672 FND-002, SR-673 FND-002).

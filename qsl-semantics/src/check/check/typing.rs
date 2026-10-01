@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The typing loop (QSL-228): [`Typer::check_as`] and [`Typer::infer`] type
+//! The typing loop: [`Typer::check_as`] and [`Typer::infer`] type
 //! an expression on an explicit heap stack, not the host stack.
 //!
 //! A form whose operands are still to type is a [`Frame`] on that stack.
@@ -10,7 +10,7 @@
 //! depth checks, and one nested deeper refuses on the depth limit, on a
 //! small thread in a debug build.
 //!
-//! Operands are typed in the order the recursive typer before QSL-228 typed
+//! Operands are typed in the order the earlier recursive typer typed
 //! them, and every depth check, node charge, binding, formed unit and
 //! refusal happens at the same point of that order, so every checked tree,
 //! slot and refusal is that typer's. A nesting level `Typer::enter` entered
@@ -973,7 +973,7 @@ impl<'a> Typer<'a> {
                     receiver_location,
                 )));
             }
-            // FR-063/S2 seam (QSL-143): no arm for `Expression::__SeamProbe`
+            // FR-063/S2 seam: no arm for `Expression::__SeamProbe`
             // under `--cfg seam_probe` alone -- this match is deliberately
             // non-exhaustive (`E0004`) in `xtask seam-probe`'s build of
             // `qsl-semantics`, the seam probe's evidence for "the check seam

@@ -90,7 +90,7 @@ would still pass without showing the output is unchanged.
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-The registry landed under QSL-46 (PR #305) alongside the unchanged catalog.
+The registry landed alongside the unchanged catalog.
 
 By Acceptance Criterion:
 - FR-079-AC-1: unbacked. No test compares corpus output across a catalog

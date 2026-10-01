@@ -226,7 +226,7 @@ mod tests {
     /// Also QSpec FR-147-AC-2 ("Division by zero is undefined and produces
     /// no numeric value"), verified through central `TC-192`
     /// (`agent-ix/quire-specification`): this is the kernel-level instance
-    /// of that requirement (QSL-163).
+    /// of that requirement.
     #[trace("TC-323")]
     #[trace("TC-192", "FR-147-AC-2")]
     #[test]

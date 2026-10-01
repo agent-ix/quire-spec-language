@@ -782,7 +782,7 @@ fn declared<'w>(wire: &'w Value, name: &str) -> &'w Value {
         .unwrap_or_else(|| panic!("{name} is written"))
 }
 
-/// QSL-237 (FR-322): `check` records a `declaration`
+/// FR-322: `check` records a `declaration`
 /// occurrence for a declared record and tuple, located at the declared
 /// name, so both are written with their `declaration` and read back
 /// Verified: D1 and D5, exported under their declared names.
@@ -946,7 +946,7 @@ fn one_enum_declaration_bound_twice_is_declared_once() {
     assert_eq!(declarations, 1);
 }
 
-/// QSL-237: `record Tree { kids: Sequence<Tree>[0, 3]; }`'s recursion group
+/// `record Tree { kids: Sequence<Tree>[0, 3]; }`'s recursion group
 /// is written whole: the record with its `declaration` and occurrence, its
 /// sequence and its bound, and the package reads back Verified.
 #[trace("TC-416")]
@@ -1333,7 +1333,7 @@ fn t_read_from_text() -> FunctionDeclaration {
     .expect("the spans fit t")
 }
 
-/// QSL-239 (FR-096, ADR-013 O-12): `emit_checked` places every occurrence
+/// FR-096, ADR-013 O-12: `emit_checked` places every occurrence
 /// through the checked unit's own form spans, with no caller conversion.
 /// The package reads back Verified, and each region's bytes are the source
 /// text of an expression of `t`: its whole body, or one `true` literal.
@@ -1486,11 +1486,11 @@ fn call_identity_and_location(
     (identity, origin, location)
 }
 
-/// FR-065-AC-3 (QSL-154): the call's own source occurrence resolves to the
+/// FR-065-AC-3: the call's own source occurrence resolves to the
 /// same byte span through a real `quire.checked-package/v2` emit/decode
 /// round trip -- a leg `qsl-eval`'s own minimal `quire.checked-function-
-/// package/v2` encoding (deleted, QSL-248/G2) never could exercise, since
-/// that encoding carried no source map at all (only a declared function's
+/// package/v2` encoding (deleted with qsl-eval's second v2 producer) never
+/// could exercise, since that encoding carried no source map at all (only a declared function's
 /// own name and identity). `emit_checked`'s real source map does, so this
 /// is where FR-065-AC-3's v2 checkpoint actually lives.
 #[trace("FR-065-AC-3", "TC-163")]
@@ -1611,7 +1611,7 @@ fn inc_read_from_text() -> FunctionDeclaration {
     .expect("the spans fit inc")
 }
 
-/// QSL-8 (FR-096): the checker's `generated` nodes (the `Int` scalar type
+/// FR-096: the checker's `generated` nodes (the `Int` scalar type
 /// under each bounded domain) are placed at the body of the declaration
 /// that names them, so a package using an integer emits through
 /// `emit_checked` and reads back Verified.
@@ -1844,7 +1844,7 @@ fn q_and_t_package() -> CheckedPackage {
 /// omitted only because it names the `metre` unit node, which lowering names
 /// by key but does not build.
 ///
-/// FR-062-AC-9 (TC-160 step 8, as amended by QSL-242): the emitter is
+/// FR-062-AC-9 (TC-160 step 8, as amended): the emitter is
 /// all-or-nothing over the nodes a node names. `q`'s declaration node and
 /// each node on its path to the omitted unit are omitted with
 /// `NamesOmittedNode`; `t` and its body are written; QSL's I2 read is
@@ -1949,7 +1949,7 @@ fn the_q_and_t_package_with_an_unplaced_occurrence_refuses() {
     assert_eq!(refusal.code(), Code::UnsupportedProjection);
 }
 
-/// QSL-313 (FR-105-AC-6): the injectable failure point AC-6 needs, proven
+/// FR-105-AC-6: the injectable failure point AC-6 needs, proven
 /// generically over `emit_package`'s own node-emission loop -- the same loop
 /// FR-105's `state`/`frame` node goes through once a clause names one. This
 /// test's fixture holds three plain function nodes and no `state`/`frame`
@@ -1982,7 +1982,7 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     // package, and a node after it must never even be attempted.
     let target = total / 2;
     let attempts = std::cell::Cell::new(0usize);
-    let fault_reason = "QSL-313 fault injection (test): forced encoding failure";
+    let fault_reason = "fault injection (test): forced encoding failure";
     let refusal = emit_package_with_fault(&package, whole_unit, |_id| {
         let seen = attempts.get();
         attempts.set(seen + 1);
@@ -2594,7 +2594,7 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
     identities.iter().map(|identity| lib(identity)).collect()
 }
 
-/// QSL-255 (FR-322 `dependency_selections`, FR-307, ADR-011 §2.4): the E4
+/// FR-322 `dependency_selections`, FR-307, ADR-011 §2.4: the E4
 /// closure is written as one `{identity, version, package_id}` entry per
 /// library identity, in ascending UTF-8 byte order, identically in the lock
 /// and the identity preimage. The package reads back Verified through IR's
@@ -2717,7 +2717,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
     assert_eq!(identities, ["test/\u{FF61}", "test/\u{1F600}"]);
 }
 
-/// ADR-011 §4 dependency binding at E4 (QSL-255): a dependency whose
+/// ADR-011 §4 dependency binding at E4: a dependency whose
 /// recomputed `package_id` is not the one its import records refuses
 /// `stale_dependency` naming both. FR-307's diamond rule refuses two
 /// selections of one identity at different versions, or at one version with
@@ -2835,9 +2835,9 @@ fn e4_refuses_a_stale_dependency_and_a_conflicting_diamond() {
 }
 
 // ---------------------------------------------------------------------
-// QSL-309 (FR-114): a protocol `attempt`'s own `operation_anchor`/`frame`
-// nodes, all the way through emission. QSL-299 found emit.rs needs no new
-// code for this node shape, but that was confirmed only in the absence of
+// FR-114: a protocol `attempt`'s own `operation_anchor`/`frame`
+// nodes, all the way through emission. emit.rs needs no new code for
+// this node shape, but that was confirmed only in the absence of
 // real FR-114 nodes; this exercises it with a real attempt and a real
 // `post` clause naming the same operation, so their frame occurrences and
 // `operation-contract` requirement record are expected to be shared
@@ -2929,7 +2929,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
 /// A unit declaring [`config_version_model`]'s `Config` alias, then
 /// `declarations`, then a protocol whose `run sequence` holds one `attempt
 /// Update by R on {operation} contracts [{contracts}]`, every body the bare
-/// literal `true` (the protocol content QSL-309's checker covers in full).
+/// literal `true` (the protocol content the checker covers in full).
 fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
@@ -3040,7 +3040,7 @@ fn digest_of(key: quire_exact::NodeKey) -> String {
 /// clause node; the compiled package holds exactly one anchor node and one
 /// frame node for `attemptUpdate` -- the very nodes the attempt names, the
 /// frame's `modifies` exactly `versionNumber` -- and exactly one
-/// `operation-contract` record for the frame. QSL-299's "emit.rs needs no
+/// `operation-contract` record for the frame. The "emit.rs needs no
 /// new code" claim, exercised against real nodes rather than their absence.
 #[trace("TC-513", "FR-114-AC-1")]
 #[test]

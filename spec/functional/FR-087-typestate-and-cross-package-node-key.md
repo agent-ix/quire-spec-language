@@ -23,10 +23,10 @@ relationships:
 ## Description
 
 ADR-013 §7 names slice **S-3** ("Typestate, clause and type": O-08, O-09
-clause id, O-10, O-11, O-14, O-15, T-1, T-3), and no FR owns it (QSL-158).
-QSL-158's own comments split S-3 along the line the scoping pass identified:
+clause id, O-10, O-11, O-14, O-15, T-1, T-3), and no FR owns it.
+S-3 splits along the line the scoping pass identified:
 **S-3a** (this requirement) is the typestate half — T-1, T-3, O-15 — because
-it is the whole of what QSL-6 (#242, ADR-011 M-4) waits on; **S-3b**
+it is the whole of what #242 (ADR-011 M-4) waits on; **S-3b**
 (FR-088) is the clause/name/type half — O-08, O-09 clause id, O-10, O-11,
 O-14, C-26. This requirement covers S-3a only.
 
@@ -72,12 +72,12 @@ during implementation.**
    candidate for `CheckedPackage`'s canonical home. The second —
    `check::CheckedPackage` (`qsl-semantics/src/check/mod.rs:127`,
    `PackageDeclarations::check` at `:291` returning it) — landed under
-   FR-068 (M-5, QSL-139) in layer-3 `check`, and FR-068's own text
+   FR-068 (M-5) in layer-3 `check`, and FR-068's own text
    acknowledges this contradicts ADR-011 §4's worked example, which names
    layer-4 `package` as the S4 type's owner; FR-068 resolved that
    contradiction by following §6.1's layer ordering instead, reasoning that
-   §4's placement would open a `check` → `package` reverse edge, and opened
-   QSL-167 to track "§4 versus §6.1 on `CheckedPackage`'s owning layer" as
+   §4's placement would open a `check` → `package` reverse edge, and recorded
+   "§4 versus §6.1 on `CheckedPackage`'s owning layer" as
    an ADR-011 defect.
 
    **The collision is not only cross-module: two submodules `package`
@@ -108,8 +108,8 @@ during implementation.**
    `CheckedPackage`. This requirement is what builds `CheckedGraph`, so it
    is where the reconciliation lands — see Outputs and Behavior, "`check`
    produces `CheckedGraph`; `package` constructs `CheckedPackage`," and
-   FR-087-AC-9. This closes the `CheckedPackage`-placement half of QSL-167;
-   QSL-167's separate §6.2 refusal-row finding is untouched by this
+   FR-087-AC-9. This closes the `CheckedPackage`-placement half of that defect;
+   the separate §6.2 refusal-row finding is untouched by this
    requirement.
 
 3. **The new top-level `library` module this requirement builds is not
@@ -300,7 +300,7 @@ during implementation.**
   constructor/public-accessor mechanism), §6.1 (the layer table: layer 3
   `library`, with `VerifiedPackage` and `ImportView`; layer 4 `package`).
 - The current tree: `ResolvedSourcePackage` (complete-V1 lane C2, formerly
-  `qsl-semantics/src/complete/package.rs`) is retired (QSL-269); no *top-level* `library`
+  `qsl-semantics/src/complete/package.rs`) is retired; no *top-level* `library`
   module exists yet (`src/lib.rs` has no `mod library;`), but
   `src/value/library.rs` (FR-307, re-exported at `value::*`,
   `src/value/mod.rs:154`) and `src/value/package_identity.rs` already exist
@@ -374,7 +374,7 @@ during implementation.**
   constructor private to `package`, its state reached elsewhere only
   through named accessors, and named by every caller at
   `qsl_package::CheckedPackage`, with no re-export in the root crate
-  (QSL-182, ADR-011 §7.2; §4 as amended). Its layer-5 operations are methods of the `CheckedPackageEvaluation`
+  (ADR-011 §7.2; §4 as amended). Its layer-5 operations are methods of the `CheckedPackageEvaluation`
   extension trait, which `value::expression` defines and implements for it
   (ADR-011 §4); a caller brings the trait into scope, and the trait keeps
   the method names, `CheckedPackage::call` among them (AD-016 Owner
@@ -396,13 +396,13 @@ during implementation.**
   retires when both successors exist"; ruling on QSL-229). Its dependency
   half, the `import` selections, is resolved in layer-3 `library` against
   the I2 import views (`VerifiedPackage`, `ImportView`) that the M-4 I2
-  reader produces (ADR-011 §6.2, §8; QSL-6). Its header-selection half, the
+  reader produces (ADR-011 §6.2, §8). Its header-selection half, the
   `profile`, definition and `model` selections, is resolved at E3 against
   QSL's `DefinitionLock` catalog and the domain packages I1 admitted
   ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md), ADR-011
-  §2.4; QSL-234). The change that removes the type deletes it,
+  §2.4). The change that removes the type deletes it,
   `resolve_source_package` and `command::resolve_parsed_source`, and leaves
-  no `pub use` alias or wrapper that keeps an old name reachable (QSL-269).
+  no `pub use` alias or wrapper that keeps an old name reachable.
   The closure and bundle move to `library::bundle`
   ([FR-111](FR-111-link-a-complete-v1-definition-bundle.md)).
 
@@ -541,12 +541,12 @@ model selection, among others). ADR-011 gives each half its own successor
   layer-3 `library` against the I2 import views (`VerifiedPackage`,
   `ImportView`) that the M-4 I2 reader produces (ADR-011 §6.2, the
   `complete::package` row; ADR-011 §8, lane C2 → I2 and `library`). Owner:
-  QSL-6 (ADR-011 M-4).
+  ADR-011 M-4.
 - **Header-selection half.** QSL SHALL resolve a source's `profile`
   selections at E3 against QSL's `DefinitionLock` catalog, and each `model`
   declaration against the domain package I1 admitted for it
   ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md); ADR-011
-  §2.4, amended 2026-09-26; QSL-234). The lock's edition and definition
+  §2.4, amended 2026-09-26). The lock's edition and definition
   selections come from the same catalog through the emitter (ADR-011 §2.4,
   amended 2026-09-24).
 
@@ -577,7 +577,7 @@ and no backend artifact.
 QSL SHALL delete `ResolvedSourcePackage`, `resolve_source_package`,
 `SourceAuthority`, the compiled-model items and
 `command::resolve_parsed_source`, and move the rest of
-`complete::package` to `library::bundle`, in one change (QSL-269), made
+`complete::package` to `library::bundle`, in one change, made
 once FR-110 is implemented (the dependency half already is: FR-099). In
 that change each scenario of `tests/it/complete_package.rs` and
 `complete::package_tests` moves to its row's successor with its tags.
@@ -586,7 +586,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-087-CON-1 | This requirement does not implement the v2 emitter itself (`CheckedPackage` → `EmittedPackage` bytes, C-03) or the layer-4 `package` reader's byte-level parsing; those are ADR-011 T-8 (M-4, QSL-6/#242). This requirement's `package`-layer output is limited to the type definitions T-1 names and the private-constructor/public-accessor surface ADR-011 §4 requires, so that M-4 has a typestate to build against. | Design | Inspection |
+| FR-087-CON-1 | This requirement does not implement the v2 emitter itself (`CheckedPackage` → `EmittedPackage` bytes, C-03) or the layer-4 `package` reader's byte-level parsing; those are ADR-011 T-8 (M-4, #242). This requirement's `package`-layer output is limited to the type definitions T-1 names and the private-constructor/public-accessor surface ADR-011 §4 requires, so that M-4 has a typestate to build against. | Design | Inspection |
 | FR-087-CON-2 | This requirement does not implement O-08, O-09, O-10, O-11, O-14 or C-26; those are FR-088 (S-3b). A type this requirement defines (for example the checked type node C-26 converts) SHALL NOT be given clause-kind, qualified-name or type-descriptor behavior by this requirement. | Design | Inspection |
 | FR-087-CON-3 | `PackageNodeKey`'s `node` component is a `WireNodeId`, never a `NodeKey`, at every point this requirement defines or reads it (R-10, O-04). A conversion function that constructs a `NodeKey` from a `PackageNodeKey`'s `node` field — at E4, at E9, or anywhere else — exceeds this requirement's scope and violates R-10; the only conforming behavior at E4 and E9 is a lookup against an already-minted `NodeKey` in a checked package, never a constructor call (ADR-013 O-04, `:173,175`). | Design | Test (TC-255) |
 | FR-087-CON-4 | `ResolvedSourcePackage` is removed in one change, made once both of its successors exist: the spine's resolution of `import` selections against I2 import views (the dependency half, FR-099, ADR-011 M-4) and E3's resolution of `profile` and `model` selections against the `DefinitionLock` catalog and I1 (the header-selection half, FR-110). The same change moves the closure and bundle to `library::bundle` (FR-111). It leaves no old name reachable: no feature flag, deprecation attribute or compatibility wrapper (no migration/fallback layer for prerelease software). | Process | Test (TC-246) |
@@ -595,7 +595,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-087-AC-1 | Each of `CheckedGraph` (in `check`), `CheckedPackage` (in `package`), `EmittedPackage` (in `package`), `VerifiedPackage` and `ImportView` (both in `library`) has exactly one defining location, with every field and every constructor (the implicit struct-literal constructor, or an explicit `new`) private to that owning module, and every external read of the type's state goes through a named accessor. This is TC-171's own established claim (constructor/field privacy plus accessor-only reachability), extended to five types instead of three; TC-171 itself records why a `compile_fail` doctest cannot demonstrate it (a doctest links the crate externally, so it shows only crate-external inaccessibility, never that an in-crate sibling module — `value::expression` with respect to `check`'s types, or `check` with respect to `package`'s — cannot reach private state; and where a field is already module-private, not merely `pub(crate)`, a doctest's before/after comparison passes identically regardless of the module boundary this requirement draws, demonstrating nothing about it). This criterion is accordingly verified the same way TC-171 verifies its own claim: direct inspection of declared visibility and of the accessor surface, not a doctest. **Amended by QSL-181 (lead ruling R5, 2026-09-23).** `VerifiedPackage` and `ImportView` stay in layer-3 `library` with their fields and constructors private; `verify_binding` (the verified binding, `VerifiedPackage`'s only constructor) and the ADR-011 §4 condition-1 witness minter `SupportedV2Wire::attest_ir_admitted_v2` are `pub` so the layer-4 v2 reader can call them across the `qsl-semantics` crate boundary. The witness's field stays private (a `compile_fail` doctest in `library::witness`), so the minter is its only constructor, and arch-lint rule T12-E (FR-060) fails on any shipped call to the minter outside `qsl-package`'s `checked_v2` (QSL-182), the ADR-013 O-04 pattern T12-B applies to the `pub` kernel `NodeKey` constructor. | Inspection (TC-243) |
+| FR-087-AC-1 | Each of `CheckedGraph` (in `check`), `CheckedPackage` (in `package`), `EmittedPackage` (in `package`), `VerifiedPackage` and `ImportView` (both in `library`) has exactly one defining location, with every field and every constructor (the implicit struct-literal constructor, or an explicit `new`) private to that owning module, and every external read of the type's state goes through a named accessor. This is TC-171's own established claim (constructor/field privacy plus accessor-only reachability), extended to five types instead of three; TC-171 itself records why a `compile_fail` doctest cannot demonstrate it (a doctest links the crate externally, so it shows only crate-external inaccessibility, never that an in-crate sibling module — `value::expression` with respect to `check`'s types, or `check` with respect to `package`'s — cannot reach private state; and where a field is already module-private, not merely `pub(crate)`, a doctest's before/after comparison passes identically regardless of the module boundary this requirement draws, demonstrating nothing about it). This criterion is accordingly verified the same way TC-171 verifies its own claim: direct inspection of declared visibility and of the accessor surface, not a doctest. **Amended (lead ruling R5, 2026-09-23).** `VerifiedPackage` and `ImportView` stay in layer-3 `library` with their fields and constructors private; `verify_binding` (the verified binding, `VerifiedPackage`'s only constructor) and the ADR-011 §4 condition-1 witness minter `SupportedV2Wire::attest_ir_admitted_v2` are `pub` so the layer-4 v2 reader can call them across the `qsl-semantics` crate boundary. The witness's field stays private (a `compile_fail` doctest in `library::witness`), so the minter is its only constructor, and arch-lint rule T12-E (FR-060) fails on any shipped call to the minter outside `qsl-package`'s `checked_v2`, the ADR-013 O-04 pattern T12-B applies to the `pub` kernel `NodeKey` constructor. | Inspection (TC-243) |
 | FR-087-AC-2 | No conversion function exists from `ParsedSource` to `CheckedGraph` or `CheckedPackage` other than the S3 checker's own entry and the S4 link step's own entry; no conversion function exists from `VerifiedPackage`, `ImportView`, or any `protocol_artifact`-read value to `CheckedGraph` or `CheckedPackage`. A source scan of every function returning `CheckedGraph` or `CheckedPackage` confirms each is defined inside the S3 checker or the S4 link step (Inspection, primary evidence, since this rules out an in-crate bypass a doctest's external vantage cannot see); a `compile_fail` doctest per forbidden path (Behavior, "R-10"; TC-244), each naming a specific expected error code, additionally demonstrates the crate-external case. | Test (TC-244) |
 | FR-087-AC-3 | `library` constructs a `VerifiedPackage` only when the three ADR-011 §4 verified-binding conditions hold, and refuses with a named cause and no partial output on: an unsupported schema version; a recomputed `package_id` that does not lexically equal the declared one; and an identity absent from the consumer's library lock or pinned request. A digest of the file bytes, the lock file, or the source is never accepted as a substitute for the recomputed `package_id`. | Test (TC-253) |
 | FR-087-AC-4 | `library` converts a `VerifiedPackage` to an `ImportView` without resolving any name: `ImportView`'s exported-declaration data is keyed for `PackageNodeKey` lookup by the importing package's own checker, and no function in `library` takes a name (`QualifiedName` or bare string) and returns a declaration or node id after the exporting package's own check stage has run. | Test (TC-254) |
@@ -603,7 +603,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 | FR-087-AC-6 | No `NodeKey` constructor call anywhere in the crate is fed, directly or transitively, by a `PackageNodeKey`'s `WireNodeId` field, an `ImportView` entry, or any other wire-read value: `library`, `package`'s E4 dependency resolution, and `replay`'s E9 lookup each make zero `NodeKey`-constructor calls, resolving a `WireNodeId` to a `NodeKey` only by lookup against an already-minted `NodeKey` in an already-checked package (ADR-013 O-04, `:173,175`). This is scoped to what this requirement (S-3) owns: the crate-wide claim "only `check` calls the `NodeKey` constructor" is FR-060 T12-B's own allow-list, whose named debt list (FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists") holds the real minting sites outside `check` this requirement does not touch or gate on — pre-existing debt this requirement neither fixes nor is blocked by (Remaining work: agent-ix/quire-spec-language#211). This criterion fails only if `library`, `package`'s E4 path, or `replay`'s E9 path gains a `NodeKey`-constructor call, or if any such call anywhere in the crate is fed by a `PackageNodeKey`'s `WireNodeId` field. This is a call-site and data-provenance policy (which module is permitted to mint, and what may feed a mint, not which shape a lookup returns), enforced by the FR-060 T-12 API-surface scan and a call-graph trace rather than by the type system, so it is verified by that scan and trace, not by a `compile_fail` doctest (a mismatched-type attempt at some other call site would fail identically regardless of location, proving nothing about it). | Test (TC-255) |
 | FR-087-AC-7 | Once FR-110 is implemented (the dependency half is FR-099), `ResolvedSourcePackage`, `resolve_source_package`, `SourceAuthority`, `ModelCatalog`, `ModelArtifact` and `command::resolve_parsed_source` are absent from every crate of the workspace under every feature combination, and `qsl_semantics::complete` no longer exists: its closure, bundle, limits and identity are `library::bundle` (FR-111). Each scenario of `tests/it/complete_package.rs` and `complete::package_tests` has a test against its row's successor in Behavior's disposition table, keeping its QSpec FR-131/FR-339 tags. A whole-workspace definition scan confirms the absence. | Test (TC-246) |
 | FR-087-AC-8 | The canonical `EmittedPackage` (this requirement, layer-4 `package`) and `protocol_artifact::native::EmittedPackage` (SEAM-3, unrelated) remain two distinct types under two distinct module paths, with no `pub use` or re-export that would place both names into one import scope, and with no field, method, or shape shared between them (Description), for as long as the SEAM-3 type exists: ADR-011 §4 records that the two-public-types-named-`CheckedPackage` rule is met by *deleting* the native-v1 type with SEAM-1, not by permanent coexistence, and this requirement's own `CheckedPackage`/`checking::CheckedPackage<'a>` pair follows the same disposition (Description, item 2). The expiry condition for `EmittedPackage`'s two-module coexistence is SEAM-3's own deletion of `protocol_artifact::native::EmittedPackage` (ADR-011 §7.3), not an indefinite steady state this requirement asserts. | Inspection (TC-247) |
-| FR-087-AC-9 | After this requirement's implementation, the `check`/`package` edge runs one way: `package` (layer 4) may import from `check` (layer 3), the layer-4 row's own direction (§6.1: "Depends on: 3, F, K"), and `check` imports nothing from `package` (the crate `qsl-package` since X-7) at either the `use`-line or the inline-path level (Cargo refuses the edge: `qsl-package` depends on `qsl-semantics`; this criterion reconfirms it). `check` defines no type, method, or field named `CheckedPackage`. `package`'s `CheckedPackage` is built by the S4 link step from a `CheckedGraph` and holds that `CheckedGraph` as a field (this package's own checked declarations) plus the S4-only checked dependency closure; it reaches check-owned state (`Node`, `Signature`, and the rest) through that field (`graph()` or named delegating accessors) and never re-declares, copies or re-derives a check-owned type in `package`. This design statement is kept because it is the S3-to-S4 typestate chain ADR-013 T-1 requires: S4's output is made from S3's output and nothing else, and every checked declaration has one owner. `check` imports from `library` only as layer 3's own order permits (`library` before `check` core); `check` reads `LibraryLock` only through its read-only accessors and never constructs or mutates one. `value::expression` (layer 5) imports `CheckedPackage` from `package` (`use qsl_package::CheckedPackage;`), the layer-5 row's own direction (§6.1: "Depends on: 4, 3, F, K"). **Amended by QSL-182 (X-7).** This sentence used to require the single closed re-export `pub use crate::checked_package::CheckedPackage;` in `value::expression`. Once `CheckedPackage` is in `qsl-package`, that line is a root-crate re-export of a moved item, which ADR-011 §7.2 and QSL-182's acceptance criteria forbid; they are the later and more specific rules, as QSL-181 ruled for FR-068-AC-10 (R3). The root crate re-exports no layer-crate item, and a `pub use` of one fails this criterion. This criterion demonstrates that the layering violation FR-068/QSL-167 recorded is closed, not relocated: a build in which `check` names `CheckedPackage`, imports from `package`, or in which `package`'s `CheckedPackage` holds anything other than a `CheckedGraph` for its own checked declarations, fails this criterion. **Amended by the layer-rule ruling (2026-09-22).** The number of `check` items `package` imports, and the number of `library` items `check` imports, are not bounded. A count of `package`'s `check` imports is met by a `package` that copies check-owned data into re-declared types, and fails a `package` that imports `Node` to name an accessor's return type, which is layer 4's permitted direction; the design statement above guards the property instead. Every `library` item is a permitted edge for `check`, because `library` precedes `check` core in §6.1's layer-3 order. That no `NodeKey` is minted from a `PackageNodeKey`'s `WireNodeId` or an `ImportView` entry is data provenance, held by FR-087-AC-6 and FR-060 T12-B. | Test (TC-256) |
+| FR-087-AC-9 | After this requirement's implementation, the `check`/`package` edge runs one way: `package` (layer 4) may import from `check` (layer 3), the layer-4 row's own direction (§6.1: "Depends on: 3, F, K"), and `check` imports nothing from `package` (the crate `qsl-package` since X-7) at either the `use`-line or the inline-path level (Cargo refuses the edge: `qsl-package` depends on `qsl-semantics`; this criterion reconfirms it). `check` defines no type, method, or field named `CheckedPackage`. `package`'s `CheckedPackage` is built by the S4 link step from a `CheckedGraph` and holds that `CheckedGraph` as a field (this package's own checked declarations) plus the S4-only checked dependency closure; it reaches check-owned state (`Node`, `Signature`, and the rest) through that field (`graph()` or named delegating accessors) and never re-declares, copies or re-derives a check-owned type in `package`. This design statement is kept because it is the S3-to-S4 typestate chain ADR-013 T-1 requires: S4's output is made from S3's output and nothing else, and every checked declaration has one owner. `check` imports from `library` only as layer 3's own order permits (`library` before `check` core); `check` reads `LibraryLock` only through its read-only accessors and never constructs or mutates one. `value::expression` (layer 5) imports `CheckedPackage` from `package` (`use qsl_package::CheckedPackage;`), the layer-5 row's own direction (§6.1: "Depends on: 4, 3, F, K"). **Amended (X-7).** This sentence used to require the single closed re-export `pub use crate::checked_package::CheckedPackage;` in `value::expression`. Once `CheckedPackage` is in `qsl-package`, that line is a root-crate re-export of a moved item, which ADR-011 §7.2 and the X-7 extraction's acceptance criteria forbid; they are the later and more specific rules, as lead ruling R3 ruled for FR-068-AC-10. The root crate re-exports no layer-crate item, and a `pub use` of one fails this criterion. This criterion demonstrates that the layering violation FR-068 recorded is closed, not relocated: a build in which `check` names `CheckedPackage`, imports from `package`, or in which `package`'s `CheckedPackage` holds anything other than a `CheckedGraph` for its own checked declarations, fails this criterion. **Amended by the layer-rule ruling (2026-09-22).** The number of `check` items `package` imports, and the number of `library` items `check` imports, are not bounded. A count of `package`'s `check` imports is met by a `package` that copies check-owned data into re-declared types, and fails a `package` that imports `Node` to name an accessor's return type, which is layer 4's permitted direction; the design statement above guards the property instead. Every `library` item is a permitted edge for `check`, because `library` precedes `check` core in §6.1's layer-3 order. That no `NodeKey` is minted from a `PackageNodeKey`'s `WireNodeId` or an `ImportView` entry is data provenance, held by FR-087-AC-6 and FR-060 T12-B. | Test (TC-256) |
 | FR-087-AC-10 | `src/package/features.rs` and `src/package/view.rs` continue to import `CheckedPackage` from `crate::checking` (the lane-private `checking::CheckedPackage<'a>`), unchanged by this requirement's introduction of a canonical `CheckedPackage` elsewhere in `package`'s own module tree, for as long as `checking`'s lane exists. No file in `package` re-exports or glob-imports both the lane-private and the canonical `CheckedPackage` into one scope where a bare `CheckedPackage` reference would be ambiguous; a source scan of `features.rs` and `view.rs` confirms their `crate::checking::CheckedPackage` import is present and unrenamed while that lane exists, and a build with both names in one import scope (an ambiguity error) fails this criterion while the import is present. This two-name coexistence is not asserted as a permanent steady state: ADR-011 §8 (Q209-1) records that `checking`'s lane retires (lane A) or converges into its replacement (lane B/D) — "each other lane is deleted with its replacement" — and the expiry condition for `features.rs`/`view.rs`'s `crate::checking::CheckedPackage` import is that lane's own deletion, per its own convergence PR, not an indefinite state this criterion treats as final. After that deletion, this criterion no longer applies to those two files (there is only one `CheckedPackage` left to import). | Test (TC-247) |
 | FR-087-AC-11 | `value::library` and `value::package_identity` no longer exist as modules under `value` after this requirement's implementation; `LibraryName`, `LibraryPackage`, `PackageId`, `ImportDeclaration`, `LibraryLock`, `resolve_libraries` and `package_identity`'s preimage-reading functions are reachable only from the new `library` module, unchanged in shape (Description, item 3, owner ruling (a), (e), (f)); `LibraryRefusal`'s own variant set is likewise unchanged, though two of its payloads are not: `PreimageDefect`, per the exception below, and `StaleDependency`'s `pin: StalePin`, which replaces `import: ImportDeclaration` so that a refusal from the §4 binding's condition 3 names the pinned lock entry and the selection the candidate presented rather than an import declaration that does not exist (`StalePin::Import` keeps `resolve_libraries`' import declaration); `value::library`'s `ExportIdentity{package, node: NodeKey}` and `resolve_name` do not relocate in their pre-move shape (owner ruling (b), (c)): `library` after relocation defines no type with a `node: NodeKey` field and no function resolving a name to a declaration or node id (`PackageNodeKey`, FR-087-AC-5, is the module's sole cross-package node reference). Every field or return value anywhere in `library` that is built from wire-read or preimage-read data is typed `WireNodeId`, never `NodeKey` (owner ruling (d)): `package_identity`'s `node_key`-equivalent function returns a `WireNodeId` and calls no `NodeKey` constructor; `PreimageDefect`'s `AmbiguousDeclaration.nodes` and `DeclarationNominalMismatch.node` fields are `WireNodeId`-typed; and `ProjectedDeclarations`'s internal map is keyed to `WireNodeId` values, not `NodeKey`. FR-307's acceptance criteria and TC-227's vectors pass against the relocated code, updated to these shapes. A whole-crate scan confirms no `NodeKey::from_hex`, `NodeKey::from_bytes`, `NodeKey::of` or other `NodeKey`-constructing call inside `library` or `package`, and no `NodeKey`-typed field, anywhere in `library`, that is populated from wire-read or preimage-read data — not only on a cross-package reference type, but on any type `library` defines, including `PreimageDefect` and `ProjectedDeclarations`. A definition of `value::library` or `value::package_identity` still present, an `ExportIdentity`-shaped type with a `NodeKey` field, a `resolve_name` function in `library`, a `NodeKey`-constructing call inside `library` or `package`, or a wire/preimage-fed `NodeKey`-typed field anywhere in `library`, each fails this criterion. ADR-015 D-2 and D-3 reshape two of these relocated types, as an exception to "unchanged in shape": `ImportDeclaration` holds its recorded digest as a `quire.package.semantic/v2` `DigestRecord`, and `LibraryName` is a non-empty string. | Test (TC-281) |
 | FR-087-AC-12 | Every `LibraryRefusal` variant `resolve_libraries` (relocated into `library`) can return classifies to exactly one of: an ADR-011 I2 graph rule (`:203-210`), the §4 binding's condition 2, the §4 binding's condition 3, or E3 name resolution — with `DuplicatePackageId` named as the one stated exception, lying outside all four (Description, item 3, owner ruling (e), which gives the per-variant classification and DuplicatePackageId's own reasoning). Concretely: `PackageIdMismatch` classifies to condition 2 itself (the digest recomputation and comparison); `InvalidPreimage` and `UndeclaredExport` classify alongside condition 2 as per-package admission checks (raised by the same reused `verify_package`, FR-087-AC-3, but only after condition 2's own comparison has completed — neither is a prerequisite condition 2 needs to run); `StaleDependency{RevisionMismatch}` classifies to condition 3 (the identity is present; only the lock-recorded version disagrees); `InvalidQualifier` classifies to E3 name resolution (it moves conceptually with `resolve_name`, owner ruling (b)); `MissingImport` and `StaleDependency{ByteDigestMismatch}` classify to I2's first rule (missing or unlisted identity); `ConflictingDefinition` classifies to I2's second rule; `ImportCycle` classifies to I2's third rule; `DuplicatePackageId` is the stated exception (conflicting metadata over identical identity content, a supplied-pool precondition, not an I2/§4/E3 question). This criterion does not require `resolve_libraries` to gain a new refusal variant, and does not require force-fitting `DuplicatePackageId` into one of the four; it requires every variant to be classified, honestly, to one of the four or to the named exception, with no variant left unclassified or misclassified (for example, mapping `StaleDependency{RevisionMismatch}` to "missing or unlisted" rather than condition 3, or mapping `DuplicatePackageId` to I2's second rule, each fails this criterion). | Test (TC-282) |
@@ -618,7 +618,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §2.1, §2.4 (lock evidence: where the header selections resolve), §4,
   §6.1, §6.2 (the `complete::package` row), §7.3 (M-4's row, which
-  QSL-6/#242 implements against this requirement's typestate), §8 (Q209-1,
+  #242 implements against this requirement's typestate), §8 (Q209-1,
   Q209-2, lane C2).
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
 - [FR-060](FR-060-check-qsl-api-surface-boundary.md), whose T-12 API-surface
@@ -626,25 +626,22 @@ that change each scenario of `tests/it/complete_package.rs` and
   depends on (only `check` calls the `NodeKey` constructor).
 - [FR-068](FR-068-split-expression-checking-into-check-stage.md), which
   landed `check::CheckedPackage` and `PackageDeclarations::check`'s
-  `CheckedPackage` return type (M-5), and opened QSL-167 for the ADR-011
+  `CheckedPackage` return type (M-5), and recorded the ADR-011
   §4-versus-§6.1 conflict this requirement resolves per the QSL-158 owner
   ruling (Status): `PackageDeclarations::check` returns `CheckedGraph`
   after this requirement, and `check::CheckedPackage` (`qsl-semantics/src/check/mod.rs:127`)
   and its three checking methods (`qsl-semantics/src/check/mod.rs:601,625,648`) are
   relocated/retargeted as this requirement's Behavior and Outputs state.
-- Linear QSL-6 (ADR-011 M-4: the I2 reader, successor to
-  `ResolvedSourcePackage`'s dependency half) and QSL-234
-  ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md), successor
-  to its header-selection half). FR-087-AC-7 and CON-4 wait on FR-110;
-  QSL-269 owns the retirement (ruling on QSL-229).
-- Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split and
-  the 2026-09-21 `CheckedPackage`-placement ruling) and QSL-167 (the ADR-011
-  §4-versus-§6.1 defect, closed for its `CheckedPackage`-placement half by
-  this ruling; its separate §6.2 refusal-row finding stays open).
+- ADR-011 M-4's I2 reader (successor to `ResolvedSourcePackage`'s
+  dependency half) and [FR-110](FR-110-resolve-header-profile-selections-at-e3.md)
+  (successor to its header-selection half), per the ruling on QSL-229.
+- The owner ruling on QSL-158 (2026-09-21) on `CheckedPackage`'s placement,
+  which closes the `CheckedPackage`-placement half of the ADR-011
+  §4-versus-§6.1 defect; its separate §6.2 refusal-row finding stays open.
 
 ## Status
 
-Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
+Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
 2026-09-21 comment on that ticket). Partly implemented. Gate (ADR-013 §7:
 "S-2, QC-10") is clear: S-2 landed as PR #260 (`97ec26e3`); QC-10 landed
 under STD-2 (Done).
@@ -654,12 +651,12 @@ Landed: PR #304 added `CheckedGraph` (`check`), which
 `EmittedPackage` (layer-4 `package`). PR #299 relocated `value::library` and
 `value::package_identity` into the top-level `library` module, where
 `PackageNodeKey{package, node: WireNodeId}` is defined and wire-fed node
-references are `WireNodeId`s, and added `LibraryRefusal::class()`. QSL-6
+references are `WireNodeId`s, and added `LibraryRefusal::class()`. M-4
 slice A1 (PR #340) added `VerifiedPackage`, `ImportView`
 (`VerifiedPackage::into_import_view`, its only constructor) and the §4
 verified binding, `library::verify_binding`. The binding
 takes a condition-1 witness (`SupportedV2Wire`) that only the layer-4 v2
-reader mints, in IR's `AdmittedV2` arm (since QSL-181 the minter and
+reader mints, in IR's `AdmittedV2` arm (since the X-6 extraction the minter and
 `verify_binding` are `pub` for the crate boundary, and arch-lint rule T12-E
 confines the minter's callers to that reader); it applies condition 2 through
 `verify_package`, and condition 3 against a `PinnedRequest` (one selection
@@ -721,9 +718,8 @@ call to `verify_binding` with a hand-built candidate. The doctests show only
 that a crate-external caller fails to compile; stable rustdoc does not check
 a `compile_fail` block's error code.
 
-QSL-158 backs AC-2 (TC-244) in full, and AC-1 (TC-243), AC-6 (TC-255),
-AC-8 and AC-10 (TC-247) and AC-11 (TC-281) in part, with
-`xtask::typestate_scan`. It is a `syn` scan of the shipped code of every
+`xtask::typestate_scan` backs AC-2 (TC-244) in full, and AC-1 (TC-243), AC-6 (TC-255),
+AC-8 and AC-10 (TC-247) and AC-11 (TC-281) in part. It is a `syn` scan of the shipped code of every
 QSL crate, and `make ci` runs it. Shipped code excludes `#[cfg(test)]`
 items and every file a `#[cfg(test)] mod` declares. The scan sees through
 `use … as` renames and `type` aliases. Its own tests plant each evasion
@@ -767,7 +763,7 @@ the steps its test backs.
   `ExportIdentity` exists, and `library` defines no `resolve_name` and no
   field or variant holding a `NodeKey`.
 
-AC-7 (TC-246) is delivered under QSL-269, and AC-13 (TC-379) is partly delivered:
+AC-7 (TC-246) is delivered, and AC-13 (TC-379) is partly delivered:
 
 - **AC-7 and CON-4.** Amended by the ruling on QSL-229 (2026-09-24) to
   follow ADR-011. They used to require every caller of
@@ -778,14 +774,14 @@ AC-7 (TC-246) is delivered under QSL-269, and AC-13 (TC-379) is partly delivered
   dependency half exists: spine `compile`'s S4 source resolution binds each
   import against a library compiled from source and read into its
   `ImportView` (FR-099, ADR-015 D-1). The header-selection half is FR-110
-  (amended 2026-09-26, QSL-234): E3 resolves header profiles against QSL's
+  (amended 2026-09-26): E3 resolves header profiles against QSL's
   `DefinitionLock` catalog, which carries each row's digest from QSpec's
   `complete-value-lock.json`, and model declarations through I1. It needs
-  no QSpec accessor (QSL-189 is Canceled, ADR-011 §2.4 amended
-  2026-09-24). FR-110 is implemented (QSL-284, PR #478, TC-490).
-  QSL-269 retired `ResolvedSourcePackage`, `resolve_source_package`,
+  no QSpec accessor (ADR-011 §2.4 amended
+  2026-09-24). FR-110 is implemented (TC-490).
+  One change retired `ResolvedSourcePackage`, `resolve_source_package`,
   `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, the complete-package `ModelConflict` and
-  `command::resolve_parsed_source` in one change, and moved the closure,
+  `command::resolve_parsed_source`, and moved the closure,
   bundle, limits and identity to `library::bundle` (FR-111), with no old name
   reachable: `qsl_semantics::complete`, `src/command/source_package.rs` and
   `tests/it/complete_package.rs` no longer exist. Each former scenario now
@@ -830,6 +826,6 @@ permitted 4-depends-on-3 edge), and `value::expression` names it through
 one `pub use` (a permitted 5-depends-on-4 edge) — no reverse edge remains
 (Description; Behavior, "`check` produces `CheckedGraph`; `package`
 constructs `CheckedPackage`"; FR-087-AC-9). This closes the
-`CheckedPackage`-placement half of QSL-167. QSL-167's other, unrelated
+`CheckedPackage`-placement half of that ADR-011 defect. Its other, unrelated
 finding (a §6.2 refusal-row defect) is untouched by this requirement and
-stays open under its own ticket.
+stays open.

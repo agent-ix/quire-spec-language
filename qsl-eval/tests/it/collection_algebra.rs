@@ -539,7 +539,7 @@ fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
     // already-retained member (`h1`, universe `u1`) via
     // `member_equal_stop(candidate, member, ..)`, whose `plan_pairs(member,
     // candidate)` call makes the already-retained member `required` and the
-    // candidate `supplied` (QSL-281: `required` is the universe already in
+    // candidate `supplied` (`required` is the universe already in
     // force, `supplied` the one tested against it).
     assert_outcome(
         &construct(&holders, vec![h1, hx], &mut meter),
@@ -583,7 +583,7 @@ fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
         &mut Meter::new(UNLIMITED),
     )
     .unwrap_err();
-    // `form_collection` is `quire_exact`'s own function now (QSL-131 V5), so
+    // `form_collection` is `quire_exact`'s own function now, so
     // its refusal is the kernel's own `Component`, not QSL's name-keyed one.
     assert_eq!(refused.component, quire_exact::Component::Element(1));
 }
@@ -640,7 +640,7 @@ mod checked {
 
     fn package(declarations: PackageDeclarations) -> CheckedPackage {
         let graph = declarations.check(CheckingLimits::default()).unwrap();
-        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         CheckedPackage::link(graph)
     }
@@ -956,7 +956,7 @@ mod checked {
         }
     }
 
-    /// QSL-281 (SR-681 FND-002): `x in c` (`Contains`) is the second
+    /// SR-681 FND-002: `x in c` (`Contains`) is the second
     /// production caller of `member_equal`, distinct from collection
     /// construction's `coalesce` dedup (`c10` above). A foreign-universe
     /// probe raises `ForeignReference` with `required` the already-formed

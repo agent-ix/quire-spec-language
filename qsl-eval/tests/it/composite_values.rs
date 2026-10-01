@@ -5,8 +5,7 @@
 //! Declaration node keys are opaque producer-assigned fixture keys; the
 //! declarations that intentionally share names and shapes get distinct keys.
 //! R03's library-import row runs through FR-307 library resolution. R04, a
-//! layer-1 parse refusal, is in `qsl-cst/tests/it/complete_cst.rs`
-//! (QSL-183).
+//! layer-1 parse refusal, is in `qsl-cst/tests/it/complete_cst.rs`.
 
 use std::cell::Cell;
 
@@ -845,7 +844,7 @@ mod checked {
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
         .check(CheckingLimits::default())
-        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         .map(CheckedPackage::link)
     }

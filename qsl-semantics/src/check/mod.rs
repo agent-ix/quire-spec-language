@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §7.3 M-5 (QSL-139/FR-068): the layer-3 checking half of what was
+//! ADR-011 §7.3 M-5 (FR-068): the layer-3 checking half of what was
 //! `value::expression`. This module owns name resolution, typing, static
 //! definedness and termination checking, and the checked-output types
 //! ([`CheckedGraph`], [`CheckedExpression`], `CheckedFunction`) whose
@@ -13,7 +13,7 @@
 //! two modules no longer share private state (US-009).
 //!
 //! # `CheckedGraph` (S3) versus `CheckedPackage` (S4) (ADR-013 T-1, FR-087,
-//! QSL-158 S-3a)
+//! S-3a)
 //!
 //! This module's own checked-output type is [`CheckedGraph`]: the S3
 //! checker's stage output, produced by [`PackageDeclarations::check`].
@@ -27,7 +27,7 @@
 //! methods on `qsl_package::CheckedPackage`, which reach this module's state
 //! only through its `CheckedGraph`-typed field and its `graph()` accessor.
 //!
-//! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2, QSL-7)
+//! # The interim `model` -> `check` edge is closed (ADR-011 §7.3 M-2)
 //!
 //! FR-068 (M-5) left an interim `model` -> `check` edge: `model::checked_dispatch.rs`
 //! and `model::conformance.rs` imported thirteen names this module defined
@@ -41,7 +41,7 @@
 //! hidden (FR-068-AC-9/FR-068-CON-5; see FR-068's Behavior section, "The
 //! interim `model` -> `check` edge," now superseded).
 //!
-//! **M-2 (QSL-7) closes it.** `model::checked_dispatch` moved to this
+//! **M-2 closes it.** `model::checked_dispatch` moved to this
 //! module's own `checked_dispatch` submodule (a private module, not
 //! resolvable as an intra-doc link, matching this crate's own convention;
 //! see [`checked_dispatch_operation`] for its re-exported entry point), and
@@ -61,7 +61,7 @@
 //! requirement's original text, not a deliberate exclusion: this module
 //! carries a `family` submodule with the function family's checking code
 //! (see `family`'s own module doc). Node identity is `lowering`'s and
-//! `node_key`'s (FR-092/FR-093, QSL-156 A4b).
+//! `node_key`'s (FR-092/FR-093).
 //! Without it, `check`'s real import graph would reach back into
 //! `value::expression::family`, which FR-068-AC-3 forbids.
 
@@ -81,7 +81,7 @@ mod field_refinement;
 mod identity;
 // `imports` has no production caller yet (E3 imported-name resolution,
 // FR-087-AC-13). Only the layer-4 reader's tests use it, so it is public
-// only under `test-support` (QSL-181: no test-only `pub`).
+// only under `test-support` (no test-only `pub`).
 #[cfg(any(test, feature = "test-support"))]
 pub mod imports;
 #[cfg(not(any(test, feature = "test-support")))]
@@ -104,7 +104,7 @@ use std::collections::BTreeMap;
 use check::{bind_parameters, Typer};
 // `Signature` is public only under `test-support`: the layer-5 evaluator's
 // tests build the resolved `Signature` `declarations_for` takes as
-// `own_signature`; no shipped caller outside `check` names it (QSL-181).
+// `own_signature`; no shipped caller outside `check` names it.
 #[cfg(any(test, feature = "test-support"))]
 pub use check::{Signature, Signatures};
 #[cfg(not(any(test, feature = "test-support")))]
@@ -145,7 +145,7 @@ pub use node_key::{
 // F6): the same duplication, for a `ValueDeclarations` test fixture, with
 // two different parameter shapes.
 //
-// QSL-181: `check_context` and the constant are test-support views of
+// `check_context` and the constant are test-support views of
 // `pub(crate)` items (`CheckContext::new`, `SCALAR_LIMITS_UNLIMITED`), so
 // the layer-5 evaluator's tests reach them without widening the items.
 #[cfg(any(test, feature = "test-support"))]
@@ -220,8 +220,8 @@ struct CheckedFunction {
     slots: usize,
 }
 
-/// Every checked function with its signature, index-aligned by construction
-/// (QSL-205): [`Self::new`] is the only way in, and it splits one list of
+/// Every checked function with its signature, index-aligned by construction:
+/// [`Self::new`] is the only way in, and it splits one list of
 /// pairs, so a position names the same function in both halves.
 #[derive(Debug)]
 struct CheckedFunctions {
@@ -310,7 +310,7 @@ fn function_state<'a>(
 #[derive(Debug)]
 pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`
-    /// entry (QSL-6 S1b).
+    /// entry.
     source: qsl_foundation::source::provenance::RawSourceRef,
     scope: Scope,
     functions: CheckedFunctions,
@@ -338,7 +338,7 @@ pub struct CheckedGraph {
     /// read only through [`Self::checked_type_node`], node-id-keyed like
     /// every other accessor here (R-06).
     type_nodes: BTreeMap<quire_exact::NodeKey, identity::CheckedTypeNode>,
-    /// FR-092/FR-093 (QSL-156 A4b): every lowered, keyed node of this
+    /// FR-092/FR-093: every lowered, keyed node of this
     /// package's functions.
     semantic_graph: lowering::SemanticGraph,
     /// NFR-011: the ceilings this package was checked under.
@@ -368,7 +368,7 @@ pub struct CheckedGraph {
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
     object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
-    /// FR-096/QSL-309: each protocol's own attempts' declared name spans,
+    /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
@@ -460,8 +460,7 @@ pub struct CallableFunction<'a> {
     pub result: &'a ValueType,
 }
 
-/// A family `check`'s stage limit as a checking refusal's cause (QSL-236,
-/// L6): `CheckingLimitKind::try_from(LimitKind)` is the named reverse of
+/// A family `check`'s stage limit as a checking refusal's cause (L6): `CheckingLimitKind::try_from(LimitKind)` is the named reverse of
 /// `foundation_kind`, and a kind no checking limit names is a fault in the
 /// family, not in the input.
 fn limit_cause(limit: &qsl_foundation::diagnostic::LimitExceeded) -> CheckCause {
@@ -616,7 +615,7 @@ impl PackageDeclarations {
     /// Check every function: duplicate names, declared types, typing, static
     /// definedness and termination, in that order. Every refusal is made
     /// before any charge; a reached checking limit is `stage_limit_exceeded`
-    /// (QSL-236) and yields no admission verdict.
+    /// and yields no admission verdict.
     pub fn check(self, limits: CheckingLimits) -> Result<CheckedGraph, Vec<CheckRefusal>> {
         // FR-096: a family limit's locus resolves through the unit's spans.
         let regions = self.regions();
@@ -633,7 +632,7 @@ impl PackageDeclarations {
             })
         };
         let mut refusals = Vec::new();
-        // QSL-205: one pass groups every declaration by name, so the
+        // One pass groups every declaration by name, so the
         // duplicate check is a map lookup per declaration, not a pairwise
         // comparison. Each group's declarations stay in declaration order,
         // functions first. FR-104/FR-109: state clauses and functions share
@@ -854,7 +853,7 @@ impl PackageDeclarations {
         // into `drafts` below, and keyed by occurrence once lowering has
         // recorded every occurrence (`requirements`, below).
         let mut claims: Vec<claims::ValueClaim> = Vec::new();
-        // QSL-148: identity, the real typing/definedness verdict and one
+        // Identity, the real typing/definedness verdict and one
         // success diagnostic are all produced through one call into the
         // checked-family contract's own `check` hook
         // (`family::ValueFunctionFamily::check`) -- not, as before this
@@ -923,7 +922,7 @@ impl PackageDeclarations {
         // production entry point. Reading `limits.depth()` here (the same
         // `CheckingLimits` the unchanged `Typer` below already honors)
         // makes the contract's own resource bound live.
-        // QSL-153: `node_count` reads the same `CheckingLimits.nodes()` the
+        // `node_count` reads the same `CheckingLimits.nodes()` the
         // unchanged `Typer` below also honors, but the two are separate,
         // deliberately different-shaped bounds over the same underlying
         // quantity (PR #303 review round 3, finding F1): the contract's own
@@ -938,7 +937,7 @@ impl PackageDeclarations {
         // `StageLimits` field at all (PR #302 review finding 3): it is
         // charged against `contract_meter`'s own `work_units` bound
         // instead, read from `CheckingLimits::work_budget`. All three are
-        // NFR-011's finite defaults unless a caller sets them (QSL-214).
+        // NFR-011's finite defaults unless a caller sets them.
         // The mechanism is real (`CheckContext::
         // check_input_bytes`/`check_node_count`, and a `cx.meter` charge for
         // `work_budget`) and is exercised directly against tight fixtures in
@@ -1079,12 +1078,12 @@ impl PackageDeclarations {
         // through its nested control scopes (`check::protocol_clause`), and
         // its binders checked against the package's own aliases and native
         // declarations (`scope`, `signatures`) for the no-shadowing rule.
-        // FR-114 (QSL-309): each `attempt`'s own `contracts` list, bound
+        // FR-114: each `attempt`'s own `contracts` list, bound
         // against its already-resolved operation (`self.protocol_attempts`)
         // and the unit's own checked state clauses (`state_clause_forms`).
         // Independent of every other declaration kind otherwise: a
         // protocol's own content is checked from its own form alone.
-        // QSL-309 (SR-770 FND-001): once those pass, `protocol_clause::
+        // Once those pass, `protocol_clause::
         // content` checks the rest -- the `using` alias, roles, attempt
         // roles and binder types -- and refuses `unsupported_construct`/
         // `not-yet-implemented` at any construct no checker reads yet
@@ -1123,7 +1122,7 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        // QSL-148: static definedness is checked per declaration now, inside
+        // Static definedness is checked per declaration now, inside
         // `family::check_declaration_body`, immediately after that same
         // declaration's typing -- `calls` (one entry per admitted function,
         // in the same order as `functions`) is collected there, not by a
@@ -1144,7 +1143,7 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
-        // FR-092/FR-093 (QSL-156 A4b): lower every function to FR-322 nodes
+        // FR-092/FR-093: lower every function to FR-322 nodes
         // and key them, each callee before its callers, and record every
         // node's source occurrences (FR-062-AC-2/FR-065-AC-3's
         // occurrence-keyed source map). A function's identity is its
@@ -1226,7 +1225,7 @@ impl PackageDeclarations {
             .enumerate()
             .map(|(index, form)| clause_location(index, &form.name))
             .collect();
-        // FR-114 (QSL-309): every protocol attempt's own real location
+        // FR-114: every protocol attempt's own real location
         // (never `generated_location`), the same reason a clause's own
         // `AnchorInput::location` must be real (FR-096).
         let attempt_locations: Vec<Vec<Location>> = protocol_bindings
@@ -1270,7 +1269,7 @@ impl PackageDeclarations {
         }
         // FR-104: each state clause after every function it may call,
         // minting its node identity and recording its `claim` occurrence.
-        // FR-114 (QSL-309): each protocol attempt, bound (S3) to its
+        // FR-114: each protocol attempt, bound (S3) to its
         // operation, lowered to that operation's `operation_anchor` and
         // `frame` node identity through the same machinery a `pre`/`post`
         // clause's own binding calls (`Lowering::protocol_attempt`) -- no
@@ -1523,7 +1522,7 @@ impl PackageDeclarations {
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
-        // FR-114 "Requirements" (QSL-309): one `operation-contract` record
+        // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
         // computed by the same `state_clause::frame_record` a `pre`/`post`
         // clause's frame claim uses (SR-770 FND-003), so an attempt and a
@@ -1981,7 +1980,7 @@ impl CheckedGraph {
     /// count, by its index in the package -- the index a checked
     /// `NodeKind::Call` or dispatch candidate names. The accessor
     /// `value::expression`'s evaluator reads where a call runs, so no
-    /// per-evaluation function list is built (QSL-205), and `check` never
+    /// per-evaluation function list is built, and `check` never
     /// constructs a layer-5 type (FR-068-AC-3).
     pub fn function_state(&self, index: usize) -> Option<FunctionState<'_>> {
         self.functions.get(index).map(function_state)

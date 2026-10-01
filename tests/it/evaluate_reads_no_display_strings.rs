@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-062-AC-6, second sentence (QSL-246): a family's `evaluate` hook reads
+//! FR-062-AC-6, second sentence: a family's `evaluate` hook reads
 //! no CST, token or display string. "Display string" means rendered text
 //! (`Display`/`Debug` output, diagnostic text, source spelling), per ADR-011
 //! FB-01. Declared names carried on checked nodes are checked input:

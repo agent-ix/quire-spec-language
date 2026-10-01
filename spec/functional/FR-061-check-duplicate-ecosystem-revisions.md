@@ -91,6 +91,6 @@ Specified and implemented under
 shared `graph::classify`) rather than crate name since #249 review R2.
 
 Run against QSL's real root `Cargo.lock`, the check reports no duplicate
-(FR-061-AC-4) and runs in `make ci`. QSL-334 removed the
-`quire-contract-codegen` development dependency whose graph resolved second
-copies of QSL and IR crates.
+(FR-061-AC-4) and runs in `make ci`. The `quire-contract-codegen` development dependency,
+whose graph resolved second
+copies of QSL and IR crates, is removed.

@@ -12,9 +12,9 @@
 //! limitations").** A `forbidden_patterns` entry is a violation from any
 //! module, including an allowed caller: a spelling that no longer names the
 //! rule's symbol at all (T12-A's `quire_spec_language::replay::`, dead since
-//! the facade became its own crate, QSL-185).
+//! the facade became its own crate).
 //!
-//! A `forbidden_modules` entry (T12-A's `qsl_replay::spine`, QSL-5) is a
+//! A `forbidden_modules` entry (T12-A's `qsl_replay::spine`) is a
 //! violation from any module too, and is found by parsing each file with
 //! `syn`, not by substring: every `use` tree leaf and every path whose first
 //! segment names the crate, or an alias of it (`use qsl_replay as q;`,
@@ -200,15 +200,15 @@ pub(crate) const RULES: &[Rule] = &[
         description:
             "CG calls the QSL layer-6 `qsl-replay` facade only (ADR-011 §3 FB-05, §2.1 E9)",
         role: Role::Cg,
-        // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6, QSL-185).
+        // The facade is the `qsl-replay` workspace crate (ADR-011 §6.1 layer 6).
         call_patterns: &["qsl_replay::"],
-        // The root crate has no `replay` module any more (QSL-185 moved it
-        // into its own crate), so a call spelled this way cannot reach the
+        // The root crate has no `replay` module any more (it moved into
+        // its own crate), so a call spelled this way cannot reach the
         // facade; it is a finding, never a pass, from any module including
         // an allowed one.
         forbidden_patterns: &["quire_spec_language::replay::"],
         // `qsl_replay::spine` is the spine compile `command` shares with the
-        // executor (QSL-5). It is `pub` only because `command` is another
+        // executor. It is `pub` only because `command` is another
         // crate; it is not part of the facade CG may call, so any reference
         // to it is a finding from any module.
         forbidden_modules: &[ForbiddenModule {
@@ -240,7 +240,7 @@ pub(crate) const RULES: &[Rule] = &[
         // (`.map(NodeKey::from_digest)`), which a call-form-only pattern
         // misses. `node_key_of` was the crate-internal minting helper
         // `value::enumeration` and `value::unit` called (R1, #249 review,
-        // review item 7); QSL-131 K4 deleted it, and the pattern stays so a
+        // review item 7); it is deleted, and the pattern stays so a
         // reintroduced helper of that name is caught.
         call_patterns: &["NodeKey::from_digest", "node_key_of("],
         forbidden_patterns: &[],
@@ -266,8 +266,8 @@ pub(crate) const RULES: &[Rule] = &[
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists" --
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
-        // leaves in the change that removes its last mint. QSL-248 (G2)
-        // removed the one entry this list ever carried (`qsl-eval`'s
+        // leaves in the change that removes its last mint. The deletion
+        // of qsl-eval's second v2 producer removed the one entry this list ever carried (`qsl-eval`'s
         // `value::expression::family::decode_v2`, the second v2 producer's
         // own `NodeKey` mint from wire hex) along with the mint itself, so
         // this is empty until a new one is found and named.
@@ -300,7 +300,7 @@ pub(crate) const RULES: &[Rule] = &[
         ),
         shipped_only: true,
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists".
-        // Empty since QSL-131 V1 retyped reference types to `EffectiveId`
+        // Empty since reference types were retyped to `EffectiveId`
         // (ADR-013 O-05, OBS-018), so any shipped mint outside `model` fails.
         debt_list: &[],
     },
@@ -309,7 +309,7 @@ pub(crate) const RULES: &[Rule] = &[
         description: "only `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21)",
         role: Role::Qsl,
         // The kernel's constructor (`quire-exact`'s `PopulationId::
-        // from_digest`, QSL-131 Slice B), called or passed as a function
+        // from_digest`), called or passed as a function
         // value. Shipped code only: a test fixture that builds a
         // `PopulationId` from literal bytes mints nothing. Its debt list is
         // empty, so any shipped mint outside `model` fails.
@@ -342,7 +342,7 @@ pub(crate) const RULES: &[Rule] = &[
                       condition-1 witness `SupportedV2Wire` (ADR-013 T-1, FR-087-AC-1)",
         role: Role::Qsl,
         // `library::SupportedV2Wire::attest_ir_admitted_v2` is `pub` only so
-        // the layer-4 v2 reader can call it across the QSL-181 crate
+        // the layer-4 v2 reader can call it across the layer-3 crate
         // boundary; the witness attests that IR's v2 reader admitted the
         // bytes, which only that reader knows. The bare name matches every
         // spelling: `SupportedV2Wire::attest_ir_admitted_v2(..)`,
@@ -1079,8 +1079,8 @@ pub(crate) fn evaluate(
             // (`<scan_root>/src`) and every extracted-layer-crate root
             // (`qsl-foundation/src`, `qsl-cst/src`, ...) alike: a missing
             // configured root must fail loudly rather than silently drop
-            // that tree's coverage (QSL-178 review F4, carried over from
-            // review-325's same finding). A crate rename or move that this
+            // that tree's coverage (carried over from review-325's
+            // finding). A crate rename or move that this
             // scanner's own root list has not caught up with is exactly the
             // failure this guards -- it must not read as a clean, coverage-free
             // pass.
@@ -1479,7 +1479,7 @@ mod tests {
         fs::write(path, contents).unwrap();
     }
 
-    /// Every `Role::Qsl` scan root now has to exist (QSL-178 review F4): a
+    /// Every `Role::Qsl` scan root now has to exist: a
     /// missing one is an error, not a silently skipped tree. Tests that
     /// exercise `Role::Qsl` rules but are not themselves about a missing
     /// root (every one below except tc_arch_lint_api_surface_015/019, which
@@ -1540,10 +1540,10 @@ mod tests {
         }
     }
 
-    /// T12-B (`RULES[1]`) with `debt_list` replaced by `debt_list`. QSL-248
-    /// (G2) emptied the real rule's debt list along with the one mint it
-    /// ever named (`qsl-eval`'s `decode_v2`), so the debt-list mechanism's
-    /// own tests -- reported-as-debt, stale-entry-fails, and the crate-
+    /// T12-B (`RULES[1]`) with `debt_list` replaced by `debt_list`. The
+    /// deletion of qsl-eval's second v2 producer emptied the real rule's
+    /// debt list along with the one mint it ever named (`qsl-eval`'s
+    /// `decode_v2`), so the debt-list mechanism's own tests -- reported-as-debt, stale-entry-fails, and the crate-
     /// scoping check beside them -- need a fixture entry of their own rather
     /// than the production list, which no longer carries one.
     fn t12b_with_debt(debt_list: &'static [DebtEntry]) -> Rule {
@@ -1736,7 +1736,7 @@ mod tests {
     /// CG-shaped consumer tree, given as T12-A's `--cg` scan root, that calls
     /// the `qsl-replay` facade from a disallowed module is a real, failing
     /// violation -- T12-A must scan the CG tree, not the QSL tree, once its
-    /// `requires_path` gate (QSL's own `qsl-replay/src/lib.rs`, QSL-185) is
+    /// `requires_path` gate (QSL's own `qsl-replay/src/lib.rs`) is
     /// satisfied.
     #[trace("TC-157", "FR-060-AC-3")]
     #[test]
@@ -1797,7 +1797,7 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_025 (negative control, QSL-5): every
+    /// tc_arch_lint_api_surface_025 (negative control): every
     /// spelling that reaches `qsl_replay::spine` is a T12-A violation, even
     /// from the allowed `replay` module -- a direct path, `use ...::spine;`
     /// then `spine::compile`, a `spine::compile` leaf inside a use group, a
@@ -1926,7 +1926,7 @@ mod tests {
         assert!(outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_014 (ADR-011 §7.3 X-2, QSL-177): a `Role::Qsl`
+    /// tc_arch_lint_api_surface_014 (ADR-011 §7.3 X-2): a `Role::Qsl`
     /// rule scans `qsl-foundation/src/` too, not only the root crate's own
     /// `src/` -- the extracted layer-F crate is as much "QSL's own tree" as
     /// the root crate for a rule like T12-D that scans for a kernel
@@ -1956,7 +1956,7 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_015 (QSL-178 review F4): a checkout with no
+    /// tc_arch_lint_api_surface_015: a checkout with no
     /// `qsl-foundation/` directory at all is an error, the same as the root
     /// crate's own `src/` being absent (tc_arch_lint_api_surface_009). Every
     /// listed root is required precisely so a crate rename or move this
@@ -1979,7 +1979,7 @@ mod tests {
         assert!(error.to_string().contains("qsl-foundation/src"), "{error}");
     }
 
-    /// tc_arch_lint_api_surface_016 (ADR-011 §7.3 X-3, QSL-178): a
+    /// tc_arch_lint_api_surface_016 (ADR-011 §7.3 X-3): a
     /// `Role::Qsl` rule scans `qsl-cst/src/` too, the same way
     /// tc_arch_lint_api_surface_014 covers `qsl-foundation/src/` -- the
     /// extracted layer-1 crate is as much "QSL's own tree" as the root
@@ -2042,8 +2042,8 @@ mod tests {
         assert!(!outcome.passed());
     }
 
-    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, QSL-185; X-4,
-    /// QSL-179; X-5, QSL-180; X-6, QSL-181; X-9, QSL-184): a `Role::Qsl` rule
+    /// tc_arch_lint_api_surface_018 (ADR-011 §7.3 X-10, X-4,
+    /// X-5, X-6, X-9): a `Role::Qsl` rule
     /// scans `qsl-replay/src/`, `qsl-source/src/`, `qsl-forms/src/`,
     /// `qsl-semantics/src/` and `qsl-route/src/` too, the same way tc_arch_lint_api_surface_014/016
     /// cover `qsl-foundation/src/` and `qsl-cst/src/` -- each extracted layer
@@ -2089,8 +2089,7 @@ mod tests {
         }
     }
 
-    /// tc_arch_lint_api_surface_019 (QSL-178 review F4, QSL-185, QSL-179,
-    /// QSL-180, QSL-181, QSL-182, QSL-184): a checkout with no `qsl-replay/`,
+    /// tc_arch_lint_api_surface_019: a checkout with no `qsl-replay/`,
     /// no `qsl-source/`, no `qsl-forms/`, no `qsl-package/`, no `qsl-route/`
     /// or no `qsl-semantics/` directory is an error, the same as tc_arch_lint_api_surface_015 for `qsl-foundation/`.
     /// Every listed root is required precisely so a crate rename or move this
@@ -2120,7 +2119,7 @@ mod tests {
             assert!(error.to_string().contains(missing), "{missing}: {error}");
         }
         // `qsl-semantics/` holds T12-D's own `requires_path` marker, so its
-        // absence is checked through T12-B, which has none (QSL-181).
+        // absence is checked through T12-B, which has none.
         let dir = tempfile::tempdir().unwrap();
         ensure_qsl_roots(dir.path());
         fs::remove_dir_all(dir.path().join("qsl-semantics")).unwrap();
@@ -2202,9 +2201,9 @@ mod tests {
     }
 
     /// A fixture debt entry for the debt-list mechanism's own tests below:
-    /// T12-B's real `debt_list` is empty since QSL-248 (G2) removed its one
-    /// entry along with the mint it named, so these tests exercise the
-    /// mechanism against a synthetic entry rather than production data.
+    /// T12-B's real `debt_list` is empty since the deletion of qsl-eval's
+    /// second v2 producer removed its one entry along with the mint it
+    /// named, so these tests exercise the mechanism against a synthetic entry rather than production data.
     const SYNTHETIC_DEBT_ENTRY: DebtEntry = DebtEntry {
         crate_src: "qsl-eval/src",
         module: "value::fixture",
@@ -2212,8 +2211,8 @@ mod tests {
     };
 
     /// TC-157 step 6: a shipped mint in a function on the debt list is
-    /// reported as debt and does not fail T12-B. The entry names its crate
-    /// (QSL-183): the same module and function in another crate is a
+    /// reported as debt and does not fail T12-B. The entry names its crate:
+    /// the same module and function in another crate is a
     /// violation, not debt.
     #[trace("TC-157", "FR-060-AC-4")]
     #[test]
@@ -2533,7 +2532,7 @@ mod tests {
     /// it in `qsl-semantics`, and another `qsl-package` module -- is a
     /// violation, whether spelled through the type, through `Self`, as a
     /// function value or across the crate boundary
-    /// (`qsl_semantics::library::SupportedV2Wire::..`, QSL-181), and so is a
+    /// (`qsl_semantics::library::SupportedV2Wire::..`), and so is a
     /// `checked_v2` module in another crate; the one call in `qsl-package`'s
     /// `checked_v2` and the minter's own definition are not.
     #[trace("TC-157", "FR-060-AC-3", "FR-087-AC-1")]

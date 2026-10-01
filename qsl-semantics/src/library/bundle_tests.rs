@@ -674,7 +674,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
     );
 }
 
-/// QSL-199: `PackageLimits::bounded()` no longer clamps a caller-supplied
+/// `PackageLimits::bounded()` no longer clamps a caller-supplied
 /// `definitions` ceiling down to [`PackageLimits::default`] (ADR-011 §7.3;
 /// NFR-001 "an implementation ceiling is not a domain bound"): a catalog
 /// with more definitions than the default (`MAX_SELECTED_DEFINITIONS`, 4096)
@@ -717,7 +717,7 @@ fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
     );
 }
 
-/// QSL-199 AC-3: reaching a *caller-raised* `definitions` ceiling (not just
+/// Reaching a *caller-raised* `definitions` ceiling (not just
 /// the default) still refuses, naming the limit kind
 /// ([`PackageLimitKind::Definitions`]) and the caller's own configured
 /// bound.
@@ -871,7 +871,7 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
             actual: Some(3),
         }
     );
-    // QSL-236: the graph's own depth ceiling is the one `PackageLimitKind`
+    // The graph's own depth ceiling is the one `PackageLimitKind`
     // that maps cleanly onto the catalog's `stage_limit_exceeded`, unlike
     // `Definitions`/`DependencyEdges`/`ArtifactBytes` above, which stay
     // `resource_exhausted`.
@@ -892,7 +892,7 @@ macro_rules! resolution_causes {
         fn covered(cause: ResolutionCause) {
             match cause {
                 $(ResolutionCause::$variant => {})+
-                // QSL-236: the one payload-bearing variant, covered
+                // The one payload-bearing variant, covered
                 // separately below rather than through this macro's
                 // bare-identifier list.
                 ResolutionCause::StageLimit(_) => {}
@@ -935,7 +935,7 @@ fn resolution_causes_match_the_complete_cause_catalog() {
             );
         }
     }
-    // QSL-236: `StageLimit`'s payload carries the kind, so it is checked
+    // `StageLimit`'s payload carries the kind, so it is checked
     // directly rather than through the macro's bare-identifier list, over
     // every kind the catalog admits (not only `NestingDepth`, the one the
     // package graph itself produces).
@@ -969,7 +969,7 @@ fn a_catalog_holding_one_exact_definition_twice_refuses() {
     assert_eq!(error, PackageError::DuplicateDefinition);
 }
 
-/// QSL-199: the size of one definition is a caller limit
+/// The size of one definition is a caller limit
 /// (`PackageLimits::single_artifact_bytes`), not a fixed 1 MiB ceiling refused
 /// as invalid bytes. An artifact one byte past the default is built, refused
 /// at catalog admission naming the kind and the bound, and admitted once the
@@ -1013,7 +1013,7 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     assert!(DefinitionCatalog::with_limits(vec![large], raised).is_ok());
 }
 
-/// QSL-199: a link checks `single_artifact_bytes` under its own limits,
+/// A link checks `single_artifact_bytes` under its own limits,
 /// whatever limits the catalog was built under.
 #[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
 #[test]

@@ -560,7 +560,7 @@ fn p06_each_call_charges_function_call() {
     let graph = declarations(types.clone(), vec![last()])
         .check(CheckingLimits::default())
         .unwrap();
-    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
     let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::default();
@@ -577,12 +577,11 @@ fn p06_each_call_charges_function_call() {
         format!("{:?}", evaluated(evaluation)),
         format!("{:?}", Outcome::Completed(int(3)))
     );
-    // QSL-206: 3 -- the top-level call's own `function.call`, which
+    // 3 -- the top-level call's own `function.call`, which
     // `CheckedPackage::call` now charges to this `meter`, plus one per
     // *nested* self-call inside `last`'s own body (a 3-node chain recurses
-    // twice before reaching the end of the chain). Before QSL-206 the
-    // top-level charge went to a meter `call` created and dropped, so this
-    // read 2. The call is still charged once: `Machine::run` makes no
+    // twice before reaching the end of the chain). A top-level charge to a
+    // meter `call` created and dropped would make this read 2. The call is still charged once: `Machine::run` makes no
     // entry-level charge of its own (PR #302 review finding 2).
     assert_eq!(meter.consumed(LimitKind::WorkUnits), 3);
 
@@ -985,7 +984,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         &[],
     )
     .unwrap();
-    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import. `converted`
     // above is checked against `admitted` (S3, `CheckedGraph`) directly;
     // evaluation needs the S4 `CheckedPackage` `admitted` links into.
@@ -1070,7 +1069,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
 
 /// PR #303 review round 3, finding F1: `CheckingLimits::new`'s own doc
 /// ("at most `nodes` expression nodes per checked package") is a bound on
-/// the whole package, not on any one declaration in it -- QSL-148's move of
+/// the whole package, not on any one declaration in it -- the move of
 /// typing into `ValueFunctionFamily::check` briefly reset the `Typer` node
 /// counter to zero for every declaration (`check::family::
 /// check_declaration_body`), so two declarations that each individually fit
@@ -1225,7 +1224,7 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )),
     ])
     .unwrap();
-    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
     let package = CheckedPackage::link(graph);
     let objects = ObjectEnvironment::default();
@@ -1258,10 +1257,10 @@ fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
         )
     };
 
-    // QSL-206: every total/threshold below counts the top-level call's own
+    // Every total/threshold below counts the top-level call's own
     // `function.call`, which `package.call` charges to this `meter` (what
-    // `invoke` reports) ahead of every charge below. Before QSL-206 that
-    // charge went to a meter `call` created and dropped, so each total, and
+    // `invoke` reports) ahead of every charge below. Were that charge
+    // to go to a meter `call` created and dropped, each total, and
     // the `work_limit` that exhausts exactly at a given charge, read one
     // less.
     assert_eq!(

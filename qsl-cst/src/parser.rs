@@ -1043,7 +1043,7 @@ enum Step<'g> {
 /// | `not not ... true`                   | 6.0           |
 /// | `always [0,1] ...` (temporal clause) | 3.0           |
 ///
-/// Measured with production memoization (QSL-213). The same inputs store
+/// Measured with production memoization. The same inputs store
 /// 0.03 to 0.17 matches per step.
 ///
 /// An identifier operand is the costliest token: `Primary` tries every

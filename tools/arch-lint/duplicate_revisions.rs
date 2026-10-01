@@ -226,7 +226,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         assert!(check(&packages).is_empty());
     }
 
-    /// tc_arch_lint_duplicate_revisions_006 (QSL-334): QSL's own root
+    /// tc_arch_lint_duplicate_revisions_006: QSL's own root
     /// `Cargo.lock` resolves every quire-ecosystem repository once. A
     /// dependency that depended back on QSL would resolve a second,
     /// git-sourced QSL copy beside the workspace path copy and fail here.

@@ -9,7 +9,7 @@
 //! `qsl_foundation`/`qsl_semantics`/`quire_exact` vocabulary below, are both
 //! private to this module.
 //!
-//! FR-096 (QSL-245, PR #465/#469, #490) governs how a refused outcome
+//! FR-096 (PR #465/#469, #490) governs how a refused outcome
 //! renders: a refusal with an FR-096 record renders its `code`, `cause`,
 //! `fields` and `locus` -- every kernel refusal but `CheckedInvariant` has
 //! one (`kernel_refusal_record`, catalog revision `1-draft.8`); a family

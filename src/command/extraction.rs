@@ -582,7 +582,7 @@ mod tests {
             let mut package_stop = exact;
             package_stop.compiler.package.artifact_bytes = 0;
             // `body_stop` trips the S1 syntax source-bytes ceiling, which
-            // QSL-236 moved onto `stage_limit_exceeded`/`input-bytes-exceeded`
+            // reports as `stage_limit_exceeded`/`input-bytes-exceeded`
             // (`LimitKind::InputBytes`). `package_stop` trips the
             // complete-V1 package-graph artifact-bytes ceiling
             // (`PackageLimitKind::ArtifactBytes`), which stays on

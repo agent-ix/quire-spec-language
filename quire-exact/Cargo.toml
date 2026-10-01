@@ -5,10 +5,10 @@ publish = false
 edition = "2021"
 rust-version = "1.98"
 license = "AGPL-3.0-or-later"
-description = "QSL#213 S-1 (ADR-011 X-1): the quire-exact kernel -- checked identity, typestate, outcome/refusal, provenance and bound value types with no dependency on any other crate in the quire ecosystem."
+description = "ADR-011 X-1: the quire-exact kernel -- checked identity, typestate, outcome/refusal, provenance and bound value types with no dependency on any other crate in the quire ecosystem."
 
 [features]
-# QSL-206: the ordered charge log (`Meter::admitted_charges`). A production
+# The ordered charge log (`Meter::admitted_charges`). A production
 # meter keeps a count only; tests that assert exact charge sequences enable
 # this through a dev-dependency, which resolver 2 turns on only for test
 # builds. TC-243 (`no_shipped_dependency_enables_test_support`) refuses a

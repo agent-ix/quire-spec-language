@@ -65,7 +65,7 @@ dependency edges between them.
 
 ## Status
 
-Implemented under QSL-269: `library::bundle_tests` and
+Implemented: `library::bundle_tests` and
 `library::bundle::tests::resolved_graph_identity_matches_its_golden_vector`
 (`qsl-semantics/src/library/`) back steps 1-7, each tagged `TC-491`, its
 `FR-111-AC-n` and the QSpec FR-131/FR-339 tags it carried.

@@ -264,7 +264,7 @@ pub enum ChargePoint {
     /// (FR-151, TC-196 D06).
     DispatchSelect,
     /// `declaration.check`: one checked-family declaration's own checking
-    /// work (QSL-153, PR #302 review finding 3) -- distinct from
+    /// work (PR #302 review finding 3) -- distinct from
     /// `FunctionCall`, which charges one *evaluated* call, not one
     /// *checked* declaration. Sized by the declaration's own preimage
     /// field-write count (`crate::check::family::IdentityPreimageMetrics::
@@ -273,7 +273,7 @@ pub enum ChargePoint {
     /// (`check` never returns `Incomplete`, ADR-012 §2's structured-outcome
     /// row).
     DeclarationCheck,
-    /// `graph.expand` (FR-107, QSL-278): one node enqueued by a `reaches`
+    /// `graph.expand` (FR-107): one node enqueued by a `reaches`
     /// walk, its source included.
     GraphExpand,
     /// `graph.edge` (FR-107): one edge target visited by a `reaches` walk.
@@ -459,12 +459,12 @@ pub struct InjectedDenial {
 
 /// One exact `{ counter: amount }` charge vector.
 ///
-/// **`pub` (QSL-166).** Was `pub(crate)`: every consumer of this vector
+/// **`pub`.** Was `pub(crate)`: every consumer of this vector
 /// lived inside this crate until QSL's own `value::accounting` copy (the
 /// byte-identical duplicate this type replaces) was deleted and its call
 /// sites repointed here across the `quire-spec-language` crate boundary. Widened together with [`Meter::charge`]/[`Meter::charge_plan`]
 /// and [`length_amount`], each verified against real cross-crate call
-/// sites, the same standard QSL-146 established for the kernel's other
+/// sites, the same standard established for the kernel's other
 /// widenings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Charge {
@@ -517,7 +517,7 @@ impl Charge {
 
 /// A per-request scalar meter.
 ///
-/// **A count, not a log (QSL-206).** A production meter holds only fixed-size
+/// **A count, not a log.** A production meter holds only fixed-size
 /// state: the ten counters, the number of admitted charges and, for an
 /// injected denial, the number of admissions at the denied point. It retains
 /// no heap state; the meter never grows with the charge count, so the meter
@@ -539,7 +539,7 @@ pub struct Meter {
     admitted: Vec<ChargePoint>,
 }
 
-// QSL-206: a production `Meter` owns no heap memory. A type with no drop
+// A production `Meter` owns no heap memory. A type with no drop
 // glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
 // fails the build rather than a test.
 #[cfg(not(feature = "test-support"))]
@@ -623,10 +623,10 @@ impl Meter {
     /// Atomically admit `charge` or return the first unavailable counter in
     /// `ScalarLimitsV1` field order.
     ///
-    /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`: QSL's own
+    /// **`pub` (an export gap).** Was `pub(crate)`: QSL's own
     /// `value::accounting::Meter::charge` call sites in `quire-spec-language`
     /// now call this one directly, across the crate boundary, after `value::accounting` was deleted as a duplicate.
-    /// This closes FR-062-AC-5's `Incomplete`-half export gap (QSL-153):
+    /// This closes FR-062-AC-5's `Incomplete`-half export gap:
     /// `ValueFunctionFamily::evaluate` (`qsl-eval/src/value/expression/family.rs`)
     /// charges its own `meter` parameter through this method, its one real
     /// cross-crate caller for that purpose.
@@ -676,7 +676,7 @@ impl Meter {
     /// `pairs + 2` remaining work units and one remaining result unit, then
     /// consumes the plan's own work unit.
     ///
-    /// **`pub` (QSL-166/QSL-153's export gap).** Was `pub(crate)`, same
+    /// **`pub` (an export gap).** Was `pub(crate)`, same
     /// reason as [`Self::charge`].
     pub fn charge_plan(&mut self, pairs: &Integer) -> Result<(), Incomplete> {
         let point = ChargePoint::EqualityPlan;
@@ -774,7 +774,7 @@ mod tests {
         }
     }
 
-    /// QSL-206 AC 2: a production meter owns no heap memory, however many
+    /// A production meter owns no heap memory, however many
     /// charges it admits. A type with no drop glue owns no `Vec`, `Box` or
     /// `String`, so its heap size is zero at every charge count; the
     /// admission count still grows with every charge. Built only without
@@ -801,7 +801,7 @@ mod tests {
         }
     }
 
-    /// QSL-206: the injected denial counts only the denied point's
+    /// The injected denial counts only the denied point's
     /// admissions, without the per-point occurrence table it replaced. The
     /// third `function.call` is denied, whatever other points were admitted
     /// in between; a denial set after earlier charges counts from then on.

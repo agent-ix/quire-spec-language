@@ -10,7 +10,7 @@
 //! [`outcome_from_stop`]/[`outcome_into_stop`], which is why an
 //! `?`-friendly shape earns its own module rather than inline handling at
 //! each call site. It is `pub` because the evaluator reads it across the
-//! layer-3/layer-5 crate boundary once QSL-181 (X-6) extracts
+//! layer-3/layer-5 crate boundary once X-6 extracts
 //! `qsl-semantics`.
 //!
 //! `quire_exact::Outcome<T>` is foreign to this crate (K is a leaf, ADR-011
@@ -18,7 +18,7 @@
 //! `impl` on it (E0116, the orphan rule) the way QSL's own now-deleted
 //! `value::outcome` copy could. They are plain functions instead: a
 //! single-implementation trait would add a name to learn with no seam or
-//! polymorphism to justify it (QSL-131 O2).
+//! polymorphism to justify it.
 //!
 //! No `Halt` variant carries a fault into a `Stop`, and no `Stop`-returning
 //! helper can pass one to [`outcome_from_stop`]: `value::expression`'s

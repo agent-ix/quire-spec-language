@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The one shared index over a [`DomainPackage`] (QSL-202).
+//! The one shared index over a [`DomainPackage`].
 //!
 //! Every model-layer rung used to rebuild its own maps from
 //! `domain_package.records` on every call: the `specific -> supertypes[]`
@@ -762,7 +762,7 @@ mod tests {
         )
     }
 
-    /// The per-call walk `conformance::type_conforms` ran before QSL-202,
+    /// The per-call walk `conformance::type_conforms` ran before the index,
     /// kept verbatim as the oracle [`RecordIndex::conforms`] must match.
     fn walked(
         domain_package: &DomainPackage,
@@ -859,7 +859,7 @@ mod tests {
         );
     }
 
-    /// QSL-202: [`RecordIndex::conforms`] answers from the ancestry exactly
+    /// [`RecordIndex::conforms`] answers from the ancestry exactly
     /// as the per-call walk did, for every ordered pair of keys (declared,
     /// referenced and unknown) and every `ancestor_steps` ceiling from 0 to
     /// past each walk's length, over a chain, a diamond, a cycle, a

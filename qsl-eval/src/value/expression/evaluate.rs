@@ -395,7 +395,7 @@ pub(crate) struct Machine<'a, 'm> {
     /// quotient formed during this evaluation.
     units: UnitScope<'a>,
     /// ADR-013 T-6 (last sentence): the checked `VariantId -> EnumValue`
-    /// index, built once with the `Scope` (QSL-205) and borrowed here,
+    /// index, built once with the `Scope` and borrowed here,
     /// consulted by the `Enum` equality schedule and `OrderedKind::Enums`
     /// -- a bare kernel
     /// `Value::Enum` (O-14/OQ-D) carries no declaration, ordered flag or
@@ -504,7 +504,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// **No entry-level `function.call` charge here (PR #302 review finding
     /// 2).** `ValueFunctionFamily::evaluate` (`family.rs`) charges the
     /// top-level call's `function.call` to the caller's meter, then runs this
-    /// machine against that same meter (QSL-206), so a charge here would
+    /// machine against that same meter, so a charge here would
     /// count the one call twice. Every *nested* `NodeKind::Call`/dispatch
     /// site this method's own task loop reaches charges `function.call`
     /// against `self.meter` (`charge_call`, called directly at those sites)
@@ -534,7 +534,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.frames.push(frame);
         self.tasks.push(Task::Eval(root));
         while let Some(task) = self.tasks.pop() {
-            // QSL-206: the task's node, borrowed from the checked tree, not
+            // The task's node, borrowed from the checked tree, not
             // its `Location`: a location is cloned only when a halt reports
             // one, never once per task.
             let located: &'a Node = match &task {
@@ -934,7 +934,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             | NodeKind::If { .. }
             | NodeKind::Connective(..)
             | NodeKind::Pre(_) => return Err(invariant()),
-            // FR-107 (QSL-278): `reaches(source, target, edge)`, checked
+            // FR-107: `reaches(source, target, edge)`, checked
             // only inside a state clause.
             NodeKind::Reaches { edge, .. } => {
                 let Value::Reference(target) = self.pop()? else {
@@ -948,7 +948,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             // FR-063: no arm for the probe variant under `--cfg seam_probe`
             // alone (`E0004`, this seam's evidence). The arm below exists
             // only in the probe's build of the crates above `qsl-eval`
-            // (`--cfg seam_probe_eval_downstream`, QSL-5): `qsl-replay`
+            // (`--cfg seam_probe_eval_downstream`): `qsl-replay`
             // depends on this crate, so it must compile there for the root
             // crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]
@@ -2146,7 +2146,7 @@ mod tests {
         );
     }
 
-    /// FR-107 (QSL-278): `allInstances<T>(p)` reached while evaluating a
+    /// FR-107: `allInstances<T>(p)` reached while evaluating a
     /// `ProtocolClause` (`Machine::with_pre`'s `reads: Some(_)`, the one
     /// signal `Machine::is_protocol_clause` reads) refuses
     /// `unknown_required_feature`/`unsupported-feature`, never an

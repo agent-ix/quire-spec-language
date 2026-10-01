@@ -24,7 +24,7 @@ both successors exist"; ruling on QSL-229):
   import views (FR-099, ADR-015 D-1). Implemented.
 - **Header-selection half.** E3's resolution of header profiles against
   the `DefinitionLock` catalog, and of `model` declarations through I1
-  (FR-110, FR-056). QSL-234.
+  (FR-110, FR-056). Implemented.
 
 ## Test Procedure
 
@@ -58,7 +58,7 @@ both successors exist"; ruling on QSL-229):
 
 ## Status
 
-Run under QSL-269, once FR-110 was implemented (QSL-284). Steps 1-3 by a
+Run once FR-110 was implemented. Steps 1-3 by a
 workspace search and a workspace build with `--all-features` (a search, not
 an automated scan); only `xtask`'s synthetic source text names
 `qsl_semantics::complete`. Step 4 by this mapping of the former scenarios:

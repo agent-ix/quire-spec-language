@@ -10,7 +10,7 @@ relationships:
 
 ## Objective
 
-**RETIRED by QSL-335.** QSL-335 deletes `integration/current-head/` and its Makefile targets. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration. The test it describes, `integration/current-head/tests/contract.rs`, is deleted. There is no successor in this repository.
+**RETIRED.** `integration/current-head/` and its Makefile targets are deleted. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration. The test it describes, `integration/current-head/tests/contract.rs`, is deleted. There is no successor in this repository.
 
 Verify the real integration boundary the current-head lane exists to guard:
 that QSL's parse output, quire-contract-ir's identity types,
@@ -23,27 +23,27 @@ apart in a way only a genuine cross-crate call detects.
 
 ## Target Integration
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Preconditions
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Inputs
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Test Procedure
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Expected Results
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Status
 
-Retired by QSL-335: `integration/current-head/` is deleted and FR-058, the
+Retired: `integration/current-head/` is deleted and FR-058, the
 requirement this test verified, is retired in full.
 
 ## Metadata

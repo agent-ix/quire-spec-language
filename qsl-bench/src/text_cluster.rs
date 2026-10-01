@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-215: a Text-reachable recursive cluster, for the cost of FR-093's
+//! A Text-reachable recursive cluster, for the cost of FR-093's
 //! text-leaf walk. Kept apart from [`crate::check`], whose generators are
 //! MP-002's protected apparatus.
 //!
@@ -9,7 +9,7 @@
 //! equality's leaf list (FR-093 "Text leaves") holds one leaf per simple
 //! path through the cluster, on the order of `(n - 1)!` leaves.
 //!
-//! [`deep_wide`] is the QSL-214 review's long-path shape: few enough leaves
+//! [`deep_wide`] is the long-path shape: few enough leaves
 //! for the node ceiling, but each under a long path of long field names.
 
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};

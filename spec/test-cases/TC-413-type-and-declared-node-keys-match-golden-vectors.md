@@ -108,11 +108,17 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch, pending merge. The tests back steps 1 to 8 except step 5's collision half. `check`
-refuses every recursion group on that branch, so step 5's collision half and
-step 9 are unbacked, and the checked type node of step 10 takes the caller's
-key. Step 3's owner needs QSL-159's source authority.
+Implemented (#384). The tests back steps 1 to 10
+(`qsl-semantics/src/check/lowering/tests.rs`, `lowering/tests/depth.rs`,
+`lowering/tests/differential.rs` and `check/node_key/tests.rs`), recursion
+groups and the declared record's own key included.
 
-The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
-`ResourceExhausted`, and the code and outcome assertions move with S-5b.
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+Step 5's test (`check/lowering/tests.rs`) asserts
+`stage_limit_exceeded`/`nesting-depth-exceeded` directly; step 6's
+(`check/lowering/tests/depth.rs`) asserts the full depth cause, bound and
+actual counter for every refusal.

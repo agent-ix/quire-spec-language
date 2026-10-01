@@ -548,8 +548,7 @@ impl LosslessCst {
     /// reparsing, or `None` if the fast path does not apply. Kept
     /// `pub(crate)`: `ParsedSource::with_whitespace_insertion` is the only
     /// public entry point, since it also checks the predecessor parse is
-    /// admissible and pairs the result through `ParsedSource::from_parts`
-    /// (QSL-178 review F2).
+    /// admissible and pairs the result through `ParsedSource::from_parts`.
     pub(crate) fn with_whitespace_insertion(
         &self,
         source: Source,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §7.2 (QSL-181 AC-3, QSL-182 AC-3, QSL-183 AC-3): the root crate re-exports no
+//! ADR-011 §7.2: the root crate re-exports no
 //! item of an extracted layer crate. Callers name each item at its layer
 //! crate's own path (`qsl_package::CheckedPackage`,
 //! `qsl_semantics::check::CheckedExpression`), so this crate's public
@@ -7,7 +7,7 @@
 //!
 //! The layer crates are read from `cargo metadata`: every workspace crate
 //! the root crate names as a `path` dependency, by its Rust name, in any
-//! dependency table. `[dev-dependencies]` count too: `qsl-route` (QSL-184)
+//! dependency table. `[dev-dependencies]` count too: `qsl-route`
 //! has no shipped caller in the root crate, so it is a dev dependency only,
 //! and a `#[cfg(test)]` item of `src/` can still name it. A crate extracted
 //! later is covered as soon as the root crate depends on it. The one
@@ -277,11 +277,11 @@ fn root_sources() -> Vec<(String, String)> {
         .collect()
 }
 
-/// TC-256 step 3 and TC-172 step 6 as amended by QSL-182 and QSL-181: no
+/// TC-256 step 3 and TC-172 step 6 as amended: no
 /// public item of the root crate exposes a layer crate's item, including
 /// `CheckedPackage` and the `check` items `value::expression` once
 /// re-exported. `value::expression` itself left the root crate for
-/// `qsl-eval` with QSL-183; the root crate does not depend on `qsl-eval`,
+/// `qsl-eval` at X-8; the root crate does not depend on `qsl-eval`,
 /// so it cannot re-export it at all.
 #[trace("FR-087-AC-9", "TC-256", "TC-172")]
 #[test]

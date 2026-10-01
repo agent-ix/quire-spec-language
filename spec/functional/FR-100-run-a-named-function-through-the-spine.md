@@ -156,7 +156,7 @@ of FR-096's key table, and each exits 20:
 | Kernel refusal | Code | Cause | Fields |
 |----------------|------|-------|--------|
 | `CardinalityOutOfBound` | `cardinality_out_of_bound` | `below-minimum` or `above-maximum` | `collection`, `bound`, `count` |
-| `ForeignReference` | `foreign_reference` | `foreign-universe` | `required`, `supplied`, each lowercase hex (QSL-281) |
+| `ForeignReference` | `foreign_reference` | `foreign-universe` | `required`, `supplied`, each lowercase hex |
 | `InexactDecimal` | `inexact_decimal` | `nonzero-discarded-digit` | `expected`: the target type's declared domain |
 | `DecimalOutOfDomain` | `decimal_out_of_domain` | `outside-domain` | `expected`: the target `Decimal[..]` domain |
 | `DivisionPairOutOfDomain` | `division_pair_out_of_domain` | `quotient-outside-domain`, `remainder-outside-domain` or `both-outside-domain`, from the variant's two admitted flags | `expected`: the consumer's integer domain |
@@ -370,7 +370,7 @@ exit 30.
 
 ## Status
 
-Implemented under QSL-271, QSL-245 and QSL-292, against catalog revision
+Implemented, against catalog revision
 `1-draft.8`. `qsl_replay::spine::run` and the CLI `run` command render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
 `CallFailure::Fault`, an unresolvable locus, each exiting 30 directly), and

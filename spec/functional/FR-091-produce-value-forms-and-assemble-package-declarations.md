@@ -781,21 +781,20 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   dispatch key to each declaration's leading token.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
   `PackageDeclarations` and its `check` in the layer-3 `check` core.
-- QSL-180's K5 slice replaces the `ValueType` fields of the `forms` types
+- The K5 slice replaces the `ValueType` fields of the `forms` types
   with a syntactic type form, and gives `PackageDeclarations` a check-owned
   resolved signature. This requirement states the same direction.
 - [FR-065](FR-065-migrate-function-application-to-checked-family.md) takes
   a family's parsed forms as its input. This requirement produces them from
   source for the `Value` family.
 - ADR-013 T-4's `Staged`, `StageFailure` and `LimitExceeded` are #213 S-5b's
-  (QSL-160, [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
+  ([FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
   T-5's `Locus` and O-12's `SourceRegion` are #213 S-4's. The
   criteria above observe a refusal's cause, limit kind, bound and byte span,
   whichever carrier holds them.
 - The unit's `SourceOwner` is the `authority` and `identity` of the unit's
   `RawSourceRef`, which the caller names and S0 mints
-  ([FR-001](FR-001-read-exact-source.md), ADR-013 §7 slice S-4b,
-  QSL-233).
+  ([FR-001](FR-001-read-exact-source.md), ADR-013 §7 slice S-4b).
 - Record, tuple and function keys over `SourceOwner` use QSL's
   `quire.structural-node/v1` preimage
   ([FR-092](FR-092-key-type-parameter-and-declared-nodes.md)). QSpec
@@ -803,7 +802,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   nodes only; the structural-node preimage is proposed to
   `ix://agent-ix/quire-specification` under ADR-013 QC-18 and QC-24.
 - The enum entries rely on `value::enumeration` computing preimage digests
-  and never minting a key (QSL-131 K4, ADR-011 FB-13), and on lowering
+  and never minting a key (ADR-011 FB-13), and on lowering
   building an admitted `EnumBinding`'s declaration and member nodes from
   its preimage (FR-092 rule 1, QSL-238's enum half).
 - The dimension and unit hand-off: the assembler ends at an admitted
@@ -814,7 +813,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 - STD-112 (QSpec catalog causes for unit-graph topology errors) and
   STD-113 (a quantity type reference in complete-V1 source).
 - Resolving a selection's definition reference against the library lock is
-  the M-4 lock evidence (QSL-6).
+  the M-4 lock evidence.
 - FR-091-AC-17's code needs the QSpec catalog to name an alias cycle under
   `definition-cycle`. Revision `1-draft.6` scopes that cause to definition
   dependencies and to FR-151 dispatch cycles, and has no row for a type
@@ -825,14 +824,14 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 
 ## Status
 
-The `Value` slice is implemented (QSL-141), with the `dimension` and `unit`
-declarations (QSL-275: FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
+The `Value` slice is implemented, with the `dimension` and `unit`
+declarations (FR-091-AC-31 to AC-34, AC-6's other half): S2 builds
 the dimension and unit forms as written, and the assembler normalizes
 terms, reduces exact numbers, mints keys with `nominal_key` and admits a
 `UnitGraph` (`PackageDeclarations::units`, `nominal_spans`;
 `assemble_with_limits` takes the decimal-scale bound). AC-35's errors are
 raised with their declarations; only their catalog code is open. It also has the `enum`, `ordered enum`
-and `predicate` declarations (QSL-275: FR-091-AC-25 to AC-30; the enum and
+and `predicate` declarations (FR-091-AC-25 to AC-30; the enum and
 predicate half of AC-6). `enum` and `ordered` build the enum form, and
 `predicate` builds the `forms` `FunctionDeclaration` of kind `Predicate`.
 The assembler admits each enum form as an `EnumBinding` over keys that
@@ -866,8 +865,8 @@ Remaining work:
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
   QSL-40, QSL-39 and QSL-36.
 - A domain package's native `Float32`/`Float64` model field is still refused
-  with the floating-type error (`Unmapped::Float`); QSL-280 admits floating
-  types as function parameter, result and body types only.
+  with the floating-type error (`Unmapped::Float`); floating types are admitted
+  as function parameter, result and body types only.
 
 ## Rulings
 
@@ -877,10 +876,10 @@ decided; the last column names the fact that reopens it.
 | Question | Ruling | Reason | Reopen when |
 | --- | --- | --- | --- |
 | FR-091-OQ-1, nested constructs | S2 builds the `Deref`, `Pre` and `AllInstances` variants that the `forms` core defines. The check stage refuses each with the owning family's catalogued cause, never `unsupported_construct`. `pre(e)` in a function body is `wrong_snapshot`/`forbidden-pre-read`, a `ProtocolClause` cause. | The catalog forbids a producer from choosing a broader listed code to discard a distinction it knows. FR-090 makes `forbidden-pre-read` a `ProtocolClause` cause. | ADR-012 §3's rule that a family owns its grammar productions is ruled to cover nested sub-expressions. |
-| FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13, QSL-131). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
-| FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence (QSL-6). The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
+| FR-091-OQ-1, declarations | `Value` owns the `enum`, `dimension`, `unit` and `predicate` declaration productions. The `enum`, `dimension` and `unit` entries need their key minting inside `check` (FB-13). | QSpec FR-322 classes enum, dimension and unit as `scalar_type` nodes. `predicate` is a function form with a `Boolean` result. | QSpec makes an enum a `union-decl` case rather than a `scalar_type`. |
+| FR-091-OQ-2 | S2 carries each unit's profile, import and model selections, and each form keeps its `using` alias. E3 resolves every alias to a declared profile selection, or refuses with `missing_declaration`/`missing-selection`. ADR-011 §2.2's E2 Version cell reads "Edition and the unit's profile, import and model selections carried". Resolution against the library lock is the M-4 lock evidence. The forms `FunctionDeclaration` has a `using` field. | ADR-011 OBS-007 makes S2 the only source of check-stage input from source. QSpec requires `using` to name a declared alias, with no default. | QSpec makes the compile request's input inventory, not each unit, the source of selections. S2 still carries each unit's selections for the driver to compare, and only the lock assembly moves. |
 | FR-091-OQ-3 | Record, tuple and function node keys are minted over `SourceOwner{authority, identity}`. ADR-013 O-04 and ADR-012 §2 state the owner reading of QC-18. `check` has no `DEFAULT_PACKAGE_IDENTITY`. | Neither the source grammar nor the v2 wire carries a package name, so replay could not rebuild a `name@version` key. QSpec's `proposals/checked-package-v2/README.md` publishes the owner reading for nominal enum, dimension and unit nodes; for `composite_type` and `function` nodes QSL keys by its proposed `quire.structural-node/v1` preimage, which carries the owner (FR-092). | QSpec adds a package name to source or to the v2 wire, or a declaration must keep its key when it moves between the units of one package. |
-| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (QSL-280, done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
+| FR-091-OQ-4 | `ValueType::Float` carries the rounding mode, in `quire-exact` (`FloatType`) and in QSL, and the evaluator applies it (done). The floating-type error (now only for a domain package model field) has code `unknown_required_feature`/`unsupported-feature`: no catalog code names a well-formed type the producer does not represent, and `unsupported_construct` is reserved for profile-prohibited forms. A bare `Float32` or `Float64` is strict `exact`, and `qsl-cst` accepts it. | QSpec FR-322 makes the rounding mode part of the type, and FR-148 requires the evaluator to use it. | QSpec FR-322 moves float rounding off `type_pinned_modes`. |
 | FR-091-OQ-5 | `collect` maps to `Query{Map}`. `reaches` is a `StateModel` construct with no variant; it and the other listed constructs are refused with `UnrepresentedConstruct`. A variant for one of them comes with its checker and evaluator arms. `div`/`rem` depend on the unit's div/rem selection (FR-091-OQ-2), float literals on a mode-carrying `ValueType::Float` (FR-091-OQ-4), and `e[i]` on QSpec semantics. | QSpec FR-145 makes `map` and `collect` one operation. QSL FR-008-AC-20's duplicate-output `collect` refusal belongs to the native lane, not to complete-V1; QSpec FR-008-AC-5 refuses `collect` only where `quire.state.queries/v1` is selected without `quire.value.complete/v1`. | M-6a must compile existing native programs that use the refused constructs. |
 | FR-091-OQ-7 | An alias cycle is `invalid_package`/`definition-cycle` at the check stage. | The check stage uses the same code for an FR-151 dispatch call-graph cycle (`qsl-semantics/src/check/refusal.rs`, `CheckCause::DefinitionCycle`), and the cause's payload is dependency edges. | QSpec declines the catalog extension and keeps `definition-cycle` to `DefinitionRef` closures. |
 | FR-091-OQ-11 | Source dimensions and units (team lead ruling, 2026-09-26). (a) Dimension terms are normalized: derived terms expand to base terms, repeated exponents add, zeros drop, terms sort by key, and a derived dimension that cancels to no terms refuses. (b) `rational`/`decimal` numbers are reduced, not refused; a zero denominator refuses as `undefined_expression`/`unproved-nonzero`. (c) A dimension or unit cycle is `invalid_package`/`definition-cycle` and an unresolved name `missing_declaration`/`missing-name`; the topology errors take the STD-112 causes (FR-091-OQ-12). (d) Units are admitted with no source use until STD-113 settles a quantity type reference. | (a) matches FR-142's normalized base-dimension map, and a derived term is how acceleration is written from speed. (b) the reduced rational is the value written (ADR-013 R-07). (c) follows FR-091-OQ-7 and the catalog's `missing-name`; no existing cause fits the topology errors. (d) the complete-V1 `type-ref` has no quantity form, and reading a unit's name as a type would invent syntax meaning. | QSpec publishes STD-112's causes or STD-113's quantity type reference. |

@@ -78,7 +78,7 @@ pub struct TemporalBinding {
     pub definition: u32,
     /// Exact configuration alternative required by that definition.
     pub clock: ClockConfiguration,
-    /// The declaration's clock name, typed (ADR-012 section 9; QSL-288):
+    /// The declaration's clock name, typed (ADR-012 section 9):
     /// the same name the inherited `v1` binding carries with a `clock:`
     /// prefix, without that prefix or any string convention. A reader takes
     /// this field directly; it never re-derives a clock name by parsing the

@@ -103,7 +103,7 @@ pub enum ProtocolAnchorCause {
         /// The entry's own span.
         span: Span,
     },
-    /// QSL-309: a protocol whose anchors, binders and attempt bindings all
+    /// A protocol whose anchors, binders and attempt bindings all
     /// check, but which holds a construct no checker reads yet (a node kind
     /// other than `sequence`, `attempt` and `finish`, a channel, a
     /// relationship, a requirement, a capture, an `activation on each`, a
@@ -120,7 +120,7 @@ pub enum ProtocolAnchorCause {
         /// protocol.
         span: Span,
     },
-    /// QSL-309: the protocol's `using` alias names no profile selection of
+    /// The protocol's `using` alias names no profile selection of
     /// the unit.
     MissingProfile {
         /// The alias as written.
@@ -128,7 +128,7 @@ pub enum ProtocolAnchorCause {
         /// The alias's own span.
         span: Span,
     },
-    /// QSL-309: a role's `on`/`each` object type names no object type of
+    /// A role's `on`/`each` object type names no object type of
     /// the package.
     MissingRoleType {
         /// The role's declared name.
@@ -138,14 +138,14 @@ pub enum ProtocolAnchorCause {
         /// The object type's own span.
         span: Span,
     },
-    /// QSL-309: an `attempt`'s `by` role names no role of the protocol.
+    /// An `attempt`'s `by` role names no role of the protocol.
     MissingRole {
         /// The role as written.
         role: String,
         /// The role reference's own span.
         span: Span,
     },
-    /// QSL-309: a binder's declared type does not resolve against the
+    /// A binder's declared type does not resolve against the
     /// package scope.
     BinderType {
         /// The binder's declared name.
@@ -301,7 +301,7 @@ pub enum Origin {
         /// The clause's index among the package's state clauses.
         index: usize,
     },
-    /// One protocol `attempt`'s own operation binding (FR-114, QSL-309), by
+    /// One protocol `attempt`'s own operation binding (FR-114), by
     /// the protocol's index among the package's protocols and the
     /// attempt's index among that protocol's own `attempts`, both in
     /// source order. An `operation_anchor`/`frame` node names no position
@@ -418,18 +418,18 @@ pub enum CheckingLimitKind {
     Nodes,
     /// Expression nesting depth.
     Depth,
-    /// A checked-family declaration's own preimage byte length (QSL-153,
-    /// `qsl_foundation::diagnostic::LimitKind::InputBytes`).
+    /// A checked-family declaration's own preimage byte length
+    /// (`qsl_foundation::diagnostic::LimitKind::InputBytes`).
     InputBytes,
     /// Cumulative checking work: the checked-family contract meter's
-    /// spend across every declaration checked against it (QSL-153,
-    /// `qsl_foundation::diagnostic::LimitKind::WorkBudget`), and lowering's
+    /// spend across every declaration checked against it
+    /// (`qsl_foundation::diagnostic::LimitKind::WorkBudget`), and lowering's
     /// `declaration.check` charges.
     WorkBudget,
 }
 
 impl CheckingLimitKind {
-    /// The T-4 [`LimitKind`] this crate-local kind names (QSL-236): the one
+    /// The T-4 [`LimitKind`] this crate-local kind names: the one
     /// bijection every construction site in this crate already assumed
     /// (`check::mod`'s own reverse mapping), now named once.
     pub(crate) const fn foundation_kind(self) -> LimitKind {
@@ -445,7 +445,7 @@ impl CheckingLimitKind {
 impl TryFrom<LimitKind> for CheckingLimitKind {
     type Error = LimitKind;
 
-    /// The reverse of `CheckingLimitKind::foundation_kind` (QSL-236, L6),
+    /// The reverse of `CheckingLimitKind::foundation_kind` (L6),
     /// for `check::mod`'s `StageFailure::Limit` arm. Matched exhaustively
     /// rather than with a `_` catch-all (PR #262 review, coordinator round
     /// 3, finding 4), so a new `LimitKind` forces a decision here.
@@ -534,7 +534,7 @@ impl WrongSnapshotCause {
     }
 }
 
-/// [`CheckCause::ResourceExhausted`]'s payload (QSL-236): the checking
+/// [`CheckCause::ResourceExhausted`]'s payload: the checking
 /// stage, the limit kind reached, its declared bound and the counter value
 /// the refused step would have reached.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -597,7 +597,7 @@ pub enum CheckCause {
         /// The failed obligation.
         obligation: MeasureObligation,
     },
-    /// `stage_limit_exceeded`/`<kind>-exceeded` (QSL-236): a declared
+    /// `stage_limit_exceeded`/`<kind>-exceeded`: a declared
     /// checking limit was reached at this node. Boxed: `actual`'s `u128`
     /// would otherwise make every `CheckCause` pay for this one variant's
     /// widest field (clippy `result_large_err` on `CheckRefusal`), the same
@@ -626,7 +626,7 @@ pub enum CheckCause {
     /// [`super::PackageDeclarations::check`], before any node is typed, so
     /// `facts`'s own call-graph walk can treat every table index it
     /// reads as already valid; reuses the already-catalogued `invalid-value`
-    /// tag rather than minting a new one. Boxed (QSL-236): this was already
+    /// tag rather than minting a new one. Boxed: this was already
     /// `CheckCause`'s widest variant at 56 bytes; adding `ResourceExhausted`'s
     /// `StageLimitCause` payload cost `CheckCause` its niche-packed
     /// discriminant, so `CheckRefusal` crossed clippy's `result_large_err`
@@ -980,7 +980,7 @@ mod tests {
     use super::{CheckCause, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause};
     use qsl_foundation::diagnostic::{Code, LimitKind};
 
-    /// QSL-236: every `CheckingLimitKind` reports `stage_limit_exceeded`
+    /// Every `CheckingLimitKind` reports `stage_limit_exceeded`
     /// with its own `<kind>-exceeded` cause, and carries the bound and
     /// actual counter it was built with.
     #[test]

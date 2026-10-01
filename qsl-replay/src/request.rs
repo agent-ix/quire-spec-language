@@ -272,7 +272,7 @@ const REQUEST_CONTRACT_VERSION: &str = "quire.native-runtime/v1";
 /// `package_contract_version` (ADR-013 O-22): the layer-4 `package` byte
 /// reader's own `quire.checked-package/v2` wire (QSpec FR-322). A request
 /// naming any other version refuses -- this reader never negotiates or
-/// infers a version from content (QSL-235).
+/// infers a version from content.
 const PACKAGE_CONTRACT_VERSION: &str = "quire.checked-package/v2";
 const KNOWN_CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
 const KNOWN_SEMANTIC_PROFILES: &[&str] = &["quire.profile.v1"];
@@ -286,7 +286,7 @@ pub enum ReplayRequestRefusal {
     #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.native-runtime/v1 contract version")]
     UnknownContractVersion(String),
     /// `package_contract_version` is not exactly `quire.checked-package/v2`
-    /// (ADR-013 O-22, QSL-235): the catalog's unsupported-wire refusal,
+    /// (ADR-013 O-22): the catalog's unsupported-wire refusal,
     /// naming the actual version the request carried.
     #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.checked-package/v2 package contract version")]
     UnknownPackageContractVersion(String),
@@ -485,7 +485,7 @@ impl ReplayRequest {
                 });
             }
         }
-        // ADR-013 O-22 (QSL-235): the package's own declared contract
+        // ADR-013 O-22: the package's own declared contract
         // version is checked here too, before the package reference or byte
         // provision is read, exactly like the request envelope's own
         // `contract_version` above.
@@ -573,7 +573,7 @@ impl ReplayRequest {
         }
 
         let (backend_identity, backend_domain, backend_hex) = wire.backend;
-        // ADR-013 C-27 (QSL-227): the backend digest is not just any FR-201
+        // ADR-013 C-27: the backend digest is not just any FR-201
         // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
         // the hex bytes are read. `ManifestDigest::from_wire` cannot
         // construct anything else.
@@ -999,7 +999,7 @@ mod tests {
         ));
     }
 
-    /// QSL-227 positive control: a real request whose `backend` digest is in
+    /// Positive control: a real request whose `backend` digest is in
     /// the required `quire.tool-manifest.jcs/v1` domain (as `wire` already
     /// builds it) decodes, and the resulting request's backend carries that
     /// domain.
@@ -1012,7 +1012,7 @@ mod tests {
         );
     }
 
-    /// QSL-227 (ADR-013 C-27): a `backend` digest in a recognized FR-201
+    /// ADR-013 C-27: a `backend` digest in a recognized FR-201
     /// domain other than `quire.tool-manifest.jcs/v1` refuses with the same
     /// typed cause the reader already uses for a byte-provision domain
     /// mismatch, pinned to the exact `WrongDomain` cause so a different
@@ -1110,7 +1110,7 @@ mod tests {
         ));
     }
 
-    /// FR-071-AC-8 (TC-445, QSL-235, ADR-013 O-22): a real, otherwise
+    /// FR-071-AC-8 (TC-445, ADR-013 O-22): a real, otherwise
     /// well-formed request wire mutated to an unknown
     /// `package_contract_version` refuses with the catalog's
     /// unsupported-wire refusal, naming the actual version supplied, before

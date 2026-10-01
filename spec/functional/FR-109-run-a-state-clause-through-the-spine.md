@@ -170,11 +170,10 @@ selection, admission or evaluation result is a report.
 - QSpec FR-301 (exit codes).
 - The CLI request form for a clause run is not specified here: FR-100's
   native-run/1 `1-draft` route refuses `selection`, `snapshots` and
-  `invocations` today, and the CLI form is a follow-up (the QSL-273 PR's
-  open questions).
+  `invocations` today, and the CLI form is a follow-up.
 
 ## Status
 
-Implemented under QSL-278 and QSL-295. The I3 extracted-source input is
+Implemented. The I3 extracted-source input is
 `ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
 feature; its provenance is `ClauseRunProvenance::extraction`.

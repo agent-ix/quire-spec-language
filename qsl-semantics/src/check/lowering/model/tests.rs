@@ -270,7 +270,7 @@ fn int(lower: i64, upper: i64) -> ValueType {
 }
 
 /// `M::Order`, `M::Invoice` and `M::Sub`, as the acme model declares them:
-/// `Order` declares `total: Int[0, 9]` and `Sub` inherits it (QSL-57).
+/// `Order` declares `total: Int[0, 9]` and `Sub` inherits it.
 fn types(acme: &Acme) -> TypeEnvironment {
     let total = vec![FieldDeclaration::new(
         "total",

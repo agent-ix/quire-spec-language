@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `qsl-eval`'s integration tests: the ones that exercise only ADR-011 §6.1
-//! layer 5 and the layers below it (QSL-183), moved from the root crate's
+//! layer 5 and the layers below it, moved from the root crate's
 //! `tests/it/`. One binary, one link step, the same shape as the root
 //! crate's `it` target.
 

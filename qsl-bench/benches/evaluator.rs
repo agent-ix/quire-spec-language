@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 evaluator benchmark: cost per call frame.
+//! Evaluator benchmark: cost per call frame.
 //!
 //! `evaluator/call_chain/<n>` times one `CheckedPackage::call` of `f0(5)`
 //! on a checked, linked `n`-function call chain, which pushes `n` call

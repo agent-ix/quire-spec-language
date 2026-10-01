@@ -21,7 +21,7 @@ this one's.
 Implemented: `model::population::mint_population_id` mints a `PopulationId`
 from the admission preimage (domain package selection, `population_key`,
 admission role), and `admit_binding`/`admit_invocation` attach it to every
-`PopulationBinding` they admit (QSL-131 Slice B). Backed by
+`PopulationBinding` they admit. Backed by
 `tc_291_population_id_is_deterministic_over_its_admission_preimage`
 (`qsl-semantics/tests/it/model_population.rs`).
 

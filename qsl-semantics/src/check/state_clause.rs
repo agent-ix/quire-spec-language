@@ -135,15 +135,15 @@ impl CheckedOperationFrame {
     }
 }
 
-/// One protocol `attempt` the FR-091 assembler admitted (FR-114 "Behavior",
-/// QSL-309): its operation resolved exactly as a `pre`/`post` clause's own
+/// One protocol `attempt` the FR-091 assembler admitted (FR-114
+/// "Behavior"): its operation resolved exactly as a `pre`/`post` clause's own
 /// (FR-104), by the same assembler pass that resolves
 /// [`StateClauseDeclaration`]s, so an attempt's operation and a clause's
 /// operation naming the same `M::T::op` always agree on identity. The
 /// `contracts` list stays on the attempt's own S2 form
 /// (`qsl_forms::AttemptForm::contracts`, unresolved): checking it needs the
 /// unit's other state clauses, which are checked at S3, not the assembler
-/// (`check::protocol_clause` binds it, QSL-309).
+/// (`check::protocol_clause` binds it).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttemptDeclaration {
     /// The index into the owning `ProtocolDeclarationForm::declarations` of
@@ -302,7 +302,7 @@ pub struct TypedStateClause {
     /// Whether slot 1 is `result` (FR-104 "Behavior": a postcondition of an
     /// operation with a result binds it there; nothing else does). Carried
     /// as its own typed field, not re-derived by name from `parameters` at
-    /// the S6a seam (QSL-278, FR-064's string-edge rule: dispatch on a
+    /// the S6a seam (FR-064's string-edge rule: dispatch on a
     /// parameter's name, not on a typed field the checker already knows,
     /// is exactly the kind of comparison a `#[string_edge]` reader marks,
     /// never an interior evaluator decision).
@@ -644,7 +644,7 @@ fn record(
 }
 
 /// `failure` as a refusal at `location`. `limit_cause` is `check`'s one
-/// mapping from a stage limit to a checking cause (QSL-236), reused here
+/// mapping from a stage limit to a checking cause, reused here
 /// rather than hand-built, so a state clause's or an attempt's
 /// resource-exhausted refusal carries the same kind and region a
 /// function's would.

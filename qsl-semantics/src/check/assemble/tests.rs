@@ -423,11 +423,11 @@ fn each_assembler_cause_has_its_catalog_code() {
     }
 }
 
-/// FR-113 (QSL-298): the assembler keeps a `protocol` declaration's form
+/// FR-113: the assembler keeps a `protocol` declaration's form
 /// rather than refusing it -- resolving its scoped anchors is
 /// `check::protocol_clause`'s job at S3, not the assembler's at E3, so a
 /// protocol with an anchor naming no declaration (`effect Applied of
-/// Missing`) still assembles. No `attempt` here: QSL-309 (FR-114) resolves
+/// Missing`) still assembles. No `attempt` here: FR-114 resolves
 /// an attempt's own operation at assembly time, so an attempt naming an
 /// unadmitted model (this fixture declares no `model M = ...;`) would
 /// refuse there instead -- `an_attempt_naming_an_unadmitted_model_refuses_
@@ -449,7 +449,7 @@ fn a_protocol_declaration_assembles_leaving_anchor_resolution_to_s3() {
     assert_eq!(package.protocols[0].name.name, "Flow");
 }
 
-/// QSL-309 (FR-114 "Behavior"): unlike FR-113's own anchor resolution
+/// Unlike FR-113's own anchor resolution
 /// (deferred to S3, above), an `attempt`'s `on M::T::op` operation is
 /// resolved by the FR-091 assembler itself, mirroring a `pre`/`post`
 /// clause's own resolution (FR-104) -- so a context naming no admitted
@@ -930,7 +930,7 @@ fn every_record_refusal_is_reported() {
     }
 }
 
-// QSL-252: `model_field` follows QSpec's own Presence row
+// `model_field` follows QSpec's own Presence row
 // (`model-complete.md`:158) and FR-322's "Model-owned members" step 4:
 // multiplicity alone gives the value type, and `presence` alone -- never a
 // lower bound of `0` -- gives `Option`.
@@ -1124,7 +1124,7 @@ fn unordered_and_not_unique_selects_bag() {
 }
 
 // ----------------------------------------------------------------------
-// QSL-275: enums and predicates (TC-481)
+// Enums and predicates (TC-481)
 // ----------------------------------------------------------------------
 
 /// FR-091 vectors N1 to N4, the SHA-256 of the RFC 8785 preimage bytes.
@@ -1469,7 +1469,7 @@ fn the_preimage_constructors_apply_the_reader_checks() {
 }
 
 // ----------------------------------------------------------------------
-// QSL-275: dimensions and units (TC-483)
+// Dimensions and units (TC-483)
 // ----------------------------------------------------------------------
 
 /// FR-091 vectors Q1 to Q10.

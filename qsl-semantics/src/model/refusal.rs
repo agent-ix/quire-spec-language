@@ -33,8 +33,7 @@ use quire_exact::UniverseId;
 /// declaration key must belong to the binding's ModelSelection") has only
 /// the caller-supplied population `DeclarationKey`, so it carries that.
 /// There is no effective-view site: an effective view carries its own
-/// domain package, so admission has no second package to compare it with
-/// (QSL-204).
+/// domain package, so admission has no second package to compare it with.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OfferedSelection {
     /// The population document's declared `modelIdentity`.
@@ -564,7 +563,7 @@ pub enum ModelRefusalCause {
     /// shared type for this; whether I1 intake is a stage is an open
     /// catalog question (STD-98), so this stays `resource_exhausted` rather
     /// than moving to `stage_limit_exceeded` with the other stage-limit
-    /// producers (QSL-236).
+    /// producers.
     IntakeLimitExceeded {
         /// The limit the document reached.
         limit: IntakeLimit,
@@ -988,8 +987,8 @@ impl std::fmt::Display for ModelRefusalCause {
 pub mod fixtures {
     //! One sample of every [`ModelRefusalCause`] variant, shared by this
     //! module's tests and the layer-5 evaluator's catalog tests
-    //! (`value::expression::causes`), which reach it across the QSL-181
-    //! crate boundary through `test-support`.
+    //! (`value::expression::causes`), which reach it across the
+    //! `qsl-semantics` crate boundary through `test-support`.
     use super::{ModelRefusalCause, OfferedSelection};
     use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
     use crate::model::key::DeclarationKey;

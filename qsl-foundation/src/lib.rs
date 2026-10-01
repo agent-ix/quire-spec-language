@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `qsl-foundation`: the ADR-011 §6.1 layer **F** foundation crate (QSL-177,
-//! ADR-011 §7.3 X-2).
+//! `qsl-foundation`: the ADR-011 §6.1 layer **F** foundation crate
+//! (ADR-011 §7.3 X-2).
 //!
 //! Module order, per ADR-011 §6.1's F row: [`absence`] < [`json_number`] <
 //! [`serde_object`] < [`digest`] < [`wire_format`] < [`source`] (with

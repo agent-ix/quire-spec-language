@@ -39,7 +39,7 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
      function not on the debt list;
    - a shipped mint in a function that is on the debt list, and the same
      module and function in another crate (a debt-list entry names its
-     crate, QSL-183);
+     crate);
    - a debt-list entry whose function no longer mints;
    - a `NodeKey::from_digest(` call inside a `#[cfg(test)]` item outside
      `check`;

@@ -135,7 +135,7 @@ payload.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Implemented by
+Specified, and implemented by
 `qsl_replay::replay_frame` over FR-098's request and a
 `WitnessEnvelope<FrameCounterexample>`, running FR-115's frame run through
 the same path as FR-109's `Frame` selection, verified by TC-515. The decode

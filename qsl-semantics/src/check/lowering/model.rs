@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-094 (QSL-156 A4b): model-owned nodes, the `Reference<T>` and
+//! FR-094: model-owned nodes, the `Reference<T>` and
 //! `Population<T>[N]` type nodes, clause-function owners and quantity type
 //! nodes.
 //!
@@ -66,7 +66,7 @@ impl AdmittedModel {
 
     /// `view`'s own domain package, admitted with `view`: the package the
     /// view was normalized from, so there is no second package whose
-    /// selection could differ (QSL-217).
+    /// selection could differ.
     pub fn from_view(view: &EffectiveView) -> Self {
         Self::assemble(view.domain_package(), view)
     }

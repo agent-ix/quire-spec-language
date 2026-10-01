@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `qsl-route`: the ADR-011 §6.1 layer **R** crate (QSL-184, ADR-011 §7.3
+//! `qsl-route`: the ADR-011 §6.1 layer **R** crate (ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
 //! §7). Among the workspace crates it depends only on `qsl-semantics`
 //! (layer 3) and `qsl-foundation` (layer F); its one other dependency is
@@ -147,7 +147,7 @@ impl Mode {
 }
 
 // `ManifestDigest` (ADR-013 O-19's `quire.tool-manifest.jcs/v1`-typed
-// backend digest) and its refusal live in `qsl_foundation::digest` (QSL-227):
+// backend digest) and its refusal live in `qsl_foundation::digest`:
 // `route` (layer R) and `replay` (layer 6) cannot depend on each other
 // (ADR-011 §6.1), but both depend on `qsl_foundation` (layer F), so the one
 // domain-first-checked type lives there and both readers share it instead of

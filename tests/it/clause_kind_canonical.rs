@@ -99,8 +99,7 @@ fn syntax_clause_kind_variant_list_is_unchanged() {
 #[trace("TC-257", "FR-088-AC-1")]
 #[test]
 fn syntax_clause_kind_qualified_spelling_gains_no_new_consumer_file() {
-    // Every workspace member's `src/`, read from `cargo metadata` (QSL-183
-    // review I6), so a crate extracted later is covered without an edit. A
+    // Every workspace member's `src/`, read from `cargo metadata`, so a crate extracted later is covered without an edit. A
     // member whose `src/` cannot be read fails the scan (review L6).
     let roots = crate::support::workspace::member_src_roots(&[]);
     let mut files_naming_it = Vec::new();

@@ -62,15 +62,15 @@ relationships:
 
 ## Status
 
-Proposed, 2026-09-29. Owning ticket: Linear QSL-19 (GitHub #220, ARCH-40),
+Proposed, 2026-09-29. Owning ticket: GitHub #220 (ARCH-40),
 epic QSL-34 (#205), Layer 4 architecture and conformance mapping. It owns no
 feature implementation. The implementation owners are QSL-68 (#120, V1-A04,
 model graph and binding), QSL-67 (#121, V1-A05, native execution and finite
-simulation) and QSL-57 (#164, the static type/model conformance boundary,
+simulation) and #164 (the static type/model conformance boundary,
 Done). Its `/spec-review all` is SR-786 to SR-793 in
 [`spec/reviews/state-model-mapping/`](../reviews/state-model-mapping/integrity.md).
 
-ADR-012 §15 (QSL-273) is the state-clause share of this mapping: families,
+ADR-012 §15 is the state-clause share of this mapping: families,
 stages, identity, wire, observations, outcomes, requirements and deletion
 order for `invariant`, `pre` and `post`. This record does not restate it. It
 adds the model graph, the static/runtime boundary, identity across all four
@@ -114,7 +114,7 @@ untrusted data, recorded as found.
   `check/check.rs:1659`). `allInstances` is typed from
   `ValueType::Population(Option<u64>)` (`check/check.rs:2164`). `lookup`
   checks `S` against `T` with `TypeEnvironment::conforms`
-  (`check/check.rs:2214`, `value/declaration.rs:966`). QSL-57's three items
+  (`check/check.rs:2214`, `value/declaration.rs:966`). #164's three items
   are delivered: an inherited field read through `deref`
   (`qsl-eval/tests/it/inherited_attributes.rs:152`), upcast reference
   equality (TC-198 L08, `qsl-eval/tests/it/equality_matrix.rs:1028`), and
@@ -155,7 +155,7 @@ untrusted data, recorded as found.
 - FR-120. `ModelSystem`, `model::state::StateModel`, `explore_model` and
   `sample_model` do not exist. The only `TransitionSystem` implementers are
   four test fixtures (`qsl-eval/tests/it/finite_simulation.rs:106`, `:148`,
-  `:189`, `:216`). Linear shows QSL-274 Done; it was the specification ticket.
+  `:189`, `:216`).
 - A `StateModel` family implementation. `FamilyKind::StateModel`
   (`qsl-semantics/src/family/mod.rs:93`) has no `FamilyContract`
   implementer, and `S6aFamilyKind` has exactly `Value` and `ProtocolClause`
@@ -353,7 +353,7 @@ does not apply.
 | ID | Decision |
 | --- | --- |
 | FP-1 | `StateModel` owns model declarations, population extent, redefinition, dispatch and the model expression forms (`deref`, `allInstances`, `lookup`, dispatched calls, `reaches` inside a clause), as ADR-012 §3 and §15.2 state. Its checked outputs are `check`-core types (ADR-012 §1): `NodeKind::Attribute`, `AllInstances`, `Lookup`, `Reaches` and the dispatch table. |
-| FP-2 | `StateModel`'s `check` hook takes one model expression form, the way `Value`'s function-application checker (`check::family::Application`, ADR-012 §14.1 QSL-148 row) takes one nested call: the enclosing family's typer calls it from a thin arm with the shared `CheckContext`. Today that work sits inside the `Value` typer (`check/check.rs:1659`, `:2164`, `:2214`). Moving it is G-2. |
+| FP-2 | `StateModel`'s `check` hook takes one model expression form, the way `Value`'s function-application checker (`check::family::Application`, ADR-012 §14.1 FR-065-AC-4 row) takes one nested call: the enclosing family's typer calls it from a thin arm with the shared `CheckContext`. Today that work sits inside the `Value` typer (`check/check.rs:1659`, `:2164`, `:2214`). Moving it is G-2. |
 | FP-3 | `StateModel` implements `FamilyContract` and not `ReferenceEvaluation`, and no `StateModel` variant is added to `S6aFamilyKind`. No S6a input is a `StateModel` item: a model form is always nested in a `Value` function body or a `ProtocolClause` body, and it evaluates inside that family's `evaluate` hook through `value::model_query`, raising `StateModel`-owned causes (ADR-013 O-16). This applies ADR-012 §2's #214 rule (a contract part nothing can construct is left out). ADR-012 §2, §3, §5.1 S1 and §13.5 are amended to say so. Reopen condition: an S6a entry whose selected item is a `StateModel` declaration. |
 | FP-4 | Simulation is a layer-5 consumer of checked packages (ADR-011 §6.1 `simulation`), not a family. `ModelSystem` is its only production `TransitionSystem`, and it evaluates through the `ProtocolClause` evaluator (FE-3), which is ADR-011 §8's "through a family evaluator". With it, lane D has converged, and `qsl_eval::simulation::Outcome` is a canonical S6a-layer outcome whose O-16 map is `Outcome::category()` (ADR-014 §7). |
 
@@ -371,7 +371,7 @@ where G-1 to G-10 say. None of them needs a further architectural decision.
 ### 9. Responsibilities returned to the implementation tickets
 
 Each gap has one owner, a bounded acceptance criterion and a test. None is
-completed by this record. QSL-57 (#164) is Done and its three items are
+completed by this record. #164 is Done and its three items are
 delivered, so static-conformance work goes to QSL-68 (#120). Migration: none
 (ADR-011 Decision 9); each replaced path is deleted in the PR that lands its
 successor.
@@ -457,7 +457,7 @@ function, not by the matrix status in `spec/tests.md`.
   G-4.
 - **Population identity** (FR-089 TC-291 to TC-297): ID-5 as it stands
   before G-3.
-- **Static conformance**: QSL-57's three items and TC-219/TC-220 (SC-1,
+- **Static conformance**: #164's three items and TC-219/TC-220 (SC-1,
   SC-2, the agreement rule).
 
 ## Consequences
@@ -493,8 +493,6 @@ function, not by the matrix status in `spec/tests.md`.
 1. IR admission of `state` nodes and a CG `operation-contract` arm (PI-5).
    Neither has a ticket; the team lead files them. Neither blocks G-1 to
    G-10.
-2. Linear has QSL-20 blocking QSL-19, but this record claims no proof
-   evidence (§6). The edge is the team lead's to relax.
 
 ## Alternatives Considered
 

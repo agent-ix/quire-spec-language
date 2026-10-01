@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-014 §4 and §11 (QSL-140): the wire-level bound types that cross from
+//! ADR-014 §4 and §11: the wire-level bound types that cross from
 //! layer 3 to the O-20 request writer, to CG and to replay.
 //!
 //! - [`DomainKey`] names one unbounded domain of a requested item: the

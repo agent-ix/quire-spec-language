@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-102 (QSL-273): the `ProtocolClause` family's S2 production —
+//! FR-102: the `ProtocolClause` family's S2 production —
 //! `invariant`/`pre`/`post` state clauses and the `self`, `result` and
 //! `reaches` expressions — run on real complete-V1 source through
 //! `qsl_cst::parse` and `build_unit` (TC-456, TC-457).
@@ -338,9 +338,9 @@ fn s2_builds_every_binder_position_in_source_order() {
     );
 }
 
-/// FR-114 "Inputs" (QSL-309): the attempt's own `on M::T::op` operation
-/// name and `contracts [...]` list are captured into `ProtocolDeclarationForm
-/// ::attempts`, alongside its `ProtocolNodeKind::Attempt` declaration, with
+/// FR-114 "Inputs": the attempt's own `on M::T::op` operation
+/// name and `contracts [...]` list are captured into `ProtocolDeclarationForm:
+/// :attempts`, alongside its `ProtocolNodeKind::Attempt` declaration, with
 /// no name resolved yet (the assembler's job, FR-114 "Behavior"). Naming
 /// `declaration` by index rather than only asserting "one attempt form
 /// exists" catches a mutation that pushes the wrong declaration's index.
@@ -372,7 +372,7 @@ fn s2_captures_an_attempts_operation_name_and_contracts_list() {
     assert_eq!(declaration.name.name, "Tried");
 }
 
-/// QSL-309 (SR-770 FND-001/FND-008): S2 records what S3 needs to decide
+/// SR-770 FND-001/FND-008: S2 records what S3 needs to decide
 /// whether it checks a protocol in full -- the `using` alias, each role,
 /// each binder's declared type, each body block (whether it is a bare
 /// Boolean literal) and every other construct by kind, in source order --
@@ -469,7 +469,7 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
     );
 }
 
-/// FR-114-AC-2 (QSL-309): `contracts []` still builds an `AttemptForm`, with
+/// FR-114-AC-2: `contracts []` still builds an `AttemptForm`, with
 /// an empty `contracts` list rather than none at all.
 #[trace("TC-513")]
 #[test]

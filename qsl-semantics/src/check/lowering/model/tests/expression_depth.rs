@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 step 10 (FR-093-AC-14, QSL-228, QSL-231) over the model forms: a
+//! TC-415 step 10 (FR-093-AC-14) over the model forms: a
 //! `lookup` chain, an attribute read and a dispatched call over one,
 //! `allInstances` under a nested sum, nested dispatch arguments, and a
 //! nested precondition a redefinition inherits through the dispatch bridge,

@@ -22,7 +22,7 @@ relationships:
 
 ## Description
 
-ADR-013 §7 slice **S-5b** (Linear QSL-160) has no owning FR before this one.
+ADR-013 §7 slice **S-5b** has no owning FR before this one.
 It carries T-4's `LimitExceeded` and its limit-kind enum, O-17's
 `RefusalRecord`, and O-22's QSL readers, each naming its position by T-5's
 `Locus`. This requirement states where each producer's locus comes from,
@@ -253,7 +253,7 @@ one exact ASCII string, spelled as the catalog spells it:
 
 Each of these ten `quire-exact` `Refusal` variants SHALL carry, in the
 variant, the target domain or IEEE width its `expected` field renders from,
-as `ForeignReference` carries its two universes (QSL-281). `IeeeNotExact`
+as `ForeignReference` carries its two universes. `IeeeNotExact`
 SHALL also carry the would-be flags, and `IeeeNanPayloadNotRepresentable`
 the source width its `actual` field renders from. `kernel_refusal_record`
 reads each field from the variant and never from a message or from the
@@ -368,7 +368,7 @@ name.
 - [FR-001](FR-001-read-exact-source.md) AC-5 to AC-7 (slice S-4b): the
   unit's `RawSourceRef`.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)
-  AC-1, AC-9 and AC-10 (QSL-141): the declaration and expression spans every
+  AC-1, AC-9 and AC-10: the declaration and expression spans every
   check-stage locus resolves through. AC-1, AC-3 to AC-6 need them.
 - [FR-062](FR-062-implement-checked-family-contract.md) AC-5 and AC-11: the
   per-declaration limits and the package node budget.
@@ -411,7 +411,7 @@ name.
 
 ## Status
 
-Partly implemented under QSL-160.
+Partly implemented.
 
 - `LimitKind` has the eight `1-draft.7` kinds, and `LimitExceeded` carries
   an optional `Locus` (AC-2).
@@ -434,7 +434,7 @@ Partly implemented under QSL-160.
   locus and catalog fields. The I2 reader builds one for its version
   refusal.
 
-Implemented under QSL-245:
+Implemented:
 
 - `CatalogCoded::catalog_fields` (returning `None` for a cause with no
   key-table row) and `CatalogCoded::refusal_record` exist.
@@ -459,11 +459,11 @@ Implemented under QSL-245:
   `ValueFunctionFamily::evaluate`/`Machine::run` (AC-15, TC-428), named
   `S6a`/`checked-program-invariant`.
 
-Implemented under QSL-282:
+Implemented:
 
 - `Code::exit_code` maps `runtime_invariant` to 30 (QSpec FR-301 tool failure; ADR-013 T-4 internal failure), and a report combining diagnostics ranks 30 first (AC-12).
 
-Implemented under QSL-281:
+Implemented:
 
 - The key table has a kernel `Refusal::ForeignReference` row: `required` the
   universe already in force, `supplied` the universe of the value tested
@@ -473,7 +473,7 @@ Implemented under QSL-281:
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.
 
-Implemented under QSL-245 against catalog revision `1-draft.8` (QSpec
+Implemented against catalog revision `1-draft.8` (QSpec
 STD-110, merged):
 
 - AC-8 is backed for all twelve kernel causes. Each of the ten value
@@ -505,7 +505,7 @@ Not built, independent of the catalog revision:
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build
   no record.
 
-Implemented under QSL-293:
+Implemented:
 
 - The embedded-document mapping of AC-1 (TC-426 step 3, C-21):
   `PackageDeclarations::embedding` and `CheckedGraph`'s equivalent carry the
@@ -519,4 +519,4 @@ Implemented under QSL-293:
   `embedding` yet either: `qsl-source`'s own document map
   (`qsl-source/src/lib.rs` ~304-344) does not reach the FR-091 assembler, so
   a real Markdown-embedded unit still resolves under its own body reference
-  until that wiring lands (QSL-294, filed as QSL-293's follow-up).
+  until that wiring lands.

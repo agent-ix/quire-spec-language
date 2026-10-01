@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-175 (#306): shared helpers for `tests/it/*`, reached as
+//! Shared helpers for `tests/it/*`, reached as
 //! `crate::support::<name>` from every module in the single `it` integration
 //! test binary. Formerly each test file re-included the file it needed via
 //! its own private `#[path = "support/<name>"] mod <local-name>;`,

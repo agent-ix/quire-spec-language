@@ -859,7 +859,7 @@ pub enum WitnessRefusal {
     #[error("missing_declaration: O-25 member {0:?} is absent")]
     MissingMember(&'static str),
     /// `package_contract_version` is present but not exactly
-    /// `quire.checked-package/v2` (ADR-013 O-22, QSL-235): the catalog's
+    /// `quire.checked-package/v2` (ADR-013 O-22): the catalog's
     /// unsupported-wire refusal, naming the actual version the packet
     /// carried.
     #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.checked-package/v2 package contract version")]
@@ -892,7 +892,7 @@ fn classify_digest_error(member: &'static str, err: InvalidDigestRecord) -> Witn
 /// The one package contract version [`WitnessEnvelope::reconstruct`] admits
 /// for `package_contract_version` (ADR-013 O-22): the layer-4 `package` byte
 /// reader's own `quire.checked-package/v2` wire (QSpec FR-322). A packet
-/// naming any other version refuses (QSL-235).
+/// naming any other version refuses.
 const PACKAGE_CONTRACT_VERSION: &str = "quire.checked-package/v2";
 
 impl<P: FamilyPayload> WitnessEnvelope<P> {
@@ -952,7 +952,7 @@ impl<P: FamilyPayload> WitnessEnvelope<P> {
         let (backend_identity, backend_domain, backend_hex) = packet
             .backend
             .ok_or(WitnessRefusal::MissingMember("backend"))?;
-        // ADR-013 C-27 (QSL-227): the backend digest is not just any FR-201
+        // ADR-013 C-27: the backend digest is not just any FR-201
         // domain -- it must be `quire.tool-manifest.jcs/v1`, checked before
         // the hex bytes are read. `ManifestDigest::from_wire` cannot
         // construct anything else.
@@ -1238,7 +1238,7 @@ mod envelope_tests {
         ));
     }
 
-    /// FR-070-AC-8 (TC-445, QSL-235, ADR-013 O-22): a real, otherwise
+    /// FR-070-AC-8 (TC-445, ADR-013 O-22): a real, otherwise
     /// well-formed packet mutated to an unknown `package_contract_version`
     /// refuses with the catalog's unsupported-wire refusal, naming the
     /// actual version supplied -- never silently admitted as any string the
@@ -1329,7 +1329,7 @@ mod envelope_tests {
         ));
     }
 
-    /// QSL-227 positive control: a real witness whose `backend` digest is in
+    /// Positive control: a real witness whose `backend` digest is in
     /// the required `quire.tool-manifest.jcs/v1` domain (as `full_packet`
     /// already builds it) reconstructs, and the resulting envelope's backend
     /// carries that domain.
@@ -1342,7 +1342,7 @@ mod envelope_tests {
         );
     }
 
-    /// FR-070-AC-6 (TC-181, digest-domain half; QSL-227, ADR-013 C-27): a
+    /// FR-070-AC-6 (TC-181, digest-domain half; ADR-013 C-27): a
     /// `backend` digest in a recognized FR-201 domain other than
     /// `quire.tool-manifest.jcs/v1` refuses with the same typed cause the
     /// reader already uses for a source-digest domain mismatch

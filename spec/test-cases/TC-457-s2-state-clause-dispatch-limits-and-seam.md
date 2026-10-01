@@ -43,4 +43,4 @@ moves from `invariant` to `temporal`.
 
 ## Status
 
-Planned (QSL-273).
+Planned.

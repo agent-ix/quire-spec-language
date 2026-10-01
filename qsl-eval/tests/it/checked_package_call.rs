@@ -107,7 +107,7 @@ fn declarations(functions: Vec<FunctionDeclaration>) -> PackageDeclarations {
     }
 }
 
-/// ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+/// ADR-013 T-1 (FR-087): the S4 link step, over an empty
 /// dependency closure -- every fixture here declares no import, so E4
 /// never has a real dependency to populate (see [`CheckedPackage`]'s own
 /// `dependencies` field doc).
@@ -281,11 +281,11 @@ fn call_to_an_unknown_function_is_refused() {
     ));
 }
 
-/// QSL-206 AC 1: `CheckedPackage::call` charges the top-level call's own
+/// `CheckedPackage::call` charges the top-level call's own
 /// `function.call` to the caller's meter. `one(a) = a` makes no other
 /// charge, so each call adds exactly one `function.call` to `meter`, and two
-/// calls on one meter accumulate. Before QSL-206 the charge went to a meter
-/// `call` created and dropped, so `meter` stayed empty.
+/// calls on one meter accumulate. A charge to a meter `call` created and
+/// dropped would leave `meter` empty.
 #[trace("TC-191", "FR-146-AC-5")]
 #[test]
 fn call_charges_the_top_level_function_call_to_the_callers_meter() {
@@ -321,7 +321,7 @@ fn call_charges_the_top_level_function_call_to_the_callers_meter() {
     );
 }
 
-/// QSL-206: the top-level charge carries over between calls on one meter.
+/// The top-level charge carries over between calls on one meter.
 /// With one work unit, the first call of `one(5)` spends it and completes;
 /// the second call's own `function.call` is denied before any node runs, so
 /// its `Incomplete` names `FunctionCall` and carries no location.

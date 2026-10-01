@@ -8,7 +8,7 @@ relationships:
 ---
 # TC-175: The move stays inside M-5: no early M-2 work, no edge widening
 
-**Retired in part by TC-261 (FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21).**
+**Retired in part by TC-261 (FR-074, ADR-011 §7.3 M-2, 2026-09-21).**
 This test case's Scope named two acceptance criteria: FR-068-AC-6 (`check`'s
 import bound, live) and FR-068-AC-7 (M-2's items stay in `model`, ahead of
 M-2 landing). FR-074 is M-2: it moved `model::checked_dispatch` and

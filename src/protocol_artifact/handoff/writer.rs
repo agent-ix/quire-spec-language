@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-042-AC-15 / FR-050-AC-8 (QSL-251): the complete compiled-protocol
+//! FR-042-AC-15 / FR-050-AC-8: the complete compiled-protocol
 //! handoff producer, callable in-process by a downstream crate.
 //!
 //! [`write_v1`] and [`write_v2`] compile the authored protocol-handoff recipe
@@ -2453,7 +2453,7 @@ fn mutation_fixtures(
         timestamp_unit,
     )?;
 
-    // QSL-288: the typed `clock_name` field must agree with the inherited
+    // The typed `clock_name` field must agree with the inherited
     // `v1` binding's legacy `clock:`-prefixed spelling. A reader takes the
     // typed field directly (`ClockNames::of_v2`), never re-parsing the
     // legacy name, so an offer whose two facts disagree is refused.

@@ -80,7 +80,7 @@ domain bound (NFR-001).
   release build's default thread stack. It does not bound composite
   nesting in type lowering: in a debug build, a chain of about 30 or more
   nested records can overflow a 2 MiB thread stack before this limit
-  applies (QSL-224).
+  applies.
 - **Preimage bytes, 16777216.** NFR-007's default package byte ceiling,
   sixteen times NFR-001's default source ceiling. A declaration's preimage
   is not linear in its source: each parameter or result typed with an enum
@@ -126,7 +126,7 @@ The enforced bound is on counts: at most 100000 leaves, and at most
 
 - Every Text-reachable cluster from 9 to 12 records refuses on the node
   ceiling in about 15 ms, with peak RSS about 18 MB.
-- The QSL-214 review's deep-and-wide shape is a 46-record chain into a
+- The review's deep-and-wide shape is a 46-record chain into a
   17-level binary tree, with 65536 leaves. With 1-, 64- and 256-byte field
   names it refuses on the work ceiling in at most 17 ms, with peak RSS at
   most 11.5 MB.

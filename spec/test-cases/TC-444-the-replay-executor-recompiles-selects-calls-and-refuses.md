@@ -24,7 +24,7 @@ The unit declares `small(x: Int[0, 9]): Boolean { x < 5 }`,
 `flag(b: Boolean): Boolean`, `id(x: Int[0, 9]): Int[0, 9]`,
 `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`,
 `maybe(t: Option<Boolean>): Boolean`, `f(x: Int[0, 9]): Integer { x + 1 }`
-and `p(x: Int[0, 9]): Boolean { f(x) > 3 }` (QSL-257: `p`'s body is a `call`
+and `p(x: Int[0, 9]): Boolean { f(x) > 3 }` (`p`'s body is a `call`
 expression node applying a distinct declared function, the one shape none
 of the other declared functions exercise -- the QSL-22 Layer 3 exemplar's
 own shape). Each request
@@ -117,11 +117,11 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
 ## Status
 
-Passed locally (QSL-5, QSL-257), `qsl-replay/src/execute/tests.rs`, for
-steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally (QSL-255
-part b): `tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
+Passed locally, `qsl-replay/src/execute/tests.rs`, for
+steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally:
+`tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one`
 and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
 
 Step 5's whitespace-only authority passes locally with `invalid_source_identity`,
 cause `blank-label` and `label` `authority` (catalog revision `1-draft.8`,
-FR-001, QSL-245).
+FR-001).

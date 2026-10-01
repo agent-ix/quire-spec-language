@@ -1243,13 +1243,13 @@ mod tests {
         assert_eq!(start, UNIT.rfind("true").unwrap());
     }
 
-    /// SR-761/SR-762 FND-001, extended by QSL-309: a protocol naming an
+    /// SR-761/SR-762 FND-001, extended: a protocol naming an
     /// undeclared model in its `attempt`'s own `on M::T::op` operation still
     /// refuses through the whole `compile` pipeline rather than silently
     /// succeeding with the protocol just missing from the emitted package --
-    /// the defect QSL-297's SR-753 FND-002 already fixed once, reintroduced
+    /// the defect SR-753 FND-002 already fixed once, reintroduced
     /// when `AssemblyCause::UnimplementedProtocol` was replaced. FR-114
-    /// (QSL-309) now resolves an attempt's own operation at assembly (E3),
+    /// now resolves an attempt's own operation at assembly (E3),
     /// mirroring a `pre`/`post` clause's own resolution, so this undeclared
     /// model now refuses there rather than only at the check stage's own
     /// FR-113 anchor pass -- an earlier, stronger catch of the same defect,

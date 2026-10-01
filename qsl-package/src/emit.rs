@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 T-8 (M-4, QSL-6), slice S1b: the S4 v2 emitter, [`CheckedPackage`]
+//! ADR-011 T-8 (M-4), slice S1b: the S4 v2 emitter, [`CheckedPackage`]
 //! -> [`EmittedPackage`] (the `quire.checked-package/v2` bytes with their own
 //! `package_id`, QSpec FR-322).
 //!
@@ -794,8 +794,8 @@ pub(crate) fn emit_package(
 /// As [`emit_package`], but lets a caller force a specific node's wire
 /// encoding to fail in place of writing it, in graph order
 /// ([`emit_package_inner`]'s `nodes` step): the injectable failure point
-/// FR-105-AC-6 requires to prove that node emission is all-or-nothing
-/// (QSL-313). No non-test caller exists; this compiles into no non-test
+/// FR-105-AC-6 requires to prove that node emission is all-or-nothing.
+/// No non-test caller exists; this compiles into no non-test
 /// build (`#[cfg(any(test, feature = "test-support"))]`), and
 /// `emit_package`/`emit_checked` never pass a `fault` that fires. Only this
 /// module's own tests call it directly; a dependent crate's tests go through
@@ -811,7 +811,7 @@ fn emit_package_with_fault(
 }
 
 /// As [`emit_checked`], but lets a caller force a specific node's wire
-/// encoding to fail, by [`CheckedNodeId`] (QSL-313, FR-105-AC-6). Public only
+/// encoding to fail, by [`CheckedNodeId`] (FR-105-AC-6). Public only
 /// under `test-support`, so it never reaches a shipped build: a dependent
 /// crate's own tests (e.g. qsl-replay's frame-node fixtures) enable the
 /// feature only from a `[dev-dependencies]` edge, which
@@ -830,8 +830,8 @@ pub fn emit_checked_with_fault(
 /// receives for the graph node `key` names ([`node_id`]'s own conversion),
 /// so a dependent crate's test can target one specific node (e.g. a
 /// `frame` node found via [`qsl_semantics::check::SemanticNode::key`])
-/// without reimplementing the conversion. Public only under `test-support`
-/// (QSL-313); see [`emit_checked_with_fault`].
+/// without reimplementing the conversion. Public only under `test-support`;
+/// see [`emit_checked_with_fault`].
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub fn checked_node_id_of(key: NodeKey) -> CheckedNodeId {
@@ -984,7 +984,7 @@ fn own_evidence(
 #[cfg(test)]
 mod tests;
 
-/// ADR-014 §4 (QSL-140, TC-440): QSL's extent classification agrees with
+/// ADR-014 §4 (TC-440): QSL's extent classification agrees with
 /// IR's `requires-bound` at the pinned IR revision.
 #[cfg(test)]
 mod extent_agreement;

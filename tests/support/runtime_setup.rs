@@ -4,8 +4,7 @@
 // File-relative #[path], not `crate::support::native_rule_model` -- this file
 // is also compiled directly into the library crate itself (`src/lib.rs`'s
 // `#[cfg(test)] #[path = "../tests/support/runtime_setup.rs"] mod
-// runtime_test_setup;`, QSL-175/#306 pre-dates and is out of this ticket's
-// scope), where no `crate::support` exists. A self-relative `mod` resolves
+// runtime_test_setup;`), where no `crate::support` exists. A self-relative `mod` resolves
 // identically in both hosts.
 #[path = "native_rule_model.rs"]
 pub(crate) mod native_rule_model;

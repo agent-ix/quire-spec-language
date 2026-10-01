@@ -43,44 +43,44 @@ operational validation remains outside this audit-only plan.
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-7 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-4 | ✅ Passed locally for FR-060-AC-1..AC-3; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-4 | ✅ Passed locally |
-| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 (retired) | ❌ Retired by QSL-335; `integration/current-head/` deleted |
-| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5, QSL-266), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`, QSL-283), AC-7 backed by TC-378, AC-9 (step 8, QSL-283), AC-12, and AC-13 (steps 10 and 11, QSL-266); AC-3 (all three clauses, QSL-246, for `src/check` and `src/family`) and AC-6 (QSL-246: first sentence, an API-surface scan and a rename test); AC-1 (step 1, QSL-283: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case) |
-| TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`, QSL-152), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build, QSL-244); FR-063's other criteria per its own Status section (QSL-149) |
-| TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally; QSL-145, QSL-268 |
-| TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | ✅ Passed locally for FR-065-AC-1, AC-2 (`a_function_identity_survives_emission_and_the_i2_read`, `qsl-package/src/emit/tests.rs`, a real `emit_checked`/I2 round trip) and AC-3 (`qsl-package/src/emit/tests.rs`, a real `emit_checked`/v2 round trip over the call's own occurrence); AC-8 backed on the A4b branch; QSL-156 remains the owner of the real `PreimageTerm`-conformant identity preimage behind AC-2's `Debug`-rendered stopgap |
-| TC-164 | A call receives the same verdict from a declaration body and from a clause expression | Integration | P1 | FR-065-AC-5 | ✅ Passed locally (QSL-148) |
-| TC-165 | The migration recipe names every required test, conversion, removal condition and remaining family | Manual | P1 | FR-066-AC-1..FR-066-AC-4 | ✅ Verified by inspection (QSL-151) |
+| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 (retired) | ❌ Retired; `integration/current-head/` deleted |
+| TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`), AC-7 backed by TC-378, AC-9 (step 8), AC-12, and AC-13 (steps 10 and 11); AC-3 (all three clauses, for `src/check` and `src/family`) and AC-6 (first sentence, an API-surface scan and a rename test); AC-1 (step 1: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case) |
+| TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build); FR-063's other criteria per its own Status section |
+| TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally |
+| TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | ✅ Passed locally for FR-065-AC-1, AC-2 (`a_function_identity_survives_emission_and_the_i2_read`, `qsl-package/src/emit/tests.rs`, a real `emit_checked`/I2 round trip) and AC-3 (`qsl-package/src/emit/tests.rs`, a real `emit_checked`/v2 round trip over the call's own occurrence); AC-8 backed (#384, the FR-092 and FR-093 keys) |
+| TC-164 | A call receives the same verdict from a declaration body and from a clause expression | Integration | P1 | FR-065-AC-5 | ✅ Passed locally |
+| TC-165 | The migration recipe names every required test, conversion, removal condition and remaining family | Manual | P1 | FR-066-AC-1..FR-066-AC-4 | ✅ Verified by inspection |
 | TC-166 | The replay executor selects a function by typed QualifiedName, never by string | Unit | P1 | FR-062-AC-10, FR-065-AC-6 | 🚧 Planned; #214 |
 | TC-167 | The S2 forms stage refuses on a recovering CST and mints no identity | Unit | P1 | FR-067-AC-1, FR-067-AC-2, FR-067-AC-3, FR-067-AC-7, FR-067-AC-8 | ✅ Passed locally |
 | TC-168 | SEAM-5 (LoweredSourceGraph) is deleted in the same change as the S2 forms core | Integration | P1 | FR-067-AC-5, FR-067-AC-6 | ✅ Passed locally |
 | TC-169 | value::expression::syntax moves to forms with no duplicate definition | Unit | P1 | FR-067-AC-9, FR-067-CON-3 | ✅ Passed locally |
 | TC-170 | check-stage modules move to check with no duplication | Unit | P1 | FR-068-AC-1, FR-068-CON-1, FR-068-CON-3 | ✅ Passed locally |
 | TC-171 | CheckedPackage/CheckedExpression/CheckedFunction constructors are private to check | Manual | P1 | FR-068-AC-2 | ✅ Inspected locally |
-| TC-172 | check's real import graph has no edge into value::expression or into checking, and value::expression re-exports no check item | Integration | P1 | FR-068-AC-3, FR-068-AC-10 (retired) | ✅ Passed locally; steps 1-5 retired by QSL-182, enforced by Cargo's `qsl-semantics` → root-crate refusal and TC-390 (`no_crate_below_layer_three_depends_on_the_check_core`); step 6 by `tests/it/layer_crate_reexports.rs` |
+| TC-172 | check's real import graph has no edge into value::expression or into checking, and value::expression re-exports no check item | Integration | P1 | FR-068-AC-3, FR-068-AC-10 (retired) | ✅ Passed locally; steps 1-5 retired, enforced by Cargo's `qsl-semantics` → root-crate refusal and TC-390 (`no_crate_below_layer_three_depends_on_the_check_core`); step 6 by `tests/it/layer_crate_reexports.rs` |
 | TC-173 | Refusal split: check causes in check, InputRefusal in value::expression | Unit | P1 | FR-068-AC-4, FR-068-AC-8 | ✅ Passed locally |
 | TC-174 | Checking and evaluation produce identical results before and after the split | Integration | P1 | FR-068-AC-5 | ✅ Passed locally |
 | TC-175 | The move stays inside M-5: no early M-2 work, no edge widening | Integration | P1 | FR-068-AC-6, FR-068-AC-7 | 🚧 FR-068-AC-6 steps amended to the module-level layer rule (2026-09-22), gate rewrite planned; FR-068-AC-7 steps retired by FR-074, superseded by TC-261 |
 | TC-176 | The interim `model` -> `check` edge stays bounded to two files and thirteen names, imported directly | Unit | P1 | FR-068-AC-9, FR-068-CON-5 | ❌ Retired by FR-074, superseded by TC-262 |
-| TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | ✅ Passed locally; QSL-46 (PR #305); AC-5's no-second-enum half by inspection |
-| TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | ✅ Passed locally; QSL-46 (PR #305) |
-| TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally; QSL-46 (PR #305) |
-| TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; QSL-46 (PR #305); inverted, QSL-226 item 5 (quire-specification FR-290-AC-10) |
-| TC-433 | A backend member keeps its identity and checks its digest domain first | Unit | P1 | FR-075-AC-6 | ✅ Passed locally; QSL-46 (PR #395), `qsl-route/src/lib.rs` |
-| TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | ✅ Passed locally; QSL-226 item 5 (quire-specification FR-290-AC-9, FR-290-AC-10) |
-| TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally; QSL-226 item 5 (quire-specification FR-290-AC-9) |
-| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ Passed locally (QSL-266) |
-| TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
-| TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
-| TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ Passed locally; QSL-46 (PR #305), `compile_fail` doctests traced on `FR077Doctests` (`src/linking/composed/requests.rs`) |
-| TC-200 | Requests are still recorded as data after negotiation removal | Unit | P1 | FR-077-AC-3 | ✅ Passed locally; QSL-46 (PR #305), `tests/it/composed_admission_stages.rs` |
-| TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | ✅ Passed locally; QSL-131, `cargo test --doc -p quire-spec-language` |
-| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | ✅ Passed locally; QSL-131, `tests/ieee_profiles.rs` + `tests/integer_division.rs` |
+| TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | ✅ Passed locally; AC-5's no-second-enum half by inspection |
+| TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | ✅ Passed locally |
+| TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally |
+| TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; inverted (quire-specification FR-290-AC-10) |
+| TC-433 | A backend member keeps its identity and checks its digest domain first | Unit | P1 | FR-075-AC-6 | ✅ Passed locally; `qsl-route/src/lib.rs` |
+| TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9, FR-290-AC-10) |
+| TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9) |
+| TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ Passed locally |
+| TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
+| TC-198 | Backend absence never settles as a refusal or a hold at the registry | Unit | P1 | FR-076-AC-3 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
+| TC-199 | requests::report takes no Backend parameter and has no capability/family disposition | Unit | P1 | FR-077-AC-1, FR-077-AC-2 | ✅ Passed locally; `compile_fail` doctests traced on `FR077Doctests` (`src/linking/composed/requests.rs`) |
+| TC-200 | Requests are still recorded as data after negotiation removal | Unit | P1 | FR-077-AC-3 | ✅ Passed locally; `tests/it/composed_admission_stages.rs` |
+| TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | ✅ Passed locally; `cargo test --doc -p quire-spec-language` |
+| TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | ✅ Passed locally; `tests/ieee_profiles.rs` + `tests/integer_division.rs` |
 | TC-203 | Existing Kani lowering corpus output is byte-identical before and after the registry swap | Integration | P1 | FR-079-AC-1 | 🚧 Planned; retires with `lowering` (ADR-011 §7.3 M-6a) |
-| TC-204 | The three legacy lowering target names resolve identically through the registry | Unit | P1 | FR-079-AC-2 | ✅ Passed locally for the current catalog; QSL-46 (PR #305); retires with `lowering` (ADR-011 §7.3 M-6a) |
-| TC-205 | cargo-deny denies inventory, linkme and ctor | Integration | P1 | FR-080-AC-2 | ✅ Passed locally with `cargo-deny` installed; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` (the test skips when `cargo-deny` is absent; `make cargo-deny-bans` does not) |
-| TC-206 | The registry module lint gate finds no static, OnceLock or thread_local | Integration | P1 | FR-080-AC-3 | ✅ Passed locally; QSL-46 (PR #305), `xtask/src/route_lint.rs` |
-| TC-207 | One unit test exists and passes per ADR-012 §5.2 row | Unit | P1 | FR-080-AC-4 | ✅ Passed locally; QSL-46 (PR #305), `qsl-route/tests/it/route_registry.rs` |
-| TC-208 | The S7 seam probe fails to compile the registry arm on an unhandled capability-kind variant | Integration | P1 | FR-080-AC-5 | 🚧 No tagged test; `make seam-probe` (part of `make ci`) confirms the S7 location `qsl-route/src/lib.rs::same_kind`; QSL-46 (PR #305) |
+| TC-204 | The three legacy lowering target names resolve identically through the registry | Unit | P1 | FR-079-AC-2 | ✅ Passed locally for the current catalog; retires with `lowering` (ADR-011 §7.3 M-6a) |
+| TC-205 | cargo-deny denies inventory, linkme and ctor | Integration | P1 | FR-080-AC-2 | ✅ Passed locally with `cargo-deny` installed; `qsl-route/tests/it/route_registry.rs` (the test skips when `cargo-deny` is absent; `make cargo-deny-bans` does not) |
+| TC-206 | The registry module lint gate finds no static, OnceLock or thread_local | Integration | P1 | FR-080-AC-3 | ✅ Passed locally; `xtask/src/route_lint.rs` |
+| TC-207 | One unit test exists and passes per ADR-012 §5.2 row | Unit | P1 | FR-080-AC-4 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
+| TC-208 | The S7 seam probe fails to compile the registry arm on an unhandled capability-kind variant | Integration | P1 | FR-080-AC-5 | 🚧 No tagged test; `make seam-probe` (part of `make ci`) confirms the S7 location `qsl-route/src/lib.rs::same_kind` |
 | TC-177 | The proof-result envelope maps every FR-331 outcome to its exact O-16 category | Property | P1 | FR-069-AC-1 | ✅ Passed locally |
 | TC-178 | The proof-result reader refuses an unknown version, vocabulary, or oversized envelope before consumption | Unit | P1 | FR-069-AC-2, FR-069-AC-4 | ✅ Passed locally |
 | TC-179 | A positive proof-result envelope round-trips its backend identity, tool pin and dispositions exactly | Unit | P1 | FR-069-AC-3 | ✅ Passed locally |
@@ -89,9 +89,9 @@ operational validation remains outside this audit-only plan.
 | TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | ✅ Passed locally |
 | TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
-| TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally (QSL-235) |
+| TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally (QSL-255) |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
 | TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | ✅ Passed locally |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
@@ -108,7 +108,7 @@ operational validation remains outside this audit-only plan.
 | TC-217 | The model binder is a pure function with no cross-run ambient state | Unit | P1 | FR-081-AC-5 | 🚧 Planned; #120 |
 | TC-218 | Redefinition variance checking reports every failing axis, not only the first | Unit | P1 | FR-082-AC-1 | ✅ Passed locally |
 | TC-219 | A missing redefinition target and a supertype cycle each refuse with a named cause | Unit | P1 | FR-082-AC-2, FR-082-AC-6 | ✅ Passed locally |
-| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6, FR-082-AC-7 | ✅ Passed locally; the type-environment ceilings are `stage_limit_exceeded` (ADR-014 B-3, QSL-160) |
+| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6, FR-082-AC-7 | ✅ Passed locally; the type-environment ceilings are `stage_limit_exceeded` (ADR-014 B-3) |
 | TC-221 | A narrowing field redefinition requires an established postcondition | Unit | P1 | FR-082-AC-4 | ✅ Passed locally |
 | TC-222 | Dispatch selects the descendant candidate independent of declaration order | Property | P1 | FR-083-AC-1 | ✅ Passed locally |
 | TC-223 | No-applicable-candidate and multiple-undominated-candidates are named separately | Unit | P1 | FR-083-AC-2 | ✅ Passed locally |
@@ -128,44 +128,44 @@ operational validation remains outside this audit-only plan.
 | TC-237 | A derivation conflict with no descendant redefiner exposes no effective member for either path | Unit | P1 | FR-081-AC-6 | ✅ Passed locally |
 | TC-238 | Replaying normalization over a permuted IR node order reproduces the same correspondence | Property | P1 | FR-081-AC-7 | ✅ Passed locally |
 | TC-239 | An arity mismatch refuses without checking per-parameter axes, while result and effect axes are still checked | Unit | P1 | FR-082-AC-5 | ✅ Passed locally |
-| TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Partly passed: step 3 (the unbounded population) passes locally (QSL-140); the other steps are planned under #120 |
+| TC-240 | allInstances and lookup return the FR-153 typed result shape and its bound/foreign/ineligible refusals | Unit | P1 | FR-084-AC-5 | 🚧 Partly passed: step 3 (the unbounded population) passes locally; the other steps are planned under #120 |
 | TC-241 | Kind mapping runs interfaces first, and a port whose interface type is not an Interface refuses wrong-export | Unit | P1 | FR-086-AC-5 | 🚧 Planned; #120 |
 | TC-242 | A selected object's reference key names the same most-specific type through every conforming query | Unit | P1 | FR-084-AC-6 | ✅ Passed locally |
-| TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Partial; QSL-158: steps 1-3 by `xtask::typestate_scan` (one layer-crate definition per type, in its owning file, every field private, no state generic); the constructor half by TC-244's allow-list. Step 4 (accessor-only reads) is not backed: a private field stays readable by its module's child modules |
-| TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | ✅ Passed locally; QSL-158: step 0 by `xtask::typestate_scan` over all five stage types and the lane-private namesakes, against named constructor sites (a value handed out through an out-parameter is not seen); rows 1-5 by `compile_fail` doctests, each paired with a block over the same names that must compile, since stable rustdoc does not check the error code; row 6 is row 2's |
+| TC-243 | Typestate constructors are private to their stage module | Manual | P1 | FR-087-AC-1 | 🚧 Partial: steps 1-3 by `xtask::typestate_scan` (one layer-crate definition per type, in its owning file, every field private, no state generic); the constructor half by TC-244's allow-list. Step 4 (accessor-only reads) is not backed: a private field stays readable by its module's child modules |
+| TC-244 | compile_fail matrix over every forbidden typestate construction (R-10, O-15) | Unit | P1 | FR-087-AC-2 | ✅ Passed locally: step 0 by `xtask::typestate_scan` over all five stage types and the lane-private namesakes, against named constructor sites (a value handed out through an out-parameter is not seen); rows 1-5 by `compile_fail` doctests, each paired with a block over the same names that must compile, since stable rustdoc does not check the error code; row 6 is row 2's |
 | TC-245 | PackageNodeKey has exactly one shape and declared equality | Unit | P1 | FR-087-AC-5 | ✅ Passed locally |
-| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | ✅ Passed locally; QSL-269: steps 1-3 by a workspace search and build (no automated scan), step 4 by TC-246's mapping table |
-| TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Partial; QSL-158: steps 1-3, 6 and 7 by `xtask::typestate_scan`; step 4 by field names only (no method or trait comparison); step 5 was checked once, by this PR's diff |
+| TC-246 | ResolvedSourcePackage is retired, with no dangling caller | Integration | P1 | FR-087-AC-7, FR-087-CON-4 | ✅ Passed locally: steps 1-3 by a workspace search and build (no automated scan), step 4 by TC-246's mapping table |
+| TC-247 | The canonical EmittedPackage/CheckedPackage stay distinct from their pre-existing namesakes | Integration | P1 | FR-087-AC-8, FR-087-AC-10 | 🚧 Partial: steps 1-3, 6 and 7 by `xtask::typestate_scan`; step 4 by field names only (no method or trait comparison); step 5 was checked once, by this PR's diff |
 | TC-248 | Frame identity's subject sets resolve to DeclarationKey through the model correspondence | Unit | P1 | FR-088-AC-2 | ✅ Passed locally; #300 |
 | TC-249 | Clause identity is the checked node id; the occurrence key disambiguates structurally identical clauses | Unit | P1 | FR-088-AC-3 | ✅ Passed locally; #300 |
 | TC-250 | Clause-kind wire-string totality in both directions, with mutation coverage | Property | P1 | FR-088-AC-4 | ✅ Passed locally; #300 |
 | TC-251 | Qualified-name resolution is confined to the check stage (R-06) | Integration | P1 | FR-088-AC-5 | ✅ Passed locally; #300 (the `QualifiedName` half only -- AC-5's "or a bare string" half is investigated, not enforced; see `tests/it/name_resolution_confinement.rs`'s own module doc) |
-| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300; step 6's from-source reorder is QSL-131 |
+| TC-252 | Checked type node to kernel ValueType is total, tested per type-node form including a sum | Unit | P1 | FR-088-AC-9, FR-088-AC-10 | ✅ Passed locally; #300 |
 | TC-253 | The verified binding admits VerifiedPackage only under all three conditions, refusing each failure independently | Integration | P1 | FR-087-AC-3, FR-087-AC-14 | ✅ Passed locally; #340 (step 3 and steps 5-7 at the `library` level, see FR-087 Status); step 9's QSpec-fixture read under `make conformance` |
 | TC-254 | library converts VerifiedPackage to ImportView without resolving any name | Unit | P1 | FR-087-AC-4 | ✅ Passed locally (steps 1-2: the view keyed by `WireNodeId`; steps 3-5: the `library` signature scan and `check::imports`, see FR-087 Status) |
-| TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Partial; QSL-158: steps 1, 2 and 5 by `xtask::typestate_scan`, which sees aliases, qualified self types, trait default methods, statics, consts and macro tokens; step 3 for a wire value named in the minting item itself only; step 4 is replaced by this test, since `arch-lint api-surface` is not part of `make ci`; step 6's transitive trace is not backed |
+| TC-255 | NodeKey is never minted from a WireNodeId; E4 and E9 resolve by lookup, never by construction | Integration | P1 | FR-087-AC-6 | 🚧 Partial: steps 1, 2 and 5 by `xtask::typestate_scan`, which sees aliases, qualified self types, trait default methods, statics, consts and macro tokens; step 3 for a wire value named in the minting item itself only; step 4 is replaced by this test, since `arch-lint api-surface` is not part of `make ci`; step 6's transitive trace is not backed |
 | TC-256 | check and package's dependency edge is one direction, and CheckedPackage wraps CheckedGraph | Integration | P1 | FR-087-AC-9 | ✅ Passed locally; step 3 by `tests/it/layer_crate_reexports.rs`, steps 1 and 6 by Cargo's `qsl-package` → `qsl-semantics` edge and TC-390; steps 2, 4 and 5 by inspection |
 | TC-257 | Exactly one closed checked clause-kind enum exists, and syntax::ClauseKind gains no variant | Unit | P1 | FR-088-AC-1 | ✅ Passed locally; #300 |
-| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Partial; QSL-158: steps 1 and 3 by `xtask::typestate_scan` over the layer crates' struct and variant fields and function return types, aliases seen through; step 4 by `value::expression::family`. Not backed: step 2 (a hand-written `PartialEq`/`Hash`, or a name beside a filler field), local maps, and the root crate's lane-private `QualifiedName` types (for example `src/runtime/validation.rs`'s `StateIndexes`) |
-| TC-259 | A package type's identity is its checked node id, scoped only by owner | Unit | P1 | FR-088-AC-7 | 🚧 Partial: step 4 (a declared type's node id is its declaration's key) passes locally, #300; steps 1 to 3 (same owner, different owners, builtin or anonymous type) and step 5 (recompilation) planned, QSL-156 |
-| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Partial; QSL-158: steps 1-2 by `xtask::typestate_scan`; step 3 for `model` fields whose name contains `type`, and the three value-type records; step 4 is not backed |
+| TC-258 | QualifiedName is used only as a declared preimage component, never as an identity | Manual | P1 | FR-088-AC-6 | 🚧 Partial: steps 1 and 3 by `xtask::typestate_scan` over the layer crates' struct and variant fields and function return types, aliases seen through; step 4 by `value::expression::family`. Not backed: step 2 (a hand-written `PartialEq`/`Hash`, or a name beside a filler field), local maps, and the root crate's lane-private `QualifiedName` types (for example `src/runtime/validation.rs`'s `StateIndexes`) |
+| TC-259 | A package type's identity is its checked node id, scoped only by owner | Unit | P1 | FR-088-AC-7 | 🚧 Partial: step 4 (a declared type's node id is its declaration's key) passes locally, #300; steps 1 to 3 (same owner, different owners, builtin or anonymous type) and step 5 (recompilation) planned |
+| TC-260 | ValueTypeRef is exactly the two-member union Native/Package | Manual | P1 | FR-088-AC-8 | 🚧 Partial: steps 1-2 by `xtask::typestate_scan`; step 3 for `model` fields whose name contains `type`, and the three value-type records; step 4 is not backed |
 | TC-261 | M-2's items are relocated to check and absent from model | Unit | P1 | FR-074-AC-1, FR-074-AC-2 | ✅ Passed locally |
 | TC-262 | The model -> check edge is fully closed after M-2 | Unit | P1 | FR-074-AC-3 | ✅ Passed locally |
-| TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial; QSL-158: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
+| TC-281 | value::library and value::package_identity relocate into the new top-level library module, per the R-10/T-3 shapes | Integration | P1 | FR-087-AC-11 | 🚧 Partial: steps 1, 4 and 5 by `xtask::typestate_scan`; step 3 by TC-227; step 6 by `arch-lint`'s T12-B allow-list, which names only `check`; step 2's byte-identity against the pre-relocation tree is not backed |
 | TC-282 | Every resolve_libraries refusal classifies to an I2 rule, a §4 condition, E3 resolution, or a named exception | Unit | P1 | FR-087-AC-12 | ✅ Passed locally |
-| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1, FR-089-AC-7 | ✅ Passed locally for the three-fact preimage (QSL-131); 🚧 Planned for ADR-016 ID-5's seven-member preimage (AC-1 as amended, AC-7), ADR-016 G-3 |
-| TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally; QSL-131 |
-| TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally; QSL-131 |
-| TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally; QSL-131 |
-| TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | ✅ Passed locally; QSL-131 |
-| TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | ✅ Passed locally; QSL-131 |
-| TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally; QSL-131 |
-| TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally (QSL-148) |
-| TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC (QSL-148) |
-| TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | ✅ Passed locally; QSL-160 (S-5b) |
-| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Steps 1 and 3 pass locally; steps 2 and 4 unreachable as written (QSL-255 part b); see TC-379 Status |
-| TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally (QSL-148, PR #303) |
-| TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | 🚧 Partly passed: the whole-package count passes locally (PR #303 review round 3, finding F1); the `Limit` outcome is pending S-5b (QSL-160) |
+| TC-291 | PopulationId is deterministic over its admission preimage and distinguishes distinct admissions | Unit | P1 | FR-089-AC-1, FR-089-AC-7 | ✅ Passed locally for the three-fact preimage; 🚧 Planned for ADR-016 ID-5's seven-member preimage (AC-1 as amended, AC-7), ADR-016 G-3 |
+| TC-292 | Kernel Value::Population carries PopulationId only, with no model dependency | Manual | P1 | FR-089-AC-2 | ✅ Inspected locally |
+| TC-293 | The evaluator resolves a Value::Population identity through the recorded correspondence, not a carried payload | Unit | P1 | FR-089-AC-3 | ✅ Passed locally |
+| TC-294 | An unresolved PopulationId refuses with a typed cause, not a panic or Undefined | Unit | P1 | FR-089-AC-4 | ✅ Passed locally |
+| TC-295 | The QSL layer admits a Value::Population identity under ValueType::Population by its resolved binding's declared maximum | Unit | P1 | FR-089-AC-5 | ✅ Passed locally |
+| TC-296 | A standalone Direct admission and an invocation's Post binding over the same domain package and population_key mint distinct PopulationIds | Unit | P1 | FR-089-AC-1 | ✅ Passed locally |
+| TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally |
+| TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally |
+| TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC |
+| TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | ✅ Passed locally (S-5b) |
+| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Steps 1 and 3 pass locally; steps 2 and 4 unreachable as written; see TC-379 Status |
+| TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally |
+| TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally: the whole-package count refuses as `ResourceExhausted` with the node-count stage-limit cause, code `stage_limit_exceeded` |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
 | TC-384 | S6a invariant breaks are InternalFaults, not panics or refusals | Unit | P1 | FR-090-AC-3 | ✅ Passed locally |
 | TC-385 | S6a's input type admits no Relation, and FamilyOutcome has exactly two arms | Unit | P1 | FR-090-AC-4 | ✅ Passed locally |
@@ -184,86 +184,86 @@ operational validation remains outside this audit-only plan.
 | TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | ✅ Passed locally: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 3's `_`-arm scan passes locally (`identity_free_forms.rs`); step 1's family-module edges pass locally (`identity_free_forms.rs`) |
 | TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | ✅ Passed locally (`qsl-eval/tests/it/source_call.rs`, `qsl-semantics/src/check/assemble/tests.rs`) |
 | TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | ✅ Passed locally (`qsl-semantics/src/check/assemble/tests.rs`) |
-| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Partial: passes locally (`qsl-semantics/src/check/assemble/tests.rs`); source owner from FR-001's `RawSourceRef` (QSL-233) |
+| TC-401 | The assembler builds record and tuple declarations with check-minted keys and resolves names to them | Unit | P1 | FR-091-AC-18 | 🚧 Partial: passes locally (`qsl-semantics/src/check/assemble/tests.rs`); source owner from FR-001's `RawSourceRef` |
 | TC-402 | The assembler lives in the check core and its non-test code has no edge to qsl-cst | Unit | P1 | FR-091-AC-20 | ✅ Passed locally (`qsl-semantics/src/check/assemble/tests.rs`) |
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
-| TC-405 | The assembler admits floating types and refuses unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | ✅ Passed locally; QSL-141, QSL-280 |
-| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Partial: S2 and assembler causes pass locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`); `stage_limit_exceeded` code needs QSL-160; the enum, dimension and unit causes pass locally; the topology cause STD-112 |
+| TC-405 | The assembler admits floating types and refuses unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | ✅ Passed locally |
+| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Partial: S2 and assembler causes pass locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`); `stage_limit_exceeded` code needs S-5b; the enum, dimension and unit causes pass locally; the topology cause STD-112 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
-| TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; QSL-131 V3; steps 2-6 via retagged tests, step 7 new |
-| TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned; QSL-131 |
+| TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; steps 2-6 via retagged tests, step 7 new |
+| TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
-| TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | ✅ Passed locally; QSL-141 |
-| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; AC-7's collision half, AC-11 and AC-12 unbacked there |
-| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | 🚧 Implemented on the QSL-156 A4b branch, pending merge |
-| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Implemented on the QSL-156 A4b branch, pending merge, except steps 8 and 9 (QSL-212); step 6 needs the QSpec lock accessor |
-| TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-16, FR-093-AC-17 | 🚧 Partial; FR-093-AC-13 passes locally under `make conformance`, `float64.add` `mode` included (QSL-6, QSL-280); FR-093-AC-16 passes locally (QSL-255); FR-093-AC-17 passes locally (QSL-260) |
-| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | 🚧 Implemented on the QSL-156 A4b branch, pending merge |
-| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; step 2's C3 key unasserted there |
-| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | 🚧 Implemented on the QSL-156 A4b branch, pending merge; QSpec unit vectors under `make conformance` |
+| TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | ✅ Passed locally |
+| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | ✅ Passed locally (#384) |
+| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | ✅ Passed locally (#384) |
+| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Passed locally (#384) except step 6's first half, which needs the QSpec lock accessor |
+| TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-16, FR-093-AC-17 | 🚧 Partial; FR-093-AC-13 passes locally under `make conformance`, `float64.add` `mode` included; FR-093-AC-16 passes locally; FR-093-AC-17 passes locally |
+| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | ✅ Passed locally (#384) |
+| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | ✅ Passed locally (#384) |
+| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | ✅ Passed locally (#384); QSpec unit vectors under `make conformance` |
 | TC-420 | Occurrence keys and source regions are lexical values, and every checked node has an occurrence | Unit | P1 | FR-095-AC-1, FR-095-AC-2 | ✅ Passed locally |
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
-| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | 🚧 Partly passed: ceilings bind and are recorded locally (QSL-214); the `stage_limit_exceeded` outcome is pending S-5b (QSL-160) |
-| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9, FR-001-AC-10, FR-001-AC-11, FR-001-AC-12 | ✅ Passed locally; QSL-233 (S-4b) steps 1 to 5, QSL-245 step 2's `blank-label` cause, `label` field, U+3000 and U+200B cases, step 6 (FR-001-AC-11, label order and `empty-path`) and step 7 (FR-001-AC-12, the edit and binding host causes as `invalid_source_map` with no region) |
-| TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | ✅ Passed locally; QSL-233 (S-4b), QSL-245 step 3's `blank-label` cause and `label` field |
-| TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | ✅ Passed locally (`qsl-semantics/src/check/region.rs`: steps 2 and 4 QSL-239, step 3 QSL-293) |
-| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-16, FR-096-AC-17 | ✅ Passed locally; QSL-160 (S-5b); AC-16 (lowering's own work charge located at a node) and AC-17 (Typer's package-wide node count reached from a second declaration) added under QSL-245 |
-| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15 | ✅ Passing locally (QSL-245): steps 1 to 6; all twelve kernel refusals with a record carry their target domain or width and `Refusal::code()`/`cause()` return the key table's code and cause (`ForeignReference` included); a kernel `CheckedInvariant` builds no record and `Machine::run` returns it as `Err(InternalFault)` |
-| TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | ✅ Passed locally; QSL-160 (S-5b), on IR-281 |
-| TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial; QSL-233 (S-4b): steps 2 to 5 pass locally; step 1 passes only with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it; QSL-245 step 2's `blank-label` cause and `label` field |
-| TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally; QSL-233 (S-4b), QSL-245 step 2's `blank-label` cause and `label` field |
-| TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally (QSL-160 part 1) |
-| TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally (QSL-216, QSL-218, QSL-222) |
-| TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally (QSL-140) |
-| TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally (QSL-140) |
-| TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally (QSL-140) |
-| TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally (QSL-140) |
-| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed (QSL-140): every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
-| TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally (QSL-140); step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
-| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Implemented; QSL-272 |
-| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Implemented; QSL-272 |
-| TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ Implemented; QSL-272 |
-| TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally (QSL-249) |
-| TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally (QSL-252) |
-| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally (QSL-5) for steps 1 to 6; step 6 (a predicate whose body calls another declared function, the QSL-22 Layer 3 exemplar's shape) added by QSL-257; step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) passes locally (QSL-255); step 5's whitespace-only authority passes with `invalid_source_identity`, cause `blank-label` and `label` `authority` (QSL-245) |
-| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended, QSL-262) |
-| TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-4, FR-110-AC-5, FR-110-AC-6 | ✅ Implemented; QSL-284 |
-| TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ Passed locally; QSL-269: `library::bundle_tests`, keeping the QSpec FR-131/FR-339 tags |
-| TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | ✅ Passed locally (QSL-271) |
-| TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ Passed locally (QSL-271) |
-| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | ✅ Passed locally (QSL-271) |
-| TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 Planned; QSL-273 |
-| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 Planned; QSL-273 |
-| TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 Planned; QSL-273 |
-| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8 | ✅ Passed locally (QSL-277, QSL-304); AC-1's `Int[0, 1000]` half is verified over the shared `ConfigVersion` fixture itself |
-| TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4 | ✅ Passed locally (QSL-277) |
-| TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ Passed locally (QSL-277) |
-| TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ Covered; QSL-279, QSL-312 |
-| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ Passed locally; QSL-273; step 1 covered; steps 2 to 3 covered (QSL-279, QSL-312); step 4 covered (QSL-313) |
-| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8 | 🚧 Planned; QSL-273 |
-| TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned; QSL-273 |
-| TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally; QSL-310, QSL-311 |
-| TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned; QSL-273 |
-| TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned; QSL-273 |
-| TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | ✅ Passed locally; QSL-273 |
-| TC-470 | runtime_invariant exits 30 and outranks other diagnostics | Unit | P1 | FR-096-AC-12 | ✅ Implemented; QSL-282 |
-| TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned; QSL-274 |
-| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-13 | 🚧 Planned; QSL-274, ADR-016 G-4 |
-| TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned; QSL-274 |
-| TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | 🚧 Planned; QSL-274 |
+| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | ✅ Passed locally: ceilings bind and are recorded, and each refusal asserts `stage_limit_exceeded` with its limit's cause |
+| TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9, FR-001-AC-10, FR-001-AC-11, FR-001-AC-12 | ✅ Passed locally (S-4b): steps 1 to 5, step 2's `blank-label` cause, `label` field, U+3000 and U+200B cases, step 6 (FR-001-AC-11, label order and `empty-path`) and step 7 (FR-001-AC-12, the edit and binding host causes as `invalid_source_map` with no region) |
+| TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | ✅ Passed locally (S-4b), step 3's `blank-label` cause and `label` field |
+| TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | ✅ Passed locally (`qsl-semantics/src/check/region.rs`: steps 2 to 4) |
+| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-16, FR-096-AC-17 | ✅ Passed locally (S-5b); AC-16 (lowering's own work charge located at a node) and AC-17 (Typer's package-wide node count reached from a second declaration) added |
+| TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15 | ✅ Passing locally: steps 1 to 6; all twelve kernel refusals with a record carry their target domain or width and `Refusal::code()`/`cause()` return the key table's code and cause (`ForeignReference` included); a kernel `CheckedInvariant` builds no record and `Machine::run` returns it as `Err(InternalFault)` |
+| TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | ✅ Passed locally (S-5b), on IR-281 |
+| TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial (S-4b): steps 2 to 5 pass locally; step 1 passes only with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it; step 2's `blank-label` cause and `label` field |
+| TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally (S-4b), step 2's `blank-label` cause and `label` field |
+| TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally |
+| TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally |
+| TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally |
+| TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally |
+| TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally |
+| TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally |
+| TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed: every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
+| TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally; step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
+| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Implemented |
+| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Implemented |
+| TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ Implemented |
+| TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally |
+| TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally |
+| TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally for steps 1 to 6, step 6 being a predicate whose body calls another declared function (the QSL-22 Layer 3 exemplar's shape); step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) passes locally; step 5's whitespace-only authority passes with `invalid_source_identity`, cause `blank-label` and `label` `authority` |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended) |
+| TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-4, FR-110-AC-5, FR-110-AC-6 | ✅ Implemented |
+| TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ Passed locally: `library::bundle_tests`, keeping the QSpec FR-131/FR-339 tags |
+| TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | ✅ Passed locally |
+| TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ Passed locally |
+| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | ✅ Passed locally |
+| TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 Planned |
+| TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 Planned |
+| TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 Planned |
+| TC-459 | S3 checks the ConfigVersion state clauses and types self, result and pre | Unit | P1 | FR-104-AC-1, FR-104-AC-2, FR-104-AC-7, FR-104-AC-8 | ✅ Passed locally; AC-1's `Int[0, 1000]` half is verified over the shared `ConfigVersion` fixture itself |
+| TC-460 | S3 refuses ill-formed state clauses with their catalog codes | Unit | P1 | FR-104-AC-3, FR-104-AC-4 | ✅ Passed locally |
+| TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ Passed locally |
+| TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ Covered |
+| TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ Passed locally; step 1 covered; steps 2 to 3 covered; step 4 covered |
+| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8 | 🚧 Planned |
+| TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned |
+| TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally |
+| TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned |
+| TC-468 | The spine clause run entry reports typed dispositions with provenance and exit codes | Integration | P1 | FR-109-AC-1, FR-109-AC-2, FR-109-AC-3, FR-109-AC-4, FR-109-AC-5 | 🚧 Planned |
+| TC-469 | The ConfigVersion spine corpus gives native-equal typed dispositions | Integration | P1 | FR-108-AC-1, FR-108-AC-2, FR-108-AC-3, FR-108-AC-4, FR-108-AC-5, FR-108-AC-6 | ✅ Passed locally |
+| TC-470 | runtime_invariant exits 30 and outranks other diagnostics | Unit | P1 | FR-096-AC-12 | ✅ Implemented |
+| TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned |
+| TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-13 | 🚧 Planned; ADR-016 G-4 |
+| TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned |
+| TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | 🚧 Planned |
 | TC-480 | S2 builds enum and predicate forms | Unit | P1 | FR-091-AC-25, FR-091-AC-26 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-481 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | ✅ Passed locally (`qsl-semantics` `check::assemble` tests, `qsl-eval/tests/it/source_call.rs`) |
 | TC-482 | S2 builds dimension and unit forms | Unit | P1 | FR-091-AC-31 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-483 | The assembler admits source dimensions and units into a UnitGraph and refuses each source error | Unit | P1 | FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35 | 🚧 Partial: AC-32 to AC-34 and AC-35's errors pass locally (`qsl-semantics` `check::assemble` tests); AC-35's catalog code awaits STD-112 |
-| TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | ✅ Passing locally (QSL-245): `Undefined::SumOutOfDomain` at the `sum` node for a running total and at the summand node for a seed, no charge after the failed decision |
-| TC-510 | S2 builds protocol scoped anchor forms with their scope and segments | Unit | P1 | FR-112-AC-1, FR-112-AC-2, FR-112-AC-3 | 🚧 Planned; QSL-296 |
-| TC-511 | S3 resolves scoped anchors through nested scopes and refuses a missing anchor or member | Unit | P1 | FR-113-AC-1, FR-113-AC-2, FR-113-AC-3 | 🚧 Planned; QSL-296 |
-| TC-512 | S3 refuses ambiguous, shadowing, wrong-kind and wrong-channel names, in builder order | Unit | P1 | FR-113-AC-4, FR-113-AC-5, FR-113-AC-6, FR-113-AC-7 | 🚧 Planned; QSL-296 |
-| TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; QSL-296; emitted-node assertions pending STD-111 |
-| TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5, FR-115-AC-6 | ✅ Passed locally; QSL-300 |
+| TC-500 | A sum seed or running total outside its domain is a located undefined outcome | Unit | P1 | FR-096-AC-14 | ✅ Passing locally: `Undefined::SumOutOfDomain` at the `sum` node for a running total and at the summand node for a seed, no charge after the failed decision |
+| TC-510 | S2 builds protocol scoped anchor forms with their scope and segments | Unit | P1 | FR-112-AC-1, FR-112-AC-2, FR-112-AC-3 | 🚧 Planned |
+| TC-511 | S3 resolves scoped anchors through nested scopes and refuses a missing anchor or member | Unit | P1 | FR-113-AC-1, FR-113-AC-2, FR-113-AC-3 | 🚧 Planned |
+| TC-512 | S3 refuses ambiguous, shadowing, wrong-kind and wrong-channel names, in builder order | Unit | P1 | FR-113-AC-4, FR-113-AC-5, FR-113-AC-6, FR-113-AC-7 | 🚧 Planned |
+| TC-513 | S3 binds a protocol attempt to its operation's one anchor and frame | Integration | P1 | FR-114-AC-1, FR-114-AC-2, FR-114-AC-3, FR-114-AC-4 | 🚧 Planned; emitted-node assertions pending STD-111 |
+| TC-514 | The spine run entry checks an invocation against its operation frame | Integration | P1 | FR-115-AC-1, FR-115-AC-2, FR-115-AC-3, FR-115-AC-4, FR-115-AC-5, FR-115-AC-6 | ✅ Passed locally |
 | TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5, FR-116-AC-6 | ✅ Passed locally |
 | TC-516 | call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2, FR-121-AC-3, FR-121-AC-4, FR-121-AC-5, FR-121-AC-6, FR-121-AC-7, FR-121-AC-8, FR-121-AC-9, FR-121-AC-10, FR-121-AC-11, FR-121-AC-12, FR-121-AC-13 | ✅ Passed locally |
 | TC-517 | The replay facade replays a state-clause counterexample and keeps its identities | Integration | P1 | FR-122-AC-1, FR-122-AC-2, FR-122-AC-3, FR-122-AC-4, FR-122-AC-5, FR-122-AC-6 | 🚧 Planned |
@@ -271,17 +271,17 @@ operational validation remains outside this audit-only plan.
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
 [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md)
-carries ADR-013 O-07, O-12, T-5 and C-14 under QSL-159. TC-420 to TC-422
+carries ADR-013 O-07, O-12, T-5 and C-14. TC-420 to TC-422
 pass locally; TC-421's QSpec-fixture step runs under `make conformance`.
-O-12's `LocatedSpan` replacement and C-21 are ADR-013 §7 slice S-4b
-(QSL-233): [FR-001](functional/FR-001-read-exact-source.md) defines the
+O-12's `LocatedSpan` replacement and C-21 are ADR-013 §7 slice S-4b:
+[FR-001](functional/FR-001-read-exact-source.md) defines the
 caller-named `RawSourceRef` (TC-424) and
 [FR-010](functional/FR-010-report-native-outcomes.md) the `parse` and
 `format` grammar that supplies it (TC-425). Check-stage regions, stage
-limits, refusal records and the I2 reader's loci are slice S-5b (QSL-160,
-[FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
+limits, refusal records and the I2 reader's loci are slice S-5b
+([FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
 TC-426 to TC-429). TC-426 (a check location's region, including the C-21
-embedded-document mapping, QSL-293), TC-427, TC-429, TC-378, TC-428
+embedded-document mapping), TC-427, TC-429, TC-378, TC-428
 (refusal record fields at S6a, including the ten kernel value refusals
 catalog revision `1-draft.8` codes) and TC-500 (a `sum` running total
 outside its domain is undefined) pass locally.
@@ -291,18 +291,16 @@ outside its domain is undefined) pass locally.
 [FR-087](../spec/functional/FR-087-typestate-and-cross-package-node-key.md)
 (S-3a: T-1, T-3, O-15) and
 [FR-088](../spec/functional/FR-088-clause-name-and-type-identity.md)
-(S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified under
-QSL-158, splitting ADR-013 §7 slice S-3, which no FR owned before this
+(S-3b: O-08, O-09 clause id, O-10, O-11, O-14, C-26) are specified by
+splitting ADR-013 §7 slice S-3, which no FR owned before this
 split. TC-243–260, TC-281, TC-282 and TC-379 above are the corresponding
 test cases. TC-379 is `🚧 Planned`, as FR-087's Status
-records: it passes steps 1 and 3 (QSL-255 part b). TC-246 passed under QSL-269.
+records: it passes steps 1 and 3. TC-246 passed.
 TC-243, TC-247, TC-255, TC-258, TC-260 and TC-281 are
-partial, each row naming the steps its test backs; TC-259 is partial
-(QSL-156); and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The
+partial, each row naming the steps its test backs; TC-259 is partial; and TC-251 covers FR-088-AC-5's `QualifiedName` half only. The
 rest pass locally. FR-087 also resolves, by owner
 ruling on QSL-158 (2026-09-21), the `CheckedPackage`-placement half of
-QSL-167 (an
-ADR-011 §4-versus-§6.1 defect): `CheckedPackage` is canonically layer-4
+an ADR-011 §4-versus-§6.1 defect: `CheckedPackage` is canonically layer-4
 `package` per ADR-013 T-1, `check`'s S3 output becomes `CheckedGraph`
 instead of the already-landed `check::CheckedPackage` (FR-068/M-5), and
 FR-087-AC-9/TC-256 assert the resulting `package` → `check` (never the
@@ -341,8 +339,7 @@ identities. FR-088-AC-11 (TC-409) covers an enum value's FR-141
 `UnitId`; it passes locally, and `make conformance` runs its QSpec-vector
 step. FR-084-AC-7 (TC-410) covers one object universe per connected
 supertype component and the authored object component of a reference key.
-TC-409 passes locally as of QSL-131 V3; TC-410 is still `🚧 Planned` under
-QSL-131. OQ-A's layer-2 edge is covered by TC-398's allow-list.
+TC-409 passes locally; TC-410 is still `🚧 Planned`. OQ-A's layer-2 edge is covered by TC-398's allow-list.
 
 ## Typed replay envelopes (FR-069–073) coverage
 
@@ -492,8 +489,8 @@ the selected scope; they are not full compiler or semantic qualification.
 ## Kernel population identity (FR-089) coverage
 
 [FR-089](../spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md)
-carries ADR-013 O-13's Population row (QC-21), authored under QSL-172 to
-close an AD-016 kernel-row gap. QSL-131 Slice B (kernel side) landed the
+carries ADR-013 O-13's Population row (QC-21), authored to
+close an AD-016 kernel-row gap. The kernel side landed the
 opaque `PopulationId` type and `Value::Population(PopulationId)` in
 `quire-exact`. Kernel `ValueType::admits` returns `false` for every
 `(ValueType::Population(_), Value::Population(_))` pair, `plan_pairs` refuses
@@ -510,7 +507,7 @@ the payload type is `PopulationId`, and the crate-DAG direction (ADR-011
 §6.1) makes a `PopulationBinding` import structurally impossible, not merely
 absent from a scan.
 
-QSL-131 Slice B's other half (`model` minting and the evaluator's
+The other half (`model` minting and the evaluator's
 resolution step) landed: `model::population::mint_population_id` mints a
 `PopulationId` at admission time (`admit_binding`/`admit_invocation`,
 `qsl-semantics/src/model/population.rs`), and `ObjectEnvironment` records the
@@ -534,7 +531,7 @@ mismatched declared maximum refuses whether or not the checked body actually
 consumes the parameter (PR #326 review finding F1), for both `allInstances`
 and `lookup` consumers. `Machine::resolve_population`'s own defence-in-depth
 check remains, unreachable through either public entry point for a checked
-program (see that method's own doc), but since FR-090-AC-10 (QSL-174) it is
+program (see that method's own doc), but since FR-090-AC-10 it is
 no longer a kernel refusal: meeting either condition there is an S6a
 invariant break, `Err(InternalFault)`, not `Refusal::UnresolvedPopulation`/
 `Refusal::PopulationMaximumMismatch`, which are deleted.
@@ -542,8 +539,8 @@ invariant break, `Err(InternalFault)`, not `Refusal::UnresolvedPopulation`/
 FR-089's own admission preimage (domain package selection, `population_key`,
 admission role) does not distinguish two bindings that differ only in
 document content or declared maximum, admitted under the same
-package/key/role within one evaluation -- an open spec question (Linear
-QSL-131) this Slice does not resolve.
+package/key/role within one evaluation -- an open spec question this Slice
+does not resolve.
 `ObjectEnvironment::with_population` is the interim guard: it refuses to
 record a second, unequal binding under an id already bound, rather than
 silently letting the later admission overwrite the earlier one.
@@ -573,7 +570,7 @@ carries ADR-011 §2.1 to §2.3 (E2, E3, E9), §3 and §6.1, ADR-012 §1, §3 and
 §4.3, and ADR-013 O-11, O-17, R-07, T-4 and T-5 for the `Value` family's S2
 production and the forms-to-`PackageDeclarations` assembler in the layer-3
 `check` core. TC-392 to TC-400, TC-402 and TC-403 pass locally
-(QSL-141; with TC-405, TC-412 and TC-398's three steps). TC-401 and TC-406 are `🚧 Partial`: their remaining clauses
+(with TC-405, TC-412 and TC-398's three steps). TC-401 and TC-406 are `🚧 Partial`: their remaining clauses
 are noted on their rows. TC-398 and TC-402 use the resolved-import and definition-scan
 approach of TC-256, TC-170 and TC-390. TC-399 is the end-to-end case from
 source to `CheckedPackage::call`. TC-480 and TC-481 back the `enum`,
@@ -582,7 +579,7 @@ FR-092-AC-13), and TC-482 and TC-483 the `dimension` and `unit`
 declarations and their `UnitGraph` (FR-091-AC-31 to AC-35). TC-480 to
 TC-482 pass locally; TC-483 passes except AC-35's catalog code, which awaits STD-112. TC-404 backs FR-003-AC-7
 and AC-8, the `format` input retargeted to the `qsl-cst` CST (ADR-011 §7.3
-M-6a), under QSL-8.
+M-6a).
 
 ## Value node keys and expression lowering (FR-092, FR-093) coverage
 
@@ -590,19 +587,17 @@ M-6a), under QSL-8.
 ADR-013 O-04 and OQ-G: QSL's `quire.structural-node/v1` preimage for type,
 value, parameter and declared function nodes, with golden vectors T1 to T12,
 D1 to D5, P1 to P4, L1 to L3 and F1 to F3, and it keys recursion groups by a
-content order (QSL-211), with vectors L5, L6, E11 to E13 and G1 to G15.
+content order, with vectors L5, L6, E11 to E13 and G1 to G15.
 TC-413 and TC-414 back its twelve ACs.
 [FR-093](functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 carries the lowering of checked expressions to FR-322 application nodes, with
-vectors E1 to E3 and the ownership split: QSL-156 A4b lowers and keys in
-`check`, and QSL-6 S1b serializes. Its text-leaf walk ends a recursive
-composite in a recursion leaf (QSL-212), with vectors T13, T14, G16 to G21,
+vectors E1 to E3 and the ownership split: `check` lowers and keys, and the
+S4 emitter serializes. Its text-leaf walk ends a recursive
+composite in a recursion leaf, with vectors T13, T14, G16 to G21,
 S4, S5, P10 to P16 and E14 to E17. TC-415 backs AC-1 to AC-6, AC-8, AC-10,
-AC-11, AC-14 and AC-15, and TC-416 AC-7, AC-9, AC-12 (each node's `dependencies`,
-QSL-225) and AC-13 (the comparison with QSpec's v2 positive fixtures,
-QSL-225). TC-413 to TC-415 are implemented on the
-QSL-156 A4b branch, pending merge, except TC-415 steps 8 and 9; TC-416 is
-planned for QSL-6 S1b. No FR-093 AC backs the `Pre` row; the
+AC-11, AC-14 and AC-15, and TC-416 AC-7, AC-9, AC-12 (each node's `dependencies`)
+and AC-13 (the comparison with QSpec's v2 positive fixtures). TC-413 to TC-415 are implemented (#384) and pass locally;
+TC-416 is partial (see its row). No FR-093 AC backs the `Pre` row; the
 `ProtocolClause` postcondition lowering backs it. Remaining work: #218.
 [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
 keys the nodes those two leave to the model layer: model declaration nodes
@@ -610,8 +605,8 @@ and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
 `Population<T>[N]` type nodes, and quantity type nodes for declared and
 compound units, with vectors M1 to M5, R1 to R5, S1 to S3, PO1 to PO3, P5
 to P8, L4, E4 to E10, C1 to C6 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
-AC-5 and TC-419 AC-6 and AC-7. All three are implemented on the QSL-156 A4b
-branch, pending merge.
+AC-5 and TC-419 AC-6 and AC-7. All three are implemented (#384) and
+pass locally.
 
 ## Finite simulation (FR-101) coverage
 
@@ -621,7 +616,7 @@ typed state key and its `quire.simulation.state-key/v1` digest, the pinned
 `quire.simulation.sampler/v1`, replay, the `cancelled`/`caller-cancelled`
 cause, limit exhaustion and the pre-exploration `requires-bound`. TC-453
 backs AC-1, AC-2 and AC-9, TC-454 AC-3 to AC-5 and AC-10, and TC-455 AC-6 to AC-8, all
-implemented under QSL-272. The simulation tests in
+implemented. The simulation tests in
 `qsl-eval/tests/it/finite_simulation.rs` trace to these ids, not to QSpec's
 TC-210 and FR-181-AC-* ids; this repository's TC-210 is a different case.
 TC-439 keeps FR-097-AC-5's `Outcome::category()` map.
@@ -635,17 +630,16 @@ relation over QSpec FR-013 frames (through FR-114's frame binding and
 FR-115's frame check), invariant-violating successors recorded rather than
 pruned (FR-181-AC-4), and effects and results as typed trace data with
 ambient-state reads refused at S3 (FR-181-AC-6). TC-471 backs AC-1 to AC-4,
-TC-472 AC-5 to AC-9 and TC-473 AC-10 to AC-12, all `🚧 Planned` under
-QSL-274. Their bound scalar fixtures use FR-056's scalar reader, on main
-(QSL-289).
+TC-472 AC-5 to AC-9 and TC-473 AC-10 to AC-12, all `🚧 Planned`. Their bound scalar fixtures use FR-056's scalar reader,
+on main.
 TC-474 backs FR-101-AC-12 to AC-14 and FR-097-AC-5's `Stopped` arm, the
 engine's findings and stopped expansions. The tests build the S4 package in
 memory.
 
 ## State clauses on the spine (FR-102 to FR-109) coverage
 
-FR-102 to FR-109 carry ADR-012 §15, the state share of the #220 (QSL-19)
-mapping, specified under QSL-273 (A05-3): S2 state clause forms (FR-102),
+FR-102 to FR-109 carry ADR-012 §15, the state share of the #220
+mapping: S2 state clause forms (FR-102),
 operations and frames at I1 and E3 (FR-103), the S3 `ProtocolClause` check
 and its requirement records (FR-104), S4 `state` node emission (FR-105), the
 snapshot and invocation input (FR-106), S6a clause evaluation (FR-107), the
@@ -656,13 +650,13 @@ expected dispositions stays.
 
 ## Protocol frames and scoped anchors (FR-112 to FR-116) coverage
 
-FR-112 to FR-116 carry ADR-012 §12.2 under QSL-296 (QSL-21a): S2 scoped
+FR-112 to FR-116 carry ADR-012 §12.2: S2 scoped
 anchor forms (FR-112), S3 anchor resolution through nested scopes with the
 missing, ambiguous and shadowing refusals (FR-113), a protocol attempt bound
 to its operation's one FR-105 frame node (FR-114), the `Frame` run selection
 and its `frame_violation` (FR-115), and frame counterexample replay (FR-116).
-TC-510 to TC-515 back every AC. TC-514 has passed locally (QSL-300) and
-TC-515 (QSL-301); the rest are `🚧 Planned`. TC-513's emitted-node
+TC-510 to TC-515 back every AC. TC-514 and TC-515 have passed
+locally; the rest are `🚧 Planned`. TC-513's emitted-node
 assertions wait on STD-111, as TC-462's do. FR-116's decode of a Kani frame
 witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49; TC-515 drives a hand-built envelope.

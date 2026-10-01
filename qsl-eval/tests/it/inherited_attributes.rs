@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-57 item 2: `deref(r).f` through an inherited or redefined field, run
+//! `deref(r).f` through an inherited or redefined field, run
 //! through the real checker and evaluator (`CheckedPackage::check_expression`
 //! and `CheckedPackage::evaluate`).
 //!

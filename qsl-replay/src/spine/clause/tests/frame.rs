@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-514 (FR-115, QSL-300): `run_clause`'s `Frame` selection over FR-108's
+//! TC-514 (FR-115): `run_clause`'s `Frame` selection over FR-108's
 //! ConfigVersion unit, package and invocation fixtures. `attemptUpdate`'s
 //! frame modifies exactly `versionNumber` and creates and deletes nothing.
 

@@ -10,7 +10,7 @@
 //! and [`Admitted`] place an exact rational at a decimal target's scale for a
 //! caller that meters the placement itself: QSL `value::quantity`'s
 //! unit conversion into a `Decimal` or integer target, which charges
-//! `unit.target-domain` rather than any `decimal.*` point (QSL-131 V4). Like
+//! `unit.target-domain` rather than any `decimal.*` point. Like
 //! [`sbits`] and [`sdigits`], they are unmetered exact arithmetic, so the
 //! caller charges or bounds the sizes before [`Placement::materialize`]. Each
 //! state carries the target it was placed for, and only an [`Admitted`]
@@ -1215,7 +1215,7 @@ mod tests {
         Integer::from(value)
     }
 
-    /// FR-142-AC-3 (QSL-131 V4 review M1): a placement is bound to its own
+    /// FR-142-AC-3: a placement is bound to its own
     /// target. `7/4` places exactly at `Decimal[0, 100; 0, 2]` (1.75 is
     /// outside the declared `[0, 1.00]`), and the placement cannot be
     /// retained unless admitted, so the out-of-domain value is refused

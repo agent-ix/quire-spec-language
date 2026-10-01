@@ -255,7 +255,7 @@ pub fn completed_with_five(evaluation: &Evaluation) -> bool {
 }
 
 /// A linear chain `M::T0 <- M::T1 <- ... <- M::T{depth-1}` of model object
-/// types, each declaring one integer field of its own (QSL-57's admission
+/// types, each declaring one integer field of its own (the admission
 /// cost shape: type `k` flattens to `k + 1` slots).
 pub fn object_chain(depth: usize) -> Vec<ObjectTypeDeclaration> {
     let key = |level: usize| {

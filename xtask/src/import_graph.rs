@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-139 (FR-068) TC-176/TC-262: resolve `model`'s real `use` edges
+//! FR-068 TC-176/TC-262: resolve `model`'s real `use` edges
 //! against `value`'s own re-export table, instead of trusting a textual scan
 //! of `use` lines alone.
 //!
 //! TC-172's scan of `check` for edges into `value::expression` or
-//! `checking` is retired (QSL-182): both modules are in the root crate,
+//! `checking` is retired: both modules are in the root crate,
 //! which depends on `qsl-semantics`, so Cargo refuses either edge from
 //! `check` and the scan could never fire.
 //!
@@ -282,7 +282,7 @@ fn strip_leading_crate(path: &[String]) -> &[String] {
 // TC-172 (FR-068-AC-3) used to scan `check` here for an edge into
 // `value::expression` or `checking`. Both are in the root crate, and Cargo
 // gates crate direction: the root crate depends on `qsl-semantics`, so
-// neither edge compiles from `check` (QSL-182 retired the scan).
+// neither edge compiles from `check` (the scan is retired).
 
 /// One resolved `model` -> `check` edge (TC-262/FR-074-AC-3, inverted from
 /// TC-176/FR-068-AC-9, which this retires): which file it was found in, the
@@ -365,7 +365,7 @@ fn value_submodule_reexports(workspace_root: &Path) -> Result<BTreeMap<String, S
 
 /// The source tree these scans read: the `qsl-semantics` crate's `src/`,
 /// where `check`, `model`, `family`, `library` and the layer-3 `value`
-/// submodules live since QSL-181 (ADR-011 §7.3 X-6). Every scanned path, and
+/// submodules live since ADR-011 §7.3 X-6. Every scanned path, and
 /// every module FR-068-AC-6 names, is relative to this crate.
 const LAYER3_SRC: &str = "qsl-semantics/src";
 
@@ -997,7 +997,7 @@ mod tests {
     /// relies on: a flat `use crate::value::DispatchTable;` inside `model`
     /// would resolve into `check` if `value::mod.rs` re-exported it from
     /// there (the fixture below supplies that re-export; the real
-    /// `value::mod.rs` has none since QSL-181 X-6a), and is recorded indirect (`direct: false`). Retagged
+    /// `value::mod.rs` has none since X-6a), and is recorded indirect (`direct: false`). Retagged
     /// from TC-176/FR-068-AC-9 (retired by FR-074): the assertion this test
     /// backs -- that such a form must be absent from `model` -- moved to
     /// TC-262's empty-set requirement, but the resolution logic itself is
@@ -1037,7 +1037,7 @@ mod tests {
     }
 
     /// Against the real, current tree: `model_check_edges` is empty -- M-2
-    /// (this ticket, QSL-7) moved `model::checked_dispatch` and
+    /// moved `model::checked_dispatch` and
     /// `model::conformance::check_field_refinement_obligation`, the only
     /// code that made `model` depend on `check`, into `check` itself, so
     /// the interim edge FR-068-AC-9/FR-068-CON-5 bounded to two files and
@@ -1087,7 +1087,7 @@ mod tests {
 
     /// `value_reexports` against the real tree: layer-3 `value`
     /// (`qsl-semantics/src/value/mod.rs`) re-exports nothing from `check`
-    /// (QSL-181 X-6a: `semantic_value` sits before `check` in ADR-011 §6.1's
+    /// (X-6a: `semantic_value` sits before `check` in ADR-011 §6.1's
     /// order). Its own submodule re-exports are non-empty, so the resolver
     /// is reading the real file. This fails if a `check` re-export comes
     /// back.
@@ -1202,7 +1202,7 @@ mod tests {
         assert!(!edges[0].is_violation());
     }
 
-    /// TC-175 (QSL-181): the scanned crate is `qsl-semantics`, so a path
+    /// TC-175: the scanned crate is `qsl-semantics`, so a path
     /// rooted at its own name is classified exactly as a `crate::` one would
     /// be, not skipped as an external crate: `qsl_semantics::value::stop`
     /// is unlisted, a flat `qsl_semantics::value::UnitTable` names no

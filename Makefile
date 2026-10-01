@@ -1,12 +1,12 @@
 .PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
-# QSL-169: fail when a tracked file is executable/binary content or exceeds
+# Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
 # the ceiling's derivation.
 check-no-committed-binaries:
 	tools/check-no-committed-binaries.sh
 
-# QSL-168: fail when an FR or TC artifact under spec/ has no row in the
+# Fail when an FR or TC artifact under spec/ has no row in the
 # master index (spec/spec.md, spec/**/tests.md). Offline, no build required.
 check-index-completeness:
 	tools/check-index-completeness.sh
@@ -19,20 +19,20 @@ check-index-completeness:
 seam-probe:
 	cargo run --package xtask -- seam-probe
 
-# QSL#214 (FR-064, QSL-145): scans the QSL crates' non-test source for a
+# QSL#214 (FR-064): scans the QSL crates' non-test source for a
 # string comparison or string `match` outside a `#[string_edge]`-marked
 # function. Part of `ci:` -- the lint gate FR-064 requires it to run in.
 string-edge:
 	cargo run --package xtask -- string-edge
 
-# QSL-46 (FR-080-AC-3): scans the #185 registry crate (every file under
+# FR-080-AC-3: scans the #185 registry crate (every file under
 # qsl-route/src) for a static, OnceLock or thread_local! item -- ADR-012
 # §5.3's registry evidence requires the registry stay an ordinary value,
 # never ambient state.
 route-lint:
 	cargo run --package xtask -- route-lint
 
-# QSL-46 (FR-080-AC-2): denies the inventory/linkme/ctor crates outright
+# FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
 # a link-time/plugin-discovery mechanism instead of the ordinary value FR-075
 # requires. Scoped to `check bans` -- deny.toml configures no license or
@@ -140,7 +140,7 @@ use-remote:
 # dependencies included. `quire-spec-language`'s dev-dependency turns on
 # `qsl-semantics/test-support`, `qsl-forms`'s turns on
 # `qsl-cst/test-support`, and several crates' turn on
-# `quire-exact/test-support` (QSL-206's charge log), so `--workspace` builds
+# `quire-exact/test-support` (the charge log), so `--workspace` builds
 # those three crates with `test-support` on even here. The `-p` runs below
 # build each crate alone, with the feature off: they lint the
 # `not(feature = "test-support")` code paths under `-D warnings`, and check
@@ -168,7 +168,7 @@ ci-all-features:
 # it never reuses this build's cached artifacts), the fixture-audit negative
 # controls and the parse example.
 #
-# QSL-251 (FR-042-AC-15/FR-050-AC-8): a `--lib`, `--no-default-features`
+# FR-042-AC-15/FR-050-AC-8: a `--lib`, `--no-default-features`
 # check with only `handoff-writer` turned on demonstrates the acceptance
 # itself -- the public writer builds with no dev-dependency in its closure --
 # rather than resting on a claim in prose. `cargo check` (not `build`) is
@@ -188,14 +188,14 @@ ci-docs:
 
 ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
-# QSL-156 A4a: the FR-322 application-node key checked against QSpec's
+# The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
 # quire-specification checkout named by QSPEC_DIR. Opt-in while QSpec is not
 # public; nothing of QSpec is copied into this repository. Without QSPEC_DIR
 # the test itself skips, so this target refuses to run instead, and it fails
 # when the test did not actually check the vectors (a renamed test filters to
 # zero tests and would otherwise pass). Both tests are `qsl-semantics`'
-# (QSL-181 moved them there; QSL-156 A4b moved the key into `check::node_key`).
+# (the key lives in `check::node_key`).
 CONFORMANCE_TEST := check::node_key::tests::conformance_fr322_application_keys_match_qspec_operation_vectors
 # FR-092-AC-8 (TC-413 step 6): the nominal enum declaration and member keys
 # against QSpec's `enum-status` and `enum-status-ready` vectors.
@@ -203,20 +203,20 @@ CONFORMANCE_ENUM_TEST := check::node_key::tests::conformance_fr092_nominal_enum_
 # TC-411 step 3 (FR-088-AC-12): the compound-unit `UnitId`s against QSpec's
 # `value-compound-unit-vectors.json`, guarded the same way.
 CONFORMANCE_UNIT_TEST := quantities::tc_411_compound_unit_ids_match_qspec_vectors
-# ADR-013 C-14 (TC-421, QSL-159): every source-map entry of QSpec's positive
+# ADR-013 C-14 (TC-421): every source-map entry of QSpec's positive
 # v2 fixtures looks up to its wire regions, guarded the same way.
 CONFORMANCE_SOURCE_MAP_TEST := checked_v2::tests::conformance_c14_source_map_lookup_over_qspec_positive_fixtures
-# QSL-232: QSL's full I2 read over QSpec's checked-package-v2 fixtures --
+# QSL's full I2 read over QSpec's checked-package-v2 fixtures --
 # every positive fixture admitted, every adverse mutation refused by cause.
 CONFORMANCE_I2_TEST := checked_v2::tests::conformance_i2_read_over_qspec_checked_package_v2_fixtures
-# QSL-302 (FR-340): QSL's full I2 read over QSpec's
+# FR-340: QSL's full I2 read over QSpec's
 # `node-identity-vectors.json` `frame_mutations` -- the frame-body member
 # eligibility table and its missing_declaration/invalid_model_binding
 # refusal split and precedence.
 CONFORMANCE_FRAME_TEST := checked_v2::tests::conformance_fr340_frame_mutations_match_qspec_vectors
-# QSL-255: QSL's I2 read over QSpec's `dependency-selection-vectors.json`.
+# QSL's I2 read over QSpec's `dependency-selection-vectors.json`.
 CONFORMANCE_DEPENDENCY_TEST := checked_v2::tests::conformance_dependency_selection_vectors
-# QSL-6 (FR-093-AC-13, TC-416 step 7): the emitted application nodes against
+# FR-093-AC-13, TC-416 step 7: the emitted application nodes against
 # QSpec's `positive-operation-identities.json` and
 # `positive-control-operations.json`.
 CONFORMANCE_GOLDEN_TEST := emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures
@@ -305,7 +305,7 @@ arch-lint-api-surface:
 arch-lint-duplicate-revisions:
 	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
 
-# ADR-013 §2 (ADR-013:113, QSL-194): no second canonical encoder beside
+# ADR-013 §2 (ADR-013:113): no second canonical encoder beside
 # `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
 # a hash fails, named files excepted with their reason. Needs only this
 # repository and passes on it, so it is part of `ci:`.
@@ -317,14 +317,14 @@ arch-lint-canonical-encoder:
 # run separately.
 arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-canonical-encoder
 
-# QSL-197: the whole 30,000-input parser differential against
+# The whole 30,000-input parser differential against
 # tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
 # 1,000 inputs of each family; this runs all of them.
 .PHONY: test-differential
 test-differential:
 	cargo test --locked --test it parser_differential -- --include-ignored
 
-# QSL-196: the committed performance benchmarks (`qsl-bench/`), one
+# The committed performance benchmarks (`qsl-bench/`), one
 # criterion bench per axis, each runnable by name. `make bench` runs all
 # six; `make bench-probe` prints the counts, refusal boundaries and one-shot
 # large-input timings (with peak RSS) the criterion benches do not record.

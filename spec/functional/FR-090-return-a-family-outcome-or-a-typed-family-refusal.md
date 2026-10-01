@@ -471,7 +471,7 @@ undefined cause type.
   `FamilyContract`, `ReferenceEvaluation` and `FamilyKind`. `FamilyContract`
   and `FamilyKind` are layer-3 `family`; `ReferenceEvaluation` and the S6a
   family kind are layer-5 `value::expression::s6a` (ADR-011 §6.2 `family`
-  row, amended by QSL-181). The S6a family
+  row, amended). The S6a family
   kind has one variant for each `FamilyKind` that implements
   `ReferenceEvaluation`. FR-090-AC-4 is the precise form of FR-062-AC-6.
   [FR-068](FR-068-split-expression-checking-into-check-stage.md) placed
@@ -480,25 +480,25 @@ undefined cause type.
   owns the population-identity admission checks FR-090-AC-10 routes through
   `CallFailure::Input`. F `diagnostic`'s `CatalogCode`, `Category` and
   `InternalFault` landed with ADR-013 §7 S-5a.
-- **Downstream:** none. QSL-131's removal of `src/value/outcome.rs`'s kernel
+- **Downstream:** none. The removal of `src/value/outcome.rs`'s kernel
   copy in favour of `quire_exact::{Outcome, Refusal, Undefined}` needs no
-  FR-090-AC change: QSL-174 already stripped that copy down to the kernel's
+  FR-090-AC change: that copy was already stripped down to the kernel's
   own variant set before this removal, so it carried no `WrongSnapshot`,
   `Model`, `UnresolvedPopulation` or `PopulationMaximumMismatch` refusal
   variant, and no `Undefined::PreconditionFalse` or `Undefined::AbsentKey`
   variant, for the removal to affect (see Status, "`quire_exact::Undefined`
   and `Refusal`, and QSL's kernel copy ... have no `PreconditionFalse`,
   `AbsentKey`, `WrongSnapshot` or `Model` variant"). FR-090-AC-1's `Evaluated`
-  payload was already `quire_exact::Outcome<T>`; QSL-131 O2 is exactly the
-  removal that lets the `Value` evaluator produce it directly, with no
+  payload was already `quire_exact::Outcome<T>`; that removal is exactly the
+  one that lets the `Value` evaluator produce it directly, with no
   coupled change on either side.
-- ADR-012 §14.1 lists `Relation`'s non-native evaluability under QSL-152
+- ADR-012 §14.1 lists `Relation`'s non-native evaluability
   (FR-062-AC-6). FR-090-AC-4 specifies it as a property of S6a's input type;
   which ticket builds that type is a ticketing question, not a design one.
 
 ## Status
 
-Implemented under QSL-174 (ADR-013 O-16, O-17, T-4, T-6), all open
+Implemented (ADR-013 O-16, O-17, T-4, T-6), all open
 questions ruled.
 
 `FamilyOutcome<T>` has two arms, `Evaluated(quire_exact::Outcome<T>)` and
@@ -522,17 +522,17 @@ with no `_` arm (`qsl-semantics/src/model/refusal.rs`), and `ModelRefusal::catal
 delegates to it. F `diagnostic`'s `category_of` maps a `CatalogCode` to its
 O-16 category. `quire_exact::Undefined` and `Refusal` have no
 `PreconditionFalse`, `AbsentKey`, `WrongSnapshot` or `Model` variant; nor did
-QSL's kernel copy, before QSL-131 O2 deleted `src/value/outcome.rs` and
-repointed every caller onto `quire_exact::{Outcome, Refusal, Undefined}`
+QSL's kernel copy, before `src/value/outcome.rs` was deleted and
+every caller repointed onto `quire_exact::{Outcome, Refusal, Undefined}`
 directly.
 
 The S6a family kind is `S6aFamilyKind { Value }`
 (`qsl-eval/src/value/expression/s6a/mod.rs`, layer 5, beside the `ReferenceEvaluation`
-trait since QSL-181): `Value` is the family that implements
+trait): `Value` is the family that implements
 `ReferenceEvaluation`. The S6a seam
 `evaluate_declaration` (`qsl-eval/src/value/expression/mod.rs`) matches it with one
 arm per variant and no `_` arm, and `CheckedPackage::call` evaluates
-through it (QSL-191).
+through it.
 
 FR-090-AC-1 and AC-3 to AC-12 (TC-382, TC-384 to TC-391, TC-407, TC-408)
 are `✅ Passed locally`.

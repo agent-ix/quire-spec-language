@@ -99,7 +99,7 @@ requirement record.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Implemented under QSL-309 (QSL-21c): the
+Specified and implemented: the
 assembler resolves an attempt's operation as FR-104 resolves a clause's.
 S3 checks the `contracts` list, and refuses a list entry that names two
 state clauses of one name. S4 binds the operation's one anchor and frame

@@ -117,7 +117,7 @@ pub enum Undefined {
 /// Why a defined result is refused. Refusals never carry the refused value.
 ///
 /// Each of the ten value refusals carries the declared target domain or IEEE
-/// width its catalog record renders (FR-096, QSL-245), so the record is built
+/// width its catalog record renders (FR-096), so the record is built
 /// from the variant and never from a message. Bigint domains are boxed, which
 /// keeps `Refusal` small; it is `Clone`, not `Copy`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -195,8 +195,7 @@ pub enum Refusal {
     /// side and the raise site's operand order settles which is which; for
     /// membership (`collection.rs`'s `member_equal_stop`, both `Contains`
     /// and collection construction's dedup), that is the already-retained
-    /// member's or collection's own universe, not the probed candidate's
-    /// (QSL-281).
+    /// member's or collection's own universe, not the probed candidate's.
     ForeignReference {
         /// The universe already in force.
         required: UniverseId,

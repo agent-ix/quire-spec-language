@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-108 (QSL-314): TC-469's 17-case ConfigVersion spine corpus. Runs the
+//! FR-108: TC-469's 17-case ConfigVersion spine corpus. Runs the
 //! same `examples/config-version/cases.rs` catalog `config_version.rs`'s
 //! native test uses, through `run_clause` (FR-109) over the spine files
 //! `crate::support::config_version::spine` writes beside the native ones.

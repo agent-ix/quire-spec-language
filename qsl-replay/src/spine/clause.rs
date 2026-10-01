@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-109 (QSL-278): `qsl_replay::spine::run_clause`, the spine's clause-run
+//! FR-109: `qsl_replay::spine::run_clause`, the spine's clause-run
 //! entry beside [`super::call::run`]'s function-run entry (ADR-011 §5).
 //!
 //! Compiles a `1-draft` unit through the spine ([`super::compile`]),
@@ -385,7 +385,7 @@ pub struct ClauseRunProvenance {
 /// charges, separately" (`FR-109-run-a-state-clause-through-the-spine.
 /// md:85`).
 ///
-/// **Production-safe by construction (QSL-206).** `quire_exact::Meter`
+/// **Production-safe by construction.** `quire_exact::Meter`
 /// deliberately keeps no per-charge log outside `test-support`
 /// (`quire-exact/src/accounting.rs:518-529`: "a production meter holds only
 /// fixed-size state... the meter never grows with the charge count"), and

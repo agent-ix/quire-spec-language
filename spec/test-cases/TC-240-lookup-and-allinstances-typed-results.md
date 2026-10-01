@@ -16,7 +16,7 @@ cardinality-out-of-bound; an unbounded population admits every selected
 count; a foreign-universe key refuses; and a non-binding receiver or a
 non-object-type `T` each refuse with their own cause. Scope: FR-084-AC-5.
 
-Step 3 (the unbounded population) is backed since QSL-140:
+Step 3 (the unbounded population) is backed:
 `qsl-semantics/tests/it/model_population.rs`,
 `an_unbounded_binding_selects_every_member_with_no_bound`, tagged
 `#[trace("TC-240", "FR-084-AC-5")]`.
@@ -49,5 +49,5 @@ Step 4 refuses with a foreign-universe cause. Step 5 refuses with a
 type-mismatch cause. A mutant that returns a partial (truncated) two-member
 set in step 2 instead of refusing passes a shallow "some members returned"
 check but fails the refusal assertion; a mutant that refuses
-operator-ineligible in step 3 (the behaviour before QSL-140) fails the
+operator-ineligible in step 3 (the earlier behaviour) fails the
 unbounded-admits-every-count assertion.

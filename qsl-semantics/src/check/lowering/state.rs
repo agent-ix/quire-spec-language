@@ -77,7 +77,7 @@ pub(crate) struct StateClauseInput<'a> {
     pub(crate) population_types: &'a [EffectiveId],
 }
 
-/// One protocol `attempt` naming an operation (FR-114, QSL-309), as
+/// One protocol `attempt` naming an operation (FR-114), as
 /// lowering reads it: no application node of its own, unlike a
 /// `state_clause` -- only the operation's anchor and frame identity, by
 /// FR-105's shared one-anchor/one-frame-node-per-operation shape (the same
@@ -236,7 +236,7 @@ impl Lowering<'_> {
         })
     }
 
-    /// FR-114 (QSL-309): bind a protocol `attempt` to its operation's own
+    /// FR-114: bind a protocol `attempt` to its operation's own
     /// `operation_anchor` and `frame` node, reusing exactly the machinery a
     /// `pre`/`post` clause's own binding calls -- no second frame node
     /// concept. Records the same `Anchor` occurrence `state_clause` records

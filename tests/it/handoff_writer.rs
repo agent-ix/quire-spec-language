@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-251 (FR-042-AC-15, FR-050-AC-8): `protocol_artifact::handoff::{write_v1,
+//! FR-042-AC-15, FR-050-AC-8: `protocol_artifact::handoff::{write_v1,
 //! write_v2}` write a complete, deterministic handoff that a consumer admits
 //! from the files on disk alone, through QSL's own strict readers.
 //!
@@ -411,7 +411,7 @@ fn write_v2_handoff_admits_from_its_files_through_the_strict_v2_reader() {
     );
 }
 
-/// QSL-288: the written handoff's `clock-name` mutation case (`clock_name`
+/// The written handoff's `clock-name` mutation case (`clock_name`
 /// disagreeing with the inherited `v1` binding's legacy `clock:` spelling)
 /// replays through the strict reader and is refused with exactly the typed
 /// `v2.binding.offer-clock-name` code, never silently admitted.

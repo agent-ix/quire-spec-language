@@ -42,7 +42,7 @@ pub struct ModelNormalizationLimits {
     pub family_steps: u64,
 }
 
-/// NFR-012's finite default ceilings (QSL-222), which a caller may raise or
+/// NFR-012's finite default ceilings, which a caller may raise or
 /// lower field by field. `spec/non-functional/NFR-012-*.md` states each
 /// value and its derivation.
 impl Default for ModelNormalizationLimits {
@@ -251,8 +251,7 @@ pub struct Incomplete {
 
 /// One exact `{ counter: amount }` charge vector: `work_units` plus at most
 /// one sized counter, since no model charge point sizes more than one.
-/// Fixed-size, so building and admitting a charge allocates nothing
-/// (QSL-218).
+/// Fixed-size, so building and admitting a charge allocates nothing.
 pub(super) struct Charge {
     point: ChargePoint,
     size: Option<(LimitKind, u64)>,
@@ -283,7 +282,7 @@ impl Charge {
 
 /// A per-normalization-run scalar meter.
 ///
-/// **A count, not a log (QSL-218, as QSL-206 did for the kernel meter).** A
+/// **A count, not a log, as for the kernel meter.** A
 /// production meter holds only fixed-size state: the limits, the six
 /// counters and the number of admitted charges. It owns no heap memory, so
 /// the meter that bounds normalization's work does not itself grow with that
@@ -299,7 +298,7 @@ pub struct Meter {
     admitted: Vec<ChargePoint>,
 }
 
-// QSL-218: a production `Meter` owns no heap memory. A type with no drop
+// A production `Meter` owns no heap memory. A type with no drop
 // glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
 // fails the build rather than a test.
 #[cfg(not(feature = "test-support"))]
@@ -393,7 +392,7 @@ mod tests {
 
     use super::*;
 
-    /// QSL-218 AC 1: a production `Meter` and `Charge` have no drop glue, so
+    /// A production `Meter` and `Charge` have no drop glue, so
     /// they own no `Vec`, `Box` or `String`: the meter holds no per-charge
     /// state however many charges it admits, and its admission count still
     /// counts every one. Built only without `test-support` (`cargo test -p

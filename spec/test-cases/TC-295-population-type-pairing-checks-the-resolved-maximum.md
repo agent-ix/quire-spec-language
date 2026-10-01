@@ -20,7 +20,7 @@ declared maximum equal to `maximum` -- the pairing
 `ValueType::admits` refuses every population pair (FR-089-AC-6, TC-297); this
 comparison is the QSL layer's. Scope: FR-089-AC-5.
 
-Implemented (QSL-131 V5): `ValueType::admits` is `quire_exact`'s own kernel
+Implemented: `ValueType::admits` is `quire_exact`'s own kernel
 function now, which has no access to the recorded correspondence and refuses
 every `(Population, Population)` pair outright (FR-089-AC-6), so `validate`
 special-cases `ValueType::Population`/`Value::Population` ahead of its

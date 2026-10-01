@@ -39,6 +39,5 @@ Backed on main by `value_function_family_check_refuses_an_ill_typed_body`
 (step 1, `qsl-semantics/src/check/family.rs`, `checking_tests`) and
 `value_function_family_checks_through_the_contract` (step 2,
 `qsl-eval/src/value/expression/family.rs`, `family_contract_tests`), both
-tagged `#[trace("TC-380", "FR-065-AC-7")]`. Step 2's F1 key is asserted on
-the QSL-156 A4b branch, pending merge; on main the identity is the
-length-prefixed preimage `check/family.rs` mints.
+tagged `#[trace("TC-380", "FR-065-AC-7")]`. Step 2 also asserts
+that `f`'s checked identity is FR-092 vector F1 (#384).

@@ -156,7 +156,7 @@ fn check_source_compositions(
             qsl_foundation::source::MAX_SOURCE_BYTES,
         )
         .map_err(|e| {
-            // QSL-236 (L2): `stage_limit_exceeded` reports the same
+            // L2: `stage_limit_exceeded` reports the same
             // reached-a-configured-ceiling outcome `is_incomplete()`'s own
             // codes do, but is deliberately excluded from `is_incomplete()`
             // itself (its exit code is 20, not 22), so it is named

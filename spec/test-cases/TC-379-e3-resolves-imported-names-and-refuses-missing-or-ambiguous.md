@@ -40,7 +40,7 @@ missing or ambiguous name with the E3 refusal codes. Scope: FR-087-AC-13.
 
 ## Status
 
-Steps 1 and 3 pass locally (QSL-255 part b): `qsl-replay`
+Steps 1 and 3 pass locally: `qsl-replay`
 `spine::dependency_tests::e3_resolves_an_imported_name_only_through_its_qualifier`,
 with a library function `f` in place of `R`, since ADR-015 D-5 admits an
 imported name only as a callee; `l::f`'s resolution to `{package_id, node}`

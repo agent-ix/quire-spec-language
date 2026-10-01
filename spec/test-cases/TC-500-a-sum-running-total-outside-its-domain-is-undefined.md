@@ -42,7 +42,7 @@ Tag the tests `#[trace("TC-500", "FR-096-AC-14")]`.
 
 ## Status
 
-Passing locally (QSL-245). S6a's `sum` returns
+Passing locally. S6a's `sum` returns
 `Undefined::SumOutOfDomain` for a seed or running total outside `N`'s
 domain: located at the summand node for a seed and at the `sum` node for an
 addition, with no charge after the failed decision and no final-total

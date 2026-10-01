@@ -20,7 +20,7 @@ snapshot/invocation files, and `request.json`, `markdown-run.json`, `compile.jso
 All selected digests are computed from the actual files. Native and extracted
 bodies have distinct source identities; each case has its own runtime identities.
 
-FR-108 (QSL-314) writes the spine counterpart of every native file into the
+FR-108 writes the spine counterpart of every native file into the
 same directory: `spine-unit.native` (the shared `1-draft` unit),
 `spine-model.semantic-ir.json` (the Semantic IR 2.0.0 domain package),
 `spine-*` snapshot/invocation documents, and `clause-run-request.json` (the

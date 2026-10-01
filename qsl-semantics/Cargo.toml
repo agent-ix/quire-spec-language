@@ -30,7 +30,7 @@ qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }
 serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation. Every QSL
-# normalized identity encodes through it (QSL-194); arch-lint's
+# normalized identity encodes through it; arch-lint's
 # `canonical-encoder` check refuses a second encoder.
 quire-canonical = { workspace = true }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -45,7 +45,7 @@ tempfile = "=3.27.0"
 [dev-dependencies]
 # Tests only: they take independent digests to check the identity encoders
 # against. Shipped code hashes through `quire-canonical` or
-# `qsl_foundation::ByteDigest` (QSL-194); TC-390 asserts sha2 stays here.
+# `qsl_foundation::ByteDigest`; TC-390 asserts sha2 stays here.
 sha2 = "=0.10.9"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `tests/it/{ieee_profiles,quantities}.rs` build expected big-integer values.
@@ -55,7 +55,7 @@ num-traits = "=0.2.19"
 syn = { version = "=2.0.119", features = ["full", "visit"] }
 # Line numbers in that scan's findings, the same way `xtask` reads them.
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
-# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }

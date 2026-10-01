@@ -144,16 +144,19 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch, pending merge. The tests back
-steps 1 to 7 except step 4's `fm`: the A4b `flatMap` test flat-maps a flat
-`s` over itself. Step 6's first half needs the QSpec
-`complete-value-lock.json` accessor (ADR-011 §2.4). Steps 8 and 9 are
-specified under QSL-212 and unbacked: on the A4b branch the leaf walk runs
-`Node` to the depth limit and walks an optional field without `inner`.
-The tests back steps 10 and 11 (QSL-228): before it, a debug build
-aborted at 20 nested `a and (…)`.
-Remaining work: QSL-156 A4b.
+Implemented (#384). The tests back steps 1 to 11, step 4's nested `fm`
+and the recursive text-leaf steps 8 and 9 included, except step 6's first
+half, which needs the QSpec `complete-value-lock.json` accessor (ADR-011
+§2.4). Steps 10 and 11 cover the case where a debug build once aborted at
+20 nested `a and (…)`.
 
-The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
-`ResourceExhausted`, and the code and outcome assertions move with S-5b.
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
+`stage_limit_exceeded`/`node-count-exceeded` directly; the depth steps'
+(`check/lowering/tests/expression_depth.rs`,
+`check/lowering/model/tests/expression_depth.rs`) assert the full depth
+cause, bound and actual counter.

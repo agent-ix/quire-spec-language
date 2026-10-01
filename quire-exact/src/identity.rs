@@ -7,7 +7,7 @@
 //! (declaration identity, O-05), `UniverseId` and `ObjectId` (a `Reference`
 //! payload, T-6), `UnitId` (a `Quantity` payload, T-6), `VariantId` (an `Enum`
 //! payload, T-6), `MemberId` (O-06) and `PopulationId` (a `Population`
-//! payload, O-13 Population row, QC-21, QSL-172). Five of the seven --
+//! payload, O-13 Population row, QC-21). Five of the seven --
 //! `EffectiveId`, `UniverseId`, `VariantId`, `MemberId`, `PopulationId` --
 //! are single-domain opaque 32-byte digests with exactly one public
 //! constructor, `from_digest` (each type's own, e.g.
@@ -252,7 +252,7 @@ digest_identity!(
 
 digest_identity!(
     /// An opaque `quire.population/v1` identity (ADR-013 O-13 Population
-    /// row, QC-21, QSL-172): a `Population` payload's admission identity.
+    /// row, QC-21): a `Population` payload's admission identity.
     /// Only QSL `model` calls [`PopulationId::from_digest`] in production,
     /// minting it from the admitted binding's own preimage (domain package,
     /// `population_key`, and the closed three-state admission-role

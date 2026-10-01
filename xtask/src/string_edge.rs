@@ -30,7 +30,7 @@
 //! **Branch-gating detection.** A comparison found while walking an
 //! `if`/`while` condition or a `match` scrutinee/guard is marked
 //! branch-gating; the allow-list rejects any entry at such a location
-//! (FR-064-AC-5). QSL-268 widened this: a comparison that is a term of a
+//! (FR-064-AC-5). This is wider: a comparison that is a term of a
 //! `&&`/`||` chain, a comparison that is a match arm's own value, and a
 //! `strip_prefix` call (whose `Some` is the dispatch) are also
 //! branch-gating, because the combined result is what an outer branch
@@ -357,7 +357,7 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
         {
             if is_prefix_gate_method(&node.method) {
                 // `strip_prefix` yields `Some` only for a matching string, so
-                // its result is itself the branch (QSL-268: the `clock:`
+                // its result is itself the branch (the `clock:`
                 // dispatch reads it through `ok_or_else`).
                 self.record_forced_branch_gating(line_of(node));
             } else {
@@ -401,8 +401,8 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
                 self.condition_depth -= 1;
             }
             // A comparison that is itself the arm's value: the match's
-            // result carries the string decision to whatever reads it
-            // (QSL-268), so it is branch-gating.
+            // result carries the string decision to whatever reads it,
+            // so it is branch-gating.
             let value_is_comparison = self.is_string_comparison(peel_parens(&arm.body));
             if value_is_comparison {
                 self.condition_depth += 1;
@@ -422,7 +422,7 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
         }
         if matches!(node.op, syn::BinOp::And(_) | syn::BinOp::Or(_)) {
             // A term of a boolean combinator: the combined result is what an
-            // outer `if`/`match` reads (QSL-268), so every comparison inside
+            // outer `if`/`match` reads, so every comparison inside
             // is branch-gating.
             self.condition_depth += 1;
             syn::visit::visit_expr_binary(self, node);
@@ -605,13 +605,13 @@ fn scan_workspace(workspace_root: &Path, honor_marks: bool) -> Result<Vec<Occurr
 }
 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
-/// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2, QSL-177), `qsl-cst`
-/// (ADR-011 §7.3 X-3, QSL-178), `qsl-source` (ADR-011 §7.3 X-4, QSL-179),
-/// `qsl-forms` (ADR-011 §7.3 X-5, QSL-180), `qsl-semantics` (ADR-011 §7.3
-/// X-6, QSL-181), `qsl-package` (ADR-011 §7.3 X-7, QSL-182), `qsl-eval`
-/// (ADR-011 §7.3 X-8, QSL-183), `qsl-route` (ADR-011 §7.3 X-9, QSL-184), `qsl-replay` (ADR-011 §7.3 X-10, QSL-185
+/// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2), `qsl-cst`
+/// (ADR-011 §7.3 X-3), `qsl-source` (ADR-011 §7.3 X-4),
+/// `qsl-forms` (ADR-011 §7.3 X-5), `qsl-semantics` (ADR-011 §7.3
+/// X-6), `qsl-package` (ADR-011 §7.3 X-7), `qsl-eval`
+/// (ADR-011 §7.3 X-8), `qsl-route` (ADR-011 §7.3 X-9), `qsl-replay` (ADR-011 §7.3 X-10
 /// -- each extracted §6.1 layer crate adds its own entry here the same way)
-/// and `qsl-bench` (QSL-196, the benchmark harness).
+/// and `qsl-bench` (the benchmark harness).
 /// `qsl-attrs` is excluded -- it is a proc-macro identity transform with no
 /// string dispatch of any kind (its own module doc).
 fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
@@ -759,7 +759,7 @@ mod tests {
 
     /// Every workspace member's `src/` is a scan root, except the
     /// documented [`UNSCANNED_MEMBERS`]. A crate extracted later, or a root
-    /// dropped from the list (QSL-184 review L5: removing `qsl-route/src`
+    /// dropped from the list (removing `qsl-route/src`
     /// failed nothing), fails here.
     #[test]
     fn every_workspace_member_is_a_scan_root() {
@@ -1093,7 +1093,7 @@ mod tests {
         }
     }
 
-    /// FR-064-AC-5's real-site half (QSL-268): runs the real scan (not a
+    /// FR-064-AC-5's real-site half: runs the real scan (not a
     /// synthetic fixture, and ignoring `#[string_edge]` marks so a mark cannot
     /// hide a site) over the ADR-010 section 4.3 dispatch strings still
     /// compared in the tree, at the one typed conversion each now lives in:
@@ -1129,7 +1129,7 @@ mod tests {
                 "clock_binding_name",
                 "clock:",
             ),
-            // QSL-287/QSL-145: a real named-`const NAME: &str` site
+            // A real named-`const NAME: &str` site
             // (`identity == NARROW`, `qsl-semantics/src/check/claims.rs`),
             // not a string literal -- the const-resolving detector, not the
             // literal-only one #485 shipped, is what finds this occurrence.
@@ -1174,7 +1174,7 @@ mod tests {
         }
     }
 
-    /// QSL-268: a comparison that is a term of a `&&`/`||` chain, a match
+    /// A comparison that is a term of a `&&`/`||` chain, a match
     /// arm's own value, or a `strip_prefix` call is branch-gating; a bare
     /// comparison bound to a variable stays non-branching.
     #[trace("TC-162", "FR-064-AC-5")]

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# QSL-168: fail when an FR or TC artifact exists under spec/ but has no row
+# Fail when an FR or TC artifact exists under spec/ but has no row
 # in the master index (spec/spec.md's Requirements table for FR, and the
 # `Test ID` column of every spec/**/tests.md TestMatrix's Test Case Summary
 # table for TC). Without this check the master index falls behind silently,
 # every new spec PR is "consistent" with the gap as it stands, and the gap
-# compounds indefinitely (QSL-168).
+# compounds indefinitely.
 #
 # This intentionally checks only ID presence, not row content, direction or
 # accuracy -- it is a completeness net, not a content reviewer.

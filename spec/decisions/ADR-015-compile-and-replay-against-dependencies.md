@@ -1,6 +1,6 @@
 ---
 id: ADR-015
-title: "Compile and replay against dependencies (QSL-255)"
+title: "Compile and replay against dependencies"
 type: ADR
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -20,14 +20,14 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-323
     type: depends_on
 ---
-# ADR-015: Compile and replay against dependencies (QSL-255)
+# ADR-015: Compile and replay against dependencies
 
 ## Status
 
 Accepted (2026-09-25). Amends ADR-011 §2.1 (E3), §4 (dependency binding)
 and §5 (spine `compile`), and ADR-013 O-02, O-04, O-26 and QC-27, as each
 decision below states. QSpec states the wire and identity parts in FR-307,
-FR-322 and FR-323 (agent-ix/quire-specification, the QSL-255 change); this
+FR-322 and FR-323 (agent-ix/quire-specification); this
 record states QSL's side.
 
 ## Context

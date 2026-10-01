@@ -22,7 +22,7 @@
 //! - a tuple or struct construction of `SupportedV2Wire` outside
 //!   `library::witness`, as a second check on what the compiler refuses.
 //!
-//! The constructor and `verify_binding` are `pub` for the QSL-181 crate
+//! The constructor and `verify_binding` are `pub` for the layer-3 crate
 //! boundary. Two gates confine the constructor within the QSL workspace,
 //! and neither is complete alone: arch-lint rule T12-E fails on any
 //! reference outside `qsl-package`'s `checked_v2`, but not on a wrapper
@@ -55,7 +55,7 @@ fn root() -> PathBuf {
 
 /// Every Rust source file of every workspace crate: the root crate's
 /// `src/` and each `<crate>/src/` beside it, so the scan follows `library`
-/// into `qsl-semantics` (QSL-181) and the reader into `qsl-package`
+/// into `qsl-semantics` and the reader into `qsl-package`
 /// (X-7). Each file is named relative to the workspace root, crate
 /// directory included (`qsl-semantics/src/library/witness.rs`), which is how
 /// [`EXEMPT`] and [`READER_FILE`] name it: a same-named module in another

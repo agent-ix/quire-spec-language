@@ -349,7 +349,7 @@ impl<'a> NamespaceReport<'a> {
     /// Whether package-level exhaustion, or a per-unit parse failure whose
     /// diagnostic reports one of `Code::is_incomplete`'s own codes,
     /// prevented completion. A per-unit `stage_limit_exceeded` parse
-    /// failure (QSL-236) is a refusal, not incompleteness (its exit code is
+    /// failure is a refusal, not incompleteness (its exit code is
     /// 20, the catalog's refusal category, not 22), so it is not counted
     /// here; `issues()` still names it.
     pub fn is_incomplete(&self) -> bool {

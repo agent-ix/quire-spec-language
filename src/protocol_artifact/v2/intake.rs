@@ -364,7 +364,7 @@ fn temporal(
             .and_then(|index| declaration.bindings.get(index))
             .and_then(artifact::clock_binding_name)
             .ok_or(Error::Invalid(Invalid::Reference))?;
-        // QSL-288: the typed `clock_name` field must agree with the inherited
+        // The typed `clock_name` field must agree with the inherited
         // `v1` binding's legacy `clock:` spelling. `ClockNames::of_v2`
         // (evaluation and request derivation) reads `clock_name` alone and
         // never parses the legacy name; this admission check is the one

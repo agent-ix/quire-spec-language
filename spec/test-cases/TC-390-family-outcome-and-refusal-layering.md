@@ -46,7 +46,7 @@ which turns `FamilyResult` back into a shared cause list.
    (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
    ADR-011 §6.2), `qsl-semantics/src/value/model_query.rs` (layer 3 `model`) and
    `qsl-cst/src/`, and check whether any of them names one of the three
-   types. `src/value/outcome.rs` (layer K) left this list under QSL-131 O2:
+   types. `src/value/outcome.rs` (layer K) left this list:
    its module was deleted, and every caller now imports
    `quire_exact::{Outcome, Refusal, Undefined}` directly.
 3. Resolve every `use` edge and every inline path under the `check` core, and
@@ -54,8 +54,8 @@ which turns `FamilyResult` back into a shared cause list.
    `ModelRefusal` or the `StateModel` undefined cause type.
 4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
    `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`, and both dependency
-   tables of `qsl-package/Cargo.toml` (layer 4, QSL-182) and
-   `qsl-eval/Cargo.toml` (layer 5, QSL-183).
+   tables of `qsl-package/Cargo.toml` (layer 4) and
+   `qsl-eval/Cargo.toml` (layer 5).
 
 Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 
@@ -86,6 +86,6 @@ Tag the test `#[trace("FR-090-AC-9", "TC-390")]`.
 `tests/it/family_outcome_layering.rs`, over `xtask::definition_scan::scan_dirs`
 and `xtask::import_graph::resolved_paths`.
 
-Step 4's `qsl-eval` set gained `quire-canonical` and `serde` under QSL-272
+Step 4's `qsl-eval` set gained `quire-canonical` and `serde`
 (FR-101): `qsl-eval/Cargo.toml` and the assertion in
 `tests/it/family_outcome_layering.rs` were updated in the same change.

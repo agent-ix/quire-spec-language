@@ -22,7 +22,7 @@ predicate called, without noticing the evaluator still needs it).
 Verified by the pre-existing evaluation tests in `tests/ieee_profiles.rs` and
 `tests/integer_division.rs` that exercise `evaluate_ieee`, `compare_ieee`,
 `convert_ieee_width`, `exact_to_ieee`, `ieee_to_exact`, `divide` and `modulo`
-(QSL-131 added the `TC-202`/`FR-078-AC-3` tags to their existing `#[trace]`
+(the `TC-202`/`FR-078-AC-3` tags were added to their existing `#[trace]`
 attributes, alongside each test's original FR-148/FR-147 tags): these tests
 passed unchanged before and after the `negotiate_*` removal, which is this
 criterion's before/after comparison. The one admission-focused test in

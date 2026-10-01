@@ -167,7 +167,7 @@ identity gives every source-owned declaration a different key.
   ADR-013 C-13 requires. The recompiled package therefore names each source
   exactly as the proving run did, which keeps its declaration keys and its
   `package_id` (US-005). The executor is ADR-013 TK-01, `qsl_replay::replay`
-  ([FR-098](FR-098-execute-a-replay-request.md), QSL-5), and this is the
+  ([FR-098](FR-098-execute-a-replay-request.md)), and this is the
   replay module's recompilation path, the S8 row of ADR-011 §2. TC-444
   checks the whitespace-only label.
 
@@ -217,7 +217,7 @@ revision namespace and value part of every immutable key
 ## Status
 
 Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-10 are
-implemented under QSL-233 (ADR-013 §7 slice S-4b) and backed by TC-424:
+implemented (ADR-013 §7 slice S-4b) and backed by TC-424:
 `SourceIdentity` (`qsl-foundation/src/source.rs`) carries the four labels,
 admission mints the source's `RawSourceRef`, S0 refusals carry a
 `SourceRegion` or none, `Source::render` and `render_offered` derive line and
@@ -226,12 +226,12 @@ native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
 debt recorded above). The replay executor's recompilation under the
 reference's labels is ADR-013 TK-01's.
 
-QSL-245 (part 2) emits the catalog revision `1-draft.8` causes:
+QSL emits the catalog revision `1-draft.8` causes:
 `SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
 `Source::read_typed` checks the four labels in order before the path
 (`qsl-foundation/src/source.rs`). The revision claim
-(`src/linking/composed/definition_source.rs`) reads `1-draft.8` (QSL-245
-part 1). The cause and `label` reach the native `Diagnostic`,
+(`src/linking/composed/definition_source.rs`) reads `1-draft.8`.
+The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
 native-state-input construction error and the replay recompile refusal, each
 tested for `blank-label` with its label. `empty-path` is tested at the reader

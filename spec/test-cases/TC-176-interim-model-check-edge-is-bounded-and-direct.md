@@ -8,7 +8,7 @@ relationships:
 ---
 # TC-176: The interim `model` → `check` edge stays bounded to two files and thirteen names, imported directly
 
-**RETIRED by TC-262 (FR-074, ADR-011 §7.3 M-2, QSL-7, 2026-09-21).** This
+**RETIRED by TC-262 (FR-074, ADR-011 §7.3 M-2, 2026-09-21).** This
 test case verified FR-068-AC-9/FR-068-CON-5 (both now retired, see FR-068):
 that the *interim* `model` → `check` edge stayed bounded to exactly two
 files and thirteen names while M-2 had not yet landed. FR-074 is M-2: it
@@ -27,7 +27,7 @@ this repository's rule against silently deleting a retired test case.
 
 Verify the reverse edge FR-068's move opens — `model` (layer-3-earlier)
 depending on `check` (layer-3-later), forbidden by ADR-011 §6.1's
-intra-layer-3 order until M-2 (QSL-7) closes it — stays exactly as narrow as
+intra-layer-3 order until M-2 closes it — stays exactly as narrow as
 FR-068-AC-9 and FR-068-CON-5 declare it: `model/checked_dispatch.rs`
 importing four relocated names and `model/conformance.rs` importing nine,
 both directly from `crate::check`, and no third `model` file gaining any

@@ -24,7 +24,7 @@
 //! declarations (`ImportDeclaration`, `LibraryPackage`), the resolved lock
 //! (`Selection`, `LibraryLock`) and refusal reporting (`LibraryCause`,
 //! `LibraryRefusal`). It also owns the ADR-013 T-1 I2 wire-admitted types,
-//! `VerifiedPackage` and `ImportView` (QSL-6, FR-087-AC-1/AC-3/AC-4): the
+//! `VerifiedPackage` and `ImportView` (FR-087-AC-1/AC-3/AC-4): the
 //! layer-4 `package` reader (`qsl-package`'s `checked_v2`) reads
 //! `quire.checked-package/v2` bytes and calls `verify_binding` here, handing
 //! it the condition-1 witness only that reader mints, to apply the ADR-011
@@ -32,7 +32,7 @@
 //! [`VerifiedPackage::into_import_view`] is the only `ImportView`
 //! constructor. Both types' fields are private to this module. The witness
 //! minter and `verify_binding` are `pub` so the layer-4 reader can call them
-//! across the QSL-181 crate boundary; within the QSL workspace, arch-lint
+//! across the `qsl-semantics` crate boundary; within the QSL workspace, arch-lint
 //! rule T12-E and `tests/it/verified_binding_witness.rs` confine the
 //! minter's callers to that reader (see `library::witness`).
 //!
@@ -76,7 +76,7 @@ pub use package_identity::{NodeDefect, PreimageDefect};
 pub use witness::SupportedV2Wire;
 
 /// Test fixtures for the layer-4 reader's tests, which reach `library`
-/// across the QSL-181 crate boundary through `test-support`. Never compiled
+/// across the `qsl-semantics` crate boundary through `test-support`. Never compiled
 /// into a production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
@@ -416,7 +416,7 @@ pub enum LibraryRefusal {
     /// bytes by the same procedure (tautological on the wire-read path);
     /// this one compares against a digest IR derived independently, so it
     /// is the check that actually catches this crate's own canonicalization
-    /// ever diverging from IR's (QSL-6 L2).
+    /// ever diverging from IR's.
     #[error("package_id digest disagrees with IR's own already-verified recompute")]
     IdentityDivergedFromIr {
         /// The package's identity.
@@ -579,7 +579,7 @@ pub enum RefusalClass {
 /// this function's own recompute is a structural invariant, not a fresh
 /// test of the wire's claim -- `checked_v2` has already cross-checked that
 /// mint against IR's own independently-verified `package_id.digest` before
-/// ever constructing the candidate (QSL-6 L2), and that comparison, not
+/// ever constructing the candidate, and that comparison, not
 /// this one, is what actually catches the wire path's condition 2. What
 /// this function performs freshly on every path is validating that the
 /// preimage itself is well-formed. Check 3 -- the identity is listed in the
@@ -639,7 +639,7 @@ pub(crate) fn verify_package(
 /// };
 /// ```
 ///
-/// `verify_binding` is `pub` for the QSL-181 crate boundary: it only
+/// `verify_binding` is `pub` for the `qsl-semantics` crate boundary: it only
 /// verifies, and it needs a condition-1 witness. A crate-external caller
 /// cannot build that witness itself (its field is private), so it cannot
 /// verify a hand-built candidate without calling the `pub` witness minter.
@@ -721,7 +721,7 @@ impl PinnedRequest {
     /// selection is refused.
     #[allow(
         dead_code,
-        reason = "no production caller yet: ADR-011 §4's round trip (QSL-6 slice S3) builds the consumer's pinned request; until then only tests call it"
+        reason = "no production caller yet: unused pending ADR-011 §4's round trip (QSL-347) to build the consumer's pinned request; until then only tests call it"
     )]
     pub(crate) fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,
@@ -755,7 +755,7 @@ impl From<&LibraryLock> for PinnedRequest {
 /// ADR-011 §4's verified binding, `library`'s own entry point. The layer-4
 /// `package` reader calls it after IR admitted the wire (condition 1,
 /// `_admitted`) and after cross-checking its recomputed `package_id` against
-/// IR's own verified digest (QSL-6 L2). It re-applies condition 2 through
+/// IR's own verified digest. It re-applies condition 2 through
 /// `verify_package` (owner ruling item 3(f): reused unchanged, not a second
 /// digest implementation), then condition 3: `pinned` must select
 /// `candidate`'s identity at `candidate`'s recomputed `package_id` and

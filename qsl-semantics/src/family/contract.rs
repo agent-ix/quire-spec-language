@@ -42,7 +42,7 @@ impl DiagnosticSink {
     /// through it -- so the compiler is told that directly rather than
     /// having the lint silenced over a real (non-test) reader that does
     /// not exist. `test-support` makes it reachable from the layer-5
-    /// evaluator's tests across the QSL-181 crate boundary.
+    /// evaluator's tests across the `qsl-semantics` crate boundary.
     #[cfg(any(test, feature = "test-support"))]
     pub fn entries(&self) -> &[Diagnostic] {
         &self.entries
@@ -81,9 +81,9 @@ impl ScopeStack {
 /// (ADR-011 §2.3) and bounds its own recursion by `nesting_depth`, checked
 /// before each recursive step -- never by the native call stack.
 ///
-/// **`input_bytes` and `node_count` restored (QSL-153).** PR #262 review
+/// **`input_bytes` and `node_count` restored.** PR #262 review
 /// deleted these, along with `work_budget`: nothing in #214's one migrated
-/// stage entry produced or read them. QSL-153 restores them with a real
+/// stage entry produced or read them. They are restored with a real
 /// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
 /// row for this ticket), matching the shape `CheckContext::enter_nesting`
 /// already established for `nesting_depth`:
@@ -213,7 +213,7 @@ impl<'a, D> CheckContext<'a, D> {
 
     /// Refuse `amount` (a declaration's own preimage byte length,
     /// `StageLimits`'s own doc) once it exceeds `limits.input_bytes`
-    /// (QSL-153, restoring the deleted `input_bytes` field with a real
+    /// (restoring the deleted `input_bytes` field with a real
     /// consumer).
     pub(crate) fn check_input_bytes(&self, amount: u64) -> Result<(), LimitExceeded> {
         if amount > self.limits.input_bytes {
@@ -227,7 +227,7 @@ impl<'a, D> CheckContext<'a, D> {
     }
 
     /// Refuse `amount` (a declaration's own visited `Expression` node
-    /// count) once it exceeds `limits.node_count` (QSL-153).
+    /// count) once it exceeds `limits.node_count`.
     pub(crate) fn check_node_count(&self, amount: u64) -> Result<(), LimitExceeded> {
         if amount > self.limits.node_count {
             return Err(LimitExceeded::new(
@@ -243,10 +243,10 @@ impl<'a, D> CheckContext<'a, D> {
 /// ADR-012 §2's design-level `FamilyContract`: `check` and `requirements`,
 /// each required by the trait's own associated-function signature, so a
 /// family that omits either fails to compile. `requirements` (the
-/// contract's sixth part, FR-062-AC-4) moved to QSL-140 with ADR-014 §11;
+/// contract's sixth part, FR-062-AC-4) moved with ADR-014 §11;
 /// see [`crate::family::requirements`]'s module doc.
 ///
-/// **No `package` part (QSL-242, ADR-012 §2 "Packaging").** A family's
+/// **No `package` part (ADR-012 §2 "Packaging").** A family's
 /// packaging is its `check` lowering to the checked semantic graph
 /// (FR-093); `qsl_package::emit_checked` writes every family's nodes, one
 /// arm per node tag, and is all-or-nothing over the nodes a node names
@@ -254,7 +254,7 @@ impl<'a, D> CheckContext<'a, D> {
 /// version of this trait also required `package(checked: &Self::Checked,
 /// out: &mut Vec<u8>)`. `ValueFunctionFamily`'s implementation emitted v2
 /// bytes into `out`, but `CheckedPackage::emit_function_package_v2` (the
-/// one real caller, deleted itself under QSL-248/G2 along with the second
+/// one real caller, deleted itself along with the second
 /// `quire.checked-function-package/v2` producer it and `family::emit_v2`/
 /// `decode_v2` made up) passed it a scratch `Vec` that it never read back,
 /// then built its actual returned bytes independently through
@@ -340,8 +340,8 @@ pub trait FamilyContract {
     type Checked;
     /// This family's typed refusal cause (ADR-012 §5.1 S4), returned through
     /// [`qsl_foundation::diagnostic::StageFailure::Refused`] -- see that variant's own
-    /// doc for why #214 shipped with no way to construct one and QSL-148
-    /// (`Value`'s function family) is the first real instance.
+    /// doc for why #214 shipped with no way to construct one and
+    /// `Value`'s function family is the first real instance.
     type Cause;
     /// This family's read-only resolved declarations and type environment.
     /// A GAT (`Declarations<'a>`, not a plain associated type): a family

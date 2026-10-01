@@ -276,7 +276,7 @@ pub struct BackendProviderSource {
     /// The provider identity, as the FR-331 manifest states it.
     pub backend_identity: String,
     /// The FR-331 manifest's digest (ADR-013 O-19), always domain
-    /// `quire.tool-manifest.jcs/v1` (QSL-227: [`ManifestDigest`] cannot be
+    /// `quire.tool-manifest.jcs/v1` ([`ManifestDigest`] cannot be
     /// constructed with any other domain).
     pub manifest_digest: ManifestDigest,
     /// The executor/tool pin the manifest carries alongside `backend`.

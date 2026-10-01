@@ -1018,7 +1018,7 @@ fn animal_environment() -> TypeEnvironment {
     .unwrap()
 }
 
-/// TC-198 L08 (QSL-57 item 1): `Reference<Animal>` and `Reference<Dog>`
+/// TC-198 L08: `Reference<Animal>` and `Reference<Dog>`
 /// admit `=` in either operand order, because `Dog` conforms to `Animal`.
 /// The comparison is still the identity triple: the same `Dog` object on
 /// both sides is `true`, another object is `false`.
@@ -1052,7 +1052,7 @@ fn e16a_references_admit_a_conforming_upcast_in_either_order() {
     );
 }
 
-/// TC-198 L08's adverse case (QSL-57 item 1): two object-reference types
+/// TC-198 L08's adverse case: two object-reference types
 /// with no generalization relation between them still refuse `=` at check
 /// time, `ill_typed`/`type-mismatch`, in either order; siblings under one
 /// supertype are no more related than unrelated roots.
@@ -1880,7 +1880,7 @@ fn expression_package(types: TypeEnvironment, ieee: bool) -> CheckedPackage {
     }
     .check(CheckingLimits::default())
     .unwrap();
-    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
     CheckedPackage::link(graph)
 }
@@ -2503,7 +2503,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     }
     .check(CheckingLimits::default())
     .unwrap();
-    // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an empty
+    // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import.
     let package = CheckedPackage::link(graph);
     let parameters = [("p", ValueType::Integer)];

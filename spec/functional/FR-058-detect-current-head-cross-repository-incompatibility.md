@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-**RETIRED by QSL-335.** QSL-335 deletes `integration/current-head/` and its Makefile targets. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration.
+**RETIRED.** `integration/current-head/` and its Makefile targets are deleted. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration.
 
 QSL's own build (root `Cargo.toml`, root `Cargo.lock`) resolves
 `quire-contract-ir`, `quire-contract-codegen` and every other cross-repository
@@ -138,10 +138,10 @@ current-head lane failed), and how to re-run it locally.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-058-AC-1 | **RETIRED by QSL-335**, for the reason given in the Description. The current-head lane's manifest(s) are not members of the root `[workspace]`; running the lane never changes the root `Cargo.lock`'s resolved revisions. | Retired |
-| FR-058-AC-2 | **RETIRED by QSL-335**, for the reason given in the Description. A lane run against real current heads of quire-contract-ir, quire-contract-runtime and quire-contract-codegen resolves and records one commit per repository (QSL, IR, RT, CG) in a log. | Retired |
-| FR-058-AC-3 | **RETIRED by QSL-335**, for the reason given in the Description. A lane run against the intentionally incompatible fixture manifest fails, and its diagnostic names the incompatible dependency and a stable marker string, not only a raw compiler error. | Retired |
-| FR-058-AC-4 | **RETIRED by QSL-335**, for the reason given in the Description. The lane is invocable by one documented local command; its documentation names an owner and an update procedure. | Retired |
+| FR-058-AC-1 | **RETIRED**, for the reason given in the Description. The current-head lane's manifest(s) are not members of the root `[workspace]`; running the lane never changes the root `Cargo.lock`'s resolved revisions. | Retired |
+| FR-058-AC-2 | **RETIRED**, for the reason given in the Description. A lane run against real current heads of quire-contract-ir, quire-contract-runtime and quire-contract-codegen resolves and records one commit per repository (QSL, IR, RT, CG) in a log. | Retired |
+| FR-058-AC-3 | **RETIRED**, for the reason given in the Description. A lane run against the intentionally incompatible fixture manifest fails, and its diagnostic names the incompatible dependency and a stable marker string, not only a raw compiler error. | Retired |
+| FR-058-AC-4 | **RETIRED**, for the reason given in the Description. The lane is invocable by one documented local command; its documentation names an owner and an update procedure. | Retired |
 
 ## Dependencies
 
@@ -153,7 +153,7 @@ current-head lane failed), and how to re-run it locally.
 
 ## Status
 
-**Retired by QSL-335.** `integration/current-head/` (the lane crate, its `tool/` and
+**Retired.** `integration/current-head/` (the lane crate, its `tool/` and
 `fixtures/`) and its Makefile targets are deleted. All acceptance criteria
 above are retired for the reason given in the Description. There is no
 successor requirement in this repository.

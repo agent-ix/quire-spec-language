@@ -98,7 +98,7 @@ admits.
   present but not exactly the one package contract version this reader
   admits (`quire.checked-package/v2`), with the catalog's unsupported-wire
   refusal (`unknown_wire`/`unsupported-wire`, ADR-013 O-22) naming the actual
-  version supplied. **Added by QSL-235**: this member was previously only
+  version supplied. **Added**: this member was previously only
   checked for presence, never for its value.
 
 ## Constraints

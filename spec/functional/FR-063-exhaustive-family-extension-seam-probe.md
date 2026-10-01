@@ -35,11 +35,11 @@ on every build of the full gate, not only by inspection of the source.
   `qsl-eval`, that gives each seam `match` in `qsl-semantics` its probe arm
   so that crate compiles in those builds.
 - The `seam_probe_eval_downstream` and `seam_probe_replay_downstream`
-  build-configuration flags (QSL-5): the first, set by the probe builds of
+  build-configuration flags: the first, set by the probe builds of
   the root crate and `qsl-replay`, gives each seam `match` in `qsl-eval` its
   probe arm; the second, set only by the root crate's probe build, gives
   `qsl-replay`'s seam its probe arm.
-- The `seam_probe_forms` build-configuration flag (QSL-244): set only by
+- The `seam_probe_forms` build-configuration flag: set only by
   `qsl-forms`' own probe build, it adds `LeadingTokenKind::__SeamProbe`, so
   `dispatch` is non-exhaustive there and in no other build.
 - A checked-in list of the seam functions the probe builds' compiler errors
@@ -89,7 +89,7 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
 `xtask seam-probe` SHALL run six probe builds and collect every rustc
 `E0004` diagnostic location each reports:
 
-1. `qsl-forms` (QSL-244) with `RUSTFLAGS=--cfg seam_probe_forms`, which
+1. `qsl-forms` with `RUSTFLAGS=--cfg seam_probe_forms`, which
    reports the parser's leading-token-kind table, `qsl-forms::dispatch::
    dispatch`. The cfg is separate from `seam_probe` so that seam does not stop
    the crates above `qsl-forms` compiling in the other builds;
@@ -97,16 +97,16 @@ SHALL construct or match on a probe variant, and the `seam_probe` and `seam_prob
 3. the root crate (`quire-spec-language`) with `RUSTFLAGS=--cfg seam_probe
    --cfg seam_probe_downstream --cfg seam_probe_eval_downstream --cfg
    seam_probe_replay_downstream`. The root crate depends on `qsl-replay`,
-   which depends on `qsl-eval` (QSL-5);
+   which depends on `qsl-eval`;
 4. `qsl-route` with `RUSTFLAGS=--cfg seam_probe --cfg
    seam_probe_downstream`. The root crate names `qsl-route` only as a dev
    dependency, so building the root crate's library never compiles it;
-5. `qsl-eval` (layer 5, QSL-183) with `RUSTFLAGS=--cfg seam_probe --cfg
+5. `qsl-eval` (layer 5) with `RUSTFLAGS=--cfg seam_probe --cfg
    seam_probe_downstream`, which reports `qsl-eval`'s own seams. The root
    crate's build reaches `qsl-eval` through `qsl-replay` but sets
    `seam_probe_eval_downstream`, which gives those seams their probe arms,
    so only this build reports them;
-6. `qsl-replay` (layer 6, QSL-5) with `RUSTFLAGS=--cfg seam_probe --cfg
+6. `qsl-replay` (layer 6) with `RUSTFLAGS=--cfg seam_probe --cfg
    seam_probe_downstream --cfg seam_probe_eval_downstream`, which reports
    the replay executor's seam over `FamilyOutcome`.
 
@@ -156,8 +156,8 @@ ticket's runtime asks "what hook status does family X have at stage Y" to
 make an actual decision. It is deleted along with them, rather than kept
 alive by more fabricated callers or `#[allow(dead_code)]`. The list above
 therefore names no stage-participation table. The evaluation-stage entry is
-the S6a seam's `match` over the S6a family kind (`evaluate_declaration`,
-QSL-191), which has one arm per family that implements
+the S6a seam's `match` over the S6a family kind (`evaluate_declaration`),
+which has one arm per family that implements
 `ReferenceEvaluation` and no `Relation` arm (FR-090-AC-4).
 
 ### No wildcard arm, and no `#[non_exhaustive]` enum
@@ -222,7 +222,7 @@ Specified under
 their enums are defined, by the owning repository; this requirement covers
 only S1-S4, which are wholly inside the QSL crate.
 
-**QSL-155 correction.** FR-063-AC-5's second clause originally read "a test
+**AC-5 correction.** FR-063-AC-5's second clause originally read "a test
 that stubs the gate's target list shows the gate fails when
 `xtask seam-probe` exits non-zero." There is no Rust-level gate abstraction
 to stub: the gate is a `Makefile` target, and nothing in the design calls
@@ -234,7 +234,7 @@ not a stub -- are what propagate `xtask seam-probe`'s exit code to the
 gate's own. The AC-5 table row above already reflects the corrected text.
 
 **By Acceptance Criterion, with real trace tags as they exist in the
-delivered code today (QSL-149, QSL-143, QSL-155):**
+delivered code today:**
 
 - FR-063-AC-1: backed (`TC-161`,
   `failing_builds_compare_their_union_against_the_checked_in_list`,
@@ -251,15 +251,15 @@ delivered code today (QSL-149, QSL-143, QSL-155):**
   `a_wrong_checked_in_list_maps_to_a_non_zero_exit_code`,
   `xtask/src/seam_probe.rs`).
 - FR-063-AC-5: backed (`TC-161`, `the_full_gate_invokes_seam_probe`,
-  `xtask/src/seam_probe.rs`), against this criterion's own QSL-155-corrected
-  text (see the QSL-155 correction note above): the gate's real target
+  `xtask/src/seam_probe.rs`), against this criterion's own corrected
+  text (see the AC-5 correction note above): the gate's real target
   list, not a stub. `a_failed_prerequisite_fails_the_aggregate_gate_target`
   (untagged) is supporting evidence only: it shows `make`'s prerequisite-
   failure mechanism works in general, on a fixture, not that it fires for
   the real `xtask seam-probe` exit code.
 - FR-063-AC-6: backed (`TC-161`,
   `checked_in_locations_cover_every_ac6_category`,
-  `xtask/src/seam_probe.rs`, QSL-244). All five categories have a checked-in
+  `xtask/src/seam_probe.rs`). All five categories have a checked-in
   entry: S1 `FamilyKind::catalog_code_prefix`, S6a `evaluate_declaration`,
   S2 `qsl-forms::dispatch::dispatch` and `Typer::infer_form`, S3
   `Machine::apply` and `Lowering::lower_node`, S4 `CheckCause::code`. The

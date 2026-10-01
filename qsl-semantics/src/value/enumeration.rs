@@ -412,7 +412,7 @@ pub(crate) fn member_preimage_bytes(
 /// rather than the kernel ever holding one.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 ///
-/// The table is shared behind an `Arc` (QSL-205): a clone is a reference
+/// The table is shared behind an `Arc`: a clone is a reference
 /// count, so every checked equality over one enum can hold that enum's
 /// table without copying it.
 pub struct EnumMemberIndex(std::sync::Arc<BTreeMap<VariantId, EnumValue>>);

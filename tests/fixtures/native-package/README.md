@@ -26,7 +26,7 @@ complete TC-090.
 
 ## Frozen positive vectors
 
-QSL-233 (ADR-013 §7 S-4b) regenerated the three families: the manifest's
+ADR-013 §7 slice S-4b regenerated the three families: the manifest's
 `source` gained `authority` (`agent-ix`) and `revision_namespace` (`draft`),
 the four source labels of FR-001, so every canonical and package byte string
 and every identity digest changed (FR-021-AC-1).

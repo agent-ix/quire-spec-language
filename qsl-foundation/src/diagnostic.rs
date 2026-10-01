@@ -160,7 +160,7 @@ pub enum Code {
     /// ADR-013 O-01/QC-5: a second selection of a domain-package identity
     /// already selected at a different (or the same) version.
     DuplicateSelection,
-    /// QSL-236: a stage-entry limit was reached (`stage_limit_exceeded`,
+    /// A stage-entry limit was reached (`stage_limit_exceeded`,
     /// catalog revision `1-draft.8`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
     StageLimitExceeded,
@@ -559,14 +559,14 @@ fn source_refusal(
             Code::InvalidSourceIdentity
         }
         SourceReadCause::ReferenceInvariant => Code::RuntimeInvariant,
-        // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
+        // The source's own byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds the catalog admits.
         SourceReadCause::ByteBudget => Code::StageLimitExceeded,
         SourceReadCause::InvalidUtf8 => Code::InvalidUtf8,
         SourceReadCause::Bom | SourceReadCause::Nul => Code::InvalidSyntax,
         SourceReadCause::DigestMismatch => Code::SourceDigestMismatch,
     };
-    // QSL-236 (L3): only a `ByteBudget` refusal names a `SyntaxLimit` --
+    // L3: only a `ByteBudget` refusal names a `SyntaxLimit` --
     // every other cause's `limit` stays `None`.
     let limit = (refusal.cause == SourceReadCause::ByteBudget)
         .then_some(SyntaxLimit::SourceBytes { bound: byte_limit });
@@ -657,7 +657,7 @@ impl From<crate::source_map::SourceMapError> for Diagnostic {
 // Code"); they retain no canonical authority and gain no new consumer (R-09),
 // and nothing below converts to or from them.
 //
-// S-5b (QSL-160) adds T-4's `LimitKind`, `LimitExceeded`, `Staged` and
+// S-5b adds T-4's `LimitKind`, `LimitExceeded`, `Staged` and
 // `StageFailure` in `stage`, and O-17's `RefusalRecord` below, each naming
 // its position by T-5's `Locus`. This build claims catalog revision
 // `1-draft.8`, whose `stage_limit_exceeded` has one cause per `LimitKind`.
@@ -894,7 +894,7 @@ pub fn category_of(code: &CatalogCode) -> Option<Category> {
         .map(|&(_, category)| category)
 }
 
-/// ADR-013 O-16/O-17 (QSL-174): a family-owned evaluation-time refusal
+/// ADR-013 O-16/O-17: a family-owned evaluation-time refusal
 /// cause, held only through this trait so the layer-3 `check` core and this
 /// crate itself never name the concrete cause type -- "a cause belongs to
 /// the family whose construct produces it" (ADR-013 O-16). The supertraits
@@ -937,8 +937,7 @@ pub trait CatalogCoded: std::fmt::Debug + Send + Sync + 'static {
 /// the fields are read from the variant, never from a message: each domain
 /// or width is spelled exactly as the catalog spells it (FR-096 "A kernel
 /// value refusal carries what its record renders"), and
-/// `CardinalityOutOfBound`/`ForeignReference` keep their own fields
-/// (QSL-281).
+/// `CardinalityOutOfBound`/`ForeignReference` keep their own fields.
 ///
 /// `None` for `CheckedInvariant`: it is an [`InternalFault`], never a
 /// refusal record (a record is always category refusal).
@@ -1097,7 +1096,7 @@ impl RefusalRecord {
     }
 }
 
-/// ADR-013 O-16 (QSL-174): a family-owned evaluation-time undefined cause,
+/// ADR-013 O-16: a family-owned evaluation-time undefined cause,
 /// held only through this trait -- the undefined-category counterpart of
 /// [`CatalogCoded`].
 pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
@@ -1106,7 +1105,7 @@ pub trait UndefinedCoded: std::fmt::Debug + Send + Sync + 'static {
     fn undefined_record(&self) -> UndefinedRecord;
 }
 
-/// ADR-013 O-16 (QSL-174): the closed reason set of the
+/// ADR-013 O-16: the closed reason set of the
 /// `quire.native.diagnostics/v1` "Undefined reasons" table -- the catalog
 /// states this is not a refusal code or cause. Grows by one variant each
 /// time a family adds a new evaluation-time undefined result, the same way
@@ -1137,7 +1136,7 @@ impl std::fmt::Display for UndefinedReason {
     }
 }
 
-/// ADR-013 O-16 (QSL-174): the undefined-side counterpart of O-17's
+/// ADR-013 O-16: the undefined-side counterpart of O-17's
 /// `RefusalRecord` (held back for #213 S-5b): `reason` plus the catalog's
 /// own structured payload for that reason. [`UndefinedCoded::undefined_record`]
 /// returns this record, not the bare reason, because the catalog requires

@@ -75,4 +75,4 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273).
+Planned.

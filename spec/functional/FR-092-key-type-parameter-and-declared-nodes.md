@@ -964,7 +964,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
   that form recursion groups.
 - `SourceOwner`'s `authority` and `identity` are those of the unit's
   `RawSourceRef` ([FR-001](FR-001-read-exact-source.md); ADR-013 §7 slice
-  S-4b, QSL-233).
+  S-4b).
 - QSpec. `quire.structural-node/v1`, the `value`/`parameter` semantic form
   and the function node body shape are QSL proposals (ADR-013 QC-24). QSL
   keys its nodes by them now and conforms to QSpec's arm once QSpec publishes
@@ -976,9 +976,8 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 
 ## Status
 
-Specified under QSL-208; recursion groups and declared composite handles
-specified under QSL-211. Implemented on the QSL-156 slice A4b branch,
-pending merge: `check` keys every node by this requirement's preimages in
+Specified, including recursion groups and declared composite
+handles. Implemented (#384): `check` keys every node by this requirement's preimages in
 `qsl-semantics/src/check/node_key/` and `qsl-semantics/src/check/lowering.rs`,
 recursion groups included (`node_key::group_keys`, which names members by
 handle, and the lowering's drafts, keyed in dependency order), and gives a
@@ -990,7 +989,7 @@ member of a recursion group is that member wherever it is named after the
 group is keyed (FR-093's P15 and P16 are typed at G17).
 
 AC-13, the `predicate` function node and a source enum's nodes, is
-implemented (QSL-275): lowering writes `predicate` for a declaration of kind
+implemented: lowering writes `predicate` for a declaration of kind
 `Predicate` outside a recursion group, and a source enum's declaration and
 member nodes reach lowering through the assembler's `enums`.
 

@@ -77,7 +77,7 @@ impl ClockNames {
     }
 
     /// The typed clock names of every declaration of a version-2 `package`
-    /// (ADR-012 section 9; QSL-288): read directly from the `temporal_bindings`
+    /// (ADR-012 section 9): read directly from the `temporal_bindings`
     /// delta's typed `clock_name` field, never by re-parsing the inherited
     /// `clock:` binding-name spelling. `None` for a declaration with no
     /// temporal binding.
@@ -108,7 +108,7 @@ impl ClockNames {
 /// admission has no other source for a declaration's clock name; version-2
 /// admission reads the typed `temporal_bindings.clock_name` field instead
 /// ([`ClockNames::of_v2`]) and uses this only to emit that field and to
-/// verify it agrees with the legacy spelling (QSL-288).
+/// verify it agrees with the legacy spelling.
 #[qsl_attrs::string_edge]
 pub(crate) fn clock_binding_name(binding: &wire::BindingRequirement) -> Option<&str> {
     binding.name.strip_prefix("clock:")

@@ -15,10 +15,10 @@ pub enum Code {
     /// The `cargo xtask string-edge` scan found an allow-list defect or an
     /// unmarked, un-allow-listed occurrence.
     StringEdge,
-    /// QSL-139 (FR-068) TC-172/TC-176's resolved import-graph scan
+    /// FR-068 TC-172/TC-176's resolved import-graph scan
     /// (`xtask::import_graph`) could not parse a source file.
     ImportGraph,
-    /// QSL-46 (FR-080-AC-3) `cargo xtask route-lint` found a `static`,
+    /// FR-080-AC-3: `cargo xtask route-lint` found a `static`,
     /// `OnceLock` or `thread_local!` item in the `#185` registry module.
     RouteLint,
 }
@@ -161,7 +161,7 @@ pub enum Error {
         summary: String,
     },
     /// A configured `string-edge` crate root does not exist. Every listed
-    /// root is required (QSL-178 review F4): a crate rename or move this
+    /// root is required: a crate rename or move this
     /// scan's own root list has not caught up with must fail loudly, not
     /// silently drop that tree's coverage.
     #[error("string-edge: configured crate root does not exist: {path}")]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-107 (QSL-278) and FR-115 (QSL-300): `ProtocolClause`'s S6a/evaluation half
+//! FR-107 and FR-115: `ProtocolClause`'s S6a/evaluation half
 //! ([`super::ReferenceEvaluation`]), mirroring `family.rs`'s own
 //! `ValueFunctionFamily` half (ADR-012 §2: one marker type implements both
 //! halves, split across crates by the orphan rule -- see that module's own
@@ -115,7 +115,7 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
     /// own refusal. Check 11 charges nothing (`admit_invocation`'s docs), so
     /// `meter` is untouched.
     ///
-    /// FR-063 seam (QSL-278, mirroring `family.rs`'s own
+    /// FR-063 seam (mirroring `family.rs`'s own
     /// `ValueFunctionFamily::evaluate` seam exactly, the S6a family kind's
     /// own "one variant per family that implements `ReferenceEvaluation`"
     /// rule, FR-090 lines 44-45): this match's own probe arm below is

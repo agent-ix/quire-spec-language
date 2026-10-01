@@ -308,7 +308,7 @@ fn resource_limits_never_become_boolean_results() {
     // token/node ceilings and must parse, not refuse. This replaces a
     // former assertion that it was refused, back when `enter()` charged
     // nesting on every `expression()`/`binary()` recursion instead of on
-    // real bracket pairs (QSL-197).
+    // real bracket pairs.
     let expression = std::iter::repeat_n("true", 1000)
         .collect::<Vec<_>>()
         .join(" implies ");

@@ -860,7 +860,7 @@ fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
     );
 }
 
-/// QSL-232 (QSpec FR-322-AC-14): the projection keeps graph order, so a
+/// The projection keeps graph order, so a
 /// projection in descending node-id order is admitted. Declaration checks
 /// still visit nodes in ascending node-id digest order (FR-322-AC-21), so an
 /// ambiguity reports both nodes in ascending order whatever the projection

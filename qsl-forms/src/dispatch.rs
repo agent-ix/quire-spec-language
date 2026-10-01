@@ -192,7 +192,7 @@ pub enum LeadingTokenKind {
     /// absent from every non-test build.
     #[cfg(test)]
     TestProbe,
-    /// FR-063/S2 (QSL-244): exists only so `--cfg seam_probe_forms` makes
+    /// FR-063/S2: exists only so `--cfg seam_probe_forms` makes
     /// `dispatch` non-exhaustive. `qsl-forms` is built alone under that cfg
     /// (a separate cfg from `seam_probe`, so this crate's own seam does not
     /// hide the seams in the crates above it). Never constructed.
@@ -717,7 +717,7 @@ mod tests {
     }
 
     /// FR-091: the `record` entry replaced the M-3a no-entry fixture token;
-    /// FR-102 (QSL-273, TC-457) claims `invariant`, so FR-067-AC-3's
+    /// FR-102 (TC-457) claims `invariant`, so FR-067-AC-3's
     /// no-entry case moves to `temporal`, a spelling no family claims.
     #[trace("TC-167", "FR-067-AC-3")]
     #[trace("TC-457", "FR-102-AC-4")]

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-413 (FR-092-AC-7, QSL-224): a long chain of declared composites
+//! TC-413 (FR-092-AC-7): a long chain of declared composites
 //! checks or refuses on the named depth limit, and never overflows the
 //! stack. Each check runs on a spawned thread with a 2 MiB stack, the
-//! default test-thread size, in whatever profile the suite runs in; before
-//! QSL-224 a debug build aborted at a 30-record chain.
+//! default test-thread size, in whatever profile the suite runs in; a debug
+//! build once aborted at a 30-record chain.
 
 use std::collections::BTreeSet;
 
@@ -129,7 +129,7 @@ fn record_nodes(graph: &CheckedGraph) -> usize {
         .count()
 }
 
-/// QSL-224's reproduction: a 30-record chain of optional fields into one
+/// The reproduction: a 30-record chain of optional fields into one
 /// text field checks at the default limits, alone and under an equality
 /// that walks its text leaf.
 #[trace("FR-092-AC-7", "TC-413")]

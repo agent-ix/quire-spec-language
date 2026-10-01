@@ -73,7 +73,7 @@ mutated document except where the row says otherwise.
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive`. Every population declaration is an unbounded `Population(None)`
-(FR-104-check-state-clauses.md:194-195, as amended by QSL-277): no wire
+(FR-104-check-state-clauses.md:194-195, as amended): no wire
 field expresses a maximum, and none is needed. `archive`'s own declared
 member type is `Sub` (see row 39), not `ConfigVersion` itself: population
 coverage is by conformance downward only, so a population whose member is
@@ -102,4 +102,4 @@ row yields an `AdmittedObservations`.
 
 ## Status
 
-Planned (QSL-273).
+Planned.

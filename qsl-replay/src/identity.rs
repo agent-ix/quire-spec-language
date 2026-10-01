@@ -10,7 +10,7 @@
 //!   splitting that module concurrently) and cannot depend on before it
 //!   merges. This module's copy is #231's own, scoped to `replay` only.
 //! - O-07's occurrence key and O-12's source region have their canonical
-//!   home in `qsl_foundation::source::provenance` (#213 S-4, QSL-159);
+//!   home in `qsl_foundation::source::provenance` (#213 S-4);
 //!   this crate carries them from there.
 //! - [`ObligationIdentity`] (O-09) is canonical here (ADR-013 OQ-H): CG
 //!   names this type directly; IR names no QSL type. CG computes its digest
@@ -220,7 +220,7 @@ impl RawSourceRef {
 /// which also pins the tool. Two backend identities are equal iff both
 /// fields are equal.
 ///
-/// QSL-227: the manifest digest is typed [`ManifestDigest`] (shared with
+/// The manifest digest is typed [`ManifestDigest`] (shared with
 /// `qsl_route::Candidate`, moved to `qsl_foundation` for exactly this
 /// reason), not a domain-agnostic `DigestRecord` -- a `Backend` cannot be
 /// built at all with a digest in any other FR-201 domain. `Backend` keeps

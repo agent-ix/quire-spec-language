@@ -4,7 +4,7 @@ resolver = "2"
 
 [workspace.dependencies]
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation, pinned once for
-# every crate that encodes an identity (QSL-194).
+# every crate that encodes an identity.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "quire-canonical-v0.3.0" }
 
 [package]
@@ -19,11 +19,11 @@ default-run = "quire-spec"
 
 [features]
 default = []
-# ADR-011 §7.3 X-4 (QSL-179): the I3 adapter crate `qsl-source` owns the
+# ADR-011 §7.3 X-4: the I3 adapter crate `qsl-source` owns the
 # quire-rs dependency; this feature builds it with its own `quire-extraction`,
 # and turns on `qsl-replay`'s, so FR-109's `run_clause` accepts an I3 source.
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction", "qsl-replay/quire-extraction"]
-# QSL-251: `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
+# `protocol_artifact::handoff::{write_v1, write_v2}`, the complete
 # compiled-protocol handoff producer a downstream crate calls in-process. It
 # embeds the authored `examples/protocol-handoff/` recipe inputs, so the
 # default build leaves it out. It adds no dependency.
@@ -37,27 +37,27 @@ handoff-writer = []
 quire-exact = { path = "quire-exact" }
 # ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
 # native-temporal document identities encode through the one RFC 8785
-# implementation (QSL-220).
+# implementation.
 quire-canonical = { workspace = true }
-# ADR-011 §7.3 X-2 (QSL-177): layer F, extracted out of this crate.
+# ADR-011 §7.3 X-2: layer F, extracted out of this crate.
 qsl-foundation = { path = "qsl-foundation" }
-# ADR-011 §7.3 X-3 (QSL-178): layer 1, extracted out of this crate.
+# ADR-011 §7.3 X-3: layer 1, extracted out of this crate.
 qsl-cst = { path = "qsl-cst" }
-# ADR-011 §7.3 X-5 (QSL-180): layer 2, extracted out of this crate.
+# ADR-011 §7.3 X-5: layer 2, extracted out of this crate.
 qsl-forms = { path = "qsl-forms" }
-# ADR-011 §7.3 X-6 (QSL-181): layer 3, extracted out of this crate. This crate
+# ADR-011 §7.3 X-6: layer 3, extracted out of this crate. This crate
 # re-exports none of its items (ADR-011 §7.2); callers name them at
 # `qsl_semantics::...`.
 qsl-semantics = { path = "qsl-semantics" }
-# ADR-011 §7.3 X-7 (QSL-182): layer 4, extracted out of this crate. This crate
+# ADR-011 §7.3 X-7: layer 4, extracted out of this crate. This crate
 # re-exports none of its items (ADR-011 §7.2); callers name them at
 # `qsl_package::...`.
 qsl-package = { path = "qsl-package" }
-# ADR-011 §6.1 layer 6 `replay` (QSL-185): `command`'s CLI `compile` calls
+# ADR-011 §6.1 layer 6 `replay`: `command`'s CLI `compile` calls
 # its spine compile (`qsl_replay::spine`), the one S1-to-S4 chain `replay`
-# and `command` share (QSL-5). This crate re-exports none of its items.
+# and `command` share. This crate re-exports none of its items.
 qsl-replay = { path = "qsl-replay" }
-# ADR-011 §7.3 X-4 (QSL-179): layer I3, extracted out of this crate. This
+# ADR-011 §7.3 X-4: layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }
 logos = "=0.16.1"
@@ -84,7 +84,7 @@ qsl-attrs = { path = "qsl-attrs" }
 # dependency that does. Resolver 2 turns it on only when a test target is
 # built, so it never reaches the production lib.
 qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
-# ADR-011 §7.3 X-9 (QSL-184): layer R, extracted out of this crate. No
+# ADR-011 §7.3 X-9: layer R, extracted out of this crate. No
 # shipped module of this crate calls it, so it is a dev dependency only
 # (ADR-011 §7.1: "A dependency needed only by tests is a dev dependency"):
 # `tests/it/lowering_registry_isolation.rs` builds a `qsl_route::Registry`
@@ -98,9 +98,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
 # whole-crate `syn` scanner instead of a second, byte-identical copy; a
 # workspace path dependency, dev-only, so it adds no edge to any shipped
-# build (PR #300 review, QSL-158 S-3b).
+# build (PR #300 review).
 xtask = { path = "xtask" }
-# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "quire-exact", features = ["test-support"] }
@@ -130,7 +130,7 @@ path = "src/main.rs"
 name = "fixture-audit"
 path = "tools/fixture-audit/main.rs"
 
-# QSL-175 (#306): every former `tests/*.rs` integration-test target is now a
+# Every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for
 # the full rationale). It needs no `required-features`: the `qsl-semantics`
 # fixtures its modules call are enabled by that crate's dev-dependency above.

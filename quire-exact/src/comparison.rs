@@ -52,7 +52,7 @@ impl ComparisonOperator {
 
     /// Decide the operator over an exact ordering of its operands.
     ///
-    /// `pub`, not `pub(crate)` (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `pub(crate)`: `quire_spec_language::value::
     /// text`'s own `compare`, still local because it returns this crate's
     /// own `Outcome`, calls it directly. It is a pure decision over an
     /// already-computed `Ordering`, so widening charges or exposes nothing.

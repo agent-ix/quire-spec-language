@@ -579,7 +579,7 @@ mod tests {
     use super::super::refusal::Origin;
     use super::*;
 
-    /// The pre-QSL-203 component partition, kept only as this module's
+    /// The earlier component partition, kept only as this module's
     /// differential oracle: a reachability set per member, then an
     /// all-pairs mutual-reachability filter, O(V^2) time and memory.
     fn closure_components(members: &[Member<'_>]) -> Vec<Vec<usize>> {
@@ -624,7 +624,7 @@ mod tests {
         components
     }
 
-    /// `check` as it was before QSL-203: the oracle partition, then the
+    /// `check` as it was before Tarjan's components: the oracle partition, then the
     /// same per-component obligations.
     fn closure_check(members: &[Member<'_>]) -> Vec<CheckRefusal> {
         check_components(
@@ -839,11 +839,11 @@ mod tests {
         (0..count).map(|index| format!("f{index}")).collect()
     }
 
-    /// QSL-203 AC 2: on generated call graphs -- random, ringed, chained and
+    /// On generated call graphs -- random, ringed, chained and
     /// dense, with self-loops, repeated edges, multiple components and
     /// dispatch edges, and with measures that fail each obligation or none --
     /// Tarjan's components and every termination refusal, in order, equal
-    /// the pre-QSL-203 closure-and-filter algorithm's.
+    /// the earlier closure-and-filter algorithm's.
     #[trace("TC-191", "FR-146-AC-4")]
     #[trace("TC-191", "FR-146-AC-7")]
     #[test]
@@ -950,7 +950,7 @@ mod tests {
     }
 }
 
-/// QSL-203 review finding 2: informal timing of `check` alone on N
+/// Informal timing of `check` alone on N
 /// self-recursive members, each its own refused component. Wall-clock, so
 /// `#[ignore]`d out of the default run; run with
 /// `cargo test --release -p qsl-semantics termination_scaling -- --ignored --nocapture`.

@@ -24,11 +24,11 @@ under-move (one or more check-cause types left behind in `value::expression`,
 so `check`'s own checking methods cannot use them without a reverse edge).
 Scope: FR-068-AC-4, FR-068-AC-8 (retired).
 
-**Steps 4-5 are retired under QSL-131 O2, which deletes `value/outcome.rs`.**
+**Steps 4-5 are retired: `value/outcome.rs` is deleted.**
 This test formerly also verified the one mechanical consequence of
 relocating `WrongSnapshotCause` onto that file: its import updating to name
 `check`, with no other change to the file. `value/outcome.rs` does not exist
-now — QSL-131 O2 deletes the module and repoints every `value` caller onto
+now — the module is deleted and every `value` caller repointed onto
 `quire_exact::{Outcome, Refusal, Undefined}` directly (TC-390) — so there is
 no file left for steps 4-5 to read or diff, and FR-068-AC-8, the criterion
 they verified, is retired for the same reason. Nothing takes their place: the

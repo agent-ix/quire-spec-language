@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The workspace's member crates, read from `cargo metadata`, so a source
 //! scan covers every crate as soon as it is a member instead of only the ones
-//! someone remembered to list (QSL-183 review L6, I6).
+//! someone remembered to list.
 
 use std::path::{Path, PathBuf};
 

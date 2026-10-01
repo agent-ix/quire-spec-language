@@ -1979,7 +1979,7 @@ fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
     }
 }
 
-/// QSL-199: a linear chain `model.chain.0 -> model.chain.1 -> ... ->
+/// A linear chain `model.chain.0 -> model.chain.1 -> ... ->
 /// model.chain.{depth}`, each type's own single direct supertype the next
 /// in the chain; `model.chain.{depth}` itself has none. `model.chain.0` has
 /// exactly `depth` ancestors. Two fields ride on the chain's ends: one on
@@ -2027,7 +2027,7 @@ fn check_chain(depth: u64, limits: ModelNormalizationLimits) -> ConformanceCheck
     )
 }
 
-/// QSL-199 AC-4: a valid model with more than 128 ancestors on one type
+/// A valid model with more than 128 ancestors on one type
 /// passes conformance at default (unlimited) limits. The removed fixed
 /// ceiling of 128 refused this whatever the caller configured (ADR-011 §7.3;
 /// NFR-001 "an implementation ceiling is not a domain bound").
@@ -2080,7 +2080,7 @@ fn an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses(
     }
 }
 
-/// QSL-199 AC-4, end to end: a model with more than 128 ancestors on one
+/// End to end: a model with more than 128 ancestors on one
 /// type normalizes at default (unlimited) limits, and the same model's
 /// redefinition then passes conformance. The removed fixed ceiling of 128
 /// on normalization's ancestor paths refused this before conformance ever

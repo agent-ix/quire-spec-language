@@ -17,8 +17,8 @@
 //! FR-113's binder no-shadowing rule (a record binder, a capture, a
 //! compensation trigger or a retry or recovery parameter shadowing a
 //! model/profile alias, a native declaration of the package or another
-//! visible binder) is checked here too (QSL-306), over the `BinderForm`s
-//! QSL-306's own S2 extension (`qsl_forms::protocol_clause::BinderForm`)
+//! visible binder) is checked here too, over the `BinderForm`s
+//! the S2 extension (`qsl_forms::protocol_clause::BinderForm`)
 //! now builds for every binder position. QSpec `shared-grammar.md` makes
 //! every binder "unique in their enclosing declaration": that declaration
 //! is the checked protocol as a whole, so every binder name in it shares
@@ -79,7 +79,7 @@ pub struct BoundAttempt {
     pub contracts: Vec<usize>,
 }
 
-/// One protocol `attempt`, fully checked (FR-114 "Outputs", QSL-309): the
+/// One protocol `attempt`, fully checked (FR-114 "Outputs"): the
 /// identity of its operation's `state`/`operation_anchor` node and
 /// `state`/`frame` node (FR-105), and the identity of each state clause its
 /// `contracts` list names, in list order. The frame's own entries are never
@@ -107,7 +107,7 @@ pub struct CheckedAttempt {
 /// `attempts` starts empty: `check` checks FR-114's `contracts` binding
 /// (its own `Vec<BoundAttempt>` return value) but mints no node identity,
 /// since that needs S4 (lowering); `check::mod`'s own pipeline fills
-/// `attempts` in once it does (QSL-309).
+/// `attempts` in once it does.
 #[derive(Clone, Debug)]
 pub struct CheckedProtocol {
     /// The declared protocol name.
@@ -167,7 +167,7 @@ fn admitted_kinds(site: AnchorSite) -> (&'static str, &'static [ProtocolNodeKind
 
 /// FR-113: the protocol node `protocol`'s scoped anchors resolve to, and
 /// FR-114: each `attempt`'s own `contracts` list checked against its
-/// already-resolved operation (QSL-309) -- or the refusals below, in source
+/// already-resolved operation -- or the refusals below, in source
 /// position order (declaration-order duplicate refusals first at equal
 /// span, then binder-shadow refusals, then per-anchor refusals, then
 /// per-contract refusals). `alias_names` (the unit's own `profile`/`model`
@@ -379,8 +379,8 @@ fn bind_attempts(
     (bound, refusals)
 }
 
-/// Whether this checker covers every part of a static node of `kind`
-/// (QSL-309): a `sequence` (a name and its children), an `attempt` (its
+/// Whether this checker covers every part of a static node of `kind`:
+/// a `sequence` (a name and its children), an `attempt` (its
 /// operation and `contracts`, FR-114; its role, binder and body are checked
 /// by [`content`]) and the `finish` node (its binder and body, the same).
 /// Every other kind carries content -- a channel, a guard, a join policy,
@@ -406,7 +406,7 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
     }
 }
 
-/// QSL-309 (SR-770 FND-001): the rest of a protocol's content, once
+/// The rest of a protocol's content, once
 /// [`check`] has resolved its anchors, binders and attempt bindings.
 ///
 /// FR-113 and FR-114 check only those three parts. A protocol holding
@@ -661,7 +661,7 @@ fn check_kind(
 /// binder visible where it is declared, in source order.
 ///
 /// Binders are checked in `protocol.binders`' own order (source order,
-/// QSL-306's S2 walk), each against every binder built before it anywhere
+/// the S2 walk), each against every binder built before it anywhere
 /// in the protocol: a later binder shadows an earlier one, never the other
 /// way round, so only the later binder is refused (FR-113: "refuse ... at
 /// that binder, naming the declaration it would shadow"). QSpec
@@ -770,11 +770,11 @@ mod tests {
 
     /// `M::Actor` and its own `op` and `other` operations (no parameters,
     /// no result, an empty frame), normalized to a [`SelectedModel`] aliased `M` --
-    /// QSL-309's own fixture, so every `attempt ... on M::Actor::op` this
+    /// the FR-114 fixture, so every `attempt ... on M::Actor::op` this
     /// module's fixtures already write (FR-114's own assembler resolution,
     /// which now runs for every protocol) resolves rather than refusing at
     /// assembly. This module's FR-113 tests still exercise anchor
-    /// resolution and binder shadowing only; QSL-309 touches neither.
+    /// resolution and binder shadowing only; FR-114 touches neither.
     fn m_actor_model() -> SelectedModel {
         let key = |name: &str| DeclarationKey {
             package: "example/protocol-fixture".to_owned(),
@@ -830,7 +830,7 @@ mod tests {
     }
 
     /// S1, S2 and the assembler over `declarations`, against
-    /// [`m_actor_model`]'s own `M::Actor::op` (QSL-309): FR-113's checker
+    /// [`m_actor_model`]'s own `M::Actor::op`: FR-113's checker
     /// itself resolves protocol node references only, never a model type,
     /// but FR-114's own assembler resolution now runs for every attempt
     /// regardless, so this module's fixtures need a real admitted model
@@ -911,7 +911,7 @@ mod tests {
     }
 
     /// The full `PackageDeclarations::check` pipeline over `declarations`,
-    /// expecting it to succeed (QSL-309).
+    /// expecting it to succeed.
     fn checks(declarations: &str) -> CheckedGraph {
         let (_, assembled) = assemble(declarations);
         assembled
@@ -919,7 +919,7 @@ mod tests {
             .unwrap_or_else(|refusals| panic!("{declarations}: {refusals:?}"))
     }
 
-    /// QSL-309: a protocol `name` made only of parts the checker covers in
+    /// A protocol `name` made only of parts the checker covers in
     /// full (`super::content`): one role, a `run sequence` holding one
     /// `attempt` of `M::Actor::op` with `contracts [contracts]`, and a
     /// `finish`, every body the bare literal `true`.
@@ -1114,7 +1114,7 @@ mod tests {
         // Every record binder here is uniquely named (`applied_inner`,
         // `seen_inner`/`seen_qualified`/`seen_outer`), distinct from the
         // outer fixture's own `applied`: FR-113's binder no-shadowing rule
-        // is now protocol-wide (QSL-306, SR-765 FND-001), and this test's
+        // is now protocol-wide (SR-765 FND-001), and this test's
         // own assertions are about anchor *resolution* through nested and
         // sibling named-control scopes, not about binder shadowing --
         // reusing a binder name here would make the fixture itself refuse.
@@ -1316,7 +1316,7 @@ mod tests {
     /// same refusals in the same order.
     /// [`a_missing_anchor_and_a_later_shadowing_binder_report_in_source_order`]
     /// carries AC-6's own trace tag, over its own fixture (a missing anchor
-    /// paired with a shadowing binder, QSL-306).
+    /// paired with a shadowing binder).
     #[trace("TC-512")]
     #[test]
     fn a_missing_anchor_and_a_later_duplicate_declaration_report_in_source_order() {
@@ -1534,7 +1534,7 @@ mod tests {
         ));
     }
 
-    /// SR-770 FND-001 (QSL-309): a protocol whose anchors (FR-113) and
+    /// SR-770 FND-001: a protocol whose anchors (FR-113) and
     /// attempt bindings (FR-114) all resolve, but which holds content no
     /// checker reads yet (here a channel, a `compensate` template, an
     /// `effect`, an `event` and a `commit`), still refuses
@@ -1565,7 +1565,7 @@ mod tests {
         }
     }
 
-    /// QSL-309: a protocol made only of parts the checker covers in full
+    /// A protocol made only of parts the checker covers in full
     /// (a role, a `sequence`, an `attempt` and a `finish`, each body a bare
     /// Boolean literal) checks through the whole pipeline, and its checked
     /// attempt names the resolved operation's own anchor and frame nodes.
@@ -2162,7 +2162,7 @@ mod tests {
         let second =
             attempt_flow("Second", "").replacen("as (tried: Boolean)", "as (shared: Boolean)", 1);
         let combined = format!("{first}\n{second}");
-        // QSL-309: both protocols are made only of fully checked parts, so
+        // Both protocols are made only of fully checked parts, so
         // the whole package checks: neither refuses `Shadow`.
         let checked = checks(&combined);
         let names: Vec<&str> = checked

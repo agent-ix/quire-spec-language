@@ -21,8 +21,8 @@
 //! since its caller (QSL's own `model::population::all_instances`, which
 //! this comment used to name directly) is now a separate crate.
 //!
-//! QSL-131 V5b widens two more trusted, no-recheck primitives from
-//! `pub(crate)` to `pub`, each as an `Outcome`-returning wrapper around its
+//! Two more trusted, no-recheck primitives are widened
+//! from `pub(crate)` to `pub`, each as an `Outcome`-returning wrapper around its
 //! existing `Stop`-based body (the same split [`form_grouped`] already used):
 //! [`form`] (QSL's `value::expression::evaluate` `Machine` builds occurrences
 //! from a checked, already-typed expression and forms them with no
@@ -426,7 +426,7 @@ fn member_equal_stop(candidate: &Value, member: &Value, meter: &mut Meter) -> Re
     // `candidate` the value tested against it, so `plan_pairs(member,
     // candidate)` -- not the reverse -- keeps a `ForeignReference`'s
     // `required` naming the collection's own universe and `supplied` the
-    // probe's (QSL-281, FR-096's `required`/`supplied` convention;
+    // probe's (FR-096's `required`/`supplied` convention;
     // `plan_pairs` is symmetric, so this does not change the pair count or
     // result).
     let plan = plan_pairs(member, candidate).map_err(Stop::Refused)?;

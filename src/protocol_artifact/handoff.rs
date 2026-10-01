@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{v2, wire as w, Dimension, Limits, ACCOUNTING_VERSION};
 
-/// QSL-251: the complete handoff producer. Behind the `handoff-writer`
+/// The complete handoff producer. Behind the `handoff-writer`
 /// feature because it embeds the authored recipe inputs, which the default
 /// build does not carry.
 #[cfg(feature = "handoff-writer")]

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 §2 (ADR-013:113, QSL-194): one RFC 8785 implementation.
+//! ADR-013 §2 (ADR-013:113): one RFC 8785 implementation.
 //!
 //! "One RFC 8785 JCS implementation produces every RFC 8785 encoding: the
 //! `quire-canonical` crate." QSL once spelled "serialize with `serde_json`,
 //! then SHA-256" at eight identity sites, each its own canonical encoder,
 //! and a helper in one file (`key.rs`'s `jcs_bytes`) was hashed in others
-//! (`population.rs`, `intake.rs`). QSL-194 moved them all to
+//! (`population.rs`, `intake.rs`). They all moved to
 //! `quire-canonical`; this check refuses a new one.
 //!
 //! **Two function sets.** Over every shipped function of a crate -- free
@@ -229,7 +229,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         ],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
-        reason: "QSL-251: the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
+        reason: "the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
                  emitted or embedded (offer, mutation offers, sources, clock inputs, rule \
                  placeholders, its own source, `SHA256SUMS` members); not an identity over a \
                  canonical form",
@@ -240,7 +240,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         functions: &["compile_with", "emit_and_read"],
         calls: &["bind", "admit"],
         kind: ExemptionKind::NotAnIdentity,
-        reason: "QSL-251: these two functions name no `serde_json` themselves; their only \
+        reason: "these two functions name no `serde_json` themselves; their only \
                  hash sites are their calls into `linking::composed::binding::bind` and \
                  `protocol_artifact::native::admit`, which hash the admission evidence they \
                  construct, not a canonical form of it. Pinned to those two calls so this \
@@ -1100,7 +1100,7 @@ pub(crate) fn report(outcome: &Outcome) -> String {
     };
     let mut summary = String::new();
     summary.push_str(
-        "ADR-013 §2 one-RFC-8785-encoder check (ADR-013:113, QSL-194)\n  Note: a shipped file \
+        "ADR-013 §2 one-RFC-8785-encoder check (ADR-013:113)\n  Note: a shipped file \
          fails if it both hashes (names Sha256, sha2, of_preimage or ByteDigest::of, or calls \
          a hashing function of another file) and reads as JSON (names serde_json, or calls a \
          JSON-producing function of another file). Both function sets are closed under \
@@ -1538,7 +1538,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         assert_eq!(sites[0].function, "fresh");
     }
 
-    /// QSL-220: intake's exemption is pinned to its `raw_bytes_digest`
+    /// Intake's exemption is pinned to its `raw_bytes_digest`
     /// call. The pre-#389 `check_package_digest` (55db8a4c), hashing a
     /// `jcs_bytes` JSON producer with `Sha256` directly, fails on both
     /// counts, and hashing JSON through the pinned call still fails.
@@ -1617,7 +1617,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .collect()
     }
 
-    /// QSL-220 review M1 (A): a serializer imported by name and hashed
+    /// Review M1 (A): a serializer imported by name and hashed
     /// through the pinned call fails.
     #[test]
     fn pinned_exemption_refuses_an_imported_serializer() {
@@ -1629,7 +1629,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         assert_eq!(found, vec![(4, "check_package_digest".to_owned())]);
     }
 
-    /// QSL-220 review M1 (B): a JSON producer defined in the same file and
+    /// Review M1 (B): a JSON producer defined in the same file and
     /// hashed through the pinned call fails.
     #[test]
     fn pinned_exemption_refuses_a_same_file_json_producer() {

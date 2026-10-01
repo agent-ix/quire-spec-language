@@ -152,7 +152,7 @@ impl ProjectedDeclarations {
     /// freshly wire-read [`crate::library::LibraryPackage::exports`].
     #[allow(
         dead_code,
-        reason = "no production caller yet: reachable only through `library::declared_exports`, itself uncalled until ADR-011 §4's round trip (QSL-6 slice S3) wires the I2 reader in"
+        reason = "no production caller yet: reachable only through `library::declared_exports`, itself unused pending ADR-011 §4's round trip (QSL-347) to wire the I2 reader in"
     )]
     pub(crate) fn declared_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.0.values().map(String::as_str).collect();
@@ -527,7 +527,7 @@ mod tests {
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
 
-    /// QSL-194 (ADR-013:113): the canonicity check is the `quire-canonical`
+    /// The canonicity check is the `quire-canonical`
     /// encoder's own output, so it admits a member name outside ASCII
     /// exactly when the name is in RFC 8785's UTF-16 code-unit order. `😀`
     /// (UTF-16 `D83D DE00`) sorts before U+E000 (`E000`) in RFC 8785, but

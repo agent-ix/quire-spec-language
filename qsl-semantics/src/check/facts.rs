@@ -6,7 +6,7 @@
 //! stable path `p`, and an integer ordering or equality between a stable
 //! integer path (or `size(p)`) and an integer literal. A comparison of two
 //! non-literal operands yields no fact. The walk keeps its pending nodes on a
-//! heap stack (QSL-228); the guard-fact helpers it calls recurse over a
+//! heap stack; the guard-fact helpers it calls recurse over a
 //! typed tree whose depth the checking limits already bound.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -692,8 +692,8 @@ impl<'a> Definedness<'a> {
     }
 
     /// Walk `root` under `facts`, depth first in evaluation order, keeping
-    /// the pending nodes on a heap stack rather than the host stack
-    /// (QSL-228). A node's obligation is discharged once its operands are
+    /// the pending nodes on a heap stack rather than the host stack.
+    /// A node's obligation is discharged once its operands are
     /// walked, and a node whose later operands run under facts its first
     /// operand establishes (`if`, a connective, `let`) walks them once that
     /// operand is walked: the order, and so the first refusal and the order

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-139 (FR-068) TC-170/TC-171/TC-173: resolve "exactly one defining
+//! FR-068 TC-170/TC-171/TC-173: resolve "exactly one defining
 //! location" claims against the real, whole source tree, not a claim about
 //! four named methods or twelve named types read in isolation.
 //!
@@ -215,8 +215,8 @@ pub struct CrateDefinitions {
 }
 
 /// Scan the QSL crate's `src/` tree and its extracted layer-3, layer-4 and
-/// layer-5 crates' (`qsl-semantics/src/`, QSL-181; `qsl-package/src/`,
-/// QSL-182; `qsl-eval/src/`, QSL-183), once, as one set of definitions:
+/// layer-5 crates' (`qsl-semantics/src/`, `qsl-package/src/`,
+/// `qsl-eval/src/`), once, as one set of definitions:
 /// `check`, `model`, `library`, the S4 `CheckedPackage` and the S6a
 /// `value::expression` moved there, and the checks below still ask where in
 /// the QSL crate family an item is defined.
@@ -303,7 +303,7 @@ mod tests {
     /// `check::family.rs` keeps the checking half, FR-068-AC-1) and
     /// `causes` (FR-090's family evaluation causes, defined beside the
     /// evaluator) and `s6a` (the S6a family contract, `ReferenceEvaluation`
-    /// and `S6aFamilyKind`, layer 5 since QSL-181), so an unexpected module
+    /// and `S6aFamilyKind`, layer 5), so an unexpected module
     /// cannot be hiding a renamed leftover here.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
@@ -327,7 +327,7 @@ mod tests {
     }
 
     /// TC-170 step 1: `check` is declared at the root of `qsl-semantics`,
-    /// the layer-3 crate it moved into (QSL-181).
+    /// the layer-3 crate it moved into.
     #[trace("TC-170", "FR-068-AC-1")]
     #[test]
     fn crate_root_declares_check() {
@@ -374,7 +374,7 @@ mod tests {
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
     /// rather than crate-wide).
     ///
-    /// **Updated (QSL-158 S-3a).** `check`'s S3 output type was renamed
+    /// **Updated.** `check`'s S3 output type was renamed
     /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
     /// methods this test pins moved with it, and `CheckedPackage` itself is
     /// now `package`'s own, different, S4 in-process type
@@ -467,7 +467,7 @@ mod tests {
     /// (a partial move), or that adds a `check` copy while leaving the
     /// original in `model` (a duplicate rather than a move), fails this
     /// test. Inverted from FR-068-AC-7's pre-M-2 assertion (the same two
-    /// names, opposite module) now that M-2 (this ticket, QSL-7) has moved
+    /// names, opposite module) now that M-2 has moved
     /// them.
     #[trace("TC-261", "FR-074-AC-1", "FR-074-AC-2")]
     #[test]

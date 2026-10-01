@@ -62,7 +62,7 @@ Tag the tests `#[trace("TC-428", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Passing locally (QSL-245), steps 1 to 6. Steps 1 to 3 cover FR-096-AC-6 and
+Passing locally, steps 1 to 6. Steps 1 to 3 cover FR-096-AC-6 and
 FR-096-AC-7. Step 4 (FR-096-AC-8) covers all twelve kernel causes: each
 variant carries the target domain or width its record renders,
 `Refusal::code()` and `Refusal::cause()` return the key table's code and

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-199: every [`Limits`] field is enforced as the caller supplies it,
+//! Every [`Limits`] field is enforced as the caller supplies it,
 //! above or below [`Limits::default`] (NFR-001: an implementation ceiling is
 //! not a domain bound), and [`qsl_cst::ParsedSource::effective_limits`]
 //! records exactly the limits the parse was checked against. Each test goes
@@ -7,7 +7,7 @@
 //! points, so a ceiling clamped anywhere on that path turns it red.
 //!
 //! Raising `nesting` is safe because both the lexer and the parser keep
-//! explicit stacks (QSL-197); the nesting tests below run on a 512 KiB
+//! explicit stacks; the nesting tests below run on a 512 KiB
 //! thread to prove a raised ceiling can never abort the process.
 use ix_trace_rs::trace;
 use qsl_cst::diagnostic::read_source;
@@ -77,7 +77,7 @@ fn a_caller_raised_source_byte_ceiling_admits_past_the_default() {
     text.push('\n');
     assert_eq!(
         parse("bytes-default", &text, Limits::default()).unwrap_err(),
-        // QSL-236: `source_bytes` is a `SyntaxLimit` kind the catalog
+        // `source_bytes` is a `SyntaxLimit` kind the catalog
         // admits, so it now reports `stage_limit_exceeded`.
         CompleteCode::StageLimitExceeded,
         "the default source-byte ceiling must refuse a source past it"
@@ -183,7 +183,7 @@ fn a_caller_raised_node_ceiling_admits_past_the_default_and_refuses_one_less() {
         qsl_cst::parse_source(source(), Limits::default())
             .unwrap_err()
             .code,
-        // QSL-236: the node ceiling is a `SyntaxLimit` kind the catalog
+        // The node ceiling is a `SyntaxLimit` kind the catalog
         // admits, so it now reports `stage_limit_exceeded`.
         CompleteCode::StageLimitExceeded,
     );
@@ -291,7 +291,7 @@ fn assert_admitted_under(outcome: Result<ParsedSource, Box<CompleteDiagnostic>>,
     assert_eq!(parsed.effective_limits().nesting, 100_000);
 }
 
-/// QSL-199 finding 1: raising `nesting` to 100,000 never crashes the
+/// Raising `nesting` to 100,000 never crashes the
 /// parser. 6,000 nested parentheses (through [`qsl_cst::parse`]) and 6,000
 /// nested `Option<...>` (through [`qsl_cst::parse_source`]) on a 512 KiB
 /// thread are admitted with the raised limits recorded. Node and token
@@ -331,7 +331,7 @@ fn a_raised_nesting_ceiling_never_crashes_the_parser() {
     });
 }
 
-/// QSL-199 finding 1: a caller-raised `nesting` ceiling admits a unit the
+/// A caller-raised `nesting` ceiling admits a unit the
 /// default of 64 refuses, and one pair past the raised ceiling refuses
 /// naming it.
 #[trace("TC-012", "NFR-001-M-4")]

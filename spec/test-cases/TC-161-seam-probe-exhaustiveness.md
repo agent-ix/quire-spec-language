@@ -19,7 +19,7 @@ Verify that the six probe builds -- `qsl-forms` under
 `RUSTFLAGS=--cfg seam_probe`, then the root crate, `qsl-route`, `qsl-eval`
 and `qsl-replay` each under `RUSTFLAGS=--cfg seam_probe --cfg
 seam_probe_downstream`, with the layered downstream cfgs FR-063 names for
-the root crate and `qsl-replay` (QSL-5) -- each fail to compile, together
+the root crate and `qsl-replay` -- each fail to compile, together
 with exactly the checked-in set of seam-function locations (and with rustc
 error code `E0004` specifically at each), that the three normal builds (the
 root crate, `qsl-route` and `qsl-eval`, no `seam_probe` set) succeed with none, that removing a checked-in entry or removing an
@@ -41,10 +41,10 @@ Cargo feature to inspect) to a grep-shaped check over the specific files
 that could set the cfg, stated as exactly that, not as an equivalent
 restatement.
 
-**S4 category landed under QSL-152; S2 and S3 landed under QSL-143.**
+**The S4, S2 and S3 categories have landed.**
 FR-062-AC-8 and FR-063-AC-6's `Cause`-enum category (S4) is now checked in:
-`Value`'s function family has a real typed refusal cause (`CheckCause`,
-QSL-148), and QSL-152 wires FR-063's S4 seam probe onto its `catalog_code()`
+`Value`'s function family has a real typed refusal cause (`CheckCause`),
+and FR-063's S4 seam probe is wired onto its `catalog_code()`
 mapping, `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`), the same
 shape `FamilyKind::catalog_code_prefix`'s S1 probe uses.
 FR-063-AC-6's S2 category (the
@@ -52,13 +52,13 @@ check seam over the parsed form enum, `Typer::infer_form` matching
 `qsl-forms::Expression`) and S3 category (the checked-node-enum's evaluator,
 `Machine::apply` in `qsl-eval`, and its identity-lowering pass,
 `Lowering::lower_node` in `qsl-semantics`, both matching
-`qsl-semantics::check::ir::NodeKind`) are delivered by
-[QSL-143](https://linear.app/agent-ix/issue/QSL-143): both enums carry the
+`qsl-semantics::check::ir::NodeKind`) are delivered:
+both enums carry the
 same `#[cfg(seam_probe)]` probe-variant treatment as `FamilyKind`, with a
 protective arm at every other production `match` site the variant would
 otherwise break. The parser's leading-token-kind entry table
-(`qsl-forms::dispatch::dispatch`, S2's other named location) is delivered by
-[QSL-244](https://linear.app/agent-ix/issue/QSL-244): `qsl-forms` has its own
+(`qsl-forms::dispatch::dispatch`, S2's other named location) is delivered:
+`qsl-forms` has its own
 probe build under `--cfg seam_probe_forms`, so its no-arm treatment does not
 hide any other seam. This test case's checked-in list therefore covers the
 `FamilyKind`, S6a/S7, S2, S3 and S4 categories -- all five categories
@@ -105,7 +105,7 @@ FR-063-AC-6 names -- and step 8 below exercises each of the five in turn.
    prerequisite and that the `seam-probe:` target's own recipe runs
    `cargo xtask seam-probe` (a grep-shaped check over the real file, not a
    stub of a Rust-level gate-target-list abstraction, which does not exist
-   -- QSL-155's correction to this criterion's original text). Separately,
+   -- a correction to this criterion's original text). Separately,
    on a minimal fixture `Makefile` of the same `ci:`/prerequisite shape,
    confirm a failed prerequisite fails the aggregate target and a
    succeeding one does not.
@@ -122,7 +122,7 @@ FR-063-AC-6 names -- and step 8 below exercises each of the five in turn.
    separately run `cargo clippy` over the fixture module.
 10. Inspect the definitions of `FamilyKind`, the parsed form enum
     (`Expression`), the checked node enum (`NodeKind`), `CheckCause` (the
-    S4 cause-bearing type, QSL-152) and `WrongSnapshotCause` (the
+    S4 cause-bearing type) and `WrongSnapshotCause` (the
     S4-shaped, not family-`Cause`, type) for `#[non_exhaustive]`.
 
 ## Expected Results

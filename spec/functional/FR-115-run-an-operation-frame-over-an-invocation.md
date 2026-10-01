@@ -119,7 +119,7 @@ clause under test.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Implemented under QSL-300 (QSL-21e). The
+Specified and implemented. The
 checked graph records each operation a clause or attempt names with its frame
 node (`CheckedGraph::operation_frame`, resolved by `TypeEnvironment::operation`
 as FR-104 resolves a clause's operation). `admit_frame_invocation` runs

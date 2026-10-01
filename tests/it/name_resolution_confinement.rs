@@ -67,8 +67,8 @@ fn workspace_root() -> PathBuf {
 /// `workspace_root`, excluding `exclude_prefixes` (checked against the
 /// relative path).
 ///
-/// The scanned crates are every workspace member read from `cargo metadata`
-/// (QSL-183 review I6), so a crate extracted later is covered without an
+/// The scanned crates are every workspace member read from `cargo metadata`,
+/// so a crate extracted later is covered without an
 /// edit, except [`UNSCANNED_MEMBERS`]. A member's `src/` that cannot be read
 /// fails the scan (review L6).
 fn source_files(workspace_root: &Path, exclude_prefixes: &[&str]) -> Vec<String> {

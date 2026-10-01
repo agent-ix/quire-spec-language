@@ -40,12 +40,11 @@ struct Collector<'a> {
     declarations: &'a mut Vec<ProtocolNodeDeclaration>,
     /// FR-113's binder collection, in source order.
     binders: &'a mut Vec<BinderForm>,
-    /// FR-114's attempt operation/contracts collection, in source order
-    /// (QSL-309).
+    /// FR-114's attempt operation/contracts collection, in source order.
     attempts: &'a mut Vec<AttemptForm>,
-    /// Every event node, `commit` and `check` body block (QSL-309).
+    /// Every event node, `commit` and `check` body block.
     bodies: &'a mut Vec<ProtocolBodyForm>,
-    /// Every `related by` clause of an event node (QSL-309), alongside the
+    /// Every `related by` clause of an event node, alongside the
     /// protocol's top-level constructs.
     constructs: &'a mut Vec<ProtocolConstructForm>,
     /// The S2 nesting-depth bound `control_anchors` charges `depth`
@@ -124,7 +123,7 @@ pub(crate) fn state_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
 /// scoped anchors, in source order of their references: the `for` and
 /// `commit` references of every top-level `compensate` declaration (empty
 /// scope), then the references the `run` control tree holds, each with the
-/// names of its enclosing named controls. QSL-309 adds what S3 needs to
+/// names of its enclosing named controls. It also records what S3 needs to
 /// decide whether it checks the protocol in full: the `using` alias, each
 /// role, each binder's declared type, each body block (whether it is a bare
 /// Boolean literal) and every other construct present, by kind and span.
@@ -276,7 +275,7 @@ pub(crate) fn protocol_declaration(
 
 impl Collector<'_> {
     /// Records the one `{ e }` body block directly among `items`, owned by
-    /// declaration `owner` (QSL-309): whether it is a bare Boolean literal,
+    /// declaration `owner`: whether it is a bare Boolean literal,
     /// and its span. No expression tree is built.
     fn body(
         &mut self,
@@ -789,7 +788,7 @@ fn event_node_anchors(
     });
     // Every event node kind (`send` and `attempt` included) carries its own
     // `as (x: T)` record binder (FR-113 "Refusals"), its own body block and
-    // zero or more `related by` clauses (QSL-309).
+    // zero or more `related by` clauses.
     collector.binders.push(record_binder(
         cst,
         &event_items,

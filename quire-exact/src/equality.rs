@@ -315,8 +315,7 @@ mod tests {
 
     /// TC-322: a reference pair of different universes refuses with
     /// `ForeignReference` rather than comparing structurally, carrying the
-    /// left operand's universe as `required` and the right's as `supplied`
-    /// (QSL-281).
+    /// left operand's universe as `required` and the right's as `supplied`.
     #[trace("TC-322")]
     #[test]
     fn tc_322_foreign_reference_pair_is_refused() {

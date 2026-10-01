@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 step 11 (FR-093-AC-15, QSL-228): the explicit-stack walks close
+//! TC-415 step 11 (FR-093-AC-15): the explicit-stack walks close
 //! each binder's scope when its body is done and walk every branch. Typing
 //! refuses a binder read after its body and admits a sibling that reuses the
 //! name; lowering gives a sibling binder its enclosing level and resolves a

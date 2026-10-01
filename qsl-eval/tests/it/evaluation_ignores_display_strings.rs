@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-062-AC-6, second sentence (QSL-246): a family's `evaluate` reads no
+//! FR-062-AC-6, second sentence: a family's `evaluate` reads no
 //! display string. Renaming every declared name in a package (functions,
 //! parameters, type aliases) changes no evaluation result, because a name
 //! that is not part of the semantics is never consulted by the evaluator.

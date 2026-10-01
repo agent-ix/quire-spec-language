@@ -26,11 +26,11 @@ const CAUSE_TYPES: [&str; 4] = [
 /// The modules ordered below the `check` core (ADR-011 §6.1, §6.2): layer 1
 /// `qsl-cst`, layer 2 `qsl-forms`, and the layer-3 `semantic_value`, `model` and
 /// `library` modules, plus the layer-3 `value` module that sits beside the
-/// evaluator (`value::model_query`). `value::outcome` left this list under
-/// QSL-131 O2, which deleted the module (it was layer K, a byte-identical
-/// `quire_exact` copy). `value::reference` left it under QSL-181 X-6a, which
+/// evaluator (`value::model_query`). `value::outcome` left this list when its
+/// module was deleted (it was layer K, a byte-identical
+/// `quire_exact` copy). `value::reference` left it under X-6a, which
 /// moved its `ObjectEnvironment` into `model` (`qsl-semantics/src/model`
-/// covers it). QSL-181 (X-6b) moved every layer-3 module into
+/// covers it). X-6b moved every layer-3 module into
 /// `qsl-semantics`.
 const BELOW_CORE: [&str; 10] = [
     "qsl-cst/src",
@@ -244,7 +244,7 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` alike
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
-/// (layer 3, QSL-181) names exactly `qsl-forms`, `qsl-foundation` and
+/// (layer 3) names exactly `qsl-forms`, `qsl-foundation` and
 /// `quire-exact` among the workspace crates in `[dependencies]`, never
 /// `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
@@ -252,19 +252,19 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
-/// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4,
-/// QSL-182) names exactly `qsl-foundation`, `qsl-semantics` and
+/// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)
+/// names exactly `qsl-foundation`, `qsl-semantics` and
 /// `quire-exact` among the workspace crates in `[dependencies]`; its
 /// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
-/// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R,
-/// QSL-184) names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
+/// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R)
+/// names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
 /// in `[dependencies]`, has no `[build-dependencies]`, and its
 /// `[dev-dependencies]` may also name layer K's `quire-exact`. `qsl-eval` (layer
-/// 5, QSL-183) names exactly `qsl-foundation`, `qsl-package`,
+/// 5) names exactly `qsl-foundation`, `qsl-package`,
 /// `qsl-semantics`, `quire-exact` and `thiserror` in
 /// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layers
 /// `qsl-forms` and `qsl-cst` (FR-091-AC-13's call of a function compiled
-/// from source; `serde_json` moved here too, QSL-248, once its one shipped
+/// from source; `serde_json` moved here too, once its one shipped
 /// caller -- the deleted v2 function-package codec -- was deleted). Every other
 /// workspace crate, `qsl-source` and this crate included, is refused. Cargo already
 /// refuses a normal-dependency cycle back to this crate, but accepts a
@@ -362,7 +362,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
         }
         if crate_name == "qsl-semantics" {
-            // Layer 3 (QSL-181): its workspace-crate `[dependencies]` are
+            // Layer 3: its workspace-crate `[dependencies]` are
             // exactly layers 2, F and K -- no `qsl-cst` (layer 1) and no
             // root crate. Its other entries are third-party crates and the
             // FCD crates, which `fcd_is_named_by_model_intake_only` below
@@ -383,7 +383,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "{crate_name} depends on layer-1 qsl-cst"
             );
             fcd_is_named_by_model_intake_only(&package.normal);
-            // QSL-194 (ADR-013 §2, ADR-013:113): shipped code encodes and
+            // ADR-013 §2, ADR-013:113: shipped code encodes and
             // hashes identities through `quire-canonical` and
             // `qsl_foundation::ByteDigest`; `sha2` is a test-only
             // dependency, so no shipped module can hash on its own.
@@ -400,15 +400,15 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
         }
         if crate_name == "qsl-package" {
-            // Layer 4 (QSL-182): "3, F, K; `quire-contract-model` for the v2
+            // Layer 4: "3, F, K; `quire-contract-model` for the v2
             // wire contract" (ADR-011 X-7). The whole shipped table
             // is fixed: layer 3, F, K (the kernel occurrence `Origin` the
-            // I2 reader keys the v2 source map by, ADR-013 O-07, QSL-159),
+            // I2 reader keys the v2 source map by, ADR-013 O-07),
             // the v2 wire contract, `quire-canonical` (ADR-013 §2's one
-            // RFC 8785 encoder, for the `package_id` preimage, QSL-194),
-            // `serde` (the emitter's wire envelope, QSL-6) and `thiserror`.
+            // RFC 8785 encoder, for the `package_id` preimage),
+            // `serde` (the emitter's wire envelope) and `thiserror`.
             // `serde_json` and `sha2` are used by its tests only. `qsl-attrs`
-            // (QSL-287, ADR-012 section 9) is the `#[string_edge]` marker
+            // (ADR-012 section 9) is the `#[string_edge]` marker
             // crate, exempt from the layer order below (FR-064): it is a
             // zero-cost attribute `xtask string-edge` reads, not a semantic
             // dependency.
@@ -430,11 +430,11 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
         }
         if crate_name == "qsl-eval" {
-            // Layer 5 (QSL-183): "4, 3, F, K". The whole shipped table is
+            // Layer 5: "4, 3, F, K". The whole shipped table is
             // fixed: the four layer crates, `thiserror` for its error types,
             // and `quire-canonical`/`serde` for the FR-101 simulation state
-            // key and the pinned sampler's draw preimage (ADR-011 X-8,
-            // QSL-272). `qsl-attrs` (QSL-287, ADR-012 section 9) is the
+            // key and the pinned sampler's draw preimage (ADR-011
+            // X-8). `qsl-attrs` (ADR-012 section 9) is the
             // `#[string_edge]` marker crate, exempt from the layer order
             // below (FR-064).
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
@@ -460,7 +460,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
         }
         if crate_name == "qsl-route" {
-            // Layer R (QSL-184): `route` names layer 3's `Capability`, F's
+            // Layer R: `route` names layer 3's `Capability`, F's
             // `ByteDigest` and `CatalogCode`, and `thiserror` for
             // `RegistrationRefusal`, and nothing of layer 4, K or the root
             // crate. The whole `[dependencies]` table is checked, so a
@@ -493,7 +493,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             }
         }
     }
-    // ADR-011 §7.1 (QSL-184): no shipped root-crate module calls `route`,
+    // ADR-011 §7.1: no shipped root-crate module calls `route`,
     // so the root crate names `qsl-route` as a dev dependency only. This
     // line comes out when a shipped caller (the T-13 driver) makes the
     // normal edge real.
@@ -513,7 +513,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         root.dev.iter().any(|dependency| dependency == "qsl-route"),
         "the root crate's tests name qsl-route through a dev dependency"
     );
-    // ADR-011 §7.3 X-8 (QSL-183): no shipped root-crate module calls layer
+    // ADR-011 §7.3 X-8: no shipped root-crate module calls layer
     // 5 yet, and every test that did moved into `qsl-eval`, so the root
     // crate names `qsl-eval` in no table. This comes out when the layer-6
     // `command`/`replay` caller makes the normal edge real.
@@ -576,7 +576,7 @@ fn forwards_to_test_support(value: &str, workspace_crates: &[&str]) -> bool {
     })
 }
 
-/// QSL-181 (#371 review L8, #372 review M1): `test-support` turns on fixture
+/// #371 review L8, #372 review M1: `test-support` turns on fixture
 /// constructors that forge crate-issued capabilities
 /// (`ReaderAuthority::fixture`) and test-only views of `pub(crate)` items.
 /// It is for tests only:

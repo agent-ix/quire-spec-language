@@ -6,7 +6,7 @@
 # now), behind filenames indistinguishable from the plain-text JSON members
 # alongside them, and a size ceiling (the handoff producer's
 # old `BINARY_BYTES`) was raised to 16 MiB to let them through instead of
-# being asked whether they should exist. QSL-169.
+# being asked whether they should exist.
 #
 # This check detects content by its actual bytes, not by filename or
 # extension: an extension allow-list is trivially defeated by naming a file

@@ -42,4 +42,4 @@ decode/reconstruction unchecked. Scope: FR-070-AC-8, FR-071-AC-8.
 
 ## Status
 
-Passed locally (QSL-235), `qsl-replay/src/witness.rs::envelope_tests::tc_445_refuses_an_unknown_package_contract_version` and `qsl-replay/src/request.rs::tests::tc_445_refuses_an_unknown_package_contract_version`.
+Passed locally, `qsl-replay/src/witness.rs::envelope_tests::tc_445_refuses_an_unknown_package_contract_version` and `qsl-replay/src/request.rs::tests::tc_445_refuses_an_unknown_package_contract_version`.

@@ -5,7 +5,7 @@
 //! decision (D06), the clause-kind restriction on a dispatched
 //! `receiver.member(args)` call (D07), and the FR-146 call-graph refusal of
 //! a cycle through a dispatch edge (D08) — plus one end-to-end test of the
-//! `crate::check::checked_dispatch` bridge (ADR-011 §7.3 M-2, QSL-7: moved
+//! `crate::check::checked_dispatch` bridge (ADR-011 §7.3 M-2: moved
 //! here from `crate::model::checked_dispatch`) linking a real model family
 //! and evaluating a dispatched call through it.
 
@@ -646,7 +646,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     );
 }
 
-// QSL-248 (G2) deleted this crate's second v2 producer and its round-trip
+// The deletion of this crate's second v2 producer removed its round-trip
 // test here; FR-065-AC-2 is now backed by `qsl-package/src/emit/tests.rs`'s
 // `a_function_identity_survives_emission_and_the_i2_read`.
 
@@ -668,8 +668,8 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 /// from the same caller-supplied `CheckingLimits.depth()`
 /// (`PackageDeclarations::check`, `src/check/mod.rs`) and is charged once
 /// per top-level declaration -- it proves that wiring is live through the
-/// public API, not real recursive descent. QSL-148 has since moved real
-/// recursive checking into `check_declaration_body`, reached from
+/// public API, not real recursive descent. Real recursive checking has since moved
+/// into `check_declaration_body`, reached from
 /// `ValueFunctionFamily::check`, and `Typer`'s own separate
 /// `CheckingLimits.depth` bound on that real descent is demonstrated by
 /// `real_checker_depth_limit_is_the_proximate_cause`
@@ -1746,7 +1746,7 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
     }
 }
 
-/// ADR-013 O-05 (QSL-131): the bridge keys each object type by the effective
+/// ADR-013 O-05: the bridge keys each object type by the effective
 /// identity `model` computed over the view -- the identity a `Reference<T>`
 /// value's type component carries -- never a caller-supplied key. `B`'s
 /// declared supertype `A` resolves through the same view, so the result

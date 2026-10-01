@@ -1,7 +1,7 @@
-# QSL-196 performance baseline
+# Performance baseline
 
-This file records the benchmark set, its noise floor, and the rule that QSL-202
-to QSL-206 use to claim an improvement. Every figure below comes from a run of
+This file records the benchmark set, its noise floor, and the rule that a
+performance change uses to claim an improvement. Every figure below comes from a run of
 the benchmarks in this crate. Nothing is estimated or carried over from the
 architecture evaluation.
 
@@ -14,7 +14,7 @@ architecture evaluation.
 | CST identity hashing against source bytes | `make bench-cst` | `benches/cst.rs` | `src/parse.rs` |
 | Model layer on an N-type `DomainPackage` built through FR-154 intake | `make bench-model` | `benches/model.rs` | `src/model.rs` |
 | Evaluator cost per call frame | `make bench-evaluator` | `benches/evaluator.rs` | `src/check.rs` |
-| Checker: Text-reachable recursive cluster (QSL-215) | `make bench-text_cluster` | `benches/text_cluster.rs` | `src/text_cluster.rs` |
+| Checker: Text-reachable recursive cluster | `make bench-text_cluster` | `benches/text_cluster.rs` | `src/text_cluster.rs` |
 | Counts, refusal boundaries, one-shot large inputs and peak RSS | `make bench-probe` | `src/bin/qsl-bench-probe.rs` | all of the above |
 
 `make bench` runs all six criterion suites. Each target runs
@@ -23,11 +23,11 @@ through `BENCH_ARGS`.
 
 Run benches with `-p qsl-bench`, never `--workspace`. A workspace build turns
 on `quire-exact/test-support` through other crates' dev-dependencies, and the
-meter then logs every charge (QSL-206).
+meter then logs every charge.
 
 Every input is built through the layers' public API. So a rewrite behind that
-API needs no bench change. A change to the API itself does, the way QSL-201's
-new `intake::admit` return type did. All model-intake calls go through
+API needs no bench change. A change to the API itself does, the way the intake
+single-parse change's new `intake::admit` return type did. All model-intake calls go through
 `src/model.rs`, so such a change is one edit there. Each generator has a
 smallest-size `#[test]`, so a generator that stops building its input fails in
 `make ci` rather than at bench time.
@@ -70,13 +70,13 @@ run, not five interleaved rounds. It does not meet this rule.
 | Toolchain | rustc 1.98.1 (48a229cea 2026-09-01), `bench` profile (release) |
 | Harness | criterion 0.8.2, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
 | Checker and evaluator axes | 5 runs, 2026-09-23 17:22 to 18:23 (UTC-7), at `4dd02fb1`. That revision's checker, evaluator, package, forms and kernel sources are identical to this branch's base, `25ee38ff`. Load average ranged from 3.3 to 26.6, with two other QSL builds running. |
-| Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7), at `46113bb5`. This is rebased on `25ee38ff` (QSL-201) and includes the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
+| Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7), at `46113bb5`. This is rebased on `25ee38ff` (the intake single-parse change) and includes the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
 
 These three axes were re-measured because each changed what it measures:
 
 - **Parser:** benchmark IDs now carry the parse outcome.
 - **CST:** qsl-cst's parse path now counts the bytes it hashes.
-- **Model:** QSL-201 changed intake, and new benchmarks were added.
+- **Model:** the intake single-parse change changed intake, and new benchmarks were added.
 
 ## How the figures and the variance are computed
 
@@ -106,7 +106,7 @@ Inputs, both parsed at default `Limits`:
   `function fI using Complete (x: Integer): Integer pure { x }`.
 
 `<outcome>` (`admitted`, `recovered` or `refused`) is the input's parse outcome,
-decided once at setup. When QSL-197 turns a refusal into a parse, the benchmark
+decided once at setup. When a parser change turns a refusal into a parse, the benchmark
 gets a new ID (`parser/depth/admitted/5`). It is not compared against the time
 it took to refuse.
 
@@ -123,13 +123,13 @@ it took to refuse.
 | `parser/volume/admitted/500` | 500 functions, 31,069 B | 44.1 ms | 42.9 ms – 65.4 ms | 6% | volume/100: 5.2 times, linear |
 | `parser/volume/admitted/1000` | 1,000 functions, 62,069 B, 26,026 tokens, 18,003 nodes | 107 ms | 87.1 ms – 156 ms | 14% | volume/500: 2.4 times for 2 times. About 107 µs per function, or 0.58 MB/s. |
 | `parser/volume/admitted/2000` | 2,000 functions, 125,069 B, 36,003 nodes (largest that parses) | 194 ms | 182 ms – 261 ms | 9% | volume/1000: 1.8 times, linear |
-| `parser/volume/refused/3000` | 3,000 functions, 188,069 B; `resource_exhausted`, "complete grammar work or nesting budget exhausted" | 134 ms | 117 ms – 149 ms | 11% | volume/2000. Time to reach the refusal. QSL-197 AC 5 requires this input to parse. |
+| `parser/volume/refused/3000` | 3,000 functions, 188,069 B; `resource_exhausted`, "complete grammar work or nesting budget exhausted" | 134 ms | 117 ms – 149 ms | 11% | volume/2000. Time to reach the refusal. The bracket-pair nesting change requires this input to parse. |
 
 Refusal boundary at 89326999, from `qsl-bench-probe parse`, which tries depths
 0 to 64: depth 4 is the deepest nesting that parses, and every depth from 5 to
 64 is refused. 4,000 functions is refused with "CST leaf budget exhausted".
 
-Since QSL-197, nesting counts bracket pairs, so every depth from 0 to 63 in the
+Nesting now counts bracket pairs, so every depth from 0 to 63 in the
 function body parses (the body's `{` is the 64th pair) and the depth rows
 become `parser/depth/admitted/<d>`. `volume/3000` is still refused, now by the
 syntax-node ceiling (54,003 nodes against 50,000): "syntax node ceiling of
@@ -165,7 +165,7 @@ processes, at `4dd02fb1` (same checker code as above).
 
 | Input size | Wall time, 3 runs | Median | Stated variance | Peak RSS, 3 runs | Median RSS | RSS variance | Comparison point |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| chain of 4,000 | 6,782 ms, 4,956 ms, 8,580 ms | 6.78 s | 27% | 179,140, 179,128, 179,184 KiB | 179 MB | 0.01% | QSL-203 reports 7.4 s and 178 MB from the evaluation, within this variance |
+| chain of 4,000 | 6,782 ms, 4,956 ms, 8,580 ms | 6.78 s | 27% | 179,140, 179,128, 179,184 KiB | 179 MB | 0.01% | The Tarjan termination change's evaluation reports 7.4 s and 178 MB, within this variance |
 | chain of 8,000 | 38,165 ms, 29,812 ms, 33,564 ms | 33.6 s | 11% | 681,784, 681,716, 681,884 KiB | 682 MB | 0.01% | chain of 4,000: 5.0 times the time and 3.8 times the memory for 2 times the size |
 
 The smaller sizes were measured once each by the probe:
@@ -180,7 +180,7 @@ The smaller sizes were measured once each by the probe:
 
 ### CST identity hashing (`benches/cst.rs`)
 
-**QSL-200 has landed.** A parse no longer hashes per-node data. A node's
+**Per-node hashing is gone.** A parse no longer hashes per-node data. A node's
 identity is the revision digest, its span and its arena index; the structural
 path is derived from parent links on request, and reuse is a one-to-one span
 mapping over typed productions (`LosslessCst::reuse_map`). A parse computes
@@ -188,12 +188,12 @@ one identity digest, over the document-revision labels, whatever its node
 count; qsl-cst's own unit test counts the digest calls.
 
 - `cst/parse/<input>` times the whole parse. Throughput is source bytes.
-- The `cst/sha256/<input>` rows timed the per-node digests QSL-200 removed and
+- The `cst/sha256/<input>` rows timed the per-node digests that were removed and
   are gone with them. `qsl-bench-probe cst` now prints node counts only.
 
-The tables below were measured at 89326999, before QSL-200, when every node
+The tables below were measured at 89326999, before per-node hashing was removed, when every node
 carried a SHA-256 `StableNodeId` over its whole source slice and every
-ancestor's production name. They are kept as the record of what QSL-200
+ancestor's production name. They are kept as the record of what that change
 removed; the PR #380 A/B run is the comparison against them.
 
 | Input | Source bytes | CST nodes | Bytes hashed | Hashed per source byte | Of which: source slices / ancestor names |
@@ -288,7 +288,7 @@ over a package of 1,000 types (2,001 records):
 - **Member sweep** (`model/all_instances/members/<m>`): *m* members of an
   8-ancestor type, querying `C0`. The same query also runs through the
   evaluator's bridge (`model/query/evaluate_all_instances/<m>`), which rebuilds
-  a reverse catalog of the binding's 1,000 types on every query (QSL-202).
+  a reverse catalog of the binding's 1,000 types on every query (fixed by the `ModelIndex` change).
 
 | Benchmark | Input size | Median | Range (5 runs) | Stated variance | Comparison point |
 | --- | --- | --- | --- | --- | --- |
@@ -350,14 +350,14 @@ baseline does not show the per-frame cost changing with depth.
 - **Unlimited limits.** The rebuild calls `build` with
   `ModelNormalizationLimits::UNLIMITED` (`normalize.rs:2974`, `:2998`). This is
   read from code, not timed. The timing confirms the cost.
-- **Fixed by QSL-204 (PR #387).** Admission now reads the package and its
+- **Fixed.** Admission now reads the package and its
   object universe from the effective view the caller normalized under its own
   limits, and does no normalization. The `model/object_universe_of/<n>` bench
   is gone with the function it timed. The rows above are kept as history.
   Back-to-back A/B in one session, base `f157f346` against PR head, criterion
   point estimates:
 
-  | Bench | Base | QSL-204 | Change |
+  | Bench | Base | Fixed | Change |
   |---|---|---|---|
   | `model/admit_binding/250` | 7.82 ms | 0.322 ms | −95.8% |
   | `model/admit_invocation/250` | 16.04 ms | 0.666 ms | −95.7% |
@@ -376,7 +376,7 @@ baseline does not show the per-frame cost changing with depth.
   every depth.
 - **N axis (members), 8 ancestors.** 512 µs, 2.48 ms and 9.62 ms at 250, 1,000
   and 4,000 members. That is linear, at 2.0 to 2.5 µs per member.
-- **QSL-202's other claims.**
+- **The `ModelIndex` change's other claims.**
   - `model/conformance/resolve_redefinition_target/<n>` times one conformance
     call. Each call builds `ConformanceIndex` over the whole package: 321 µs,
     1.77 ms and 16.4 ms at 501, 2,001 and 8,001 records.
@@ -388,7 +388,7 @@ baseline does not show the per-frame cost changing with depth.
 ### F7: checker lookups do about 10^9 string comparisons at 5,000 declarations. Re-scoped.
 
 The quadratic lookups are real. They dominate the check when there are no
-calls, but not on a call chain. The main site is not one QSL-205 lists. The
+calls, but not on a call chain. The main site is not one the checker lookup-map change lists. The
 count is about 10^7 to 10^8, not 10^9.
 
 - **5,000 independent declarations (227 ms).** A `perf record --call-graph
@@ -404,7 +404,7 @@ count is about 10^7 to 10^8, not 10^9.
 - **Chain of 4,000 (6.8 s).** 86% of samples are in the termination check
   (68.6% component filter, `termination.rs:108-114`; 17.2% reachability sets,
   `:90-101`). `OccurrenceMap::record` is 1.2%, `check_application` 0.15%, and
-  the duplicate-name check 0.4%. On this shape the finding is QSL-203's.
+  the duplicate-name check 0.4%. On this shape the finding belongs to the Tarjan termination change.
 - **The comparison count.** Derived from the code, not counted. At 5,000
   declarations:
   - 25 × 10^6 name comparisons in the duplicate-name check;
@@ -414,17 +414,17 @@ count is about 10^7 to 10^8, not 10^9.
 
   That is about 4 × 10^7 comparisons without calls and 9 × 10^7 on a chain.
   The 227 ms timing agrees.
-- **Re-scope for QSL-205.** Add the duplicate-name check
+- **Re-scope for the checker lookup-map change.** Add the duplicate-name check
   (`check/mod.rs:440-447`). Measure on `checker/independent/*`, where lookups
   dominate, not on `checker/chain/*`, where termination hides them until
-  QSL-203 lands.
+  the Tarjan termination change lands.
 
-### F13: model intake parses the same bytes three times. Confirmed at `89326999`, fixed by QSL-201. Intake's real cost is FCD's validator.
+### F13: model intake parses the same bytes three times. Confirmed at `89326999`, fixed by the intake single-parse change. Intake's real cost is FCD's validator.
 
 - **At `89326999`.** The first session measured three parses of the same bytes,
   about 117 ms at 4,000 types. The two redundant parses cost about 74 ms of a
   2.45 s intake (3%).
-- **After QSL-201.** Intake parses once (`PackageDocument::parse`):
+- **After the fix.** Intake parses once (`PackageDocument::parse`):
   `model/intake/parse/4000` is 65.1 ms. That is 3% of admit plus read_records
   at 4,000 types, and 20% at 250 and 1,000 types.
 - **What dominates.** `read_records` grows quadratically: 8.0 ms, 66 ms and
@@ -435,14 +435,14 @@ count is about 10^7 to 10^8, not 10^9.
     (`crates/semantic-ir/src/constructs.rs:645-646` at FCD `1572ba4b`). It
     calls `document_features(document)`, which collects every field of every
     type, once per type. That is O(T × F), in the FCD validator QSL calls.
-  - This was profiled at `89326999`. QSL-201 did not change the validator
+  - This was profiled at `89326999`. The fix did not change the validator
     call.
 - **The fix belongs to FCD: PLAT-1051.** Hoist `document_features` out of the
   per-type loop in `decide`.
 
-## QSL-203: termination by Tarjan's SCC. Improvement on every chain size.
+## Termination by Tarjan's SCC. Improvement on every chain size.
 
-QSL-203 replaced the termination check's per-function reachability sets and
+This change replaced the termination check's per-function reachability sets and
 all-pairs component filter with an iterative Tarjan SCC
 (`qsl-semantics/src/check/termination.rs`). It was measured by the claim rule
 above, in one session on 2026-09-23, 21:12 to 21:27 (UTC-7):
@@ -452,7 +452,7 @@ above, in one session on 2026-09-23, 21:12 to 21:27 (UTC-7):
 - The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
   `make bench-checker`, then `qsl-bench-probe check chain <n>` for 250, 1,000,
   2,000, 4,000 and 8,000, one process per size.
-- Load average ranged from 4.2 to 16.5. A QSL-197 parser A/B session and other
+- Load average ranged from 4.2 to 16.5. A concurrent parser A/B session and other
   QSL builds ran on the machine during the session.
 - The apparatus is unchanged: `benches/checker.rs`, `src/check.rs` and
   `Cargo.toml` are byte-identical on both sides.
@@ -505,7 +505,7 @@ still quadratic, but the quadratic term is no longer termination. A
 - 19%: `check_application`'s linear signature search;
 - 0.16%: the termination check.
 
-These are F7's lookup sites, which belong to QSL-205. The inclusive shares
+These are F7's lookup sites, which belong to the checker lookup-map change. The inclusive shares
 overlap, because `memcmp` samples unwind into more than one caller.
 
 The session is recorded as four collections under
@@ -544,9 +544,9 @@ it grows about 2 times, which is linear. `qsl-bench-probe check
 self-recursive <n>` times the same shape through the whole check. There, the
 F7 lookup sites dominate, as they do on the chain.
 
-## QSL-206: one meter, a charge count and no per-task location clone. Improvement on every chain size.
+## One meter, a charge count and no per-task location clone. Improvement on every chain size.
 
-QSL-206 changed three things on the evaluator's per-frame path:
+This change did three things on the evaluator's per-frame path:
 
 - `quire_exact::Meter` keeps a count of admitted charges, not a `Vec` of them.
 - The evaluator's task loop borrows each task's node and clones a `Location`
@@ -585,9 +585,9 @@ variance is the MAD/median of the five per-round slopes.
 | 100 and 1,000 frames | 301 ns (11%) | 162 ns (2.1%) |
 | 1 and 1,000 frames | 295 ns (10%) | 160 ns (1.8%) |
 
-## QSL-205: checker lookups by map. Improvement on every checker benchmark; chain check near-linear.
+## Checker lookups by map. Improvement on every checker benchmark; chain check near-linear.
 
-QSL-205 replaced the checker's linear lookups with maps built once:
+This change replaced the checker's linear lookups with maps built once:
 
 - `OccurrenceMap` keys spans by (node id, role); the next ordinal is that
   key's span count.
@@ -606,8 +606,8 @@ QSL-205 replaced the checker's linear lookups with maps built once:
 It was measured by the claim rule above, in one session on 2026-09-24, 01:37 to
 01:53 (UTC-7):
 
-- A is `ddc0083e` (origin/main, after QSL-156 A4b) and B is `61dd8188` (the
-  fix). Each side has its own worktree and target directory.
+- A is `ddc0083e` (origin/main, after #384 landed lowering and node keys)
+  and B is `61dd8188` (the fix). Each side has its own worktree and target directory.
 - The rounds ran A1, B1, A2, B2 … A5, B5. Each round ran one
   `make bench-checker`, then `qsl-bench-probe check chain <n>` for 1,000,
   2,000, 4,000 and 8,000 and `qsl-bench-probe check independent <n>` for 1,000
@@ -617,8 +617,8 @@ It was measured by the claim rule above, in one session on 2026-09-24, 01:37 to
 - The apparatus is unchanged: `benches/checker.rs`, `src/check.rs` and
   `Cargo.toml` are byte-identical on both sides.
 
-A is much slower than QSL-203's B on the same inputs (chain of 1,000: 93 ms
-against 15.6 ms). A4b's lowering keys every node, and its cost is in both
+A is much slower than the Tarjan termination change's B on the same inputs (chain of 1,000: 93 ms
+against 15.6 ms). #384's lowering keys every node, and its cost is in both
 sides.
 
 What each figure counts:
@@ -646,7 +646,7 @@ What each figure counts:
 | probe independent 5,000 | 7.12, 6.30, 4.74, 2.10, 2.62 s | 733, 472, 379, 381, 368 ms | 4.74 s | 381 ms | 92% | 45% | improvement |
 
 **Growth per doubling on the chain.** B's probe medians grow 1.72, 2.08 and
-2.17 times from 1,000 to 8,000 (A: 3.62, 3.64 and 7.63), so QSL-205's
+2.17 times from 1,000 to 8,000 (A: 3.62, 3.64 and 7.63), so the change's
 near-linear criterion (at most about 2.5 times per doubling) passes on the
 medians. Taken round by round, B's ratios range over 1.68–2.09, 1.99–2.64 and
 1.98–2.23. One round exceeds 2.5: round 2's 2,000 to 4,000 (439 ms / 166 ms =
@@ -712,9 +712,9 @@ The session is recorded as four collections under
   `qsl205-ab-b-probe-v1.json`. Wall time and peak RSS are separate
   `quantity` dimensions.
 
-## QSL-202: one `ModelIndex` per package. Improvement on conformance, admission and `allInstances`; normalize unchanged.
+## One `ModelIndex` per package. Improvement on conformance, admission and `allInstances`; normalize unchanged.
 
-QSL-202 replaced the model layer's per-call maps with one `ModelIndex`
+This change replaced the model layer's per-call maps with one `ModelIndex`
 (`qsl-semantics/src/model/index.rs`), built once per package:
 
 - Normalization builds it and keeps it in the `EffectiveView`. Dispatch
@@ -807,7 +807,7 @@ Reading the table:
   `PackageDocument::parse` is byte-identical source on both sides, and
   `read_records` differs only in no longer keeping the unread
   `has_own_precondition` flag. Those rows are session noise at this load, not
-  a QSL-202 effect.
+  an effect of this change.
 
 **Warm and cold ancestry.** The conformance, `admit_binding`,
 `admit_invocation`, `all_instances` and `query/evaluate_all_instances` rows
@@ -846,7 +846,7 @@ The two sides are stored as quoin measurement collections under
 `spec/evidence/measurements/qsl202-ab-a-model-v2.json` and
 `qsl202-ab-b-model-v2.json`.
 
-## QSL-214 and QSL-215: wide and long leaf lists. The default ceilings refuse both.
+## Wide and long leaf lists. The default ceilings refuse both.
 
 `benches/text_cluster.rs` (`make bench-text_cluster`) times one check of two
 shapes. The generators are in `src/text_cluster.rs`.
@@ -871,8 +871,7 @@ the same tree under a `c`-record chain with one-byte names.
 - Each leaf charges its key bytes to the work budget, and the walk shares
   path prefixes between leaves.
 
-The walk stays combinatorial. QSL-215's second option is taken. At the
-defaults, the node ceiling bounds the leaf count and the work ceiling
+The walk stays combinatorial. At the defaults, the node ceiling bounds the leaf count and the work ceiling
 bounds the leaves' key bytes, so both shapes refuse early and name the
 limit that stopped them.
 
@@ -951,7 +950,7 @@ one per axis, at definition version `-v2`:
 - `spec/assurance/MP-004-model-wall-time.md`
 - `spec/assurance/MP-005-evaluator-wall-time.md`
 
-QSL-203 added `spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at
+The Tarjan termination change added `spec/assurance/MP-006-probe-check-wall-time-and-rss.md`, at
 `-v1`. It covers the probe's one-shot `check` runs, with wall time and peak
 RSS per input.
 
@@ -979,8 +978,8 @@ the findings.
   criterion suites time wall clock and nothing else.
 - **Sizes.** The criterion suites stop at 2,000-function chains and 4,000
   model types. The 4,000 and 8,000 chains are one-shot probe runs.
-- **The native S1 parser.** `src/parser.rs`, which QSL-197 also changes, is not
+- **The native S1 parser.** `src/parser.rs`, which the parser nesting change also touches, is not
   benchmarked. Only `qsl_cst::parse` is.
 - **The query bridge's catalog lookup in the type count.** It is measured at
-  1,000 types only. Since QSL-202 it is a lookup in a catalog built once per
+  1,000 types only. Since the `ModelIndex` change it is a lookup in a catalog built once per
   normalization, not a per-query rebuild.

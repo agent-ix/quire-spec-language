@@ -17,7 +17,7 @@ its report is non-empty, rejects an allow-list entry that gates a branch
 (including each of ADR-010 §4.3's five named production sites), and that the
 lint gate fails when the tool does. Scope: FR-064-AC-1 through FR-064-AC-6.
 
-**Status (QSL-145, QSL-268).** `xtask string-edge` is clean over the whole
+**Status.** `xtask string-edge` is clean over the whole
 workspace and `string-edge` is a prerequisite of `make ci` (step 7, backed
 by `the_real_makefile_wires_string_edge_into_ci` and
 `a_failed_prerequisite_fails_the_aggregate_target`). The scan skips a
@@ -56,7 +56,7 @@ production sites are fixtures shaped like each named site, not the real
 crate's own occurrences of them (the real-site half is
 `real_adr010_sites_are_flagged_branch_gating_by_the_structural_detector`); the fixtures demonstrate the
 rejection rule works, not that the real crate's five sites are converted.
-QSL-150 lands step 2's own dedicated test the same way: `run`'s allow-list
+Step 2's own dedicated test lands the same way: `run`'s allow-list
 filtering is split into a separate, pure `unreported_occurrences`, and
 `allow_listed_occurrence_is_silent_removing_the_entry_reports_it_again`
 exercises the real add-then-remove-reappears sequence through it.
@@ -94,7 +94,7 @@ exercises the real add-then-remove-reappears sequence through it.
 7. Confirm that the real `Makefile`'s `ci` target lists `string-edge` as a
    prerequisite and that `string-edge`'s recipe runs `cargo xtask
    string-edge` (a grep-shaped check over the real file, not a stub of an
-   abstraction that does not exist; QSL-155). Separately, on
+   abstraction that does not exist). Separately, on
    a minimal fixture `Makefile` of an aggregate-target/prerequisite shape,
    confirm a failed prerequisite fails the aggregate target and a
    succeeding one does not (the same mechanism FR-063-AC-5/TC-161 step 7

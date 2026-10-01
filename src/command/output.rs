@@ -748,7 +748,7 @@ mod tests {
         );
     }
 
-    /// FR-100-AC-9 (TC-452 step 4, QSL-281): a kernel `ForeignReference`
+    /// FR-100-AC-9 (TC-452 step 4): a kernel `ForeignReference`
     /// record renders `foreign_reference`/`foreign-universe` with its
     /// `required`/`supplied` universes and exits 20, no longer the bare
     /// `{"kind":"refused"}` a kernel-no-record row renders. Goes through the

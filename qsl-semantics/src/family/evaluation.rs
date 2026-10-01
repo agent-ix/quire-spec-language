@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 O-16 (QSL-174): the S6a evaluation-time result shapes --
+//! ADR-013 O-16: the S6a evaluation-time result shapes --
 //! [`FamilyResult`], [`EvalOutcome`] and [`FamilyOutcome`] -- distinct from
 //! [`super::outcome`]'s S1-S4 `CheckOutcome`/`StageFailure`.
 

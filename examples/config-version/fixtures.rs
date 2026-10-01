@@ -24,7 +24,7 @@ mod cases;
 pub use cases::Case;
 use cases::{CaseSpec, Input, Row};
 
-/// FR-108 (QSL-314): the spine counterpart of this module's native files.
+/// FR-108: the spine counterpart of this module's native files.
 #[path = "spine.rs"]
 pub mod spine;
 

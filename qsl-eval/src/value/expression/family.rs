@@ -8,7 +8,7 @@
 //! FR-065-AC-2 verifies against is `qsl_package::emit_checked` plus its I2
 //! reader (`qsl-package/src/emit/tests.rs`); S4 linking is
 //! `qsl_package::CheckedPackage::link`, not a step this module repeats.
-//! ADR-011 §7.3 M-5 (QSL-139/FR-068) moved this module's checking-only
+//! ADR-011 §7.3 M-5 (FR-068) moved this module's checking-only
 //! half -- identity minting, [`qsl_semantics::check::PackageDeclarations::check`]'s
 //! own [`qsl_semantics::family::FamilyContract`] hook, and the `OccurrenceMap`
 //! `check` builds from it -- into `check::family`, since FR-068-
@@ -102,7 +102,7 @@ pub(super) mod sealed {
 /// identity resolves against and the caller's object environment -- both
 /// borrowed for the one call, never owned by the family marker type. The
 /// meter is not part of it: the hook's own `meter` parameter meters the
-/// whole call (QSL-206). [`super::CheckedPackageEvaluation::call`] is this
+/// whole call. [`super::CheckedPackageEvaluation::call`] is this
 /// environment's one real (non-test) constructor.
 pub(crate) struct EvaluationEnv<'a> {
     pub(crate) package: &'a super::CheckedPackage,
@@ -154,7 +154,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
     /// `Ok(EvalOutcome::Kernel(Outcome::Incomplete(_)))` exactly when the
     /// caller-configured `meter` cannot afford it (FR-090-AC-1).
     ///
-    /// **One meter for the whole call (QSL-206).** The body then runs
+    /// **One meter for the whole call.** The body then runs
     /// against that same `meter`, which charges every nested call and value
     /// operation. So the caller's meter counts the top-level call's own
     /// `function.call`, first, followed by everything the body does. An
@@ -236,7 +236,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
             // alone (`E0004`, this seam's evidence).
             //
             // The arm below exists only in the probe's build of the crates
-            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`):
             // `qsl-replay` depends on this crate, so it must compile there
             // for the root crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]
@@ -248,8 +248,8 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 }
 
 // FR-062-AC-8/FR-063-AC-6 (ADR-012 §5.1 S4, "each family Cause enum's
-// catalog_code()" seam-probe coverage) is real now, not deferred. QSL-148
-// gives `Value`'s function-declaration family a real `Cause`:
+// catalog_code()" seam-probe coverage) is real now, not deferred.
+// `Value`'s function-declaration family has a real `Cause`:
 // `ValueFunctionFamily::Cause = qsl_semantics::check::CheckRefusal`
 // (`qsl_semantics::check::family`), returned through
 // `qsl_foundation::diagnostic::StageFailure::Refused` when `check` genuinely refuses
@@ -257,7 +257,7 @@ impl super::s6a::ReferenceEvaluation for ValueFunctionFamily {
 // mapping (`CheckCause::code`/`CheckCause::cause`, `src/check/refusal.rs`)
 // already existed and was exhaustive by construction -- it is `Value`'s
 // pre-existing checking-refusal vocabulary, not a new enum authored to fill
-// this associated type. QSL-152 wires FR-063's S4 seam probe onto it:
+// this associated type. FR-063's S4 seam probe is wired onto it:
 // `CheckCause::code` (`qsl-semantics/src/check/refusal.rs`) carries a
 // `#[cfg(seam_probe)]` variant with no arm, the same shape
 // `FamilyKind::catalog_code_prefix`'s S1 probe already used, and
@@ -333,7 +333,7 @@ mod family_contract_tests {
         assert_eq!(diagnostics.entries().len(), 1);
         // The admitted declaration's identity is its FR-092 function node
         // key, which `PackageDeclarations::check` mints once every
-        // declaration is typed (QSL-156 A4b): for `f() -> Boolean { true }`
+        // declaration is typed: for `f() -> Boolean { true }`
         // under owner (a, u), FR-092 vector F1.
         let expected = PackageDeclarations {
             functions: vec![form],
@@ -415,7 +415,7 @@ mod family_contract_tests {
         let identity = graph
             .function_identity("f")
             .expect("f is declared in this package");
-        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
@@ -436,7 +436,7 @@ mod family_contract_tests {
         );
     }
 
-    /// FR-062-AC-5's `Incomplete` half (QSL-153): `evaluate` genuinely
+    /// FR-062-AC-5's `Incomplete` half: `evaluate` genuinely
     /// charges its own kernel `meter` parameter (`ChargePoint::FunctionCall`,
     /// `ValueFunctionFamily::evaluate`'s own doc) -- given a meter whose
     /// `work_units` limit is already exhausted, that charge is denied and
@@ -470,7 +470,7 @@ mod family_contract_tests {
         let identity = graph
             .function_identity("f")
             .expect("f is declared in this package");
-        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
@@ -612,7 +612,7 @@ mod family_contract_tests {
         );
     }
 
-    /// PR #302 review finding 2, QSL-206: a *nested* call's denied
+    /// PR #302 review finding 2: a *nested* call's denied
     /// `function.call` surfaces as the kernel `Outcome::Incomplete`, inside
     /// `EvalOutcome::Kernel`, from `Machine::run`'s own `charge_call` -- not
     /// from the top-level admission. `caller`'s body calls `callee`. The
@@ -639,7 +639,7 @@ mod family_contract_tests {
         let identity = graph
             .function_identity("caller")
             .expect("caller is declared in this package");
-        // ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 link step, over an
+        // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
         let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();

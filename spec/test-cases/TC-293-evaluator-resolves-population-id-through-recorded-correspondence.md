@@ -16,7 +16,7 @@ evaluation, evaluating an expression that consumes it resolves that same
 `PopulationBinding` by lookup in the recorded correspondence. Scope:
 FR-089-AC-3.
 
-Implemented (QSL-131 Slice B): the evaluator matches
+Implemented: the evaluator matches
 `Value::Population(population_id)` and resolves it through
 `ObjectEnvironment::resolve_population`'s recorded correspondence
 (`Machine::resolve_population`, `qsl-eval/src/value/expression/evaluate.rs`'s

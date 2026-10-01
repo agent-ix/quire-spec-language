@@ -324,7 +324,7 @@ fn each_expression_construct_maps_to_its_variant() {
         ("pre(a)", "Pre(a)"),
         ("allInstances<M::T>(p)", "AllInstances[Name(\"M::T\")](p)"),
         ("(a)", "a"),
-        // FR-102 (QSL-273, TC-456): `self`, `result` and a single-segment
+        // FR-102 (TC-456): `self`, `result` and a single-segment
         // `reaches` edge build as expressions instead of refusing.
         ("self", "SelfRef"),
         ("result", "Result"),
@@ -428,7 +428,7 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
         other => panic!("the diagnosed-source cause, not {other:?}"),
     }
 
-    // FR-102 (QSL-273) gave `invariant`/`pre`/`post` their own dispatch
+    // FR-102 gave `invariant`/`pre`/`post` their own dispatch
     // entry, so FR-091-AC-6's undispatched case moves to a spelling no
     // family claims yet: `synthesis` (`SynthesisDeclaration`).
     let synthesis = "synthesis Syn using v grammar M::G domain M::D satisfies { true };";
@@ -453,7 +453,7 @@ fn a_construct_no_variant_represents_refuses_the_unit() {
         ("a mod b", Production::Product, "a mod b"),
         ("xs[0]", Production::Postfix, "xs[0]"),
         ("none", Production::Primary, "none"),
-        // FR-102 (QSL-273): a single-segment `reaches` edge now builds
+        // FR-102: a single-segment `reaches` edge now builds
         // (`each_expression_construct_maps_to_its_variant`); a
         // multi-segment edge still refuses, but at the qualified edge
         // itself, not the whole construct (FR-102-AC-3).
@@ -749,7 +749,7 @@ fn enum_predicate_dimension_and_unit_declarations_build_forms() {
 }
 
 /// TC-395 step 5: only the `Value` family form builder names the
-/// declaration productions QSL-275 gives it.
+/// declaration productions it owns.
 #[trace("FR-091-AC-6", "TC-395")]
 #[test]
 fn only_the_value_builder_names_the_enum_dimension_unit_and_predicate_productions() {

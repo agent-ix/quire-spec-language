@@ -161,11 +161,10 @@ unchanged.
 - QSpec `proposals/quire-v1/definitions/complete-value-lock.json` (the
   catalog rows), `native-diagnostics.md` (the codes and causes) and
   FR-322 (the lock members).
-- Linear QSL-234 (this requirement), QSL-269 (the retirement it unblocks).
 
 ## Status
 
-Specified under QSL-234; implemented under QSL-284 and backed by the
+Implemented and backed by the
 TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
 `qsl-replay/src/spine.rs`).
 
@@ -183,4 +182,4 @@ which this requirement refuses as `revision-mismatch`. The updates:
   assembler and emitter unit tests) keep the placeholder. It also rewrote
   the `CatalogEntry::digest` doc (`value/definition.rs`), which
   said no reader verifies the digest; FR-110 reads the `root` digest.
-- **Dependency on the A05 lane (QSL-273, QSL-271).** QSL-271 (#481) moved `FR-108:51` and TC-452 step 4 to the `root` row.
+- **Dependency on the A05 lane.** `FR-108:51` and TC-452 step 4 moved to the `root` row.

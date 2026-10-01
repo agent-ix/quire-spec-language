@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-203: `PackageDeclarations` with N recursive components, for the
+//! `PackageDeclarations` with N recursive components, for the
 //! termination check's per-component cost. Kept apart from [`crate::check`],
 //! whose generators are MP-002's protected apparatus.
 

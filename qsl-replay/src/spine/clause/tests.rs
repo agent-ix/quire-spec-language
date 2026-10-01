@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-464 to TC-468 (FR-106, FR-107, FR-109, QSL-278).
+//! TC-464 to TC-468 (FR-106, FR-107, FR-109).
 //!
 //! The domain package below (`test/nodes`) is a single self-referencing
 //! `Node` type: `next: Reference<Node>` (optional), one closed population
@@ -1376,8 +1376,8 @@ fn config_version_population_identity() -> String {
 }
 
 /// FR-108's own bound: `versionNumber` is `Int[0, 1000]`, a package-declared
-/// `VersionNumber` value type (FR-056's `value-type/v1` scalar reader,
-/// QSL-289), not the native `Integer` this fixture used before QSL-279 --
+/// `VersionNumber` value type (FR-056's `value-type/v1` scalar reader),
+/// not the native `Integer` this fixture formerly used --
 /// the below-range and above-range corpus cases need a real domain bound to
 /// refuse against.
 fn version_number_type() -> String {
@@ -1394,7 +1394,7 @@ fn config_version_domain_document() -> Vec<u8> {
 }
 
 /// [`config_version_domain_document`], with `extra_operations` appended
-/// after `attemptUpdate` (TC-466 step 3, QSL-311): the one fact "what
+/// after `attemptUpdate` (TC-466 step 3): the one fact "what
 /// `ConfigVersion` operations exist" stays in this one builder rather than
 /// a second, hand-duplicated envelope for step 3's `probe`.
 fn config_version_domain_document_with_operations(
@@ -1598,7 +1598,7 @@ fn config_version_domain_document_with_operations(
 /// `Config`: FR-108's own `ParentOrder`, `NoCycle` and `VersionUnchanged`
 /// clauses, plus `sameIdentity` and `n`.
 ///
-/// QSL-279 (FR-105) implements the `state`/`state_clause`,
+/// FR-105 implements the `state`/`state_clause`,
 /// `state`/`operation_anchor` and `state`/`frame` emission a postcondition
 /// of `attemptUpdate` needs to reach S5: before it, any clause naming the
 /// operation refused `EmitRefusal::UnlocatedOccurrence` at S5
@@ -2290,7 +2290,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // shape `CheckedInvariant` above already is. This test's own fixture
     // (`compiled()`, `unit_and_packages()`) still has no precondition or
     // postcondition to attempt it against -- `test/nodes` declares only
-    // `NoCycle`, an invariant. QSL-279 lifted the compile-time blocker this
+    // `NoCycle`, an invariant. FR-105 lifted the compile-time blocker this
     // comment used to describe (SR-751 FND-003): `post VersionUnchanged` on
     // `attemptUpdate` now compiles through `spine::compile`, in
     // `config_version_compiled()` below, in this same file. Constructing
@@ -2801,7 +2801,7 @@ fn tc466_step2_pre_parent_implies_version_one_false_when_pre_root_is_not_one() {
 }
 
 // ---------------------------------------------------------------------------
-// TC-466 step 3 (FR-107-AC-3, QSL-311): `ReachesTarget` over a `probe`
+// TC-466 step 3 (FR-107-AC-3): `ReachesTarget` over a `probe`
 // invocation -- a variant of the `config-version` fixture package above
 // that adds one operation, `probe(target: ConfigVersion)`, with no result
 // and an empty frame (TC-466's own step 3 wording), and one precondition,
@@ -3163,7 +3163,7 @@ fn tc466_step3_reaches_target_true_self_a_target_a_over_the_loop() {
 }
 
 // ---------------------------------------------------------------------------
-// TC-466 step 3(e) (FR-107-AC-3, QSL-311): a charge-denial `Meter` over
+// TC-466 step 3(e) (FR-107-AC-3): a charge-denial `Meter` over
 // step 3(a)'s own chain/self/target shape, denying the `reaches` walk's
 // 1st through 5th charge in turn. `ClauseRunRequest` builds its own
 // `Meter::new(request.accounting)` internally (`qsl-replay/src/spine/
@@ -3414,7 +3414,7 @@ fn tc466_step3_completes_true_when_the_denied_charge_is_never_made() {
 }
 
 // ---------------------------------------------------------------------------
-// FR-109-AC-6: an I3 extracted source (QSL-295).
+// FR-109-AC-6: an I3 extracted source.
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "quire-extraction")]
@@ -3603,7 +3603,7 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
 }
 
 // ---------------------------------------------------------------------------
-// FR-105 (QSL-279): S4 state-node emission (TC-462, TC-463).
+// FR-105: S4 state-node emission (TC-462, TC-463).
 // ---------------------------------------------------------------------------
 
 fn config_version_compiled() -> Compiled {
@@ -3843,7 +3843,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         );
     }
 
-    // QSpec FR-341-AC-10 (QSL-319): a state clause's own `self`, `result`
+    // QSpec FR-341-AC-10: a state clause's own `self`, `result`
     // and operation-parameter nodes are `value`/`parameter` nodes like any
     // other binder, so their own occurrence also carries role `expression`,
     // not `anchor` -- the function-parameter case is covered by
@@ -3883,7 +3883,7 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
 /// (`a_fault_injected_partway_through_node_emission_writes_nothing`) proves
 /// the same all-or-nothing mechanism, but only over three plain function
 /// nodes with no `state`/`frame` node; this test drives it over the real
-/// `frame` node of a compiled state-clause package (QSL-313). It reaches
+/// `frame` node of a compiled state-clause package. It reaches
 /// `qsl-package`'s `test-support`-gated seam
 /// (`emit_checked_with_fault`/`checked_node_id_of`) across the crate
 /// boundary, enabled only by this crate's own `[dev-dependencies]` edge
@@ -3904,7 +3904,7 @@ fn a_fault_on_the_frame_node_refuses_the_whole_config_version_package() {
         .expect("exactly one frame node (asserted by s4_emits_exactly_the_fr_105_state_nodes)")
         .key();
     let frame_id = qsl_package::checked_node_id_of(frame_key);
-    let fault_reason = "QSL-313 fault injection (test): forced encoding failure at the frame node";
+    let fault_reason = "fault injection (test): forced encoding failure at the frame node";
 
     let refusal = qsl_package::emit_checked_with_fault(&compiled.package, |id| {
         if *id == frame_id {
@@ -4008,7 +4008,7 @@ fn s4_state_package_emission_is_stable_across_compiles() {
 }
 
 // ---------------------------------------------------------------------------
-// FR-105-AC-2/AC-4 remainder (QSL-312): dependencies and
+// FR-105-AC-2/AC-4 remainder: dependencies and
 // occurrences beyond the frame, the state_clause `semantic_type`, the
 // condition-term shapes, and the rename/`<=`/duplicate/second-post/
 // Sub-anchor-sharing FR-105-AC-4 cases `s4_state_package_emission_is_
@@ -4627,7 +4627,7 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// FR-105-AC-4 remainder (QSL-312): identity under source edits. Each test
+// FR-105-AC-4 remainder: identity under source edits. Each test
 // compiles an edited copy of FR-108's unit (a one-place textual edit of
 // `config_version_unit_and_packages`' own text, asserted to apply exactly
 // once) and compares it against the unedited compile.

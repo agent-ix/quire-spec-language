@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-57: the checker's `TypeEnvironment` against the model it checks.
+//! The checker's `TypeEnvironment` against the model it checks.
 //!
 //! Three parts:
 //!

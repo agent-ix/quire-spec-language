@@ -7,7 +7,7 @@
 //! These are plain values. Layer 1 (`qsl-cst`) produces them from source,
 //! the spine resolves them (E3, I1), and the tool modules check profiles against a
 //! [`ProfileCatalog`]; none of those layers owns them, so they sit in F
-//! (ADR-011 §6.1, QSL-181).
+//! (ADR-011 §6.1).
 
 use std::collections::BTreeSet;
 

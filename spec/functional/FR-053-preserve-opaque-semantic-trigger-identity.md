@@ -12,7 +12,7 @@ relationships:
 
 ## Description
 
-**RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
+**RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs` (see Status below).**
 
 When a downstream integration submits an event-triggered native-temporal
 evaluation, the compiler SHALL retain the semantic trigger-event identity as
@@ -76,12 +76,12 @@ facts into the FR-300 binding.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-053-AC-1 | **RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.** A non-UTF-8 semantic trigger identity round-tripped byte-for-byte through v2 request production, evaluation and strict result reading. This criterion was satisfied while the module existed; with QSL-21d/e/f landed, the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted module's own tests called it. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
-| FR-053-AC-2 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-053-AC-1: replacing the trigger bytes changed request and result identities; a result carrying bytes from another request or a correction with changed trigger bytes refused. | Retired |
-| FR-053-AC-3 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-053-AC-1: empty, malformed, noncanonical or cross-version trigger encodings refused with no partial view, Boolean truth or textual fallback. | Retired |
-| FR-053-AC-4 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-053-AC-1: a timestamp, receipt, display name, payload, capture, static binding coordinate or declaration-table position could not substitute for the supplied trigger bytes. | Retired |
-| FR-053-AC-5 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-053-AC-1: the v1 reader rejected v2 contracts and v2 rejected v1 textual-instance documents without translation. | Retired |
-| FR-053-AC-6 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-053-AC-1: a strictly read v2 request exposed its admitted trigger captures, evaluation anchor, both progress and closure axes, execution state, and completeness evidence as exact typed views, and its corresponding strictly read v2 result exposed the checked activation state; neither view could expose a caller-authored obligation or QObs subject. | Retired |
+| FR-053-AC-1 | **RETIRED (M-6d), which deletes `protocol_artifact::native_temporal` (FR-052) and its only test, `tests/it/native_temporal_owner.rs`.** A non-UTF-8 semantic trigger identity round-tripped byte-for-byte through v2 request production, evaluation and strict result reading. This criterion was satisfied while the module existed; with the spine `ProtocolClause` frame slices landed, the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted module's own tests called it. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
+| FR-053-AC-2 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: replacing the trigger bytes changed request and result identities; a result carrying bytes from another request or a correction with changed trigger bytes refused. | Retired |
+| FR-053-AC-3 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: empty, malformed, noncanonical or cross-version trigger encodings refused with no partial view, Boolean truth or textual fallback. | Retired |
+| FR-053-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: a timestamp, receipt, display name, payload, capture, static binding coordinate or declaration-table position could not substitute for the supplied trigger bytes. | Retired |
+| FR-053-AC-5 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: the v1 reader rejected v2 contracts and v2 rejected v1 textual-instance documents without translation. | Retired |
+| FR-053-AC-6 | **RETIRED (M-6d)**, for the same reason as FR-053-AC-1: a strictly read v2 request exposed its admitted trigger captures, evaluation anchor, both progress and closure axes, execution state, and completeness evidence as exact typed views, and its corresponding strictly read v2 result exposed the checked activation state; neither view could expose a caller-authored obligation or QObs subject. | Retired |
 
 ## Dependencies
 
@@ -93,9 +93,9 @@ facts into the FR-300 binding.
 
 ## Status
 
-**Retired by QSL-303 (M-6d).** `protocol_artifact::native_temporal` (FR-052)
+**Retired (M-6d).** `protocol_artifact::native_temporal` (FR-052)
 and its only test, `tests/it/native_temporal_owner.rs`, are deleted: with
-QSL-21d/e/f (QSL-309/300/301) landed, the spine `ProtocolClause` path no
+the spine `ProtocolClause` frame slices landed, the spine `ProtocolClause` path no
 longer needs this producer/consumer round trip, and nothing outside the
 deleted module's own tests called it. All acceptance criteria above are
 retired for the reason given at FR-053-AC-1.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196: input generators shared by this crate's criterion benchmarks
+//! Input generators shared by this crate's criterion benchmarks
 //! (`benches/*.rs`) and its one-shot probe (`src/bin/qsl-bench-probe.rs`).
 //!
 //! Each module builds one axis's input at a caller-chosen size `N` through
@@ -16,7 +16,7 @@
 //! - [`recursion`]: N self-recursive functions, N recursive components.
 //! - [`rss`]: the process's peak resident set size, for the probe.
 //! - [`text_cluster`]: N mutually referencing, Text-reachable records and
-//!   one structural equality, for FR-093's text-leaf walk (QSL-215).
+//!   one structural equality, for FR-093's text-leaf walk.
 //!
 //! No generator panics on a refusal from the layer it feeds: a refusal is a
 //! measured result, reported by the probe, not a harness failure.

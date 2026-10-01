@@ -30,15 +30,15 @@ This record is the `/specify` output for #210. Its `/spec-review` (all
 analyses, SR-474 to SR-481) is in
 [`spec/reviews/family-extension/`](../reviews/family-extension/base.md).
 
-Amended 2026-09-26 by QSL-273 (A05-3): §15 maps state clauses, frames,
+Amended 2026-09-26: §15 maps state clauses, frames,
 operation anchors and observations onto this contract. It is the state share
-of the #220 (QSL-19) mapping that §14.1 hands to #120, #121 and #164, and it
+of the #220 mapping that §14.1 hands to #120, #121 and #164, and it
 is the design FR-102 to FR-109 implement. The rest of the #220 mapping (the
 model graph, the static/runtime boundary, identity across phases, finite
 exploration and the owner of each gap) is
 [ADR-016](ADR-016-state-model-finite-execution-mapping.md).
 
-Amended 2026-09-29 by QSL-18 (ARCH-41, #221). §16 maps sum types and `case`
+Amended 2026-09-29 (ARCH-41, #221). §16 maps sum types and `case`
 onto this contract, following QSpec's merged design (AD-015, FR-143,
 FR-146). It corrects the `SumCase` diagnostics in §3 and §12.1, and the S6a
 sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
@@ -216,7 +216,7 @@ here, and #212 can check them from this record alone.
 
 #212 scenario 5 needs one input from #222: the "available finite bound"
 predicate. ADR-014 §4 defines it: a finite bound is available exactly when
-every unbounded domain of the item is boundable, and QSL-140's request writer
+every unbounded domain of the item is boundable, and the O-20 request writer
 computes it.
 
 ## 2. Shared family contract
@@ -355,12 +355,11 @@ caller, and records what is deferred here so the intent survives past this
 one PR:
 
 - `FamilyContract::requirements()` and the `Requirements`/`CapabilityKind`/
-  `Extent`/`Bound` types are **not implemented**. FR-057/#229 (QSL-11,
-  Done) states plainly that function-application has no FR-057 capability
+  `Extent`/`Bound` types are **not implemented**. FR-057/#229 states plainly that function-application has no FR-057 capability
   kind at all ("no kind for an expression nested in a clause, such as a
   function application"), so a `requirements()` for this family would
   return `None` unconditionally -- not a real function, its own absence
-  wearing a signature. QSL-140 (ADR-013 §7 S-6) adds
+  wearing a signature. ADR-013 §7 S-6 adds
   `Requirements` and `requirements()` back to the contract with the ADR-014
   bound types; each family with a real FR-057 kind implements it in its own
   migration, per [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md).
@@ -375,8 +374,7 @@ one PR:
 - `PackageRefusal` is **deleted**; `FamilyContract::package` itself is
   **deleted entirely** (PR #262 review, findings F1/F2, a correction to
   this paragraph's earlier "`package` returns `()`" text). Its one real
-  caller, `CheckedPackage::emit_function_package_v2` (deleted itself under
-  QSL-248/G2, along with the second `quire.checked-function-package/v2`
+  caller, `CheckedPackage::emit_function_package_v2` (deleted itself, along with the second `quire.checked-function-package/v2`
   producer it belonged to), wrote `package`'s output into a scratch buffer
   it never read back, then built its actual returned bytes independently
   through `family::emit_v2` -- a hook nothing consumed. QSL-242 settled
@@ -458,7 +456,7 @@ The per-family assignment:
 
 | Family | Parsing forms | Validation and normalization | Evaluation and lowering | Distinct diagnostics |
 |---|---|---|---|---|
-| `Value` | literals, operators, `let`, `if`, calls, records, collections, function declarations | typing, coercion, `Int[..]` range obligations, termination (`Value`'s whole-package `check::termination` pass over the call graph's recursive components; §14.1, QSL-148 row) | `value::expression` evaluator; v2 value and expression nodes; IR `Operator`; RT exact ops; CG oracle arm | ill-typed, operator-ineligible, range, termination |
+| `Value` | literals, operators, `let`, `if`, calls, records, collections, function declarations | typing, coercion, `Int[..]` range obligations, termination (`Value`'s whole-package `check::termination` pass over the call graph's recursive components; §14.1, FR-065-AC-4 row) | `value::expression` evaluator; v2 value and expression nodes; IR `Operator`; RT exact ops; CG oracle arm | ill-typed, operator-ineligible, range, termination |
 | `StateModel` | model declarations, populations, lookups, inheritance, dispatched calls | population extent, redefinition conflicts, dispatch preconditions, query-only restriction | model normalize; population evaluation through `value::model_query`, called from the enclosing family's `evaluate` hook (no `evaluate` hook of its own, ADR-016 FP-3); v2 `model` and `relation` nodes | missing-name, redefinition, dispatch-ineligible |
 | `SumCase` | `union` declarations, union construction, `case` with arms (§16.2) | arm resolution per arm; exhaustiveness as its own obligation (FR-146) | `case` evaluation inside the enclosing declaration's evaluation; v2 union and case nodes (§16.4) | `undefined_expression`/`unproved-exhaustiveness`, with obligation `duplicate-arm`, `unknown-member`, `arm-arity` or `missing-arm`. An unreachable arm is a `duplicate-arm`. Construction and scrutinee errors are `ill_typed`/`type-mismatch` (§16.5). |
 | `TemporalTrace` | temporal formulas, intervals, clock roles, profiles; the control-to-temporal mapping over checked protocol operations | interval and window typing, profile facet admission | temporal evaluation over a trace; v2 temporal nodes | unbounded without facet, clock role, interval |
@@ -868,7 +866,7 @@ ticket run the same scan in their repositories.
 | `"quire.protocol.finite-global/v1"` (`QSL:src/protocol_artifact/validate.rs:287,291`) | yes | typed profile enum decoded once at protocol-artifact intake. Done: intake resolves each definition to the closed `RegisteredDefinition`, and validation reads that, not the identity string | QSL `ProtocolClause` |
 | `"filament-canonical-json-1"` (`QSL:src/state/evaluation.rs:2478-2484`) | yes | typed canonicalization enum decoded at state-input intake. Done: `CanonicalizationDomain` and the `sha256`-typed `CanonicalDigest` | QSL `StateModel` |
 | `"quire.state.authority-adapter"` (`QSL:src/state/evaluation.rs:2781-2783`) | yes | typed adapter-kind enum decoded at intake. Done: `AdapterArtifact` is constructed once from the wire reference by `TryFrom` | QSL `StateModel` |
-| `"clock:"` prefix (`QSL:src/temporal.rs:50`) | yes | a typed clock-role field carried on the wire, so readers stop re-parsing the prefix. Done (QSL-288): version-2's `temporal_bindings` delta carries a typed `clock_name: String` field alongside `v1`'s frozen `clock:`-prefixed binding name (FR-050 extends `/1` without changing its bytes, meaning or strict reader). `ClockNames::of_v2` reads that typed field directly for every v2 admission and emission path, so no v2 reader re-parses the prefix; the prefix itself is still parsed twice — once at v2 emission, to derive `clock_name` from the legacy name, and once at v2 intake's consistency check, to refuse an offer whose typed field disagrees with the inherited legacy spelling (`v2.binding.offer-clock-name`) — plus once more at `/1`-only admission, where `ClockNames::of`'s legacy parsing remains the sole source of the name. The two facts cannot silently diverge, but the prefix is not parsed "once, at lexing"; it is parsed at each of those three sites. | QSL `TemporalTrace` |
+| `"clock:"` prefix (`QSL:src/temporal.rs:50`) | yes | a typed clock-role field carried on the wire, so readers stop re-parsing the prefix. Done: version-2's `temporal_bindings` delta carries a typed `clock_name: String` field alongside `v1`'s frozen `clock:`-prefixed binding name (FR-050 extends `/1` without changing its bytes, meaning or strict reader). `ClockNames::of_v2` reads that typed field directly for every v2 admission and emission path, so no v2 reader re-parses the prefix; the prefix itself is still parsed twice — once at v2 emission, to derive `clock_name` from the legacy name, and once at v2 intake's consistency check, to refuse an offer whose typed field disagrees with the inherited legacy spelling (`v2.binding.offer-clock-name`) — plus once more at `/1`-only admission, where `ClockNames::of`'s legacy parsing remains the sole source of the name. The two facts cannot silently diverge, but the prefix is not parsed "once, at lexing"; it is parsed at each of those three sites. | QSL `TemporalTrace` |
 | composed `Backend{identity: &str}` (`QSL:src/linking/composed/requests.rs:80`) | no | removed from the linker; candidates use `BackendId` in the #185 registry (§7) | #185 |
 | value call by function name `&str` (`QSL:src/value/expression/mod.rs:635`) | no | this is the replay executor entry; keyed by a typed `QualifiedName` (ADR-013 O-11, owner ruling on OQ-5), the one name lookup after checking that ADR-013 R-06 allows | #214 |
 | backend CLI argument | no | resolved to `BackendId` by registry lookup in `route`; it is the only backend choice. `--target` and `ProjectionTarget` (`QSL:src/lowering/target.rs:39-46`) are deleted with `lowering` (ADR-011 §7.3 M-6a). | #185 |
@@ -885,7 +883,7 @@ states the contract; the change belongs to their own tickets (§14).
 | Item | Decision |
 |---|---|
 | ADR-010 OBS-003 | The composed linker performs no backend negotiation. `requests::report` records requests as data and has no `Backend` parameter, no `UnsupportedCapability` disposition and no `UnsupportedFamily` disposition. Candidates and routing live only in the #185 registry, and dispositions only in CG `negotiate_*` (§7). #185 implements the removal unconditionally: four-kind compatibility is refused as unsupported (owner ruling on #229, recorded in agent-ix/quire-specification#134). QSL FR-036 (line 97, AC-5, AC-6) and TC-115 change with it (§14). |
-| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are RT capability predicates (AD-016 arrow 3). A CG `negotiate_*` arm may take them as inputs (arrow 4, WP7 open), but they are not settlement points and settle no disposition; today CG calls neither (agent-ix/quire-contract-codegen#86). CG `negotiate_*` arms over S9 are the only settlement points. The predicate list is decided by AD-016 WP7. QSL has no copy of them: X-1 (#213 S-1) moved `division` and `ieee` into `quire-exact` without cutting these (its own summary said so), so QSL carried both until QSL-131 removed them (ADR-011 §6.1's K-leaf bullet). QSL value semantics keep their evaluation functions, which are not negotiation. |
+| ADR-010 OBS-004 | `negotiate_integer_division`, `negotiate_ieee` and `IeeeBackendCapabilities` are RT capability predicates (AD-016 arrow 3). A CG `negotiate_*` arm may take them as inputs (arrow 4, WP7 open), but they are not settlement points and settle no disposition; today CG calls neither (agent-ix/quire-contract-codegen#86). CG `negotiate_*` arms over S9 are the only settlement points. The predicate list is decided by AD-016 WP7. QSL has no copy of them: X-1 (#213 S-1) moved `division` and `ieee` into `quire-exact` without cutting these (its own summary said so), so QSL carried both until #213 S-1b removed them (ADR-011 §6.1's K-leaf bullet). QSL value semantics keep their evaluation functions, which are not negotiation. |
 | ADR-010 OBS-012 | "Capability" has one meaning: the requirement kind that semantic admission records as per-item requirement data (AD-016 arrow 1, whose `capability_report` wording is stale here; ADR-011 §2.2 E3), from the agent-ix/quire-specification#134 (FR-290) vocabulary. This is how this record reads AD-016's row "QSL `Capability` = language admission": the values are recorded during admission and decide nothing. The QSL four-variant request label enum is replaced by the #213 type. IR `CheckedCapability`, `CapabilityDisposition` and `OutputCapability`, and CG `ObligationDisposition`, are dispositions or output kinds. They stay layer-owned, with total conversions (AD-016 shared-type strategy). |
 | ADR-010 OBS-013 | The Kani backend is one `BackendDescriptor` in the #185 registry. Its implementation is CG (harness and its `negotiate_*` arm) plus IR (outcome), per AD-016. QSL owns the registry, not the backend. FR-290's wording "quire-spec-language's Kani backend" is corrected by agent-ix/quire-specification#134 (scope item 5). |
 | ADR-010 OBS-014 | The five production string sites are the rows marked "yes" in §9. Each is typed at its intake edge. |
@@ -927,7 +925,7 @@ until #226 lands, and #226 enforces it after that.
 
 ### 12.1 Add a sum type and an exhaustive `case`
 
-Amended 2026-09-29 by QSL-18: §16 is the decision-complete mapping and holds
+Amended 2026-09-29: §16 is the decision-complete mapping and holds
 where it differs from this table. In particular:
 
 - the keyword is `union` (QSpec AD-015);
@@ -987,7 +985,7 @@ control scope it is written in. It is represented only inside S2 and S3: it
 has no checked clause kind and no v2 node. FR-112 to FR-116 are the
 requirements.
 
-Amended 2026-09-27 by QSL-296 (QSL-21a), recording the team-leader rulings
+Amended 2026-09-27, recording the team-leader rulings
 on PR #497: the source `frame` production and `FrameForm`, the `Frame` and
 `ScopedAnchor` checked clause kinds, the v2 scoped anchor node and the
 `finish` check of postcondition writes are not part of this change set. A
@@ -1108,7 +1106,7 @@ item settles `invalid-request` with no preference order
 | `FamilyKind`, `FamilyContract`, `ReferenceEvaluation`, seams S1–S4, the seam probe, the thin check seam for function application, the `#[string_edge]` attribute and `xtask string-edge` scan | #214 |
 | Capability type and outcome constructors for §7.3 and §7.4 | #213 |
 | Registry value, `BackendDescriptor`, candidate sets and routing (§7.2), the S7 registry arm and its seam probe, removal of the composed-linker negotiation (the `requests` backend disposition), registry evidence (§5.3) | #185 |
-| Removal of the QSL `negotiate_*` copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them | QSL-131 |
+| Removal of the QSL `negotiate_*` copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them | Done |
 | QSL FR-036 amendment (line 97, AC-5, AC-6: requests recorded as data; dispositions in CG `negotiate_*`) and the TC-115 rewrite, through `/specify` before #185 starts | #185 |
 | `negotiate_*` taking the candidate set and extent (§7.2, §1.1), backend kind enum S9, the solver-absence fault-injection test (§7.4), CG S6 enum matches | agent-ix/quire-contract-codegen#86 (the last two are §14.2 amendments to #86); #185 exit, #188, #189 and #217 wait on it. #86's S6 matches wait on agent-ix/quire-contract-ir#141. #86 and #141 take their S6, S7 and S9 variant sets from agent-ix/quire-specification#134. |
 | Remaining `Value` forms | #120, #164, #170, #175 |
@@ -1120,23 +1118,23 @@ item settles `invalid-request` with no preference order
 | IR tag and form enums decoded at v2 intake; removal of the post-intake `as_str()` sites in IR `src/kani/` | agent-ix/quire-contract-ir#141 |
 | CG enum matches in place of string compares | agent-ix/quire-contract-codegen#86 |
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
-| S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | [QSL-143](https://linear.app/agent-ix/issue/QSL-143) |
-| Marking or converting the QSL crate's remaining string-dispatch sites so `xtask string-edge` joins the lint gate (FR-064): done for the literal-comparison scan; `string-edge` is a `make ci` prerequisite and the workspace scan is clean. The scan does not yet resolve named `const NAME: &str` operands (FR-064 Status; owner [QSL-287](https://linear.app/agent-ix/issue/QSL-287)) | [QSL-145](https://linear.app/agent-ix/issue/QSL-145) |
-| `FamilyContract::requirements()` and the `Requirements` type (ADR-012 §2's fourth contract part), moved here from QSL-152 by ADR-014 §11 (FR-062-AC-1's `requirements` half, AC-4) | [QSL-140](https://linear.app/agent-ix/issue/QSL-140) (PR #435) |
-| `Relation`'s absence from S6a's input type (FR-090-AC-4, backed); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage (backed, `CheckCause::code`) | [QSL-152](https://linear.app/agent-ix/issue/QSL-152) |
-| Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | [QSL-242](https://linear.app/agent-ix/issue/QSL-242) |
-| Tests for the amended FR-062-AC-1 (TC-160 step 1: `compile_fail` doctests on `FamilyContract` for omitting `requirements` and the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8), all backed | [QSL-283](https://linear.app/agent-ix/issue/QSL-283) |
-| `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | [QSL-153](https://linear.app/agent-ix/issue/QSL-153) |
-| FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until QSL-143/QSL-152/`stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | [QSL-149](https://linear.app/agent-ix/issue/QSL-149) |
-| Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (corrected; the gate now runs `xtask string-edge`, QSL-145) | [QSL-155](https://linear.app/agent-ix/issue/QSL-155) (spec defect) |
-| The add-then-remove-reappears scan sequence, the CLI process-exit-code assertion, and a real test against the ADR-010 §4.3 production dispatch sites still in the tree (FR-064-AC-2, AC-4, AC-5; the AC-5 real-site half landed with the detector widening, [QSL-268](https://linear.app/agent-ix/issue/QSL-268)) | [QSL-150](https://linear.app/agent-ix/issue/QSL-150) |
-| A compile-fail test that the function packaging/lowering public API accepts no raw-CST/source-string overload (backed: `.into()` and a direct `link(..)` call both fail to compile), and a real occurrence-span-survives-linking test (a call's source occurrence resolves to the same byte span before linking, after linking and after a real v2 emit/decode round trip, with a corrupted-alternate control) (FR-065-AC-1, AC-3 -- both now backed, `TC-163`) | [QSL-154](https://linear.app/agent-ix/issue/QSL-154) |
-| Moving function declaration and application typing and definedness checking into `Value`'s family check code (`ValueFunctionFamily::check` for declarations, `check::family::Application` for calls) and removing it from `Typer`, one S3 checker per form (FR-065-CON-2), with a thin `Call` arm (FR-065-CON-3). Termination checking stays `Value`'s whole-package pass, `check::termination::check`, which runs after every declaration is checked, finds the call graph's recursive components (Tarjan strongly connected components) and returns at most one refusal per component (QSpec FR-146); a mutually recursive component's obligations need every member's typed measure together, so that pass decides termination once per component, with every member's typed measure in hand. Which `Value` ticket deletes SEAM-2's (`src/checking/composed/`) `predicate` and `Invoke` checking is FR-065-OQ-1. Also owns FR-062-AC-7 (a real recursive-descent fixture and a limit-varied-by-one control) (FR-062-AC-7, FR-065-AC-4, AC-5) | [QSL-148](https://linear.app/agent-ix/issue/QSL-148) |
-| Two typing contexts constructed from the same resolved declarations, checking the same form through each, produce identical checked output (FR-062-AC-3's third clause, backed by `TC-160`/`two_contexts_from_the_same_declarations_check_identically`; its first two clauses are backed by QSL-246's tests in the same module) | [QSL-161](https://linear.app/agent-ix/issue/QSL-161) |
-| The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | [QSL-151](https://linear.app/agent-ix/issue/QSL-151) |
-| The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | [QSL-156](https://linear.app/agent-ix/issue/QSL-156) |
-| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (`TC-166` has zero tests) (FR-062-AC-10, FR-065-AC-6) -- a real owner that already existed before this table was written but was not recorded against either criterion until now | [QSL-5](https://linear.app/agent-ix/issue/QSL-5) / #243 |
-| `Value` function `requirements()` at operation-application granularity: one `value-validity` record per scalar operation application occurrence, with ADR-014 §4's operation-application extent (FR-062-AC-4, AC-13; FR-057-AC-10), and the `route` request builder over a package's records (FR-075-AC-8) | [QSL-266](https://linear.app/agent-ix/issue/QSL-266) |
+| S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | Done |
+| Marking or converting the QSL crate's remaining string-dispatch sites so `xtask string-edge` joins the lint gate (FR-064): done for the literal-comparison scan; `string-edge` is a `make ci` prerequisite and the workspace scan is clean, same-crate named `const NAME: &str` operands included (FR-064 Status) | Done |
+| `FamilyContract::requirements()` and the `Requirements` type (ADR-012 §2's fourth contract part), moved here by ADR-014 §11 (FR-062-AC-1's `requirements` half, AC-4) | Done |
+| `Relation`'s absence from S6a's input type (FR-090-AC-4, backed); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage (backed, `CheckCause::code`) | Done |
+| Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | Done |
+| Tests for the amended FR-062-AC-1 (TC-160 step 1: `compile_fail` doctests on `FamilyContract` for omitting `requirements` and the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case), AC-5's third clause (`check` and `emit_checked` never return `Incomplete`) and AC-9 (TC-160 step 8), all backed | Done |
+| `StageLimits`'/`LimitKind`'s (then `StageLimitKind`) input-bytes, node-count and work-budget limit kinds, with a real producer and consumer for each, and the `evaluate`-hook `Incomplete` outcome once `quire-exact`'s meter-charge API is exported (FR-062-AC-5) | Done |
+| FR-063's S1-S4 seam-probe coverage of the mechanism itself (`xtask seam-probe`'s own end-to-end behavior, dedicated trace-tagged tests), and the checked-in list's coverage across all five of AC-6's named categories (tracked here, though AC-6 stays unbacked until the S2/S3 probes, the S4 probe and `stage_hooks`'s replacement each land their own share) (FR-063-AC-1, AC-2, AC-3, AC-4, AC-6, AC-7) | Done |
+| Spec defects: FR-063-AC-5's gate-stubbing test, and FR-064-AC-6's second half (corrected; the gate now runs `xtask string-edge`) | Done (spec defect) |
+| The add-then-remove-reappears scan sequence, the CLI process-exit-code assertion, and a real test against the ADR-010 §4.3 production dispatch sites still in the tree (FR-064-AC-2, AC-4, AC-5; the AC-5 real-site half landed with the detector widening) | Done |
+| A compile-fail test that the function packaging/lowering public API accepts no raw-CST/source-string overload (backed: `.into()` and a direct `link(..)` call both fail to compile), and a real occurrence-span-survives-linking test (a call's source occurrence resolves to the same byte span before linking, after linking and after a real v2 emit/decode round trip, with a corrupted-alternate control) (FR-065-AC-1, AC-3 -- both now backed, `TC-163`) | Done |
+| Moving function declaration and application typing and definedness checking into `Value`'s family check code (`ValueFunctionFamily::check` for declarations, `check::family::Application` for calls) and removing it from `Typer`, one S3 checker per form (FR-065-CON-2), with a thin `Call` arm (FR-065-CON-3). Termination checking stays `Value`'s whole-package pass, `check::termination::check`, which runs after every declaration is checked, finds the call graph's recursive components (Tarjan strongly connected components) and returns at most one refusal per component (QSpec FR-146); a mutually recursive component's obligations need every member's typed measure together, so that pass decides termination once per component, with every member's typed measure in hand. Which `Value` ticket deletes SEAM-2's (`src/checking/composed/`) `predicate` and `Invoke` checking is FR-065-OQ-1. Also owns FR-062-AC-7 (a real recursive-descent fixture and a limit-varied-by-one control) (FR-062-AC-7, FR-065-AC-4, AC-5) | Done |
+| Two typing contexts constructed from the same resolved declarations, checking the same form through each, produce identical checked output (FR-062-AC-3's third clause, backed by `TC-160`/`two_contexts_from_the_same_declarations_check_identically`; its first two clauses are backed by tests in the same module) | Done |
+| The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | Done |
+| The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | Done |
+| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (FR-062-AC-10, FR-065-AC-6); `TC-166` is Planned and has zero tests | Planned; QSL-346 |
+| `Value` function `requirements()` at operation-application granularity: one `value-validity` record per scalar operation application occurrence, with ADR-014 §4's operation-application extent (FR-062-AC-4, AC-13; FR-057-AC-10), and the `route` request builder over a package's records (FR-075-AC-8) | Done |
 
 Requirements needed before implementation starts:
 
@@ -1172,7 +1170,7 @@ Requirements needed before implementation starts:
   over the candidate-set wire and the v2 bytes as data (§5.3), so they need
   no #225 edge.
 
-## 15. State clauses on the shared contract (QSL-19 mapping, QSL-273)
+## 15. State clauses on the shared contract (#220 mapping)
 
 This section maps the state behaviour that native-run/1 executes today
 (FR-023, FR-026, FR-028, FR-031 and FR-032) onto the families, stages and
@@ -1370,7 +1368,7 @@ pinned revision 48ab5dc).
 ### 15.8 Replacement and deletion
 
 The native modules have users besides native `run` today: native `compile`
-of `0-draft` sources (FR-027, kept until QSL-5 by the 2026-09-24 ruling),
+of `0-draft` sources (FR-027, kept until M-6c by the 2026-09-24 ruling),
 `NativePackage` and its native-linked-package/1 reader (FR-028), and the
 `0-draft` route of CLI `run`, which FR-100 sends to native run (FR-026).
 `native_model`, `model_source` and `mapped` are imported by native compile
@@ -1380,7 +1378,7 @@ by SEAM-3 (`src/protocol_artifact/mod.rs`). So the order is:
 
 1. FR-102 to FR-109 land. Nothing native is deleted. FR-108's parity test
    runs both paths.
-2. M-6c retires the `0-draft` native path as a whole, with QSL-5: FR-100's
+2. M-6c retires the `0-draft` native path as a whole: FR-100's
    `0-draft` route of CLI `run`, native `compile` and `lower`, `NativePackage`
    and the native-linked-package/1 reader. The same PR deletes native `run`,
    `state`, `runtime`, `mapped` and `model_source`, the modules only those
@@ -1394,7 +1392,7 @@ by SEAM-3 (`src/protocol_artifact/mod.rs`). So the order is:
 No native module is deleted before step 2, and no module is deleted while a
 remaining path still imports it.
 
-## 16. Sum types and `case` on the shared contract (QSL-18 mapping, #221)
+## 16. Sum types and `case` on the shared contract (#221 mapping)
 
 This section maps sum types and `case` onto the families, stages and seams of
 this record. It is the #221 (ARCH-41) mapping that §14.1 hands to #187
@@ -1553,11 +1551,11 @@ they have an arm.
 | S3 declaration | the assembler's `DeclarationForm::Union` arm (`qsl-semantics/src/check/assemble.rs:476-477` region) registers the union in the type environment. `SumCaseFamily: FamilyContract` checks the declaration: duplicate member names, payload type resolution, and the FR-143-AC-13 recursion rule. Payload positions join the existing record and tuple recursion graph, `value::declaration::check_recursion` (`qsl-semantics/src/value/declaration.rs:1160`), as named edges. That call site is shared code, not a family's internals. | new `qsl-semantics/src/check/sum_case.rs`; `check::assemble`; `value::declaration` | S1 (first real `FamilyKind::SumCase` implementer), S3 | none |
 | S3 construction | the `check`-core call-target seam function (§16.2), then `check::sum_case::construct`. The member is resolved against the union, and each payload argument is checked against its declared position type. FR-143's four construction refusals are the existing `CheckCause::IllTyped` with tag `type-mismatch` (§16.5). | `check::sum_case`; the `check`-core call-target seam function; the `Call` and `Name` arms of `Typer::infer_form` | S3 | none |
 | S3 `case` | the `Case` arm of `Typer::infer_form` makes one call to `check::sum_case::check_case`. That function is a §4 staged builder with states Scrutinee, then Arms (§16.5). Each arm is a clause with independent meaning (§4.1). | `check::sum_case`; `check` core dispatch arm | S3, S4 | none |
-| S3 checked nodes | `NodeKind` (`qsl-semantics/src/check/ir.rs:294-547`) gains a union-construction variant and a `Case` variant. The compiler forces one arm at each existing match over `NodeKind`. `Pre` (QSL-277) forced the same sites: `check/check/typing.rs`, `check/lowering.rs` (`Lowering::lower_node`, `:2739`), `check/claims.rs`, `check/facts.rs`, `check/observation.rs`, `ir.rs` children (`:590`) and the evaluator's `Machine::apply` (`qsl-eval/src/value/expression/evaluate.rs:929`). Each forced arm walks children or makes one call into `sum_case`. | `check` core; each listed site | S3 | none |
+| S3 checked nodes | `NodeKind` (`qsl-semantics/src/check/ir.rs:294-547`) gains a union-construction variant and a `Case` variant. The compiler forces one arm at each existing match over `NodeKind`. `Pre` forced the same sites: `check/check/typing.rs`, `check/lowering.rs` (`Lowering::lower_node`, `:2739`), `check/claims.rs`, `check/facts.rs`, `check/observation.rs`, `ir.rs` children (`:590`) and the evaluator's `Machine::apply` (`qsl-eval/src/value/expression/evaluate.rs:929`). Each forced arm walks children or makes one call into `sum_case`. | `check` core; each listed site | S3 | none |
 | S3 collection element types | until SC-G5 gives unions an FR-144 canonical key, a set, bag or ordered set whose element type contains a union refuses `ill_typed`/`operator-ineligible` at S3. It takes the same path as an IEEE-bearing element type: `value::declaration::type_refusal` (`qsl-semantics/src/value/declaration.rs:1055-1060`, beside `contains_ieee`). A `Sequence<U>` needs no key and is admitted. The kernel's forced key arm for a union value yields no key, exactly as the kernel does for a population pair (ADR-013 O-13 Population row): it never invents an order. When SC-G5 lands, the refusal is deleted in the change that adds the key. | `value::declaration`; `quire-exact` `key.rs` | none | SC-G5 lifts it |
 | S3 requirements | none new. A clause containing `case` records the clause's own kind, `value-validity`, through that clause's family. A scalar operation application in an arm body is a `Value` claim site found by the existing walk (`check/claims.rs`), which only gains the forced child-walk arm. `SumCaseFamily::requirements()` returns no claim (FR-057; recipe "A note on `requirements()`"). | none | none | none |
 | S3 lowering | FR-093 lowering of the union type node, a union construction and a `case` expression to v2 nodes. This needs the wire vocabulary `NodeTag`, `SemanticTerm` and `Operator` (`qsl-semantics/src/check/node_key/mod.rs:288`, `:324`, `:631`), and a member variant (`qsl-semantics/src/value/member.rs:96` region), each with QSpec's spelling. | `check::lowering`, `check::node_key`, `value::member` | S3, S5 wire totality | spelling proposed with SC-G1 to SC-G3 (§16.10) |
-| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the QSL-279 precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the pinned IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
+| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the pinned IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
 | I2 | none. `library` exposes exported declarations as data and classifies no node kind (ADR-013 T-2, QC-19). | none | none | none |
 | S6a | `case` arm selection and construction. `Machine::apply` gets one arm per new `NodeKind` variant, each making one call into `value::expression::sum_case`. Selection evaluates the scrutinee, selects the arm whose member identity equals the value's active member, binds the payload positionally and evaluates the body (FR-146-AC-11). A scrutinee outcome other than `Completed` propagates unchanged. Argument admission refuses every ill-formed supplied union value before S6a, per SC-R3 (`InputRefusal`, T-4). A checked `case` is exhaustive, so a value that reaches S6a and matches no arm can only come from a QSL defect. That is `Err(InternalFault)`, an S6a invariant break (O-16), and never a refusal. There is no `S6aFamilyKind` variant (§16.6). | new `qsl-eval/src/value/expression/sum_case.rs`; `evaluate.rs`; argument admission in `qsl-eval/src/value/expression/mod.rs` | S3 | charge points: SC-G4 |
 | Route, E7 | none in QSL. No `SumCase` claim requests a kind. For a `value-validity` item whose function body contains `case`, IR decodes the new tag and form at v2 intake and returns an explicit `unsupported` lower arm until an IR form exists. CG `negotiate_*` settles it `unsupported` with a catalog code (§12.1 IR and CG rows, unchanged). | IR, CG | S6 | IR, CG tickets |

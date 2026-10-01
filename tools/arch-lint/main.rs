@@ -7,7 +7,7 @@
 //! `arch-lint duplicate-revisions` is FR-061 (one revision per quire crate
 //! in QSL's own `Cargo.lock`).
 //! `arch-lint canonical-encoder` is ADR-013 §2's one-RFC-8785-encoder rule
-//! (ADR-013:113, QSL-194): no second canonical encoder beside
+//! (ADR-013:113): no second canonical encoder beside
 //! `quire-canonical`.
 #![forbid(unsafe_code)]
 

@@ -149,8 +149,8 @@ impl RuleRef {
 }
 
 /// A run of producer keys that several facts share -- an ancestor path --
-/// with the length of its keys' RFC 8785 array elements counted once
-/// (QSL-216). Cloning shares the keys, so every fact derived along one path
+/// with the length of its keys' RFC 8785 array elements counted once.
+/// Cloning shares the keys, so every fact derived along one path
 /// holds that path once, not a copy each.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct KeyPath {
@@ -193,7 +193,7 @@ fn joined_len(prefix: u64, prefix_nonempty: bool, extra: u64) -> u64 {
 }
 
 /// A fact's ordered producer keys: a shared ancestor path, then the keys this
-/// fact adds after it (QSL-216). Compares, and reads, as the one flat list
+/// fact adds after it. Compares, and reads, as the one flat list
 /// of keys it spells.
 #[derive(Clone)]
 pub struct FactInputs {
@@ -218,7 +218,7 @@ impl FactInputs {
     }
 
     /// Whether these inputs begin with the very allocation `other`'s path
-    /// holds: shared, not copied (test-only; QSL-216).
+    /// holds: shared, not copied (test-only).
     #[cfg(test)]
     pub(crate) fn shares_path_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.path.keys, &other.path.keys)
@@ -405,7 +405,7 @@ impl EffectiveDeclarationPreimage {
     }
 
     /// This preimage's RFC 8785 length, counted from its parts without
-    /// encoding its facts' shared paths (QSL-216): the preimage with no
+    /// encoding its facts' shared paths: the preimage with no
     /// derivation, plus each fact's length and the commas between them.
     /// Equal to [`Self::canonical_len`], so `normalize.hash` is charged
     /// before the preimage is encoded and hashed.
@@ -502,7 +502,7 @@ pub fn hex(bytes: &[u8]) -> String {
 /// `serde_json` encoder this replaced aborted the process on; this panics
 /// with the encoder's reason instead.
 pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
-    // ADR-013 §2 (arch-lint `canonical-encoder`, QSL-278): the digest goes
+    // ADR-013 §2 (arch-lint `canonical-encoder`): the digest goes
     // through `quire-canonical`'s own `sha256` directly, never `to_vec` and
     // then `ByteDigest::of` over the resulting bytes -- that pair is a
     // second RFC 8785 encoder in every caller's own file, this module's own

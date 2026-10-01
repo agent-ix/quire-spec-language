@@ -52,4 +52,4 @@ Tag the tests `#[trace("TC-456", "FR-102-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273). The code waits for the other lane's work in `qsl-forms`.
+Planned. The code waits for the other lane's work in `qsl-forms`.

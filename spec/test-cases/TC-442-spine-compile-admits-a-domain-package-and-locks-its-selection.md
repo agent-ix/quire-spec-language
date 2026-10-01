@@ -81,4 +81,4 @@ including its two field-access and conforming-equality cases),
 
 ## Status
 
-Passed locally (QSL-249, QSL-256).
+Passed locally.

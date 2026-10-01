@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Lossless complete-V1 CST construction and recovery -- the layer-1-only
-//! subset of the root crate's former `complete_cst.rs` (QSL-178 review F3):
+//! subset of the root crate's former `complete_cst.rs`:
 //! these tests call only `qsl_cst::parse` and qsl-cst types, never the root
 //! crate's `complete::{apply_edit, apply_edits}` incremental-editing API,
 //! which stays covered by the root's own `tests/it/complete_cst.rs`.
@@ -152,7 +152,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
         )
         .unwrap_err()
         .code,
-        // QSL-236: the node ceiling is a `SyntaxLimit` kind the catalog
+        // The node ceiling is a `SyntaxLimit` kind the catalog
         // admits, so it now reports `stage_limit_exceeded`.
         CompleteCode::StageLimitExceeded
     );
@@ -363,8 +363,8 @@ fn revision_bound_node_identity_includes_the_document_identity() {
 }
 
 /// TC-188 R04 (FR-143-AC-10): a sum declaration is a layer-1 parse refusal
-/// at `variant`. Moved here from the root crate's `composite_values.rs`
-/// (QSL-183): it calls only `qsl_cst::parse`.
+/// at `variant`. Moved here from the root crate's `composite_values.rs`:
+/// it calls only `qsl_cst::parse`.
 #[trace("TC-188", "FR-143-AC-10")]
 #[test]
 fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {

@@ -521,7 +521,7 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 /// as JSON are digested over their RFC 8785 canonical encoding, through
 /// `quire-canonical` directly -- the one sanctioned encoder (ADR-013 §2);
 /// bytes that do not parse are digested raw. The raw fallback itself is
-/// `model::intake::check_package_digest` (widened, QSL-278, to serve this
+/// `model::intake::check_package_digest` (widened, to serve this
 /// second caller) -- never an ad hoc `ByteDigest::of` here, and never a
 /// second call site of `model::key::raw_bytes_digest` outside that already-
 /// exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback

@@ -5,7 +5,7 @@
 //! body and measure, checks every definedness obligation on a reachable
 //! path and the `decreases` obligations of every recursive component, all
 //! before any charge -- that checking-stage logic lives in the layer-3
-//! [`qsl_semantics::check`] module (ADR-011 §7.3 M-5, QSL-139/FR-068). This module
+//! [`qsl_semantics::check`] module (ADR-011 §7.3 M-5, FR-068). This module
 //! is what remains at layer 5 (S6a): [`CheckedPackage::call`] and
 //! [`CheckedPackage::evaluate`] run already-checked code under a
 //! [`Meter`], reaching `check`'s checked-output state only
@@ -39,10 +39,10 @@ pub use family::{InvalidQualifiedName, QualifiedName};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
-// retired by QSL-181: ADR-011 §7.2 forbids a root re-export of an item that
+// retired: ADR-011 §7.2 forbids a root re-export of an item that
 // moves to `qsl-semantics`). `CheckedPackage` (S4 in-process) is layer 4's
 // own canonical type, imported from `qsl-package` and re-exported by none of
-// this crate (QSL-182 amends FR-087-AC-9 the same way): callers name it at
+// this crate (FR-087-AC-9 as amended): callers name it at
 // `qsl_package::CheckedPackage` and bring `CheckedPackageEvaluation` into
 // scope to call it.
 use qsl_package::CheckedPackage;
@@ -185,7 +185,7 @@ fn validate(
         });
     }
     for (parameter, ((_, value_type), argument)) in parameters.iter().zip(arguments).enumerate() {
-        // FR-089-AC-6 (QSL-131 V5): kernel `ValueType::admits` refuses every
+        // FR-089-AC-6: kernel `ValueType::admits` refuses every
         // `(Population, Population)` pair outright -- the declared-maximum
         // comparison is this QSL-layer check (FR-089-AC-5), not a
         // generic-admission side effect. `Population<T>[N]` is reachable
@@ -236,8 +236,8 @@ fn validate(
 }
 
 /// The evaluation environment `evaluate_declaration` runs `identity`
-/// against: exactly one variant per [`S6aFamilyKind`] family (FR-107,
-/// QSL-278), each carrying its own family's real `Env<'a>`. A caller always
+/// against: exactly one variant per [`S6aFamilyKind`] family (FR-107),
+/// each carrying its own family's real `Env<'a>`. A caller always
 /// pairs a `family` with its own matching variant; the mismatched pairs
 /// `evaluate_declaration`'s own match handles are a broken invariant, never
 /// reachable through [`CheckedPackageEvaluation::call`] or
@@ -303,7 +303,7 @@ fn evaluate_declaration(
         // (`E0004`). Do not add a catch-all to make it compile.
         //
         // The arm below exists only in the probe's build of the crates
-        // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+        // above `qsl-eval` (`--cfg seam_probe_eval_downstream`):
         // `qsl-replay` depends on this crate, so it must compile there
         // for the root crate's own seams to be reached at all.
         #[cfg(seam_probe_eval_downstream)]
@@ -343,8 +343,8 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// declarations do not resolve refuses with `UnknownFunction`, naming
     /// it; it never falls back to a display-name string comparison.
     ///
-    /// FR-090: returns `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),
-    /// .. })` for the kernel evaluation outcome unchanged -- except a kernel
+    /// FR-090: returns `Ok(Evaluation { outcome: FamilyOutcome::Evaluated(o),.
+    /// . })` for the kernel evaluation outcome unchanged -- except a kernel
     /// `Refusal::CheckedInvariant`, which never reaches this `Ok` arm at all
     /// (FR-096-AC-15): S6a's own seam turns it into `Err(InternalFault)`
     /// before an `Outcome` is ever built --,
@@ -434,7 +434,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         // checked function-application code, not a second, parallel
         // `Machine` call beside it. It charges this call's own
         // `function.call` to the caller's `meter`, then runs the body
-        // against that same meter (QSL-206), so `meter` counts the whole
+        // against that same meter, so `meter` counts the whole
         // call. A denied charge surfaces as
         // `Ok(FamilyOutcome::Evaluated(Outcome::Incomplete(_)))`, the same
         // shape a denied charge inside the body takes.
@@ -512,7 +512,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         bindings.push(Value::Reference(observations.self_object.clone()));
         let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
         // FR-104 "Behavior": slot 1 is `result` exactly when the checker's
-        // own typed `binds_result` says so (QSL-278, FR-064's string-edge
+        // own typed `binds_result` says so (FR-064's string-edge
         // rule) -- never decided here by comparing a parameter's name.
         if declaration.binds_result() {
             remaining.next();
@@ -775,7 +775,7 @@ mod tests {
     /// `FamilyOutcome::Evaluated`; `qsl-eval/tests/it/model_reference_queries.rs`'s
     /// TC-385 test takes the `FamilyEvaluated` arm through the seam.
     ///
-    /// Also backs FR-062-AC-6's first sentence (QSL-152): that sentence is
+    /// Also backs FR-062-AC-6's first sentence: that sentence is
     /// FR-090-AC-4 verbatim ("The Relation family has no evaluation hook,
     /// and S6a's input type admits no Relation node..."), so the test that
     /// demonstrates one demonstrates the other.
