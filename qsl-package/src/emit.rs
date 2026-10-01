@@ -112,7 +112,8 @@ fn diagnostics_catalog() -> CheckedArtifactRef {
             value: "1-draft.8".into(),
         },
         digest_domain: "quire.definition.bytes/v1".into(),
-        // Informational; no reader verifies it yet.
+        // The raw-byte SHA-256 of the catalog's definition, a required
+        // `CheckedArtifactRef` member.
         digest: "94580e10014aaf133de121126d8d795b3d86e693835d6bf1026fb45dd291d95d".into(),
         export: None,
     }
@@ -643,7 +644,9 @@ fn catalog_entry(role: CatalogRole) -> &'static CatalogEntry {
 /// then its other always-selected roles in catalog order, then each law
 /// definition the bodies name that is not already selected.
 fn catalog_selections(laws: &[DefinitionReference]) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
-    // Informational; no reader verifies these digests yet.
+    // Each digest is the catalog row's raw-byte SHA-256. A law's digest is
+    // also part of its `DefinitionRef`, so it feeds the application-node keys
+    // that name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(CatalogRole::Edition).reference()),

@@ -68,3 +68,20 @@ conversions or public surface. One item is removed from the public API, the
 `diagnostics_catalog` re-export, and its only external user is already routed.
 Merge needs a rebase onto a486e555, the IR #235 merge plus a Cargo.lock commit,
 and the gate run again.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | Two comments read "Informational; no reader verifies it yet" / "... these digests yet" over the catalog digests the emitter writes. This PR removed IR's lock-vs-evidence comparison, so nothing now verifies those digests at all. The "informational value" framing is the wording the owner's rules ban: a value is either a required wire member or it goes. The digests are required `CheckedArtifactRef` members and stay. Restate each comment as what the value is (the QSpec definition's byte digest, a required wire member), or delete the comment. The line-646 digests also enter application-node keys through the law `DefinitionRef`s, so "no reader verifies" there undersells them. | qsl-package/src/emit.rs:115; qsl-package/src/emit.rs:646 |
+
+## Dispositions
+
+Round 1, reviewed at 985bb85bcfd85683f898a4131f3dceebc52678fb (rebased onto a486e555, IR main a0fd8e7, no path patch; caller's `make ci` exit 0 on 985bb85b).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 05051fa3: the `read_checked_package_v2` doc now says evidence "supplies the selected domain package documents, the admitted dependency packages and the supported features" |
+| FND-002 | fixed | 05051fa3: the `own_evidence` doc is "each of the lock's required features, declared as supported", with no attest/pairing sentence |
+| FND-003 | fixed | 05051fa3: the `read_fixture_wire` doc is rewrapped under 100 columns |
+| FND-004 | fixed | 05051fa3: the test comment now states IR's `StaleDependency` covers a `package_id` that does not recompute; `map_refusal_code`'s "known-wrong mapping" paragraph is reworded the same way |

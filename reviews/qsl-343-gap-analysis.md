@@ -39,3 +39,17 @@ The remaining stale_dependency coverage stays bound and meaningful:
 
 Complete against the ticket. One low gap: the emitted catalog revision
 became an unowned value when AC-17 was deleted.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | The FND-001 fix asserts the catalog's `digest` literal (`94580e10...d95d`) in `the_lock_selects_the_catalog_definitions`. FR-093-AC-17 deliberately leaves the digest out. emit.rs:115 calls the digest "Informational; no reader verifies it yet", and after IR-457 nothing verifies it. The assertion fails only when someone updates the digest. It is a digest pin tested for its own sake, which the owner's rules forbid. Fix: drop the `digest` member from the assertion, and assert authority, identity, revision and digest_domain, the four members AC-17 names. | qsl-package/src/emit/tests.rs:327-336 |
+
+## Dispositions
+
+Round 1, reviewed at 985bb85bcfd85683f898a4131f3dceebc52678fb.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 05051fa3: FR-093 states the emitted `diagnostics.catalog`, new FR-093-AC-17 and TC-416 step 9 back it, and `the_lock_selects_the_catalog_definitions` (traced TC-416, FR-093-AC-7, FR-093-AC-17) asserts the wire member and the Verified read-back. Reusing the id AC-17 is acceptable: the old AC was never released, no live spec or code references it, and the new AC pins the same catalog-revision value the old AC's last sentence asserted. |
