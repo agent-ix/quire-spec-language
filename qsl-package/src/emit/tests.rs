@@ -16,9 +16,6 @@ use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
 use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
-};
 use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
 use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{

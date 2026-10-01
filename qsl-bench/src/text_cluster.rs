@@ -14,9 +14,6 @@
 
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_semantics::check::{LockEvidence, PackageDeclarations};
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
-};
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
 use quire_semantic_value::declaration::{
