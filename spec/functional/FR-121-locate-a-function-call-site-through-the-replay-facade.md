@@ -35,7 +35,7 @@ named function's declared parameters, each paired with its own node id; a
 named operation's `operation_anchor` and `frame` nodes, the frame's
 occurrence key and the node and occurrence key of every state clause
 naming the operation; a named state clause's node and occurrence key; or
-a named state field's domain key (ADR-012 §15.4).
+a named state field's or population's domain key (ADR-012 §15.4, §15.7).
 
 `call_site` compiles one unit through S1 to S4 -- the same
 `qsl_replay::spine::compile` FR-027's `compile` command uses -- against the
@@ -57,7 +57,7 @@ to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
-`SourceHolder`, `OperationName` and `FieldName`, and the kernel `Origin`
+`SourceHolder`, `OperationName`, `FieldName` and `PopulationName`, and the kernel `Origin`
 and `Role` that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
 re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
 `DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
@@ -84,8 +84,10 @@ declaration by declared identity, never by position.
   naming an operation `M::T::op` as model alias, object type and operation
   identifiers, or a `ClauseName` naming a state clause by its declared
   `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
-  alias, object type and field identifiers. The selection types are
-  exactly the four implementors of the sealed trait `CallSiteSelection`.
+  alias, object type and field identifiers, or a `PopulationName` naming a
+  population `M::P` as model alias and population artifact id. The
+  selection types are exactly the five implementors of the sealed trait
+  `CallSiteSelection`.
 
 ## Outputs
 
@@ -101,6 +103,7 @@ declaration by declared identity, never by position.
     `occurrence: OccurrenceKey`, in declaration order);
   - for a `ClauseName`, a `ClauseSite`: `name`, `node` and `occurrence`;
   - for a `FieldName`, a `FieldSite`: `domain` (`DomainKey`);
+  - for a `PopulationName`, a `PopulationSite`: `domain` (`DomainKey`);
 - or a typed `CallSiteRefusal` with no partial result.
 
 ## Behavior
@@ -158,6 +161,16 @@ declaration by declared identity, never by position.
   UTF-8 byte order. A selection whose alias, object type or field does not
   resolve SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
   `FieldName` with the compiled package's own `package_id` (FR-088-AC-6).
+- For a population selection, `call_site` SHALL resolve the model alias
+  to its domain package and the population among its population
+  declarations by artifact id, and SHALL return the population's ADR-012
+  §15.7 domain key, `DomainKey::Population` with its canonical member
+  type's `model`/`object_type` node and its ordinal among the package's
+  population declarations in ascending `DeclarationKey` order, computed by
+  the same ordering and key construction the checker's requirement records
+  use. A selection whose alias or population does not resolve SHALL refuse
+  `CallSiteRefusal::UnknownPopulation`, pairing the `PopulationName` with
+  the compiled package's own `package_id` (FR-088-AC-6).
 - An operation selection whose model alias or object type does not
   resolve, whose operation resolves to no single operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
@@ -190,6 +203,8 @@ declaration by declared identity, never by position.
 | FR-121-AC-14 | For the ConfigVersion domain package plus `Sub`, a subtype of `ConfigVersion` declaring `zeta` then `alpha`, a field selection returns `DomainKey::Node` on `ConfigVersion`'s own `object_type` node with path `[0]` for `parent` and `[1]` for `versionNumber`, the same `[1]` key for `versionNumber` named through `Sub`, and on `Sub`'s own `object_type` node `[0]` for `alpha` and `[1]` for `zeta`; each node equals the one the compiled graph's lowering keyed for that type. `Config::Sub.nope`, `Config::ConfigVersion.alpha`, `Config::Nope.parent` and `Nope::Sub.alpha` each refuse `CallSiteRefusal::UnknownField`, pairing the `FieldName` with the package. | Test (TC-516) |
 | FR-121-AC-15 | For the AC-14 domain package and a unit with no clause on `Sub`, so that the compiled graph holds no `Sub` node, `Config::Sub.alpha`'s domain key equals the one returned for the AC-14 unit. | Test (TC-516) |
 | FR-121-AC-16 | For the ConfigVersion unit, the field key of `parent` (ordinal 0 under `ConfigVersion`) differs from the `config_history` population key its clauses' requirement records carry (ordinal 0, member type `ConfigVersion`), which is a `DomainKey::Population` on the same node. | Test (TC-516) |
+| FR-121-AC-17 | For the AC-14 domain package with a second population `aaa_subs` of `Sub` declared after `config_history`, a population selection returns `DomainKey::Population` with `ConfigVersion`'s node and ordinal 1 for `config_history` -- equal to the one population key every requirement record of the unit's `ConfigVersion` clauses carries -- and with `Sub`'s node and ordinal 0 for `aaa_subs`. | Test (TC-516) |
+| FR-121-AC-18 | `Config::nope`, `Nope::config_history` and `Config::ConfigVersion` (an object type, not a population) each refuse `CallSiteRefusal::UnknownPopulation`, pairing the `PopulationName` with the compiled package's own `package_id`. | Test (TC-516) |
 
 ## Dependencies
 

@@ -21,7 +21,9 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 use super::{refuse, Lowering, NodeContent};
 use crate::check::node_key::{ModelOwner, NodeTag, Owner, SemanticTerm};
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
-use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
+use crate::model::domain_package::{
+    DomainPackage, DomainPackageRecord, DomainPackageRef, PopulationRecord,
+};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use crate::value::quantity::QuantityUnit;
@@ -196,6 +198,23 @@ impl AdmittedModel {
                 declared == member && (*id == target || conforms(target, *id))
             })
         };
+        self.population_domains()
+            .filter(|(_, population, _)| population.member_types.iter().any(covers))
+            .map(|(ordinal, population, canonical)| (ordinal, &population.key, canonical))
+            .collect()
+    }
+
+    /// Every population declaration of this package, in ascending
+    /// `DeclarationKey` order, with its ordinal in that order and the
+    /// `EffectiveId` of its canonical member type (the least declared
+    /// member type by `DeclarationKey`): the ordering and canonical member
+    /// [`Self::populations_of`] keys a covering population by, and the one
+    /// `CheckedGraph::population_domain` names a population by. A
+    /// population whose canonical member is not an admitted type is
+    /// skipped, keeping its ordinal.
+    pub(crate) fn population_domains(
+        &self,
+    ) -> impl Iterator<Item = (usize, &PopulationRecord, EffectiveId)> {
         // `records` is a `BTreeMap` keyed by `DeclarationKey`, so its
         // population records iterate in ascending key order.
         self.records
@@ -206,19 +225,15 @@ impl AdmittedModel {
             })
             .enumerate()
             .filter_map(|(ordinal, population)| {
-                if !population.member_types.iter().any(covers) {
-                    return None;
-                }
                 // The canonical member: the least declared member type, by
-                // `DeclarationKey`, regardless of which one covers `target`.
+                // `DeclarationKey`, regardless of which one covers a target.
                 let canonical = population.member_types.iter().min()?;
                 let node = self
                     .types
                     .iter()
                     .find_map(|(id, declared)| (declared == canonical).then_some(*id))?;
-                Some((ordinal, &population.key, node))
+                Some((ordinal, population, node))
             })
-            .collect()
     }
 }
 
