@@ -35,7 +35,8 @@ named function's node, its `declaration` occurrence key and its declared
 parameters, each paired with its own node id; a
 named operation's `operation_anchor` and `frame` nodes, the frame's
 occurrence key and the node and occurrence key of every state clause
-naming the operation; or a named state clause's node and occurrence key.
+naming the operation; a named state clause's node and occurrence key; or
+a named state field's domain key (ADR-012 §15.4).
 
 `call_site` compiles one unit through S1 to S4 -- the same
 the FR-278 composition FR-027's `compile` command uses -- against the
@@ -57,8 +58,8 @@ to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
-`SourceHolder` and `OperationName`, and the kernel `Origin` and `Role`
-that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
+`SourceHolder`, `OperationName` and `FieldName`, and the kernel `Origin`
+and `Role` that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
 re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
 `DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
 kernel `Integer`, `IntegerInterval` and `EmptyInterval`. A caller reads a
@@ -83,8 +84,9 @@ declaration by declared identity, never by position.
 - `selection`: a `QualifiedName` naming a function, an `OperationName`
   naming an operation `M::T::op` as model alias, object type and operation
   identifiers, or a `ClauseName` naming a state clause by its declared
-  `Identifier`. The selection types are exactly the three implementors of
-  the sealed trait `CallSiteSelection`.
+  `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
+  alias, object type and field identifiers. The selection types are
+  exactly the four implementors of the sealed trait `CallSiteSelection`.
 
 ## Outputs
 
@@ -101,6 +103,7 @@ declaration by declared identity, never by position.
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
     `occurrence: OccurrenceKey`, in declaration order);
   - for a `ClauseName`, a `ClauseSite`: `name`, `node` and `occurrence`;
+  - for a `FieldName`, a `FieldSite`: `domain` (`DomainKey`);
 - or a typed `CallSiteRefusal` with no partial result.
 
 ## Behavior
@@ -153,6 +156,16 @@ declaration by declared identity, never by position.
   state-clause counterexample carries. A name that declares no state
   clause SHALL refuse `CallSiteRefusal::UnknownClause`, pairing the
   `ClauseName` with the compiled package's own `package_id` (FR-088-AC-6).
+- For a field selection, `call_site` SHALL resolve the model alias and
+  object type as an operation selection does, and the field in the object
+  type's effective attribute set, and SHALL return the field's ADR-012
+  §15.4 domain key: `DomainKey::Node` with the `model`/`object_type` node
+  of the type that declares the field, whether or not the package's own
+  lowering keyed that node, and the one-element path holding the field's
+  ordinal among that type's own field declarations in ascending field-name
+  UTF-8 byte order. A selection whose alias, object type or field does not
+  resolve SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
+  `FieldName` with the compiled package's own `package_id` (FR-088-AC-6).
 - An operation selection whose model alias or object type does not
   resolve, whose operation resolves to no single operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
@@ -210,6 +223,9 @@ declaration by declared identity, never by position.
 | FR-121-AC-15 | Worked example. For a unit declaring `p(x: Int[0, 9]): Boolean { x < 5 }` and `q(x: Int[0, 9]): Boolean { x < 5 }`, the `FunctionSite` for `p` carries `function` equal to the compiled graph's `function` node whose `declaration` is `p`, and `declaration` equal to `OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))`. With a CG obligation kind and `arguments` `[(x's parameter node id, [0, 9])]`, these are the members of `p`'s ADR-013 O-09 function-contract obligation preimage. `q`'s `FunctionSite` has the same `parameters` (one shared parameter node) and a different `function`, so the two obligations differ. Recompiling the unit with a comment and blank lines inserted before `p` gives `p` the same `function` and `declaration`. Over the AC-6 unit, `sameIdentity`'s `function` equals no `ClauseSite` `node` returned for `attemptUpdate`, `probe` or any AC-8 clause selection. | Test (TC-516) |
 | FR-121-AC-16 | A `ReplayRefusal` that is no fault, such as `UnboundParameter`, maps by `TerminalValue::from_replay_refusal` to `TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(code))` with `code` equal to `ReplayRefusal::code` for it, and category `inconclusive`; `ReplayRefusal::Fault` and `ReplayRefusal::Admission` with `AdmissionFailure::Fault` map to `TerminalValue::Failed`. | Test (TC-516) |
 | FR-121-AC-17 | A `CallSiteRefusal` other than `Fault`, such as `Compile` or `UnknownFunction`, maps by `TerminalValue::from_call_site_refusal` to `TerminalValue::Declined { cause: ProofRefusalCause::InvalidInput, code: DeclineCode::Qsl(code) }` with `code` equal to `CallSiteRefusal::code` for it, and category `refusal`; `CallSiteRefusal::Fault` maps to `TerminalValue::Failed`. | Test (TC-516) |
+| FR-121-AC-18 | For the ConfigVersion domain package plus `Sub`, a subtype of `ConfigVersion` declaring `zeta` then `alpha`, a field selection returns `DomainKey::Node` on `ConfigVersion`'s own `object_type` node with path `[0]` for `parent` and `[1]` for `versionNumber`, the same `[1]` key for `versionNumber` named through `Sub`, and on `Sub`'s own `object_type` node `[0]` for `alpha` and `[1]` for `zeta`; each node equals the one the compiled graph's lowering keyed for that type. `Config::Sub.nope`, `Config::ConfigVersion.alpha`, `Config::Nope.parent` and `Nope::Sub.alpha` each refuse `CallSiteRefusal::UnknownField`, pairing the `FieldName` with the package. | Test (TC-516) |
+| FR-121-AC-19 | For the AC-18 domain package and a unit with no clause on `Sub`, so that the compiled graph holds no `Sub` node, `Config::Sub.alpha`'s domain key equals the one returned for the AC-18 unit. | Test (TC-516) |
+| FR-121-AC-20 | For the ConfigVersion unit, the field key of `parent` (ordinal 0 under `ConfigVersion`) differs from the `config_history` population key its clauses' requirement records carry (ordinal 0, member type `ConfigVersion`), which is a `DomainKey::Population` on the same node. | Test (TC-516) |
 
 ## Dependencies
 
@@ -234,6 +250,8 @@ declaration by declared identity, never by position.
   subject members a `FunctionSite` carries), O-25, C-11, TK-01.
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): the
   `function` node a `FunctionSite` names.
+- [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
+  §15.4, §15.7: the state field and population domain keys.
 - ADR-015 D-1: the dependency input.
 
 ## Status

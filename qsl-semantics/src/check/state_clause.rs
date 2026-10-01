@@ -624,7 +624,13 @@ fn record(
                 })?;
                 let mut prefixed = vec![position];
                 prefixed.extend(path);
-                domains.insert(DomainKey::new(wire(frame), prefixed), kind);
+                domains.insert(
+                    DomainKey::Node {
+                        node: wire(frame),
+                        path: prefixed,
+                    },
+                    kind,
+                );
             }
         }
     }
@@ -636,7 +642,10 @@ fn record(
             ))
         })?;
         domains.insert(
-            DomainKey::new(wire(*object), vec![ordinal]),
+            DomainKey::Population {
+                member_type: wire(*object),
+                ordinal,
+            },
             DomainKind::Population,
         );
     }

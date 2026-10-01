@@ -1014,8 +1014,13 @@ fn requires_bound_refuses_before_any_transition_system_call() {
             .iter()
             .next()
             .expect("one unbounded domain");
-        assert_eq!(domain_key.node(), node);
-        assert_eq!(domain_key.path(), &[] as &[u32]);
+        assert_eq!(
+            domain_key,
+            &qsl_foundation::bound::DomainKey::Node {
+                node,
+                path: Vec::new()
+            }
+        );
         assert_eq!(domain_kind, DomainKind::Integer);
         assert_eq!(system.calls(), 0, "no TransitionSystem method ran");
 

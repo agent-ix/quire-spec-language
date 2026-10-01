@@ -366,6 +366,12 @@ pub struct CheckedGraph {
     /// FR-115: every admitted object type's effective identity, by its
     /// declaration key.
     object_types: BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    /// ADR-012 §15.4: every admitted object type's `model`/`object_type`
+    /// node key, by its declaration key -- keyed from the declaration
+    /// whether or not this package's lowering minted the node, so
+    /// [`Self::field_domain`] names a field's declaring type even when no
+    /// clause reads it.
+    object_nodes: BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
     /// FR-096: each protocol's own attempts' declared name spans,
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
@@ -813,6 +819,15 @@ impl PackageDeclarations {
         let lock_evidence = self.lock_evidence;
         let models = self.models;
         let (model_objects, object_types) = model_object_tables(&models);
+        let object_nodes = object_types
+            .keys()
+            .filter_map(|declaration| {
+                models
+                    .iter()
+                    .find_map(|model| model.model_node_key(declaration))
+                    .map(|node| (declaration.clone(), node))
+            })
+            .collect();
         let mut model_selections: Vec<_> = models
             .iter()
             .map(|model| model.selection().clone())
@@ -1646,6 +1661,7 @@ impl PackageDeclarations {
             operation_frames,
             model_objects,
             object_types,
+            object_nodes,
             attempt_spans: regions.attempt_spans,
         })
     }
@@ -1871,6 +1887,60 @@ impl CheckedGraph {
             object: object.clone(),
             operation: operation.clone(),
         })
+    }
+
+    /// ADR-012 §15.4: the domain key of the state field `field` of the
+    /// object type `object` of the `model` alias -- the object type node
+    /// that *declares* the field, and one path element, the field's ordinal
+    /// among that type's own field declarations in ascending field-name
+    /// UTF-8 byte order. `field` resolves in `object`'s effective attribute
+    /// set, so an inherited field is keyed under its declaring type, never
+    /// under the subtype it was named through, and reordering declarations
+    /// in source shifts no key. `Ok(None)` when the alias, the object type
+    /// or the field does not resolve.
+    pub fn field_domain(
+        &self,
+        model: &Identifier,
+        object: &Identifier,
+        field: &Identifier,
+    ) -> Result<Option<qsl_foundation::bound::DomainKey>, qsl_foundation::InternalFault> {
+        let Some(context) = self
+            .model_objects
+            .get(model.as_str())
+            .and_then(|objects| objects.get(object))
+            .and_then(|declaration| self.object_types.get(declaration))
+        else {
+            return Ok(None);
+        };
+        let types = self.scope.types();
+        let Some(attribute) = types.attribute(*context, field.as_str()) else {
+            return Ok(None);
+        };
+        let fault = |invariant| qsl_foundation::InternalFault::new("check.field-domain", invariant);
+        let declaring = attribute.owner();
+        let node = self
+            .object_types
+            .iter()
+            .find_map(|(declaration, id)| (*id == declaring).then_some(declaration))
+            .and_then(|declaration| self.object_nodes.get(declaration))
+            .ok_or_else(|| fault("declaring-type-has-a-model-node"))?;
+        let mut names: Vec<&str> = types
+            .object_type(declaring)
+            .ok_or_else(|| fault("declaring-type-is-admitted"))?
+            .attributes()
+            .iter()
+            .map(crate::value::declaration::FieldDeclaration::name)
+            .collect();
+        // `str`'s `Ord` is UTF-8 byte order.
+        names.sort_unstable();
+        let position = names
+            .binary_search(&attribute.field().name())
+            .map_err(|_| fault("field-is-declared-by-its-owner"))?;
+        let ordinal = u32::try_from(position).map_err(|_| fault("field-ordinal-past-u32"))?;
+        Ok(Some(qsl_foundation::bound::DomainKey::Node {
+            node: claims::wire(*node),
+            path: vec![ordinal],
+        }))
     }
 
     /// FR-115: the frame of the operation `selection` names, and its object

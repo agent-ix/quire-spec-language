@@ -420,7 +420,10 @@ mod tests {
     }
 
     fn key(fill: u8, path: &[u32]) -> DomainKey {
-        DomainKey::new(node(fill), path.to_vec())
+        DomainKey::Node {
+            node: node(fill),
+            path: path.to_vec(),
+        }
     }
 
     /// A `value-validity` claim over `domains`.
