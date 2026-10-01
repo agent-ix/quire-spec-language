@@ -28,11 +28,12 @@ implementation ceiling is not a domain bound (NFR-001). Parse/link/check retain
 their existing independent limits and meanings. No budget becomes a domain,
 population or backend-fuel bound.
 
-Two current exceptions, both tracked rather than normative. The checked-package
-v2 reader parses through IR's `strict_json_value`, which inherits serde_json's
-fixed 128-container recursion cap; a deeper wire is refused as malformed before
-the caller's nesting ceiling is consulted, so the recorded nesting ceiling is at
-most 128 until IR-279 removes that cap. The native v1 package path (the root
+Two current exceptions. The checked-package v2 reader's nesting ceiling is
+charged by IR at most at IR's fixed maximum,
+`CheckedPackageReadLimits::MAXIMUM_DEPTH`, which bounds the stack IR's reader
+reserves; a larger requested ceiling is recorded as that maximum. A wire nested
+past the charged ceiling is reported as a depth incompleteness naming the
+charged ceiling and the measured depth. The native v1 package path (the root
 crate's `package`, SEAM-1) still clamps elevated options to the defaults until
 ADR-011 §7.3 M-6c retires it.
 

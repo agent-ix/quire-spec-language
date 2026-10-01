@@ -95,17 +95,12 @@ Specified and implemented under QSL-140. TC-436 to TC-439 and TC-441 pass
 locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
 an unbounded population its own node, lowering one refuses with
 `UnrepresentableBound` rather than writing the bare set node an unbounded
-`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 is partly passed: its agreeing fixtures pass, and an ignored
-test asserts agreement for three fixtures IR's predicate at the pinned revision gets
-wrong. IR-283: IR's `requires-bound` does not distinguish positions, so a
-`bounded_domain` over the shared `integer` scalar bounds every integer
-position, and the `collection_bounds` literals typed at that node read as an
-unbounded integer. IR-284: IR has no recursion rule. A quantity fixture is not
-compared yet: the emitter omits a record whose field names a declared unit
-node, because lowering does not build that node. The ignored test is
-un-ignored when both land. FR-097-AC-6's per-application-node agreement
-(TC-440 step 4) passes for the inner `+` of `(x + 1) + n` and the
-records outside the agreement. The outer `+` is in the ignored
-`tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283`:
-IR lowers it, because `x: Int[0, 9]` bounds the shared `integer` node
-(IR-283).
+`Set<Reference<T>>` also has. TC-441 step 5 checks that interim refusal. TC-440 is partly passed: every comparable fixture agrees, including
+`Flags`, `RangedTree` and `Mixed`, which depend on IR's `requires-bound`
+being position-sensitive and requiring a bound for a recursive type. A
+quantity fixture is not compared: the emitter omits a record whose field
+names a declared unit node, because lowering does not build that node; its
+agreement test is ignored. FR-097-AC-6's per-application-node agreement
+(TC-440 step 4) passes: IR lowers the inner `+` of `(x + 1) + n` and
+requires a bound for the outer `+`, and the records outside the agreement
+have their extents asserted.

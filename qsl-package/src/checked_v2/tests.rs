@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageRefusalCause,
-    CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageReadLimits,
+    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -916,16 +916,15 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
     }
 }
 
-/// QSL-199: `depth` above serde_json's recursion cap is not enforced (IR's
-/// `strict_json_value` refuses deeper wires as malformed first), so a
-/// verified read records `depth` as that cap, not the requested value.
+/// A `depth` above IR's fixed maximum is charged at that maximum, so a
+/// verified read records `depth` as the maximum, not the requested value.
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
-fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
+fn a_verified_read_records_depth_as_the_charged_maximum() {
     let preimage = identity_preimage(vec![]);
     let bytes = jcs(&valid_envelope(&preimage));
     let requested = V2ReadLimits {
-        depth: 500,
+        depth: usize::MAX,
         ..V2ReadLimits::default()
     };
     match read_v2(
@@ -941,12 +940,17 @@ fn a_verified_read_records_depth_as_the_enforced_serde_json_cap() {
         } => assert_eq!(
             effective_limits,
             V2ReadLimits {
-                depth: 128,
+                depth: maximum_depth(),
                 ..requested
             }
         ),
         other => panic!("expected Verified, got {other:?}"),
     }
+}
+
+/// IR's fixed depth maximum, in [`V2ReadLimits::depth`]'s type.
+fn maximum_depth() -> usize {
+    usize::try_from(CheckedPackageReadLimits::MAXIMUM_DEPTH).unwrap()
 }
 
 /// QSL-199 AC-3: reaching a *caller-raised* ceiling (not just the default)
@@ -1021,7 +1025,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
 
     // Measure the envelope's actual IR-reported depth with the engine under
     // test itself, rather than a second, drifting reimplementation of IR's
-    // own `json_depth` (L5): an unreachably low ceiling forces
+    // own depth count (L5): an unreachably low ceiling forces
     // `Incomplete(Limit(Depth))`, whose `consumed` is IR's own count.
     let actual_depth = match read_v2(
         &bytes,
@@ -1082,43 +1086,68 @@ fn nested_array(wraps: usize, leaf: Value) -> Value {
     value
 }
 
-#[test]
-fn depth_far_past_the_default_limit_is_refused_as_malformed_wire_not_incomplete() {
-    // IR-238 item 1 (M1): IR's `strict_json_value` parses with
-    // `serde_json::Deserializer` and never disables its recursion limit, so
-    // serde_json's own fixed 128-container recursion cap fires before IR's
-    // own `json_depth` resource meter ever runs. Pins the module doc's
-    // "Ceilings" section: a wire this far past the default limit is
-    // refused, not reported `Incomplete`, however `V2ReadLimits::depth` is
-    // configured. Bare bytes, not a valid envelope: the depth check runs
-    // before schema decode, on any well-formed JSON document.
-    let bytes = jcs(&nested_array(200, json!(1)));
-    let outcome = read_v2(
-        &bytes,
+/// The scalar `1` inside `wraps` nested arrays, written as bytes so no deep
+/// value is built or encoded on the test's stack: depth `wraps + 1` in IR's
+/// units.
+fn nested_array_bytes(wraps: usize) -> Vec<u8> {
+    format!("{}1{}", "[".repeat(wraps), "]".repeat(wraps)).into_bytes()
+}
+
+/// The read of `bytes` under `limits` as a depth incompleteness: its
+/// configured bound and measured depth.
+fn depth_incompleteness(bytes: &[u8], limits: V2ReadLimits) -> (u64, u128) {
+    match read_v2(
+        bytes,
         identity("pkg"),
         "1".to_owned(),
-        V2ReadLimits::default(),
+        limits,
         &evidence(),
         &no_pins(),
+    ) {
+        Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {
+            (exceeded.configured_bound(), exceeded.actual())
+        }
+        other => panic!("expected Incomplete(Limit(Depth)), got {other:?}"),
+    }
+}
+
+#[test]
+fn depth_far_past_the_default_limit_is_incomplete_not_malformed_wire() {
+    // A wire nested well past the default limit is a depth incompleteness
+    // naming that limit and the measured depth, not a malformed-wire
+    // refusal. Bare bytes, not a valid envelope: the depth check runs
+    // before schema decode, on any well-formed JSON document.
+    let limits = V2ReadLimits::default();
+    assert_eq!(
+        depth_incompleteness(&nested_array_bytes(200), limits),
+        (u64::try_from(limits.depth).unwrap(), 201)
     );
-    assert!(
-        matches!(
-            &outcome,
-            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
-                if refusal.code == CheckedPackageRefusalCode::MalformedWire
-        ),
-        "expected Refused(Envelope(MalformedWire)) once nesting passes serde's recursion cap, got {outcome:?}"
+}
+
+#[test]
+fn depth_past_the_charged_maximum_is_incomplete_naming_the_maximum() {
+    // A caller depth above IR's fixed maximum is charged at the maximum: a
+    // wire one level past it is incomplete, naming the maximum, not the
+    // caller's requested limit.
+    let limits = V2ReadLimits {
+        depth: usize::MAX,
+        ..V2ReadLimits::default()
+    };
+    let maximum = CheckedPackageReadLimits::MAXIMUM_DEPTH;
+    assert_eq!(
+        depth_incompleteness(&nested_array_bytes(maximum_depth()), limits),
+        (maximum, u128::from(maximum) + 1)
     );
 }
 
 #[test]
 fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
     // QSL-6 M2 (decided fail-closed): `V2ReadLimits::depth` is passed to
-    // IR unchanged, in entered-container units. IR's own `json_depth`
+    // IR unchanged, in entered-container units. IR's own depth count
     // counts a scalar leaf as one further unit beyond the containers
     // entered to reach it, but counts an empty container as exactly the
     // containers entered including itself -- so at one shared limit the two
-    // kinds of deepest path disagree by one (module doc, IR-238 item 1).
+    // kinds of deepest path disagree by one (module doc, "Ceilings").
     // Bare bytes, not a valid envelope: the depth check runs before schema
     // decode, on any well-formed JSON document.
     let limits = V2ReadLimits {
