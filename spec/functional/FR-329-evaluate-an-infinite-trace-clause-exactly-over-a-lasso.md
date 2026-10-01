@@ -65,7 +65,9 @@ loop is never reported as a violation.
   states, reading every unrolled position; or `Incomplete` with its charge
   point.
 - A refusal `invalid_runtime_input`/`invalid-value`, with no truth value,
-  for a malformed or unfair lasso.
+  for a malformed lasso, or a `Lasso::Model` that is unfair.
+- `MissingFairnessPremise{constraint}` (O-16 unsupported), with no truth
+  value, for a `Lasso::Observed` and a non-empty fairness set.
 
 ## Behavior
 
@@ -91,12 +93,12 @@ loop is never reported as a violation.
   the evaluator SHALL refuse `invalid_runtime_input`/`invalid-value`, naming
   the constraint.
 - When the clause's fairness set is non-empty and the lasso is
-  `Lasso::Observed`, the evaluator SHALL refuse
-  `invalid_runtime_input`/`invalid-value`: observations carry no transition
-  identity or enabledness, so the premise cannot be checked.
-- When the clause's fairness premise is missing, as QSpec FR-161 and FR-341
-  define that case, the evaluator SHALL return no truth value and the result
-  SHALL be O-16 category unsupported.
+  `Lasso::Observed`, the evaluator SHALL return
+  `MissingFairnessPremise{constraint}` naming the first constraint of the
+  checked fairness set, and SHALL evaluate no formula: observations carry
+  no transition identity or enabledness, so the fairness premise is missing
+  (QSpec FR-362, wire cause `unsupported_projection`/
+  `missing-fairness-premise`). It maps to O-16 unsupported.
 
 ### Exact evaluation (ADR-018 SM-8)
 
@@ -126,7 +128,8 @@ loop is never reported as a violation.
 | FR-329-AC-1 | On the observed lasso with an empty prefix and loop `a.versionNumber` 0, 1, 2 (ADR-018 §6): `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` is `Completed(true)`; `always eventually holds(a.versionNumber = 2)` is `Completed(true)`; `eventually always holds(a.versionNumber = 0)` is `Completed(false)` at position 0. | Test (TC-839) |
 | FR-329-AC-2 | On the observed lasso with prefix `a.versionNumber` 5 and loop 0, 1, 2: `always (holds(a.versionNumber = 0) implies once holds(a.versionNumber = 5))` is `Completed(true)`, although no loop position holds 5; `always (holds(a.versionNumber = 0) implies once[1,1] holds(a.versionNumber = 2))` is `Completed(false)` at position 0, because position 1 reads position 0. | Test (TC-839) |
 | FR-329-AC-3 | A lasso with an empty loop refuses `invalid_runtime_input`/`invalid-value`. A `Lasso::Model` whose last loop post-state differs from its entry state refuses the same way. | Test (TC-839) |
-| FR-329-AC-4 | On ADR-018 §6's three-step `upd(a)` lasso as `Lasso::Model`, `always eventually holds(b.versionNumber = 2)` under `fair weak attemptUpdate` is `Completed(false)` at position 0; under `fair weak each attemptUpdate` it refuses `invalid_runtime_input`/`invalid-value` naming the constraint (`upd(b)` is enabled throughout the loop and never taken). The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-839) |
+| FR-329-AC-4 | On ADR-018 §6's three-step `upd(a)` lasso as `Lasso::Model`, `always eventually holds(b.versionNumber = 2)` under `fair weak attemptUpdate` is `Completed(false)` at position 0; under `fair weak each attemptUpdate` it refuses `invalid_runtime_input`/`invalid-value` naming the constraint (`upd(b)` is enabled throughout the loop and never taken). | Test (TC-839) |
+| FR-329-AC-7 | The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` returns `MissingFairnessPremise` naming `fair weak whole attemptUpdate`, O-16 unsupported, and evaluates no position; with an empty fairness set over the same observed lasso it is `Completed(false)` at position 0. | Test (TC-848) |
 | FR-329-AC-5 | AC-1's first clause with a meter one unit short of its visit count returns `Incomplete` and no truth value. | Test (TC-839) |
 | FR-329-AC-6 | On the observed `Counter` lasso with an empty prefix and loop `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` returns `Undefined{where: 2, cause: division-by-zero}`, category violation. | Test (TC-847) |
 
@@ -140,10 +143,10 @@ loop is never reported as a violation.
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md).
 - QSpec FR-161-AC-4 and AC-5 (lasso meaning; fairness filters traces
-  before evaluation), FR-091. The missing-fairness-premise case is QSpec's
-  to define (ADR-018 QS-4).
+  before evaluation), FR-091, FR-362 (the missing fairness premise).
 
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (QS-4, QS-10 (a), QS-13).
+- QSpec FR-362 (fairness, the missing fairness premise) and FR-367
+  (interval operators): Linear STD-131 (QS-4, QS-10 (a), QS-13).

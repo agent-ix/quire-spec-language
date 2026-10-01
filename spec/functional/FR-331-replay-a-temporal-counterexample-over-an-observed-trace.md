@@ -125,4 +125,4 @@ formula is false on it.
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (QS-8, counterexample wire).
+- QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8).

@@ -84,13 +84,16 @@ result) and `unsupported` (a missing fairness premise), and whose
   a closed finite trace.
 - A refusal of FR-329 (malformed or unfair lasso) SHALL report stage
   `evaluate`, category `refusal`, with its record.
-- The entry SHALL map `Completed(true)` to `success` (exit 0),
-  `Completed(false)` to `violation` (exit 10) with the failing position,
-  `Undefined` to `violation` (exit 10) with its position and its
-  `UndefinedEvaluation` cause,
-  `Pending` to `inconclusive` (exit 0, completed without violation), a
-  missing fairness premise to `unsupported` (exit 21), and `Incomplete` to
-  `incomplete` (exit 22), by QSpec FR-301's exit contract.
+- The entry SHALL map `Completed(true)` to `success` (exit 0);
+  `Completed(false)` to `violation` with the failing position; `Undefined`
+  to `violation` with its position and its `UndefinedEvaluation` cause, so
+  it reports category `violation`, never FR-109's `undefined` category;
+  `Pending` to `inconclusive` (exit 0, completed without violation);
+  `MissingFairnessPremise` to `unsupported` (exit 21) with cause
+  `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to
+  `incomplete` (exit 22), by QSpec FR-301's exit contract. Every
+  `violation`, an undefined evaluation included, exits with the violation
+  exit, 10.
 - The report's provenance SHALL hold, in addition to FR-109's members, the
   identity and digest of every observation document read, in position
   order, and the loop start for a lasso.
@@ -104,6 +107,7 @@ result) and `unsupported` (a missing fairness premise), and whose
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
 | FR-330-AC-5 | From source, FR-327-AC-5's first clause over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
+| FR-330-AC-6 | From source, a clause `Fair` (`always eventually holds(c.value = 2)` under `fair weak inc`) over `Lasso` with an empty prefix and loop 0, 1, 2 reports stage `evaluate`, `unsupported`, exit 21, cause `unsupported_projection`/`missing-fairness-premise` naming `fair weak whole inc`. | Test (TC-848) |
 
 ## Dependencies
 
@@ -114,7 +118,7 @@ result) and `unsupported` (a missing fairness premise), and whose
   [FR-327](FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md),
   [FR-328](FR-328-evaluate-an-infinite-trace-clause-over-a-finite-prefix.md),
   [FR-329](FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md).
-- QSpec FR-301 (exit codes).
+- QSpec FR-301 (exit codes), FR-362 (the missing fairness premise).
 
 ## References
 

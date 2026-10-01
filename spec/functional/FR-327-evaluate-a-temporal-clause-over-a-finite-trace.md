@@ -144,4 +144,4 @@ with an incomplete result, never a guess, when the work budget runs out.
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131.
+- QSpec FR-360 to FR-370: Linear STD-131.

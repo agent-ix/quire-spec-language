@@ -12,7 +12,7 @@ relationships:
 
 Verify the request writer's classification of an infinite-trace item, its
 dispositions against empty, bounded-only and unbounded registries, the
-FR-341 to O-16 map, and that S6a evidence settles no item.
+FR-360 to O-16 map, and that S6a evidence settles no item.
 
 Scope: FR-332-AC-1 to FR-332-AC-4.
 
@@ -25,7 +25,7 @@ In a harness downstream of CG `negotiate_*`, with test descriptors:
 2. Negotiate it against an empty registry, a (`temporal-satisfaction`,
    `bounded`) descriptor, and a (`temporal-satisfaction`, `unbounded`)
    descriptor whose arm takes the infinite-trace form.
-3. Map each FR-341 (infinite-trace) label, with `failed` under
+3. Map each FR-360 label, with `failed` under
    `resource-incomplete` and under another execution.
 4. Run `Reaches` at S6a on a lasso where it holds, then read the
    empty-registry accounting record.

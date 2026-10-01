@@ -109,5 +109,5 @@ a bound and how to give one, instead of picking one.
 ## References
 
 - Linear QSL-385 (spec ticket); QSL-42 (implementation).
-- QSpec half: Linear STD-131 (QS-1, QS-9: universes in the subject and the
-  obligation identity).
+- QSpec FR-361 (the model subject) and FR-368 (its place in negotiation and
+  the obligation identity): Linear STD-131 (QS-1, QS-9).

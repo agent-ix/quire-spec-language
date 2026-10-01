@@ -52,11 +52,18 @@ never reads as a guarantee.
 
 - `Completed(false)` (violation) with the `TemporalPosition` of the
   activation that the bad prefix falsifies; `Undefined` (violation) as
-  FR-327 states; or `Pending` (O-16 inconclusive); or `Incomplete` with its
-  charge point.
+  FR-327 states; or `Pending` (O-16 inconclusive); or
+  `MissingFairnessPremise{constraint}` (O-16 unsupported); or `Incomplete`
+  with its charge point.
 
 ## Behavior
 
+- When the clause's fairness set is non-empty, the evaluator SHALL return
+  `MissingFairnessPremise{constraint}` naming the first constraint of the
+  checked fairness set, and SHALL evaluate no formula: a supplied trace
+  carries no enabledness, so the fairness premise is missing (QSpec FR-362,
+  wire cause `unsupported_projection`/`missing-fairness-premise`). It maps
+  to O-16 unsupported.
 - The evaluator SHALL treat every position after the finite trace as
   unknown, with no stutter or false-extension; terminal stutter applies only
   to a model behaviour that ends at a terminal state (FR-125, ADR-018 SM-4).
@@ -90,6 +97,7 @@ never reads as a guarantee.
 | FR-328-AC-3 | Over the same prefix, `always (holds(c.value = 0) implies once[1,1] holds(c.value = 9))` is `Completed(false)` at position 0, because `once[1,1]` at position 0 reads before position 0, where atoms are false. | Test (TC-838) |
 | FR-328-AC-4 | No clause in AC-1 to AC-3 yields `tested` or `proved`; each `Pending` maps to O-16 inconclusive. | Test (TC-838) |
 | FR-328-AC-5 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `eventually holds(2 / (2 - c.value) = 3)`, outside the safety fragment, returns `Undefined{where: 2, cause: division-by-zero}`, not `Pending`. | Test (TC-847) |
+| FR-328-AC-6 | Over the `Counter` prefix with `c.value` 0, 1, 2 under infinite-trace, `always holds(c.value <= 1)` with the fairness set `fair weak inc` returns `MissingFairnessPremise` naming `fair weak whole inc`, O-16 unsupported, and evaluates no position; with an empty fairness set it is `Completed(false)` at position 0. | Test (TC-848) |
 
 ## Dependencies
 
@@ -97,9 +105,10 @@ never reads as a guarantee.
 - [FR-327](FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md),
   [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md).
-- QSpec FR-161-AC-2, FR-324-AC-2, FR-092.
+- QSpec FR-161-AC-2, FR-324-AC-2, FR-092, FR-362 (the missing fairness
+  premise).
 
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (QS-13).
+- QSpec FR-367 and FR-362: Linear STD-131 (QS-4, QS-13).

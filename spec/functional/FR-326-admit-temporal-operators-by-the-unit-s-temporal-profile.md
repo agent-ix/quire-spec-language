@@ -154,4 +154,6 @@ for negotiation whether the claim is bounded.
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (QS-3, QS-13), STD-99.
+- QSpec FR-361 (profiles over a model subject) and FR-367 (interval
+  operators under infinite-trace): Linear STD-131 (QS-3, QS-13); Linear
+  STD-99.

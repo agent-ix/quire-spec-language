@@ -326,6 +326,7 @@ names different artifacts in each.
 | TC-845 | A claim over an unbounded declaration settles end to end | Integration | P1 | FR-335-AC-1, FR-335-AC-2, FR-335-AC-3, FR-335-AC-4, FR-335-AC-5 | 🚧 Planned |
 | TC-846 | A model subject is finite by its universes, apart from proof bounds | Integration | P1 | FR-336-AC-1, FR-336-AC-2, FR-336-AC-3, FR-336-AC-4 | 🚧 Planned |
 | TC-847 | An undefined letter fails a clause over a supplied trace or lasso, and replays | Integration | P1 | FR-327-AC-5, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5, FR-331-AC-4 | 🚧 Planned |
+| TC-848 | A fairness premise over a supplied trace is missing, and the clause settles unsupported | Integration | P1 | FR-328-AC-6, FR-329-AC-7, FR-330-AC-6 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -756,5 +757,6 @@ to FR-336 carry ADR-014 §2, §4 and §9 and ADR-018 §1: the optional
 collection bound and population maximum (FR-333), the root definitions'
 identity preimage (FR-334), end-to-end settlement over an unbounded
 declaration (FR-335) and a model subject's universes (FR-336). TC-835 to
-TC-846 back every AC, all `🚧 Planned`. TC-842 and TC-845 run downstream
+TC-846 back every AC, with TC-847 (undefined letters) and TC-848 (the
+missing fairness premise), all `🚧 Planned`. TC-842 and TC-845 run downstream
 of CG `negotiate_*` with test descriptors.

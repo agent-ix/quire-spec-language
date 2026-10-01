@@ -89,5 +89,6 @@ profile.
 ## References
 
 - Linear QSL-384 (this requirement's spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (ADR-018 QS-13) and STD-99 (the `[a,*]`
+- QSpec FR-367 (interval operators under infinite-trace; Linear STD-131,
+  ADR-018 QS-13) and Linear STD-99 (the `[a,*]`
   grammar note and the v2 temporal operation identities).

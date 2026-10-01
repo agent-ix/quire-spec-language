@@ -38,7 +38,7 @@ request writer SHALL classify the item `unbounded` with no available finite
 bound. With no backend that advertises (`temporal-satisfaction`,
 `unbounded`) and discharges the infinite-trace form, the item SHALL settle
 `unsupported` with a warning naming the capability (QSpec FR-161-AC-7). A
-backend's QSpec FR-341 (infinite-trace) result SHALL map to one O-16
+backend's QSpec FR-360 result SHALL map to one O-16
 category. S6a evaluation of the clause on a trace (FR-328, FR-329) is
 evidence for that trace and never settles the item.
 
@@ -56,7 +56,7 @@ request routes to it and its result lands in the matching category.
   `Unbounded{[formula]}`).
 - The registry of backend descriptors (FR-075) and CG `negotiate_*`
   (ADR-012 §7.1).
-- A routed backend's QSpec FR-341 (infinite-trace) result: label and
+- A routed backend's QSpec FR-360 result: label and
   QSpec FR-241 execution.
 
 ## Outputs
@@ -98,7 +98,7 @@ request routes to it and its result lands in the matching category.
 |----|----------|--------------|
 | FR-332-AC-1 | `Reaches` (`eventually holds(c.value = 2)`, infinite-trace) is written as one item classified `unbounded` with `finite_bound_available` false; a bounded request for it with any `FiniteBound` refuses `invalid_runtime_input`/`invalid-value` and writes no item. | Test (TC-842) |
 | FR-332-AC-2 | With an empty registry, `Reaches` settles `unsupported` with a warning naming `temporal-satisfaction`; with only a test descriptor advertising (`temporal-satisfaction`, `bounded`), it settles `unsupported`, warned, `unbounded-extent`, naming the kind, the descriptor and its mode; with a test descriptor advertising (`temporal-satisfaction`, `unbounded`) whose arm takes the infinite-trace form, it settles `supported` and routes to that descriptor. | Test (TC-842) |
-| FR-332-AC-3 | Each FR-341 (infinite-trace) label maps to its O-16 category as the Behavior table states, including `failed` with `resource-incomplete` to incomplete and `failed` with another execution to internal failure. | Test (TC-842) |
+| FR-332-AC-3 | Each FR-360 label maps to its O-16 category as the Behavior table states, including `failed` with `resource-incomplete` to incomplete and `failed` with another execution to internal failure. | Test (TC-842) |
 | FR-332-AC-4 | Running `Reaches` at S6a on a lasso where it is true gives `tested`; the accounting record for the AC-2 empty-registry request still holds the item `unsupported`. | Test (TC-842) |
 
 ## Dependencies
@@ -113,9 +113,10 @@ request routes to it and its result lands in the matching category.
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md).
 - CG `negotiate_*` settles the dispositions; AC-2 runs in a test harness
   downstream of CG with test descriptors, as ADR-014 §6 step 5 states.
-- QSpec FR-161-AC-7, FR-290, FR-341 (infinite-trace), FR-331.
+- QSpec FR-161-AC-7, FR-290, FR-360, FR-331.
 
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec half: Linear STD-131 (QS-9).
+- QSpec FR-368 (negotiating temporal model-check items): Linear STD-131
+  (QS-9).

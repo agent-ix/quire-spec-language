@@ -11,8 +11,8 @@ relationships:
 ## Description
 
 Verify ADR-018 SM-8 lasso evaluation with past operators reaching into the
-prefix, malformed-lasso refusals, fairness on model-step and observed
-lassos, and metering.
+prefix, malformed-lasso refusals, fairness on a model-step lasso, and
+metering.
 
 Scope: FR-329-AC-1 to FR-329-AC-5.
 
@@ -26,8 +26,7 @@ Scope: FR-329-AC-1 to FR-329-AC-5.
    `Lasso::Model` whose last loop post-state is not its entry state.
 4. Over ADR-018 §6's `upd(a)` lasso as `Lasso::Model`, evaluate
    `always eventually holds(b.versionNumber = 2)` under `fair weak
-   attemptUpdate` and under `fair weak each attemptUpdate`; then under
-   `fair weak attemptUpdate` over the same lasso as `Lasso::Observed`.
+   attemptUpdate` and under `fair weak each attemptUpdate`.
 5. Evaluate step 1's first clause with a meter one unit short of its visit
    count.
 
@@ -39,6 +38,5 @@ Tag the tests `#[trace("TC-839", "FR-329-AC-n")]`.
 - Step 2: `true`; `false` at 0.
 - Step 3: `invalid_runtime_input`/`invalid-value` for each.
 - Step 4: `false` at 0; refusal `invalid_runtime_input`/`invalid-value`
-  naming the `each` constraint; refusal `invalid_runtime_input`/
-  `invalid-value` for the observed lasso.
+  naming the `each` constraint.
 - Step 5: `Incomplete` with no truth value.
