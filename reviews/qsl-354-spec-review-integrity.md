@@ -50,3 +50,9 @@ Round 1, reviewed at a00ace78 (fix commit a00ace78 on top of 6d60826c).
 | FND-004 | fixed | a00ace78 |
 | FND-005 | fixed | a00ace78 |
 | FND-006 | fixed | a00ace78 |
+
+Round 2, reviewed at 15472a71 (fix commit 15472a71 on top of a00ace78).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 15472a71 |
