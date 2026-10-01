@@ -133,8 +133,8 @@ refinement <Name> using <infinite-trace profile> abstract <A> concrete <C> {
   step <C>::<Type>::<op> -> stutter;
   step <C>::<Type>::<op> -> any;
   history <C>::<Type>.<field>: <bounded type> = <literal> { on <C>::<Type>::<op>: <expression>; … }
-  assume fair weak each <C>::<Type>::<op>;
-  ensure fair weak each <A>::<Type>::<op>;
+  assume fair weak [each | whole] <C>::<Type>::<op>;
+  ensure fair weak [each | whole] <A>::<Type>::<op>;
 }
 ```
 
@@ -145,7 +145,7 @@ refinement <Name> using <infinite-trace profile> abstract <A> concrete <C> {
 | RM-3 | **Object map.** Each abstract object type that an abstract population admits is mapped from one concrete object type of its source population. Its most-specific type in the mapped state is the abstract type whose `from` names the concrete object's most-specific type. Each row `f = e` defines abstract field `f` by expression `e`, whose `self` is the concrete object. `e` reads the concrete state through the forms a state-clause body admits (ADR-016 FE-4): field reads, `deref`, `reaches`, history fields (AX-1) and pure function application. A concrete reference to an object of a mapped type denotes the abstract object with the same key, so a field of type `Reference<T_A>` is mapped by an expression of type `Reference<T_C>` where `T_A` is mapped from `T_C`. |
 | RM-4 | **Typing.** S3 checks each `e` against the abstract field's declared type with `TypeEnvironment::conforms` (ADR-016 SC-2) and refuses `ill_typed`/`type-mismatch` at `e`. A field named twice refuses `invalid_model_binding`/`conflicting-binding` naming both rows. A field with no row is a **hidden field** (AX-2). |
 | RM-5 | **Step map.** Each concrete operation has exactly one `step` row; S3 refuses an operation with none (`missing_declaration`/`missing-name`, naming the operation) or with two (`invalid_model_binding`/`conflicting-binding`). The right side is one of: an abstract operation applied to a receiver and one expression per declared parameter, each over the concrete receiver as `self`, the concrete arguments by parameter name and the concrete pre-state, typed against the abstract parameter types, with `_` for an argument the concrete step leaves open; `stutter`; or `any`. |
-| RM-6 | **Fairness rows.** `assume` rows are the concrete fairness set `F_C` and `ensure` rows the abstract fairness set `F_A`, each an ADR-018 FA-1 constraint over its own model's operations. Either set may be empty. |
+| RM-6 | **Fairness rows.** `assume` rows are the concrete fairness set `F_C` and `ensure` rows the abstract fairness set `F_A`, each an ADR-018 FA-1 constraint over its own model's operations. A row with no granularity is `whole`, as ADR-018 FA-1 reads an unmarked constraint; a row that means `each` spells it. Either set may be empty. |
 | RM-7 | **Mapping functions.** For a concrete state `s` with history values `h`, `map(s, h)` is the abstract state built by RM-2 and RM-3 from the visible rows. A row whose evaluation is undefined, refused or incomplete at a state makes `map` undetermined there (RE-4). Each `e` is evaluated through the one clause evaluator (ADR-016 FE-3) over `s`'s synthesized observation (ADR-016 ID-10) with a fresh meter, as a value-typed body. |
 
 The refinement declaration enters the checked package as a node, so its
@@ -162,12 +162,23 @@ identity enters the `package_id` and every obligation identity that cites it
 | RS-4 | **An abstract-operation step** passes when the abstract transition identity it names (the abstract operation; the receiver; the arguments evaluated at `(s, h)`, each `_` ranging over its parameter domain) is a transition from `a = map(s, h)` to `a' = map(s', h')` under FR-120: the effective precondition holds at `a`, `StateModel::check_frame` over `(a, a')` returns a delta, and some value of the result domain makes the effective postcondition true over `(a, a', delta)`. These are the same calls `ModelSystem` makes when it expands `a`, applied to one candidate. |
 | RS-5 | **An `any` step** passes when it passes RS-3 or passes RS-4 for some abstract transition identity enabled at `a`. |
 | RS-6 | **Terminal stutter.** The concrete terminal stutter step (ADR-018 SM-4) is a `stutter` step. |
-| RS-7 | **Abstract progress.** Abstract behaviours are maximal paths (ADR-018 SM-3), so a mapped behaviour stutters forever only at an abstract terminal state. A concrete behaviour violates abstract progress when, from some position onward, every step is a `stutter` step and some abstract transition is enabled at the (constant) mapped state. Infinite stuttering at an abstract terminal state is the abstract terminal stutter. This is the divergence condition of QSpec FR-177's relation, with divergence observable. |
+| RS-7 | **Abstract progress.** Abstract behaviours are maximal paths (ADR-018 SM-3), so a mapped behaviour stutters forever only at an abstract terminal state. A concrete behaviour violates abstract progress when, from some position onward, every step is a `stutter` step and some abstract transition is enabled at the (constant) mapped state. Infinite stuttering at an abstract terminal state is the abstract terminal stutter. A concrete terminal state is the case where the stuttering is the concrete terminal stutter (RS-6): it violates RS-7 when its mapped state is not abstract-terminal. This is the divergence condition of QSpec FR-177's relation, with divergence observable. |
 | RS-8 | **Refinement.** The concrete subject refines the abstract subject under the declaration exactly when RS-2 holds and every behaviour of the concrete subject that is fair under `F_C` passes RS-3 to RS-5 at every step, satisfies RS-7, and satisfies `F_A` on its mapped behaviour (CO-2). Each concrete step maps to one abstract step or to a stutter. |
 
 Under this definition the mapped behaviour, with its stutter positions
 removed, is a behaviour of the abstract subject. Removing stutter positions
 removes no abstract state change, and RS-7 keeps the result maximal.
+
+**Deadlock reports.** ADR-018, as amended, reports a reachable terminal state
+of a model as a deadlock by default, and a model that halts on purpose opts
+out. The report and RS-7 answer different questions and stay separate:
+
+| ID | Rule |
+| --- | --- |
+| RS-9 | **Each model's report is its own.** A model's deadlock report and its opt-out belong to that model's own subject and its own claims. The refinement item reads neither, and its verdict is the same under every combination of opt-outs. |
+| RS-10 | **A concrete terminal state in the refinement.** The refinement classifies a concrete terminal state by its mapped state. If the mapped state is abstract-terminal, the concrete terminal stutter matches the abstract terminal stutter and the refinement holds there. If not, the item settles `refuted` with failure `Divergence` (RS-7, RC-1): the concrete model stops where the abstract model continues, which is a refinement failure, not a deadlock report. |
+| RS-11 | **Opt-out combinations.** Both report (the default): a concrete halt at an abstract-terminal state is reported as a deadlock on each model, and the refinement holds. Abstract opts out, concrete reports: the abstract design halts there on purpose, the refinement holds, and the concrete model's own report still lists the halt until its author opts the concrete model out too. Concrete opts out, abstract reports: the refinement holds at such a halt and the abstract model's own report lists the abstract-terminal state; a concrete halt at a state where the abstract model can move is still refuted by RS-10. Both opt out: no deadlock report, and RS-10 still refutes a halt where the abstract model can move. |
+| RS-12 | **Stuttering is not a deadlock.** A concrete state where only `stutter`-mapped operations are enabled (such as `peek` in §8) is not terminal, so no deadlock report names it. RS-7 refutes it when a loop there is fair under `F_C` and the mapped state is not abstract-terminal. |
 
 ### 3. What carries over
 
@@ -175,8 +186,8 @@ removes no abstract state change, and RS-7 keeps the result maximal.
 | --- | --- |
 | CO-1 | **Safety.** RS-2 to RS-5 are a safety property of the concrete subject: every violation is a finite prefix ending at the first failing step. Over a functional mapping (no hidden field), EN-1 decides it in its first phase by running `check_step` on every product edge it explores, the way it detects a rejecting monitor state (ADR-018 EN-1). |
 | CO-2 | **Liveness.** `F_A` holds on a mapped behaviour when each constraint satisfies ADR-018 FA-3 read through the mapping: an abstract transition identity is **enabled** at a position when it is enabled at that position's mapped state (ADR-018 FA-2, evaluated by the abstract subject's `ModelSystem`), and it is **taken** at a step when that step is an abstract-operation step for it (RS-4) or an `any` step that RS-5 matches to a transition of that constraint. RS-7 and `F_A` are liveness properties of the concrete subject under `F_C`. EN-1 checks them in its second phase, with the concrete fairness filter `F_C` on each SCC (ADR-018 FA-4). |
-| CO-3 | **Transfer of abstract claims.** When the abstract subject satisfies an infinite-trace clause `P` under fairness set `F_P` with `F_P ⊆ F_A`, and the concrete subject refines it, the concrete subject satisfies `P` read through `map` under `F_C`. `P`'s atoms read abstract state only, and `P`'s `over` parameter ranges over the images of the concrete objects (RM-2). The infinite-trace operators are stuttering-invariant (QSpec FR-161's non-strict until; no next or previous operator in the grammar), which makes this sound. |
-| CO-4 | **Bounded clauses are checked on each model.** A bounded-profile clause counts event positions (ADR-018 SM-3), and a concrete behaviour has more positions than its mapped abstract behaviour. A bounded clause about the concrete model is checked on the concrete subject directly (ADR-018 TP-2). |
+| CO-3 | **Transfer of abstract claims.** When the abstract subject satisfies an infinite-trace clause `P` under fairness set `F_P` where `F_A` implies every constraint of `F_P` (the constraint is in `F_A`, or it is the `whole` form of an `each` constraint in `F_A`, since `each` implies `whole` for one operation), and the concrete subject refines it, the concrete subject satisfies `P` read through `map` under `F_C`. `P`'s atoms read abstract state only, and `P`'s `over` parameter ranges over the images of the concrete objects (RM-2). The infinite-trace operators are stuttering-invariant (QSpec FR-161's non-strict until; no next or previous operator in the grammar), which makes this sound. |
+| CO-4 | **Clauses with an interval operator are checked on each model.** Transfer is per clause, and a clause carries over exactly when it contains no interval operator. An interval operator counts event positions (ADR-018 SM-3), and a concrete behaviour has more positions than its mapped abstract behaviour, so a stutter step changes which states an interval covers. This covers bounded-profile clauses and **mixed** infinite-trace clauses, whose interval operators are nested under unbounded ones (ADR-018, as amended, admits them under the infinite-trace profile). In a mixed clause the part that does not carry is every interval subformula, and with it every operator whose scope contains one; in `always (fail implies eventually always[0,10] healthy)` that is `always[0,10] healthy`, and so the whole clause. A clause with an interval operator about the concrete model is checked on the concrete subject directly (ADR-018 TP-2 for a bounded clause, TP-4 for a mixed one). An author who wants an interval-free part transferred writes it as its own clause. |
 | CO-5 | **Recording a transferred verdict.** A transferred claim is a claim over the concrete subject that names its two premises: the abstract claim and the refinement. It settles `proved` exactly when both premises settled `proved` and the abstract claim's subject is the abstract subject this refinement names. Its basis is the weaker of the two premise bases. Any other premise combination leaves it to be checked directly on the concrete subject. QS-7 asks QSpec where this vertical composition lives. |
 
 **Step labels.** QSL behaviours carry each step's transition identity
@@ -317,10 +328,15 @@ refinement CasRefinesCounter using inf abstract Spec concrete Impl {   // illust
   step Impl::Counter::retryA  -> stutter;
   step Impl::Counter::retryB  -> stutter;
   step Impl::Counter::peek    -> stutter;
-  assume fair weak each Impl::Counter::beginA;   // and beginB, commitA, commitB, retryA, retryB
+  assume fair weak each Impl::Counter::beginA;   // and beginB, commitA, commitB, retryA, retryB, each spelled
   ensure fair weak each Spec::Counter::inc;
 }
 ```
+
+Every fairness row spells `each`, the granularity meant. With one receiver
+and no parameters each operation has one transition identity, so `whole`
+would give the same verdicts here; the spelling stays explicit because an
+unmarked row is `whole`.
 
 **Subjects.** Universe `counters = {c}`. Abstract initial snapshot: `c` with
 `value` 0. Concrete initial snapshot: `c` with every integer field 0 and both
@@ -443,15 +459,15 @@ the step map treat keys uniformly, which every RM-2 key-preserving map does.
 
 | ID | Item | Where |
 | --- | --- | --- |
-| QS-1 | Surface syntax of the refinement declaration in the shared grammar: the header with abstract and concrete model aliases and profile; population, object and field rows; step rows with abstract operation application, `_` arguments, `stutter` and `any`; history rows; `assume` and `ensure` fairness rows | shared grammar |
-| QS-2 | Refinement semantics: RS-2 to RS-8 over model subjects, the key-preserving population map, reference lifting through object maps, hidden fields as existentially chosen abstract state, and the abstract progress rule | a new QSpec FR, citing QSpec FR-181 and FR-161 |
+| QS-1 | Surface syntax of the refinement declaration in the shared grammar: the header with abstract and concrete model aliases and profile; population, object and field rows; step rows with abstract operation application, `_` arguments, `stutter` and `any`; history rows; `assume` and `ensure` fairness rows, an unmarked granularity read as `whole` | shared grammar |
+| QS-2 | Refinement semantics: RS-2 to RS-8 over model subjects, the key-preserving population map, reference lifting through object maps, hidden fields as existentially chosen abstract state, the rule that a refinement verdict is independent of either model's deadlock opt-out with a concrete terminal state classified by its mapped state (RS-9 to RS-12), and the abstract progress rule | a new QSpec FR, citing QSpec FR-181 and FR-161 |
 | QS-3 | History fields: initial value, per-operation update, receiver-only writes, and the rule that an update never removes a step (AX-1, AX-3) | the same FR |
 | QS-4 | The `quire.checked-package/v2` node for a refinement declaration and its place in the obligation identity | QSpec v2 contract, FR-331 |
 | QS-5 | Claim kinds: the whole refinement as `temporal-satisfaction`; the per-step obligations as the existing `operation-contract` row, with the step obligation of RE-2 stated as that row's "implication between the two contracts' clauses"; the `refinement` kind's scope as the `protocol` family only | QSpec FR-290 |
 | QS-6 | Counterexample wire: the `RefinementFailure` member and its six kinds; replay rules of RC-2; the `MappingUndetermined` inconclusive cause | QSpec FR-331 and the counterexample contract; QSpec FR-341 (infinite-trace) |
-| QS-7 | Vertical composition: a claim over a concrete subject discharged from an abstract claim and a refinement (CO-3, CO-5), its premises, its basis, and whether QSpec FR-348 covers it or a new FR does | QSpec FR-348 or a new FR |
+| QS-7 | Vertical composition: a claim over a concrete subject discharged from an abstract claim and a refinement (CO-3, CO-5); the per-clause transfer rule, under which a clause with an interval operator, bounded or mixed, does not carry (CO-4); fairness implication between `F_A` and the claim's fairness set; its premises, its basis, and whether QSpec FR-348 covers it or a new FR does | QSpec FR-348 or a new FR |
 | QS-8 | QSpec FR-177's relation stated over the same step rules: internal actions as `stutter`, visible steps as step-map rows with observations, divergence as RS-7, with refusal sets, terminal success and assumption weakening as the protocol-only additions (MC-1) | QSpec FR-177 |
-| QS-9 | Conformance vectors, each with expected verdict and, for a refutation, a counterexample that must replay: (a) §8's holding case, lost-update case and divergence case; (b) a `step … -> any` variant of the lost-update model that holds; (c) an initial-state mismatch; (d) a `stutter` step that changes a mapped field; (e) a history-field refinement that holds, and the same refinement with the row for the history-backed abstract field removed, so that field is hidden and, with an `ensure` row, the liveness half settles `unsupported`; (f) a hidden-field safety refinement that holds where every functional mapping fails (the coin of §4); (g) a mapping row that evaluates undefined (`MappingUndetermined`); (h) replay refusals and a `ReplayParity` case | QSpec TC-200 neighbourhood and new TCs |
+| QS-9 | Conformance vectors, each with expected verdict and, for a refutation, a counterexample that must replay: (a) §8's holding case, lost-update case and divergence case; (b) a `step … -> any` variant of the lost-update model that holds; (c) an initial-state mismatch; (d) a `stutter` step that changes a mapped field; (e) a history-field refinement that holds, and the same refinement with the row for the history-backed abstract field removed, so that field is hidden and, with an `ensure` row, the liveness half settles `unsupported`; (f) a hidden-field safety refinement that holds where every functional mapping fails (the coin of §4); (g) a mapping row that evaluates undefined (`MappingUndetermined`); (h) replay refusals and a `ReplayParity` case; (i) a concrete halt at an abstract-terminal state, with the same refinement verdict under all four deadlock opt-out combinations; (j) a concrete halt at a state where the abstract model can move, refuted `Divergence` under every combination; (k) a mixed clause proved on the abstract subject that does not transfer, checked directly on the concrete subject | QSpec TC-200 neighbourhood and new TCs |
 
 ## Consequences
 
@@ -520,6 +536,11 @@ the step map treat keys uniformly, which every RM-2 key-preserving map does.
 - **One mechanism covering the abstraction relation as well.** Rejected. QSL
   explores neither side of a code binding (MC-2); forcing it into
   `check_step` would need QSL to run Rust.
+- **Transferring a mixed clause with its intervals counted in abstract
+  steps.** Rejected. That reading counts only the concrete steps that are not
+  stutter steps, which is not a formula the trace evaluator states over the
+  concrete behaviour (ADR-018 SM-1), so its verdict could not be re-checked or
+  replayed on the concrete subject. CO-4 checks such a clause directly.
 - **Abstract initial condition as a predicate.** Rejected. Model subjects
   have initial snapshots (ADR-018 SM-2), and RS-2 compares by state key.
 
