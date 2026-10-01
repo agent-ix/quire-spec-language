@@ -17,6 +17,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-056
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-318
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-319
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-321
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-322
+    type: references
   - target: ix://agent-ix/quire-specification/FR-033
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-034
@@ -143,10 +151,14 @@ shared typed value domain that [FR-040](FR-040-check-composed-values.md)
 checks over admitted domain-package model declarations
 ([FR-056](FR-056-admit-domain-package-model-declarations.md)). This
 requirement evaluates within that domain and does not define a second value
-system. A sum-type value, once some future requirement admits it into that
-domain, evaluates through the same predicate-call and ordered-query boundary
-this requirement already defines; it does not require a separate query
-semantics.
+system. A union value ([FR-321](FR-321-admit-supplied-union-values.md)) is a
+member of that domain. It is passed to a predicate, bound by a query binder,
+returned by `map` and compared by `contains` through the same predicate-call
+and ordered-query boundary as any other value, with union equality
+([FR-319](FR-319-key-union-member-and-case-nodes.md)); a `case` inside a
+predicate or query body is checked and evaluated by
+[FR-318](FR-318-check-case-expressions-and-exhaustiveness.md) and
+[FR-322](FR-322-evaluate-union-construction-and-case.md).
 
 ## Acceptance Criteria
 
@@ -160,6 +172,7 @@ semantics.
 | FR-046-AC-6 | Missing input, unknown required membership and missing completeness produce no successful total; an independently supplied complete counterpart evaluates without reconstructing missing members or consulting an ambient store. | Test (TC-128) |
 | FR-046-AC-7 | Zero, exact and one-step-insufficient caller budgets distinguish completed work from resource incompleteness for predicate expansion, nested traversal and retained output; retrying starts fresh accounting without changing the selected semantics or earlier immutable inputs. | Test (TC-128) |
 | FR-046-AC-8 | Emitted calls/query records preserve original handles, binder scopes, type/unit selections and captures. Static compiler and admitted-artifact evaluation evidence remain separately identifiable; a passed earlier stage cannot stand in for an unexecuted later stage. | Test (TC-126, TC-127) |
+| FR-046-AC-9 | A predicate `isRect(s: Shape)` whose body is a `case` over `s` returns `true` for `Shape::Rect(2, 3)` and `false` for `Shape::Empty`; over a `Sequence<Shape>` holding `Shape::Empty, Shape::Rect(2, 3), Shape::Rect(2, 3)`, `contains` of `Shape::Rect(2, 3)` is `true`, `filter` by `isRect` keeps both `Rect` occurrences in order, and `count` by `isRect` is 2. | Test (TC-833) |
 
 ## Dependencies
 
