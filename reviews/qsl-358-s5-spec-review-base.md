@@ -51,3 +51,9 @@ Round 1 at 553729e5 (rebased onto main 09eb9dc6, which includes slices 2 and 3).
 | FND-002 | fixed | 49ae8c6c: no "Amended (QSL-358)" marker or ticket id is left in FR-068. |
 | FND-003 | fixed | 49ae8c6c: after the rebase over slices 2 and 3, the following all name `checking`, `location`, `call` and `loss`: the ADR-011 SV row (with the Depends-on cell now `K; quire-canonical, serde and thiserror, each without std`), the SV prose bullet, the §6.2 move row (`quire_semantic_value::{..., checking, location, call, loss}`), the `value::expression::refusal` row, X-6, X-7 (qsl-package's SV reason), X-10 (qsl-replay's SV edge) and X-11. |
 | FND-004 | fixed | 49ae8c6c: FR-090:25,121,192 read `quire_semantic_value::location::Location`. So do FR-062, FR-095, FR-096, FR-100, ADR-011, ADR-012, ADR-013, TC-407 and TC-426. A grep of spec/ finds no `check::Location`. |
+
+Round 2 at bb5e2889. It is one doc-only commit on 553729e5, touching FR-068 and the three `reviews/` files. The `reviews/` files are now byte-identical to the reviewer's round-1 copies, and the coder-written dispositions are gone.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | bb5e2889: the FR-068 Outputs `check` bullet lists only the ten check-cause types. It says `Location`, `Origin` and `CheckMode` are defined in `quire-semantic-value` (`location`, `checking`) and imported by `check`. AC-3 says `CheckMode` is defined in SV `checking` and that `check` imports it from there. |
