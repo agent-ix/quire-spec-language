@@ -20,7 +20,6 @@ fn always_roles() -> Vec<&'static str> {
         .collect()
 }
 
-#[trace("Task-048")]
 #[test]
 fn the_catalog_covers_every_role_exactly_once() {
     let lock = lock();
@@ -41,7 +40,7 @@ fn the_catalog_covers_every_role_exactly_once() {
     }
 }
 
-#[trace("TC-192")]
+#[trace("QSpec-TC-192")]
 #[test]
 fn admit_selection_accepts_every_trigger_combination_exactly_once() {
     let lock = lock();
@@ -101,7 +100,7 @@ fn admit_selection_accepts_every_trigger_combination_exactly_once() {
     assert!(every_trigger.division_profile().is_some());
 }
 
-#[trace("TC-192")]
+#[trace("QSpec-TC-192")]
 #[test]
 fn admit_selection_refuses_each_closed_code_exactly_once() {
     let lock = lock();

@@ -272,7 +272,7 @@ fn last() -> FunctionDeclaration {
     )
 }
 
-#[trace("TC-191", "FR-146-AC-1")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-1")]
 #[test]
 fn p01_projection_under_a_presence_guard_decreases_structurally() {
     declarations(node_environment(), vec![last()])
@@ -305,8 +305,8 @@ fn down() -> FunctionDeclaration {
     )
 }
 
-#[trace("TC-191", "FR-146-AC-2")]
-#[trace("TC-191", "FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-2")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
 #[test]
 fn p02_self_call_without_a_decrease_or_a_measure_is_refused() {
     let looping = |measure| {
@@ -354,8 +354,8 @@ fn parity(own: &str, other: &str, measure: Expression) -> FunctionDeclaration {
     )
 }
 
-#[trace("TC-191", "FR-146-AC-4")]
-#[trace("TC-191", "FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-4")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
 #[test]
 fn p03_mutual_recursion_needs_measures_of_one_arity() {
     check(vec![
@@ -431,8 +431,8 @@ fn reduce_total(source: &str) -> Expression {
     }
 }
 
-#[trace("TC-191", "FR-146-AC-6")]
-#[trace("TC-191", "FR-146-AC-8")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
 #[test]
 fn p04_division_presence_and_reduction_need_static_proofs() {
     assert_eq!(
@@ -495,8 +495,8 @@ fn p04_division_presence_and_reduction_need_static_proofs() {
     .unwrap();
 }
 
-#[trace("TC-191", "FR-146-AC-3")]
-#[trace("TC-191", "FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-3")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
 #[test]
 fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
     let calling = |target: &str| {
@@ -552,8 +552,8 @@ fn chain(types: &TypeEnvironment, heads: &[i64]) -> Value {
     }
 }
 
-#[trace("TC-191", "FR-146-AC-5")]
-#[trace("TC-191", "FR-146-AC-6")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-5")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
 #[test]
 fn p06_each_call_charges_function_call() {
     let types = node_environment();
@@ -611,7 +611,7 @@ fn p06_each_call_charges_function_call() {
     );
 }
 
-#[trace("TC-191", "FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
 #[test]
 fn p07_nonrecursive_functions_need_no_measure() {
     let double = |measure| {
@@ -634,7 +634,7 @@ fn p07_nonrecursive_functions_need_no_measure() {
     check(vec![double(Some(name("n"))), quad]).unwrap();
 }
 
-#[trace("TC-191", "FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
 #[test]
 fn p07_a_call_interval_is_its_declared_result_so_a_ranged_nesting_is_unproved() {
     let double = function(
@@ -662,9 +662,9 @@ fn p07_a_call_interval_is_its_declared_result_so_a_ranged_nesting_is_unproved() 
     );
 }
 
-#[trace("TC-191", "FR-146-AC-2")]
-#[trace("TC-191", "FR-146-AC-7")]
-#[trace("TC-191", "FR-146-AC-8")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-2")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
 #[test]
 fn p08_measures_decrease_lexicographically_by_accepted_forms() {
     check(vec![down()]).unwrap();
@@ -780,7 +780,7 @@ fn p08_measures_decrease_lexicographically_by_accepted_forms() {
         .unwrap();
 }
 
-#[trace("TC-191", "FR-146-AC-8")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
 #[test]
 fn p09_intervals_come_only_from_declared_types_and_literal_guards() {
     let body = |body| {
@@ -907,8 +907,8 @@ fn box_environment() -> TypeEnvironment {
     .unwrap()
 }
 
-#[trace("TC-191", "FR-146-AC-6")]
-#[trace("TC-191", "FR-146-AC-8")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
 #[test]
 fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
     let types = box_environment();
@@ -1211,8 +1211,8 @@ fn p_work_budget_limit_refuses_through_package_declarations_check() {
     .expect("the unconfigured default is unlimited, so the same package admits");
 }
 
-#[trace("TC-191", "FR-146-AC-5")]
-#[trace("TC-191", "FR-146-AC-6")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-5")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
 #[test]
 fn p11_evaluation_charges_calls_orderings_arithmetic_and_skipped_operands() {
     let graph = check(vec![

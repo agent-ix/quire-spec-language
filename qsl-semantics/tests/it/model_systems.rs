@@ -296,7 +296,7 @@ fn find_component<'a>(
 /// FR-208-AC-9: a relationship end naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not as a dangling end:
 /// the end names a declared type of the wrong meaning.
-#[trace("TC-197")]
+#[trace("QSpec-TC-197")]
 #[test]
 fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     let domain_package = fixture_y(|records| {
@@ -328,7 +328,8 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     assert!(refusals[0].detail.contains("model.Money"));
 }
 
-#[trace("TC-197")]
+#[trace("TC-235", "FR-086-AC-3")]
+#[trace("QSpec-TC-197")]
 #[test]
 fn y01_every_kind_resolves_to_its_exact_producer_key() {
     let domain_package = fixture_y(|_| {});
@@ -370,7 +371,8 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-2")]
+#[trace("TC-235", "FR-086-AC-3")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-2")]
 #[test]
 fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
     let domain_package = fixture_y(|_| {});
@@ -423,7 +425,7 @@ fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {
 // Retagged AC-3 -> AC-6 (PR #144 review finding #1): y03a-e test the
 // per-`RelationshipDirection` port-pair admit/refuse rule directly — AC-6's
 // own subject.
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y03a_swapped_connection_ends_refuse_on_port_direction() {
     let domain_package = fixture_y(|records| {
@@ -454,7 +456,7 @@ fn y03a_swapped_connection_ends_refuse_on_port_direction() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y03b_target_to_source_against_the_declared_ports_refuses() {
     let domain_package = fixture_y(|records| {
@@ -476,7 +478,7 @@ fn y03b_target_to_source_against_the_declared_ports_refuses() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y03c_bidirectional_against_non_inout_ports_refuses() {
     let domain_package = fixture_y(|records| {
@@ -498,7 +500,7 @@ fn y03c_bidirectional_against_non_inout_ports_refuses() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y03d_bidirectional_with_both_ports_inout_admits() {
     let domain_package = fixture_y(|records| {
@@ -520,7 +522,7 @@ fn y03d_bidirectional_with_both_ports_inout_admits() {
     }
 }
 
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y03e_undirected_is_never_a_connection_direction() {
     let domain_package = fixture_y(|records| {
@@ -546,7 +548,7 @@ fn y03e_undirected_is_never_a_connection_direction() {
 // direction, endpoint type and multiplicity are all enforced") over a
 // connection whose port direction is the same admissible pair y03d already
 // covers under AC-6.
-#[trace("TC-197", "FR-152-AC-4", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-4", "QSpec-FR-152-AC-6")]
 #[test]
 fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
     // model.Flow2 generalizes to model.Flow (Flow2 is more derived), so
@@ -610,7 +612,7 @@ fn y04_flow_source_must_conform_to_flow_target_not_the_reverse() {
 }
 
 // Retagged AC-3 -> AC-6 (PR #144 review finding #1).
-#[trace("TC-197", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-6")]
 #[test]
 fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
     let domain_package = fixture_y(|records| {
@@ -650,7 +652,7 @@ fn y05_a_narrowed_end_multiplicity_refuses_and_exposes_no_connection() {
 // PR's re-keying fix — this test never exercises that axis, so it stays
 // honestly unbacked. Also renamed: the cascade is three refusals
 // (component -> endpoint -> relationship), not four.
-#[trace("TC-197", "FR-152-AC-2")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-2")]
 #[test]
 fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
     let domain_package = fixture_y(|records| {
@@ -719,7 +721,7 @@ fn y06_removing_the_part_capability_cascades_three_refusals_in_rule_order() {
 /// the same interface type. `model.Sys.pump.out` and `model.Sys.tank.in`
 /// both name a value type with node `model.Count`, one in `test/orders`
 /// and one in `other/pkg`.
-#[trace("TC-197", "FR-152-AC-4", "FR-152-AC-6")]
+#[trace("QSpec-TC-197", "QSpec-FR-152-AC-4", "QSpec-FR-152-AC-6")]
 #[test]
 fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node() {
     let domain_package = fixture_y(|records| {
@@ -765,7 +767,7 @@ fn y07_bidirectional_interface_type_does_not_confuse_two_packages_sharing_a_node
 /// exact same `DeclarationKey`, and `normalize` -- which every real
 /// pipeline runs before `classify` ever sees a domain package -- must
 /// refuse before either component reaches `SystemsClassification`.
-#[trace("TC-197")]
+#[trace("QSpec-TC-197")]
 #[test]
 fn two_components_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(

@@ -286,7 +286,7 @@ fn call_to_an_unknown_function_is_refused() {
 /// charge, so each call adds exactly one `function.call` to `meter`, and two
 /// calls on one meter accumulate. A charge to a meter `call` created and
 /// dropped would leave `meter` empty.
-#[trace("TC-191", "FR-146-AC-5")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-5")]
 #[test]
 fn call_charges_the_top_level_function_call_to_the_callers_meter() {
     let objects = ObjectEnvironment::default();
@@ -325,7 +325,7 @@ fn call_charges_the_top_level_function_call_to_the_callers_meter() {
 /// With one work unit, the first call of `one(5)` spends it and completes;
 /// the second call's own `function.call` is denied before any node runs, so
 /// its `Incomplete` names `FunctionCall` and carries no location.
-#[trace("TC-191", "FR-146-AC-5")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-5")]
 #[test]
 fn a_second_call_on_a_spent_meter_is_denied_at_its_function_call() {
     let objects = ObjectEnvironment::default();

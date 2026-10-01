@@ -761,7 +761,12 @@ fn reference_elements(value: &Value) -> Vec<ObjectReference> {
 /// the checker/evaluator, and FR-153-AC-6 (`b1`'s reference is identical whether
 /// selected under `M::A` or queried directly under `M::B`).
 #[test]
-#[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-1",
+    "QSpec-FR-153-AC-5",
+    "QSpec-FR-153-AC-6"
+)]
 fn l12_all_instances_expression_selects_subtype_population_once() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -841,7 +846,7 @@ fn l12_all_instances_expression_selects_subtype_population_once() {
 /// than only at evaluation of the bridge around it -- fails here too, then
 /// pins the low-limit denial to the exact same charge point L01 denies at.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -893,7 +898,13 @@ fn l13_all_instances_expression_incomplete_under_a_low_work_limit() {
 /// (per-mode presence) and FR-153-AC-4 (typed present-result Outputs) at the
 /// expression layer.
 #[test]
-#[trace("TC-198", "TC-408", "FR-153-AC-2", "FR-153-AC-4", "FR-090-AC-12")]
+#[trace(
+    "QSpec-TC-198",
+    "TC-408",
+    "QSpec-FR-153-AC-2",
+    "QSpec-FR-153-AC-4",
+    "FR-090-AC-12"
+)]
 fn l14_lookup_expression_undefined_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -969,7 +980,7 @@ fn l14_lookup_expression_undefined_mode() {
 /// through the real checker/evaluator — backing FR-153-AC-2 and FR-153-AC-4's
 /// `Option<Reference<T>>` Outputs shape for `empty` mode specifically.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l15_lookup_expression_empty_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1036,7 +1047,13 @@ fn l15_lookup_expression_empty_mode() {
 /// through the identity bridge's refusal path
 /// (`crate::value::model_query::model_refusal`), not only its success path.
 #[test]
-#[trace("TC-198", "TC-408", "FR-153-AC-2", "FR-153-AC-4", "FR-090-AC-12")]
+#[trace(
+    "QSpec-TC-198",
+    "TC-408",
+    "QSpec-FR-153-AC-2",
+    "QSpec-FR-153-AC-4",
+    "FR-090-AC-12"
+)]
 fn l16_lookup_expression_refused_mode() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1101,7 +1118,7 @@ fn equal(left: Expression, right: Expression) -> Expression {
 /// operands denote `b1`, so the comparison is `true`; the same query for a
 /// reference to `a1` against `b1` is `false`.
 #[test]
-#[trace("TC-198", "FR-153-AC-6", "FR-149-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6", "QSpec-FR-149-AC-6")]
 fn l08_upcast_lookup_result_equals_the_subtype_reference() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1260,7 +1277,7 @@ fn integer_of(value: Value) -> Integer {
 /// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
 /// reads `b1`'s inherited slot.
 #[test]
-#[trace("TC-198", "FR-153-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
 fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
     let scenario = scenario();
     let (package, objects) = attribute_world(
@@ -1283,7 +1300,7 @@ fn l11_deref_through_a_supertype_reference_reads_an_inherited_field() {
 /// this `Attribute` node charged both unconditionally, adding two charge
 /// units to every `Value`-family attribute read that had none before FR-107.
 #[test]
-#[trace("TC-198", "FR-153-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
 fn deref_field_read_charges_no_model_family_charge_outside_a_protocol_clause() {
     let scenario = scenario();
     let (package, objects) = attribute_world(
@@ -1344,8 +1361,8 @@ fn deref_field_read_charges_no_model_family_charge_outside_a_protocol_clause() {
 /// one slot. With the redefinition renamed, `B.z` redefining `A.x`, the same
 /// expression reads `B.z`'s slot.
 #[test]
-#[trace("TC-198", "FR-153-AC-6")]
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 fn l11_deref_through_a_supertype_reference_reads_the_redefiner() {
     let scenario = scenario();
     let redefines = || FieldRef::new(scenario.a, "x");
@@ -1380,8 +1397,8 @@ fn l11_deref_through_a_supertype_reference_reads_the_redefiner() {
 /// admission (`type_environment_model.rs`), since evaluation matches a
 /// reference's object type exactly.
 #[test]
-#[trace("TC-198", "FR-153-AC-6")]
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 fn l11_deref_through_a_supertype_reference_reads_a_redefined_reference_field() {
     let scenario = scenario();
     let reference_to_a =
@@ -1415,7 +1432,7 @@ fn l11_deref_through_a_supertype_reference_reads_a_redefined_reference_field() {
 /// with no generalization relation still refuse `=` at check time,
 /// `ill_typed`/`type-mismatch`.
 #[test]
-#[trace("TC-198", "FR-149-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-149-AC-6")]
 fn l08_references_to_unrelated_object_types_refuse_equality_at_check_time() {
     let scenario = scenario();
     let package = package_with_unrelated_type(&scenario);
@@ -1438,7 +1455,7 @@ fn l08_references_to_unrelated_object_types_refuse_equality_at_check_time() {
 /// is admitted at check time because `M::B` conforms to `M::A` in the
 /// package's own environment, and its result is typed `Reference<M::A>`.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1462,7 +1479,7 @@ fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
 /// `r: Reference<M::A>`, refuses the same way: a supertype does not conform
 /// to its subtype.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
     let scenario = scenario();
     let package = package_with_unrelated_type(&scenario);
@@ -1673,7 +1690,7 @@ fn lookup_refuses_non_population_operand_as_ineligible() {
 /// declared type the model doesn't recognize -- never
 /// `Refusal::CheckedInvariant`.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() {
     let scenario = scenario();
     let foreign_key = fixed_type(0xCC);
@@ -1729,7 +1746,7 @@ fn all_instances_expression_target_declared_but_not_in_model_is_type_mismatch() 
 /// charge, then `foreign-universe` -- reporting the bytes actually supplied,
 /// not a fabricated complement.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1803,7 +1820,12 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
 /// membership, so this ordering holds regardless of whether the object
 /// identity would otherwise be present or absent.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-3", "FR-153-AC-4")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-2",
+    "QSpec-FR-153-AC-3",
+    "QSpec-FR-153-AC-4"
+)]
 fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1864,7 +1886,7 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
 /// `quire_exact::from_admitted` bypasses `admits()` the same way
 /// for the identical reason.
 #[test]
-#[trace("TC-198", "FR-143", "FR-153-AC-5")]
+#[trace("QSpec-TC-198", "QSpec-FR-143", "QSpec-FR-153-AC-5")]
 fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type() {
     let scenario = scenario();
     let package = package(&scenario);
@@ -1937,7 +1959,7 @@ fn lookup_expression_inside_a_set_literal_keeps_the_most_specific_element_type()
 /// `[a1, a2, b1]` to `[a1, b1]`, so the assertion below on the pre-anchored
 /// result went red as expected; reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn l07_pre_all_instances_reads_the_invocation_pre_population() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -1985,7 +2007,7 @@ fn l07_pre_all_instances_reads_the_invocation_pre_population() {
 /// `a2` over the post population, and `pre(lookup<M::A>(p, r2) absent
 /// empty)` is present, `a2` keeping its pre most-specific type `M::A`.
 #[test]
-#[trace("TC-198", "FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2048,7 +2070,7 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
 /// population (3 members, matching `pre_count`), so the `NotEqual` assertion
 /// below went red as expected (`false`, not `true`); reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2106,7 +2128,7 @@ fn pre_anchor_does_not_leak_into_a_sibling_post_anchored_query() {
 /// guard). This test went red as expected (a checked expression instead of
 /// a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_bound_query_result_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2147,7 +2169,7 @@ fn pre_refuses_a_let_bound_query_result_capture_drift() {
 /// eligible_read` guard). This test went red as expected (a checked
 /// expression instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_bound_population_alias_capture_drift() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2188,7 +2210,7 @@ fn pre_refuses_a_let_bound_population_alias_capture_drift() {
 /// checked, evaluated `Completed(Integer(3))`, the pre population's size,
 /// instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2236,7 +2258,7 @@ fn pre_refuses_a_let_bound_alias_of_a_let_bound_population_alias() {
 /// went red as expected (a checked, evaluated `Completed(Integer(3))`
 /// instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2278,7 +2300,7 @@ fn pre_refuses_a_let_expression_used_directly_as_the_all_instances_operand() {
 /// red as expected (a checked, evaluated `Completed(Integer(3))` instead of
 /// a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2324,7 +2346,7 @@ fn pre_refuses_an_if_expression_used_directly_as_the_all_instances_operand() {
 /// case. This test went red as expected (a checked, evaluated
 /// `Completed(Integer(3))` instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2375,7 +2397,7 @@ fn pre_refuses_a_let_bound_if_expression_alias_of_a_population_alias() {
 /// went red as expected (a checked, evaluated `Completed(Integer(3))`
 /// instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-3")]
+#[trace("QSpec-FR-042-AC-3")]
 fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2426,7 +2448,7 @@ fn pre_refuses_a_let_bound_nested_let_alias_of_a_population_alias() {
 /// written directly inside `pre(...)` then also reads 2, so the comparison
 /// becomes `2 != 2`, `false`. This test went red as expected; reverted.
 #[test]
-#[trace("FR-042-AC-2")]
+#[trace("QSpec-FR-042-AC-2")]
 fn pre_of_a_captured_post_reference_retains_its_post_observation() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2475,7 +2497,7 @@ fn pre_of_a_captured_post_reference_retains_its_post_observation() {
 /// `Expression::Pre` arm). This test went red the same way (a checked
 /// `Population(3)` instead of a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-4")]
+#[trace("QSpec-FR-042-AC-4")]
 fn pre_refuses_a_bare_population_parameter() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2498,7 +2520,7 @@ fn pre_refuses_a_bare_population_parameter() {
 /// went red the same way (a checked `Integer` instead of a refusal);
 /// reverted.
 #[test]
-#[trace("FR-042-AC-4")]
+#[trace("QSpec-FR-042-AC-4")]
 fn pre_of_an_integer_literal_is_refused() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2527,7 +2549,7 @@ fn pre_of_an_integer_literal_is_refused() {
 /// test went red as expected (a checked expression instead of a refusal);
 /// reverted.
 #[test]
-#[trace("FR-042-AC-4")]
+#[trace("QSpec-FR-042-AC-4")]
 fn pre_refuses_outside_a_postcondition_context() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2546,7 +2568,7 @@ fn pre_refuses_outside_a_postcondition_context() {
 /// `contains_pre_eligible_read` always treats as eligible) and evaluates to
 /// exactly the same result as the single `pre(e)`.
 #[test]
-#[trace("FR-042-AC-2", "TC-198", "FR-153-AC-7")]
+#[trace("QSpec-FR-042-AC-2", "QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn nested_pre_is_idempotent() {
     let scenario = l07_scenario();
     let package = package(&scenario);
@@ -2595,7 +2617,7 @@ fn nested_pre_is_idempotent() {
 /// red as expected (a checked, evaluated `Completed(Integer(2))` instead of
 /// a refusal); reverted.
 #[test]
-#[trace("FR-042-AC-4", "TC-198")]
+#[trace("QSpec-FR-042-AC-4", "QSpec-TC-198")]
 fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_read() {
     let scenario = l07_scenario();
     let package = package_with_function(&scenario);
@@ -2628,7 +2650,7 @@ fn pre_of_a_function_call_over_a_bare_parameter_argument_refuses_forbidden_pre_r
 /// eligible). This test went red as expected (a refusal instead of a
 /// completed integer); reverted.
 #[test]
-#[trace("FR-042-AC-1", "TC-198", "FR-153-AC-7")]
+#[trace("QSpec-FR-042-AC-1", "QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
     let scenario = l07_scenario();
     let package = package_with_collection_function(&scenario);
@@ -2670,7 +2692,7 @@ fn pre_of_a_function_call_over_an_eligible_read_argument_stays_legal() {
 /// take, so `select_anchor`'s missing-pre-anchor case is exactly the one
 /// `wrong-anchor` case this crate's checker cannot decide for itself.
 #[test]
-#[trace("FR-090-AC-7", "FR-042-AC-4", "TC-198", "TC-388")]
+#[trace("FR-090-AC-7", "QSpec-FR-042-AC-4", "QSpec-TC-198", "TC-388")]
 fn pre_of_a_binding_with_no_pre_anchor_refuses_wrong_anchor() {
     let scenario = scenario();
     let package = package(&scenario);

@@ -70,15 +70,16 @@
 //! (`plan/Plan-013-complete-v1-delivery`) references exactly `FR-140`,
 //! `FR-141`, `FR-142`, `FR-147` and `FR-148`, and their QSpec `TC-185`
 //! through `TC-187`/`TC-192`/`TC-193`, as the acceptance evidence for this
-//! same scalar/numeric/text/enum/unit/IEEE kernel, and `IT-011` records that
-//! QSpec, not QSL's `spec/`, owns `FR-131` through `FR-153` outright.
+//! same scalar/numeric/text/enum/unit/IEEE kernel, and QSpec, not QSL's
+//! `spec/`, owns `FR-131` through `FR-153` outright (`spec/tests.md`,
+//! Requirements Traceability).
 //! Authoring a parallel FR/TC set in this repo's `spec/` for behavior QSpec
 //! already normatively defines would duplicate that ownership rather than
 //! resolve the gap (QSL never vendors specs -- graph by reference).
 //!
 //! What was actually missing is narrower than "no requirement": it is that
 //! most of *this crate's own* tests do not yet carry the two-argument
-//! `#[trace("TC-NNN", "FR-NNN-AC-n")]` form naming the QSpec id they verify,
+//! `#[trace("QSpec-TC-NNN", "QSpec-FR-NNN-AC-n")]` form naming the QSpec id they verify,
 //! even where the module doc above them already names the owning FR. This is
 //! not the first binding against these QSpec FRs in this repo:
 //! `qsl-semantics/tests/it/integer_division.rs` (`DIV-01` to `DIV-13`)
@@ -87,26 +88,13 @@
 //! text-profile and enumeration ACs in depth, both against central
 //! `TC-192`/`TC-186`. What is new here is only this crate's own kernel-level
 //! slice: `division`'s `tc_323_division_by_zero_is_undefined` now also
-//! carries `#[trace("TC-192", "FR-147-AC-2")]`, verified to fail (panic on
-//! an unguarded zero divisor) when the zero-divisor check is removed. No
-//! other test in this crate was given a QSpec AC tag in this PR: a test
-//! only earns one where its own assertions, not merely its module doc's
-//! FR citation, actually distinguish the AC's claim from a wrong
-//! implementation (H1/H2) -- `division`'s Euclidean-`mod`
-//! test and `text`'s two bound tests do not (a floor-law `mod` and a
-//! byte-counted length both pass them too), so they keep only their local
-//! `TC-3NN` id. Extending real, distinguishing bindings to this crate's
-//! remaining untagged tests is QSL-133's scope, not invented here.
-//!
-//! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
-//! for 56 tests: **`TC-343` is retired, not reused.** It named
-//! `text::tests::tc_343_unquoted_literal_is_refused`, which tested only
-//! `TextPayload::from_source_literal`'s malformed-input path; M-6 removed
-//! `from_source_literal` from the kernel entirely (with no in-crate caller
-//! outside that test), and the test went with it rather than being
-//! repointed at unrelated behavior. Do not mint a new `TC-343` to fill the
-//! hole -- an id that once named one thing should not silently come to
-//! name another.
+//! carries `#[trace("QSpec-TC-192", "QSpec-FR-147-AC-2")]`, verified to fail (panic on
+//! an unguarded zero divisor) when the zero-divisor check is removed. A test
+//! carries a QSpec AC tag only where its own assertions, not merely its
+//! module doc's FR citation, distinguish the AC's claim from a wrong
+//! implementation (H1/H2). `division`'s Euclidean-`mod` test and `text`'s
+//! two bound tests do not (a floor-law `mod` and a byte-counted length both
+//! pass them too), so they carry no tag.
 
 #![forbid(unsafe_code)]
 

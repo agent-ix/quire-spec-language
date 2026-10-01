@@ -322,7 +322,7 @@ fn incomplete(consumed_and_limit: u64, next_charge: i64, charge_point: ChargePoi
     )
 }
 
-#[trace("TC-190", "FR-145-AC-1")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-1")]
 #[test]
 fn q01_map_keeps_the_source_kind_and_derives_its_bound() {
     let package = plain();
@@ -348,7 +348,7 @@ fn q01_map_keeps_the_source_kind_and_derives_its_bound() {
     }
 }
 
-#[trace("TC-190", "FR-145-AC-1")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-1")]
 #[test]
 fn q02_filter_keeps_multiplicity_and_first_occurrence_order() {
     let package = plain();
@@ -390,8 +390,8 @@ fn q02_filter_keeps_multiplicity_and_first_occurrence_order() {
     assert_elements(&result, &[2, 3]);
 }
 
-#[trace("TC-190", "FR-145-AC-4")]
-#[trace("TC-190", "FR-145-AC-6")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-4")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-6")]
 #[test]
 fn q03_flatten_admits_kinds_and_derives_bounds() {
     let package = plain();
@@ -460,7 +460,7 @@ fn q03_flatten_admits_kinds_and_derives_bounds() {
     assert_eq!(checked.value_type(), &integers(CollectionKind::Set, 0, 4));
 }
 
-#[trace("TC-190", "FR-145-AC-2")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-2")]
 #[test]
 fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
     let package = plain();
@@ -550,8 +550,8 @@ fn q04_empty_fold_uses_identity_and_empty_reduce_is_undefined_or_refused() {
     );
 }
 
-#[trace("TC-190", "FR-145-AC-5")]
-#[trace("TC-190", "FR-145-AC-9")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-5")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-9")]
 #[test]
 fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
     let add = FunctionDeclaration::new(
@@ -671,8 +671,8 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
     check(&package, &sequence, &difference).unwrap();
 }
 
-#[trace("TC-190", "FR-145-AC-3")]
-#[trace("TC-190", "FR-145-AC-7")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-3")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-7")]
 #[test]
 fn q06_conversions_record_static_loss_and_check_the_target_bound() {
     use CollectionProperty::{Multiplicity, Order, Uniqueness};
@@ -752,7 +752,7 @@ fn q06_conversions_record_static_loss_and_check_the_target_bound() {
     );
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q07_map_charges_visits_then_membership_formation() {
     let package = plain();
@@ -771,7 +771,7 @@ fn q07_map_charges_visits_then_membership_formation() {
     );
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q08_exists_stops_at_the_first_witness_and_filter_exposes_no_partial_result() {
     let package = plain();
@@ -802,7 +802,7 @@ fn q08_exists_stops_at_the_first_witness_and_filter_exposes_no_partial_result() 
     );
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q09_sequence_to_set_conversion_coalesces_with_membership_charges() {
     let package = plain();
@@ -866,7 +866,7 @@ fn holder(types: &TypeEnvironment, identity: &str) -> Value {
         .unwrap()
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
     let types = holder_environment();
@@ -954,7 +954,7 @@ fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
     assert_eq!((size.work, size.results), (1, 1));
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q11_fold_charges_visit_step_and_one_accumulator_retain() {
     let package = plain();
@@ -1007,7 +1007,7 @@ fn check_linked(
     )
 }
 
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q12_sum_charges_visits_additions_and_one_scalar_retain() {
     let package = plain();
@@ -1048,7 +1048,7 @@ fn q12_sum_charges_visits_additions_and_one_scalar_retain() {
     );
 }
 
-#[trace("TC-190", "FR-145-AC-6")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-6")]
 #[test]
 fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
     let package = plain();
@@ -1098,7 +1098,7 @@ fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
 /// A collection literal's `form` call keeps an `Incomplete` outcome intact:
 /// a meter denied at `collection.result-retain` stops the literal
 /// `Incomplete`, not refused.
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q14_collection_literal_formation_stops_incomplete_at_result_retain() {
     let package = plain();
@@ -1131,7 +1131,7 @@ fn q14_collection_literal_formation_stops_incomplete_at_result_retain() {
 
 /// A sequence-to-set conversion's `form` call keeps an `Incomplete` outcome
 /// intact at `collection.result-retain`.
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q15_sequence_to_set_conversion_stops_incomplete_at_result_retain() {
     let package = plain();
@@ -1153,7 +1153,7 @@ fn q15_sequence_to_set_conversion_stops_incomplete_at_result_retain() {
 
 /// `flatten`'s `form` call keeps an `Incomplete` outcome intact at
 /// `collection.result-retain`.
-#[trace("TC-190", "FR-145-AC-8")]
+#[trace("QSpec-TC-190", "QSpec-FR-145-AC-8")]
 #[test]
 fn q16_flatten_stops_incomplete_at_result_retain() {
     let package = plain();

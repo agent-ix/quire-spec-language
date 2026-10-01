@@ -9,8 +9,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-087
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/IT-011
-    type: traces_to
   - target: ix://agent-ix/quire-specification/FR-131
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-339
@@ -24,7 +22,7 @@ QSL SHALL link a set of root definition selections, against a
 caller-supplied definition catalog, into a dependency-closed complete-V1
 bundle, or refuse with a catalogued code and cause (QSpec FR-131, and
 FR-339-AC-3's backend-independence; QSpec V1-SRC-003 and V1-SRC-004,
-which QSpec's delivery manifest assigns to QSL and IT-011 adopts).
+which QSpec's delivery manifest assigns to QSL).
 
 This is the closure, cycle, facet and bundle capability of
 `complete::resolve_source_package`, kept when `ResolvedSourcePackage`
@@ -137,7 +135,6 @@ applies them to the catalog and `link_bundle` to the closure.
 
 - QSpec FR-131 (AC-1 to AC-3), FR-339 (AC-3), `docs/v1-delivery-ticket-manifest.md`
   (V1-SRC-003, V1-SRC-004) and `native-diagnostics.md`.
-- [IT-011](../integration/IT-011-adopt-complete-v1-baseline.md), which adopts them.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §6.1, §6.2 (`complete::package` → layer-3 `library`).
 - [FR-087](FR-087-typestate-and-cross-package-node-key.md), whose AC-7 moves this capability here when `ResolvedSourcePackage` retires.
 

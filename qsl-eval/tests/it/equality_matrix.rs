@@ -410,8 +410,8 @@ const PLAN_SCHEDULE: [ChargePoint; 4] = [
 
 // ---- scalar rows -------------------------------------------------------------
 
-#[trace("TC-194", "FR-149-AC-1")]
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-1")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e01_boolean_identical_truth_value() {
     let env = TypeEnvironment::default();
@@ -425,8 +425,8 @@ fn e01_boolean_identical_truth_value() {
     assert_disjoint(&env, &b);
 }
 
-#[trace("TC-194", "FR-149-AC-3")]
-#[trace("TC-194", "FR-149-AC-5")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-3")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-5")]
 #[test]
 fn e02_integers_and_admitted_rational_conversion() {
     let env = TypeEnvironment::default();
@@ -458,8 +458,8 @@ fn e02_integers_and_admitted_rational_conversion() {
     assert_disjoint(&env, &ratio);
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-5")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-5")]
 #[test]
 fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
     let env = TypeEnvironment::default();
@@ -490,8 +490,8 @@ fn e03_decimals_compare_mathematically_and_convert_without_mutation() {
     assert_disjoint(&env, &d);
 }
 
-#[trace("TC-194", "FR-149-AC-3")]
-#[trace("TC-194", "FR-149-AC-10")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-3")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
 #[test]
 fn e04_rational_with_denominator_above_one_has_no_decimal_equality_conversion() {
     let env = TypeEnvironment::default();
@@ -509,8 +509,8 @@ fn e04_rational_with_denominator_above_one_has_no_decimal_equality_conversion() 
     );
 }
 
-#[trace("TC-194", "FR-149-AC-3")]
-#[trace("TC-194", "FR-149-AC-5")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-3")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-5")]
 #[test]
 fn e05_quantities_after_explicit_canonical_unit_conversion() {
     let units = units();
@@ -557,7 +557,7 @@ fn e05_quantities_after_explicit_canonical_unit_conversion() {
     assert_disjoint(&env, &metres);
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e06_text_under_one_pinned_profile() {
     let env = TypeEnvironment::default();
@@ -621,8 +621,8 @@ fn enum_shape(
     ))
 }
 
-#[trace("TC-194", "FR-149-AC-3")]
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-3")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e07_enumerations_by_declaration_node_and_case() {
     let env = TypeEnvironment::default();
@@ -653,8 +653,8 @@ fn e07_enumerations_by_declaration_node_and_case() {
 
 // ---- presence, composite and collection rows -------------------------------
 
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
 #[test]
 fn e08_options_compare_state_then_payload() {
     let env = TypeEnvironment::default();
@@ -693,8 +693,8 @@ fn holder_environment() -> TypeEnvironment {
     .unwrap()
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
 #[test]
 fn e09_absence_and_null_stay_distinct() {
     let env = holder_environment();
@@ -764,8 +764,8 @@ fn nested(env: &TypeEnvironment, declaration: &str, id: i64, v: i64) -> Value {
     .unwrap()
 }
 
-#[trace("TC-194", "FR-149-AC-2")]
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-2")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e10_records_compare_structurally_within_one_declaration() {
     let env = record_environment();
@@ -791,7 +791,7 @@ fn e10_records_compare_structurally_within_one_declaration() {
     assert_disjoint(&env, &a);
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e11_tuples_compare_positionally_within_one_declaration() {
     let env = record_environment();
@@ -857,7 +857,7 @@ fn collection_row(kind: CollectionKind, left: &[i64], equal_to: &[&[i64]], unequ
     assert_disjoint(&env, &value_type);
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e12_sequences_compare_by_index() {
     collection_row(
@@ -868,8 +868,8 @@ fn e12_sequences_compare_by_index() {
     );
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-8")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-8")]
 #[test]
 fn e13_sets_ignore_insertion_order() {
     collection_row(
@@ -880,8 +880,8 @@ fn e13_sets_ignore_insertion_order() {
     );
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-8")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-8")]
 #[test]
 fn e14_bags_compare_multiplicity() {
     collection_row(
@@ -892,7 +892,7 @@ fn e14_bags_compare_multiplicity() {
     );
 }
 
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e15_ordered_sets_normalize_to_first_occurrence() {
     collection_row(
@@ -939,9 +939,9 @@ fn reference(universe: &str, identity: &str) -> ObjectReference {
     )
 }
 
-#[trace("TC-194", "FR-149-AC-2")]
-#[trace("TC-194", "FR-149-AC-4")]
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-2")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e16_references_compare_identity_triple_only() {
     let env = object_environment();
@@ -1022,8 +1022,8 @@ fn animal_environment() -> TypeEnvironment {
 /// admit `=` in either operand order, because `Dog` conforms to `Animal`.
 /// The comparison is still the identity triple: the same `Dog` object on
 /// both sides is `true`, another object is `false`.
-#[trace("TC-194", "FR-149-AC-6")]
-#[trace("TC-198", "FR-153-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
 #[test]
 fn e16a_references_admit_a_conforming_upcast_in_either_order() {
     let env = animal_environment();
@@ -1056,7 +1056,7 @@ fn e16a_references_admit_a_conforming_upcast_in_either_order() {
 /// with no generalization relation between them still refuse `=` at check
 /// time, `ill_typed`/`type-mismatch`, in either order; siblings under one
 /// supertype are no more related than unrelated roots.
-#[trace("TC-194", "FR-149-AC-6")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-6")]
 #[test]
 fn e16b_references_to_unrelated_object_types_refuse() {
     let env = animal_environment();
@@ -1114,24 +1114,24 @@ fn ieee_relations(left: IeeeValue, right: IeeeValue) -> [bool; 3] {
     ]
 }
 
-#[trace("TC-194", "FR-149-AC-1")]
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-1")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e17_signed_zeros_under_each_selected_ieee_relation() {
     let (positive, negative) = (IeeeValue::binary32(0), IeeeValue::binary32(0x8000_0000));
     assert_eq!(ieee_relations(positive, negative), [true, false, false]);
 }
 
-#[trace("TC-194", "FR-149-AC-1")]
-#[trace("TC-194", "FR-149-AC-4")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-1")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-4")]
 #[test]
 fn e18_quiet_nan_under_each_selected_ieee_relation() {
     let nan = IeeeValue::binary32(0x7fc0_0001);
     assert_eq!(ieee_relations(nan, nan), [false, true, true]);
 }
 
-#[trace("TC-194", "FR-149-AC-3")]
-#[trace("TC-194", "FR-149-AC-5")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-3")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-5")]
 #[test]
 fn e19_ieee_widths_need_explicit_conversion() {
     let narrow = IeeeValue::binary32(0x3f80_0000);
@@ -1163,7 +1163,7 @@ fn e19_ieee_widths_need_explicit_conversion() {
 
 // ---- dispositions and accounting -------------------------------------------
 
-#[trace("TC-194", "FR-149-AC-7")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
 #[test]
 fn e20_nested_construction_dispositions_propagate_in_declaration_order() {
     let env = record_environment();
@@ -1319,8 +1319,8 @@ fn e21_operands(env: &TypeEnvironment) -> [(Value, Value); 2] {
     [duplicated, (prefix(&shared_tail), prefix(&shared_tail))]
 }
 
-#[trace("TC-194", "FR-149-AC-7")]
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
     let env = list_environment();
@@ -1366,8 +1366,8 @@ fn e21_duplicated_and_shared_lists_charge_seventeen_pairs() {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-8")]
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-8")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e22_sets_and_bags_match_reference_holders_by_key_rank() {
     let env = object_environment();
@@ -1439,8 +1439,8 @@ fn e22_sets_and_bags_match_reference_holders_by_key_rank() {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-7")]
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e23_plan_reservation_is_unavailable_after_plan_formation() {
     let env = list_environment();
@@ -1460,8 +1460,8 @@ fn e23_plan_reservation_is_unavailable_after_plan_formation() {
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
 }
 
-#[trace("TC-194", "FR-149-AC-7")]
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e24_quantity_leaf_charges_only_its_pair() {
     let units = units();
@@ -1530,7 +1530,7 @@ fn e24_quantity_leaf_charges_only_its_pair() {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-9")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-9")]
 #[test]
 fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
     let env = object_environment();
@@ -1606,7 +1606,7 @@ fn e25_top_level_scalar_and_reference_equality_is_a_one_pair_plan() {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-10")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
 #[test]
 fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
     let env = TypeEnvironment::default();
@@ -1689,7 +1689,7 @@ fn e26_exactly_the_tabled_equality_conversions_are_admitted() {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-11")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-11")]
 #[test]
 fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
     let env = TypeEnvironment::new(
@@ -1768,7 +1768,7 @@ fn e27_structural_mismatch_and_cardinality_short_circuit_pair_counts() {
     );
 }
 
-#[trace("TC-194", "FR-149-AC-9")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-9")]
 #[test]
 fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
     let env = TypeEnvironment::new(
@@ -1802,7 +1802,7 @@ fn e28_equality_on_ieee_bearing_types_is_operator_ineligible() {
     assert_eq!(env.check_type(&set), Err(ineligible));
 }
 
-#[trace("TC-194", "FR-149-AC-10")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
 #[test]
 fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
     let env = TypeEnvironment::default();
@@ -1853,7 +1853,7 @@ fn e29_integer_to_decimal_conversion_charges_its_decimal_schedule() {
     );
 }
 
-#[trace("TC-194", "FR-149-AC-5")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-5")]
 #[test]
 fn e_construction_refusals_are_located() {
     let env = record_environment();
@@ -1986,7 +1986,7 @@ fn completed_as(outcome: &quire_exact::Outcome<Value>, expected: &Value) {
     );
 }
 
-#[trace("TC-191", "FR-146-AC-6")]
+#[trace("QSpec-TC-191", "QSpec-FR-146-AC-6")]
 #[test]
 fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations() {
     let package = plain_package();
@@ -2061,7 +2061,7 @@ fn x01_rational_arithmetic_evaluates_and_its_range_and_divisor_are_obligations()
     );
 }
 
-#[trace("TC-185", "FR-140-AC-3")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3")]
 #[test]
 fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     let package = plain_package();
@@ -2131,7 +2131,7 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     );
 }
 
-#[trace("TC-186", "FR-141-AC-4")]
+#[trace("QSpec-TC-186", "QSpec-FR-141-AC-4")]
 #[test]
 fn x03_text_orders_lexicographically_within_one_profile() {
     let package = plain_package();
@@ -2160,8 +2160,8 @@ fn x03_text_orders_lexicographically_within_one_profile() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-9")]
-#[trace("TC-187", "FR-142-AC-2")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-9")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2")]
 #[test]
 fn x04_quantities_order_and_add_only_in_one_unit() {
     let units = units();
@@ -2233,7 +2233,7 @@ fn x04_quantities_order_and_add_only_in_one_unit() {
 /// A product or quotient's unit is a compound unit no package declares:
 /// checking forms it as the node's static type, and evaluation forms it again
 /// when the value exists, so a further operation reads it by its `UnitId`.
-#[trace("TC-187", "FR-142-AC-6")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-6")]
 #[test]
 fn x04_compound_results_feed_further_quantity_operations() {
     let units = units();
@@ -2338,8 +2338,8 @@ fn x04_an_unresolved_unit_past_admission_is_an_internal_fault() {
     }
 }
 
-#[trace("TC-193", "FR-148-AC-8")]
-#[trace("TC-193", "FR-148-AC-6")]
+#[trace("QSpec-TC-193", "QSpec-FR-148-AC-8")]
+#[trace("QSpec-TC-193", "QSpec-FR-148-AC-6")]
 #[test]
 fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     let package = expression_package(TypeEnvironment::default(), true);
@@ -2472,7 +2472,7 @@ fn plus_one(spelling: &str) -> Expression {
     }
 }
 
-#[trace("TC-194", "FR-149-AC-7")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
 #[test]
 fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     let types = TypeEnvironment::new(
@@ -2554,7 +2554,7 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     ));
 }
 
-#[trace("TC-194", "FR-149-AC-10")]
+#[trace("QSpec-TC-194", "QSpec-FR-149-AC-10")]
 #[test]
 fn e26_let_bound_conversions_are_ordinary_conversions() {
     let package = plain_package();

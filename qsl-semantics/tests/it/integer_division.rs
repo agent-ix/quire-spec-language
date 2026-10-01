@@ -114,7 +114,13 @@ fn assert_law(profile: DivisionProfile, a: i128, b: i128, (q, r): (i128, i128)) 
     }
 }
 
-#[trace("TC-192", "FR-147-AC-1", "FR-147-AC-4", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-1",
+    "QSpec-FR-147-AC-4",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn signed_table_distinguishes_the_three_laws() {
     let operands = [(7, 3), (7, -3), (-7, 3), (-7, -3)];
@@ -138,7 +144,13 @@ fn signed_table_distinguishes_the_three_laws() {
     }
 }
 
-#[trace("TC-192", "FR-147-AC-2", "FR-147-AC-5", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-2",
+    "QSpec-FR-147-AC-5",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn div_01_zero_divisors_are_undefined_for_every_law_and_mod() {
     for profile in DivisionProfile::ALL {
@@ -168,7 +180,7 @@ fn div_01_zero_divisors_are_undefined_for_every_law_and_mod() {
     }
 }
 
-#[trace("TC-192", "FR-147-AC-5", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-5", "TC-202", "FR-078-AC-3")]
 #[test]
 fn div_02_div_03_mod_is_euclidean_and_non_euclidean_claims_refuse() {
     for profile in DivisionProfile::ALL {
@@ -217,7 +229,13 @@ fn signed_64() -> IntegerDomain {
     ))
 }
 
-#[trace("TC-192", "FR-147-AC-1", "FR-147-AC-4", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-1",
+    "QSpec-FR-147-AC-4",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn div_04_div_06_mathematical_and_signed_64_domains() {
     let (min, max) = (i128::from(i64::MIN), i128::from(i64::MAX));
@@ -282,7 +300,7 @@ fn div_08(meter: &mut Meter) -> Outcome<QuotientRemainder> {
     )
 }
 
-#[trace("TC-192", "FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn div_08_exact_bound_succeeds_and_each_named_denial_is_atomic() {
     let mut meter = Meter::new(DIV_08);
@@ -355,7 +373,13 @@ fn mod_10(domain: &IntegerDomain, meter: &mut Meter) -> Outcome<Integer> {
     modulo(&big(-7), &big(3), domain, meter)
 }
 
-#[trace("TC-192", "FR-147-AC-5", "FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-5",
+    "QSpec-FR-147-AC-6",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn div_10_mod_charges_only_the_integer_modulus_points() {
     let mut meter = Meter::new(DIV_10);
@@ -383,7 +407,13 @@ fn div_10_mod_charges_only_the_integer_modulus_points() {
     }
 }
 
-#[trace("TC-192", "FR-147-AC-2", "FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-2",
+    "QSpec-FR-147-AC-6",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     let one = |limits: ScalarLimits| ScalarLimits {
@@ -440,7 +470,13 @@ fn div_11_zero_divisors_are_undefined_after_the_operands_charge() {
     );
 }
 
-#[trace("TC-192", "FR-147-AC-5", "FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace(
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-5",
+    "QSpec-FR-147-AC-6",
+    "TC-202",
+    "FR-078-AC-3"
+)]
 #[test]
 fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
     let unit_interval = IntegerDomain::Bounded(IntegerInterval::new(big(0), big(1)).unwrap());
@@ -479,7 +515,7 @@ fn div_12_mod_domain_refusal_precedes_the_retain_charge() {
     );
 }
 
-#[trace("TC-192", "FR-147-AC-6", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "QSpec-FR-147-AC-6", "TC-202", "FR-078-AC-3")]
 #[test]
 fn div_13_the_first_short_counter_in_field_order_is_reported() {
     assert_eq!(
@@ -498,7 +534,7 @@ fn div_13_the_first_short_counter_in_field_order_is_reported() {
     );
 }
 
-#[trace("TC-192", "TC-202", "FR-078-AC-3")]
+#[trace("QSpec-TC-192", "TC-202", "FR-078-AC-3")]
 #[test]
 fn div_09_missing_conflicting_or_stale_division_definitions_refuse_admission() {
     let refuse = |cause| {
@@ -555,12 +591,12 @@ fn oracle(profile: DivisionProfile, a: i128, b: i128) -> (i128, i128) {
 }
 
 #[trace(
-    "TC-192",
-    "FR-147-AC-1",
-    "FR-147-AC-2",
-    "FR-147-AC-4",
-    "FR-147-AC-5",
-    "FR-147-AC-6",
+    "QSpec-TC-192",
+    "QSpec-FR-147-AC-1",
+    "QSpec-FR-147-AC-2",
+    "QSpec-FR-147-AC-4",
+    "QSpec-FR-147-AC-5",
+    "QSpec-FR-147-AC-6",
     "TC-202",
     "FR-078-AC-3"
 )]

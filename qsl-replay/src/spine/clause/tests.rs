@@ -3658,7 +3658,7 @@ fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str 
 /// occurrence with role `expression`.
 #[trace("TC-462", "FR-105-AC-1")]
 #[trace("TC-462", "FR-105-AC-2")]
-#[trace("TC-462", "FR-341-AC-10")]
+#[trace("TC-462", "QSpec-FR-341-AC-10")]
 #[test]
 fn s4_emits_exactly_the_fr_105_state_nodes() {
     let compiled = config_version_compiled();

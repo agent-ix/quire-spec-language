@@ -56,7 +56,6 @@ impl ObjectReference {
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
 
@@ -66,10 +65,9 @@ mod tests {
         bytes
     }
 
-    /// TC-316: two references built from the same triple are equal; changing
+    /// two references built from the same triple are equal; changing
     /// any one component of the triple makes them distinct (ADR-013 T-6:
     /// equality never inspects referenced state -- only the triple).
-    #[trace("TC-316")]
     #[test]
     fn tc_316_reference_equality_follows_the_identity_triple() {
         let universe = UniverseId::from_digest(digest(1));

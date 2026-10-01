@@ -150,13 +150,10 @@ impl IllTypedCause {
 mod tests {
     use std::cmp::Ordering;
 
-    use ix_trace_rs::trace;
-
     use super::*;
 
-    /// TC-335: each comparison operator decides its Boolean from an exact
+    /// each comparison operator decides its Boolean from an exact
     /// ordering exactly as its FR-149 name reads.
-    #[trace("TC-335")]
     #[test]
     fn tc_335_holds_matches_the_operator_name() {
         assert!(ComparisonOperator::Less.holds(Ordering::Less));
@@ -165,9 +162,8 @@ mod tests {
         assert!(!ComparisonOperator::Equal.holds(Ordering::Greater));
     }
 
-    /// TC-336: only the three FR-272-catalogued causes have a `tag`; every
+    /// only the three FR-272-catalogued causes have a `tag`; every
     /// other cause is a kernel-internal reason with no closed spelling.
-    #[trace("TC-336")]
     #[test]
     fn tc_336_only_catalogued_causes_have_a_tag() {
         assert_eq!(IllTypedCause::TypeMismatch.tag(), Some("type-mismatch"));

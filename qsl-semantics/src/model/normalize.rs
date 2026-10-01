@@ -2870,7 +2870,7 @@ mod tests {
     /// TC-195 N10: a view whose declarations are not ascending by effective
     /// identity refuses `invalid_model_binding`/`unsorted-view`, naming the
     /// first out-of-order entry's own effective identity.
-    #[trace("TC-195")]
+    #[trace("QSpec-TC-195")]
     #[test]
     fn n10_unsorted_view_refuses_by_the_semantic_check() {
         let view = EffectiveView {
@@ -2909,7 +2909,7 @@ mod tests {
     /// own `Arc` into the completed view instead of copying the package, and
     /// yields the same view as the borrowing `normalize`.
     #[test]
-    #[trace("TC-195")]
+    #[trace("QSpec-TC-195")]
     fn normalize_shared_keeps_the_callers_package_without_copying() {
         let domain_package = Arc::new(DomainPackage::new(
             DomainPackageRef::fixture("test/orders"),

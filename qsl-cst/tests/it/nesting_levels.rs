@@ -216,7 +216,7 @@ fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused()
 // a call argument list. The parser reuses the argument it already matched,
 // so the work stays linear in depth: the typo is a recoverable syntax error
 // at the default ceilings, not a work-budget refusal.
-#[trace("TC-012", "TC-222", "FR-302-AC-2")]
+#[trace("TC-012", "QSpec-TC-222", "QSpec-FR-302-AC-2")]
 #[test]
 fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
     on_bounded_stack(|| {
@@ -247,7 +247,7 @@ fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
 // argument list of the innermost `g(x,)` expects another expression or a
 // closing `)` after its trailing comma, and finds `)` there. That is the
 // token right after the comma, one of the two spans FR-302-AC-2 accepts.
-#[trace("TC-012", "TC-222", "FR-302-AC-2")]
+#[trace("TC-012", "QSpec-TC-222", "QSpec-FR-302-AC-2")]
 #[test]
 fn nested_trailing_comma_typo_recovery_points_at_the_offending_comma() {
     on_bounded_stack(|| {
@@ -368,7 +368,7 @@ fn a_deep_chain_that_fails_to_parse_is_discarded_on_a_bounded_stack() {
 
 // A long chain yields a deep CST; rendering and identity work stay
 // iterative on it.
-#[trace("TC-012", "TC-222", "FR-302-AC-1")]
+#[trace("TC-012", "QSpec-TC-222", "QSpec-FR-302-AC-1")]
 #[test]
 fn a_deep_cst_renders_and_resolves_identities_on_a_bounded_stack() {
     on_bounded_stack(|| {

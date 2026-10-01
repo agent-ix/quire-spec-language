@@ -810,9 +810,8 @@ mod tests {
         })
     }
 
-    /// TC-307: `ValueType::Boolean` admits only `Value::Boolean`, refusing
+    /// `ValueType::Boolean` admits only `Value::Boolean`, refusing
     /// a value of another kind.
-    #[trace("TC-307")]
     #[test]
     fn tc_307_admits_checks_the_matching_variant_only() {
         assert!(ValueType::Boolean.admits(&Value::Boolean(true)));
@@ -828,13 +827,12 @@ mod tests {
             .admits(&Value::Population(PopulationId::from_digest(digest(1)))));
     }
 
-    /// TC-308: an `Enum` shape admits a `Value::Enum` of a variant it
+    /// an `Enum` shape admits a `Value::Enum` of a variant it
     /// contains at the variant's own rank, and refuses one it does not
     /// contain (ADR-013 O-14/OQ-D, no declaration lookup).
     ///
     /// Also TC-409 (FR-088-AC-11): admission checks the whole `(VariantId,
     /// rank)` pair, not membership alone.
-    #[trace("TC-308")]
     #[trace("TC-409")]
     #[test]
     fn tc_308_enum_shape_admits_only_its_own_variants() {
@@ -846,14 +844,13 @@ mod tests {
         assert!(!ValueType::Boolean.admits(&Value::Enum(EnumMember::new(in_shape, 0))));
     }
 
-    /// TC-308 (OQ-D adverse): a well-formed variant paired with the *wrong*
+    /// (OQ-D adverse): a well-formed variant paired with the *wrong*
     /// rank is refused just as surely as an unknown variant -- admission
     /// checks the whole `(VariantId, rank)` pair against the shape's own
     /// ranked list, not membership alone.
     ///
     /// Also TC-409 step 5 (FR-088-AC-11): a value that pairs a known
     /// `VariantId` with the wrong rank is refused at admission.
-    #[trace("TC-308")]
     #[trace("TC-409")]
     #[test]
     fn admits_refuses_a_known_variant_at_the_wrong_rank() {
@@ -872,7 +869,6 @@ mod tests {
     ///
     /// Also TC-409 step 3 (FR-088-AC-11): rank is the canonical-list
     /// position.
-    #[trace("TC-308")]
     #[trace("TC-409")]
     #[test]
     fn enum_shape_rank_matches_canonical_position() {
@@ -887,9 +883,9 @@ mod tests {
         assert_eq!(shape.variants().collect::<Vec<_>>(), [a, b]);
     }
 
-    /// TC-309: building a record with a missing required field is refused
+    /// building a record with a missing required field is refused
     /// at that field, before any other field is inspected.
-    #[trace("TC-309")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
     #[test]
     fn tc_309_record_refuses_a_missing_required_field() {
         let member = MemberId::from_digest(digest(2));
@@ -904,10 +900,9 @@ mod tests {
         assert_eq!(err.cause, ConstructionCause::MissingField);
     }
 
-    /// TC-310: a tuple built with the declared position count and types
+    /// a tuple built with the declared position count and types
     /// completes, and `occ` counts the tuple itself plus its one integer
     /// position.
-    #[trace("TC-310")]
     #[test]
     fn tc_310_tuple_of_declared_arity_and_types_completes() {
         let shape = vec![ValueType::Integer];
@@ -920,9 +915,9 @@ mod tests {
         assert_eq!(value.occ(), Integer::one().add(&Integer::one()));
     }
 
-    /// TC-311: a tuple call with the wrong argument count is refused with
+    /// a tuple call with the wrong argument count is refused with
     /// the declared and supplied counts named.
-    #[trace("TC-311")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
     #[test]
     fn tc_311_tuple_wrong_arity_names_both_counts() {
         let shape = vec![ValueType::Integer, ValueType::Boolean];
@@ -941,12 +936,11 @@ mod tests {
         );
     }
 
-    /// TC-354 (H-7/H-8): `fill_slots` fills a present field and, for an
+    /// (H-7/H-8): `fill_slots` fills a present field and, for an
     /// omitted optional field, `Absent`, both in declaration order
     /// regardless of supplied order (`fill_slots` was previously only
     /// exercised indirectly, through `record`'s missing-required-field
     /// refusal path).
-    #[trace("TC-354")]
     #[test]
     fn tc_354_fill_slots_fills_present_and_absent_in_declaration_order() {
         let count = MemberId::from_digest(digest(1));
@@ -971,11 +965,10 @@ mod tests {
         assert!(matches!(slots[1], FieldValue::Absent));
     }
 
-    /// TC-355 (H-7/H-8): `evaluate_record` runs a deferred field expression
+    /// (H-7/H-8): `evaluate_record` runs a deferred field expression
     /// and completes with `composite.result-retain` charged (`evaluate_record`
     /// had no test before this; `record`/`tuple`'s tests exercise only the
     /// non-deferred constructors).
-    #[trace("TC-355")]
     #[test]
     fn tc_355_evaluate_record_completes_from_a_deferred_field() {
         let count = MemberId::from_digest(digest(1));
@@ -998,10 +991,9 @@ mod tests {
         assert_eq!(value.occ(), Integer::one().add(&Integer::one()));
     }
 
-    /// TC-356 (H-7/H-8): `evaluate_tuple` runs deferred positional
+    /// (H-7/H-8): `evaluate_tuple` runs deferred positional
     /// expressions in position order and completes (`evaluate_tuple` had no
     /// test before this).
-    #[trace("TC-356")]
     #[test]
     fn tc_356_evaluate_tuple_completes_from_deferred_positions() {
         let shape = vec![ValueType::Integer];

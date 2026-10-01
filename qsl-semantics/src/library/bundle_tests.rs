@@ -131,7 +131,7 @@ fn assert_catalogued(refusal: &BundleRefusal) {
     );
 }
 
-#[trace("TC-491", "FR-111-AC-1", "FR-131-AC-1", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-1", "QSpec-FR-131-AC-1", "QSpec-FR-131-AC-2")]
 #[test]
 fn capability_inventory_round_trips_through_one_shared_family_authority() {
     let inventory = CapabilityId::complete_inventory();
@@ -156,7 +156,7 @@ fn capability_inventory_round_trips_through_one_shared_family_authority() {
     }
 }
 
-#[trace("TC-491", "FR-111-AC-5", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
 #[test]
 fn definition_digest_is_the_exact_artifact_byte_digest() {
     let bytes = b"exact definition bytes\n";
@@ -178,10 +178,10 @@ fn definition_digest_is_the_exact_artifact_byte_digest() {
 #[trace(
     "TC-491",
     "FR-111-AC-1",
-    "FR-131-AC-1",
-    "FR-131-AC-2",
-    "FR-131-AC-3",
-    "FR-339-AC-3"
+    "QSpec-FR-131-AC-1",
+    "QSpec-FR-131-AC-2",
+    "QSpec-FR-131-AC-3",
+    "QSpec-FR-339-AC-3"
 )]
 #[test]
 fn roots_covering_the_facets_and_capabilities_link() {
@@ -196,7 +196,7 @@ fn roots_covering_the_facets_and_capabilities_link() {
     }
 }
 
-#[trace("TC-491", "FR-111-AC-2", "FR-131-AC-2", "FR-131-AC-3")]
+#[trace("TC-491", "FR-111-AC-2", "QSpec-FR-131-AC-2", "QSpec-FR-131-AC-3")]
 #[test]
 fn roots_the_catalog_does_not_hold_exactly_refuse_naming_their_index() {
     let definitions = complete_definitions();
@@ -257,7 +257,7 @@ fn roots_the_catalog_does_not_hold_exactly_refuse_naming_their_index() {
     assert_catalogued(&digest_only);
 }
 
-#[trace("TC-491", "FR-111-AC-2", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-2", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
     let mut definitions = complete_definitions();
@@ -285,7 +285,7 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
     assert_catalogued(&missing);
 }
 
-#[trace("TC-491", "FR-111-AC-3", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-3", "QSpec-FR-131-AC-2")]
 #[test]
 fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
     let left = definition(
@@ -354,7 +354,7 @@ fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
     assert_catalogued(&both);
 }
 
-#[trace("TC-491", "FR-111-AC-3", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-3", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     let a_ref = definition(
@@ -415,10 +415,10 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     "TC-491",
     "FR-111-AC-1",
     "FR-111-AC-4",
-    "FR-131-AC-1",
-    "FR-131-AC-2",
-    "FR-131-AC-3",
-    "FR-339-AC-3"
+    "QSpec-FR-131-AC-1",
+    "QSpec-FR-131-AC-2",
+    "QSpec-FR-131-AC-3",
+    "QSpec-FR-339-AC-3"
 )]
 #[test]
 fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
@@ -478,7 +478,7 @@ fn a_missing_facet_or_capability_refuses_and_no_backend_input_exists() {
     assert_catalogued(&refusal);
 }
 
-#[trace("TC-491", "FR-111-AC-5", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
 #[test]
 fn semantic_identity_binds_typed_definition_interpretation() {
     let definitions = complete_definitions();
@@ -550,7 +550,7 @@ fn semantic_identity_binds_typed_definition_interpretation() {
 /// names a compiled model's identity is a root the catalog lacks, so it
 /// refuses `unsupported-selection`; model selections resolve only through I1
 /// (FR-056), never here.
-#[trace("TC-491", "FR-111-AC-2", "FR-131-AC-1", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-2", "QSpec-FR-131-AC-1", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_root_naming_a_compiled_models_identity_is_not_a_definition_root() {
     let definitions = complete_definitions();
@@ -576,7 +576,7 @@ fn a_root_naming_a_compiled_models_identity_is_not_a_definition_root() {
     assert_catalogued(&refusal);
 }
 
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
 #[test]
 fn catalog_and_link_resource_limits_have_exact_boundaries() {
     let definitions = complete_definitions();
@@ -679,7 +679,7 @@ fn catalog_and_link_resource_limits_have_exact_boundaries() {
 /// NFR-001 "an implementation ceiling is not a domain bound"): a catalog
 /// with more definitions than the default (`MAX_SELECTED_DEFINITIONS`, 4096)
 /// admits under a caller-raised ceiling that the default itself refuses.
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
     let over_default = MAX_SELECTED_DEFINITIONS + 1;
@@ -721,7 +721,7 @@ fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
 /// the default) still refuses, naming the limit kind
 /// ([`PackageLimitKind::Definitions`]) and the caller's own configured
 /// bound.
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
 #[test]
 fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_bound() {
     let raised = PackageLimits {
@@ -760,7 +760,7 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
     );
 }
 
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-1", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-1", "QSpec-FR-131-AC-2")]
 #[test]
 fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     let leaf = definition(
@@ -908,7 +908,7 @@ macro_rules! resolution_causes {
 /// Layer 3's resolution cause tags are a subset of layer 1's complete cause
 /// vocabulary: each spells the same catalog tag and is admitted for exactly
 /// the same codes as the `qsl_cst::CompleteCause` of the same name.
-#[trace("TC-491", "FR-111-AC-7", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-7", "QSpec-FR-131-AC-2")]
 #[test]
 fn resolution_causes_match_the_complete_cause_catalog() {
     let pairs = resolution_causes![
@@ -960,7 +960,7 @@ fn resolution_causes_match_the_complete_cause_catalog() {
 
 /// A catalog holding one exact definition twice refuses at construction
 /// (`invalid_package`/`duplicate-member`).
-#[trace("TC-491", "FR-111-AC-7", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-7", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_catalog_holding_one_exact_definition_twice_refuses() {
     let definitions = complete_definitions();
@@ -974,7 +974,7 @@ fn a_catalog_holding_one_exact_definition_twice_refuses() {
 /// as invalid bytes. An artifact one byte past the default is built, refused
 /// at catalog admission naming the kind and the bound, and admitted once the
 /// caller raises the limit to its size.
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
 #[test]
 fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     let default = PackageLimits::default();
@@ -1015,7 +1015,7 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
 
 /// A link checks `single_artifact_bytes` under its own limits,
 /// whatever limits the catalog was built under.
-#[trace("TC-491", "FR-111-AC-6", "FR-131-AC-2")]
+#[trace("TC-491", "FR-111-AC-6", "QSpec-FR-131-AC-2")]
 #[test]
 fn a_link_enforces_its_own_single_artifact_bytes() {
     let default = PackageLimits::default();

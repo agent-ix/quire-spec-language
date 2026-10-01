@@ -325,11 +325,10 @@ mod tests {
 
     use super::*;
 
-    /// TC-317 (H-7/H-8, strengthened): `Outcome::completed` returns the
+    /// (H-7/H-8, strengthened): `Outcome::completed` returns the
     /// value for `Completed` and `None` for every other variant --
     /// `Undefined`, `Refused` and `Incomplete` are each exercised, not just
     /// `Undefined` as before.
-    #[trace("TC-317")]
     #[test]
     fn tc_317_completed_extracts_only_the_completed_variant() {
         use crate::accounting::{ChargePoint, Incomplete, LimitKind};

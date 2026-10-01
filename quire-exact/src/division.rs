@@ -221,14 +221,13 @@ mod tests {
         })
     }
 
-    /// TC-323: dividing by zero under any law is undefined, never a panic.
+    /// dividing by zero under any law is undefined, never a panic.
     ///
     /// Also QSpec FR-147-AC-2 ("Division by zero is undefined and produces
     /// no numeric value"), verified through central `TC-192`
     /// (`agent-ix/quire-specification`): this is the kernel-level instance
     /// of that requirement.
-    #[trace("TC-323")]
-    #[trace("TC-192", "FR-147-AC-2")]
+    #[trace("QSpec-TC-192", "QSpec-FR-147-AC-2")]
     #[test]
     fn tc_323_division_by_zero_is_undefined() {
         let domain = IntegerDomain::Mathematical;
@@ -246,9 +245,8 @@ mod tests {
         ));
     }
 
-    /// TC-324: Euclidean `mod` never returns a negative remainder for a
+    /// Euclidean `mod` never returns a negative remainder for a
     /// negative dividend, unlike truncating `rem`.
-    #[trace("TC-324")]
     #[test]
     fn tc_324_euclidean_modulo_is_nonnegative() {
         let domain = IntegerDomain::Mathematical;

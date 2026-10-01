@@ -213,7 +213,7 @@ fn corpus() -> Vec<(&'static str, String)> {
     ]
 }
 
-#[trace("TC-180", "FR-339-AC-1", "FR-339-AC-2")]
+#[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-339-AC-2")]
 #[test]
 fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
     assert_eq!(Production::all(), ACCEPTED_PRODUCTIONS);
@@ -280,7 +280,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
     }
 }
 
-#[trace("TC-180", "FR-339-AC-1", "FR-339-AC-2")]
+#[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-339-AC-2")]
 #[test]
 fn grammar_combinators_enforce_authored_boundaries_at_the_failing_token() {
     struct Vector {
@@ -408,7 +408,7 @@ fn grammar_combinators_enforce_authored_boundaries_at_the_failing_token() {
     }
 }
 
-#[trace("TC-180", "FR-339-AC-1", "FR-339-AC-2")]
+#[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-339-AC-2")]
 #[test]
 fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
     let relationship = source(
@@ -446,7 +446,7 @@ fn exact_ebnf_name_boundaries_refuse_overbroad_qualified_names() {
     assert_eq!(parsed.diagnostics()[0].byte_span().unwrap().start, at);
 }
 
-#[trace("TC-180", "FR-339-AC-4")]
+#[trace("QSpec-TC-180", "QSpec-FR-339-AC-4")]
 #[test]
 fn undeclared_extension_refuses_at_the_extension_token() {
     let text = source("widget Surprise { }");
@@ -464,7 +464,7 @@ fn undeclared_extension_refuses_at_the_extension_token() {
     );
 }
 
-#[trace("TC-180", "FR-339-AC-1")]
+#[trace("QSpec-TC-180", "QSpec-FR-339-AC-1")]
 #[test]
 fn contextual_complete_words_remain_eligible_identifiers() {
     let contextual = [
@@ -489,7 +489,7 @@ fn contextual_complete_words_remain_eligible_identifiers() {
     assert_eq!(parsed.cst().render(), text.as_bytes());
 }
 
-#[trace("TC-180", "FR-131-AC-2", "FR-339-AC-4")]
+#[trace("QSpec-TC-180", "QSpec-FR-131-AC-2", "QSpec-FR-339-AC-4")]
 #[test]
 fn profile_identity_is_syntactic_and_retained_for_package_resolution() {
     let valid = source("record R { datum: Integer; }");
@@ -505,7 +505,7 @@ fn profile_identity_is_syntactic_and_retained_for_package_resolution() {
     assert_eq!(parsed.cst().render(), unknown.as_bytes());
 }
 
-#[trace("TC-180", "FR-131-AC-2", "FR-339-AC-1")]
+#[trace("QSpec-TC-180", "QSpec-FR-131-AC-2", "QSpec-FR-339-AC-1")]
 #[test]
 fn reserved_member_spellings_do_not_create_phantom_profile_selections() {
     let text = source(
@@ -539,7 +539,7 @@ fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
     }
 }
 
-#[trace("TC-047", "FR-047-AC-3")]
+#[trace("QSpec-TC-047", "QSpec-FR-047-AC-3")]
 #[test]
 fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
     let profile = |identity: &str, version: &str, digest: &str| {

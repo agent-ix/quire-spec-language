@@ -37,7 +37,7 @@ fn identity(revision: &str) -> SourceIdentity {
     }
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     let parsed = qsl_cst::parse(
@@ -93,7 +93,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     assert_eq!(map[replaced.identity().node.get()], None);
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
     let parsed = qsl_cst::parse(
@@ -157,7 +157,7 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         .eq(inserted.cst().ancestor_productions(unchanged)));
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
     let parsed = qsl_cst::parse(
@@ -217,7 +217,7 @@ fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
     );
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-3")]
 #[test]
 fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
     let parsed = qsl_cst::parse(
@@ -257,7 +257,6 @@ fn stale_and_overlapping_incremental_changes_refuse_with_typed_codes() {
     );
 }
 
-#[trace("Task-047")]
 #[test]
 fn invalid_caller_edit_ranges_refuse_without_panicking() {
     let text = format!("{SOURCE}\r\n// 😀");
@@ -315,7 +314,6 @@ fn invalid_caller_edit_ranges_refuse_without_panicking() {
     }
 }
 
-#[trace("Task-047")]
 #[test]
 fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
     let parsed = qsl_cst::parse(
@@ -364,7 +362,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
     assert_eq!(aggregate.code, CompleteCode::StageLimitExceeded);
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-2")]
 #[test]
 fn insertion_inside_crlf_falls_back_to_full_lexing() {
     let parsed = qsl_cst::parse(
@@ -401,7 +399,7 @@ fn insertion_inside_crlf_falls_back_to_full_lexing() {
     assert_eq!(edited.cst().render(), full.cst().render());
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-2")]
 #[test]
 fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
     for (case, source, at, replacement) in [
@@ -450,7 +448,7 @@ fn incremental_boundary_whitespace_keeps_the_root_on_the_full_document() {
     }
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-3")]
 #[test]
 fn adjacent_half_open_edits_are_not_overlaps() {
     let parsed = qsl_cst::parse(

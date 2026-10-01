@@ -1535,7 +1535,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
 /// module's own `assemble` test helper admits no real domain package;
 /// deleting the model-alias half of `alias_names`'s assembly would leave
 /// every one of those green while this one goes red.
-#[trace("SR-766", "FR-113")]
+#[trace("FR-113")]
 #[test]
 fn a_models_own_alias_is_recorded_in_the_packages_alias_names() {
     let document = config_version_document(

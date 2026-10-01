@@ -3288,7 +3288,7 @@ pub(crate) mod checking_tests {
     /// Grouping names in one pass refuses exactly the declarations
     /// whose name repeats, in declaration order, each with every locus of
     /// its name in declaration order -- the refusals the pairwise scan made.
-    #[trace("TC-191", "FR-146-AC-8")]
+    #[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
     #[test]
     fn duplicate_names_are_refused_with_every_locus_in_order() {
         use crate::check::refusal::{Location as BodyLocation, Origin as BodyOrigin};

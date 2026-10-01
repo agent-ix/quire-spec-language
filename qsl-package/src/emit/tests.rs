@@ -1628,7 +1628,7 @@ const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
 /// parameter's occurrences at regions of `both`, every occurrence at a
 /// region of the unit, and (FR-341-AC-10) every occurrence of a
 /// `value`/`parameter` node has role `expression`.
-#[trace("FR-091-AC-10", "FR-096-AC-1", "FR-341-AC-10", "TC-426")]
+#[trace("FR-091-AC-10", "FR-096-AC-1", "QSpec-FR-341-AC-10", "TC-426")]
 #[test]
 fn source_text_compiles_through_the_spine_and_reads_back_verified() {
     let parsed = qsl_cst::parse(

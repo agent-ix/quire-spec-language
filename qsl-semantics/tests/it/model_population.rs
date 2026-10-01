@@ -367,8 +367,14 @@ fn lookup_key(
 /// declared maximum unreflected in the Outputs — the
 /// `selected_a.bound().maximum() == 3` assertion went red as expected,
 /// reverted.
+#[trace("TC-242", "FR-084-AC-6")]
 #[test]
-#[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5", "FR-153-AC-6")]
+#[trace(
+    "QSpec-TC-198",
+    "QSpec-FR-153-AC-1",
+    "QSpec-FR-153-AC-5",
+    "QSpec-FR-153-AC-6"
+)]
 fn l01_all_instances_selects_subtype_population_once() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -478,7 +484,7 @@ fn l01_all_instances_selects_subtype_population_once() {
 /// which left only two charges (bound + retain) under `work_units: 4` — the
 /// call went `Completed` instead of `Incomplete`, red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l01_all_instances_incomplete_at_result_retain() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -520,8 +526,9 @@ fn l01_all_instances_incomplete_at_result_retain() {
 /// `population.extent == Extent::Closed` in `admit_binding`, so the
 /// open-extent population fell through instead of returning
 /// `UnknownClosure` — red as expected, reverted.
+#[trace("TC-226", "FR-084-AC-1")]
 #[test]
-#[trace("TC-198", "FR-153-AC-2")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2")]
 fn l02_unknown_closure_is_incomplete_not_refused() {
     let open_extent = fixture_f1_with_extent(Extent::Open);
     let open_view = view_of(&open_extent);
@@ -606,8 +613,9 @@ fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> Popu
 /// queried type `M::A` for the reference key's own static type `M::B` — the
 /// `Completed(Some(TypedReference::new(DeclarationKey::fixture("model.A"), ...)))`
 /// assertion went red as expected, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_undefined_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -662,8 +670,9 @@ fn l03_lookup_undefined_mode() {
 ///
 /// Mutation used (typed result): same as `l03_lookup_undefined_mode`'s typed-
 /// result mutation, confirmed independently red here too, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_empty_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -711,8 +720,9 @@ fn l03_lookup_empty_mode() {
 /// Mutation used: in `lookup`, changed the `AbsenceMode::Refused` arm's
 /// `Code::InvalidRuntimeInput` to `Code::IllTyped` — the code assertion went
 /// red as expected, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_refused_mode() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -754,7 +764,7 @@ fn l03_lookup_refused_mode() {
 /// (always valid UTF-8, `PopulationDocument`'s member records) can ever
 /// produce.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -797,7 +807,7 @@ fn l03_lookup_refused_mode_malformed_identity_reports_hex_detail() {
 /// [`bridge_lookup_key`](qsl_semantics::value) and [`lookup_key`]
 /// both build it), is found.
 #[test]
-#[trace("TC-198", "FR-153-AC-2", "FR-153-AC-4")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -836,7 +846,7 @@ fn l03_lookup_present_member_found_through_the_raw_bytes_path() {
 /// charged `lookup.key` and returned a lookup result instead of refusing,
 /// red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l03_lookup_type_mismatch_before_any_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -875,7 +885,7 @@ fn l03_lookup_type_mismatch_before_any_charge() {
 /// instead of one — the `consumed(WorkUnits) == 1` assertion went red as
 /// expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l04_lookup_foreign_universe_refuses() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -930,7 +940,7 @@ fn l04_lookup_foreign_universe_refuses() {
 /// direct-construction path `crate::value::model_query`'s own module docs
 /// cite as this byte-level defense's real test.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -985,7 +995,7 @@ fn l04b_lookup_wrong_length_universe_refuses_as_foreign() {
 /// refuses as foreign at all (it would instead reach `AbsentKey`, `e1` not
 /// being a member of the `{A, B}` binding).
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
     let domain_package = fixture_two_components();
     let view = view_of(&domain_package);
@@ -1061,8 +1071,9 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
 /// match), so the conflicting second `a1` record was admitted instead of
 /// refused — the `AdmissionOutcome::Refused` assertion went red as expected,
 /// reverted.
+#[trace("TC-229", "FR-084-AC-4")]
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1113,8 +1124,9 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 /// duplicate fall into the conflicting-identity check (it shares an object
 /// with an already-admitted entry) and wrongly refuse — the
 /// `AdmissionOutcome::Admitted` assertion went red as expected, reverted.
+#[trace("TC-229", "FR-084-AC-4")]
 #[test]
-#[trace("TC-198", "FR-153-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn l05_duplicate_collapses_and_recovers_l01() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1159,8 +1171,9 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 /// (always matching the first type-level entry found), so the foreign
 /// `model.Z` member no longer refused — the `AdmissionOutcome::Refused`
 /// assertion went red as expected, reverted.
+#[trace("TC-226", "FR-084-AC-1")]
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_foreign_type_refuses() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1198,7 +1211,7 @@ fn l05_foreign_type_refuses() {
 /// case: `model.C` is a real declared object type here, just not one
 /// [`P1_POPULATION`] lists.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05b_member_type_not_covered_by_population_member_types_refuses() {
     let mut domain_package = fixture_f1();
     domain_package.records.push(object_type("model.C", vec![]));
@@ -1236,7 +1249,7 @@ fn l05b_member_type_not_covered_by_population_member_types_refuses() {
 /// even though that type is a real declared object type covered by the
 /// population's own `member_types`.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05c_abstract_instance_refuses() {
     let mut domain_package = fixture_f1();
     for record in &mut domain_package.records {
@@ -1284,7 +1297,7 @@ fn l05c_abstract_instance_refuses() {
 /// refusing — the `AllInstancesOutcome::Refused` assertion went red as
 /// expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l06_cardinality_bound_and_incomplete() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1391,7 +1404,7 @@ fn l06_cardinality_bound_and_incomplete() {
 /// `Refused(foreign_reference/foreign-model-selection)` assertion went red
 /// as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_foreign_model_selection_refuses_at_admission() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1429,7 +1442,7 @@ fn l05_foreign_model_selection_refuses_at_admission() {
 /// and admits normally -- the by-key resolution this fix added does not
 /// itself change an already-passing admission.
 #[test]
-#[trace("TC-198", "FR-153-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1467,7 +1480,7 @@ fn admission_admits_when_the_population_key_resolves_in_the_domain_package() {
 /// denies), which let the open-extent population admit instead of returning
 /// `UnknownClosure` -- red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
     let open_extent = fixture_f1_with_extent(Extent::Open);
     let view = view_of(&open_extent);
@@ -1506,7 +1519,7 @@ fn admission_reads_extent_from_the_resolved_record_never_a_caller_claim() {
 /// which let a foreign key resolve to `fixture_f1()`'s own `model.pop.p1`
 /// record instead of refusing -- red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn admission_refuses_a_population_key_from_another_domain_package() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1551,7 +1564,7 @@ fn admission_refuses_a_population_key_from_another_domain_package() {
 /// document admit instead of denying — the `AdmissionOutcome::Incomplete`
 /// assertion went red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l02_population_members_limit_denies_the_third_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1603,7 +1616,7 @@ fn l02_population_members_limit_denies_the_third_member_charge() {
 /// document admit instead of denying — the `AdmissionOutcome::Incomplete`
 /// assertion went red as expected, reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l02_work_units_limit_denies_the_third_member_charge() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1662,7 +1675,7 @@ fn l02_work_units_limit_denies_the_third_member_charge() {
 /// `selected_a.bound().maximum() == 5` went red as expected (got `3`),
 /// reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-1", "FR-153-AC-5")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1", "QSpec-FR-153-AC-5")]
 fn l08_bound_reflects_declared_maximum_not_member_count_or_a_constant() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -1735,7 +1748,7 @@ fn r06_bundle() -> DomainPackage {
 }
 
 #[test]
-#[trace("TC-196", "FR-151-AC-10")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
@@ -1808,7 +1821,7 @@ fn r06_subsetting_violation_refuses_after_the_charged_subset_value() {
 /// `a1.all`'s one value, so the same one `binding.subset-value` charge
 /// (`n = 1`) discharges instead of refusing, and admission completes.
 #[test]
-#[trace("TC-196", "FR-151-AC-10")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
@@ -1855,7 +1868,7 @@ fn r06_subsetting_satisfied_admits_with_the_charged_subset_value() {
 /// `duplicate-member` (FR-272's closed cause; there is no dedicated
 /// duplicate-field variant) naming the object and the duplicated field.
 #[test]
-#[trace("TC-196", "FR-151-AC-10")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-10")]
 fn r06_duplicate_field_values_refuse_rather_than_silently_keep_the_first() {
     let domain_package = r06_bundle();
     let view = view_of(&domain_package);
@@ -1966,7 +1979,7 @@ fn invocation_context<'a>(
 /// green when it should have stayed red, confirming the mutation defeats
 /// the guard that test exists to pin; reverted.
 #[test]
-#[trace("TC-198", "FR-153-AC-7")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-7")]
 fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2012,7 +2025,7 @@ fn l07_invocation_admits_a_declared_delete_and_attaches_the_pre_anchor() {
 /// scenario (deleting `a2`), but under `empty_effect()`'s empty `deletes:
 /// []`.
 #[test]
-#[trace("TC-198", "FR-046-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-046-AC-3")]
 fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2053,7 +2066,7 @@ fn l07_invocation_refuses_a_delete_outside_the_declared_frame() {
 /// way: post names `a9` (of `model.A`), absent from pre, under an effect
 /// declaring no `creates` grant at all.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn invocation_refuses_a_create_outside_the_declared_frame() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2104,7 +2117,7 @@ fn invocation_refuses_a_create_outside_the_declared_frame() {
 /// and admits when it does -- both over the identical pre/post pair, so only
 /// the declared frame decides the outcome.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn invocation_field_write_outside_the_declared_frame_refuses_and_inside_it_admits() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2244,7 +2257,7 @@ fn ordering_bundle() -> DomainPackage {
 /// plain sequences). This test went red as expected (`Refused(
 /// frame_violation/unauthorized-change)` instead of `Admitted`); reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
     let domain_package = ordering_bundle();
     let view = view_of(&domain_package);
@@ -2299,7 +2312,7 @@ fn enforce_frame_admits_an_unordered_field_reorder_without_a_write() {
 /// declared-`ordered: true` field, as order-insensitive). This test went
 /// red as expected (`Admitted` instead of `Refused`); reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_refuses_an_ordered_field_reorder_as_a_write() {
     let domain_package = ordering_bundle();
     let view = view_of(&domain_package);
@@ -2400,7 +2413,7 @@ fn redefinition_chain_bundle() -> DomainPackage {
 /// writes the redefining member, `model.B.x` -- admitted because `model.B.x`
 /// itself names `model.A.x` as its `redefines` target above.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_redefinition() {
     let domain_package = redefinition_bundle();
     let view = view_of(&domain_package);
@@ -2463,7 +2476,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_rede
 /// of `Admitted` -- the walk found `model.C.x -> model.B.x` but never
 /// checked whether `model.B.x` itself reached a grant); reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_redefinition_chain() {
     let domain_package = redefinition_chain_bundle();
     let view = view_of(&domain_package);
@@ -2533,7 +2546,7 @@ fn enforce_frame_admits_a_field_write_that_reaches_a_declared_grant_through_a_re
 /// green except this test, which went from `Refused` to `Admitted`;
 /// reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_name() {
     let domain_package = DomainPackage::new(
         DomainPackageRef::fixture("bundle.redef.package"),
@@ -2620,7 +2633,7 @@ fn enforce_frame_refuses_a_field_write_at_a_package_the_declared_grant_does_not_
 /// invocation was silently admitted, `a1` ending up typed `model.B` in the
 /// returned post binding); reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2684,7 +2697,7 @@ fn enforce_frame_refuses_an_object_that_changes_type_between_pre_and_post() {
 /// not exact type equality, exactly like `all_instances`'s own subtype
 /// selection (`tests/model_population.rs`'s `l01_*` test).
 #[test]
-#[trace("TC-198", "FR-046-AC-3")]
+#[trace("QSpec-TC-198", "QSpec-FR-046-AC-3")]
 fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2743,7 +2756,7 @@ fn invocation_admits_a_subtype_created_and_deleted_under_a_supertype_grant() {
 /// the complete computed set already agrees with, once nothing catches the
 /// duplicate itself); reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2806,7 +2819,7 @@ fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_twice() {
 /// This test went red as expected (`Admitted` instead of `Refused`);
 /// reverted.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populations() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -2864,7 +2877,7 @@ fn invocation_refuses_a_declared_delta_that_disagrees_with_the_complete_populati
 /// to mirror the native runtime's own `declared_deltas` shape, not because
 /// this test independently proves it fires.
 #[test]
-#[trace("FR-046-AC-3")]
+#[trace("QSpec-FR-046-AC-3")]
 fn invocation_refuses_a_declared_delta_that_declares_the_same_identity_created_and_deleted() {
     let domain_package = fixture_f1();
     let view = view_of(&domain_package);
@@ -3148,7 +3161,7 @@ fn admit_p1_under(
 /// Mutation used: raising the tight limit to 4 turns the refusal
 /// assertion red, since the package then fits.
 #[test]
-#[trace("TC-198", "FR-153-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn qsl204_an_over_limit_domain_package_refuses_admission_naming_the_limit() {
     let domain_package = fixture_f1();
     assert_eq!(domain_package.records.len(), 4);
@@ -3208,7 +3221,7 @@ fn fixture_diamond() -> DomainPackage {
 /// Mutation used: raising the tight bound to 2 turns the refusal
 /// assertion red, since `D`'s two-step paths then fit.
 #[test]
-#[trace("TC-198", "FR-153-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
     let domain_package = fixture_diamond();
 
@@ -3255,7 +3268,7 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
 ///   refuses it, and `admit_binding` has no parameter through which the
 ///   cyclic package could be offered alongside some other package's view.
 #[test]
-#[trace("TC-198", "FR-153-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn qsl204_admission_reads_the_domain_package_the_view_was_normalized_from() {
     let forward = fixture_f1();
     let mut reversed = fixture_f1();

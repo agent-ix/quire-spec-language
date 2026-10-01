@@ -460,14 +460,11 @@ impl Integer {
 mod tests {
     use std::str::FromStr;
 
-    use ix_trace_rs::trace;
-
     use super::*;
 
-    /// TC-329: `IntegerInterval::admit` accepts a value inside the declared
+    /// `IntegerInterval::admit` accepts a value inside the declared
     /// domain, and `BoundedInteger` reports back the exact value and domain
     /// that admitted it (ADR-013 O-21 kernel bound value type).
-    #[trace("TC-329")]
     #[test]
     fn tc_329_bounded_integer_admits_within_domain() {
         let domain = IntegerInterval::new(Integer::zero(), Integer::from(10_u64)).unwrap();
@@ -476,18 +473,16 @@ mod tests {
         assert_eq!(admitted.domain(), &domain);
     }
 
-    /// TC-330: a value outside the declared domain is refused with
+    /// a value outside the declared domain is refused with
     /// `OutOfDomain`, never silently narrowed or saturated.
-    #[trace("TC-330")]
     #[test]
     fn tc_330_bounded_integer_refuses_outside_domain() {
         let domain = IntegerInterval::new(Integer::zero(), Integer::from(10_u64)).unwrap();
         assert_eq!(domain.admit(Integer::from(11_u64)), Err(OutOfDomain));
     }
 
-    /// TC-331: parsing round-trips through `Display` for a canonical
+    /// parsing round-trips through `Display` for a canonical
     /// decimal integer literal, negative sign included.
-    #[trace("TC-331")]
     #[test]
     fn tc_331_integer_parse_display_round_trips() {
         let parsed = Integer::from_str("-42").unwrap();

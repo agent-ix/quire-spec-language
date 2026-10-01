@@ -318,7 +318,7 @@ mod tests {
         bytes
     }
 
-    /// TC-302 (H-7/H-8, strengthened): each of the five single-domain digest
+    /// (H-7/H-8, strengthened): each of the five single-domain digest
     /// identities (`EffectiveId`, `UniverseId`, `VariantId`, `MemberId`,
     /// `PopulationId`) treats equal digest bytes as interchangeable ids --
     /// not just `==`, but hashing equal (either stands in for the other as a
@@ -328,7 +328,6 @@ mod tests {
     /// macro-generated, and have their own equivalent coverage below
     /// (`tc_411_unit_id_is_a_two_domain_record_compared_on_label_then_bytes`,
     /// `tc_302b_equal_object_identity_bytes_mint_interchangeable_identities`).
-    #[trace("TC-302")]
     #[test]
     fn tc_302_equal_digest_bytes_mint_interchangeable_identities() {
         macro_rules! check {
@@ -349,12 +348,11 @@ mod tests {
         check!(PopulationId);
     }
 
-    /// TC-302 (H-7/H-8) equivalent for `ObjectId`: equal authored UTF-8
+    /// (H-7/H-8) The same check for `ObjectId`: equal authored UTF-8
     /// bytes mint interchangeable ids -- `==`, equal hashing, and distinct
     /// strings compare unequal and order lexically over their bytes (ADR-013
     /// §8 OQ-C ruling: `ObjectId` carries its bytes directly, never a
     /// digest, so there is no digest to equate here).
-    #[trace("TC-302")]
     #[test]
     fn tc_302b_equal_object_identity_bytes_mint_interchangeable_identities() {
         let a = ObjectId::new("o1").unwrap();
@@ -373,14 +371,13 @@ mod tests {
     /// one validation `ObjectId::new` performs, so it is worth its own
     /// mutation-provable assertion (removing the `is_empty` check would let
     /// this construct `Ok`).
-    #[trace("TC-302")]
     #[test]
     fn tc_302c_empty_object_identity_refuses() {
         assert_eq!(ObjectId::new("").unwrap_err(), EmptyObjectIdentity);
         assert!(ObjectId::new("o1").is_ok());
     }
 
-    /// TC-303 (H-7/H-8, strengthened): each identity's domain constant is
+    /// (H-7/H-8, strengthened): each identity's domain constant is
     /// distinct, so no two of the identities (`EffectiveId`, `UniverseId`,
     /// `VariantId`, `MemberId`, `PopulationId`, and QC-22's compound-unit arm
     /// of `UnitId`) can be confused by domain string (ADR-013 QC-15, QC-21).
@@ -402,7 +399,6 @@ mod tests {
     /// caught. The test is right to exist at this crate's boundary -- there
     /// is no other way to pin the value here -- the previous wording
     /// overstated what it actually catches.
-    #[trace("TC-303")]
     #[test]
     fn tc_303_domain_constants_are_pairwise_distinct() {
         assert_eq!(EFFECTIVE_ID_DOMAIN, "quire.model.effective-declaration/v1");
@@ -448,8 +444,7 @@ mod tests {
         assert_eq!(declared, UnitId::declared(NodeKey::from_digest(digest(2))));
     }
 
-    /// TC-304: `Display` renders exactly 64 lowercase hex digits.
-    #[trace("TC-304")]
+    /// `Display` renders exactly 64 lowercase hex digits.
     #[test]
     fn tc_304_display_is_64_lowercase_hex_digits() {
         let id = UniverseId::from_digest(digest(0xcd));
@@ -461,10 +456,9 @@ mod tests {
         assert!(rendered.ends_with("cd"));
     }
 
-    /// TC-304 equivalent for `ObjectId`: `Display` renders the authored
+    /// The same check for `ObjectId`: `Display` renders the authored
     /// bytes exactly, never hex -- the OQ-C ruling's "not a digest" holds
     /// all the way through formatting.
-    #[trace("TC-304")]
     #[test]
     fn tc_304b_object_id_display_is_the_authored_bytes_exactly() {
         let id = ObjectId::new("zz9-plural-z-alpha").unwrap();

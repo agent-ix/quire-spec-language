@@ -40,7 +40,13 @@ fn identity(revision: &str) -> SourceIdentity {
     }
 }
 
-#[trace("TC-180", "TC-222", "FR-339-AC-1", "FR-339-AC-2", "FR-302-AC-1")]
+#[trace(
+    "QSpec-TC-180",
+    "QSpec-TC-222",
+    "QSpec-FR-339-AC-1",
+    "QSpec-FR-339-AC-2",
+    "QSpec-FR-302-AC-1"
+)]
 #[test]
 fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
     let parsed = qsl_cst::parse(
@@ -116,7 +122,7 @@ fn complete_source_builds_a_byte_exact_trivia_preserving_cst() {
     }
 }
 
-#[trace("TC-222", "FR-302-AC-1")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-1")]
 #[test]
 fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
     let baseline = qsl_cst::parse(
@@ -158,7 +164,7 @@ fn exact_syntax_node_limit_admits_the_boundary_and_refuses_one_less() {
     );
 }
 
-#[trace("TC-222", "FR-302-AC-1")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-1")]
 #[test]
 fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
     let baseline = qsl_cst::parse(
@@ -220,7 +226,7 @@ fn token_limit_charges_every_retained_cst_leaf_at_the_exact_boundary() {
     }
 }
 
-#[trace("TC-222", "FR-302-AC-1")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-1")]
 #[test]
 fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
     let source = format!("0x{}", "f".repeat(900_000));
@@ -239,7 +245,7 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
     assert_eq!(refusal.byte_span().unwrap().end, 10);
 }
 
-#[trace("TC-222", "FR-302-AC-2")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-2")]
 #[test]
 fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
     let source = "language \"ix:native\" edition \"1-draft\"; profile C = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"; record Broken { value: Integer }";
@@ -260,7 +266,7 @@ fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
     assert!(!parsed.cst().recoveries().is_empty());
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[trace("TC-424", "FR-001-AC-12")]
 #[test]
 fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
@@ -294,7 +300,7 @@ fn rendering_a_foreign_cst_node_is_a_typed_refusal() {
     assert_eq!(foreign.region, None);
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
     let parsed = qsl_cst::parse(
@@ -311,7 +317,7 @@ fn rendering_an_exchanged_clone_from_the_same_cst_succeeds() {
     );
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn revision_bound_node_identity_includes_the_document_identity() {
     let first = qsl_cst::parse(
@@ -365,7 +371,7 @@ fn revision_bound_node_identity_includes_the_document_identity() {
 /// TC-188 R04 (FR-143-AC-10): a sum declaration is a layer-1 parse refusal
 /// at `variant`. Moved here from the root crate's `composite_values.rs`:
 /// it calls only `qsl_cst::parse`.
-#[trace("TC-188", "FR-143-AC-10")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-10")]
 #[test]
 fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
     let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";

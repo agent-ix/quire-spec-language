@@ -95,7 +95,7 @@ fn unlimited_meter() -> qsl_semantics::model::accounting::Meter {
 // review finding #1): AC-1 is about an effective member's provenance, which
 // this happy-path linking test never inspects; AC-3 is entirely about
 // refusals, and this test has none.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate() {
     let mut records = fixture_g();
@@ -161,7 +161,7 @@ fn d01_a_closed_diamond_links_every_subtype_to_its_unique_undominated_candidate(
 /// share (one fewer subtype, two fewer candidate checks, one fewer
 /// dominance enumeration since only `D` still has two applicable
 /// candidates).
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
     let mut records = fixture_g();
@@ -227,7 +227,7 @@ fn an_abstract_subtype_is_never_linked_as_a_dispatch_target() {
 
 /// D01's `dispatch_candidates` boundary: the eighth `dispatch.candidate`
 /// charge is denied when the counter's limit is `7`.
-#[trace("TC-196", "FR-151-AC-8")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
     let mut records = fixture_g();
@@ -264,7 +264,7 @@ fn d01_the_eighth_dispatch_candidate_charge_is_incomplete_at_the_named_limit() {
 
 /// D01's `dispatch_candidates` boundary, the other half of FR-151-AC-8: the
 /// exact bound (`8`, the real count D01 charges) completes.
-#[trace("TC-196", "FR-151-AC-8")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-8")]
 #[test]
 fn d01_the_eighth_dispatch_candidate_charge_completes_at_the_exact_limit() {
     let mut records = fixture_g();
@@ -485,7 +485,7 @@ fn d04_registration_order_does_not_change_the_linked_table() {
 /// D05: an open generalization closure has no dispatch table at all — the
 /// incomplete outcome `incomplete_population`/`unclosed-method-set`, not a
 /// refusal, and no dispatch charge of any kind.
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge() {
     let mut records = fixture_g();
@@ -522,7 +522,7 @@ fn d05_an_open_generalization_closure_is_incomplete_before_any_dispatch_charge()
 /// share the exact same `DeclarationKey`, and `normalize` -- which every
 /// real pipeline runs before `link_dispatch` ever sees a domain package --
 /// must refuse before either candidate reaches `link_dispatch`.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(

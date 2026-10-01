@@ -517,14 +517,14 @@ fn assert_matches_baseline(inputs: usize) {
     );
 }
 
-#[trace("TC-012", "TC-222", "FR-302-AC-1", "FR-302-AC-2")]
+#[trace("TC-012", "QSpec-TC-222", "QSpec-FR-302-AC-1", "QSpec-FR-302-AC-2")]
 #[test]
 fn both_parsers_match_the_recorded_baseline_on_generated_units() {
     assert_matches_baseline(QUICK_INPUTS_PER_FAMILY);
 }
 
 // The whole baseline: `make test-differential`.
-#[trace("TC-012", "TC-222", "FR-302-AC-1", "FR-302-AC-2")]
+#[trace("TC-012", "QSpec-TC-222", "QSpec-FR-302-AC-1", "QSpec-FR-302-AC-2")]
 #[test]
 #[ignore = "30,000 inputs; run by `make test-differential`"]
 fn both_parsers_match_the_whole_recorded_baseline() {
