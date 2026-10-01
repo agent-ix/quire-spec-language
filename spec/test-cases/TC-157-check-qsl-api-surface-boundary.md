@@ -17,7 +17,7 @@ as `failing` with file, line and module named, respects `::`-segment module
 matching (a textual prefix that is not a segment boundary, such as
 `model_query` under a `model` allow-list, is not treated as allowed), and
 reproduces the real, current pending/failing/passing state of
-T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-4.
+T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through FR-060-AC-5.
 
 ## Test Procedure
 
@@ -46,6 +46,8 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
    - a doc comment naming `NodeKey::from_digest` in a module outside `check`.
 7. T12-C fixture: a shipped `EffectiveId::from_digest(` call in
    `value::model_query`, in a function not on T12-C's debt list.
+8. T12-B fixture: a shipped `NodeKey::from_digest(` call in
+   `quire-semantic-value/src/unit.rs`.
 
 ## Expected Results
 
@@ -80,12 +82,14 @@ T12-A/T12-B/T12-C/T12-D/T12-E against QSL's own head. Scope: FR-060-AC-1 through
   match are not reported.
 - Step 7: the call fails T12-C and is named with file, line, module and
   function.
+- Step 8: the call fails T12-B and is named, with its file under
+  `quire-semantic-value/src/` and module `unit` (FR-060-AC-5).
 
 ## Metadata
 
 - Priority: P1
 - Target Integration: `tools/arch-lint/api_surface.rs`
-- Automation: Automated Rust unit tests (steps 1-4, 6, 7) plus one manual real-data run (step 5)
+- Automation: Automated Rust unit tests (steps 1-4, 6-8) plus one manual real-data run (step 5)
 
 ## Dependencies
 

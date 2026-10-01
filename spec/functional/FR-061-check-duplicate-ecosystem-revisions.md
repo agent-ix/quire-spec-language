@@ -69,10 +69,10 @@ revisions: `quire-contract-ir` (consumed at one revision) and
 `quire-contract-model` (IR's own workspace member, consumed at a different
 revision) are the IR repository twice, and are reported (#249 review R2).
 
-The kernel crate `quire-exact`, which FR-059's edge extraction exempts as a
-leaf, is a QSL-repository package here: `quire-exact` resolved at two distinct
-QSL sources is reported as a duplicate, since two kernel copies split the
-kernel types.
+The shared leaf crates `quire-exact` and `quire-semantic-value`, which
+FR-059's edge extraction exempts, are QSL-repository packages here: either one
+resolved at two distinct QSL sources is reported as a duplicate, since two
+copies split their types.
 
 ## Acceptance Criteria
 
@@ -82,7 +82,7 @@ kernel types.
 | FR-061-AC-2 | A lockfile with one source per ecosystem repository reports no duplicate; a non-ecosystem crate name (for example `serde`) resolved to two sources is not reported. | Test (TC-158) |
 | FR-061-AC-3 | A lockfile with two packages classifying to the same ecosystem repository -- whether they share one crate name or not -- resolved to two distinct sources reports exactly one duplicate finding, naming both sources. | Test (TC-158) |
 | FR-061-AC-4 | Run against QSL's real root `Cargo.lock` (`make arch-lint-duplicate-revisions`, part of `make ci`), the check reports no duplicate. | Test (TC-158) |
-| FR-061-AC-5 | A lockfile with `quire-exact` resolved to two distinct QSL git sources reports exactly one duplicate finding, for the QSL repository. | Test (TC-158) |
+| FR-061-AC-5 | A lockfile with `quire-exact`, or with `quire-semantic-value`, resolved to two distinct QSL git sources reports exactly one duplicate finding, for the QSL repository. | Test (TC-158) |
 
 ## Dependencies
 
