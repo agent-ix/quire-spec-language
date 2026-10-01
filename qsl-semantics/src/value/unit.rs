@@ -22,16 +22,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
-    is_qualified_name, preimage_digest, refuse, retains, CanonicalNodeId, CanonicalOwner,
-    CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    RationalDocument,
+    is_qualified_name, preimage_digest, refuse, retains, CanonicalOwner, CanonicalRational,
+    NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument,
 };
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
-use quire_semantic_value::semantic_node::{check_terms, InvalidSemanticGraph, SemanticGraphCause};
+use quire_semantic_value::semantic_node::{
+    CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
+};
 use quire_semantic_value::unit::{
-    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, UnitEdge, UnitGraph,
-    UnitNode,
+    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, UnitGraph, UnitNode,
 };
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
@@ -168,7 +168,7 @@ impl NodeIdentityPreimage for DimensionPreimage {
                 .terms
                 .iter()
                 .map(|(id, exponent)| CanonicalDimensionTerm {
-                    dimension_node_id: (*id).into(),
+                    dimension_node_id: CanonicalNodeId::from(*id.as_bytes()),
                     exponent: exponent.to_string(),
                 })
                 .collect(),
@@ -303,12 +303,12 @@ impl UnitPreimage {
 impl NodeIdentityPreimage for UnitPreimage {
     fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
         preimage_digest(&CanonicalUnit {
-            dimension_node_id: self.dimension.into(),
+            dimension_node_id: CanonicalNodeId::from(*self.dimension.as_bytes()),
             offset: CanonicalRational::new(&self.offset.0, &self.offset.1),
             owner: self.owner.canonical(),
             qualified_declaration: &self.qualified_declaration,
             scale: CanonicalRational::new(&self.scale.0, &self.scale.1),
-            target_unit_node_id: self.target.map(Into::into),
+            target_unit_node_id: self.target.map(|id| CanonicalNodeId::from(*id.as_bytes())),
             version: UNIT_VERSION,
         })
     }
@@ -316,8 +316,8 @@ impl NodeIdentityPreimage for UnitPreimage {
 
 impl UnitPreimage {
     /// Refuse an unreduced rational, then a zero scale or a non-identity root
-    /// ([`UnitEdge::checked`]).
-    fn check_semantics(&self) -> Result<UnitEdge, SemanticGraphCause> {
+    /// ([`UnitNode::checked`]).
+    fn check_semantics(&self) -> Result<UnitNode, SemanticGraphCause> {
         let reduced = |(numerator, denominator): &SpelledRational| {
             Rational::new(numerator.clone(), denominator.clone())
                 .ok()
@@ -327,7 +327,12 @@ impl UnitPreimage {
                 .ok_or(SemanticGraphCause::UnreducedRational)
         };
         let (scale, offset) = (reduced(&self.scale)?, reduced(&self.offset)?);
-        UnitEdge::checked(scale, offset, self.target.is_none())
+        UnitNode::checked(
+            *self.dimension.as_bytes(),
+            self.target.map(|target| *target.as_bytes()),
+            scale,
+            offset,
+        )
     }
 }
 
@@ -359,7 +364,14 @@ pub fn admit_unit_graph(
     let mut keys = BTreeSet::new();
     let mut admitted_dimensions = BTreeMap::new();
     for (preimage, key) in dimensions {
-        check_terms(&preimage.terms).map_err(refuse)?;
+        let node = DimensionNode::checked(
+            preimage
+                .terms
+                .iter()
+                .map(|(id, exponent)| (*id.as_bytes(), exponent.clone()))
+                .collect(),
+        )
+        .map_err(refuse)?;
         if !keys.insert(key) {
             return Err(refuse(SemanticGraphCause::DuplicateNode));
         }
@@ -367,20 +379,11 @@ pub fn admit_unit_graph(
             key_matches: retains(key, &preimage)?,
             owner: preimage.owner,
         });
-        admitted_dimensions.insert(
-            key,
-            DimensionNode {
-                terms: preimage
-                    .terms
-                    .into_iter()
-                    .map(|(id, exponent)| (*id.as_bytes(), exponent))
-                    .collect(),
-            },
-        );
+        admitted_dimensions.insert(key, node);
     }
     let mut admitted_units = BTreeMap::new();
     for (preimage, key) in units {
-        let edge = preimage.check_semantics().map_err(refuse)?;
+        let node = preimage.check_semantics().map_err(refuse)?;
         if !keys.insert(key) {
             return Err(refuse(SemanticGraphCause::DuplicateNode));
         }
@@ -388,14 +391,7 @@ pub fn admit_unit_graph(
             key_matches: retains(key, &preimage)?,
             owner: preimage.owner,
         });
-        admitted_units.insert(
-            key,
-            UnitNode {
-                dimension: *preimage.dimension.as_bytes(),
-                target: preimage.target.map(|target| *target.as_bytes()),
-                edge,
-            },
-        );
+        admitted_units.insert(key, node);
     }
     let graph = UnitGraph::from_checked_nodes(&admitted_dimensions, &admitted_units)?;
     if provenance.iter().any(|node| !owners.contains(&node.owner)) {

@@ -75,7 +75,9 @@ use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
-use quire_semantic_value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
+use quire_semantic_value::quantity::{
+    check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
+};
 
 /// The largest expression nesting depth a checker may declare. The typing,
 /// facts and lowering walks run over explicit heap stacks, so this bounds the
@@ -1590,7 +1592,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
                 (
                     NodeKind::Quantity(operator, left_box, right_box),
-                    ValueType::Quantity(self.units.form(unit)),
+                    ValueType::Quantity(self.units.form(IdentifiedUnit::new(unit))),
                 )
             }
             _ => return Err(mismatch(location)),

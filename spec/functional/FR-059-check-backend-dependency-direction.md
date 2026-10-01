@@ -47,8 +47,9 @@ crate name quire-contract-ir's workspace member publishes under) as
 the named shared-leaf set, `quire-exact` and `quire-semantic-value`, no
 ecosystem repository, wherever it is sourced from. These are ADR-011 FB-05's
 shared `no_std` leaf crates: the kernel K (§6.1 "K is a leaf") and the
-semantic-value leaf SV, which depends on K only, so an edge into either closes
-no cycle. Every other package sourced from the QSL repository classifies as
+semantic-value leaf SV, whose dependencies are K, ADR-013's one RFC 8785
+encoder `quire-canonical`, `serde` and `thiserror`. Neither depends on a QSL
+layer or on an IR, RT or CG crate, so an edge into either closes no cycle. Every other package sourced from the QSL repository classifies as
 QSL. This exemption is local to edge extraction; the shared `graph::classify`,
 and so [FR-061](FR-061-check-duplicate-ecosystem-revisions.md), classifies a
 QSL-sourced shared leaf as QSL.

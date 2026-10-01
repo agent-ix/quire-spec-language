@@ -13,14 +13,15 @@ use crate::graph::{classify, Edge, EdgeKind, Repo};
 /// The package names of ADR-011 FB-05's shared `no_std` leaf crates,
 /// published from the QSL repository and depended on by RT and CG (ADR-011
 /// §7.1): the kernel K (`quire-exact`) and the semantic-value leaf SV
-/// (`quire-semantic-value`, which depends on K only).
+/// (`quire-semantic-value`, which depends on K and ADR-013's one RFC 8785
+/// encoder `quire-canonical`, and on no QSL layer).
 const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
 
 /// The ecosystem repository a resolved package contributes to the FR-059
 /// edge graph: `classify`'s answer, except that a shared leaf in
 /// [`SHARED_LEAVES`] contributes none. A shared leaf depends on no QSL module
-/// above it and no ecosystem crate (ADR-011 §6.1 "K is a leaf" and the SV
-/// row), so an edge into it closes no FB-11 cycle, and ADR-011 FB-05 places
+/// above it and on no IR, RT or CG crate (ADR-011 §6.1 "K is a leaf" and the
+/// SV row), so an edge into it closes no FB-11 cycle, and ADR-011 FB-05 places
 /// it outside the bypass. The exemption is local to edge extraction: FR-061's
 /// duplicate-revision check still classifies a QSL-sourced shared leaf as QSL
 /// through `classify`.

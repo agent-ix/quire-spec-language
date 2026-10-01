@@ -9,9 +9,13 @@
 //! keys raises as well.
 
 use alloc::collections::BTreeSet;
+use alloc::string::{String, ToString};
+use core::fmt;
 
 use quire_canonical::Limits;
-use quire_exact::Integer;
+use serde::Serialize;
+
+use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
 
 /// The strict reader's `refused { code: invalid_semantic_graph }`.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -115,6 +119,47 @@ pub const IDENTITY_LIMITS: Limits = match Limits::new(u64::MAX, Limits::MAX_DEPT
     // arm is evaluated at compile time and is unreachable.
     Err(_) => panic!("Limits::MAX_DEPTH is within Limits::MAX_DEPTH"),
 };
+
+/// The `node-identity-preimage.schema.json` node-id member every node-key
+/// and compound-unit preimage embeds: a node key's digest as 64 lowercase
+/// hexadecimal digits under the `quire.checked-semantic-node/v1` domain. The
+/// one definition of that JCS shape, so node keys and compound-unit ids
+/// encode a node id the same way.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CanonicalNodeId {
+    // RFC 8785 JCS: `quire-canonical` orders members itself, so field
+    // declaration order carries no meaning.
+    digest: String,
+    domain: &'static str,
+}
+
+impl From<[u8; 32]> for CanonicalNodeId {
+    /// The node id of these 32 digest bytes, as read or as retained.
+    fn from(digest: [u8; 32]) -> Self {
+        Self {
+            digest: DigestHex(digest).to_string(),
+            domain: NODE_KEY_DOMAIN,
+        }
+    }
+}
+
+impl From<NodeKey> for CanonicalNodeId {
+    fn from(key: NodeKey) -> Self {
+        Self::from(*key.as_bytes())
+    }
+}
+
+/// 32 digest bytes as 64 lowercase hexadecimal digits, the spelling
+/// `NodeKey`'s `Display` uses.
+struct DigestHex([u8; 32]);
+
+impl fmt::Display for DigestHex {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0
+            .iter()
+            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -30,15 +30,14 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use core::fmt;
 use core::hash::{Hash, Hasher};
 
 use serde::Serialize;
 
-use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN};
+use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
 
 use crate::semantic_node::{
-    check_terms, InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
+    check_terms, CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
 };
 
 /// The graph refusal of `cause`.
@@ -128,7 +127,7 @@ impl UnitEdge {
     /// A unit node's edge after its semantic checks, in order: a zero scale
     /// refuses, then a canonical root (`is_root`) whose edge is not the
     /// identity (scale one, offset zero).
-    pub fn checked(
+    fn checked(
         scale: Rational,
         offset: Rational,
         is_root: bool,
@@ -213,24 +212,50 @@ impl Unit {
 /// A dimension node after its per-node checks, as read: its
 /// `(base dimension id, exponent)` terms, empty for a base dimension. Each id
 /// is the 32 digest bytes of a node key, resolved by lookup among the
-/// admitted dimension keys.
+/// admitted dimension keys. Built only by [`DimensionNode::checked`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DimensionNode {
-    /// The terms, as read.
-    pub terms: Vec<([u8; 32], Integer)>,
+    terms: Vec<([u8; 32], Integer)>,
+}
+
+impl DimensionNode {
+    /// A dimension node's terms after `check_terms`, in order: a zero
+    /// exponent refuses, then a repeated base dimension, then terms not
+    /// strictly ascending by id.
+    pub fn checked(terms: Vec<([u8; 32], Integer)>) -> Result<Self, SemanticGraphCause> {
+        check_terms(&terms)?;
+        Ok(Self { terms })
+    }
 }
 
 /// A unit node after its per-node checks, as read. Its dimension and target
 /// ids are the 32 digest bytes of node keys, resolved by lookup among the
-/// admitted keys.
+/// admitted keys. Built only by [`UnitNode::checked`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnitNode {
-    /// The unit's dimension node id.
-    pub dimension: [u8; 32],
-    /// The target unit node id, or `None` for a canonical root.
-    pub target: Option<[u8; 32]>,
-    /// The checked edge to the target ([`UnitEdge::checked`]).
-    pub edge: UnitEdge,
+    dimension: [u8; 32],
+    target: Option<[u8; 32]>,
+    edge: UnitEdge,
+}
+
+impl UnitNode {
+    /// A unit node whose edge `target = scale × source + offset` passed its
+    /// semantic checks, in order: a zero scale refuses, then a canonical
+    /// root (`target` is `None`) whose edge is not the identity (scale one,
+    /// offset zero).
+    pub fn checked(
+        dimension: [u8; 32],
+        target: Option<[u8; 32]>,
+        scale: Rational,
+        offset: Rational,
+    ) -> Result<Self, SemanticGraphCause> {
+        let edge = UnitEdge::checked(scale, offset, target.is_none())?;
+        Ok(Self {
+            dimension,
+            target,
+            edge,
+        })
+    }
 }
 
 /// An admitted closed set of dimension and unit nodes.
@@ -260,8 +285,14 @@ fn resolve(index: &BTreeMap<[u8; 32], NodeKey>, id: [u8; 32]) -> Option<NodeKey>
 }
 
 impl UnitGraph {
-    /// Admit the topology of dimension and unit nodes that already passed
-    /// their per-node checks, keyed by their distinct retained keys.
+    /// Admit the topology of dimension and unit nodes, keyed by their
+    /// distinct retained keys. Each node's own checks are its constructor's
+    /// ([`DimensionNode::checked`], [`UnitNode::checked`]).
+    ///
+    /// This checks topology only. It does not check that a key is the digest
+    /// of its node's preimage or that the node's owner is selected: that is
+    /// the caller's, and QSL's `admit_unit_graph` does both. A graph built
+    /// from keys nobody checked carries no key-provenance guarantee.
     ///
     /// The graph, referenced by node ids, is checked for unknown or derived
     /// dimension terms, unknown dimensions, unknown and cross-dimension
@@ -302,9 +333,10 @@ impl UnitGraph {
     }
 
     /// ADR-013 C-30: a unit node key as a declared-arm [`UnitId`]. Only the
-    /// key of an admitted unit converts, and admission checked that key
-    /// against its `quire.unit-node/v1` preimage; any other node key, such
-    /// as a dimension's, is refused.
+    /// key of a unit in this graph converts; any other node key, such as a
+    /// dimension's, is refused. That the key is the digest of its
+    /// `quire.unit-node/v1` preimage holds when the graph's builder checked
+    /// it, as QSL's `admit_unit_graph` does ([`Self::from_checked_nodes`]).
     pub fn declared_unit_id(&self, key: NodeKey) -> Result<UnitId, NotAUnitKey> {
         self.unit(key).map(Unit::id).ok_or(NotAUnitKey { key })
     }
@@ -506,12 +538,6 @@ pub enum CompoundUnitCause {
 // RFC 8785 JCS: `quire-canonical` orders members itself, so field
 // declaration order carries no meaning.
 #[derive(Serialize)]
-struct CanonicalNodeId {
-    digest: String,
-    domain: &'static str,
-}
-
-#[derive(Serialize)]
 struct CanonicalCompoundTerm {
     exponent: String,
     unit_node_id: CanonicalNodeId,
@@ -521,18 +547,6 @@ struct CanonicalCompoundTerm {
 struct CanonicalCompound {
     terms: Vec<CanonicalCompoundTerm>,
     version: &'static str,
-}
-
-/// A node id's 32 digest bytes as 64 lowercase hexadecimal digits, the
-/// spelling `NodeKey`'s `Display` uses.
-struct DigestHex([u8; 32]);
-
-impl fmt::Display for DigestHex {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
-    }
 }
 
 /// The compound-arm [`UnitId`] of exactly these `(unit node id, exponent)`
@@ -546,10 +560,7 @@ pub fn compound_unit_id<'a>(terms: impl IntoIterator<Item = ([u8; 32], &'a Integ
             .into_iter()
             .map(|(unit, exponent)| CanonicalCompoundTerm {
                 exponent: exponent.to_string(),
-                unit_node_id: CanonicalNodeId {
-                    digest: DigestHex(unit).to_string(),
-                    domain: NODE_KEY_DOMAIN,
-                },
+                unit_node_id: CanonicalNodeId::from(unit),
             })
             .collect(),
         version: COMPOUND_UNIT_DOMAIN,
@@ -635,5 +646,57 @@ impl CompoundUnit {
             scale_exponents(&self.terms, exponent),
             self.dimension.power(exponent),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    fn id(byte: u8) -> [u8; 32] {
+        [byte; 32]
+    }
+
+    fn rational(numerator: i64) -> Rational {
+        Rational::from_integer(Integer::from(numerator))
+    }
+
+    /// A dimension node cannot hold terms `check_terms` refuses, so
+    /// `UnitGraph::from_checked_nodes` never sees a zero exponent, a repeat
+    /// or unsorted terms; the refusals come in `check_terms`' order.
+    #[test]
+    fn a_dimension_node_refuses_zero_then_repeated_then_unsorted_terms() {
+        let term = |key, exponent: i64| (id(key), Integer::from(exponent));
+        assert!(DimensionNode::checked(vec![term(1, 2), term(2, -1)]).is_ok());
+        assert_eq!(
+            DimensionNode::checked(vec![term(2, 1), term(1, 0), term(1, 1)]),
+            Err(SemanticGraphCause::ZeroExponent)
+        );
+        assert_eq!(
+            DimensionNode::checked(vec![term(1, 1), term(1, 1)]),
+            Err(SemanticGraphCause::DuplicateTerm)
+        );
+        assert_eq!(
+            DimensionNode::checked(vec![term(2, 1), term(1, 1)]),
+            Err(SemanticGraphCause::UnsortedTerms)
+        );
+    }
+
+    /// A unit node refuses a zero scale before a non-identity root, and its
+    /// root-ness is its own `target`, so the edge check cannot disagree with
+    /// the node it is stored in.
+    #[test]
+    fn a_unit_node_refuses_a_zero_scale_then_a_non_identity_root() {
+        assert_eq!(
+            UnitNode::checked(id(1), None, rational(0), rational(5)),
+            Err(SemanticGraphCause::ZeroScale)
+        );
+        assert_eq!(
+            UnitNode::checked(id(1), None, rational(2), rational(0)),
+            Err(SemanticGraphCause::NonIdentityRoot)
+        );
+        assert!(UnitNode::checked(id(1), None, rational(1), rational(0)).is_ok());
+        assert!(UnitNode::checked(id(1), Some(id(2)), rational(2), rational(3)).is_ok());
     }
 }

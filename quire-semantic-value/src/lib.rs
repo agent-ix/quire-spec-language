@@ -3,8 +3,10 @@
 //! leaf crate (FB-05) above the `quire-exact` kernel (K < SV < 3).
 //!
 //! It holds the runtime semantic values QSL's layer 3 and above and a backend
-//! share, so the code exists once. It depends on `quire-exact` only, and uses
-//! only `core` and `alloc`.
+//! share, so the code exists once. It depends on no QSL layer: its
+//! dependencies are the `quire-exact` kernel, ADR-013 §2's one RFC 8785
+//! encoder (`quire-canonical`, built without `std`), `serde` and
+//! `thiserror`. It uses only `core` and `alloc`.
 #![no_std]
 
 extern crate alloc;

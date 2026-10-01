@@ -41,15 +41,13 @@ which turns `FamilyResult` back into a shared cause list.
    `FamilyResult` or `EvalOutcome` (`enum`, `struct` or
    `type`). Use the `syn`-based definition scan the repository already has
    (`xtask/src/definition_scan.rs`).
-2. Resolve every `use` edge and every inline path under `qsl-forms/src/`,
-   `quire-semantic-value/src/` (layer SV),
-   `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the `semantic_value` modules
-   (`src/value/{definition, enumeration, unit, quantity, key, reference}`,
-   ADR-011 §6.2), `qsl-semantics/src/value/model_query.rs` (layer 3 `model`) and
-   `qsl-cst/src/`, and check whether any of them names one of the three
-   types. `src/value/outcome.rs` (layer K) left this list:
-   its module was deleted, and every caller now imports
-   `quire_exact::{Outcome, Refusal, Undefined}` directly.
+2. Resolve every `use` edge and every inline path under the test's
+   `BELOW_CORE` roots, and check whether any of them names one of the three
+   types: `qsl-cst/src/`, `qsl-forms/src/`, `quire-semantic-value/src/`
+   (layer SV), `qsl-semantics/src/model/`, `qsl-semantics/src/library/`, the
+   `semantic_value` modules `qsl-semantics/src/value/{definition.rs,
+   enumeration.rs, unit.rs, declaration.rs}` (ADR-011 §6.2) and
+   `qsl-semantics/src/value/model_query.rs` (layer 3 `model`).
 3. Resolve every `use` edge and every inline path under the `check` core, and
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.

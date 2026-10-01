@@ -167,30 +167,6 @@ pub(crate) struct CanonicalOwner<'a> {
 }
 
 #[derive(Serialize)]
-pub(crate) struct CanonicalNodeId {
-    digest: String,
-    domain: &'static str,
-}
-
-impl From<NodeKey> for CanonicalNodeId {
-    fn from(key: NodeKey) -> Self {
-        Self {
-            digest: key.to_string(),
-            domain: NODE_KEY_DOMAIN,
-        }
-    }
-}
-
-impl From<WireNodeId> for CanonicalNodeId {
-    fn from(id: WireNodeId) -> Self {
-        Self {
-            digest: id.to_string(),
-            domain: NODE_KEY_DOMAIN,
-        }
-    }
-}
-
-#[derive(Serialize)]
 pub(crate) struct CanonicalRational {
     denominator: String,
     numerator: String,

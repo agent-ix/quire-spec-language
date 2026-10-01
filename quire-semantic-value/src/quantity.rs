@@ -89,6 +89,35 @@ impl QuantityUnit {
     }
 }
 
+/// A [`QuantityUnit`] with its kernel [`UnitId`], computed once. A compound
+/// unit's id is a SHA-256 over its RFC 8785 preimage, so a caller that has
+/// already computed it passes this along rather than recomputing it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdentifiedUnit {
+    id: UnitId,
+    unit: QuantityUnit,
+}
+
+impl IdentifiedUnit {
+    /// `unit` with its id.
+    pub fn new(unit: QuantityUnit) -> Self {
+        Self {
+            id: unit.id(),
+            unit,
+        }
+    }
+
+    /// The unit's kernel id.
+    pub fn id(&self) -> UnitId {
+        self.id
+    }
+
+    /// The unit.
+    pub fn unit(&self) -> &QuantityUnit {
+        &self.unit
+    }
+}
+
 /// The unit graph over kernel [`UnitId`]s: each id's [`QuantityUnit`]. A
 /// kernel [`Quantity`] carries only its unit's id, so every FR-142 operation
 /// reads its operands through a table (ADR-013 T-6: the unit graph stays in
@@ -107,7 +136,12 @@ impl UnitTable {
 
     /// Record `unit` under its id and return the id.
     pub fn insert(&mut self, unit: QuantityUnit) -> UnitId {
-        let id = unit.id();
+        self.insert_identified(IdentifiedUnit::new(unit))
+    }
+
+    /// Record a unit whose id is already computed and return the id.
+    fn insert_identified(&mut self, unit: IdentifiedUnit) -> UnitId {
+        let IdentifiedUnit { id, unit } = unit;
         self.0.entry(id).or_insert(unit);
         id
     }
@@ -177,10 +211,10 @@ impl<'a> UnitScope<'a> {
     }
 
     /// Record a unit this stage formed and return its id.
-    pub fn form(&mut self, unit: QuantityUnit) -> UnitId {
+    pub fn form(&mut self, unit: IdentifiedUnit) -> UnitId {
         let id = unit.id();
         if self.package.get(id).is_none() {
-            self.formed.insert(unit);
+            self.formed.insert_identified(unit);
         }
         id
     }
@@ -316,13 +350,14 @@ pub fn evaluate_quantity(
     evaluate_quantity_unit(operation, meter).map(|(outcome, _)| outcome)
 }
 
-/// [`evaluate_quantity`] with the result's unit, formed once at type time
-/// and carried by the result quantity's id, for a caller that records it.
+/// [`evaluate_quantity`] with the result's unit and its id, formed once at
+/// type time and carried by the result quantity's id, for a caller that
+/// records it ([`UnitScope::form`]).
 pub fn evaluate_quantity_unit(
     operation: QuantityOperation<'_>,
     meter: &mut Meter,
-) -> Result<(Outcome<Quantity>, QuantityUnit), IllTyped> {
-    let unit = type_check(operation)?;
+) -> Result<(Outcome<Quantity>, IdentifiedUnit), IllTyped> {
+    let unit = IdentifiedUnit::new(type_check(operation)?);
     let outcome = outcome_from_stop(evaluate(operation, unit.id(), meter));
     Ok((outcome, unit))
 }
