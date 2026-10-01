@@ -39,8 +39,8 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use call_site::{
-    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FunctionSite,
-    OperationSite,
+    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
+    FieldSite, FunctionSite, OperationSite,
 };
 pub use execute::{
     replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
@@ -86,6 +86,19 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, Origin, Role, ScalarLimits};
+// The ADR-014 B-4 proof bound a `DeclaredDomain` wraps, its domain key and
+// finite domain, and the kernel integer and interval an integer range is
+// built from, re-exported so CG, which reaches QSL only through this crate
+// (ADR-011 FB-05), builds a `DeclaredDomain` without its own direct
+// dependency on `qsl-foundation` or `quire-exact`. With them come their
+// constructors -- `DomainKey::new`, `FiniteBound::cardinality`/
+// `integer_range`/`depth`, `IntegerInterval::new` and `Integer`'s `From`
+// conversions -- and the refusals they return. None is a T-12-governed
+// constructor (ADR-011 §3 FB-05).
+pub use qsl_foundation::bound::{
+    DomainKey, EmptyFiniteBound, FiniteBound, FiniteBoundKind, ProofBound,
+};
+pub use quire_exact::{EmptyInterval, Integer, IntegerInterval};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimits, StateEnvironment,

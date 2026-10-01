@@ -11,12 +11,15 @@
 //! and locates one selection in the result: the compiled package's own
 //! `package_id` and a named function's parameters, each paired with its own
 //! node id, a named operation's anchor, frame and state clause identities,
-//! or a named state clause's identities. Every node id is the same
+//! or a named state clause's identities, or a named state field's domain
+//! key (ADR-012 §15.4). It also returns the compiled package's own
+//! `quire.checked-package/v2` bytes. Every node id is the same
 //! `WireNodeId` a `CanonicalAssignment`, a witness transcript or a
 //! counterexample names, joined by declared identity, never by position (ADR-013 O-25).
 //! It builds no [`crate::execute::replay`] call and no
 //! [`crate::spine::Call`]; it names a call site, it does not make one.
 
+use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -40,14 +43,42 @@ use crate::spine::{self, CompileRefusal, DependencyInput, DependencyInputRefusal
 ///   [`OperationSite`];
 /// - a [`ClauseName`] selects a state clause -- an invariant, a
 ///   precondition or a postcondition -- by its declared name, as FR-106's
-///   `ClauseSelection` names it, and locates a [`ClauseSite`].
+///   `ClauseSelection` names it, and locates a [`ClauseSite`];
+/// - a [`FieldName`] `M::T.f` selects a state field of an object type and
+///   locates a [`FieldSite`], its ADR-012 §15.4 domain key.
 ///
-/// Sealed: these three are the selections.
+/// Sealed: these four are the selections.
 pub trait CallSiteSelection: sealed::Locate {}
 
 impl CallSiteSelection for QualifiedName {}
 impl CallSiteSelection for OperationName {}
 impl CallSiteSelection for ClauseName {}
+impl CallSiteSelection for FieldName {}
+
+/// A state field `M::T.f`: the `model` alias `M`, an object type `T` of
+/// that model, and a field `f` of `T`'s effective attribute set, declared
+/// by `T` or inherited from a supertype.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FieldName {
+    /// The model alias `M`.
+    pub model: Identifier,
+    /// The object type `T` the field is named through.
+    pub object: Identifier,
+    /// The field `f`.
+    pub field: Identifier,
+}
+
+impl std::fmt::Display for FieldName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}::{}.{}",
+            self.model.as_str(),
+            self.object.as_str(),
+            self.field.as_str()
+        )
+    }
+}
 
 /// A state clause of the unit, by its declared name: the name FR-106's
 /// `ClauseSelection` and a state-clause counterexample name it by.
@@ -81,14 +112,19 @@ mod sealed {
 }
 
 /// What [`call_site`] returns: the compiled package's own content-addressed
-/// identity and what the selection located, a [`FunctionSite`], an
-/// [`OperationSite`] or a [`ClauseSite`].
+/// identity, its lowered bytes, and what the selection located, a
+/// [`FunctionSite`], an [`OperationSite`], a [`ClauseSite`] or a
+/// [`FieldSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
     /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
     /// digest record -- the same shape `ReplayRequestWire::package_id` and
     /// a witness envelope's package identity carry.
     pub package_id: DigestRecord,
+    /// The compiled package's `quire.checked-package/v2` bytes, exactly as
+    /// the S4 emitter wrote them when it minted `package_id`: their
+    /// `identity_preimage` member's RFC 8785 bytes digest to `package_id`.
+    pub package: Vec<u8>,
     /// The located function or operation.
     pub site: S,
 }
@@ -119,6 +155,17 @@ pub struct OperationSite {
     /// Every `pre` and `post` clause of the unit whose operation resolves
     /// to this operation, in declaration order.
     pub clauses: Vec<ClauseSite>,
+}
+
+/// A state field's domain in the compiled package (ADR-012 §15.4).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FieldSite {
+    /// The field's domain key: the `model`/`object_type` node of the type
+    /// that declares the field, and one path element, the field's ordinal
+    /// among that type's own field declarations in ascending field-name
+    /// UTF-8 byte order. The key a `DeclaredDomain` bounding the field
+    /// names.
+    pub domain: DomainKey,
 }
 
 /// One state clause's identities in the compiled package.
@@ -202,6 +249,17 @@ pub enum CallSiteRefusal {
         /// The compiled package's own `package_id`.
         package: DigestRecord,
     },
+    /// `selection` names no state field of the compiled `package`: its model
+    /// alias or object type does not resolve, or the object type's
+    /// effective attribute set has no field of that name. Paired with the
+    /// package, as [`Self::UnknownFunction`] is (FR-088-AC-6).
+    #[error("missing_declaration/missing-name: package {} declares no field {selection}", .package.hex())]
+    UnknownField {
+        /// The field `call_site` was given.
+        selection: FieldName,
+        /// The compiled package's own `package_id`.
+        package: DigestRecord,
+    },
     /// A broken invariant: the compiled package's own function node for a
     /// selected function is not itself a function node, or its parameter
     /// count does not match its checked signature, or a declared parameter
@@ -235,7 +293,11 @@ pub fn call_site<'a, S: CallSiteSelection>(
     .map_err(|refusal| Box::new(CallSiteRefusal::from(*refusal)))?;
     let package_id = compiled.emitted.package_id().record();
     let site = selection.locate(&compiled.package, package_id)?;
-    Ok(CallSite { package_id, site })
+    Ok(CallSite {
+        package_id,
+        package: compiled.emitted.bytes().to_vec(),
+        site,
+    })
 }
 
 impl From<CompileRefusal> for CallSiteRefusal {
@@ -358,6 +420,29 @@ impl sealed::Locate for ClauseName {
                 })
             })?;
         clause_site(clause)
+    }
+}
+
+impl sealed::Locate for FieldName {
+    type Site = FieldSite;
+
+    /// `self`'s domain key in `package` (ADR-012 §15.4).
+    fn locate(
+        &self,
+        package: &CheckedPackage,
+        package_id: DigestRecord,
+    ) -> Result<FieldSite, Box<CallSiteRefusal>> {
+        package
+            .graph()
+            .field_domain(&self.model, &self.object, &self.field)
+            .map_err(|fault| Box::new(CallSiteRefusal::Fault(fault)))?
+            .map(|domain| FieldSite { domain })
+            .ok_or_else(|| {
+                Box::new(CallSiteRefusal::UnknownField {
+                    selection: self.clone(),
+                    package: package_id,
+                })
+            })
     }
 }
 
@@ -582,5 +667,83 @@ mod tests {
             }
             other => panic!("expected UnknownFunction, got {other:?}"),
         }
+    }
+
+    /// FR-121-AC-14: a `CallSite` carries the compiled package's
+    /// `quire.checked-package/v2` bytes, exactly the S4 emitter's, and the
+    /// RFC 8785 bytes of their `identity_preimage` member digest, under
+    /// `quire.package.semantic/v2`, to the `CallSite`'s own `package_id`,
+    /// which the bytes' own `package_id` member also spells.
+    #[trace("TC-516", "FR-121-AC-14")]
+    #[test]
+    fn call_site_returns_the_checked_package_bytes_its_package_id_names() {
+        let site = function_site(UNIT.as_bytes(), "f").expect("f is a declared function");
+        let compiled = crate::spine::compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            UNIT.as_bytes(),
+            &qsl_semantics::model::intake::package_input([]),
+            &DependencyInput::default(),
+            crate::spine::SpineLimits::default(),
+        )
+        .expect("the fixture unit compiles");
+        assert_eq!(site.package, compiled.emitted.bytes());
+
+        let wire: serde_json::Value =
+            serde_json::from_slice(&site.package).expect("the package bytes are JSON");
+        assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+        let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
+            .expect("MAX_DEPTH is within MAX_DEPTH");
+        let digest = quire_canonical::sha256(&wire["identity_preimage"], limits)
+            .expect("the identity preimage is canonical JSON");
+        assert_eq!(
+            DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
+            site.package_id
+        );
+        assert_eq!(wire["package_id"]["digest"], site.package_id.hex());
+    }
+
+    /// FR-121-AC-15: a client builds a `DeclaredDomain` -- an integer range
+    /// over the parameter node `call_site` named -- through this crate's
+    /// root re-exports alone (`DomainKey`, `FiniteBound`, `Integer`,
+    /// `ProofBound`), and the integer range's constructor refuses an
+    /// inverted range there too.
+    #[trace("TC-516", "FR-121-AC-15")]
+    #[test]
+    fn a_declared_domain_is_built_through_the_facade_alone() {
+        let site = function_site(PREDICATE_UNIT.as_bytes(), "p").expect("p is declared");
+        let [(_, parameter)] = site.site.parameters[..] else {
+            panic!("p declares one parameter");
+        };
+        let bound = crate::FiniteBound::integer_range(
+            crate::Integer::from(0_i64),
+            crate::Integer::from(9_i64),
+        )
+        .expect("[0, 9] is not empty");
+        let declared = crate::DeclaredDomain::new(crate::ProofBound {
+            domain: crate::DomainKey::new(parameter, Vec::new()),
+            bound: bound.clone(),
+        });
+        assert_eq!(declared.parameter(), parameter);
+        assert_eq!(declared.bound(), &bound);
+        assert_eq!(
+            declared.bound().kind(),
+            crate::FiniteBoundKind::IntegerRange
+        );
+        let crate::FiniteBound::IntegerRange(interval) = declared.bound() else {
+            panic!("an integer range: {bound:?}");
+        };
+        assert_eq!(
+            interval,
+            &crate::IntegerInterval::new(crate::Integer::from(0_i64), crate::Integer::from(9_i64))
+                .expect("[0, 9] is not empty")
+        );
+        assert_eq!(
+            crate::FiniteBound::integer_range(
+                crate::Integer::from(9_i64),
+                crate::Integer::from(0_i64)
+            ),
+            Err(crate::EmptyFiniteBound::InvertedIntegerRange)
+        );
     }
 }
