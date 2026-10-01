@@ -3,7 +3,7 @@ name = "quire-exact"
 version = "0.1.0"
 publish = false
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 X-1: the quire-exact kernel -- checked identity, typestate, outcome/refusal, provenance and bound value types with no dependency on any other crate in the quire ecosystem."
 
@@ -16,11 +16,11 @@ description = "ADR-011 X-1: the quire-exact kernel -- checked identity, typestat
 test-support = []
 
 [dependencies]
-num-bigint = { version = "=0.4.8", default-features = false }
-num-integer = { version = "=0.1.47", default-features = false }
-num-traits = { version = "=0.2.19", default-features = false }
-thiserror = { version = "=2.0.20", default-features = false }
-unicode-normalization = { version = "=0.1.25", default-features = false }
+num-bigint = { version = "0.4.8", default-features = false }
+num-integer = { version = "0.1.47", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }
+unicode-normalization = { version = "0.1.25", default-features = false }
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

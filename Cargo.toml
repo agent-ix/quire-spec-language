@@ -58,15 +58,15 @@ qsl-replay = { path = "qsl-replay" }
 # ADR-011 §7.3 X-4: layer I3, extracted out of this crate. This
 # crate reaches quire-rs only through it (ADR-011 §6.1 layer-6 row).
 qsl-source = { path = "qsl-source", optional = true }
-logos = "=0.16.1"
-num-bigint = "=0.4.8"
-num-integer = "=0.1.47"
-num-traits = "=0.2.19"
-serde_json = { version = "=1.0.151", features = ["unbounded_depth", "raw_value"] }
-sha2 = "=0.10.9"
-serde = { version = "=1.0.228", features = ["derive"] }
-thiserror = "=2.0.20"
-unicode-normalization = "=0.1.25"
+logos = "0.16.1"
+num-bigint = "0.4.8"
+num-integer = "0.1.47"
+num-traits = "0.2.19"
+serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
+sha2 = "0.10.9"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.20"
+unicode-normalization = "0.1.25"
 # one-copy-deps (agent-ix org-wide, IR #225/RT #88): branch = "main", no rev,
 # so an identical spec in every dependent unifies to one lockfile entry
 # instead of pinning independently per repo.
@@ -89,9 +89,9 @@ qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # beside the SEAM-1 lowering pipeline. This crate re-exports none of its
 # items (ADR-011 §7.2).
 qsl-route = { path = "qsl-route" }
-tempfile = "=3.27.0"
-jsonschema = { version = "=0.17.1", default-features = false, features = ["draft202012"] }
-serde_json = { version = "=1.0.151", features = ["raw_value"] }
+tempfile = "3.27.0"
+jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # TC-257 (FR-088-AC-1) reuses `xtask::definition_scan::scan_crate`'s existing
 # whole-crate `syn` scanner instead of a second, byte-identical copy; a
@@ -108,7 +108,7 @@ quire-exact = { path = "quire-exact", features = ["test-support"] }
 # tree, so it needs only "full" (the full grammar) and "visit" -- PR #300
 # review round 2, L5 dropped the "extra-traits" feature that used to exist
 # solely to put `Debug` on `syn::Type` for that string search.
-syn = { version = "=2.0.119", features = ["full", "visit"] }
+syn = { version = "2.0.119", features = ["full", "visit"] }
 
 [[example]]
 name = "native_protocol_handoff"

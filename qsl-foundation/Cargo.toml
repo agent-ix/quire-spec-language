@@ -12,9 +12,9 @@ qsl-attrs = { path = "../qsl-attrs" }
 # ADR-011 §6.1: F depends on K. ADR-013 T-5's `Locus` carries the kernel
 # `Location`, and O-07's occurrence key the kernel `Origin`.
 quire-exact = { path = "../quire-exact" }
-serde = { version = "=1.0.228", features = ["derive"] }
-sha2 = "=0.10.9"
-thiserror = "=2.0.20"
+serde = { version = "1.0.228", features = ["derive"] }
+sha2 = "0.10.9"
+thiserror = "2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

@@ -9,14 +9,14 @@ description = "Workspace developer tooling: cargo xtask seam-probe / string-edge
 
 [dependencies]
 qsl-attrs = { path = "../qsl-attrs" }
-serde_json = { version = "=1.0.151" }
-proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
-syn = { version = "=2.0.119", features = ["full", "visit"] }
-thiserror = "=2.0.20"
+serde_json = { version = "1.0.151" }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+syn = { version = "2.0.119", features = ["full", "visit"] }
+thiserror = "2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
-tempfile = "=3.27.0"
+tempfile = "3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"
