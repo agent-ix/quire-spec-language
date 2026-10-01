@@ -85,6 +85,12 @@ pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIden
 - For a `Reach`, `ExpectedReward` or `LongRunFraction` form, EN-5 SHALL use
   the MDP or DTMC itself as the product, with the predicates as state labels and
   rewards on edges.
+- If an atom, a state predicate, a measure or a reward the claim reads
+  evaluates `Undefined` at a product state the build creates, then
+  EN-5 SHALL stop the build at the first such state in canonical breadth-first
+  order and return a refutation whose evidence is an `Undefined` path to
+  it, with `UndefinedEvaluation{where, cause}` (ADR-028 XV-8, ADR-018
+  UE-1).
 - The initial product states SHALL be each subject initial state, per `over`
   binding, paired with the monitor's successor on position 0.
 - Exploration SHALL use FR-101's canonical breadth-first order, so the
@@ -101,6 +107,7 @@ pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIden
 | FR-196-AC-2 | §15.2's product for `P95` at `5 ms` carries the `duration` accumulator, which takes the values `0`, `1 ms`, `2 ms`, `3 ms`, `4 ms` and the saturated value `6 ms`; the activation flag is set from position 1. The edge for `attempt` with `d = 3 ms`, `outcome = Ok` carries `343/5000`. | Test (TC-631) |
 | FR-196-AC-3 | §15.4's `Deliver` over every scheduler is an MDP with two actions at each live state, whose draws carry `9/10` and `1/10` (`send_a`) and `4/5` and `1/5` (`send_b`); under `Even` it is a DTMC with FR-187-AC-2's probabilities. | Test (TC-631) |
 | FR-196-AC-4 | FR-187-AC-3's `Health` variant with two post-states per draw builds, over every scheduler, an intermediate state per draw with two probability-1 actions, and the monitor does not advance on it; under a workload the build stops with `Unsupported(NotMarkov)`; the variant with no post-state stops with `Unsupported(NotMarkov)` under both. Two builds of one request are equal. | Test (TC-631) |
+| FR-196-AC-5 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(random b: Int[0, 1] ~ {0: 1, 1: 1})` with postcondition `self.v = b`; workload `Even` with weight `flip` 1) and the claim `probability >= 1/2 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` under `Even`, evidence `exact`, the build stops at the product state with `v = 1` at position 1 and returns a refutation whose evidence is the `Undefined` path `flip` with `b = 1`, probability `1/2`, with `UndefinedEvaluation{where: 1, cause: division-by-zero}`. | Test (TC-641) |
 
 ## Dependencies
 

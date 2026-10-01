@@ -51,7 +51,8 @@ pub struct ProbabilisticCounterexample {
 }
 pub struct WitnessScheduler { pub entries: Vec<(ProductKey, WitnessChoice)> }
 pub enum WitnessChoice { Identity(SchedulerChoice), PostState(Vec<(Vec<Value>, Digest)>), Delay }
-pub enum WitnessEvidence { Paths(Vec<WitnessPath>), Subsystem(ProbabilityCertificate) }
+pub enum WitnessEvidence { Paths(Vec<WitnessPath>), Subsystem(ProbabilityCertificate),
+    Undefined { path: WitnessPath, undefined: UndefinedEvaluation } }   // ADR-028 XV-8
 pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 step content plus the drawn vector
 
 pub fn replay_probabilistic_witness(
@@ -94,6 +95,12 @@ pub fn replay_probabilistic_witness(
   its step probabilities under the workload; evaluate the event with SM-1;
   check that the paths are pairwise prefix-free; and check the sum against
   the bound.
+- For `Undefined` evidence it SHALL re-execute the path as a path of a
+  path set, check that every step has positive probability, and evaluate
+  the claim's letters along it by ADR-018 UE-5, with no sum against the
+  bound. The first undefined evaluation at `where` with an equal cause
+  SHALL settle `reproduced-with-evaluated-witness`; any other result
+  SHALL settle `inconclusive`, `ReplayParity`.
 - For subsystem evidence it SHALL rebuild the induced chain over the
   certificate's support by applying the witness scheduler, and run FR-201's
   checker on it.
@@ -117,6 +124,7 @@ pub fn replay_probabilistic_witness(
 | FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; with a post-state digest altered it refuses `stale_dependency`/`revision-mismatch`; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
 | FR-202-AC-3 | §15.3's per-window claim is refuted with subsystem evidence: a dyadic `Lower` certificate for `Pr(not E)` with value above `1/100`, which replay accepts through FR-201's checker. FR-200-AC-2's `Coin2` witness replays `refuted` and passes the fairness check; the same witness with the scheduler taking `wait` at the live state forever fails the fairness check and settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
 | FR-202-AC-4 | With `max_witness_paths` 0, §15.4's refutation carries subsystem evidence instead of a path set and still replays `refuted`. Replaying one envelope twice gives equal outcomes. | Test (TC-637) |
+| FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
 
 ## Dependencies
 
