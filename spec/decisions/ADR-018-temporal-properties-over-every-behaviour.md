@@ -157,11 +157,16 @@ is added.
 
 `ProofBasis` is `Checks{success_checks}` (Kani, unchanged in meaning: zero
 is the vacuous proof), `Exhaustive`, `BoundedComplete{depth}` and
-`Inductive{depth}`. `TerminalValue::category` maps `Checks{0}` to
+`Inductive{depth}`. Amended by ADR-022 GV-1: `ProofBasis` also has
+`Witness{sources}`, the basis of a state-graph `possible` claim proved by replayed
+witness paths with how each was found, and ADR-022 adds the verdict kinds V-9 (witnessed) and V-10
+(refuted by trap) for state-graph claims. `TerminalValue::category` maps `Checks{0}` to
 inconclusive with `KaniVacuousProof`, as today, and every other basis to
 success. `InconclusiveCause` gains `BoundReached{depth}`,
 `InductionNotClosed{depth}`, `UndecidedSuccessor`, `NoInitialState` and
-`CertificateRejected{rule, state}`. `IncompleteCause` gains `LimitReached{limit, value,
+`CertificateRejected{rule, state}`; amended by ADR-022 RU-5, it also gains
+`WellDefinednessUnchecked{sources}`, witnesses found on a run that did not
+check well-definedness everywhere. `IncompleteCause` gains `LimitReached{limit, value,
 setting}`, QSpec FR-331's `limit-reached`, and `Cancelled`, written
 `cancelled` (V-7). `TerminalValue::Proved` carries
 `certification: Option<Certification>`, `Certification::{Certified,

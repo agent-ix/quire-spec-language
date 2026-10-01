@@ -193,6 +193,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
+  - target: ix://agent-ix/quire-spec-language/ADR-022
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
@@ -790,3 +791,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR | Proposed; compiler requirements FR-205 to FR-218; the protocol transition system for `parallel`: protocol subjects and states keyed canonically, step kinds with folded structural moves and atomic attempts, causal interleavings, the memory-model seam, fit with ADR-018's behaviours, deadlocks and fairness, `ProtocolSystem` on FR-101, footprints for partial-order reduction, protocol steps in refinement, compensation, replicated roles and activation on each; owner rulings RU-1 to RU-5 |
 | [ADR-025](decisions/ADR-025-weak-memory-models-for-parallel.md) | ADR | Proposed; compiler requirements FR-219 to FR-229; weak memory models for `parallel`: a source default with request selection of `sc`, x86-TSO or RC11 release-acquire with relaxed and `seq_cst` accesses, as operational models on the explicit-state engine; memory bounds as request budgets, memory fairness, the race-freedom item, reduction rows, counterexamples with buffer and view state, and the preconditions for transfer to code |
+| [ADR-022](decisions/ADR-022-possible-properties-and-state-graph-queries.md) | ADR | Proposed; possible properties and state-graph queries over a model: `possible` (EF), `always possible` (AG EF) and `unique path` as a property family beside temporal claims, their semantics over the explored state graph, witness sampling and backward reachability on the explicit-state engine, witness, trap and path-pair evidence that replays, and verdicts |
