@@ -21,7 +21,7 @@
 //! [`PopulationBinding`] correspondence, and the `PopulationBinding` a
 //! `PopulationId` names is `model`'s (ADR-011 §6.1, "K is a leaf"). ADR-011
 //! §6.1 orders layer 3 `semantic_value < model`, so the module sits in
-//! `model`, above the `value::declaration` registry it reads, instead of
+//! `model`, above SV's `declaration` registry it reads, instead of
 //! importing `model` upward from `semantic_value`.
 
 use std::collections::{BTreeMap, BTreeSet};

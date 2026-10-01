@@ -95,7 +95,7 @@ impl EnumValue {
 /// ADR-013 O-14/OQ-D) needs its declaration, ordered flag, position or case
 /// name back. The kernel is a leaf and carries none of this (`quire_exact::
 /// value`'s own module doc); the FR-141 enum-specific `=`/ordering schedule
-/// ([`compare_enum`], `value::declaration::CheckedEquality`'s `Enum`
+/// ([`compare_enum`], `declaration::CheckedEquality`'s `Enum`
 /// schedule, and `value::expression::evaluate`'s `OrderedKind::Enums` arm)
 /// resolves a `VariantId` back to its full [`EnumValue`] through this index
 /// rather than the kernel ever holding one.
@@ -122,7 +122,7 @@ impl EnumMemberIndex {
     }
 
     /// The sub-index holding only the entries named by `variants`, silently
-    /// skipping any this index never recorded. `value::declaration::
+    /// skipping any this index never recorded. `declaration::
     /// CheckedEquality` (SR-511 M2) uses this to retain, inside a checked
     /// `Enum`-scheduled equality node, only the compared operands' own enum
     /// declaration -- an `EnumShape::variants()` iterator -- rather than a
