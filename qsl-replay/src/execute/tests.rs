@@ -502,41 +502,14 @@ fn tc_444_an_unknown_version_refuses() {
     ));
 }
 
-/// FR-098-AC-4: a selection naming no function node refuses, whether the
-/// name is undeclared or qualified.
-#[trace("TC-444", "FR-098-AC-4")]
+/// FR-098-AC-4, TC-166 step 3: a well-formed selection naming no function
+/// node refuses `UnknownFunction`, naming the exact selection and the
+/// recompiled package -- an undeclared name, a name equal to `small` but for
+/// case, and a qualified name whose last segment is `small`. None of them
+/// falls back to a display-name match against `small`.
+#[trace("TC-444", "TC-166", "FR-098-AC-4", "FR-062-AC-10", "FR-065-AC-6")]
 #[test]
 fn tc_444_a_selection_naming_no_function_refuses() {
-    for selection in [name(&["large"]), name(&["module", "small"])] {
-        let mut wire = small(7);
-        wire.selected_function = selection.clone();
-        let refused = replay(wire).unwrap_err();
-        let ReplayRefusal::UnknownFunction {
-            selection: named,
-            package,
-        } = &refused
-        else {
-            panic!("expected an unknown function, got {refused:?}");
-        };
-        assert_eq!(named, &selection);
-        assert_eq!(
-            package,
-            &spine(&proved(), &BTreeMap::new()).emitted.package_id()
-        );
-    }
-}
-
-/// TC-166 steps 2 and 3: the executor resolves a request's typed
-/// `QualifiedName` against the recompiled package's declarations, exact
-/// segment for exact segment. `small` resolves and replays. A well-formed
-/// name that resolves to none refuses `UnknownFunction`, naming the exact
-/// selection and the recompiled package: an undeclared name, a name equal to
-/// `small` but for case, and a qualified name whose last segment is `small`.
-/// None of them falls back to a display-name match against `small`.
-#[trace("TC-166", "FR-062-AC-10", "FR-065-AC-6")]
-#[test]
-fn tc_166_an_unresolvable_qualified_name_refuses_unknown_function() {
-    replay(small(7)).expect("`small` resolves against the recompiled package");
     let recompiled = spine(&proved(), &BTreeMap::new()).emitted.package_id();
     for selection in [
         name(&["large"]),
@@ -556,6 +529,38 @@ fn tc_166_an_unresolvable_qualified_name_refuses_unknown_function() {
         assert_eq!(named, &selection);
         assert_eq!(package, &recompiled);
         assert_eq!(refused.code(), Code::MissingDeclaration);
+    }
+}
+
+/// TC-166 step 2: a package declaring `small` and `Small`, whose names
+/// differ only by case and whose bodies disagree at `x = 7`. Each request
+/// selects one by its exact `QualifiedName` and replays that function's own
+/// body: `small(7)` is `false`, `Small(7)` is `true`. A display-name match
+/// that folded case would replay the same body for both.
+#[trace("TC-166", "FR-062-AC-10", "FR-065-AC-6")]
+#[test]
+fn tc_166_case_variant_functions_each_replay_their_own_body() {
+    let source = format!(
+        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+         function small using v(x: Int[0, 9]): Boolean pure {{ x < 5 }}\n\
+         function Small using v(x: Int[0, 9]): Boolean pure {{ x > 5 }}\n"
+    );
+    let compiled = spine(&source, &BTreeMap::new());
+    for (function, holds) in [("small", false), ("Small", true)] {
+        let wire = request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&[function]),
+            input(parameter(&compiled, function, 0), 7),
+        );
+        let ReplayResult::Input(result) = replay(wire).expect("the replay runs") else {
+            panic!("an Input-sourced request settles on the Input arm");
+        };
+        assert_eq!(
+            result.value(),
+            Some(EvaluatedValue::Boolean(holds)),
+            "{function}(7) replays its own body"
+        );
     }
 }
 

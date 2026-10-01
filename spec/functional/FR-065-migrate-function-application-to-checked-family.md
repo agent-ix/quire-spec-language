@@ -352,11 +352,13 @@ delivered code today:
 - FR-065-AC-6: backed (`TC-166`), implemented and tested. The `replay`
   executor entry resolves the request's typed `QualifiedName` against the
   recompiled package's declarations: a `compile_fail` doctest on `replay`
-  shows a bare `&str` selection does not compile, and
-  `tc_166_an_unresolvable_qualified_name_refuses_unknown_function`
-  (`qsl-replay/src/execute/tests.rs`) refuses an undeclared, a case-variant
-  and a qualified name with `ReplayRefusal::UnknownFunction` rather than
-  matching any function by display name.
+  shows a bare `&str` selection does not compile. In
+  `qsl-replay/src/execute/tests.rs`,
+  `tc_166_case_variant_functions_each_replay_their_own_body` replays `small`
+  and `Small` each by its own body, and
+  `tc_444_a_selection_naming_no_function_refuses` refuses an undeclared, a
+  case-variant and a qualified name with `ReplayRefusal::UnknownFunction`
+  rather than matching any function by display name.
 - FR-065-AC-7: backed (`TC-380`). The contract's
   `check` hook type-checks the body, and `f`'s checked identity is
   FR-092 vector F1.
