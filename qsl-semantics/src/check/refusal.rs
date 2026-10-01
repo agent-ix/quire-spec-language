@@ -285,8 +285,12 @@ pub enum Origin {
     /// A standalone checked expression.
     Expression,
     /// A declared record, tuple or enum type, by its declared name. Its
-    /// `declaration` occurrence is located here (FR-322). A type
-    /// declaration carries no form spans, so this origin names no region
+    /// `declaration` occurrence is located here (FR-322), and so is the
+    /// `generated` occurrence of a node that no function body, measure,
+    /// state clause or protocol attempt reaches, when this is the least
+    /// declared name that reaches it (`lowering::enclosing_declarations`). It
+    /// names the declared name's region when the FR-091 assembler read the
+    /// name from the unit, and no region for a type declared by hand
     /// (FR-096).
     TypeDeclaration {
         /// The declared name.
