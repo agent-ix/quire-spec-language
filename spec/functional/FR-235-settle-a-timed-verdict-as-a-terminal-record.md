@@ -76,6 +76,7 @@ refuted, with its trap evidence.
 | V-1 | `Holds(certificate)` and the checker accepts | `proved` | `closed-scope` | `Proved{basis: ZoneCertified}` | success |
 | V-1 | `HoldsDigitized` (FR-243) | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` | success |
 | V-4 | `Violated` whose replay reproduces, `kind` `Formula` or `Deadlock` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
+| V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-10 | `Violated` with `kind: TimeLock` whose replay reproduces | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-6 | `Holds(certificate)` and the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected)` | inconclusive |
 | V-6 | `Undecided(NoAdmittedBehaviour)` or `Undecided(LassoNotConcretized)`; a replay that settles `inconclusive` or refuses | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
@@ -104,6 +105,7 @@ refuted, with its trap evidence.
 | FR-235-AC-2 | `Settles` over `Rpc` with `T = 4 ms`, decided by the zone search, settles `proved`, `Proved{ZoneCertified}`; the same outcome with one certificate node removed settles `inconclusive`, `CertificateRejected`. `NoLateReply` over the same subject, decided by digitization (FR-243), settles `Proved{Exhaustive}` with method `digitized-explicit-state`. | Test (TC-690) |
 | FR-235-AC-3 | `NoLateReply` with `T = 3 ms` settles `refuted` only after FR-237's replay reproduces; with the `timeout` step's delay changed to `5/2` the replay refuses and the item settles `inconclusive`. The strict-guard variant's time-lock-freedom item settles `refuted`, basis `closed-scope`, with a counterexample whose `kind` is `TimeLock`. | Test (TC-690) |
 | FR-235-AC-4 | FR-232-AC-3's `Stall` claim settles `inconclusive`, `NoAdmittedBehaviour`; FR-234-AC-3's punctual liveness claim settles `unsupported`, `PunctualInterval`; a zone search stopped by `max_symbolic_states` settles `failed`, `resource-incomplete`, naming the limit. | Test (TC-690) |
+| FR-235-AC-5 | FR-239-AC-5's outcome settles `refuted`, `decisive-counterexample`, category violation, cause `UndefinedEvaluation{where: 2, cause: division-by-zero}`, after FR-237's replay reproduces it. | Test (TC-710) |
 
 ## Dependencies
 

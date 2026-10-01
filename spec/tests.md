@@ -480,6 +480,7 @@ names different artifacts in each.
 | TC-707 | QSL writes monitor-agreement, tick-arithmetic and timestamp-contract obligations, and disposes elapsed-time obligations unsupported | Unit | P1 | FR-252-AC-1, FR-252-AC-2 | 🚧 Planned |
 | TC-708 | Delay distributions check, windows are exact and the race resolves ties by the workload | Unit | P1 | FR-253-AC-1, FR-253-AC-2, FR-253-AC-3 | 🚧 Planned |
 | TC-709 | Timed runs sample with exact rational delays, measure timed events and replay | Integration | P1 | FR-254-AC-1, FR-254-AC-2, FR-254-AC-3 | 🚧 Planned |
+| TC-710 | An undefined timed claim evaluation refutes with a timed prefix and replays | Integration | P1 | FR-239-AC-5, FR-237-AC-5, FR-235-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

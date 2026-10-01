@@ -123,6 +123,12 @@ edges, automaton states and stored zone bytes.
   SHALL stop and return `Stopped(ResourceExhausted, limit)` naming the limit
   and its value. When `poll` returns `true`, it SHALL return
   `Stopped(Cancelled, …)`.
+- If an atom of the claim evaluates `Undefined` at a point of a symbolic
+  state the search creates, then the engine SHALL end the search with
+  `Violated` at the first such symbolic state in canonical breadth-first
+  order, concretized by FR-241 to a point where it is undefined, with
+  `kind: UndefinedEvaluation{where, cause}` (ADR-026 TV-1, ADR-018 UE-1). An
+  undefined position SHALL rank like any other violation.
 - An expansion that stops on an undecided contract conjunction SHALL return
   `Undecided(UndecidedSuccessor)`; a subject with no initial state,
   `Undecided(NoInitialState)`.
@@ -144,6 +150,7 @@ edges, automaton states and stored zone bytes.
 | FR-239-AC-2 | ADR-026 §9's retry model (heartbeat while `x < 1`, retry when `x > 1 and y < 1`) returns `Violated` for `always holds(not retried)`, though the same model read over integer clocks has no reachable retry. | Test (TC-694) |
 | FR-239-AC-3 | A model whose clock `x` is compared only with 5 and grows without bound in a loop reaches a finite number of stored symbolic states, and the same model with the constant `10^12` reaches the same number. | Test (TC-694) |
 | FR-239-AC-4 | `Settles` over `Rpc` with `max_symbolic_states` 2 returns `Stopped(ResourceExhausted, MaxSymbolicStates)` naming the value 2; with a poll that returns `true`, `Stopped(Cancelled, …)`; a subject with an unbounded population root refuses `RequiresBound` with no state explored. Two runs of each request give equal outcomes and byte-equal certificates and counterexamples. | Test (TC-694) |
+| FR-239-AC-5 | Over a `Ticker` model (`time dense`; object `t` with `n: Int[0, 2]` and clock `x`; operation `step` with precondition `self.n < 2`, guard `x >= 1`, reset `x` and postcondition `self.n = pre(self.n) + 1`; time invariant `x <= 1`; initial `n = 0`) and `always holds(2 / (2 - t.n) >= 1)` under `model-time`, the search returns `Violated` with the timed prefix `step` after delay 1, `step` after delay 1, and `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`, the position at time stamp 2. | Test (TC-710) |
 
 ## Dependencies
 

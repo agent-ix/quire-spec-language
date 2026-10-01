@@ -79,6 +79,11 @@ refutation.
   FR-231 over the timed lasso, unrolling the loop until the unrolled time
   span covers the formula's time reach. `false` SHALL settle
   `reproduced-with-evaluated-witness`; `true` or no value, `inconclusive`.
+- **Undefined evaluation.** For `kind: UndefinedEvaluation`, replay SHALL
+  evaluate the claim's letters along the replayed timed prefix by FR-231
+  (ADR-018 UE-5). The first undefined evaluation at `where`, with an equal
+  cause, SHALL settle `reproduced-with-evaluated-witness`; any other
+  result SHALL settle `inconclusive`, `ReplayParity`.
 - **Local time-lock.** For `kind: TimeLock`, after the prefix and its
   `final_delay`, when no positive delay is admissible at the last timed
   state, replay SHALL check that no transition identity is enabled there;
@@ -105,6 +110,7 @@ refutation.
 | FR-237-AC-2 | Refusals settle no result: the `timeout` delay changed to `5/2` (guard `x >= 3` fails); the delay changed to `7/2` (`x <= 3` forbids it); one post-state digest altered (`stale_dependency`/`revision-mismatch`); a lasso whose loop has total delay 0; a lasso whose loop does not return to its entry clock values. | Test (TC-692) |
 | FR-237-AC-3 | The strict-guard variant's local time-lock counterexample reproduces; the same payload replayed against the variant with `reply` guarded by `x >= 3 ms` settles `inconclusive`, `ReplayParity`, since `reply` is enabled at the last state. | Test (TC-692) |
 | FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. Replaying one envelope twice gives equal results. | Test (TC-692) |
+| FR-237-AC-5 | FR-239-AC-5's counterexample replays to `reproduced-with-evaluated-witness`; with its last step removed it settles `inconclusive`, `ReplayParity`. | Test (TC-710) |
 
 ## Dependencies
 
