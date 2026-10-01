@@ -47,9 +47,10 @@ TemporalTrace evaluator and replay settle it.
 ## Outputs
 
 - `TerminalValue::Unsupported(UnavailabilityCause::MissingFairnessPremise
-  { constraint: FairnessConstraint })`: QSpec FR-341 (infinite-trace) label
-  `unsupported`, QSpec FR-243 basis `unavailable`, O-16 category
-  unsupported.
+  { constraint: FairnessConstraint })`: QSpec FR-360 label
+  `unsupported`, QSpec FR-243 basis `unavailable`, wire cause
+  `unsupported_projection`/`missing-fairness-premise` (QSpec FR-362), O-16
+  category unsupported.
 
 ## Behavior
 
@@ -78,4 +79,5 @@ TemporalTrace evaluator and replay settle it.
 
 ## References
 
-- QSpec half of ADR-019, carrying ADR-019 QS-3: Linear STD-132.
+- QSpec FR-362 (the missing fairness premise): the QSpec half of ADR-019
+  QS-3 (Linear STD-132).

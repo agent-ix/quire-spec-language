@@ -96,4 +96,5 @@ computes it and what it writes.
 
 ## References
 
-- QSpec half of ADR-019, carrying ADR-019 QS-8: Linear STD-132.
+- QSpec FR-369 (the strong-fairness hint): the QSpec half of ADR-019 QS-8
+  (Linear STD-132).

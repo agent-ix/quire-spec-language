@@ -19,7 +19,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-341
+  - target: ix://agent-ix/quire-specification/FR-360
     type: depends_on
 ---
 # ADR-019: Strong fairness of operations
@@ -34,8 +34,8 @@ The owner's rulings on this record's own draft questions are in §9. The owning 
 work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. "QSpec FR-341 (infinite-trace)" is the infinite-trace result
-disposition vocabulary, as in ADR-018. Item ids `SY-`, `SF-`, `SR-`, `BE-`,
+requirement. QSpec FR-360 is the infinite-trace result disposition
+vocabulary, as in ADR-018. Item ids `SY-`, `SF-`, `SR-`, `BE-`,
 `SV-`, `QS-` and `AM-` are local to this record. Other artifacts cite them as
 `ADR-019 SR-2`.
 
@@ -62,8 +62,8 @@ Their liveness needs strong fairness. TLA+ writes it `SF`, Quint
 
 QSpec FR-161 states that fairness filters the admitted infinite traces before
 evaluation and that the fairness set enters every proof and counterexample
-identity (FR-161-AC-5). QSpec FR-341 (infinite-trace) settles a missing
-fairness premise `unsupported`.
+identity (FR-161-AC-5). QSpec FR-362 settles a missing fairness premise
+`unsupported`, cause `unsupported_projection`/`missing-fairness-premise`.
 
 ## Decision
 
@@ -144,7 +144,7 @@ Every verdict is one of ADR-018 V-1 to V-8, with ADR-018's `ProofBasis` and
 | ID | Rule |
 | --- | --- |
 | SV-1 | **Capability.** A temporal provider manifest advertises the fairness kinds its candidate decides. When no candidate for (`temporal-satisfaction`, `unbounded`) advertises `strong`, an item with a strong constraint settles V-8, `unsupported-requested-capability`, with a warning naming the strong-fairness capability, as QSpec FR-161-AC-7 does for a missing liveness backend. |
-| SV-2 | **Missing fairness premise.** `MissingFairnessPremise{constraint}` is a new `Unsupported` cause, QSpec FR-341 (infinite-trace)'s "missing fairness premise": `unsupported`, basis `unavailable`. Enabledness comes from a model subject only, through FR-120. A supplied trace, replayed or monitored with no model subject behind it, carries states and steps and no enabledness. A clause with any fairness constraint, weak or strong, evaluated over a supplied trace settles `unsupported` with this cause, naming the first constraint of its fairness set in canonical order. A clause with an empty fairness set over a supplied trace evaluates as ADR-014 A-4 states. |
+| SV-2 | **Missing fairness premise.** `MissingFairnessPremise{constraint}` is a new `Unsupported` cause, QSpec FR-362's "missing fairness premise": `unsupported`, basis `unavailable`, wire cause `unsupported_projection`/`missing-fairness-premise`. Enabledness comes from a model subject only, through FR-120. A supplied trace, replayed or monitored with no model subject behind it, carries states and steps and no enabledness. A clause with any fairness constraint, weak or strong, evaluated over a supplied trace settles `unsupported` with this cause, naming the first constraint of its fairness set in canonical order. A clause with an empty fairness set over a supplied trace evaluates as ADR-014 A-4 states. |
 | SV-3 | **Undecided enabledness.** A contract conjunction that evaluates undecided while EN-1 computes an enabled set leaves both the successor relation and enabledness unknown, and settles V-6 `UndecidedSuccessor`, as ADR-018 states. |
 | SV-4 | **Unfair counterexample.** A lasso that fails a strong constraint on replay is refused by ADR-018 CX-3 and settles no `refuted`. An EN-1 counterexample is fair by SR-7; a refusal of one is an engine defect and settles V-6 `ReplayParity`. |
 | SV-5 | **Identity.** Each constraint's kind enters the clause's obligation identity with its operation and granularity (QSpec FR-161-AC-5). A claim under `strong each` and the same claim under `weak each` are different obligations, and a verdict on one never joins the other's request. |
@@ -246,7 +246,7 @@ follows IR state-node admission and the SMT backend (ADR-018 RU-1). It adds no s
 | --- | --- | --- |
 | QS-1 | Surface syntax: the `strong` kind beside `weak`, unmarked kind `weak` and `strong` always written (SY-2), the same `whole`/`each` granularity with unmarked `whole` (SY-3), so `fair Op` is `fair weak whole Op`; admission on infinite-trace clauses only | shared grammar |
 | QS-2 | Strong fairness semantics on infinite traces (SF-3) and on lassos (SF-4), the shared enabled/taken definition (SF-2), strong implies weak (SF-5), granularity ordering (SF-6), machine closure and its two consequences (SF-7) | QSpec FR-161 |
-| QS-3 | "Missing fairness premise": enabledness comes from a model subject only; a supplied trace carries none, so a clause with any fairness constraint, weak or strong, over a supplied trace settles `unsupported` (SV-2) | QSpec FR-161, FR-341 (infinite-trace) |
+| QS-3 | "Missing fairness premise": enabledness comes from a model subject only; a supplied trace carries none, so a clause with any fairness constraint, weak or strong, over a supplied trace settles `unsupported` (SV-2) | QSpec FR-161, FR-360, FR-362 |
 | QS-4 | Provider advertisement of supported fairness kinds, and the rule that negotiation never drops or weakens a fairness constraint; the `unsupported` warning naming the strong-fairness capability | QSpec FR-290 and the provider manifest contract |
 | QS-5 | The fairness set in the obligation identity and the counterexample wire carries each constraint's kind, operation and granularity | QSpec FR-161-AC-5, FR-331 and the counterexample contract |
 | QS-6 | Replay checks every constraint of the fairness set against the loop with enabledness recomputed from the model, and refuses an unfair lasso | the counterexample contract |
@@ -329,8 +329,11 @@ ADR-019" note.
 
 ## References
 
-- Owning ticket: Linear QSL-365. ADR-018's owning ticket: QSL-366. A paired STD
-  ticket carries §8 into QSpec.
+- Owning ticket: Linear QSL-365. ADR-018's owning ticket: QSL-366. §8 is
+  carried into QSpec by QSpec FR-362 (weak and strong fairness, the missing
+  fairness premise), FR-364 (replay), FR-365 (the canonical counterexample),
+  FR-368 (fairness kinds in negotiation) and FR-369 (the strong-fairness
+  hint) (Linear STD-132).
 - Later research on lowering to TLA+ and Quint, which BE-5 depends on:
   RES-42.
 - QSpec V1-TEMP-021 to V1-TEMP-026: infinite-trace capability inventory rows.

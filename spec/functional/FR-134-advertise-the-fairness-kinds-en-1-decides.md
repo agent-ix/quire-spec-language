@@ -83,4 +83,5 @@ EN-1 advertises and how the registry filters.
 
 ## References
 
-- QSpec half of ADR-019, carrying ADR-019 QS-4: Linear STD-132.
+- QSpec FR-368 (fairness kinds in negotiation): the QSpec half of ADR-019
+  QS-4 (Linear STD-132).

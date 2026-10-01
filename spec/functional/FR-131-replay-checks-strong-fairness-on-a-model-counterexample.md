@@ -91,4 +91,5 @@ its settlement.
 
 ## References
 
-- QSpec half of ADR-019, carrying ADR-019 QS-5 and QS-6: Linear STD-132.
+- QSpec FR-364 (replay) and FR-362 (the fairness set in the counterexample):
+  the QSpec half of ADR-019 QS-5 and QS-6 (Linear STD-132).

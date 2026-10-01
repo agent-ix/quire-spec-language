@@ -119,6 +119,7 @@ constraint.
 
 ## References
 
-- QSpec half of ADR-019: Linear STD-132.
+- QSpec FR-362 (strong fairness semantics) and FR-365 (the canonical
+  counterexample): the QSpec half of ADR-019 (Linear STD-132).
 - E. A. Emerson and C.-L. Lei, 1987, and T. Latvala and K. Heljanko, 2000,
   as ADR-019 cites them.

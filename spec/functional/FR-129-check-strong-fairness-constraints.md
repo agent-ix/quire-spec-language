@@ -91,4 +91,5 @@ are illustrative.
 
 ## References
 
-- QSpec half of ADR-019, carrying ADR-019 QS-1 to QS-8: Linear STD-132.
+- QSpec FR-362 (weak and strong fairness) and FR-369 (the strong-fairness
+  hint): the QSpec half of ADR-019 QS-1 to QS-8 (Linear STD-132).
