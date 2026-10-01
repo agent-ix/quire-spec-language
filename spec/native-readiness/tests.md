@@ -43,7 +43,7 @@ evaluation, shared wire and external producer qualification are outside this pla
 | FR-010 | FR-010-AC-9 | TC-015, TC-111 | ✅ Passed locally |
 | FR-003 | FR-003-AC-4 | TC-016 | ✅ Passed locally |
 | FR-003 | FR-003-AC-5 | TC-016 | ✅ Passed locally |
-| FR-003 | FR-003-AC-6 | TC-016 | ✅ Passed locally |
+| FR-003 | FR-003-AC-6 | TC-016 | 🚧 Planned: the formatter clamps every ceiling to 1 MiB |
 | FR-010 | FR-010-AC-6 | TC-017 | ✅ Passed locally |
 | FR-010 | FR-010-AC-8 | TC-018 | ✅ Passed locally |
 | FR-002 | FR-002-AC-6 | TC-019 | ✅ Passed locally |
@@ -57,7 +57,7 @@ evaluation, shared wire and external producer qualification are outside this pla
 | TC-013 | Token-preserving formatting | Unit | P1 | FR-003-AC-1, FR-003-AC-2, FR-003-AC-3 | ✅ Passed locally |
 | TC-014 | Exact extracted source correspondence | Integration | P1 | FR-004-AC-1, FR-004-AC-2, FR-004-AC-3, FR-004-AC-4, NFR-001-M-5 | ✅ Passed locally |
 | TC-015 | Native CLI outcomes and digest | E2E | P1 | FR-010-AC-1, FR-010-AC-2, FR-010-AC-3, FR-010-AC-4, FR-010-AC-5, FR-010-AC-7, FR-010-AC-9 | ✅ Passed locally |
-| TC-016 | Inclusive formatter byte ceilings | Property | P1 | FR-003-AC-4, FR-003-AC-5, FR-003-AC-6, NFR-001-M-1 | ✅ Passed locally |
+| TC-016 | Inclusive formatter byte ceilings | Property | P1 | FR-003-AC-4, FR-003-AC-5, FR-003-AC-6, NFR-001-M-1 | 🚧 Partial: AC-4 and AC-5 pass locally; AC-6 planned |
 | TC-017 | Native CLI OS argument boundary | E2E | P1 | FR-010-AC-3, FR-010-AC-6, FR-010-AC-7 | ✅ Passed locally |
 | TC-018 | Native diagnostic error interoperability | Integration | P1 | FR-010-AC-8 | ✅ Passed locally |
 | TC-019 | Bounded malformed source corpus | Property | P1 | FR-002-AC-6 | ✅ Passed locally |
