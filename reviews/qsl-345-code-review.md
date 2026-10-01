@@ -50,3 +50,11 @@ The split is clean. Items 1 and 2 use no item-4 code. Item 4 touches these place
 the `FieldName`/`FieldSite` names in the `pub use call_site::{..}` line of lib.rs,
 and the module doc of call_site.rs, which mentions a field's domain key next to the
 package bytes.
+
+## Dispositions
+
+Round 1, reviewed at 03c92c292526a13ebf2e207d30978e82a838cfd3 (fix commit 03c92c29, rebased onto main c9e63aa4). Coder's make ci on 03c92c29: exit 0, with `tests/declared_domain_facade.rs` reported as running and passing (not re-run). Item 4 confirmed absent from `git diff origin/main...03c92c29`: no qsl-semantics or ADR-012 change, no FieldName/FieldSite/field_domain, FR-121 field text removed, TC-516 steps 12-13 replaced, spec.md row without the §15.4 clause. The former AC-14/AC-15 are now AC-12/AC-13 and TC-516 steps 12/13, and the trace tags and scope line match.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 03c92c29: the in-crate `crate::`-path test is removed; the integration test qsl-replay/tests/declared_domain_facade.rs imports all eight re-exports through `qsl_replay::` and exercises each (EmptyInterval through `IntegerInterval::new`), traced FR-121-AC-13 |
