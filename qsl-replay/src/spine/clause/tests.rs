@@ -2276,11 +2276,13 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // (SR-751 FND-008 round 2, disclosed, not attempted): every
     // `CallFailure::Fault` `evaluate_clause` can itself construct
     // (`qsl-eval/src/value/expression/mod.rs:456,475,486`,
-    // "clause-observations-missing-an-observation"/
+    // "clause-observations-missing-the-clause-observation"/
     // "postcondition-result-missing"/"clause-parameter-not-admitted") is
-    // unreachable once admission has actually succeeded: FR-106's
-    // `admit_operation` unconditionally sets both `pre` and `post` on
-    // success (never leaving both `current` and `post` `None`), always
+    // unreachable once admission has actually succeeded: FR-106 always
+    // admits the observation the clause kind reads -- `current` for an
+    // invariant, `pre` and `post` for an invocation, and `pre` for a
+    // pre-call precondition, which leaves `current` and `post` both `None`
+    // and is read through `pre` -- always
     // admits a `result` for an operation `binds_result()` declares
     // (refusing at admission otherwise, never reaching evaluate), and
     // always admits every one of the clause's own declared parameters
@@ -3226,6 +3228,61 @@ fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evalu
     package
         .evaluate_clause(&name, &observations, meter)
         .expect("ReachesTarget evaluates")
+}
+
+/// FR-107: a clause reads its own observation by its kind -- `current`
+/// for an invariant, `post` for a postcondition -- and never another one in
+/// its place. `VersionUnchanged` over observations that lost their post
+/// snapshot faults naming the missing clause observation rather than
+/// evaluating over `pre`.
+#[trace("TC-466")]
+#[test]
+fn a_postcondition_with_only_a_pre_observation_faults() {
+    let compiled = config_version_compiled();
+    let (_, packages) = config_version_unit_and_packages();
+    let package = &compiled.package;
+    let model_digest_hex = config_version_model_digest_hex();
+    let (pre, pre_bytes) = document_ref_and_bytes("only-pre", |label| {
+        config_version_invocation_snapshot(label, &model_digest_hex, "pre", 1, 2)
+    });
+    let (post, post_bytes) = document_ref_and_bytes("only-post", |label| {
+        config_version_invocation_snapshot(label, &model_digest_hex, "post", 1, 3)
+    });
+    let (invocation, invocation_bytes) = document_ref_and_bytes("only-invocation", |label| {
+        config_version_invocation_bytes(label, &model_digest_hex, &pre, &post, "child")
+    });
+    let snapshots = BTreeMap::from([(pre.digest, pre_bytes), (post.digest, post_bytes)]);
+    let invocations = BTreeMap::from([(invocation.digest, invocation_bytes)]);
+    let clause = package
+        .graph()
+        .state_clause("VersionUnchanged")
+        .expect("VersionUnchanged is declared");
+    let mut observations = admit_clause_observations(
+        package.graph(),
+        clause,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+        &Provisions {
+            snapshots: &snapshots,
+            invocations: &invocations,
+        },
+        &config_version_invocation_selection("VersionUnchanged", invocation),
+        ObservationLimits::default(),
+    )
+    .expect("changed-version admits");
+    observations.post = None;
+    let name = QualifiedName::unqualified("VersionUnchanged").unwrap();
+    let mut meter = Meter::new(default_accounting(1_000_000));
+    match package.evaluate_clause(&name, &observations, &mut meter) {
+        Err(CallFailure::Fault(fault)) => {
+            assert_eq!(fault.stage(), "S6a");
+            assert_eq!(
+                fault.invariant(),
+                "clause-observations-missing-the-clause-observation"
+            );
+        }
+        other => panic!("expected an S6a fault, got {other:?}"),
+    }
 }
 
 /// Step 3(a)'s exact `reaches` charge log (TC-466's own Expected Results).

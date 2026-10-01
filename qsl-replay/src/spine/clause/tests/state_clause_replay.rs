@@ -338,19 +338,27 @@ fn a_violated_postcondition_reproduces_keeping_its_identities() {
 fn an_input_arm_envelope_reproduces_without_a_witness() {
     let documents = changed_version();
     let read = documents.read.clone();
-    let result = replay(case_with(
+    let case = case_with(
         config_version_unit(),
         "VersionUnchanged",
         documents,
         ReplaySource::Input(Vec::new()),
         |_, _| {},
-    ))
-    .expect("the replay settles");
+    );
+    let unit_bytes = case.unit.bytes.clone();
+    let package_id = case.unit.compiled.emitted.package_id();
+    let (node, occurrence) = clause_identity(&case.unit, "VersionUnchanged");
+    let result = replay(case).expect("the replay settles");
     let ReplayResult::Input(arm) = result.result() else {
         panic!("expected the input arm, got {:?}", result.result());
     };
     assert_eq!(arm.settlement(), InputSettlement::ReproducedWithoutWitness);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
+    assert_eq!(result.source().digest(), source_digest(&unit_bytes));
+    assert_eq!(result.package_id(), package_id);
+    assert_eq!(result.clause().as_str(), "VersionUnchanged");
+    assert_eq!(result.clause_node(), node);
+    assert_eq!(result.occurrence_key(), &occurrence);
     assert_eq!(result.documents(), &read[..]);
 }
 

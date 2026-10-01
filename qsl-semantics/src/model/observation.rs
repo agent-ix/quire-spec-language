@@ -1019,7 +1019,7 @@ fn admit_invocation_documents(
         &pre_snapshot.populations,
         &pre_values.completeness,
         Some(&self_object.population),
-        &document::parameter_populations(views, &invocation.parameters),
+        &document::parameter_populations(views, &operation.declaration, &invocation.parameters),
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
@@ -1147,7 +1147,11 @@ fn admit_pre_call(
         &snapshot.populations,
         &values.completeness,
         Some(&self_object.population),
-        &document::parameter_populations(context.views, &parameters),
+        &document::parameter_populations(
+            context.views,
+            &context.operation.declaration,
+            &parameters,
+        ),
     )?;
     document::check_population_closure(
         &snapshot.populations,

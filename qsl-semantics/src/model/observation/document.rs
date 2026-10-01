@@ -1234,17 +1234,26 @@ pub(super) fn admit_population_values<'t>(
 }
 
 /// FR-106's required populations from parameters: every population of the
-/// package that a reference inside a parameter's raw value names, in
-/// parameter order and then the value's walk order, once each. Read from
-/// the raw values because check 7 runs before check 10 admits them. A
-/// reference naming no declared population is left out: check 10 refuses
-/// it `dangling_reference`.
+/// package that a reference inside the raw value of one of `operation`'s
+/// declared reference-valued parameters names, in declared parameter order
+/// and then the value's walk order, once each. Read from the raw values
+/// because check 7 runs before check 10 admits them. An undeclared or
+/// non-reference parameter makes no population required: check 10 refuses
+/// it. A reference naming no declared population is left out: check 10
+/// refuses it `dangling_reference`.
 pub(super) fn parameter_populations(
     views: &[ModelView],
+    operation: &OperationDeclaration,
     parameters: &[(String, SnapshotValue)],
 ) -> Vec<String> {
     let mut named = Vec::new();
-    for (_, raw) in parameters {
+    for (name, value_type) in operation.parameters() {
+        if !holds_references(value_type) {
+            continue;
+        }
+        let Some(raw) = raw_field(parameters, name) else {
+            continue;
+        };
         let mut refs = Vec::new();
         collect_references(raw, &mut refs);
         for (population, _) in refs {
@@ -1254,6 +1263,27 @@ pub(super) fn parameter_populations(
         }
     }
     named
+}
+
+/// Whether a value of `value_type` can hold an object reference: a
+/// reference, or an option or collection of one.
+fn holds_references(value_type: &quire_exact::ValueType) -> bool {
+    match value_type {
+        quire_exact::ValueType::Reference(_) => true,
+        quire_exact::ValueType::Option(inner) => holds_references(inner),
+        quire_exact::ValueType::Collection(collection) => holds_references(collection.element()),
+        quire_exact::ValueType::Boolean
+        | quire_exact::ValueType::Integer
+        | quire_exact::ValueType::Int(_)
+        | quire_exact::ValueType::Rational(_)
+        | quire_exact::ValueType::Decimal(_)
+        | quire_exact::ValueType::Float(_)
+        | quire_exact::ValueType::Quantity(_)
+        | quire_exact::ValueType::Text(_)
+        | quire_exact::ValueType::Enum(_)
+        | quire_exact::ValueType::Composite(_)
+        | quire_exact::ValueType::Population(_) => false,
+    }
 }
 
 /// FR-106 check 7: a required population -- the population holding `self`,

@@ -504,6 +504,17 @@ impl CheckedStateClause {
         self.kind
     }
 
+    /// The observation the clause's own reads take (FR-104, FR-107):
+    /// `current` for an invariant, `pre` for a precondition, `post` for a
+    /// postcondition.
+    pub fn observation(&self) -> Observation {
+        match self.kind {
+            StateClauseKind::Invariant => Observation::Current,
+            StateClauseKind::Precondition => Observation::Pre,
+            StateClauseKind::Postcondition => Observation::Post,
+        }
+    }
+
     /// The context object type `M::T`, by its effective identity.
     pub fn context(&self) -> EffectiveId {
         self.context

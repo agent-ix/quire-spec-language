@@ -1973,6 +1973,68 @@ fn tc464_step5_a_pre_call_target_in_an_incomplete_archive_is_incomplete() {
     );
 }
 
+/// Step 5 (FR-106-AC-8): an undeclared parameter `zextra` naming `a1` in
+/// the incomplete `archive` makes no population required: check 10 refuses
+/// it `invalid_runtime_input`/`unknown-member`, not check 7 `Incomplete`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_an_undeclared_parameter_requires_no_population() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let snapshot = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({"population": archive, "complete": false, "objects": []})],
+    );
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        snapshot,
+        vec![
+            ("target", tc464_reference(TC464_CONFIG_HISTORY, "a")),
+            ("zextra", tc464_reference(archive, "a1")),
+        ],
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("zextra")
+    );
+}
+
+/// Step 5's archive case over an invocation (FR-106 required populations:
+/// "of an invocation or a `PreCall` selection, in the pre snapshot"): the
+/// `probe` invocation's `target` naming `a1` in an `archive` its pre
+/// snapshot lists with no objects and marks `complete: false` is
+/// `Incomplete` with `incomplete_population`/`incomplete-scope` naming
+/// `archive`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_an_invocation_target_in_an_incomplete_archive_is_incomplete() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let result = run_tc465_probe_with(
+        &document,
+        |pre| {
+            pre["populations"]
+                .as_array_mut()
+                .expect("the snapshot lists its populations")
+                .push(json!({"population": archive, "complete": false, "objects": []}));
+        },
+        |invocation| {
+            invocation["parameters"]["target"] =
+                json!({"reference": {"population": archive, "key": "a1"}});
+        },
+    );
+    let record = assert_tc465_incomplete(result, "incomplete_population", "incomplete-scope");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(archive)
+    );
+}
+
 /// Step 5 (FR-106-AC-8): the pre-call snapshot marked `complete: false` is
 /// `Incomplete` with `incomplete_population`/`incomplete-scope`.
 #[trace("TC-464", "FR-106-AC-8")]
@@ -2827,9 +2889,23 @@ fn run_tc465_probe(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_probe_with(document, |_| {}, mutate_invocation)
+}
+
+/// [`run_tc465_probe`], with the pre snapshot's JSON mutated by
+/// `mutate_pre` before it is digested.
+fn run_tc465_probe_with(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
-    let pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
+    let mut pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
+    mutate_pre(&mut pre_value);
     let pre_bytes = pre_value.to_string().into_bytes();
     let pre = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&pre_bytes),
