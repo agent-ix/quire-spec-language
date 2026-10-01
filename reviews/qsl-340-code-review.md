@@ -67,3 +67,13 @@ No correctness bug in the shipped code. The clamp, the incomplete mapping
 and the depth tests are right and their oracles are independent of the code
 under test. Three low findings. The `RangedTree` expectation is filed under
 gap analysis (SR-910 FND-001).
+
+## Dispositions
+
+Round 1, reviewed at c23e4fb596d3b14f8d350b8ea431ddcff997b3a1 (diff a305f56f..c23e4fb5). Reviewer re-ran the focused `qsl-package` depth and tc_440 tests: exit 0, 10 passed, 1 ignored.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c23e4fb5: the doc comment now says IR's first unbounded node is "a form QSL named as a domain or, for a recursive type, a member of the recursion group QSL named"; the `FirstUnbounded::InRecursionGroup` doc states IR reports the lowest node id, which depends on digest order (extent_agreement.rs:220-237) |
+| FND-002 | fixed | c23e4fb5: `#[trace("TC-088", "NFR-007-M-5")]` on all three new depth tests; TC-088 verifies NFR-007's five metrics and M-5 is JSON nesting (checked_v2/tests.rs:1114,1128,1157) |
+| FND-003 | fixed | c23e4fb5: `V2ReadLimits::depth` doc now carries the stack caveat (checked_v2.rs:186-189) |

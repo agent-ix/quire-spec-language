@@ -41,3 +41,12 @@ What was checked:
 The status edits are accurate for the code except for the `RangedTree`
 agreement claim, which rests on an AC clause that does not cover recursive
 types (FND-001, tied to SR-910 FND-001). One low wording nit.
+
+## Dispositions
+
+Round 1, reviewed at c23e4fb596d3b14f8d350b8ea431ddcff997b3a1 (diff a305f56f..c23e4fb5).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c23e4fb5: FR-097-AC-6 now reads "...a form QSL names as a domain; for a recursive type, whose domain QSL names `Recursive` at the type's root, it is a member of that root's recursion group"; TC-440 Expected Results, TC-440 Status, FR-097 Status and the tests.md row say the same |
+| FND-002 | fixed | c23e4fb5: NFR-007 now reads "IR charges the checked-package v2 reader's nesting ceiling up to its fixed maximum" |

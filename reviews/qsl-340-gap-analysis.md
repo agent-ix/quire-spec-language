@@ -51,3 +51,12 @@ does not test AC-6's named-form clause, and the elevated-depth admit path has
 no test. Both should be fixed in this PR (a test change for FND-002; for
 FND-001 either assert IR's node is a member of the recursion group QSL named
 and amend AC-6 to say so, or assert the node QSL named).
+
+## Dispositions
+
+Round 1, reviewed at c23e4fb596d3b14f8d350b8ea431ddcff997b3a1 (diff a305f56f..c23e4fb5). Reviewer re-ran the focused `qsl-package` depth and tc_440 tests: exit 0, 10 passed, 1 ignored.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c23e4fb5: RangedTree now expects `InRecursionGroup`: the test takes the node QSL names `Recursive` (`key.node()`), asserts it carries a `recursion_group` string, and asserts IR's first unbounded node has the same `recursion_group`; FR-097-AC-6 amended to say so. No longer tied to digest order or a form string (extent_agreement.rs:239-291) |
+| FND-002 | fixed | c23e4fb5: `depth_raised_past_the_default_admits_a_wire_deeper_than_the_default` reads a 201-deep wire at `depth: 300` and expects an envelope refusal at the root pointer. Discriminating: at the default it is `Limit(NestingDepth)`, and the old serde-cap refusal (`refused_bytes(MalformedWire)`, IR 7c70041 common.rs:67-75) carries `path: None`, so either regression fails it |
