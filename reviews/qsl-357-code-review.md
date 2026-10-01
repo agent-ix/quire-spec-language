@@ -87,3 +87,13 @@ regression, and no behaviour or public type changed for QSL's std callers. One
 medium finding: the gate is not reproducible on a host without the bare-metal target.
 Fix FND-001 (one line in `rust-toolchain.toml`) before merge. FND-002 and FND-003 are
 low and can be fixed in the same round.
+
+## Dispositions
+
+Round 1, reviewed at 41ad03cc749475720bc919ae176677f65bb5981f (fix commit 41ad03cc on top of 676cee4d, rebased onto 6360c035). `git range-diff` shows 676cee4d is identical to 4e2dfb7d, and `quire-exact/` and the Makefile have no diff between them, so the library code the full gate passed on 4e2dfb7d is unchanged. I ran `make quire-exact-no-std` on 41ad03cc: it passes.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 41ad03cc: rust-toolchain.toml now lists `targets = ["thumbv7em-none-eabi"]` |
+| FND-002 | fixed | 41ad03cc: the target is now `cargo build --locked -p quire-exact --target thumbv7em-none-eabi` |
+| FND-003 | fixed | 41ad03cc: the "K is a leaf" paragraph is re-wrapped to about 78 columns |
