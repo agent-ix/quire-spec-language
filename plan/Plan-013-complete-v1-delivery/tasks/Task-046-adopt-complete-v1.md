@@ -6,14 +6,8 @@ status: done
 track: A00
 priority: P0
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-055
-    type: references
-  - target: ix://agent-ix/quire-spec-language/IT-011
-    type: references
   - target: ix://agent-ix/quire-specification/Task-010
     type: references
-  - target: ix://agent-ix/quire-spec-language/TC-144
-    type: verifies
 ---
 # Task-046: Adopt the frozen complete-V1 baseline
 
@@ -25,7 +19,6 @@ issue/test dependency graph without changing central semantics.
 
 ## Subtasks
 
-- [x] Add IT-011 and TM-010 as the local adoption and coverage boundary.
 - [x] Map each capability to one primary issue, central TestCase and qualification owner.
 - [x] Create Task-047 through Task-054 with explicit serial and external dependencies.
 - [x] Complete the selected lane-boundary specification review and resolve findings.
@@ -33,7 +26,7 @@ issue/test dependency graph without changing central semantics.
 
 ## Deliverables
 
-- Plan-013, its nine typed tasks and TC-144's executable Rust audit.
+- Plan-013 and its nine typed tasks.
 - An evidence-honest L1–L6 reconciliation and explicit external owner boundaries.
 - A merged issue #116 PR that unblocks Task-047 / QSL #117.
 

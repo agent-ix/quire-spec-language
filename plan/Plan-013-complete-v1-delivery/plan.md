@@ -4,8 +4,6 @@ title: "Complete-V1 native compiler, runtime and tooling delivery"
 type: Plan
 status: active
 relationships:
-  - { target: ix://agent-ix/quire-spec-language/FR-055, type: references }
-  - { target: ix://agent-ix/quire-spec-language/IT-011, type: references }
   - { target: ix://agent-ix/quire-specification/AD-003, type: references }
   - { target: ix://agent-ix/quire-specification/AD-005, type: references }
   - { target: ix://agent-ix/quire-specification/AD-006, type: references }
@@ -79,7 +77,7 @@ evidence state.
 
 ## Requirements Summary
 
-- [x] **FR-055 / IT-011 / QSL #116:** install the frozen contract, exact allocation,
+- [x] **QSL #116:** install the frozen contract, exact allocation,
   evidence reconciliation and serial issue graph.
 - [x] **AD-003, FR-131/134, FR-302/303 and FR-339:** complete source packages,
   grammar, identities, lossless CST and incremental source tooling foundations
@@ -133,11 +131,6 @@ missing; qualification is 83 missing. Plan adoption changes none of those states
 | L6 protocol handoff | TC-121 and TC-132–138 | protocol conformance remains with its owner; QSL preserves exact source and domain-package inputs |
 
 ## Test Plan
-
-### Plan adoption
-
-- [x] **TC-144** (IT-011): Rust structural audit of the 83-row allocation,
-  task graph, evidence-state counts and delivery constraints.
 
 ### Source/package and tooling (#117)
 
@@ -306,7 +299,7 @@ A00 -> A01 -> A02 -> A03 -> A04 -> A05 -> A06 -> A07 -> A08
 
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
-| Task-046 | A00 | FR-055, IT-011 | TC-144 | done |
+| Task-046 | A00 | — | — | done |
 | Task-047 | A01 | FR-131/134, FR-302/303, FR-339 | TC-180/184, TC-222 | done |
 | Task-048 | A02 | FR-140–142, FR-147/148 | TC-185–187, TC-192/193 | done |
 | Task-049 | A03 | FR-143–146, FR-149, FR-307 | TC-188–191, TC-194, TC-227 | not_started |

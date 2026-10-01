@@ -107,7 +107,7 @@ names different artifacts in each.
 | TC-209 | The witness envelope's Debug and Display rendering never reproduces the full transcript | Unit | P1 | FR-073-AC-1 | ✅ Passed locally |
 | TC-210 | The replay request's Debug and Display rendering never reproduces a byte-provision entry's raw bytes | Unit | P1 | FR-073-AC-2 | ✅ Passed locally |
 | TC-211 | A refusal cause from any of the four envelopes renders with no unredacted transcript, byte or value content, while the typed accessor stays fully readable | Unit | P1 | FR-073-AC-3 | ✅ Passed locally |
-| TC-213 | Original declaration keys survive normalization unchanged | Unit | P1 | FR-081-AC-1 | ✅ Passed locally |
+| TC-213 | Original declaration keys survive normalization unchanged | Unit | P1 | FR-081-AC-1 | ❌ Not passed: the effective view omits operation members (see the FR-081–086 coverage note) |
 | TC-214 | Structurally identical declarations from distinct originals never collapse to one effective identity | Unit | P1 | FR-081-AC-2 | 🚧 Planned; #120 |
 | TC-215 | A dominated redefinition is retained for provenance, not deleted | Unit | P1 | FR-081-AC-3 | ✅ Passed locally |
 | TC-216 | Changing only a display name leaves every key, identity and ordering unchanged | Property | P1 | FR-081-AC-4 | 🚧 Planned; #120 |
@@ -416,11 +416,10 @@ retrospectively scope model-binder behavior under issue #120: the model
 normalization, conformance, dispatch, population and systems-classification
 code these requirements bind, and most of the Rust tests exercising it,
 predate this specification slice (from #131 domain-package intake and the
-FR-150–153 binding work it carries). Sixteen of the thirty TC-213–242 rows
+FR-150–153 binding work it carries). Fifteen of the thirty TC-213–242 rows
 above cite real, currently passing tests rather than planned work, naming
 the exact backing test:
 
-- TC-213 (FR-081-AC-1): `tests/model_normalization.rs::n01_normalizes_f1_to_the_exact_ground_truth_identities`
 - TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
 - TC-218 (FR-082-AC-1): `tests/model_conformance.rs::r03_an_incompatible_operation_redefinition_reports_every_failing_axis`
 - TC-219 (FR-082-AC-2): `tests/model_conformance.rs::r07_zero_inherited_targets_refuses_redefinition_target` and `tests/model_normalization.rs::r01_a_closing_generalization_cycle_names_the_full_rotated_chain`; FR-082-AC-6's unknown-supertype and cycle rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_*_supertype_*` and `::divergence_generalization_cycle_*`
@@ -438,6 +437,14 @@ the exact backing test:
 - TC-238 (FR-081-AC-7): `tests/model_normalization.rs::n07_record_order_does_not_affect_identity_or_view` (asserts the whole view's identity digest is order-independent; does not separately assert a per-entry iteration sequence — see the TC's own caveat)
 - TC-239 (FR-082-AC-5, Part A — the arity carve-out itself): `tests/model_conformance.rs::r04_an_arity_mismatch_refuses_without_checking_parameter_axes`. Part B (a combined arity-and-result-multiplicity failure) is not backed by any existing test; see the TC's own gap note.
 - TC-242 (FR-084-AC-6): `tests/model_population.rs::l01_all_instances_selects_subtype_population_once`, which already carries the quire-specification `QSpec-FR-153-AC-6` trace tag and asserts this exact guarantee (`b1_via_a == b1_via_b`)
+
+TC-213 (FR-081-AC-1) is not passed. Normalizing a domain package admitted
+through `admit` and `read_records` with an operation member, `attemptUpdate`,
+yields a view whose original keys omit that operation: `normalize` builds
+view entries for object types and fields only (its module doc records this as
+a scope decision). QSpec `model-complete.md` phase 2 qualifies operations,
+relationships and systems elements as effective members too, so the
+correspondence does not name every admitted model declaration.
 
 TC-234 (FR-086-AC-2) was corrected back from a prior, mistaken "Passed
 locally" this revision: `check_connection` really is exhaustive today, but

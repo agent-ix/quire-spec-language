@@ -70,8 +70,9 @@
 //! (`plan/Plan-013-complete-v1-delivery`) references exactly `FR-140`,
 //! `FR-141`, `FR-142`, `FR-147` and `FR-148`, and their QSpec `TC-185`
 //! through `TC-187`/`TC-192`/`TC-193`, as the acceptance evidence for this
-//! same scalar/numeric/text/enum/unit/IEEE kernel, and `IT-011` records that
-//! QSpec, not QSL's `spec/`, owns `FR-131` through `FR-153` outright.
+//! same scalar/numeric/text/enum/unit/IEEE kernel, and QSpec, not QSL's
+//! `spec/`, owns `FR-131` through `FR-153` outright (`spec/tests.md`,
+//! Requirements Traceability).
 //! Authoring a parallel FR/TC set in this repo's `spec/` for behavior QSpec
 //! already normatively defines would duplicate that ownership rather than
 //! resolve the gap (QSL never vendors specs -- graph by reference).
