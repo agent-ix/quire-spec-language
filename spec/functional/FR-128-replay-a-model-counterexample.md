@@ -83,7 +83,14 @@ refusal order and its results.
 
 - An FR-072 replay result on the `ModelTrace` arm, holding the evaluated
   value and the `trace_position`, or a typed `ReplayRefusal` with no
-  partial result.
+  partial result. The arm's value is `ModelTraceValue::{Truth(bool),
+  Undefined(UndefinedEvaluation)}`: `Truth` for a `Formula` or `Deadlock`
+  counterexample, `Undefined` for an `UndefinedEvaluation` one. FR-072's
+  no-value rule reads this arm so: an undefined letter reproduced at
+  `where` with the payload's cause is a completed `Undefined` value; an
+  evaluation that completes no value (refused, incomplete, or undefined at
+  a position of a `Formula` counterexample) is FR-072's no-value case and
+  settles `inconclusive`, `NoValue`.
 
 ## Behavior
 
@@ -177,5 +184,6 @@ refusal order and its results.
 
 ## References
 
-- QSpec half of ADR-018, carrying ADR-018 QS-8, QS-9 and QS-12: Linear
-  STD-131.
+- QSpec FR-364 (temporal counterexample replay), FR-368 (negotiating
+  temporal model-check items) and FR-366 (deadlock freedom): the QSpec half
+  of ADR-018 QS-8, QS-9 and QS-12 (Linear STD-131).

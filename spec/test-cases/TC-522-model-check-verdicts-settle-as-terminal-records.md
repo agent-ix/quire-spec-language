@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the map from EN-1's outcomes and their replay results to
-`TerminalValue`, QSpec FR-341 labels, FR-243 bases and O-16 categories; the
+`TerminalValue`, QSpec FR-360 labels, FR-243 bases and O-16 categories; the
 category of every `ProofBasis` and new inconclusive cause; each replay
 refusal path; a faulting replay; and the named limit of a stopped run.
 

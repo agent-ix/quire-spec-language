@@ -38,7 +38,7 @@ relation and FR-101's engine explores it, but exploration checks state
 invariants only, and a temporal clause is evaluated over one supplied trace.
 The explicit-state model checker (ADR-018 EN-1) explores the product of the
 model with the clause's property automaton and settles a negotiated item in
-QSpec FR-341's vocabulary.
+QSpec FR-360's vocabulary.
 
 ## Acceptance Examples (Illustrative)
 

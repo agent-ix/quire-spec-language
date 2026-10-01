@@ -68,8 +68,8 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
 
 - The checker SHALL admit at most one `terminal` member per state model. If
   a state model has a second `terminal` member, then the checker SHALL
-  refuse `conflicting_declaration`/`duplicate-declaration` at its span,
-  naming the first.
+  refuse `ambiguous_declaration`/`ambiguous-name` at its span, naming
+  both members (QSpec FR-366).
 - The checker SHALL check the predicate `P` of a `When` member as a state
   predicate over the model's state, through the one clause checker that
   invariants use (FR-104). If `P` reads a parameter, a result or a
@@ -112,7 +112,7 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-124-AC-1 | The `Counter` unit (population `counters`, field `value: Int[0, 3]`, operation `inc` with precondition `self.value < 3` and postcondition `self.value = pre(self.value) + 1`) checks with each of: no `terminal` member (`None`), `terminal when` a predicate that holds exactly when every counter is at 3 (`When`), and `terminal any` (`Any`); the three packages have pairwise different identities. A second `terminal` member refuses `conflicting_declaration`/`duplicate-declaration` naming the first; a `terminal when` predicate that reads `pre(self.value)` refuses as FR-104 refuses it in an invariant. | Test (TC-519) |
+| FR-124-AC-1 | The `Counter` unit (population `counters`, field `value: Int[0, 3]`, operation `inc` with precondition `self.value < 3` and postcondition `self.value = pre(self.value) + 1`) checks with each of: no `terminal` member (`None`), `terminal when` a predicate that holds exactly when every counter is at 3 (`When`), and `terminal any` (`Any`); the three packages have pairwise different identities. A second `terminal` member refuses `ambiguous_declaration`/`ambiguous-name` naming both members; a `terminal when` predicate that reads `pre(self.value)` refuses as FR-104 refuses it in an invariant. | Test (TC-519) |
 | FR-124-AC-2 | A request with two temporal items over the same `Counter` subject (universe `{c}`, initial value 0) and the `None` declaration carries exactly one `DeadlockFreedom` item, with property form `ReachableInvariant`, requirement (`temporal-satisfaction`, `Unbounded`) and an obligation identity distinct from both authored items. With the `When` declaration it carries one; with the `Any` declaration it carries none. | Test (TC-519) |
 | FR-124-AC-3 | Over the `Counter` subject, state `value = 3` is terminal; it is deadlocked under `None` and intended under `When` and `Any`. States `value = 0` to `2` are not terminal under any declaration. Adding `fair weak inc` to a request's items changes none of these classifications. | Test (TC-519) |
 
@@ -128,4 +128,6 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
 
 ## References
 
-- QSpec half of ADR-018, carrying ADR-018 QS-12: Linear STD-131.
+- QSpec FR-366 (deadlock freedom: the `terminal` member, the deadlock
+  definition and the deadlock-freedom item), the QSpec half of ADR-018 QS-12
+  (Linear STD-131).

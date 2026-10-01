@@ -44,7 +44,7 @@ it replays.
 
 ## Semantic authority and boundary
 
-QSpec owns the verdict table onto QSpec FR-341 (infinite-trace) and FR-243,
+QSpec owns the verdict table onto QSpec FR-360 and FR-243,
 the method and depth members of the FR-331 terminal record, and the new
 inconclusive causes on the wire (ADR-018 QS-6; References). This
 requirement specifies QSL's types and its map from EN-1's outcomes. The SMT
@@ -76,8 +76,7 @@ pub enum ProofBasis {
 //   UndecidedSuccessor, NoInitialState
 ```
 
-and the FR-331 terminal record carrying the value, its QSpec FR-341
-(infinite-trace) label, its QSpec FR-243 basis and its O-16 category.
+and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its QSpec FR-243 basis and its O-16 category.
 
 ## Behavior
 
@@ -85,7 +84,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 
 - `model_check` SHALL map each input to exactly one row of this table:
 
-| Verdict | Input | QSpec FR-341 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
+| Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
@@ -129,7 +128,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-127-AC-1 | Each row of the map settles its `TerminalValue`, FR-341 label, FR-243 basis and O-16 category exactly as the table states: `Holds{Exhaustive}`; a reproduced `Violated`; `BoundReached{depth: 2}` carrying depth 2 and method `explicit-state`; `Undecided(UndecidedSuccessor)`; `Undecided(NoInitialState)`; `Stopped{ResourceExhausted, {MaxStates, 2}}` naming `max_states`, value 2. | Test (TC-522) |
+| FR-127-AC-1 | Each row of the map settles its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states: `Holds{Exhaustive}`; a reproduced `Violated`; `BoundReached{depth: 2}` carrying depth 2 and method `explicit-state`; `Undecided(UndecidedSuccessor)`; `Undecided(NoInitialState)`; `Stopped{ResourceExhausted, {MaxStates, 2}}` naming `max_states`, value 2. | Test (TC-522) |
 | FR-127-AC-2 | `TerminalValue::category` maps `Proved{Checks{0}}` to inconclusive `KaniVacuousProof`; `Proved{Checks{1}}`, `Proved{Exhaustive}`, `Proved{BoundedComplete{depth: 5}}` and `Proved{Inductive{depth: 2}}` to success; `Inconclusive` with `BoundReached{1}`, `InductionNotClosed{2}`, `UndecidedSuccessor` and `NoInitialState` to inconclusive. | Test (TC-522) |
 | FR-127-AC-3 | FR-126-AC-1's weak `each` outcome settles `proved`, `closed-scope`, `Proved{Exhaustive}`, success. Its counterexample under the constraint with no granularity settles `refuted` only after FR-128 replay reproduces it. The same counterexample with one post-state digest altered settles `inconclusive`, `ReplayRefused`; replayed in an envelope for the weak `each` clause, whose fairness it fails, it settles `inconclusive`, `ReplayRefused`; with its last step removed, so the loop does not close, it settles `inconclusive`, `ReplayRefused`; one whose formula evaluates `true` on replay settles `inconclusive`, `ReplayParity`. A replay that returns `InternalFault` settles `failed`, category failed. | Test (TC-522) |
 | FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles `failed`, `resource-incomplete`, `unavailable`, `Incomplete(ResourceExhausted)`, category incomplete, naming `max_automaton_states` with value 50; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
@@ -148,4 +147,6 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 
 ## References
 
-- QSpec half of ADR-018, carrying ADR-018 QS-6: Linear STD-131.
+- QSpec FR-363 (every-behaviour temporal verdicts) and FR-360 (the
+  infinite-trace result disposition): the QSpec half of ADR-018 QS-6 (Linear
+  STD-131).

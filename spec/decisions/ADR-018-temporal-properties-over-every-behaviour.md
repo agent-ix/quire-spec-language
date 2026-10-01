@@ -47,7 +47,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-341
+  - target: ix://agent-ix/quire-specification/FR-360
     type: depends_on
 ---
 # ADR-018: Temporal properties over every behaviour of a model
@@ -61,9 +61,8 @@ QSL compiler requirements that implement it are FR-123 to FR-128 (use case
 US-015). The owning ticket and related work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. QSpec has two artifacts numbered FR-341; this record cites only
-the infinite-trace result disposition vocabulary, written "QSpec FR-341
-(infinite-trace)". Item ids `TP-`, `V-`, `SM-`, `EN-`, `FA-`, `CX-`, `DS-`,
+requirement. QSpec FR-360 is the infinite-trace result disposition
+vocabulary. Item ids `TP-`, `V-`, `SM-`, `EN-`, `FA-`, `CX-`, `DS-`,
 `QS-`, `RU-`, `DL-`, `IV-` and `UE-` are local to this record. Other artifacts cite
 them as `ADR-018 SM-2`.
 
@@ -98,8 +97,7 @@ counterexample is a finite prefix plus a loop, and that finite prefixes or
 absence of a counterexample never prove infinite satisfaction. QSpec FR-090
 fixes four profiles; three are bounded (interval on every operator) and
 `quire.temporal.infinite-trace/v1` admits no interval today, which §11 and
-QS-13 change. QSpec FR-341
-(infinite-trace) maps `proved`, `refuted`, `inconclusive`, `unsupported` and
+QS-13 change. QSpec FR-360 maps `proved`, `refuted`, `inconclusive`, `unsupported` and
 `failed` onto the QSpec FR-241 execution, FR-242 truth and FR-243 settlement
 basis axes. QSpec FR-243's bases are `closed-scope`, `decisive-witness`,
 `decisive-counterexample`, `unsettled` and `unavailable`.
@@ -116,7 +114,7 @@ variant ADR-013 C-09 adds), with `InconclusiveCause`
 ### 1. Property forms with an every-behaviour verdict
 
 A temporal claim over a **model subject** (§2) gets an every-behaviour
-verdict in four forms. The form is computed by the S3 TemporalTrace `check`
+verdict in five forms. The form is computed by the S3 TemporalTrace `check`
 from the checked formula and recorded beside the claim's requirement record.
 
 | ID | Form | Profile | Shape | Engines that settle it (§3) |
@@ -125,6 +123,7 @@ from the checked formula and recorded beside the claim's requirement record.
 | TP-2 | Bounded MLTL | event-position false-extension | any bounded-profile clause. With activation `on origin` its truth on a behaviour depends only on the first `h + 1` positions, `h` its ADR-014 TR-4 horizon. With activation `on each` it holds at every activating position, which makes it an unbounded safety property | `on origin`: explicit-state (exhaustive) and SMT unrolling to `h` (bounded-complete). `on each`: as TP-3 |
 | TP-3 | LTL safety | infinite-trace | a formula in ADR-014 A-4's safety fragment, which admits interval operators (IV-4) | explicit-state (exhaustive); SMT k-induction (inductive); SMT unrolling (refutation, bounded-to-k) |
 | TP-4 | LTL liveness | infinite-trace | any other admitted infinite-trace formula, including one with interval operators nested under unbounded ones (IV-1), with its fairness constraints (§4) | explicit-state (exhaustive); SMT lasso unrolling (refutation, bounded-to-k) |
+| TP-5 | Refinement (amended by ADR-020) | none: the refinement is a temporal property of the concrete subject read through its mapping (ADR-020 §5) | a refinement of an abstract subject by the concrete subject, with a safety half and, when the abstract fairness set is non-empty, a liveness half | explicit-state (both halves, ADR-020 RE-1); SMT per-step simulation (safety half, ADR-020 RE-2); SMT unrolling (refutation, bounded-to-k, ADR-020 RE-3) |
 
 The model subject admits two profiles: event-position false-extension and
 infinite-trace. Both read one admitted semantic-event position per step, and
@@ -136,20 +135,20 @@ value for, so a claim under either over a model subject settles
 Each model subject also gets one derived **deadlock-freedom** item, a TP-1
 invariant, unless its state model opts out (§10, DL-3).
 
-**Verdict kinds.** Each verdict is one QSpec FR-341 (infinite-trace) label
+**Verdict kinds.** Each verdict is one QSpec FR-360 label
 with one QSpec FR-243 basis, carried by an existing `TerminalValue` variant.
 The strength of a proof is the basis plus a `ProofBasis` member that this
 record adds to `TerminalValue::Proved`. No new result axis, category or label
 is added.
 
-| ID | Verdict kind | Meaning | QSpec FR-341 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
+| ID | Verdict kind | Meaning | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- | --- |
 | V-1 | Exhaustive | Every admitted behaviour of the subject was examined | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` | success |
 | V-2 | Bounded-complete to `k` | Unrolled to depth `k` at or past the formula's horizon (TP-2 `on origin` only), so every behaviour is decided | `proved` | `closed-scope` | `Proved{basis: BoundedComplete{depth: k}}` | success |
 | V-3 | Proved by induction at `k` | The property is `k`-inductive: it holds in the first `k` steps of every behaviour, and any `k` consecutive states of the declared types that satisfy it have only satisfying successors | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}}` | success |
 | V-4 | Refuted | A counterexample (§5) reproduced by replay, including one that ends where the claim evaluated undefined (UE-1) | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | Bounded-to-`k` | The engine completed its analysis to depth `k` and found no counterexample of length at most `k` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: k})` | inconclusive |
-| V-6 | Inconclusive, other cause | `InductionNotClosed{depth: k}`: base case holds to `k`, the step case has a counterexample-to-induction. `UndecidedSuccessor`: a contract conjunction evaluated undecided during expansion, so the successor relation is not exactly known (FR-120 `ContractUndetermined`). `NoInitialState`: the subject has no initial state (ADR-016 EX-10). `ReplayParity` and `ReplayRefused`: as ADR-013 C-09 | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | Inconclusive, other cause | `InductionNotClosed{depth: k}`: base case holds to `k`, the step case has a counterexample-to-induction. `UndecidedSuccessor`: a contract conjunction evaluated undecided during expansion, so the successor relation is not exactly known (FR-120 `ContractUndetermined`). `NoInitialState`: the subject has no initial state (ADR-016 EX-10). `MappingUndetermined` (amended by ADR-020 RE-4): a refinement's mapping row, argument expression or history update was refused or incomplete, or a history update left its declared type, at a reachable state. `ReplayParity` and `ReplayRefused`: as ADR-013 C-09 | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | Stopped | A run limit stopped the analysis before it completed its method: state or transition limit, automaton-state limit (IV-6), meter, time, cancellation | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | Unsupported | No candidate settles the form; or a profile the model subject does not admit | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
@@ -158,7 +157,8 @@ is the vacuous proof), `Exhaustive`, `BoundedComplete{depth}` and
 `Inductive{depth}`. `TerminalValue::category` maps `Checks{0}` to
 inconclusive with `KaniVacuousProof`, as today, and every other basis to
 success. `InconclusiveCause` gains `BoundReached{depth}`,
-`InductionNotClosed{depth}`, `UndecidedSuccessor` and `NoInitialState`.
+`InductionNotClosed{depth}`, `UndecidedSuccessor` and `NoInitialState`;
+ADR-020 RE-4 adds `MappingUndetermined`.
 
 **Undefined evaluation.** A claim that evaluates undefined on an admitted
 behaviour is refuted. This is the well-definedness reading of Dafny and
@@ -168,7 +168,7 @@ subject.
 | ID | Rule |
 | --- | --- |
 | UE-1 | **Rule.** At each position a claim reads, it reads a *letter*: the value of every atom of the claim there, a `holds` atom through the one clause evaluator (ADR-016 FE-3), and for the deadlock-freedom item DL-1's `P` at a terminal state. A TP-2 `on origin` claim reads positions 0 to `h`; every other form reads every position of the behaviour. A position that a bounded profile's closed-boundary rule supplies past a terminal state is read by that rule and evaluates no atom. When an atom evaluates `Undefined` (the kernel `Outcome::Undefined`, or a family's `FamilyResult::Undefined`) at a position the claim reads on an admitted behaviour, the claim evaluates undefined there, and the item settles `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted` (V-4), with cause `UndefinedEvaluation{where, cause}`. |
-| UE-2 | **Cause.** `where` names the site at which the claim evaluated undefined. For the engines of this record it is a position of the counterexample, its `trace_position` (ADR-014 TR-2). `cause` is the evaluator's undefined cause as its `UndefinedRecord` (ADR-013 O-16), taken from the first atom in clause-node order that evaluated undefined at `where`. `UndefinedEvaluation{where, cause}` is a `TemporalCounterexample` `kind` (DL-4), so the refuted record carries it with its counterexample. No label, basis, `TerminalValue` variant or O-16 category is added: ADR-013 O-16 and QSpec FR-341 (infinite-trace) are unchanged. |
+| UE-2 | **Cause.** `where` names the site at which the claim evaluated undefined. For the engines of this record it is a position of the counterexample, its `trace_position` (ADR-014 TR-2). `cause` is the evaluator's undefined cause as its `UndefinedRecord` (ADR-013 O-16), taken from the first atom in clause-node order that evaluated undefined at `where`. `UndefinedEvaluation{where, cause}` is a `TemporalCounterexample` `kind` (DL-4), so the refuted record carries it with its counterexample. No label, basis, `TerminalValue` variant or O-16 category is added: ADR-013 O-16 and QSpec FR-360 are unchanged. |
 | UE-3 | **Counterexample.** The counterexample is a finite prefix from an initial state to the position `where` (CX-1), for every form, safety and liveness alike. Weak fairness is machine-closed (§4), so the prefix extends to a fair behaviour, and the claim is undefined on an admitted behaviour. |
 | UE-4 | **First refuting evidence.** An engine reports the first refuting evidence in its canonical order, whether that is an undefined evaluation or a violation. EN-1 reads a position's letter when it creates the product state for that position, since the automaton steps on the letter. Its first phase ends at the first product state, in FR-181 canonical breadth-first order, whose letter is undefined or whose monitor state rejects: an undefined position ranks like any other violation, the shortest prefix first and canonical transition order after that. A TP-4 item's second phase runs only when the first phase found no undefined evaluation. With `max_depth = k`, EN-1 creates product states up to depth `k`, so V-5 still means no counterexample of length at most `k`. EN-2 and EN-3 conjoin the definedness of every atom the claim reads to the property they encode, so an undefined evaluation is a violation to them as well. |
 | UE-5 | **Replay.** CX-3 replays the prefix unchanged, then evaluates the letters of the replayed positions in order. When the first position whose letter is undefined is `where`, with an undefined cause equal to the payload's `cause`, replay settles `reproduced-with-evaluated-witness` and the item `refuted`: reproducing the undefined value at `where` is what reproducing this counterexample means. A defined letter at `where`, an undefined letter before it, a `where` past the replayed positions, or a different cause is a disagreement and settles `inconclusive`, `ReplayParity`. No fairness check applies (UE-3). |
@@ -278,7 +278,7 @@ infinite-trace clause only.
 | ID | Rule |
 | --- | --- |
 | CX-1 | **Shapes.** A safety refutation (TP-1, TP-2, TP-3) is a finite prefix. Under a bounded profile the prefix covers the formula's horizon from every activation it reports, or ends at a terminal state, so the evaluator decides it exactly. Under infinite-trace it is a bad prefix in ADR-014 A-4's sense. A liveness refutation (TP-4) is a lasso: a prefix, possibly empty, and a non-empty loop that re-enters at its first position. A behaviour that ends at a terminal state is the lasso whose loop is the one terminal stutter step (SM-4). A deadlock refutation is a finite prefix ending at the deadlocked state (DL-4). An undefined-evaluation refutation, of any form, is a finite prefix ending at the position where the claim evaluated undefined (UE-3). |
-| CX-2 | **Content.** A counterexample is ADR-014's `TemporalCounterexample{prefix, loop, fairness, interval}` with its steps over a model subject: the index of the initial state in the subject, then each step as its FR-181 transition identity and its post-state's `quire.simulation.state-key/v1` digest, and the binding of the clause's `over` parameter (the object the refutation is about). It travels in `WitnessEnvelope<TemporalCounterexample>` with `trace_position` naming the failing position (ADR-014 TR-2) and a new `ReplaySource::ModelTrace` source arm. The envelope's obligation identity binds the subject. |
+| CX-2 | **Content.** A counterexample is ADR-014's `TemporalCounterexample{prefix, loop, fairness, interval}` with its steps over a model subject: the index of the initial state in the subject, then each step as its FR-181 transition identity and its post-state's `quire.simulation.state-key/v1` digest, and the binding of the clause's `over` parameter (the object the refutation is about). A refinement counterexample also carries the optional `RefinementFailure` member (amended by ADR-020 RC-1). It travels in `WitnessEnvelope<TemporalCounterexample>` with `trace_position` naming the failing position (ADR-014 TR-2) and a new `ReplaySource::ModelTrace` source arm. The envelope's obligation identity binds the subject. |
 | CX-3 | **Replay.** E9 replay of a model counterexample goes through the layer-6 facade entry `qsl_replay::replay_model_trace`, beside `replay`, as `replay_state_clause` and `replay_frame` do for their families; its envelope's source is `ReplaySource::ModelTrace` and its result is that arm's. It recompiles the package (FR-098), re-admits the subject's initial state and universes from the byte provision, and re-executes each step through `ModelSystem` with FR-101 `replay`. A step's post-state digest selects which successor of its transition identity the step took, since one identity can have several post-states (FR-120). Replay refuses `stale_dependency`/`revision-mismatch` when no successor of a step's identity has the recorded digest (FR-101's key mismatch), and `invalid_runtime_input`/`invalid-value` when the loop's last post-state is not its entry state or a transition is not enabled. It then checks the lasso against the fairness set (an unfair lasso refuses, ADR-014 A-4) and evaluates the formula over it with SM-1, reading the lasso by SM-8. Agreement settles `reproduced-with-evaluated-witness` and the item `refuted`; disagreement settles `inconclusive`, `ReplayParity`. A deadlock counterexample replays by DL-5 in place of the formula evaluation, and an undefined-evaluation counterexample by UE-5. |
 | CX-4 | **Engine independence.** Both engines produce the same counterexample type. EN-2 reads the transition identity of each step from selector variables in its encoding and names the initial state by index, so its counterexample replays through CX-3 with no solver present. |
 | CX-5 | **Canonical loop: a greedy walk.** Given the passing SCC `C` and its entry state `e` (the stem's last state), EN-1 builds the loop by a deterministic walk whose cost is polynomial in the size of `C`. The obligations of `C` are: one state of each acceptance set of the generalized Büchi automaton; and each fairness obligation of the component, weak or strong. A weak constraint's obligation is discharged by an edge of `C` that takes it or by a state of `C` where it is disabled. A constraint whose kind requires it to be taken whenever it is enabled in the component (strong fairness) and that is enabled at some state of `C` has an obligation discharged only by an edge of `C` that takes it; one enabled nowhere in `C` has none. Starting at `e` with the obligations `e` itself discharges removed, the walk repeats: breadth-first search inside `C` from the current state for the nearest state or edge that discharges an open obligation, nearest by edge count, ties broken by canonical transition order and then by obligation order; append that path, ending with the discharging edge when the obligation is an edge; remove every obligation the appended path discharges. When none is open, it appends the shortest path inside `C` back to `e`, ties broken by canonical transition order; when that leaves the loop empty, it appends the shortest cycle through `e`. The walk runs at most one search per obligation plus one, each linear in the edges of `C`. The loop discharges every obligation, so the lasso is fair under every constraint by construction. |
@@ -387,8 +387,8 @@ length; with no counterexample at depth 5 it would settle V-2. Fairness is not a
 
 **Stage DAG (ADR-011 §1).** A new stage **S6c Temporal model check** reads
 the in-process S4 package and the subject over a new edge **E10 S4 → S6c**,
-and outputs one `ModelCheckOutcome` per routed item. A proof, a bound
-reached, an undecided run or a stopped run settles the item's FR-331 terminal
+and outputs one `ModelCheckOutcome` per routed item. A proof, a completed
+search horizon, an undecided run or a stopped run settles the item's FR-331 terminal
 record there. A refutation leaves S6c over a new edge **E11 S6c → S7** as a
 typed witness, reaches S8 through E9 as an S6b counterexample does, and
 settles its terminal record only after replay (SM-7). SMT temporal checks run on the existing S5 → E7 → S6b
@@ -427,9 +427,9 @@ layer 5.
 | QS-1 | The model subject of a temporal claim (SM-2, SM-3): initial states, universes, behaviours as maximal paths, position 0 as the initialization observation, position `i` as the post-state of step `i` with its operation anchor | an amendment to QSpec FR-161's "transition/model subject" and a new temporal FR |
 | QS-2 | Terminal states (SM-4): closed finite execution under bounded profiles, terminal stutter extension under infinite-trace, the stutter step's identity and its exclusion from fairness; intended terminal states and deadlocks are QS-12 | the same FR; QSpec FR-181 |
 | QS-3 | Profiles admitted over a model subject: event-position false-extension and infinite-trace; the model step sequence as their sequence authority and its clock binding | QSpec FR-090, FR-250 |
-| QS-4 | Fairness: surface syntax in the shared grammar, `whole` and `each` granularity with `whole` unmarked (FA-6), enabledness (FA-2), weak fairness (FA-3), an extensible fairness kind, admission on infinite-trace clauses only; and what QSpec FR-161 and FR-341 mean by a "missing fairness premise" | shared grammar; QSpec FR-161 |
+| QS-4 | Fairness: surface syntax in the shared grammar, `whole` and `each` granularity with `whole` unmarked (FA-6), enabledness (FA-2), weak fairness (FA-3), an extensible fairness kind, admission on infinite-trace clauses only; and what QSpec FR-161 and FR-360 mean by a "missing fairness premise" | shared grammar; QSpec FR-161 |
 | QS-5 | Binding of a temporal clause's `over` parameter to a model population: one instance per object of the universe, and the reading at positions where the object does not exist | QSpec FR-161 or the new FR |
-| QS-6 | Verdict strength: the V-1 to V-8 table onto QSpec FR-341 (infinite-trace) and FR-243, the method and depth in the FR-331 terminal record, the four new inconclusive causes, the definition of counterexample length and of V-5 | QSpec FR-161, FR-341 (infinite-trace), FR-331 |
+| QS-6 | Verdict strength: the V-1 to V-8 table onto QSpec FR-360 and FR-243, the method and depth in the FR-331 terminal record, the four new inconclusive causes, the definition of counterexample length and of V-5 | QSpec FR-161, FR-360, FR-331 |
 | QS-7 | Bounded MLTL over a model (TP-2): `on origin` truth depends only on the first `h + 1` positions; `on each` holds at every activating position | QSpec FR-091, FR-092 or the new FR |
 | QS-8 | Counterexample wire: initial-state index, transition identities, post-state digests, loop entry, terminal stutter marker, `over` binding, fairness set, the `UndefinedEvaluation{where, cause}` kind (UE-2); the replay rules of CX-3 and UE-5 | QSpec FR-331 and the counterexample contract |
 | QS-9 | The FR-331 request's subject members (initial-state snapshot references, universes) and the subject's place in the obligation identity; what an advertisement of (`temporal-satisfaction`, `unbounded`) commits to, given that V-5 is a valid result; reconciling QSpec FR-161-AC-7's "liveness backend" wording with the FR-290 mode table | QSpec FR-290, FR-331, FR-161 |
@@ -449,7 +449,7 @@ evaluation (RU-5), on 2026-10-01.
 | RU-2 | The unmarked fairness granularity | **`whole`.** `each` is always written | `whole` is the weaker premise: it excludes fewer behaviours, so an unmarked constraint assumes the least, and a claim proved under it also holds under `each`. It is TLA+'s `WF` over the existentially quantified action, the reading TLA+ authors expect. A clause that relies on per-identity fairness says so in its text, its obligation identity and its counterexample | FA-6; §6 writes `each` on the variant it proves with `each` |
 | RU-3 | Whether EN-1 reports reachable terminal states | **Deadlocks are reported by default, as TLC does, with a per-model opt-out.** | A successor-free state that the author did not intend is usually a missing operation or a precondition that is too strong. Stutter extension alone absorbs it silently: every safety claim holds on the stuck tail, and only a claim about progress notices. Reporting it once per subject, as its own item, leaves every claim's verdict equal to its SM-1 truth. A model that halts on purpose in some states and can get stuck in others marks its intended terminal states, so the report survives for the others | §10, DL-1 to DL-7 |
 | RU-4 | Whether interval operators may appear inside infinite-trace formulas | **Mixed formulas are admitted**, for example `always (fail implies eventually always[0,10] healthy)` | That formula states recovery stability: after every failure the system eventually stays healthy for ten consecutive steps. A bounded `on each` clause states a bounded response at each activation and cannot put a bounded operator under an unbounded `eventually`; its false-extension also reads a terminal state differently from stutter extension. Mixed formulas cost automaton size that grows with interval length, which §11 states and limits | §11, IV-1 to IV-7; ADR-014 TR-3, A-2 and A-4, amended with this record |
-| RU-5 | How an engine settles a claim that evaluates undefined in some state | **Refuted**, cause `UndefinedEvaluation{where, cause}`, in every proof engine. Replay reproduces the undefined value at `where`. No new result kind | The Dafny and TLA+ well-definedness reading: an undefined claim does not hold. The refutation is decisive and replays without the engine, and the existing vocabulary carries it, so ADR-013 O-16 and QSpec FR-341 (infinite-trace) stay as they are | §1 UE-1 to UE-6; SM-5, CX-1, CX-3, DL-4 |
+| RU-5 | How an engine settles a claim that evaluates undefined in some state | **Refuted**, cause `UndefinedEvaluation{where, cause}`, in every proof engine. Replay reproduces the undefined value at `where`. No new result kind | The Dafny and TLA+ well-definedness reading: an undefined claim does not hold. The refutation is decisive and replays without the engine, and the existing vocabulary carries it, so ADR-013 O-16 and QSpec FR-360 stay as they are | §1 UE-1 to UE-6; SM-5, CX-1, CX-3, DL-4 |
 
 ### 10. Deadlocks
 
@@ -472,8 +472,8 @@ evaluation (RU-5), on 2026-10-01.
 | IV-3 | **Translation.** An interval operator's meaning is its expansion into nested next-position steps, with `X` the next-position step and `X^d` `d` of them: `eventually[a,b] p` is `X^a (p or X p or … or X^(b-a) p)`; `always[a,b] p` is `X^a (p and X p and … and X^(b-a) p)`; `p until[a,b] q` is `X^a` applied to the disjunction over `d` in `[0, b-a]` of `X^d q` conjoined with `X^e p` for every `e < d`, which is FR-091's lower-bound convention; `release[a,b]` is its dual; a past interval operator expands into previous-position steps. `X` exists only in this definition; the authored grammar has no next-position operator. The automaton construction (SM-6) does not keep one state per pending `X^d` obligation. It is a **counter construction**: for each occurrence of an interval operator it keeps that occurrence's open obligations and merges each into one that subsumes it. For lower bound 0 over an operand with no interval operator, the earliest open deadline subsumes the later ones for `eventually` and `until`, and the furthest required position subsumes the nearer ones for `always` and `release`, so the occurrence keeps one counter with `b + 1` values. A past interval operator with lower bound 0 keeps one counter of positions since its operand last held, saturating at `b + 1`. For a nonzero lower bound, or an operand that holds another interval operator, the occurrence keeps its open obligations as a set of offsets in `[0, b]`. The translation answers to SM-1 (SM-7). |
 | IV-4 | **Safety fragment.** ADR-014 A-4's safety fragment admits every interval operator, in negation normal form: the truth of an interval operator at a position is decided within `b` positions of it. A formula in the fragment is TP-3, so `always (req implies eventually[0,5] ack)` is TP-3. A formula with an interval operator under an unbounded `eventually` or `until` is TP-4, so the recovery-stability formula is TP-4. |
 | IV-5 | **Cost.** *Size.* An interval operator with upper bound `b` unrolls to `b + 1` positions: an `a`-step shift and `b - a + 1` copies of its operand. Nested interval operators multiply, so a chain with upper bounds `b1 … bn` unrolls to `O(n × (b1 + 1) × … × (bn + 1))` for a formula of `n` nodes. *States, under IV-3's counter construction.* An occurrence with lower bound 0 whose operand has no interval operator keeps one counter, factor `f = b + 1`, linear in the bound. An occurrence that keeps a set of offsets has factor at most `f = 2^(b+1)`; that is also the bound for a construction that keeps each pending `X^d` obligation separately, which IV-3 does not use. Nested interval operators multiply their factors. The automaton has at most `c × f1 × … × fn` states, with `c` the size the unbounded operators alone give, and the EN-1 product has at most the reachable model states times that. EN-1 explores reachable product pairs only and materializes automaton states as it reaches them, so the cost paid is the reachable part. *Example.* The negation of the recovery-stability formula is `eventually (fail and always eventually[0,10] not healthy)`. Under the counter construction its automaton has 12 states: one before the failure and a counter of positions since the last unhealthy state, 0 to 10. With bound `b` it has `b + 2`. EN-2 encodes an interval operator over its `b + 1` positions at each unrolled step, so its encoding grows linearly in `b` per operator. |
-| IV-6 | **Limit.** No syntactic cap on interval length applies beyond TR-3's `u64` bounds. EN-1's limits are FR-101's `Limits` plus `max_automaton_states`, an ADR-014 B-5 budget of QSL's own provider, like the rest of `ModelCheckLimits`, with a published default of 2^20 (1,048,576) automaton states, which a request sets like the other limits. The other published defaults are `max_states` 10,000,000 and `max_transitions` 100,000,000 (FR-101, FR-126). EN-1 counts distinct automaton states as the translation materializes them during product exploration, with checked arithmetic. Reaching the limit stops the run and settles V-7: QSpec FR-341 (infinite-trace) `failed`, execution `resource-incomplete`, basis `unavailable`, `Incomplete(ResourceExhausted)` naming `max_automaton_states`. V-7 is the stopped-run verdict of §1; `inconclusive` (V-5, V-6) is kept for a run that completed its method. Either way the result is non-Boolean, and the caller raises the limit or narrows the interval and reruns. |
-| IV-7 | **Position counting.** An interval operator counts positions, so a formula that has one is not stutter-invariant: inserting a step that repeats a state can change its truth. The state-space reduction record (References) specifies how reductions treat such a formula. A transfer of a claim through a refinement mapping that relies on stutter invariance holds only for formulas with no interval operator. |
+| IV-6 | **Limit.** No syntactic cap on interval length applies beyond TR-3's `u64` bounds. EN-1's limits are FR-101's `Limits` plus `max_automaton_states`, an ADR-014 B-5 budget of QSL's own provider, like the rest of `ModelCheckLimits`, with a published default of 2^20 (1,048,576) automaton states, which a request sets like the other limits. The other published defaults are `max_states` 10,000,000 and `max_transitions` 100,000,000 (FR-101, FR-126). EN-1 counts distinct automaton states as the translation materializes them during product exploration, with checked arithmetic. Reaching the limit stops the run and settles V-7: QSpec FR-360 `failed`, execution `resource-incomplete`, basis `unavailable`, `Incomplete(ResourceExhausted)` naming `max_automaton_states`. V-7 is the stopped-run verdict of §1; `inconclusive` (V-5, V-6) is kept for a run that completed its method. Either way the result is non-Boolean, and the caller raises the limit or narrows the interval and reruns. |
+| IV-7 | **Position counting.** An interval operator counts positions, so a formula that has one is not stutter-invariant: inserting a step that repeats a state can change its truth. The state-space reduction record (References) specifies how reductions treat such a formula. A claim transfers through a refinement mapping only when it is in ADR-020 CO-3's stutter-invariant fragment, which has no interval operator and no previous operator; any other claim is checked on the concrete subject directly (ADR-020 CO-4). |
 
 ## Consequences
 
@@ -516,8 +516,9 @@ Each amended cell carries an "Amended by ADR-018" note.
   their categories, and the replay settlements of a model counterexample.
   O-24 public type: `Proved` carries a `ProofBasis`, and the typed
   inconclusive causes include the four new ones.
-- ADR-014 §1 B-5 "When reached": a completed depth settles `inconclusive`
-  `BoundReached`; a run stopped before its depth settles `incomplete`; EN-1's
+- ADR-014 §1 B-5 "When reached": a run that completes its search horizon
+  `k` (EN-1's `max_depth`) settles `inconclusive` `BoundReached{depth: k}`;
+  a run stopped before it completes the horizon settles `incomplete`; EN-1's
   budget type is `ModelCheckLimits`. §2 B-1
   table, row "Temporal interval under `quire.temporal.infinite-trace/v1`":
   optional, refused only as `[a,*]` or `a > b`. §3 TR-3: under infinite-trace
@@ -546,7 +547,7 @@ Each amended cell carries an "Amended by ADR-018" note.
   from finite prefixes, and V-5 states the same strength as `inconclusive`
   with its depth, with no change to ADR-014 §4.
 - **A separate verdict vocabulary for model checking** (exhaustive,
-  bounded, inductive as new labels). Rejected. QSpec FR-341 and FR-243
+  bounded, inductive as new labels). Rejected. QSpec FR-360 and FR-243
   already carry the distinction; `ProofBasis` adds only the method and depth.
 - **Universes as `ProofBound`s for EN-1.** Rejected, as in ADR-016 §2. A
   universe is part of the subject and enters the obligation identity as such.
@@ -581,9 +582,10 @@ Each amended cell carries an "Amended by ADR-018" note.
 
 ## References
 
-- Owning ticket: Linear QSL-366. Its QSpec half, QS-1 to QS-13, is Linear
-  STD-131. The language-feature tickets that build on
-  this record: QSL-365 (strong fairness), QSL-367 (refinement mappings),
+- Owning ticket: Linear QSL-366. Its QSpec half, QS-1 to QS-13, is QSpec
+  FR-360 to FR-370 (Linear STD-131). The language-feature tickets that build on
+  this record: QSL-365 (strong fairness), QSL-367 (refinement mappings,
+  whose record is ADR-020 on quire-spec-language#564),
   QSL-368 (state-space reduction, whose record is ADR-021 on
   quire-spec-language#568), QSL-369 (EF and AG EF), QSL-370
   (hyperproperties).

@@ -230,7 +230,7 @@ names different artifacts in each.
 | TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed: every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally; step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
 | TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Implemented |
-| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Implemented |
+| TC-454 | The pinned sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | 🚧 Steps 1 to 3 and 8 change with the `choice` preimage (not yet implemented) |
 | TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ Implemented |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally |
@@ -660,11 +660,12 @@ pass locally.
 
 [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
 is QSL's implementation of QSpec FR-181: canonical successor order, the
-typed state key and its `quire.simulation.state-key/v1` digest, the pinned
-`quire.simulation.sampler/v1`, replay, the `cancelled`/`caller-cancelled`
+typed state key and its `quire.simulation.state-key/v1` digest, the
+`quire.simulation.sampler/v1` generator, replay, the `cancelled`/`caller-cancelled`
 cause, limit exhaustion and the pre-exploration `requires-bound`. TC-453
-backs AC-1, AC-2 and AC-9, TC-454 AC-3 to AC-5 and AC-10, and TC-455 AC-6 to AC-8, all
-implemented. The simulation tests in
+backs AC-1, AC-2 and AC-9, TC-454 AC-3 to AC-5 and AC-10, and TC-455 AC-6 to AC-8,
+implemented except the sampler's `choice` preimage member and its
+identity-only generator check (AC-3, AC-10). The simulation tests in
 `qsl-eval/tests/it/finite_simulation.rs` trace to these ids, not to QSpec's
 TC-210 and FR-181-AC-* ids; this repository's TC-210 is a different case.
 TC-439 keeps FR-097-AC-5's `Outcome::category()` map.

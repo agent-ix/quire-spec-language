@@ -35,7 +35,7 @@ Tag the tests `#[trace("TC-519", "FR-124-AC-n")]`.
 ## Expected Results
 
 - Step 1: `None`, `When`, `Any`, pairwise different package identities;
-  `conflicting_declaration`/`duplicate-declaration` naming the first member;
+  `ambiguous_declaration`/`ambiguous-name` naming both members;
   FR-104's refusal for the `pre` read.
 - Step 2: one `DeadlockFreedom` item (form `ReachableInvariant`,
   (`temporal-satisfaction`, `Unbounded`), identity distinct from both

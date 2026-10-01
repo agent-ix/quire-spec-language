@@ -149,4 +149,6 @@ ADR-018 §6 and are illustrative.
 
 ## References
 
-- QSpec half of ADR-018, carrying ADR-018 QS-1 to QS-13: Linear STD-131.
+- QSpec FR-362 (fairness constraints), FR-367 (interval operators under
+  infinite-trace) and FR-370 (the temporal clause body): the QSpec half of
+  ADR-018, QS-1 to QS-13 (Linear STD-131).

@@ -178,5 +178,6 @@ a lasso, what it charges and what it reports.
 
 ## References
 
-- QSpec half of ADR-018, carrying ADR-018 QS-1, QS-2, QS-5 and QS-13:
-  Linear STD-131.
+- QSpec FR-361 (model behaviours read as temporal traces) and FR-367
+  (interval operators under infinite-trace): the QSpec half of ADR-018 QS-1,
+  QS-2, QS-5 and QS-13 (Linear STD-131).

@@ -53,9 +53,14 @@ counterexample.
 
 ```rust
 pub struct ModelCheckRequest<'a> {
-    pub subject: ModelSubject<'a>,          // FR-125
+    pub subject: CheckSubject<'a>,
     pub item: ModelCheckItem<'a>,
     pub limits: ModelCheckLimits,
+}
+
+pub enum CheckSubject<'a> {
+    Model(ModelSubject<'a>),                // FR-125
+    Protocol(ProtocolSubject<'a>),          // FR-205; checked as FR-215 states
 }
 
 pub enum ModelCheckItem<'a> {
@@ -66,6 +71,9 @@ pub enum ModelCheckItem<'a> {
 pub struct ModelCheckLimits {
     pub limits: Limits,                     // FR-101: max_states, max_depth, max_transitions
     pub max_automaton_states: u64,
+    pub max_live_instances: Option<u64>,    // FR-209
+    pub max_store_buffer: Option<u64>,      // FR-225
+    pub max_messages: Option<u64>,          // FR-225
 }
 
 pub fn check_model(
@@ -81,7 +89,12 @@ IV-6). `ModelCheckLimits::default()` publishes `max_states` 10,000,000,
 with `Limits` at FR-101's defaults. `max_depth` is the search horizon `k`
 of a bounded search, a method parameter and not a resource budget: a run
 that completes it settles V-5, not V-7, and the result states the `k` it
-used. Its default, `usize::MAX`, sets no horizon. The subject's
+used. Its default, `usize::MAX`, sets no horizon.
+`max_live_instances`, `max_store_buffer` and `max_messages` bound a
+protocol subject; FR-209 and FR-225 specify their meaning, their published
+defaults and the outcomes they settle, and FR-215 specifies how this
+engine checks a protocol subject. The behaviour below is stated for a model
+subject. The subject's
 FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelSubject` (FR-125).
 
@@ -97,8 +110,8 @@ subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
 - `Violated(TemporalCounterexample)`: the canonical counterexample (§
   "Counterexamples"), to be replayed before it counts (FR-128) (V-4),
   including one whose `kind` is `UndefinedEvaluation{where, cause}`;
-- `BoundReached { depth }`: the run completed depth `max_depth` with no
-  counterexample (V-5);
+- `BoundReached { depth }`: the run completed its search horizon
+  `max_depth`, `depth` being that horizon, with no counterexample (V-5);
 - `Undecided(InconclusiveCause)`: `UndecidedSuccessor` or `NoInitialState`
   (V-6);
 - `Stopped { cause: IncompleteCause, limit: Option<ReachedLimit> }`: a run
@@ -283,7 +296,7 @@ automaton states and the depth reached.
 | FR-126-AC-5 | Limits over the example subject and the TP-4 claim of AC-1 with no granularity: `max_depth` 2 returns `BoundReached{depth: 2}`, since the length-3 loop needs an edge out of depth 2; `max_depth` 3 returns `Violated` with the AC-1 loop, found by the second phase over the retained graph although depth 3 left a frontier; `max_states` 2 returns `Stopped{ResourceExhausted, {MaxStates, 2}}`; `max_transitions` 3 returns `Stopped{ResourceExhausted, {MaxTransitions, 3}}`; a `true` poll returns `Stopped{Cancelled, None}`. Over the `Counter` subject with an evaluation meter budget of zero, the `inc` precondition's evaluation stops the run with `Stopped{ResourceExhausted, {EvaluationMeter, 0}}`. | Test (TC-521) |
 | FR-126-AC-6 | `always (holds(not s.healthy) implies eventually[0,100] holds(s.healthy))` over the `Restless` subject, where `fail` can repeat forever, with `max_automaton_states` 50 returns `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an automaton-state count of 50 and no counterexample; with the default limit it returns `Violated`, a finite prefix with at least 101 consecutive unhealthy positions. A subject with an undecided contract conjunction returns `Undecided(UndecidedSuccessor)`, and one with an unbounded population root returns `RequiresBound` before exploring. | Test (TC-521) |
 | FR-126-AC-7 | Running AC-1's two requests twice each gives equal outcomes and byte-equal counterexamples. | Test (TC-521) |
-| FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000, `max_automaton_states` 1,048,576 and `max_depth` `usize::MAX`. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
+| FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000, `max_automaton_states` 1,048,576 and `max_depth` `usize::MAX`, with `max_live_instances`, `max_store_buffer` and `max_messages` unset, so FR-209's and FR-225's published defaults apply. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
 | FR-126-AC-9 | Over the `Counter` subject (no `terminal` member), `always holds(6 / (2 - c.value) >= 0)` under infinite-trace returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` and `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`. The TP-4 claim `always eventually holds(6 / (2 - c.value) = 6)` returns the same counterexample, not the terminal stutter lasso. `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))` returns `kind: Formula` with the prefix `0 -inc-> 1`, which violates before position 2. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, returns `Holds{Exhaustive}`. With a `terminal when 6 / (3 - c.value) = 0` member, the `DeadlockFreedom` item returns `Violated` with the prefix to value 3 and `kind: UndefinedEvaluation{where: 3, cause: division-by-zero}`. | Test (TC-537) |
 
 ## Dependencies
@@ -303,4 +316,7 @@ automaton states and the depth reached.
   [FR-075](FR-075-compute-candidates-from-registered-backends.md) (the EN-1
   provider manifest advertising (`temporal-satisfaction`, `bounded`) and
   (`temporal-satisfaction`, `unbounded`) registers through it).
+- FR-205 (protocol subject), FR-209 (`max_live_instances`), FR-215
+  (checking a protocol subject) and FR-225 (`max_store_buffer`,
+  `max_messages`).
 - FR-127 settles the outcome; FR-128 replays the counterexample.

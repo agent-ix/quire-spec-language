@@ -29,9 +29,9 @@ QSL implements these parts of FR-181:
 
 - the exploration contract's canonical successor order;
 - the simulator state key, its typed canonical form and its digest;
-- seeded sampling with the pinned `quire.simulation.sampler/v1` generator
-  (QSpec `proposals/quire-v1/definitions/simulation-sampler.md`, revision
-  `1-draft.1`);
+- seeded sampling with the `quire.simulation.sampler/v1` generator
+  (QSpec `proposals/quire-v1/definitions/simulation-sampler.md`), selected
+  by its identity;
 - trace replay;
 - the stopped outcomes: exhaustion of an exploration limit, and caller
   cancellation with cause `cancelled`/`caller-cancelled`;
@@ -243,29 +243,29 @@ trace or frontier names is its state-key digest, not its key bytes:
 `KeyMismatch.{expected, actual}` are `DigestRecord`s. Replay recomputes each
 candidate state's digest and compares it with the recorded digest.
 
-**Sampler.** Sampling runs `quire.simulation.sampler/v1` at revision
-`1-draft.1`, and only that generator. `sample_request` first compares the
-supplied `DefinitionRef`'s identity and version with
-`quire.simulation.sampler/v1` and `1-draft.1`, and refuses any other with
-`NotSimulated::GeneratorMismatch`, before any draw. QSL pins no raw-byte
-digest of the definition file; the supplied digest is recorded as given.
-Draw `d` at trace `t`, step `s` under seed `k` is SHA-256 of the JCS object
-`{"draw":"d","seed":"k","step":"s","trace":"t"}`, each member a decimal
-string, encoded through `quire-canonical`. `s` is the 0-based index of the
-transition within the trace: it advances once per transition taken, whether
-or not that step computed a digest. With `n` successors in canonical order
-and `v` the digest read as a big-endian `u256`, `v` is accepted when
-`v < n * floor(2^256 / n)` and selects index `v mod n`; a rejected `v`
-increments `d`. `d` restarts at 0 at every step. `n = 1` selects index 0
-with no digest. `n = 0` ends the trace with `StopReason::NoSuccessors` and
-no draw. Reaching `max_steps` ends it with `StopReason::StepLimit`. FR-181
-names one initial state; when a `TransitionSystem` has `m > 1` initial
-states after coalescing equal keys, QSL starts trace `t` from the initial
-state at index `t mod m` in canonical order, with no draw. This is QSL's
-choice; STD-109 settles it upstream. Provenance records the seed, the trace
-index and the supplied `DefinitionRef` (identity, version and digest) in
-place of today's `sampler_version: String` (ADR-014 TR-1). `CounterSampler`
-is removed.
+**Sampler.** Sampling runs `quire.simulation.sampler/v1`, and only that
+generator. `sample_request` first compares the supplied `DefinitionRef`'s
+identity with `quire.simulation.sampler/v1`, and refuses any other with
+`NotSimulated::GeneratorMismatch`, before any draw. A step of
+`sample_request` makes one uniform choice over its enabled successors, with
+choice index `c = 0` (QSpec FR-181); the further choices a workload adds
+are FR-188's.
+Draw `d` of choice `c` at trace `t`, step `s` under seed `k` is SHA-256 of
+the JCS object `{"choice":"c","draw":"d","seed":"k","step":"s","trace":"t"}`,
+each member a decimal string, encoded through `quire-canonical`. `s` is the
+0-based index of the transition within the trace: it advances once per
+transition taken, whether or not that step computed a digest. With `n`
+successors in canonical order and `v` the digest read as a big-endian
+`u256`, `v` is accepted when `v < n * floor(2^256 / n)` and selects index
+`v mod n`; a rejected `v` increments `d`. `d` restarts at 0 at every choice.
+`n = 1` selects index 0 with no digest. `n = 0` ends the trace with
+`StopReason::NoSuccessors` and no draw. Reaching `max_steps` ends it with
+`StopReason::StepLimit`. FR-181 names one initial state; when a
+`TransitionSystem` has `m > 1` initial states after coalescing equal keys,
+QSL starts trace `t` from the initial state at index `t mod m` in canonical
+order, with no draw. This is QSL's choice; STD-109 settles it upstream.
+Provenance records the seed, the trace index and the sampler identity
+(ADR-014 TR-1). `CounterSampler` is removed.
 
 **Stopped outcomes.** A run that stops before its frontier empties never
 reports `Exhaustive`. `Bounded` carries the limit that stopped it.
@@ -318,8 +318,7 @@ proof bound (ADR-014 §1).
 **Traceability.** Every simulation test in `qsl-eval/tests/it/` traces to
 this requirement's ACs and to TC-453 to TC-455. None carries QSpec's
 `TC-210` or `FR-181-AC-*` ids, which name different artifacts in this
-repository (this repository's TC-210 is a witness-envelope case). The
-disposition of each existing test is in the table below.
+repository (this repository's TC-210 is a witness-envelope case).
 
 ## Acceptance Criteria
 
@@ -327,59 +326,27 @@ disposition of each existing test is in the table below.
 | --- | --- | --- |
 | FR-101-AC-1 | Exploration visits each parent's successors in ascending JCS byte order of their transition identity, whatever order the `TransitionSystem` lists them in and whatever their post-states' keys: a state listing `z` before `a` is expanded `a` first, and `step(10)` is visited before `step(9)`, because `{"arguments":[{"type":"integer","value":"10"}],…}` precedes `{"arguments":[{"type":"integer","value":"9"}],…}` bytewise. Successors with equal transition identities are visited in ascending state-key byte order. Parent states keep FIFO discovery order within a level, whatever their keys. | Test (TC-453) |
 | FR-101-AC-2 | The state key is the JCS encoding of FR-181's typed canonical form, and exploration coalesces two states exactly when their full key bytes are equal. The state whose `semantic` member is `float64` bits `0000000000000000` and every map empty has digest `943ae638f84583f2a35a7a92f1eac7f58c380c045298892fb1412756a1cc95e6`; with bits `8000000000000000` (negative zero) it has digest `92a3e9557f9aaf672a61aaab71eb2bfad13a0d88662953998de4057ed54e4b01`, and the two remain two states. Two NaNs with different payloads are two states. Each digest is a `DigestRecord` under `quire.simulation.state-key/v1`. | Test (TC-453) |
-| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector: seed `424242`, trace `0`, `n = 5` draws indices `0, 0, 4, 4, 4` at steps 0 to 4, and the step-0 preimage `{"draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to `cb7d4b3b8b8491d8310ccc1e07c3ee236d3fe86cf713d1851533a85ef6682622`. Seed `424242`, trace `1`, `n = 5` draws `1, 4, 3, 4, 0`; seed `424242`, trace `0`, `n = 3` draws `2, 1, 0, 2, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `4` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
-| FR-101-AC-4 | Two sampled runs with equal seeds, trace indices and `DefinitionRef`s over the same `TransitionSystem` produce identical traces, including provenance. The provenance records the seed, the trace index and the supplied `DefinitionRef`; a different seed or trace index gives different provenance. With `m > 1` initial states after coalescing equal keys, trace `t` starts at canonical initial state `t mod m`, and no draw selects the start. | Test (TC-454) |
+| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4, and the step-0 preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to `d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2`. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
+| FR-101-AC-4 | Two sampled runs with equal seeds and trace indices over the same `TransitionSystem` produce identical traces, including provenance. The provenance records the seed, the trace index and the sampler identity; a different seed or trace index gives different provenance. With `m > 1` initial states after coalescing equal keys, trace `t` starts at canonical initial state `t mod m`, and no draw selects the start. | Test (TC-454) |
 | FR-101-AC-5 | A trace records its initial state and each step's state as state-key digests, and replays against the `TransitionSystem` that produced it without the simulator, by recomputed digest. When several successors share a transition identity, replay takes the one whose digest equals the recorded digest. A trace whose initial digest matches no initial state, whose step names a transition the current state does not offer, or whose recorded digest differs from every matching successor's digest refuses at that step with `UnknownInitial`, `MissingTransition` or `KeyMismatch`. | Test (TC-454) |
 | FR-101-AC-6 | A run the poll cancels returns `Outcome::Cancelled` with `cause` `CatalogCode::new("cancelled", "caller-cancelled")`, category incomplete, and the unexplored frontier as state-key digests in next-expansion order. It never returns `Exhaustive` or `Bounded`. | Test (TC-455) |
 | FR-101-AC-7 | A run that reaches `max_states`, `max_depth` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state-key digests in next-expansion order, category incomplete. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
 | FR-101-AC-8 | `explore_request` or `sample_request` over `domains` that include an unbounded domain under the ADR-014 §4 extent rule returns `NotSimulated::RequiresBound` naming each unbounded domain's key and kind, calls no `TransitionSystem` method, and returns no `Outcome`. A `classify_extent` stage limit returns `NotSimulated::Extent`. The same request with every domain bounded explores. Raising exploration `Limits` does not change a `RequiresBound` result. | Test (TC-455) |
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
-| FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1` or its version is not `1-draft.1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
+| FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
 | FR-101-AC-11 | A `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding -- for example a `u64` above `2^53` -- refuses `NotSimulated::KeyEncoding` from `explore_request` and `sample_request`, and `ReplayError::KeyEncoding` from `replay`, instead of aborting the process. | Test (TC-453) |
 | FR-101-AC-12 | On a test system `0 → {1, 2}`, `1 → 3`, whose expansion of `1` returns `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge`, exploration returns `Outcome::Stopped` with that cause, frontier `[<1>, <2>]` (the stopped state, then the queue), category incomplete; with `runtime_invariant`/`established-invariant-broken` it returns `Stopped`, category internal failure. | Test (TC-474) |
 | FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its digest, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
 | FR-101-AC-14 | Sampling the chain `0 → 1`, whose expansion of `1` stops with `resource_exhausted`/`insufficient-next-charge`, ends with `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 1, and that trace replays successfully. The same trace replayed against a system whose expansion of `1` does not stop refuses `ReplayError::Stopped{step: 1, recorded: Some(<cause>), replayed: None}`; against one that stops with `runtime_invariant`, `recorded` and `replayed` name the two causes; a trace sampled with `max_steps` 1 from a chain whose `1` does not stop ends `StepLimit` at `1`, and replayed against the stopping chain it refuses with `recorded: None`. A trace whose recorded findings differ from the recomputed ones refuses `ReplayError::FindingMismatch` at that step. | Test (TC-474) |
 | FR-101-AC-15 | `Limits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000 and `max_depth` `usize::MAX`. A chain of 3 states explored with `Limits::default()` returns `Exhaustive`; with `max_states` set to 2 and the other members at their defaults it returns `Outcome::Bounded` at `Limit::States` with value 2. | Test (TC-536) |
 
-## Existing test disposition
-
-The tests in `qsl-eval/tests/it/finite_simulation.rs` at `6938db3d`:
-
-| Test | Disposition |
-| --- | --- |
-| `exhaustive_small_graph_reports_exact_state_and_transition_counts` | Retag: TC-455 step 5, AC-7 |
-| `canonical_order_is_the_systems_authored_successor_order` | Replace: TC-453 step 1, AC-1 |
-| `key_equal_coalescing_merges_two_paths_to_the_same_state` | Retag: TC-453 step 7, AC-2 |
-| `depth_limit_n_stops_bounded_and_n_plus_one_is_exhaustive` | Retag: TC-455 step 2, AC-7 |
-| `state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive` | Retag: TC-455 step 2, AC-7 |
-| `transition_limit_n_stops_bounded_and_n_plus_one_is_exhaustive` | Retag: TC-455 step 2, AC-7 |
-| `state_limit_mid_successors_places_the_blocked_key_after_the_queue` | Retag: TC-455 step 3, AC-7 |
-| `several_initial_states_are_all_admitted_when_the_cap_allows` | Retag: TC-453 step 4, AC-9 |
-| `state_limit_on_initial_states_orders_admitted_then_blocked_then_remaining` | Retag: TC-453 step 8, AC-9 |
-| `duplicate_initial_states_coalesce_to_one_state` | Retag: TC-453 step 4, AC-9 |
-| `max_states_zero_admits_no_initial_state` | Retag: TC-453 step 8, AC-9 |
-| `cancellation_stops_the_run_and_returns_the_frontier` | Retag: TC-455 step 1, AC-6 |
-| `seeded_sampling_reproduces_the_same_trace` | Retag: TC-454 step 5, AC-4 |
-| `different_seeds_can_sample_different_traces` | Retag: TC-454 step 5, AC-4 |
-| `max_steps_shorter_than_the_path_stops_on_the_step_limit` | Retag: TC-454 step 9, AC-10 |
-| `sample_on_a_system_with_no_initial_states_returns_an_error` | Retag: TC-454 step 9, AC-10 |
-| `sample_then_replay_round_trips_with_duplicate_transition_ids` | Retag: TC-454 step 7, AC-5 |
-| `multi_initial_sample_picks_the_sampler_selected_start` | Replace: TC-454 step 6, AC-4. It asserts a drawn start, which AC-4 forbids |
-| `multi_initial_replay_matches_the_recorded_initial_key` | Retag: TC-454 step 7, AC-5 |
-| `replay_refuses_a_trace_whose_initial_key_matches_no_state` | Retag: TC-454 step 7, AC-5 |
-| `replay_accepts_a_good_trace_and_refuses_a_tampered_one` | Retag: TC-454 step 7, AC-5 |
-| `counter_sampler_produces_a_pinned_index_sequence` | Delete with `CounterSampler`; TC-454 steps 1 to 3 replace it |
-| `tc_439_explore_outcomes_map_to_their_o16_category` | Unchanged: TC-439, FR-097-AC-5 |
-
-Each retagged test keeps its assertion and moves to digests, canonical order
-and the new signatures where this requirement changes them.
-
 ## Dependencies
 
 - QSpec FR-181, its exploration contract and typed canonical form, and QSpec
   TC-210's sampler vector.
-- QSpec `quire.simulation.sampler/v1`, revision `1-draft.1`
-  (`proposals/quire-v1/definitions/simulation-sampler.md`).
+- QSpec `quire.simulation.sampler/v1`
+  (`proposals/quire-v1/definitions/simulation-sampler.md`), whose preimage
+  includes `choice`.
 - QSpec FR-201: the `quire.simulation.state-key/v1` digest domain.
 - [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
   §1, §4, §7 and TR-1, TR-6, TR-7.
@@ -405,9 +372,11 @@ admits initial states in ascending state-key byte order. The state key is
 the JCS encoding of a `TransitionSystem`-supplied typed view, through
 `quire-canonical`; `Trace.initial`, `Step.key` and every `Frontier` entry
 hold `DigestRecord`s under `quire.simulation.state-key/v1`, and replay
-compares recomputed digests. Sampling runs the pinned
-`quire.simulation.sampler/v1` `1-draft.1` generator; `CounterSampler` is
-deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
+compares recomputed digests. Sampling runs the
+`quire.simulation.sampler/v1` generator under the preimage without
+`choice`, and checks the definition's version; the `choice` preimage
+member, AC-3's vectors under it, and the identity-only check of AC-10 are
+not yet implemented. `CounterSampler` is deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
 "caller-cancelled")`, asserted literally by both cancellation tests.
 `explore_request` and `sample_request` classify `domains` before calling any
 `TransitionSystem` method, returning `NotSimulated::RequiresBound`,

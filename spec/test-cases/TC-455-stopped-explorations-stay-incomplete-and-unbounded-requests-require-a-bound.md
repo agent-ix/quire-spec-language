@@ -55,8 +55,4 @@ Tag each test `#[trace("TC-455", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-✅ Implemented. FR-101's "Existing test disposition" table maps each
-existing test to its step here. Review rewrote step 4's
-test to raise `Limits` between iterations, assert the domain key and the
-`Integer` kind, and narrow `Extent` to a node-count stage limit (SR-673
-FND-003).
+✅ Implemented.
