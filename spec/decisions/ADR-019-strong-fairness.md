@@ -27,8 +27,10 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. Draft for plan-lead review. It builds on ADR-018, which
-is itself a draft; where ADR-018's open questions are still being ruled, this
-record follows the ruling and names the point. The owning ticket and related
+is itself a draft. It follows ADR-018's rulings: unmarked fairness
+granularity is `whole`, reachable deadlocks are reported by default with a
+per-model opt-out, and the infinite-trace profile admits interval operators
+nested under unbounded ones. The owning ticket and related
 work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
@@ -71,7 +73,7 @@ fairness premise `unsupported`.
 | --- | --- |
 | SY-1 | A fairness constraint names a **kind**, a **granularity** and one operation of the model. The kinds are `weak` and `strong`. The granularities are ADR-018 FA-1's `whole` and `each`, with the same meaning for both kinds. |
 | SY-2 | The kind is always written. A strong and a weak constraint read differently on the same behaviour (§2), and an explicit kind keeps the premise visible in the clause, its obligation identity and its counterexample. |
-| SY-3 | The unmarked granularity is the one ADR-018's ruling on its open question 2 fixes, and it is the same for both kinds. The example below spells the granularity, so it reads the same under either ruling. |
+| SY-3 | The unmarked granularity is `whole`, as ADR-018 rules for weak fairness, and it is the same for both kinds: `fair strong Op` means `fair strong whole Op`. The example below writes `each` wherever it relies on per-identity fairness. |
 | SY-4 | A clause may carry weak and strong constraints together, including both kinds on the same operation. Strong implies weak (§2), so a weak constraint beside a strong one on the same operation and granularity adds nothing to the premise; both stay in the fairness set. |
 | SY-5 | The constraint type is ADR-018 FA-5's `FairnessConstraint{kind, operation, granularity}` with `FairnessKind::Strong` added beside `FairnessKind::Weak`. Strong constraints are admitted on infinite-trace clauses only, as weak ones are. |
 
@@ -93,10 +95,10 @@ temporal Served using inf over (m: M::Mutex) clock "model-steps" on origin {
 | SF-1 | **One semantics.** Strong fairness is a filter on behaviours, applied before SM-1 evaluates the formula (ADR-018 SM-1, SM-5; QSpec FR-161). A strong constraint changes which behaviours are admitted; it never changes how a formula evaluates on an admitted behaviour. |
 | SF-2 | **Enabled and taken.** A constraint is enabled at a position exactly as ADR-018 FA-2 defines it: a transition identity is enabled at a state when the operation's effective precondition holds for that receiver and argument vector and at least one post-state satisfies its postcondition; a `whole` constraint is enabled when any of its identities is. A constraint is taken at a step when the step's transition identity belongs to it. Enabledness is a property of the model state at the position and never of the automaton state. |
 | SF-3 | **Strong fairness.** A behaviour satisfies a strong constraint when, if the constraint is enabled at infinitely many positions, it is taken at infinitely many steps. In automata terms it is a Streett pair: the states where the constraint is enabled, and the edges that take it. |
-| SF-4 | **On a lasso.** The positions of the loop recur forever and the stem's do not, so on a lasso SF-3 reduces to the loop: if the constraint is enabled at some state of the loop, some step of the loop takes it. A lasso whose loop is the terminal stutter step (ADR-018 SM-4) satisfies every strong constraint, since no operation is enabled at a terminal state. |
+| SF-4 | **On a lasso.** The positions of the loop recur forever and the stem's do not, so on a lasso SF-3 reduces to the loop: if the constraint is enabled at some state of the loop, some step of the loop takes it. A lasso whose loop is the terminal stutter step (ADR-018 SM-4) satisfies every strong constraint, since no operation is enabled at a terminal state. ADR-018 reports a reachable terminal state as a deadlock by default, unless the model opts out; that report reads the state graph, not the fairness set, so strong fairness neither hides nor creates a deadlock. In a model that opts out, the stutter lasso is an ordinary admitted behaviour under every strong constraint. |
 | SF-5 | **Strong implies weak.** A constraint continuously enabled from some position onward is enabled infinitely often, so every behaviour that satisfies the strong constraint satisfies the weak one with the same operation and granularity. The strongly fair behaviours are a subset of the weakly fair ones, so a claim proved under weak fairness holds under strong fairness, and a claim refuted under strong fairness is refuted under weak fairness. |
 | SF-6 | **Granularity.** As for weak fairness, `each` is the stronger premise: every behaviour fair under `strong each` for an operation is fair under `strong whole` for it. Under `whole`, any transition of the operation discharges the obligation, so a different receiver or argument vector can starve one identity. |
-| SF-7 | **Machine closure.** Strong fairness of operations of the model is machine-closed: every finite prefix of a behaviour extends to a behaviour fair under any finite set of weak and strong constraints. On a finite subject this is direct: from the last state of the prefix some bottom SCC of the state graph is reachable, every transition enabled at a state of a bottom SCC stays inside it, and a cycle through every edge of that SCC is fair for every constraint. Two consequences carry over from ADR-018 §4: strong fairness never makes a proof vacuous, and it never changes the verdict of a safety form (TP-1, TP-2, TP-3), whose truth depends on finite prefixes only. |
+| SF-7 | **Machine closure.** Strong fairness of operations of the model is machine-closed: every finite prefix of a behaviour extends to a behaviour fair under any finite set of weak and strong constraints. On a finite subject this is direct: from the last state of the prefix some bottom SCC of the state graph is reachable, every transition enabled at a state of a bottom SCC stays inside it, and a cycle through every edge of that SCC is fair for every constraint. A terminal state is a bottom SCC whose one edge is the stutter step, which enables no operation, so the argument covers prefixes that end in a deadlock, whether or not the model opts out of deadlock reporting. Two consequences carry over from ADR-018 §4: strong fairness never makes a proof vacuous, and it never changes the verdict of a safety form (TP-1, TP-2, TP-3), whose truth depends on finite prefixes only. |
 
 ### 3. Checking on EN-1: SCC refinement for Streett emptiness
 
@@ -117,6 +119,7 @@ fairness in explicit-state LTL checking (References).
 | SR-6 | **Canonical result.** Sub-SCCs are enumerated in discovery order within their parent, and the first passing component in that order, depth-first through the refinement, is the one the counterexample uses. The stem is the first path in FR-181 canonical breadth-first order from an initial product state to that component. The loop construction is AM-3's. |
 | SR-7 | **The loop is fair by construction.** The loop lies inside the passing component `P`. It visits a state of every acceptance set and, for every weak constraint, an edge of it or a state where it is disabled. For every strong constraint that has an edge in `P`, the loop takes one such edge. Every other strong constraint is disabled at every state of `P` (SR-2 (c)), hence at every state of the loop. So every strong constraint enabled at a loop state is taken in the loop, which is SF-4. |
 | SR-8 | **Replay re-establishes fairness.** The engine's claim of fairness is not trusted. ADR-018 CX-3 replay re-executes the lasso through `ModelSystem`, computes the enabled transition identities at every loop state from FR-120 itself, and checks every constraint of the fairness set against the loop: weak by FA-3, strong by SF-4. A lasso that fails a strong constraint is refused as an unfair lasso, with ADR-018 CX-3's existing refusal. Replay decides from the fairness set ADR-018 CX-2 already carries, with each constraint's kind. |
+| SR-9 | **Mixed formulas.** The filter reads only model states, model transitions and enabled sets; the property automaton enters only through its acceptance sets (SR-2 (a)). An automaton that unrolls interval operators nested under unbounded ones into chains of next steps is one more automaton, so SR-1 to SR-8 hold for mixed formulas unchanged, with `n` and `m'` growing with the interval lengths. |
 
 ### 4. Back ends
 
@@ -177,7 +180,7 @@ Write a state by its `owner` value, `acq(1)` and `acq(2)` for `acquire` with
 receiver `m` and argument 1 or 2, and `rel` for `release`. Three states are
 reachable: at 0, `acq(1)` and `acq(2)` are enabled; at 1 and at 2, only `rel`
 is. Edges: `0 -acq(1)-> 1`, `0 -acq(2)-> 2`, `1 -rel-> 0`, `2 -rel-> 0`. No
-state is terminal, and every behaviour returns to 0 after every
+state is terminal, so the default deadlock report finds none, and every behaviour returns to 0 after every
 acquisition, so `release` needs no fairness here: at 1 and 2 it is the only
 enabled transition, and a behaviour is a maximal path.
 
@@ -214,7 +217,8 @@ Exhaustive}` (V-1), over this subject. The lasso above is unfair under this
 premise: `acq(1)` is enabled at position 0 and never taken, so replay refuses
 it (SR-8).
 
-**Verdict under `fair strong whole acquire`.** The one constraint is taken by
+**Verdict under `fair strong whole acquire`**, which is also the reading of
+unmarked `fair strong acquire` (SY-3). The one constraint is taken by
 `acq(2)` inside `S`, so `S` passes and the item settles `refuted` with the
 same lasso. Process 2 re-acquiring satisfies fairness for `acquire` as a
 whole while process 1 starves (SF-6).
@@ -237,7 +241,7 @@ lands with EN-2. It adds no stage, edge or layer to ADR-011.
 
 | ID | Item | Where |
 | --- | --- | --- |
-| QS-1 | Surface syntax: the `strong` kind beside `weak`, the kind always written (SY-2), the same `whole`/`each` granularity and unmarked default (SY-3), admission on infinite-trace clauses only | shared grammar |
+| QS-1 | Surface syntax: the `strong` kind beside `weak`, the kind always written (SY-2), the same `whole`/`each` granularity with unmarked `whole` (SY-3), admission on infinite-trace clauses only | shared grammar |
 | QS-2 | Strong fairness semantics on infinite traces (SF-3) and on lassos (SF-4), the shared enabled/taken definition (SF-2), strong implies weak (SF-5), granularity ordering (SF-6), machine closure and its two consequences (SF-7) | QSpec FR-161 |
 | QS-3 | "Missing fairness premise": no enabledness for a constraint's transitions at a position the fairness check reads, for either kind; settles `unsupported` | QSpec FR-161, FR-341 (infinite-trace) |
 | QS-4 | Provider advertisement of supported fairness kinds, and the rule that negotiation never drops or weakens a fairness constraint; the `unsupported` warning naming the strong-fairness capability | QSpec FR-290 and the provider manifest contract |
@@ -316,15 +320,13 @@ lands with EN-2. It adds no stage, edge or layer to ADR-011.
 
 1. **Kind always written.** SY-2 requires the kind keyword. The alternative
    is an unmarked kind meaning `weak`. Confirm.
-2. **Unmarked granularity.** SY-3 follows ADR-018's ruling on its open
-   question 2, for both kinds.
-3. **Canonical loop.** AM-3 replaces ADR-018's "shortest cycle" with a
+2. **Canonical loop.** AM-3 replaces ADR-018's "shortest cycle" with a
    canonical greedy walk. Confirm, or rule that ADR-018 settles it there.
-4. **Hint on weak refutations.** When a weak-fairness refutation's loop has
+3. **Hint on weak refutations.** When a weak-fairness refutation's loop has
    an operation enabled at some loop state and never taken, the
    counterexample could name the strong constraint that would exclude it.
    It is a diagnostic only and changes no verdict. Whether to add it.
-5. **Enabledness on supplied traces.** SV-2 settles `unsupported` when a
+4. **Enabledness on supplied traces.** SV-2 settles `unsupported` when a
    supplied trace carries no enabledness. Giving runtime traces an
    enabledness observation is a separate surface; whether one is wanted.
 
