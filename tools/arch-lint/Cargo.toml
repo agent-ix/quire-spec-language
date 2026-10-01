@@ -15,17 +15,17 @@ name = "arch-lint"
 path = "main.rs"
 
 [dependencies]
-serde_json = { version = "=1.0.151" }
-thiserror = "=2.0.20"
+serde_json = { version = "1.0.151" }
+thiserror = "2.0.20"
 # FR-060 T12-B/T12-C/T12-D parse and tokenize QSL source: `#[cfg(test)]`
 # exclusion, enclosing-function resolution, and token-level pattern matching.
-syn = { version = "=2.0.119", features = ["full", "visit"] }
+syn = { version = "2.0.119", features = ["full", "visit"] }
 # `span-locations` gives each token its real source line.
-proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
-tempfile = "=3.27.0"
+tempfile = "3.27.0"
 
 [lints.rust]
 unsafe_code = "forbid"

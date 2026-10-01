@@ -11,7 +11,7 @@ description = "QSL#214 (FR-064): the #[string_edge] tool attribute. An identity 
 proc-macro = true
 
 [dev-dependencies]
-trybuild = "=1.0.121"
+trybuild = "1.0.121"
 
 [lints.rust]
 unsafe_code = "forbid"

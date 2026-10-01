@@ -25,10 +25,10 @@ quire-exact = { path = "../quire-exact" }
 quire-canonical = { workspace = true }
 # The pinned sampler's draw preimage and the simulation-state typed
 # canonical form fixtures are `Serialize` (FR-101; ADR-011 X-8).
-serde = { version = "=1.0.228", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
 # The derived `Error` impls of `InputRefusal`, `CallFailure` and
 # `InvalidQualifiedName`.
-thiserror = "=2.0.20"
+thiserror = "2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
@@ -36,7 +36,7 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # layer-5 `quire.checked-function-package/v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
 # one shipped caller) was deleted; several `tests/it/*.rs` fixtures still
 # build JSON directly.
-serde_json = "=1.0.151"
+serde_json = "1.0.151"
 # The evaluator's tests build `PackageDeclarations` from layer-2 parsed forms
 # (`Expression`, `FunctionDeclaration`, `TypeForm`): `check` takes forms as its
 # input and qsl-semantics exposes no builder of them. Layer 2 is below this
@@ -55,7 +55,7 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }
-sha2 = "=0.10.9"
+sha2 = "0.10.9"
 
 [[test]]
 name = "it"

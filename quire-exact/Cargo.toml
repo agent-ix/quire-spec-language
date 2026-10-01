@@ -16,11 +16,11 @@ description = "ADR-011 X-1: the quire-exact kernel -- checked identity, typestat
 test-support = []
 
 [dependencies]
-num-bigint = { version = "=0.4.8", default-features = false }
-num-integer = { version = "=0.1.47", default-features = false }
-num-traits = { version = "=0.2.19", default-features = false }
-thiserror = { version = "=2.0.20", default-features = false }
-unicode-normalization = { version = "=0.1.25", default-features = false }
+num-bigint = { version = "0.4.8", default-features = false }
+num-integer = { version = "0.1.47", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
+thiserror = { version = "2.0.20", default-features = false }
+unicode-normalization = { version = "0.1.25", default-features = false }
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

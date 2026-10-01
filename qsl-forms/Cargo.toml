@@ -23,9 +23,9 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 qsl-cst = { path = "../qsl-cst", features = ["test-support"] }
 # `dispatch`'s TC-167 test parses its own source to inspect the dispatch
 # `match`; `tests/it/identity_free_forms.rs` (TC-398) walks every field type.
-syn = { version = "=2.0.119", features = ["full", "visit"] }
+syn = { version = "2.0.119", features = ["full", "visit"] }
 # Line numbers in that walk's findings, the same way `xtask` reads them.
-proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 
 [[test]]
 name = "it"
