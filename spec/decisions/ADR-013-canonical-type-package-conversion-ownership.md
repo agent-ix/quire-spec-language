@@ -803,17 +803,7 @@ Equality: not an identity. Each bound value compares under its owning type.
 
 | Pin | Authority | Rule |
 | --- | --- | --- |
-| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | One lock holds one revision of each git dependency (OBS-041). |
-
-Release pins are exact revisions in each repository's own manifest and lock.
-They are the only qualified dependency selection, and AD-011 ecosystem locks
-qualify them.
-
-Pin representation (OBS-034 secondary, T-9): a `RevisionPin` is the
-repository source exactly as `Cargo.lock` records it, plus the full
-40-character lowercase commit sha. A short sha, branch or tag refuses.
-
-Equality: lexical on both fields of a `RevisionPin`.
+| Cargo dependency revision | Each repository's `Cargo.toml` (first-party dependencies mostly on `branch = "main"`), resolved to one revision per git dependency in its `Cargo.lock` | One lock holds one revision of each git dependency (OBS-041). |
 
 #### O-24 Proof results
 
@@ -932,7 +922,7 @@ stores one and derives four (QC-13).
 
 ### 3.1 Stage contracts for ADR-011
 
-ADR-011 (#209, QSL PR #235) leaves nine questions to #211. Each row below
+ADR-011 (#209, QSL PR #235) leaves eight questions to #211. Each row below
 decides one. The O rows above hold the full decision where one exists.
 
 | ID | ADR-011 question | Decision |
@@ -945,7 +935,6 @@ decides one. The O rows above hold the full decision where one exists.
 | T-6 | The kernel edge cuts for X-1 | Each payload either moves into `quire-exact` as a component type of an AD-016 kernel-row type (QC-15), or its variant leaves the kernel type. The `Reference` payload moves in: a `UniverseId`, an `EffectiveId` and an `ObjectId` (O-05). `UniverseId` is the `quire.model.object-universe/v1` digest of the object's universe, one universe per connected supertype component (OQ-C and OQ-E rulings). `ObjectId` is the authored object identity (QSpec FR-204; non-empty per FR-035) as exact UTF-8, not a digest (OQ-C ruling). The `Quantity` payload moves in: magnitude and a `UnitId`, with no reference to `quantity` declarations. `UnitId` is a domain-labelled digest record with O-18's shape and equality restricted to two domains: a declared unit carries its QSpec FR-142 node key (`quire.checked-semantic-node/v1` over the `quire.unit-node/v1` preimage), and a compound unit carries its `quire.value.compound-unit/v1` digest. The kernel holds the declared unit's key as opaque bytes under its domain label and names no declaration type. QSL `semantic_value` mints every `UnitId`, including the compound result of a quantity multiplication, division or power, which stays in `semantic_value` over the unit graph; the kernel's quantity operations take the identical unit and mint none. A consumer that adopts the kernel (TK-03) and forms a compound unit computes the QSpec FR-142 compound-unit digest itself. Equality is lexical on domain, then bytes, so a declared unit and a compound unit are never equal (R-04; OQ-B ruling). The `Enum` payload moves in as the O-14 sum shape: an enum value is a `VariantId` and its rank in the canonical member list, with no `NodeKey` (OQ-D and OQ-F rulings). The `Population` payload moves in as the O-13 Population row's shape: a `PopulationId` only, with no `PopulationBinding`. `VariantId` and `MemberId` are opaque digest newtypes with no dependency on `check` (QC-15); QSL computes their digests. `PopulationId` is likewise an opaque digest newtype, with no dependency on `model` (QC-21); QSL `model` computes it, exactly as it computes `EffectiveId` (O-05), and only `model` calls its constructor (ADR-011 T-12). `PopulationId`'s preimage's admission-role component is a closed three-state discriminator -- `Direct`, `Pre`, `Post` -- applied to every admission, not only the two `admit_invocation` attaches, so a standalone `admit_binding` admission and an invocation's `Post` binding over the same domain package and `population_key` mint distinct identities rather than colliding. The preimage also holds the declared maximum, the member set and a `Post` binding's pre-binding identity (FR-089, ADR-017 ID-5). `ValueType::Population` keeps its `u64` count only (AD-016 model row); `Value::Population` carries `PopulationId`, never `PopulationBinding`, which stays in `model`. Any other `model::population` payload -- membership, closure and `allInstances`/`lookup` state -- leaves the kernel type and stays in `model`. In `Refusal`, the `expression::WrongSnapshotCause` variant leaves: it becomes an evaluation cause of `ProtocolClause`, the family that owns `Pre` (ADR-012 §4.3), defined in `value::expression` and mapped through its own `catalog_code()` (O-16, O-17). A family that does not evaluate natively (`Relation`) is not an S6a input, so no family-dispatch cause exists (O-16); family causes are never kernel causes. `diagnostic::Code` leaves: the kernel `Refusal` carries the kernel's own typed cause, and QSL F `diagnostic`, which holds `CatalogCode` and the O-16 category type, maps that cause to a code. `NodeKey` and `EffectiveId` minting follows O-04 and O-05: one public constructor from a preimage digest, so the preimage types, JCS and hashing stay in QSL and the kernel imports none of them. `collection`, `equality`, `division` and `ieee` then import only kernel types. Code that needs a `definition` or `model::key` value stays in `semantic_value` and passes the kernel shape in. #213 S-1 makes the cuts as part of X-1. |
 | T-7 | Which crate holds `BackendDescriptor`, the candidate set and `Capability` | They cross as data in QSpec-authored formats. No shared Rust crate holds them. `quire-exact` cannot, because the AD-016 kernel row lists its types exactly, and ADR-011 §7 approves no other extraction. A backend's descriptor is its FR-331 provider manifest. The driver reads it, and QSL `route` converts it into its `BackendDescriptor` (C-28). A candidate set is, per `request_index`, one list of `backend` members (O-19) sorted by (identity, manifest digest), or the unknown-backend mark carrying the named identity: QSpec FR-331 `candidates` (QC-12, C-29). A capability crosses in its agent-ix/quire-specification#134 (FR-290) wire spelling (C-24). QSL's `Capability` (#213 S-6) and CG's own representations each convert from the wire, so there is no CG → QSL type edge (FB-05). |
 | T-8 | The executor key | Ruled 2026-09-19 (OQ-5), as O-26 states: the replay request carries the selected function's `QualifiedName` (O-11), and E9 resolves it by name lookup in the recompiled package's declarations. It keeps AD-016 arrow 7 unchanged. ADR-011 E9 is aligned to this. |
-| T-9 | Pin representation (OBS-034 secondary) | O-23: a `RevisionPin` is the repository source exactly as `Cargo.lock` records it, plus the full 40-character lowercase commit sha. A short sha, branch or tag refuses. Equality is lexical on both fields. |
 
 ### 4. Boundary conversions
 
@@ -1021,7 +1010,6 @@ flowchart LR
   Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
   ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
   builds the carrier and #186 the serializer. No build produces both.
-- Exact release pins are authoritative (O-23).
 
 ### 6. Lane-private representations
 
@@ -1269,7 +1257,7 @@ Primary-owner items:
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: QSL `Witness{transcript}` admitted through `parse`, with derived accessors; IR's copy is deleted (OQ-H). |
 | OBS-032 | O-13: single kernel ends the RT/QSL drift. |
-| OBS-034 | O-23, T-9: `Cargo.toml` and `Cargo.lock` are the one revision authority, so CG deletes its pin literals and `pins.json`; `RevisionPin` representation. |
+| OBS-034 | O-23: `Cargo.toml` and `Cargo.lock` are the one revision authority, so CG deletes its pin literals and `pins.json`. |
 | OBS-035 | O-17: FR-322 code set canonical; IR conformance work. |
 
 Secondary-owner items (the #211 part only):
@@ -1277,7 +1265,7 @@ Secondary-owner items (the #211 part only):
 | Item | Decision |
 | --- | --- |
 | OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
-| OBS-031 | O-23: release pins are the only qualified dependency selection. |
+| OBS-031 | O-23: first-party dependencies on `branch = "main"` resolve to their current heads in each repository's `Cargo.lock`, so each lock update integrates current heads and no separate heads workspace is needed. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
 | OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling). ADR-011 closes OBS-039 against the amended #205 text. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |
@@ -1325,8 +1313,8 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
   adds one FR-201 domain; QC-22, QC-23 and QC-29 have no filed QSpec ticket yet. The owner questions
   OQ-1 to OQ-5 are ruled (2026-09-19), and OQ-A to OQ-F (2026-09-22).
 - ADR-012 §13.2 questions 1 to 4 are answered in OQ-5, O-10, O-17, O-14 and
-  O-19; O-20's owner row is decided in #222 (ADR-014 §4). The nine ADR-011 questions to
-  #211 are answered in §3.1 (T-1 to T-9). ADR-011 applies Q209-8, and
+  O-19; O-20's owner row is decided in #222 (ADR-014 §4). The eight ADR-011 questions to
+  #211 are answered in §3.1 (T-1 to T-8). ADR-011 applies Q209-8, and
   ADR-012 §13.5 answers Q210-1 to Q210-4.
 
 ## Alternatives Considered
