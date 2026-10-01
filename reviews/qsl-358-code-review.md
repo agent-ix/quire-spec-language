@@ -81,3 +81,19 @@ fix. Every finding is low and none blocks the merge. FND-001 is a simplification
 also removes the race nesting. FND-002 to FND-004 strengthen the `Debug` oracle and its
 maintenance. FND-005 is a ci ergonomics issue. Mergeable. By repo practice, fix the
 lows inside this PR.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | On a machine whose cargo cache lacks the crates (a fresh clone or CI host), `cargo +1.82 fetch --offline` prints `error: no matching package named ... found ... you're using offline mode`, then the online fallback succeeds. I reproduced it with an empty `CARGO_HOME`. A passing `make ci` log then carries an `error:` line, which a reader can take for the cause of an unrelated later failure. Silence the offline attempt's stderr, so a failed fallback still shows its own real error, or print one line saying the fallback ran. | Makefile:220 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e9e462d7: `release_children(node: Value, ..)` takes the popped node by value and calls `Arc::into_inner` on each nesting variant (value.rs:392-414). The get_mut window and its race paragraph are gone. The deep-drop and shared-handle tests pass in the e9e462d7 ci log. |
+| FND-002 | fixed | e9e462d7: `schedule_value` destructures `OptionValue { payload_type, payload, occ }` and `CompositeValue { declaration, slots, occ }` exhaustively. The collection arm uses `CollectionValue::debug_fields`, which destructures `Self { collection_type, elements, occ }` (collection.rs:207). A new field in any of the three is now a compile error. |
+| FND-003 | fixed | e9e462d7: a `BracketCount` sink counts `([{` and `)]}`. The test asserts `sink.open > DEEP` and `sink.open == sink.close` (value.rs:1872-1945). |
+| FND-004 | fixed | e9e462d7: `debug_samples()` returns a composite root and an option root. Between them they cover all ten scalar variants, Absent, Null and Present, and a composite inside a collection inside an option. I checked that the expected strings are the real derive output: in a scratch copy, with `#[derive(Debug)]` restored on `Value` and the hand-written impl disabled, `value_debug_matches_the_derived_format` passes. |
+| FND-005 | fixed | e9e462d7: `rustup toolchain install` now runs only when `rustup target list --toolchain 1.82 --installed` lacks thumbv7em-none-eabi (Makefile:213). In the e9e462d7 ci log no install runs and nothing syncs. |

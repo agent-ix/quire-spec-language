@@ -217,7 +217,7 @@ quire-exact-msrv:
 	printf '[package]\nname = "quire-exact-msrv-consumer"\nversion = "0.0.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nquire-exact = { path = "$(CURDIR)/quire-exact" }\n\n[workspace]\n' > $(QUIRE_EXACT_MSRV_CONSUMER)/Cargo.toml
 	printf '#![no_std]\npub use quire_exact;\n' > $(QUIRE_EXACT_MSRV_CONSUMER)/src/lib.rs
 	cp Cargo.lock $(QUIRE_EXACT_MSRV_CONSUMER)/Cargo.lock
-	cd $(QUIRE_EXACT_MSRV_CONSUMER) && { cargo +$(QUIRE_EXACT_MSRV) fetch --offline --target thumbv7em-none-eabi || cargo +$(QUIRE_EXACT_MSRV) fetch --target thumbv7em-none-eabi; }
+	cd $(QUIRE_EXACT_MSRV_CONSUMER) && { cargo +$(QUIRE_EXACT_MSRV) fetch --offline --target thumbv7em-none-eabi 2>/dev/null || { echo "quire-exact-msrv: cargo $(QUIRE_EXACT_MSRV) cache incomplete, fetching online"; cargo +$(QUIRE_EXACT_MSRV) fetch --target thumbv7em-none-eabi; }; }
 	cd $(QUIRE_EXACT_MSRV_CONSUMER) && cargo +$(QUIRE_EXACT_MSRV) build --offline --target thumbv7em-none-eabi
 
 ci: check-no-committed-binaries quire-exact-no-std quire-exact-msrv check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions

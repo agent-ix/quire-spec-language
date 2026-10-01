@@ -56,3 +56,10 @@ Every slice-0 item is delivered, and the RT goal (consume with cargo and rustc 1
 thumbv7em, stack-safe drop and `Debug`) is met, which I measured directly. Both findings
 are low gaps in what the tests and gate prove, not defects in delivered behaviour.
 Mergeable.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e9e462d7: `deep_values_compare_equal_on_a_small_stack` (plan_equality plus planned_equality returns `Some(true)`) and `deep_values_compare_keys_on_a_small_stack` (`compare_keys` returns `Equal`) run on two separately built `deep_value()`s on a 2 MiB thread. Separately built values cannot take an `Arc` pointer-equality shortcut. Both pass in the e9e462d7 ci log. |
+| FND-002 | fixed | e9e462d7: `quire-exact-msrv` now builds a generated no_std consumer (path dependency, empty `[workspace]`) with `cargo +1.82` itself. So cargo 1.82 reads quire-exact's manifest and its dependencies' manifests, and a cargo-level regression fails the gate. The copied lock pins the workspace's versions. I checked: cargo keeps the locked syn 3.0.5 and tinyvec 1.13.2, adds only the consumer, and prunes the rest. That is deliberate, deterministic, and stated in the Makefile comment. A fresh RT resolve picks newer patches (syn 3.0.6 and tinyvec 1.13.3 earlier today), and RT's own lock and CI cover those. The noisy first offline run is SR-946 FND-006. |
