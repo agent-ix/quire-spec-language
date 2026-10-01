@@ -332,11 +332,11 @@ chain of `next` fields.
 
 ### Who builds the lowering
 
-Slice A4b builds this lowering and FR-092's keys, in the layer-3
+`check` builds this lowering and FR-092's keys (#384), in the layer-3
 `check` core, because E3 mints node keys and each key hashes the lowered
 body (ADR-011 SG-1, FB-13). The checked semantic graph holds each lowered
 node: its tag, form, semantic type, declaration, owner, body and key. The
-slice S1b v2 emission arm (layer-4 `package`) writes those nodes to the
+M-4 v2 emission arm (layer-4 `package`) writes those nodes to the
 wire: it adds each node's `node_id`, `dependencies`, `occurrences` and
 `recursion_group` and the graph order, and it builds no body term and mints
 no key of its own. A recursion group's members carry one `recursion_group`
@@ -751,14 +751,13 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 ## Status
 
 Specified, including the text-leaf walk and its recursion
-leaf. Implemented on the slice
-A4b branch, pending merge: `check` lowers each checked node in
+leaf. Implemented (#384): `check` lowers each checked node in
 `qsl-semantics/src/check/lowering.rs` and keys it by FR-092, and TC-415
-backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1 there. The
+backs AC-1 to AC-6, AC-8, AC-10, AC-11, AC-14, AC-15 and CON-1. The
 text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
-text-leaf vectors. A4b spells an integer literal as a decimal string and gives
-`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is slice S1b, in `qsl-package/src/emit.rs`:
+text-leaf vectors. The lowering spells an integer literal as a decimal string and gives
+`quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is the M-4 emitter, in `qsl-package/src/emit.rs`:
 TC-416 backs AC-7, AC-9, AC-12 and CON-2 there. The pinned IR reader
 admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
 and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
@@ -779,8 +778,8 @@ package. The fixtures' two `quire.op.ieee.float64.add` nodes carry `mode`
 and compares `mode` on every member. The fixture identities no row lowers in a function
 body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decimal`,
 `model.reaches` and the `model.*` rows AC-3 excludes) are skipped by name. The
-`dependencies` rule is specified. Ownership, decided here: slice A4b builds
-the lowering and the keys in `check`; slice S1b serializes the lowered nodes
+`dependencies` rule is specified. Ownership, decided here: `check` builds
+the lowering and the keys; the M-4 emitter serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.
 

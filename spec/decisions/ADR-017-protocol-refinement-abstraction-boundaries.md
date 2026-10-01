@@ -757,8 +757,6 @@ These are proposed; the team lead files them.
 
 Ticket-text corrections for the owner (all ticket text read as data):
 
-- QSL-16's links for "#84" and "#136" should name
-  agent-ix/quire-contract-codegen#84 and agent-ix/quire-contract-ir#136.
 - QSL-39 cites QSpec FR-250 where it means QSpec AD-003 and V1-TOOL-012.
 - QSL-40 and QSL-39 name QSpec FR-177 as their normative contract; their
   gates test QSpec FR-290's operation-contract refinement row (RF-1).
@@ -791,10 +789,7 @@ Ticket-text corrections for the owner (all ticket text read as data):
    lands (PF-2).
 4. **Linear edges** for the owner: QSL-39 blocks QSL-36 today, but #198 needs
    nothing from #192, so that edge can go; #192 reuses #191's report and
-   classification scaffolding, so QSL-40 blocks QSL-39. QSL-20 (ARCH-G3)
-   blocks QSL-16; this record changes no O-24 to O-27 wire member, so G3's
-   validation is unaffected, and TK-2 changes only a check inside
-   `replay_frame`.
+   classification scaffolding, so QSL-40 blocks QSL-39.
 
 ## Consequences
 

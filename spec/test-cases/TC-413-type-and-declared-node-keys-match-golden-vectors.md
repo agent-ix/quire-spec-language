@@ -108,10 +108,10 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 
 ## Status
 
-Implemented on the slice A4b branch, pending merge. The tests back steps 1 to 8 except step 5's collision half. `check`
-refuses every recursion group on that branch, so step 5's collision half and
-step 9 are unbacked, and the checked type node of step 10 takes the caller's
-key. Step 3's owner needs the S-4 source authority.
+Implemented (#384). The tests back steps 1 to 10
+(`qsl-semantics/src/check/lowering/tests.rs`, `lowering/tests/depth.rs`,
+`lowering/tests/differential.rs` and `check/node_key/tests.rs`), recursion
+groups and the declared record's own key included.
 
 The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
 (FR-096). Until S-5b lands, the tests observe the same limit as

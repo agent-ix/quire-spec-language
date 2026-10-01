@@ -1119,7 +1119,7 @@ item settles `invalid-request` with no preference order
 | CG enum matches in place of string compares | agent-ix/quire-contract-codegen#86 |
 | RT enum matches in place of string compares | RT ticket, to be opened by the RT owner |
 | S2 (parser leading-token-kind entry table/parsed-form-enum check seam) and S3 (checked-node-enum evaluator/v2-emitter/requirement-derivation matches) seam-probe coverage, over the crate-wide enums (`token::Kind`, `Expression`, `NodeKind`) every `Value` form uses, not only function declaration/application | Done |
-| Marking or converting the QSL crate's remaining string-dispatch sites so `xtask string-edge` joins the lint gate (FR-064): done for the literal-comparison scan; `string-edge` is a `make ci` prerequisite and the workspace scan is clean. The scan does not yet resolve named `const NAME: &str` operands (FR-064 Status) | Done |
+| Marking or converting the QSL crate's remaining string-dispatch sites so `xtask string-edge` joins the lint gate (FR-064): done for the literal-comparison scan; `string-edge` is a `make ci` prerequisite and the workspace scan is clean, same-crate named `const NAME: &str` operands included (FR-064 Status) | Done |
 | `FamilyContract::requirements()` and the `Requirements` type (ADR-012 §2's fourth contract part), moved here by ADR-014 §11 (FR-062-AC-1's `requirements` half, AC-4) | Done |
 | `Relation`'s absence from S6a's input type (FR-090-AC-4, backed); FR-062-AC-8's S4 cause-bearing-family seam-probe coverage (backed, `CheckCause::code`) | Done |
 | Decision: `FamilyContract` has no `package` part, and S4's all-or-nothing rule is the emitter's omission closure (§2 "Packaging"); FR-062-AC-1, AC-5's third clause and AC-9 amended to match | Done |
@@ -1133,7 +1133,7 @@ item settles `invalid-request` with no preference order
 | Two typing contexts constructed from the same resolved declarations, checking the same form through each, produce identical checked output (FR-062-AC-3's third clause, backed by `TC-160`/`two_contexts_from_the_same_declarations_check_identically`; its first two clauses are backed by tests in the same module) | Done |
 | The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | Done |
 | The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | Done |
-| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (`TC-166` has zero tests) (FR-062-AC-10, FR-065-AC-6) -- a real owner that already existed before this table was written but was not recorded against either criterion until now | #243 |
+| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (FR-062-AC-10, FR-065-AC-6); `TC-166` is Planned and has zero tests | Planned; no owner |
 | `Value` function `requirements()` at operation-application granularity: one `value-validity` record per scalar operation application occurrence, with ADR-014 §4's operation-application extent (FR-062-AC-4, AC-13; FR-057-AC-10), and the `route` request builder over a package's records (FR-075-AC-8) | Done |
 
 Requirements needed before implementation starts:

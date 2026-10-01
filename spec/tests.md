@@ -47,7 +47,7 @@ operational validation remains outside this audit-only plan.
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`), AC-7 backed by TC-378, AC-9 (step 8), AC-12, and AC-13 (steps 10 and 11); AC-3 (all three clauses, for `src/check` and `src/family`) and AC-6 (first sentence, an API-surface scan and a rename test); AC-1 (step 1: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case) |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build); FR-063's other criteria per its own Status section |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally |
-| TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | ✅ Passed locally for FR-065-AC-1, AC-2 (`a_function_identity_survives_emission_and_the_i2_read`, `qsl-package/src/emit/tests.rs`, a real `emit_checked`/I2 round trip) and AC-3 (`qsl-package/src/emit/tests.rs`, a real `emit_checked`/v2 round trip over the call's own occurrence); AC-8 backed on the A4b branch; the real `PreimageTerm`-conformant identity preimage behind AC-2's `Debug`-rendered stopgap remains open |
+| TC-163 | Function identity and provenance survive checking and package conversion | Integration | P1 | FR-065-AC-1..FR-065-AC-3, FR-065-AC-8 | ✅ Passed locally for FR-065-AC-1, AC-2 (`a_function_identity_survives_emission_and_the_i2_read`, `qsl-package/src/emit/tests.rs`, a real `emit_checked`/I2 round trip) and AC-3 (`qsl-package/src/emit/tests.rs`, a real `emit_checked`/v2 round trip over the call's own occurrence); AC-8 backed (#384, the FR-092 and FR-093 keys) |
 | TC-164 | A call receives the same verdict from a declaration body and from a clause expression | Integration | P1 | FR-065-AC-5 | ✅ Passed locally |
 | TC-165 | The migration recipe names every required test, conversion, removal condition and remaining family | Manual | P1 | FR-066-AC-1..FR-066-AC-4 | ✅ Verified by inspection |
 | TC-166 | The replay executor selects a function by typed QualifiedName, never by string | Unit | P1 | FR-062-AC-10, FR-065-AC-6 | 🚧 Planned; #214 |
@@ -196,13 +196,13 @@ operational validation remains outside this audit-only plan.
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | ✅ Passed locally |
-| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | 🚧 Implemented on the A4b branch, pending merge; AC-7's collision half, AC-11 and AC-12 unbacked there |
-| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | 🚧 Implemented on the A4b branch, pending merge |
-| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Implemented on the A4b branch, pending merge, except steps 8 and 9; step 6 needs the QSpec lock accessor |
+| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | ✅ Passed locally (#384) |
+| TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | ✅ Passed locally (#384) |
+| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Passed locally (#384) except step 6's first half, which needs the QSpec lock accessor |
 | TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-16, FR-093-AC-17 | 🚧 Partial; FR-093-AC-13 passes locally under `make conformance`, `float64.add` `mode` included; FR-093-AC-16 passes locally; FR-093-AC-17 passes locally |
-| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | 🚧 Implemented on the A4b branch, pending merge |
-| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | 🚧 Implemented on the A4b branch, pending merge; step 2's C3 key unasserted there |
-| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | 🚧 Implemented on the A4b branch, pending merge; QSpec unit vectors under `make conformance` |
+| TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | ✅ Passed locally (#384) |
+| TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | ✅ Passed locally (#384) |
+| TC-419 | A declared unit's quantity type is its unit node, and a compound unit's keys to the golden vectors | Unit | P1 | FR-094-AC-6, FR-094-AC-7 | ✅ Passed locally (#384); QSpec unit vectors under `make conformance` |
 | TC-420 | Occurrence keys and source regions are lexical values, and every checked node has an occurrence | Unit | P1 | FR-095-AC-1, FR-095-AC-2 | ✅ Passed locally |
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
@@ -596,9 +596,8 @@ S4 emitter serializes. Its text-leaf walk ends a recursive
 composite in a recursion leaf, with vectors T13, T14, G16 to G21,
 S4, S5, P10 to P16 and E14 to E17. TC-415 backs AC-1 to AC-6, AC-8, AC-10,
 AC-11, AC-14 and AC-15, and TC-416 AC-7, AC-9, AC-12 (each node's `dependencies`)
-and AC-13 (the comparison with QSpec's v2 positive fixtures). TC-413 to TC-415 are implemented on the
-A4b branch, pending merge, except TC-415 steps 8 and 9; TC-416 is
-planned for slice S1b. No FR-093 AC backs the `Pre` row; the
+and AC-13 (the comparison with QSpec's v2 positive fixtures). TC-413 to TC-415 are implemented (#384) and pass locally;
+TC-416 is partial (see its row). No FR-093 AC backs the `Pre` row; the
 `ProtocolClause` postcondition lowering backs it. Remaining work: #218.
 [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md)
 keys the nodes those two leave to the model layer: model declaration nodes
@@ -606,8 +605,8 @@ and clause functions under QSpec's `ModelOwner`, the `Reference<T>` and
 `Population<T>[N]` type nodes, and quantity type nodes for declared and
 compound units, with vectors M1 to M5, R1 to R5, S1 to S3, PO1 to PO3, P5
 to P8, L4, E4 to E10, C1 to C6 and U1 to U4. TC-417 backs AC-1 to AC-4 and AC-7, TC-418
-AC-5 and TC-419 AC-6 and AC-7. All three are implemented on the A4b
-branch, pending merge.
+AC-5 and TC-419 AC-6 and AC-7. All three are implemented (#384) and
+pass locally.
 
 ## Finite simulation (FR-101) coverage
 

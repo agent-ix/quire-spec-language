@@ -717,7 +717,7 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 ## Status
 
 Specified, with C3's receiver (P9) and AC-6's quotient units
-corrected. Implemented on the slice A4b branch, pending merge:
+corrected. Implemented (#384):
 `qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
 `Reference`, `Population`, clause-function and quantity type nodes, `check`
 records the model correspondence, `check::checked_dispatch_operation` gives

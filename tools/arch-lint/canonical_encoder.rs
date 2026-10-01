@@ -229,7 +229,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         ],
         calls: &[],
         kind: ExemptionKind::NotAnIdentity,
-        reason: "QSL-251: the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
+        reason: "the handoff writer's FR-001 `ByteDigest`s of exact bytes it has \
                  emitted or embedded (offer, mutation offers, sources, clock inputs, rule \
                  placeholders, its own source, `SHA256SUMS` members); not an identity over a \
                  canonical form",
@@ -240,7 +240,7 @@ pub(crate) const EXEMPT: &[Exemption] = &[
         functions: &["compile_with", "emit_and_read"],
         calls: &["bind", "admit"],
         kind: ExemptionKind::NotAnIdentity,
-        reason: "QSL-251: these two functions name no `serde_json` themselves; their only \
+        reason: "these two functions name no `serde_json` themselves; their only \
                  hash sites are their calls into `linking::composed::binding::bind` and \
                  `protocol_artifact::native::admit`, which hash the admission evidence they \
                  construct, not a canonical form of it. Pinned to those two calls so this \
@@ -1100,7 +1100,7 @@ pub(crate) fn report(outcome: &Outcome) -> String {
     };
     let mut summary = String::new();
     summary.push_str(
-        "ADR-013 §2 one-RFC-8785-encoder check (ADR-013:113, QSL-194)\n  Note: a shipped file \
+        "ADR-013 §2 one-RFC-8785-encoder check (ADR-013:113)\n  Note: a shipped file \
          fails if it both hashes (names Sha256, sha2, of_preimage or ByteDigest::of, or calls \
          a hashing function of another file) and reads as JSON (names serde_json, or calls a \
          JSON-producing function of another file). Both function sets are closed under \

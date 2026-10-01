@@ -646,7 +646,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     );
 }
 
-// G2 deleted this crate's second v2 producer and its round-trip
+// The deletion of this crate's second v2 producer removed its round-trip
 // test here; FR-065-AC-2 is now backed by `qsl-package/src/emit/tests.rs`'s
 // `a_function_identity_survives_emission_and_the_i2_read`.
 

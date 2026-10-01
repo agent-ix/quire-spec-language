@@ -1489,8 +1489,8 @@ fn call_identity_and_location(
 /// FR-065-AC-3: the call's own source occurrence resolves to the
 /// same byte span through a real `quire.checked-package/v2` emit/decode
 /// round trip -- a leg `qsl-eval`'s own minimal `quire.checked-function-
-/// package/v2` encoding (deleted in G2) never could exercise, since
-/// that encoding carried no source map at all (only a declared function's
+/// package/v2` encoding (deleted with qsl-eval's second v2 producer) never
+/// could exercise, since that encoding carried no source map at all (only a declared function's
 /// own name and identity). `emit_checked`'s real source map does, so this
 /// is where FR-065-AC-3's v2 checkpoint actually lives.
 #[trace("FR-065-AC-3", "TC-163")]
@@ -1982,7 +1982,7 @@ fn a_fault_injected_partway_through_node_emission_writes_nothing() {
     // package, and a node after it must never even be attempted.
     let target = total / 2;
     let attempts = std::cell::Cell::new(0usize);
-    let fault_reason = "QSL-313 fault injection (test): forced encoding failure";
+    let fault_reason = "fault injection (test): forced encoding failure";
     let refusal = emit_package_with_fault(&package, whole_unit, |_id| {
         let seen = attempts.get();
         attempts.set(seen + 1);

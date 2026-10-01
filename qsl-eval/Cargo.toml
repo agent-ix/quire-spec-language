@@ -32,8 +32,8 @@ thiserror = "=2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
-# G2: test-only since the layer-5 `quire.checked-function-package/
-# v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
+# Test-only since the deletion of qsl-eval's second v2 producer: the
+# layer-5 `quire.checked-function-package/v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
 # one shipped caller) was deleted; several `tests/it/*.rs` fixtures still
 # build JSON directly.
 serde_json = "=1.0.151"

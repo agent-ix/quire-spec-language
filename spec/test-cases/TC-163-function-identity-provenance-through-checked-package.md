@@ -56,8 +56,8 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
 
 ## Status
 
-Step 6 (FR-065-AC-8) is unbacked until slice A4b switches the
-checker's minter to the FR-092 and FR-093 keys.
+Step 6 (FR-065-AC-8) is backed since #384 switched the checker's minter
+to the FR-092 and FR-093 keys (`qsl-semantics/src/check/lowering/tests.rs`).
 
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by four `compile_fail`
 doctests on `CheckedPackage::link` (`qsl-package/src/checked.rs`, AC-1),

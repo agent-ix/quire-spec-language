@@ -1023,12 +1023,11 @@ pub(crate) struct CheckedDeclarationBody {
 /// moved into the family: it stays exactly where `check::mod` already runs
 /// it, over every declaration's [`CheckedDeclarationBody::calls`] collected
 /// after every declaration's own family check succeeds. This is a reported
-/// finding, not a silent narrowing: QSL-148's own ticket text asks to move
-/// "typing, definedness and termination checking" into this family, and
-/// termination's own whole-package shape makes that specific part
-/// impossible under the per-node contract ADR-012 §2 defines (each `check`
-/// call sees one form and one `Declarations`, never every sibling
-/// declaration at once).
+/// finding, not a silent narrowing (ADR-012 §14.1, FR-065): typing and
+/// definedness move into this family, but termination's own whole-package
+/// shape makes moving it impossible under the per-node contract ADR-012
+/// §2 defines (each `check` call sees one form and one `Declarations`,
+/// never every sibling declaration at once).
 ///
 /// Takes `input: &ValueDeclarations<'_>` rather than its constituent fields
 /// spelled out as separate parameters (PR #303 review, finding 12): this is

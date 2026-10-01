@@ -493,8 +493,6 @@ function, not by the matrix status in `spec/tests.md`.
 1. IR admission of `state` nodes and a CG `operation-contract` arm (PI-5).
    Neither has a ticket; the team lead files them. Neither blocks G-1 to
    G-10.
-2. Linear has QSL-20 blocking QSL-19, but this record claims no proof
-   evidence (§6). The edge is the team lead's to relax.
 
 ## Alternatives Considered
 

@@ -75,7 +75,7 @@ requirement is required to keep in sync.
   settlement points and settle no disposition... QSL has no copy of them:
   X-1 (#213 S-1) moved `division` and `ieee` into `quire-exact` without
   cutting these (its own summary said so), so QSL carried both until
-  QSL-131 removed them (ADR-011 §6.1's K-leaf bullet). QSL value semantics
+  #213 S-1b removed them (ADR-011 §6.1's K-leaf bullet). QSL value semantics
   keep their evaluation functions, which are not negotiation."
 - ADR-012 §14.1's ownership row assigns "Removal of the QSL `negotiate_*`
   copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s

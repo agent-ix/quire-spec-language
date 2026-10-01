@@ -254,7 +254,7 @@ impl<'a, D> CheckContext<'a, D> {
 /// version of this trait also required `package(checked: &Self::Checked,
 /// out: &mut Vec<u8>)`. `ValueFunctionFamily`'s implementation emitted v2
 /// bytes into `out`, but `CheckedPackage::emit_function_package_v2` (the
-/// one real caller, deleted itself under G2 along with the second
+/// one real caller, deleted itself along with the second
 /// `quire.checked-function-package/v2` producer it and `family::emit_v2`/
 /// `decode_v2` made up) passed it a scratch `Vec` that it never read back,
 /// then built its actual returned bytes independently through

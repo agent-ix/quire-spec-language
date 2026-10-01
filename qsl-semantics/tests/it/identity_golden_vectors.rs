@@ -108,7 +108,7 @@ fn assert_golden(text: &str, digest: &str, actual: &str) {
     assert_eq!(
         serde_json::to_string(&parsed).expect("a Value serializes"),
         text,
-        "the pre-QSL-194 encoder emitted these bytes, so the digest is unchanged"
+        "the encoder before `quire-canonical` emitted these bytes, so the digest is unchanged"
     );
 }
 

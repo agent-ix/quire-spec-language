@@ -266,8 +266,8 @@ pub(crate) const RULES: &[Rule] = &[
         // FR-060 Behavior, "T12-B and T12-C: shipped code and debt lists" --
         // every shipped mint outside `check` on origin/main, named by
         // enclosing module and function. This list only shrinks: an entry
-        // leaves in the change that removes its last mint. G2
-        // removed the one entry this list ever carried (`qsl-eval`'s
+        // leaves in the change that removes its last mint. The deletion
+        // of qsl-eval's second v2 producer removed the one entry this list ever carried (`qsl-eval`'s
         // `value::expression::family::decode_v2`, the second v2 producer's
         // own `NodeKey` mint from wire hex) along with the mint itself, so
         // this is empty until a new one is found and named.
@@ -1540,10 +1540,10 @@ mod tests {
         }
     }
 
-    /// T12-B (`RULES[1]`) with `debt_list` replaced by `debt_list`. G2
-    /// emptied the real rule's debt list along with the one mint it
-    /// ever named (`qsl-eval`'s `decode_v2`), so the debt-list mechanism's
-    /// own tests -- reported-as-debt, stale-entry-fails, and the crate-
+    /// T12-B (`RULES[1]`) with `debt_list` replaced by `debt_list`. The
+    /// deletion of qsl-eval's second v2 producer emptied the real rule's
+    /// debt list along with the one mint it ever named (`qsl-eval`'s
+    /// `decode_v2`), so the debt-list mechanism's own tests -- reported-as-debt, stale-entry-fails, and the crate-
     /// scoping check beside them -- need a fixture entry of their own rather
     /// than the production list, which no longer carries one.
     fn t12b_with_debt(debt_list: &'static [DebtEntry]) -> Rule {
@@ -2201,9 +2201,9 @@ mod tests {
     }
 
     /// A fixture debt entry for the debt-list mechanism's own tests below:
-    /// T12-B's real `debt_list` is empty since G2 removed its one
-    /// entry along with the mint it named, so these tests exercise the
-    /// mechanism against a synthetic entry rather than production data.
+    /// T12-B's real `debt_list` is empty since the deletion of qsl-eval's
+    /// second v2 producer removed its one entry along with the mint it
+    /// named, so these tests exercise the mechanism against a synthetic entry rather than production data.
     const SYNTHETIC_DEBT_ENTRY: DebtEntry = DebtEntry {
         crate_src: "qsl-eval/src",
         module: "value::fixture",

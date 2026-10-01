@@ -272,10 +272,9 @@ Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
 2026-09-21 owner ruling on QSL-158). S-3b implemented by #300: AC-1, AC-2,
 AC-3, AC-4, AC-9 and AC-10 are backed by real `check()`-driven tests
 (TC-257, TC-248, TC-249, TC-250, TC-252). AC-7's within-package half
-is backed on main with a declared type's node id taken from the
-caller-supplied `CompositeDeclaration` key (TC-259 step 4); FR-092-AC-12
-makes that id the FR-092 key `check` mints, and TC-259 step 4
-asserts the caller key until slice A4b adopts it. Its owner-scoped and builtin or anonymous
+is backed: a declared type's node id is the FR-092 key `check` mints
+(FR-092-AC-12, #384), not the caller-supplied `CompositeDeclaration` handle,
+and TC-259 step 4 asserts it. Its owner-scoped and builtin or anonymous
 cross-package cases (TC-259 steps 1 to 3) and recompilation (step 5) are
 not implemented. AC-5 is enforced for its
 `QualifiedName` half only (TC-251); the "or a bare string" half is
@@ -290,5 +289,5 @@ not covered. For AC-8: `ValueTypeRef` is defined once, as exactly
 `Native(NativeValueType)` and `Package(DeclarationKey)`. No `model` field
 whose name contains `type` is a `NodeKey` or a string, and the three
 value-type records carry a `ValueTypeRef`. A field type under another name
-is not covered, and TC-260 step 4 is not backed. AC-12 (TC-411)
-is implemented. AC-11 (TC-409) is not implemented.
+is not covered, and TC-260 step 4 is not backed. AC-11 (TC-409) and AC-12 (TC-411)
+are implemented and pass locally.

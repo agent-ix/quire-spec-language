@@ -53,4 +53,4 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
 ## Status
 
-Implemented on the slice A4b branch, pending merge. The tests back every step.
+Implemented (#384). The tests back every step.

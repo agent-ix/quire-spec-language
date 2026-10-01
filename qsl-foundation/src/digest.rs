@@ -104,16 +104,14 @@ impl FromStr for ByteDigest {
 // an unrecognized domain from a valid FR-201 domain that is merely the
 // wrong one -- is fixed regardless, at `refuses_a_valid_fr201_domain_that_
 // is_not_sha256_jcs` in its own test module). A hand-built list is not a
-// reliable artifact for a source comment to carry; the remaining real
-// sites are tracked as O-18 debt on QSL-26 instead of enumerated here.
+// reliable artifact for a source comment to carry, so the remaining real
+// sites are not enumerated here.
 //
 // A candidate blocked on a spec decision is still a fold target, not a
 // disqualified one -- for example, `DomainPackageRef.digest` staying
 // `[u8; 32]` rather than `DigestRecord` is blocked by ADR-013 O-01's own
 // decided public shape (its `Field`/`Decision` table keeps `digest_domain`
 // and `digest` as separate members), not by the shape criterion above.
-// Recorded on QSL-26 for whoever can amend that decision; not this slice's
-// to touch.
 // ---------------------------------------------------------------------------
 
 /// The closed FR-201 canonical-identity-domain vocabulary, as amended by

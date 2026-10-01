@@ -166,8 +166,8 @@ declaration ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 Neither preimage names a `package_id` or any unrelated declaration, so the
 identity does not depend on their order (AC-2). The declaration's identity
 equals FR-092's golden vector, and the call's equals the FR-322
-application-node key of the same node (AC-8). Slice A4b switches the
-checker's minter to these preimages.
+application-node key of the same node (AC-8). The checker mints these
+preimages (#384).
 
 ### Each function form has one S3 checker
 
@@ -283,8 +283,7 @@ finding F1).** `src/cli.rs`'s `lower` command is still present after this
 ticket lands; that is correct. ADR-011 §7.3's M-6a row
 (`spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md`, the
 "M-6a checked-package producer" line) names the scope it belongs to and
-states its owner verbatim: "QSL-8 (this repo's #240) with M-4, before
-#216". `src/package.rs`'s `NativePackageRef` belongs to native `run`, which
+states its owner verbatim: "#240 with M-4, before #216". `src/package.rs`'s `NativePackageRef` belongs to native `run`, which
 §7.3 retires in M-6c (ADR-011-OQ-2). Deleting `lower` inside #214 would contradict that
 row, not satisfy it; #240 deletes it in the same change that lands spine
 `compile` and `run` over this requirement's spine
@@ -294,7 +293,7 @@ emitter, both exist.
 
 **What is delivered.** A declaration's and a call's identities are minted
 by `check::lowering` keying after `PackageDeclarations::check` has typed
-every declaration (FR-092, FR-093; slice A4b). A declaration's typing and
+every declaration (FR-092, FR-093; #384). A declaration's typing and
 definedness verdict is made inside `ValueFunctionFamily::check` (AC-7). A call is checked by `check::family::Application`, which the
 typer's `Call` arm calls for every call it reaches (AC-4, AC-5). Termination
 is a separate whole-package pass (`check::termination::check`) after every
@@ -353,18 +352,17 @@ delivered code today:
 - FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
-  in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
-  #243 -- a real owner that existed before this round but was not
-  written against this criterion; recorded here now.
+  in the delivered code (see FR-065's own Test Matrix / TC-166). Planned;
+  no owner.
 - FR-065-AC-7: backed (`TC-380`). The contract's
-  `check` hook type-checks the body, and on the A4b branch, pending
-  merge, `f`'s checked identity is FR-092 vector F1.
+  `check` hook type-checks the body, and `f`'s checked identity is
+  FR-092 vector F1.
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
   `qsl-semantics/src/check/family.rs` `checking_tests`) and
   `value_function_family_checks_through_the_contract` (admission half and
   F1, `qsl-eval/src/value/expression/family.rs`) are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
-- FR-065-AC-8: backed on the A4b branch, pending merge (`TC-163`):
+- FR-065-AC-8: backed (`TC-163`, #384):
   `check` keys each function by FR-092 and each call by FR-093, `both` keys
   to F2 and `both(a, true)` to E2
   (`qsl-semantics/src/check/lowering/tests.rs`), and the application-node
@@ -375,8 +373,8 @@ Seven of this requirement's eight Acceptance Criteria are backed (AC-1, the
 packaging API's checked-node-only entry; AC-2, identity/provenance; AC-3,
 occurrence-span survival across check, linking and a v2 round trip; AC-4,
 the application check's verdicts; AC-5, the same call verdict at every
-entry point; AC-7, the contract `check` hook's typing verdict and F1; AC-8,
-on the A4b branch); the other one (AC-6) is unbacked, for the reason above.
+entry point; AC-7, the contract `check` hook's typing verdict and F1; AC-8, the
+FR-092 and FR-093 keys); the other one (AC-6) is unbacked, for the reason above.
 `TC-166` has zero tests in the delivered code.
 
 ## Open Questions

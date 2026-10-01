@@ -977,8 +977,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 ## Status
 
 Specified, including recursion groups and declared composite
-handles. Implemented on the slice A4b branch,
-pending merge: `check` keys every node by this requirement's preimages in
+handles. Implemented (#384): `check` keys every node by this requirement's preimages in
 `qsl-semantics/src/check/node_key/` and `qsl-semantics/src/check/lowering.rs`,
 recursion groups included (`node_key::group_keys`, which names members by
 handle, and the lowering's drafts, keyed in dependency order), and gives a

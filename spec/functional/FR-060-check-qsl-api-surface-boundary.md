@@ -241,10 +241,10 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
   not evaluated and the run exits 2 while the other three rules run.
 - T12-B passes with an empty debt list. The six
   `value::enumeration`, `value::unit` and `value::node` entries and
-  the `value::model_query` entry were removed by deleting their mints; G2
-  removed the list's last entry, `qsl-eval`'s `value/expression/
-  family.rs` `decode_v2`, the same way, by deleting the second v2 producer
-  that mint belonged to. The node-key mints are under `check`
+  the `value::model_query` entry were removed by deleting their mints. The
+  list's last entry, `qsl-eval`'s `value/expression/family.rs`
+  `decode_v2`, went the same way: deleting qsl-eval's second v2 producer
+  (`checked-function-package/v2`) deleted the mint with it. The node-key mints are under `check`
   (`check::node_key`), so T12-B passes.
 - T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`
