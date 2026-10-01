@@ -71,12 +71,12 @@ use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
     FieldDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
-use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,

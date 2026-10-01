@@ -18,8 +18,8 @@ use crate::model::domain_package::{
     DomainPackageRecord, FieldMemberRecord, Multiplicity, NativeValueType, ValueTypeRef,
 };
 use crate::model::key::DeclarationKey;
-use quire_semantic_value::declaration::FieldDeclaration;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::FieldDeclaration;
 use quire_semantic_value::location::{Location, Origin};
 
 const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\" version \"1\" digest \

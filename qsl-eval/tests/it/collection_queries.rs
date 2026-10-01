@@ -21,10 +21,10 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::Location;
 use sha2::{Digest, Sha256};
 

@@ -30,8 +30,8 @@ use crate::model::domain_package::{
     RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
-use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 
 mod expression_depth;
 

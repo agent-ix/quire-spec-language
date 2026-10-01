@@ -72,7 +72,6 @@ use crate::value::member::Member;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 

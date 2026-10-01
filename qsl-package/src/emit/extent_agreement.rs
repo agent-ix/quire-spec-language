@@ -46,10 +46,10 @@ use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey, Presence,
     ValueType,
 };
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::checking::CheckingLimits;
 
 use super::tests::{metre_units, METRE};
 use super::tests::{nodes, source, whole_unit, wire};

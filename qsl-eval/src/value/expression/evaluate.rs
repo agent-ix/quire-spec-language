@@ -45,6 +45,8 @@ use quire_exact::{
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{operand_value, CompositeShape, FieldRef};
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
+use quire_semantic_value::location::Location;
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };

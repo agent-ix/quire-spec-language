@@ -25,10 +25,10 @@ use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 

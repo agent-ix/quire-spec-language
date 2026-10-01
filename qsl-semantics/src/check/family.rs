@@ -80,8 +80,8 @@ use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
-use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::declaration::CompositeShape;
 use quire_semantic_value::location::Location as CheckLocation;
 use quire_semantic_value::location::Origin as CheckOrigin;
 

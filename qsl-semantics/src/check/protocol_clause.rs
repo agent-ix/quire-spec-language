@@ -760,8 +760,8 @@ mod tests {
     use crate::model::intake::SelectedModel;
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::{normalize, NormalizeOutcome};
-    use quire_semantic_value::declaration::TypeEnvironment;
     use quire_semantic_value::checking::CheckingLimits;
+    use quire_semantic_value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\" version \"1\" digest \

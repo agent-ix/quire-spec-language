@@ -21,10 +21,10 @@ use quire_exact::{
     EffectiveId, FieldValue, IllTypedCause, Integer, Meter, ObjectId, ObjectReference, Outcome,
     Presence, ScalarLimits, UniverseId, Value, ValueType,
 };
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

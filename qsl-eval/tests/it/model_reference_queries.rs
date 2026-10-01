@@ -48,12 +48,12 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
-use quire_semantic_value::call::InputRefusal;
-use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::location::{Location, Origin};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
