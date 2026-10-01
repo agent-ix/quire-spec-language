@@ -47,7 +47,8 @@ Amended 2026-10-01 (sum/case FR pass): §16.5's limit row and §16.8's Limits
 row no longer name a nesting-depth limit for `case`. Nesting of any depth is
 admitted, bounded only by caller-configured checking ceilings (QSpec FR-146;
 owner ruling 2026-10-01 that depth is never a limit kind). FR-315 to FR-324
-implement §16.
+implement §16. §16.10's gaps SC-G1 to SC-G7 are closed by QSpec FR-440,
+FR-441, FR-143, FR-144 and FR-146.
 
 ## Context
 
@@ -1844,19 +1845,18 @@ disposition: none"; ADR-013 R-08 and §5).
 SC-G1 to SC-G5 block the parts of #187 named in §16.3 and §16.4. SC-G6 and
 SC-G7 block nothing: QSL states its reading of each. None needs a new
 QSL owner or a bypass. Each belongs to QSpec, which owns the wire and the
-language text (ADR-013 R-02). None is decided here. None is filed in QSpec
-yet. #187 files SC-G1 to SC-G3 as its spelling proposal (below). Remaining
-work: a QSpec ticket for SC-G4 to SC-G7, which the team lead opens.
+language text (ADR-013 R-02). Each gap is closed by the QSpec FR in its
+"Closed by" column; FR-315 to FR-324 cite those FRs.
 
-| ID | Gap | Blocks |
-| --- | --- | --- |
-| SC-G1 | The v2 schema has no union node spelling: no `union` in `CompositeTypeNode.semantic_form`, no union construction in `ValueNode` or `ExpressionNode`, and no `case` in `ExpressionNode` (QSpec `proposals/checked-package-v2/schema.json`). The IR (tag, form) decode, IR#141, follows it. | S3 lowering, S4 emission, SC-R1, the downstream ledger test |
-| SC-G2 | The v2 `OperationMember` union has no union-member kind. It has only `field`, `position`, `element`, `relationship_end`, `operation`, `type_argument`, `profile_operator` and `state_clause`. v2 literals and FR-323 typed values have no union `value_kind`. | the O-06 union member on the wire, C-18 for unions, SC-R3 |
-| SC-G3 | No preimage for a union member's `VariantId`. FR-143 makes member identity the declared pair (union node key, member identifier). QC-15 and O-14 make the kernel carrier a `VariantId`. FR-141 defines a preimage for enum members only (`quire.enum-member-node/v1`). | the kernel carrier of member identity (SC-R4) |
-| SC-G4 | `value-accounting.md` has no charge point for union construction (its "composite construction" row names record fields and tuple arguments) and none for `case` selection. | the exact S6a meter charges for construction and `case` |
-| SC-G5 | FR-144's canonical-key table has no union row, although FR-143 gives unions `=` and FR-144-AC-6 requires a key for every type with `=`. | union values as set, bag or ordered-set elements, which #187 refuses at S3 until the key exists (§16.4). #187's other exit cases do not depend on it. |
-| SC-G6 | FR-146 checks arm bodies against "the `case` expression's declared result type", but the grammar has no annotation that declares it. | nothing in #187: QSL applies the `if` rule (§16.5). QSpec may define another rule; if it differs, #187's rule changes with it. |
-| SC-G7 | No QSpec value-profile definition names `union` among the forms it admits. | nothing in #187: QSL admits unions wherever records and tuples are admitted (§16.9). |
+| ID | Gap | Blocks | Closed by |
+| --- | --- | --- | --- |
+| SC-G1 | The v2 schema has no union node spelling: no `union` in `CompositeTypeNode.semantic_form`, no union construction in `ValueNode` or `ExpressionNode`, and no `case` in `ExpressionNode` (QSpec `proposals/checked-package-v2/schema.json`). The IR (tag, form) decode, IR#141, follows it. | S3 lowering, S4 emission, SC-R1, a downstream `case` item settling `unsupported` | QSpec FR-440 |
+| SC-G2 | The v2 `OperationMember` union has no union-member kind. It has only `field`, `position`, `element`, `relationship_end`, `operation`, `type_argument`, `profile_operator` and `state_clause`. v2 literals and FR-323 typed values have no union `value_kind`. | the O-06 union member on the wire, C-18 for unions, SC-R3 | QSpec FR-440 |
+| SC-G3 | No preimage for a union member's `VariantId`. FR-143 makes member identity the declared pair (union node key, member identifier). QC-15 and O-14 make the kernel carrier a `VariantId`. FR-141 defines a preimage for enum members only (`quire.enum-member-node/v1`). | the kernel carrier of member identity (SC-R4) | QSpec FR-441 |
+| SC-G4 | `value-accounting.md` has no charge point for union construction (its "composite construction" row names record fields and tuple arguments) and none for `case` selection. | the exact S6a meter charges for construction and `case` | QSpec FR-143, FR-146 |
+| SC-G5 | FR-144's canonical-key table has no union row, although FR-143 gives unions `=` and FR-144-AC-6 requires a key for every type with `=`. | union values as set, bag or ordered-set elements, which #187 refuses at S3 until the key exists (§16.4). #187's other exit cases do not depend on it. | QSpec FR-144 |
+| SC-G6 | FR-146 checks arm bodies against "the `case` expression's declared result type", but the grammar has no annotation that declares it. | nothing in #187: QSL decides the result type by QSpec FR-146 "Case result type" (§16.5). | QSpec FR-146 "Case result type" |
+| SC-G7 | No QSpec value-profile definition names `union` among the forms it admits. | nothing in #187: QSL admits unions wherever records and tuples are admitted (§16.9). | QSpec FR-143 "Value profile" |
 
 Node ids are minted at S3 lowering over the node's (tag, form) spelling
 (FR-093), so SC-G1 to SC-G3 are needed before any union node has an id. They
