@@ -305,6 +305,9 @@ names different artifacts in each.
 | TC-522 | Model-check outcomes settle as FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4, FR-127-AC-5 | 🚧 Planned |
 | TC-523 | The replay facade replays a model counterexample through ModelSystem | Integration | P1 | FR-128-AC-1, FR-128-AC-2, FR-128-AC-3, FR-128-AC-4 | 🚧 Planned |
 | TC-536 | Exploration and model-check limits publish their defaults | Unit | P1 | FR-101-AC-15, FR-126-AC-8 | 🚧 Planned |
+| TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 Planned |
+| TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 Planned |
+| TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

@@ -133,6 +133,21 @@ a lasso, what it charges and what it reports.
   FR-091's (future) or FR-092's (past) offset meaning, with no
   closed-boundary rule (ADR-018 IV-2).
 
+### Undefined evaluation
+
+- At each position a claim reads, the evaluator SHALL read the claim's
+  letter: the value of every atom of the claim at that position (ADR-018
+  UE-1).
+- A TP-2 `on origin` claim SHALL read positions 0 to its horizon `h`;
+  every other claim SHALL read every position of the behaviour. A position
+  that a bounded profile's closed-boundary rule supplies past a terminal
+  state SHALL evaluate no atom.
+- When an atom evaluates `Undefined` (the kernel `Outcome::Undefined` or a
+  family's `FamilyResult::Undefined`) at a position the claim reads, the
+  evaluator SHALL return the claim undefined at that position, with the
+  `UndefinedRecord` of the first such atom in clause-node order as its
+  cause.
+
 ### Work
 
 - The evaluator SHALL charge one TR-5 work unit for each visit of a node at
@@ -147,10 +162,11 @@ a lasso, what it charges and what it reports.
 | FR-125-AC-3 | On ADR-018 §6's lasso (empty prefix, loop `(0,0) (1,0) (2,0)`), `eventually[0,4] holds(a.versionNumber = 0)` at position 2 reads the states of positions 2 to 6 by wrapping and evaluates `true` (position 3 holds `(0,0)`); `once[0,3] holds(a.versionNumber = 2)` at position 1 reads positions 1 and 0, the rest before position 0 as false, and evaluates `false`; each visit charges one work unit. | Test (TC-520) |
 | FR-125-AC-4 | Over ADR-018 §6's subject, a clause with `over (c: Config::ConfigVersion)` yields one instance per object of `{a, b}`. A subject whose `initial` list is empty is `NoInitialState` before any state is explored. | Test (TC-520) |
 | FR-125-AC-5 | On the same lasso, `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` has past reach 1 and is evaluated over `m = 2` loop copies, 6 positions: the conjunction is `false` at position 0, which has no previous position, and `true` at position 3, whose previous position holds version 2, and the formula evaluates `true`. The same conjunction read at position 9 by congruence is `true`. | Test (TC-520) |
+| FR-125-AC-6 | Over the `Counter` subject, the letter of `always holds(6 / (2 - c.value) >= 0)` under infinite-trace is defined at positions 0 and 1 and undefined at position 2, cause `division-by-zero`. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, reads positions 0 and 1 only and evaluates `true`. | Test (TC-537) |
 
 ## Dependencies
 
-- ADR-018 §2 SM-1 to SM-5 and SM-8, §10 DL-6, §11 IV-2; ADR-014 §3 TR-2 and TR-5, §5 A-4;
+- ADR-018 §1 UE-1, §2 SM-1 to SM-5 and SM-8, §10 DL-6, §11 IV-2; ADR-014 §3 TR-2 and TR-5, §5 A-4;
   ADR-016 ID-10 (synthesized state observation) and EX-10.
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md) (successor
   relation), [FR-106](FR-106-admit-snapshots-and-invocations.md) (initial

@@ -89,6 +89,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 | --- | --- | --- | --- | --- | --- |
 | V-1 | `Holds{Exhaustive}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
+| V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` (FR-128) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
 | V-6 | `Undecided(UndecidedSuccessor)` or `Undecided(NoInitialState)` | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
@@ -98,6 +99,10 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 
 - When an outcome is `Violated`, `model_check` SHALL settle it `refuted`
   only through its replay.
+- When a claim evaluates undefined on an admitted behaviour, `model_check`
+  SHALL settle the item `refuted` with cause `UndefinedEvaluation{where,
+  cause}`, carried as its counterexample's `kind` (ADR-018 UE-1, UE-2); it
+  SHALL add no label, basis, `TerminalValue` variant or category for it.
 - `model_check` SHALL write in a `Stopped` record the limit, its value and
   the request member that raises it (FR-126 `ReachedLimit`),
   `max_automaton_states` included.
@@ -129,10 +134,12 @@ and the FR-331 terminal record carrying the value, its QSpec FR-341
 | FR-127-AC-3 | FR-126-AC-1's weak `each` outcome settles `proved`, `closed-scope`, `Proved{Exhaustive}`, success. Its counterexample under the constraint with no granularity settles `refuted` only after FR-128 replay reproduces it. The same counterexample with one post-state digest altered settles `inconclusive`, `ReplayRefused`; replayed in an envelope for the weak `each` clause, whose fairness it fails, it settles `inconclusive`, `ReplayRefused`; with its last step removed, so the loop does not close, it settles `inconclusive`, `ReplayRefused`; one whose formula evaluates `true` on replay settles `inconclusive`, `ReplayParity`. A replay that returns `InternalFault` settles `failed`, category failed. | Test (TC-522) |
 | FR-127-AC-4 | FR-126-AC-6's `max_automaton_states` run settles `failed`, `resource-incomplete`, `unavailable`, `Incomplete(ResourceExhausted)`, category incomplete, naming `max_automaton_states` with value 50; FR-126-AC-5's `max_depth` 2 run settles `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth `pending`; its evaluation-meter run names `EvaluationMeter` with value 0. | Test (TC-522) |
 | FR-127-AC-5 | FR-126-AC-3's deadlock-freedom violation settles `refuted` after replay, with a record whose counterexample `kind` is `Deadlock`, and the record's obligation identity differs from the authored claims' over the same subject. | Test (TC-522) |
+| FR-127-AC-6 | FR-126-AC-9's undefined-evaluation counterexample settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, after FR-128 replay reproduces it, and the record's counterexample carries `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`. The same payload with its cause changed to another undefined reason settles `inconclusive`, `ReplayParity`. | Test (TC-538) |
 
 ## Dependencies
 
-- ADR-018 §1 (V-1 to V-8, `ProofBasis`, the new causes, length, depth);
+- ADR-018 §1 (V-1 to V-8, `ProofBasis`, the new causes, length, depth,
+  UE-1 and UE-2);
   ADR-013 O-16 and O-24 as amended by ADR-018; ADR-014 B-5 as amended.
 - [FR-069](FR-069-implement-typed-proof-result-envelope.md) (terminal record
   and category map), [FR-072](FR-072-implement-typed-replay-result.md)

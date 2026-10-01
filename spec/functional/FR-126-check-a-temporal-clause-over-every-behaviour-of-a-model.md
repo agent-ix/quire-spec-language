@@ -95,7 +95,8 @@ subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
 - `Holds { basis: ProofBasis::Exhaustive }`: every reachable product state
   was examined and no violation or fair accepting cycle exists (V-1);
 - `Violated(TemporalCounterexample)`: the canonical counterexample (§
-  "Counterexamples"), to be replayed before it counts (FR-128) (V-4);
+  "Counterexamples"), to be replayed before it counts (FR-128) (V-4),
+  including one whose `kind` is `UndefinedEvaluation{where, cause}`;
 - `BoundReached { depth }`: the run completed depth `max_depth` with no
   counterexample (V-5);
 - `Undecided(InconclusiveCause)`: `UndecidedSuccessor` or `NoInitialState`
@@ -161,8 +162,20 @@ automaton states and the depth reached.
   the automaton's successor from its initial state on position 0.
 - The engine SHALL explore the product with FR-101's canonical
   breadth-first engine and retain every explored product edge.
+- For each position the claim reads (FR-125), the engine SHALL read the
+  position's letter when it creates the product state for that position,
+  before it steps the automaton on it.
+- If an atom of the letter evaluates `Undefined`, then the engine SHALL end
+  the first phase with a violation whose counterexample has `kind:
+  UndefinedEvaluation{where, cause}` (ADR-018 UE-1, UE-2), for every
+  property form and for a `DeadlockFreedom` item whose `terminal when`
+  predicate evaluates `Undefined` at a terminal state.
 - When the exploration reaches the monitor's rejecting state, the engine
   SHALL end the first phase with a violation.
+- The engine SHALL end the first phase at the first product state in
+  FR-101 canonical breadth-first order whose letter is undefined or whose
+  monitor state rejects; when both hold at one state, the engine SHALL
+  report the undefined evaluation (ADR-018 UE-4).
 - When a model state's FR-120 expansion gives no successor and FR-124
   classifies it as deadlocked, the engine SHALL end a `DeadlockFreedom`
   item's first phase with a violation (ADR-018 DL-7).
@@ -198,6 +211,8 @@ automaton states and the depth reached.
 
 ### Second phase (TP-4)
 
+- The engine SHALL run the second phase only when the first phase ended
+  with no violation.
 - The engine SHALL decompose the retained product graph into SCCs, in
   discovery order and never in hash-map iteration order.
 - The engine SHALL treat an SCC as a candidate when it is non-trivial (it
@@ -234,7 +249,10 @@ automaton states and the depth reached.
   to `e`, ties broken by canonical transition order, or the shortest cycle
   through `e` when the loop would otherwise be empty.
 - A safety counterexample SHALL be the canonical path to the first violating
-  product state. A deadlock counterexample SHALL be the canonical path to
+  product state. An undefined-evaluation counterexample SHALL be the
+  canonical path to the first product state whose letter is undefined, for
+  every property form; its `where` SHALL be that state's position and its
+  `cause` the `UndefinedRecord` FR-125 returns there (ADR-018 UE-3). A deadlock counterexample SHALL be the canonical path to
   the first deadlocked state (ADR-018 DL-4).
 - The counterexample SHALL be a `TemporalCounterexample` over the model
   subject: the index of its initial state in `subject.initial`; its steps in
@@ -244,7 +262,8 @@ automaton states and the depth reached.
   successor among the post-states of its transition identity; the loop
   entry, when there is a loop; the terminal stutter marker, when the loop
   is the stutter step; the `over` binding; the fairness set; and `kind`:
-  `Formula`, or `Deadlock` for a deadlock-freedom violation.
+  `Formula`, `Deadlock` for a deadlock-freedom violation, or
+  `UndefinedEvaluation{where, cause}`.
 - Its length SHALL be its number of transitions, stem and loop together.
 
 ### Determinism
@@ -264,10 +283,11 @@ automaton states and the depth reached.
 | FR-126-AC-6 | `always (holds(not s.healthy) implies eventually[0,100] holds(s.healthy))` over the `Restless` subject, where `fail` can repeat forever, with `max_automaton_states` 50 returns `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an automaton-state count of 50 and no counterexample; with the default limit it returns `Violated`, a finite prefix with at least 101 consecutive unhealthy positions. A subject with an undecided contract conjunction returns `Undecided(UndecidedSuccessor)`, and one with an unbounded population root returns `RequiresBound` before exploring. | Test (TC-521) |
 | FR-126-AC-7 | Running AC-1's two requests twice each gives equal outcomes and byte-equal counterexamples. | Test (TC-521) |
 | FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000, `max_automaton_states` 1,048,576 and `max_depth` `usize::MAX`. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
+| FR-126-AC-9 | Over the `Counter` subject (no `terminal` member), `always holds(6 / (2 - c.value) >= 0)` under infinite-trace returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` and `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`. The TP-4 claim `always eventually holds(6 / (2 - c.value) = 6)` returns the same counterexample, not the terminal stutter lasso. `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))` returns `kind: Formula` with the prefix `0 -inc-> 1`, which violates before position 2. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, returns `Holds{Exhaustive}`. With a `terminal when 6 / (3 - c.value) = 0` member, the `DeadlockFreedom` item returns `Violated` with the prefix to value 3 and `kind: UndefinedEvaluation{where: 3, cause: division-by-zero}`. | Test (TC-537) |
 
 ## Dependencies
 
-- ADR-018 §1, §2 SM-6, §3 EN-1 (its explicit-state limits and determinism),
+- ADR-018 §1 (with UE-1 to UE-4), §2 SM-6, §3 EN-1 (its explicit-state limits and determinism),
   §4 FA-1 to FA-6, §5 CX-1, CX-2 and CX-5, §10 DL-4 and DL-7, §11 IV-3, IV-5
   and IV-6; ADR-011 §1 and §6.1 (S6c, E10, layer 5 `model_check`) as amended
   by ADR-018; ADR-014 §1 B-5 as amended; ADR-016 §2 (the requires-bound

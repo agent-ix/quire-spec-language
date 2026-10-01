@@ -72,7 +72,8 @@ refusal order and its results.
   ADR-018 CX-2 model steps), or `Observed{prefix, loop}`, observed documents
   by digest for FR-331 replay over an observed trace (ADR-014 §10 scenario
   5); the terminal stutter marker, the `over` binding, the fairness set, `interval`
-  and `kind: CounterexampleKind::{Formula, Deadlock}`. Its
+  and `kind: CounterexampleKind::{Formula, Deadlock,
+  UndefinedEvaluation{where, cause}}`. Its
   `trace_position` names the failing position (ADR-014 TR-2), and its
   `clause_node` and `occurrence_key` name the clause, or the deadlock-
   freedom item.
@@ -129,6 +130,17 @@ refusal order and its results.
   - `false` SHALL settle `reproduced-with-evaluated-witness`.
   - `true`, or no value, SHALL settle `inconclusive`, `Verdicts` or
     `NoValue` (FR-072).
+- For `kind: UndefinedEvaluation{where, cause}` the executor SHALL
+  evaluate the letters of the replayed positions in order by FR-125, and
+  check no fairness (ADR-018 UE-3, UE-5).
+  - When the first position whose letter is undefined is `where`, with an
+    undefined cause equal to `cause`, the executor SHALL settle
+    `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
+    the arm's value: the reproduced undefined value is the reproduced
+    witness, not FR-072's `NoValue` case.
+  - A defined letter at `where`, an undefined letter before `where`, a
+    `where` past the replayed positions, or a different cause SHALL settle
+    `inconclusive`, `Verdicts`.
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
   evaluate the state model's `terminal when` predicate there when it has
@@ -149,10 +161,11 @@ refusal order and its results.
 | FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `Verdicts`. The original payload truncated to end at value 2 settles `inconclusive`, `Verdicts`, since `inc` is enabled there. | Test (TC-523) |
 | FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop; AC-1's envelope with its steps given as `Observed{prefix, loop}` (refused before recompiling). | Test (TC-523) |
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `Verdicts`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`revision-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
+| FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `Verdicts`. | Test (TC-539) |
 
 ## Dependencies
 
-- ADR-018 §5 CX-2 to CX-4, §10 DL-4 and DL-5; ADR-014 §3 TR-1, TR-2 and §5
+- ADR-018 §1 UE-5, §5 CX-2 to CX-4, §10 DL-4 and DL-5; ADR-014 §3 TR-1, TR-2 and §5
   A-4; ADR-013 O-25 to O-27.
 - [FR-098](FR-098-execute-a-replay-request.md) (facade and refusal order),
   [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),
