@@ -81,7 +81,7 @@ use quire_semantic_value::quantity::{
 };
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::Location;
-
+use quire_semantic_value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 
 /// An enum declaration bound to its source name, with its admitted members.
 /// A member `m` is named `name::m`.

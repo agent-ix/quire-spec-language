@@ -25,8 +25,8 @@ use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPac
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use qsl_forms::DeclaredClauseKind;
-use quire_semantic_value::quantity::QuantityUnit;
 use quire_semantic_value::location::Location;
+use quire_semantic_value::quantity::QuantityUnit;
 
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and

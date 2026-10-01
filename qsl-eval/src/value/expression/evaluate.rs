@@ -49,8 +49,6 @@ use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
-use quire_semantic_value::location::Location;
-use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome

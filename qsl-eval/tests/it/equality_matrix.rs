@@ -54,6 +54,7 @@ use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
+use quire_semantic_value::quantity::UnitTable;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

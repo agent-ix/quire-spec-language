@@ -74,6 +74,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::quantity::UnitTable;
 
 mod model;
 mod state;
