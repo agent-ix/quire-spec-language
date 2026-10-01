@@ -1251,7 +1251,7 @@ Primary-owner items:
 | OBS-019 | O-13, O-14: one value kernel; lane types private. |
 | OBS-020 | O-13: kernel rational semantics canonical. |
 | OBS-021 | O-12: the occurrence-key-keyed source map (O-07), occurrence key → regions, is the authority; body↔document map is a source-stage helper. |
-| OBS-022 | O-23: `Cargo.toml` and `Cargo.lock` are the one revision authority. QSL's native package reader in `src/package` deletes its `ir_revision` and `STANDARD` revision literals. |
+| OBS-022 | O-23: `Cargo.toml` and `Cargo.lock` are the one revision authority. The native-linked-package/1 wire carries no revision literals, and QSL's `src/package` reader checks none. |
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
 | OBS-025 | O-21: `model::accounting` does not fold into the kernel meter; it is a separate layer-3 `model` rung meter over disjoint counters, and only `value::accounting` consolidates onto it. |
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |

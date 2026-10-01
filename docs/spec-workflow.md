@@ -204,8 +204,7 @@ remained future work. The later adoption below supersedes the decision status.
 
 ## LC02 internal adoption and evidence design — 2026-09-08
 
-The owner adopted specification PR8 at
-e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation.
+The owner adopted specification PR8 for internal implementation.
 The specification repository records that decision in commit 609790e.
 Compiler PR7 merged at 2be73504edff1224d6396da15edca3775905d37b;
 LR02 research issue #58 is closed with the Rust audit implementation and evidence.
@@ -233,8 +232,7 @@ longer described as a dependency on an inactive work track.
 
 ## IR #54 resolution — 2026-09-08
 
-C landed Contract IR PR61 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f and
-closed #54. Accepted ADR-0054 removes the incorrect universal Filament-model
+C landed Contract IR PR61 and closed #54. Accepted ADR-0054 removes the incorrect universal Filament-model
 reader dependency. FR-005, IT-005, TM-003 and TC-020–024 now describe native
 resolution over public formal declarations. The existing FR-013/019/023 APIs
 are the integration target; no external #54 delivery remains outstanding.

@@ -105,26 +105,12 @@ revisions implicitly. Positive u64 IR revisions remain exact Rust integers;
 an external consumer needing a narrower domain must explicitly refuse it.
 
 The semantic-selection record has fixed member order `language`, `edition`,
-`syntax_profile`, `model_profile`, `checking_contract`, `ir_revision`,
-`base_definition`, `rules_definition`. Their exact values are:
+`syntax_profile`, `model_profile`, `checking_contract`. Their exact values are:
 
 - language: ix:native; edition: 0-draft; syntax_profile: state-finite/0-draft.
 - model_profile: native-state-model/1.
 - checking_contract: native-checked-clauses/1, naming the existing FR-016 contract
   as selected by this artifact version; it does not change language meaning.
-- ir_revision: 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f.
-- Each definition is `{revision, digest}`, where revision is the exact standard
-  Git revision e897f810a7356d4ce8fd19026221ebda7b65596f, not an authored IR revision.
-- base_definition.digest is sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429,
-  for proposals/state-core/profile.md at that revision.
-- rules_definition.digest is sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b,
-  for proposals/state-core/state-semantics.md at that revision.
-
-Both artifacts are required: the unchanged base-profile file alone does not
-identify the adopted semantic refinement. These pins record the owner's adopted
-internal semantics, not a new shared SemanticRef or a public release. Different
-definition bytes require an explicit new supported selection; there is no latest
-definition lookup or caller-overridden meaning.
 
 ## Model, clause and correspondence records
 
@@ -264,10 +250,10 @@ set is accepted; that does not make import/clause/occurrence arrays set-like.
    version 1. Only for native-linked-package/1, decode the original bytes into
    closed typed records under a separately metered pass, rejecting extra,
    missing, incorrectly typed or constructor-invalid members as invalid_package.
-   Select language, edition, syntax/model/checking profiles, IR/definition pins,
-   canonical domain/version/algorithm, then required features, in that order.
-   Existing unknown_language/unknown_edition/unknown_profile distinctions apply;
-   wrong IR/definition selections are unknown_profile. No decoder fallback or
+   Select language, edition, syntax/model/checking profiles, canonical
+   domain/version/algorithm, then required features, in that order.
+   Existing unknown_language/unknown_edition/unknown_profile distinctions apply.
+   No decoder fallback or
    interpretation of an unsupported version's fields occurs.
 4. Verify the source's four labels, digest and formal identity against the externally
    selected bindings. Native byte mismatch is stale_dependency; a foreign
@@ -337,7 +323,7 @@ CanonicalDigest or ByteDigest. Its constructor is internal to checked derivation
 Canonical content is the complete manifest in this contract, excluding the
 top-level canonical_identity member and each clause's projections member.
 Every other member participates, including exact source digest/identities,
-semantic definition pins, complete selected model artifact strings, authored
+semantic selection, complete selected model artifact strings, authored
 clause identities, source locations, resolved targets and runtime obligations.
 Import/clause/occurrence arrays remain ordered. Required features and runtime
 universe/observation sets use their expressly defined producer order. Object

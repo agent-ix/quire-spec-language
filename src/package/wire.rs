@@ -29,19 +29,12 @@ record!(Manifest {
     format: String, semantics: Semantics, required_features: Vec<String>, source: Source,
     models: Inventory<Model, 64>, clauses: Inventory<Clause, 256>, canonical_identity: CanonicalIdentity,
 });
-record!(Definition {
-    revision: String,
-    digest: Digest
-});
 record!(Semantics {
     language: String,
     edition: String,
     syntax_profile: String,
     model_profile: String,
     checking_contract: String,
-    ir_revision: String,
-    base_definition: Definition,
-    rules_definition: Definition,
 });
 record!(Source {
     authority: Text,

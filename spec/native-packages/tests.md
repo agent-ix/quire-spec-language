@@ -22,7 +22,7 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 | FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-3 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-4 | TC-079 | ✅ Qualified |
-| FR-019 | FR-019-AC-5 | TC-080 | ✅ Qualified |
+| FR-019 | FR-019-AC-5 (retired) | — | ⛔ Retired; the definition revision/digest members are deleted from the wire |
 | FR-019 | FR-019-AC-6 | TC-080 | ✅ Qualified |
 | FR-019 | FR-019-AC-7 | TC-081, TC-089 | ✅ Qualified |
 | FR-019 | FR-019-AC-8 | TC-082 | ✅ Qualified |
@@ -59,7 +59,7 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 | --- | --- | --- | --- | --- | --- |
 | TC-078 | Retain complete package inventories | Integration | P1 | FR-019-AC-1, FR-019-AC-2, FR-019-AC-3 | ✅ Qualified |
 | TC-079 | Retain package resolutions and obligations | Integration | P1 | FR-019-AC-4 | ✅ Qualified |
-| TC-080 | Bind package semantics and features | Property | P1 | FR-019-AC-5, FR-019-AC-6 | ✅ Qualified |
+| TC-080 | Bind package semantics and features | Property | P1 | FR-019-AC-6 | ✅ Qualified |
 | TC-081 | Retain unlowered package projections | Integration | P1 | FR-019-AC-7, FR-019-AC-9, FR-020-AC-11 | ✅ Qualified |
 | TC-082 | Preserve static package byte identity | Property | P1 | FR-019-AC-8, FR-019-AC-9, FR-020-AC-10, FR-021-AC-2 | ✅ Qualified |
 | TC-083 | Reject nonclosed package JSON | Property | P1 | FR-020-AC-2 | ✅ Qualified |
@@ -89,7 +89,7 @@ are not invented trace IDs.
 | Source inventory | One import/constant clause minimum, multiple owners/clauses, current/pre/post and multiple aliases; header-only/import-only are adverse source inputs | TC-078, TC-087, TC-089 |
 | Model contents | Used/unused declarations; scalar/unit/bounds, enum, structural record, object/reference, option/sequence and operation/frame roles | TC-078–080 |
 | Features | Exact set, unique permutations, duplicates/escaped duplicates, unknown, omitted/invented known feature, consumer subset and extra unknown consumer strings | TC-080, TC-084, TC-086 |
-| Wire selectors | Exact/unknown format, language, edition, profiles, definition revision/digest; no decoder fallback | TC-083–085 |
+| Wire selectors | Exact/unknown format, language, edition, profiles; no decoder fallback | TC-083–085 |
 | Bindings | Exact/missing/duplicate/extra/foreign source/model/authored clause; conflicting selected or unselected model identities | TC-085, TC-087 |
 | Representation | Producer bytes, reordered object members/escaped spellings, reordered unique features, changed ordered arrays | TC-082–084 |
 | Canonical identity | Independent full bytes/preimage, large exact revision, Unicode/control escapes, every static dependency, excluded projection forgery, unknown domains and raw/IR/JCS role substitutions | TC-090–091 |

@@ -368,7 +368,7 @@ The user requested /specify and /spec-review for all work. Existing implementati
 
 ## 14. Lifecycle Status
 
-Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. On 2026-09-08 the owner also adopted specification PR8 at e897f810a7356d4ce8fd19026221ebda7b65596f for internal implementation. Accepted IR ADR-0054 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
+Draft requirements. The admitted implementation target and new-code AGPL choice were approved in the task conversation. The owner also adopted specification PR8 for internal implementation. Accepted IR ADR-0054 subsequently supersedes the Filament model-authority assumption and closes IR #54 without a new reader. LC02 proceeds against existing FR-013/019/023 APIs. IT-005/TM-003 remain planned; native implementation, concrete semantic projection qualification, independent consumer adoption and broader FS evidence remain work rather than external #54 prerequisites.
 
 The PR10 model/checker scope is now qualified under Plan-005 and SR-083–087.
 TM-003 contains its 35 qualified cases; the earlier planned status above is

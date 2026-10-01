@@ -1,17 +1,7 @@
 # Native package vector provenance
 
-New fixture data is AGPL-3.0-only. The two header-only canonical JSON files were
-authored before the package encoder existed, but their positive setup was wrong:
-the adopted native grammar requires an import and a clause. They are retained
-as adverse empty-inventory data for TC-087; neither is a qualified producer
-vector. They contain no final newline. Their source is header.native; both bind its
-exact SHA-256 2bba5308efe2f3b5f684f062522b124e4a867549936f6944a83acc04bba85c27.
-The Unicode case uses revision 9007199254740993 and literal expected JSON
-escapes; no JavaScript numeric serialization supplies that value.
-
-After specification correction 2c6b9b8 and all-eight re-review at 1c3aa50, the
-Rust vector helper in tests/package_construction_cases/vectors.rs independently
-composes a complete positive manifest for a real imported model and constant
+The Rust vector helper in tests/package_construction_cases/vectors.rs
+independently composes a complete positive manifest for a real imported model and constant
 clause. Model loci follow physical input-fragment boundaries; native offsets
 follow fixed clause fragments. Package fields/order, Unicode escapes and domain
 prefix are authored independently of the package encoder. The opaque admitted
@@ -39,12 +29,6 @@ upstream model input and admitted bytes. The public producer test compares its
 complete output with these files; a private unit test observes the actual
 canonical pass and compares its bytes before hashing. Neither test rewrites
 fixtures or substitutes the package compiler.
-
-| Family | Canonical SHA-256 |
-| --- | --- |
-| minimal | `d32fe8abfce4f244d618bb9aaa4ae3d682976768de848e40a6d70041a55ed075` |
-| controls | `47398e63f9746c622a8577b16fab876dba194cb2e7d30fe04fe359bdc8b62aae` |
-| multiple | `ded21240a09f3d81f2bf30d5f77c28c27275d25c9b08b922b6afd68668cd7604` |
 
 The Rust maintenance example `examples/author_native_package_vectors.rs` writes
 candidate files from the independent recipe above. It calls model admission

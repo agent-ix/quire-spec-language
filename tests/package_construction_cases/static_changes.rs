@@ -225,18 +225,6 @@ fn independently_changed_static_claims_have_distinct_preimages() {
             r#""checking_contract":"native-checked-clauses/2""#,
         ),
         (
-            r#""ir_revision":"690bde7f2dc58662cf9ff0595c2c0e3b17107c6f""#,
-            r#""ir_revision":"790bde7f2dc58662cf9ff0595c2c0e3b17107c6f""#,
-        ),
-        (
-            "8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429",
-            "9bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429",
-        ),
-        (
-            "d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b",
-            "e9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b",
-        ),
-        (
             r#""context_observations":["current"]"#,
             r#""context_observations":["pre"]"#,
         ),
@@ -244,14 +232,6 @@ fn independently_changed_static_claims_have_distinct_preimages() {
         (
             r#""expression":null,"span":{"start":221,"end":225}"#,
             r#""expression":null,"span":{"start":220,"end":225}"#,
-        ),
-        (
-            r#""base_definition":{"revision":"e897f810a7356d4ce8fd19026221ebda7b65596f""#,
-            r#""base_definition":{"revision":"f897f810a7356d4ce8fd19026221ebda7b65596f""#,
-        ),
-        (
-            r#""rules_definition":{"revision":"e897f810a7356d4ce8fd19026221ebda7b65596f""#,
-            r#""rules_definition":{"revision":"f897f810a7356d4ce8fd19026221ebda7b65596f""#,
         ),
         (
             r#""universe":"nodes","observations":["current"]"#,

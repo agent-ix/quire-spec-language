@@ -123,23 +123,6 @@
         }
       }
     },
-    "definition": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "revision",
-        "digest"
-      ],
-      "properties": {
-        "revision": {
-          "const": "e897f810a7356d4ce8fd19026221ebda7b65596f"
-        },
-        "digest": {
-          "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
-        }
-      }
-    },
     "semantics": {
       "type": "object",
       "additionalProperties": false,
@@ -148,10 +131,7 @@
         "edition",
         "syntax_profile",
         "model_profile",
-        "checking_contract",
-        "ir_revision",
-        "base_definition",
-        "rules_definition"
+        "checking_contract"
       ],
       "properties": {
         "language": {
@@ -168,37 +148,6 @@
         },
         "checking_contract": {
           "const": "native-checked-clauses/1"
-        },
-        "ir_revision": {
-          "const": "690bde7f2dc58662cf9ff0595c2c0e3b17107c6f"
-        },
-        "base_definition": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/definition"
-            },
-            {
-              "properties": {
-                "digest": {
-                  "const": "sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429"
-                }
-              }
-            }
-          ]
-        },
-        "rules_definition": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/definition"
-            },
-            {
-              "properties": {
-                "digest": {
-                  "const": "sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b"
-                }
-              }
-            }
-          ]
         }
       }
     },

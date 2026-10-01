@@ -76,7 +76,7 @@ fn assert_features(package: &NativePackage<'_>, additional: &[&str], scenario: &
 }
 
 #[test]
-#[trace("TC-080", "FR-019-AC-5", "FR-019-AC-6")]
+#[trace("TC-080", "FR-019-AC-6")]
 fn every_operator_and_builtin_has_its_exact_declared_feature() {
     let models = [native_rule_model::parts().model()];
     for (expression, added) in [

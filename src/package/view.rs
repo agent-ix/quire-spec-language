@@ -17,41 +17,22 @@ use qsl_foundation::{ByteDigest, Span};
 pub(super) const FORMAT: &str = qsl_foundation::wire_format::WireFormat::LinkedPackage.as_str();
 
 #[derive(Serialize)]
-pub(super) struct Definition {
-    pub revision: &'static str,
-    pub digest: &'static str,
-}
-
-#[derive(Serialize)]
 pub(super) struct Semantics {
     pub language: &'static str,
     pub edition: &'static str,
     pub syntax_profile: &'static str,
     pub model_profile: &'static str,
     pub checking_contract: &'static str,
-    pub ir_revision: &'static str,
-    pub base_definition: Definition,
-    pub rules_definition: Definition,
 }
 
 impl Semantics {
     pub(super) fn selected() -> Self {
-        const STANDARD: &str = "e897f810a7356d4ce8fd19026221ebda7b65596f";
         Self {
             language: crate::syntax::LANGUAGE,
             edition: crate::syntax::EDITION,
             syntax_profile: crate::syntax::PROFILE,
             model_profile: "native-state-model/1",
             checking_contract: "native-checked-clauses/1",
-            ir_revision: "690bde7f2dc58662cf9ff0595c2c0e3b17107c6f",
-            base_definition: Definition {
-                revision: STANDARD,
-                digest: "sha256:8bc68a3c7e46d26c7191dfbb662d4d63070af9fedc9ce985fb1885f7efe29429",
-            },
-            rules_definition: Definition {
-                revision: STANDARD,
-                digest: "sha256:d9eb316752ac45d7984b355a054cd279ef9749164a92c7f61fbf621fe280588b",
-            },
         }
     }
 }

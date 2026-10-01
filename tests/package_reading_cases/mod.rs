@@ -210,11 +210,6 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
         ("/semantics/syntax_profile", Code::UnknownProfile),
         ("/semantics/model_profile", Code::UnknownProfile),
         ("/semantics/checking_contract", Code::UnknownProfile),
-        ("/semantics/ir_revision", Code::UnknownProfile),
-        ("/semantics/base_definition/revision", Code::UnknownProfile),
-        ("/semantics/base_definition/digest", Code::UnknownProfile),
-        ("/semantics/rules_definition/revision", Code::UnknownProfile),
-        ("/semantics/rules_definition/digest", Code::UnknownProfile),
         ("/canonical_identity/domain", Code::UnknownProfile),
         ("/canonical_identity/version", Code::UnknownProfile),
         ("/canonical_identity/algorithm", Code::UnknownProfile),
@@ -224,11 +219,7 @@ fn selection_order_and_feature_sets_do_not_depend_on_object_order() {
     for (index, (pointer, code)) in selections.iter().enumerate() {
         let mut bad = original.clone();
         for (later, _) in &selections[index..] {
-            *bad.pointer_mut(later).unwrap() = if later.ends_with("/digest") {
-                json!(ByteDigest::of(b"changed definition").to_string())
-            } else {
-                json!("future")
-            };
+            *bad.pointer_mut(later).unwrap() = json!("future");
         }
         let error = read(&bad, bindings.clone(), &models).unwrap_err();
         assert_eq!(error.code, *code, "{pointer}");

@@ -53,7 +53,7 @@ digest cannot bypass derivation checks.
 | --- | --- | --- |
 | FR-020-AC-1 | A produced package reads through actual parse/link/check with the exact externally selected source/models/authored bindings and yields the expected healthy/violating observations through actual runtime validation/evaluation. | Test |
 | FR-020-AC-2 | Invalid UTF-8, BOM, trailing JSON, malformed numbers/escapes, unpaired surrogates, duplicate decoded members and unknown/missing closed fields refuse without an accepted package. | Test |
-| FR-020-AC-3 | Unknown format in recognized valid duplicate-free JSON receives unknown_wire before version-specific field checks; unsupported language/edition/profile or changed selected semantic-definition digest refuses in the contract's selection order without fallback. | Test |
+| FR-020-AC-3 | Unknown format in recognized valid duplicate-free JSON receives unknown_wire before version-specific field checks; unsupported language/edition/profile refuses in the contract's selection order without fallback. | Test |
 | FR-020-AC-4 | Reordered unique required features preserve acceptance; duplicates receive invalid_package, and unknown features or features outside the declared consumer feature set receive unknown_required_feature. | Test |
 | FR-020-AC-5 | Changed package/source/model bytes or exact native/formal identities refuse at the corresponding binding stage, including conflicting unselected inventory identities. | Test |
 | FR-020-AC-6 | Missing, duplicate, extra, foreign or changed authored clause bindings refuse even when the attacker updates the package byte digest. | Test |

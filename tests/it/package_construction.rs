@@ -202,7 +202,7 @@ fn canonical_unicode_controls_and_large_revision_are_exact() {
 
 #[test]
 #[trace("TC-078", "TC-080", "TC-081")]
-#[trace("FR-019-AC-1", "FR-019-AC-3", "FR-019-AC-5")]
+#[trace("FR-019-AC-1", "FR-019-AC-3")]
 #[trace("FR-019-AC-6", "FR-019-AC-7")]
 fn actual_checked_clause_retains_complete_selected_model_and_dispositions() {
     let models = [native_rule_model::parts().model()];
