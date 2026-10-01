@@ -52,7 +52,8 @@
 //!   role, which is likewise widened from `pub(crate)` to `pub` here.
 
 use alloc::sync::Arc;
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+use core::fmt;
 
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::collection::{CollectionType, CollectionValue};
@@ -277,7 +278,21 @@ impl ValueType {
 /// A completed kernel value. It deliberately has no structural `PartialEq`:
 /// equality is the relation [`crate::plan_equality`]/[`crate::planned_equality`]
 /// plans and evaluates.
-#[derive(Clone, Debug)]
+///
+/// No walk over a value uses the host stack in proportion to its nesting
+/// depth, so a value of any depth can be dropped, formatted and compared on
+/// a small fixed stack, such as a no_std target's, where an overflow is not
+/// a clean panic:
+///
+/// - `Debug`, and the `Drop` of the three node structs a nested value lives
+///   in, are hand-written over an explicit worklist. `Value` itself has no
+///   `Drop`, so a caller can still move a payload out of it by pattern.
+/// - `Clone` is shallow: a nested value is one `Arc`.
+/// - Equality and the canonical key ([`crate::plan_equality`],
+///   [`crate::compare_keys`]) are worklist walks.
+/// - [`ValueType::admits`] reads only the outermost value, since a nested
+///   value carries a type that was checked when it was built.
+#[derive(Clone)]
 pub enum Value {
     /// A Boolean.
     Boolean(bool),
@@ -330,6 +345,408 @@ impl Value {
             | Self::Population(_)
             | Self::Reference(_) => Integer::one(),
         }
+    }
+}
+
+/// Drop `children`, and everything nested in them, from a worklist instead
+/// of the compiler's recursive drop glue: the `Drop` of each node struct
+/// ([`OptionValue`], [`CompositeValue`], `CollectionValue`) hands its
+/// children here. Before a node popped off the worklist drops, its own
+/// children are moved onto the worklist, so its `Drop` finds nothing left
+/// and the stack stays a fixed few frames deep at any value depth.
+///
+/// A node shared through another `Arc` handle is only decremented, never
+/// taken apart, since the other handle still reaches its contents. If
+/// another thread drops that other handle in the moment between this
+/// thread's ownership check and its decrement, the node's contents are freed
+/// by its own `Drop`, one worklist deeper; nesting grows only with such
+/// coincidences, never with value depth.
+pub(crate) fn drop_nested(children: impl IntoIterator<Item = Value>) {
+    let mut pending = Vec::new();
+    children
+        .into_iter()
+        .for_each(|child| defer_node(&mut pending, child));
+    while let Some(mut node) = pending.pop() {
+        release_children(&mut node, &mut pending);
+    }
+}
+
+/// Queue `value` if it is a node with children of its own; drop a scalar
+/// at once, which recurses nowhere.
+fn defer_node(pending: &mut Vec<Value>, value: Value) {
+    match value {
+        Value::Option(_) | Value::Composite(_) | Value::Collection(_) => pending.push(value),
+        Value::Boolean(_)
+        | Value::Integer(_)
+        | Value::Rational(_)
+        | Value::Decimal(_)
+        | Value::Float(_)
+        | Value::Quantity(_)
+        | Value::Text(_)
+        | Value::Enum(_)
+        | Value::Population(_)
+        | Value::Reference(_) => {}
+    }
+}
+
+/// Move `node`'s children onto `pending` when `node` is the only owner of
+/// its `Arc`; a shared node keeps its children.
+fn release_children(node: &mut Value, pending: &mut Vec<Value>) {
+    match node {
+        Value::Option(option) => {
+            if let Some(option) = Arc::get_mut(option) {
+                option
+                    .payload
+                    .take()
+                    .into_iter()
+                    .for_each(|payload| defer_node(pending, payload));
+            }
+        }
+        Value::Composite(composite) => {
+            if let Some(composite) = Arc::get_mut(composite) {
+                take_present(&mut composite.slots).for_each(|slot| defer_node(pending, slot));
+            }
+        }
+        Value::Collection(collection) => {
+            if let Some(collection) = Arc::get_mut(collection) {
+                collection
+                    .take_elements()
+                    .into_vec()
+                    .into_iter()
+                    .for_each(|element| defer_node(pending, element));
+            }
+        }
+        Value::Boolean(_)
+        | Value::Integer(_)
+        | Value::Rational(_)
+        | Value::Decimal(_)
+        | Value::Float(_)
+        | Value::Quantity(_)
+        | Value::Text(_)
+        | Value::Enum(_)
+        | Value::Population(_)
+        | Value::Reference(_) => {}
+    }
+}
+
+/// Move the present values out of `slots`, leaving none.
+fn take_present(slots: &mut Box<[FieldValue]>) -> impl Iterator<Item = Value> {
+    core::mem::take(slots)
+        .into_vec()
+        .into_iter()
+        .filter_map(|slot| match slot {
+            FieldValue::Present(value) => Some(value),
+            FieldValue::Absent | FieldValue::Null => None,
+        })
+}
+
+impl fmt::Debug for Value {
+    /// Prints what `#[derive(Debug)]` printed, in compact and alternate
+    /// mode, from a worklist instead of recursion. Leaves (scalars, types,
+    /// counts) print through their own `Debug`. In alternate mode a leaf
+    /// gets plain `{:#?}`, so the width, fill, precision and hex flags of
+    /// the caller's format spec reach compact-mode leaves only.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        DebugWriter::new(formatter).write(self)
+    }
+}
+
+/// A bracket pair of the derived `Debug` layout: `Name(..)`, `Name { .. }`
+/// or `[..]`.
+#[derive(Clone, Copy)]
+enum Bracket {
+    Paren,
+    Brace,
+    Square,
+}
+
+/// The rest of a list still to print.
+#[derive(Clone, Copy)]
+enum Items<'a> {
+    Slots(&'a [FieldValue]),
+    Elements(&'a [Value]),
+}
+
+impl<'a> Items<'a> {
+    fn is_empty(self) -> bool {
+        match self {
+            Self::Slots(slots) => slots.is_empty(),
+            Self::Elements(elements) => elements.is_empty(),
+        }
+    }
+
+    /// The first item's step and the items after it.
+    fn split_first(self) -> Option<(Step<'a>, Self)> {
+        match self {
+            Self::Slots(slots) => slots
+                .split_first()
+                .map(|(first, rest)| (Step::Slot(first), Self::Slots(rest))),
+            Self::Elements(elements) => elements
+                .split_first()
+                .map(|(first, rest)| (Step::Value(first), Self::Elements(rest))),
+        }
+    }
+}
+
+/// One pending piece of `Value`'s `Debug` output. A list is expanded one
+/// item at a time, so the worklist grows with nesting depth, not width.
+#[derive(Clone, Copy)]
+enum Step<'a> {
+    Value(&'a Value),
+    Slot(&'a FieldValue),
+    Payload(Option<&'a Value>),
+    /// A whole list, brackets included.
+    List(Items<'a>),
+    /// The not-yet-printed items of an open list.
+    Items(Items<'a>),
+    Leaf(&'a dyn fmt::Debug),
+    Text(&'static str),
+    Open(Bracket),
+    Next,
+    Close(Bracket),
+}
+
+/// Writes `Value`'s `Debug` output straight to the formatter, tracking the
+/// open bracket depth that alternate mode indents to.
+struct DebugWriter<'f, 'g> {
+    formatter: &'f mut fmt::Formatter<'g>,
+    alternate: bool,
+    depth: usize,
+}
+
+impl<'f, 'g> DebugWriter<'f, 'g> {
+    fn new(formatter: &'f mut fmt::Formatter<'g>) -> Self {
+        let alternate = formatter.alternate();
+        Self {
+            formatter,
+            alternate,
+            depth: 0,
+        }
+    }
+
+    fn write(mut self, root: &Value) -> fmt::Result {
+        let mut steps = vec![Step::Value(root)];
+        while let Some(step) = steps.pop() {
+            match step {
+                Step::Value(value) => schedule_value(&mut steps, value),
+                Step::Slot(FieldValue::Present(value)) => {
+                    schedule(&mut steps, tuple_steps("Present", Step::Value(value)))
+                }
+                Step::Slot(FieldValue::Absent) => self.formatter.write_str("Absent")?,
+                Step::Slot(FieldValue::Null) => self.formatter.write_str("Null")?,
+                Step::Payload(None) => self.formatter.write_str("None")?,
+                Step::Payload(Some(value)) => {
+                    schedule(&mut steps, tuple_steps("Some", Step::Value(value)))
+                }
+                Step::List(items) if items.is_empty() => self.formatter.write_str("[]")?,
+                Step::List(items) => schedule(
+                    &mut steps,
+                    [
+                        Step::Open(Bracket::Square),
+                        Step::Items(items),
+                        Step::Close(Bracket::Square),
+                    ],
+                ),
+                Step::Items(items) => {
+                    if let Some((first, rest)) = items.split_first() {
+                        if rest.is_empty() {
+                            steps.push(first);
+                        } else {
+                            schedule(&mut steps, [first, Step::Next, Step::Items(rest)]);
+                        }
+                    }
+                }
+                Step::Leaf(leaf) => self.leaf(leaf)?,
+                Step::Text(text) => self.formatter.write_str(text)?,
+                Step::Open(bracket) => self.open(bracket)?,
+                Step::Next => self.next()?,
+                Step::Close(bracket) => self.close(bracket)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn open(&mut self, bracket: Bracket) -> fmt::Result {
+        self.formatter.write_str(match bracket {
+            Bracket::Paren => "(",
+            Bracket::Brace => " {",
+            Bracket::Square => "[",
+        })?;
+        self.depth += 1;
+        if self.alternate {
+            self.newline()
+        } else if matches!(bracket, Bracket::Brace) {
+            self.formatter.write_str(" ")
+        } else {
+            Ok(())
+        }
+    }
+
+    fn next(&mut self) -> fmt::Result {
+        if self.alternate {
+            self.formatter.write_str(",")?;
+            self.newline()
+        } else {
+            self.formatter.write_str(", ")
+        }
+    }
+
+    fn close(&mut self, bracket: Bracket) -> fmt::Result {
+        self.depth = self.depth.saturating_sub(1);
+        if self.alternate {
+            self.formatter.write_str(",")?;
+            self.newline()?;
+        } else if matches!(bracket, Bracket::Brace) {
+            self.formatter.write_str(" ")?;
+        }
+        self.formatter.write_str(match bracket {
+            Bracket::Paren => ")",
+            Bracket::Brace => "}",
+            Bracket::Square => "]",
+        })
+    }
+
+    /// A line break and the current depth's indent.
+    fn newline(&mut self) -> fmt::Result {
+        self.formatter.write_str("\n")?;
+        indent(self.formatter, self.depth)
+    }
+
+    /// A leaf through its own `Debug`. Compact mode hands it the caller's
+    /// formatter; alternate mode indents each line of its `{:#?}` output to
+    /// the current depth.
+    fn leaf(&mut self, leaf: &dyn fmt::Debug) -> fmt::Result {
+        if self.alternate {
+            let mut indented = Indented {
+                out: &mut *self.formatter,
+                depth: self.depth,
+            };
+            fmt::write(&mut indented, format_args!("{leaf:#?}"))
+        } else {
+            leaf.fmt(self.formatter)
+        }
+    }
+}
+
+/// Push `steps` so they pop in the order given.
+fn schedule<'a, const N: usize>(stack: &mut Vec<Step<'a>>, steps: [Step<'a>; N]) {
+    stack.extend(steps.into_iter().rev());
+}
+
+/// Push the steps that print one value, outermost name first.
+fn schedule_value<'a>(stack: &mut Vec<Step<'a>>, value: &'a Value) {
+    let (name, leaf): (&'static str, &'a dyn fmt::Debug) = match value {
+        Value::Boolean(leaf) => ("Boolean", leaf),
+        Value::Integer(leaf) => ("Integer", leaf),
+        Value::Rational(leaf) => ("Rational", leaf),
+        Value::Decimal(leaf) => ("Decimal", leaf),
+        Value::Float(leaf) => ("Float", leaf),
+        Value::Quantity(leaf) => ("Quantity", leaf),
+        Value::Text(leaf) => ("Text", leaf),
+        Value::Enum(leaf) => ("Enum", leaf),
+        Value::Population(leaf) => ("Population", leaf),
+        Value::Reference(leaf) => ("Reference", leaf),
+        Value::Option(option) => {
+            return schedule_node(
+                stack,
+                ["Option", "OptionValue", "payload_type: ", "payload: "],
+                Step::Leaf(&option.payload_type),
+                Step::Payload(option.payload.as_ref()),
+                &option.occ,
+            )
+        }
+        Value::Composite(composite) => {
+            return schedule_node(
+                stack,
+                ["Composite", "CompositeValue", "declaration: ", "slots: "],
+                Step::Leaf(&composite.declaration),
+                Step::List(Items::Slots(&composite.slots)),
+                &composite.occ,
+            )
+        }
+        Value::Collection(collection) => {
+            return schedule_node(
+                stack,
+                [
+                    "Collection",
+                    "CollectionValue",
+                    "collection_type: ",
+                    "elements: ",
+                ],
+                Step::Leaf(collection.collection_type()),
+                Step::List(Items::Elements(collection.elements())),
+                collection.occ(),
+            )
+        }
+    };
+    schedule(stack, tuple_steps(name, Step::Leaf(leaf)));
+}
+
+/// The steps of a one-field tuple shape, `name(inner)`.
+fn tuple_steps<'a>(name: &'static str, inner: Step<'a>) -> [Step<'a>; 4] {
+    [
+        Step::Text(name),
+        Step::Open(Bracket::Paren),
+        inner,
+        Step::Close(Bracket::Paren),
+    ]
+}
+
+/// Push `Variant(Node { first: .., second: .., occ: .. })`, the shape every
+/// nesting variant shares. The four names are the variant, the node struct
+/// and the labels of its first two fields.
+fn schedule_node<'a>(
+    stack: &mut Vec<Step<'a>>,
+    [variant, node, first_label, second_label]: [&'static str; 4],
+    first: Step<'a>,
+    second: Step<'a>,
+    occ: &'a Integer,
+) {
+    schedule(
+        stack,
+        [
+            Step::Text(variant),
+            Step::Open(Bracket::Paren),
+            Step::Text(node),
+            Step::Open(Bracket::Brace),
+            Step::Text(first_label),
+            first,
+            Step::Next,
+            Step::Text(second_label),
+            second,
+            Step::Next,
+            Step::Text("occ: "),
+            Step::Leaf(occ),
+            Step::Close(Bracket::Brace),
+            Step::Close(Bracket::Paren),
+        ],
+    );
+}
+
+/// Write `depth` levels of the derived `Debug` alternate-mode indent.
+fn indent(out: &mut dyn fmt::Write, depth: usize) -> fmt::Result {
+    (0..depth).try_for_each(|_| out.write_str("    "))
+}
+
+/// A `fmt::Write` adaptor that follows every line break written through it
+/// with `depth` levels of indent, as the derive's own nested formatter
+/// does, without buffering the text.
+struct Indented<'w> {
+    out: &'w mut dyn fmt::Write,
+    depth: usize,
+}
+
+impl fmt::Write for Indented<'_> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        let mut lines = text.split('\n');
+        if let Some(first) = lines.next() {
+            self.out.write_str(first)?;
+        }
+        lines.try_for_each(|line| {
+            self.out.write_str("\n")?;
+            indent(self.out, self.depth)?;
+            self.out.write_str(line)
+        })
     }
 }
 
@@ -391,6 +808,14 @@ impl OptionValue {
     /// The present payload, or `None` for `none`.
     pub fn payload(&self) -> Option<&Value> {
         self.payload.as_ref()
+    }
+}
+
+impl Drop for OptionValue {
+    /// Frees the payload from a worklist, never by recursion (see
+    /// `drop_nested`), so the stack depth stays fixed at any value depth.
+    fn drop(&mut self) {
+        drop_nested(self.payload.take());
     }
 }
 
@@ -783,6 +1208,14 @@ impl CompositeValue {
     }
 }
 
+impl Drop for CompositeValue {
+    /// Frees the present slots from a worklist, never by recursion (see
+    /// `drop_nested`), so the stack depth stays fixed at any value depth.
+    fn drop(&mut self) {
+        drop_nested(take_present(&mut self.slots));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
@@ -1011,5 +1444,259 @@ mod tests {
         .expect("declared arity matches");
         let value = outcome.completed().expect("charges available");
         assert_eq!(value.occ(), Integer::one().add(&Integer::one()));
+    }
+
+    /// One value of every nesting variant (composite, option, collection)
+    /// around every slot state and a few scalars: the `Debug` parity
+    /// fixture.
+    fn debug_sample() -> Value {
+        let key = NodeKey::from_digest(digest(9));
+        let element = ValueType::Boolean;
+        let collection_type =
+            CollectionType::new(crate::collection::CollectionKind::Sequence, element, None);
+        let collection = crate::collection::from_admitted(
+            collection_type.clone(),
+            vec![Value::Boolean(true), Value::Boolean(false)],
+        );
+        let empty = crate::collection::from_admitted(collection_type, vec![]);
+        let present =
+            OptionValue::from_admitted(ValueType::Integer, Some(Value::Integer(Integer::one())));
+        let none = OptionValue::none(ValueType::option(ValueType::Boolean));
+        from_admitted_slots(
+            key,
+            vec![
+                FieldValue::Present(present),
+                FieldValue::Absent,
+                FieldValue::Null,
+                FieldValue::Present(collection),
+                FieldValue::Present(empty),
+                FieldValue::Present(none),
+                FieldValue::Present(Value::Enum(EnumMember::new(
+                    VariantId::from_digest(digest(3)),
+                    0,
+                ))),
+                FieldValue::Present(Value::Population(PopulationId::from_digest(digest(4)))),
+            ]
+            .into_boxed_slice(),
+        )
+    }
+
+    /// The derived `Debug` output for [`debug_sample`], captured from
+    /// `#[derive(Debug)]` on `Value` before the derive was replaced by the
+    /// iterative impl. The hand-written impl must reproduce it byte for byte.
+    const DERIVED_COMPACT: &str = "Composite(CompositeValue { declaration: NodeKey(0000000000000000000000000000000000000000000000000000000000000009), slots: [Present(Option(OptionValue { payload_type: Integer, payload: Some(Integer(Integer(1))), occ: Integer(2) })), Absent, Null, Present(Collection(CollectionValue { collection_type: CollectionType { kind: Sequence, element: Boolean, bound: None }, elements: [Boolean(true), Boolean(false)], occ: Integer(3) })), Present(Collection(CollectionValue { collection_type: CollectionType { kind: Sequence, element: Boolean, bound: None }, elements: [], occ: Integer(1) })), Present(Option(OptionValue { payload_type: Option(Boolean), payload: None, occ: Integer(1) })), Present(Enum(EnumMember { variant: VariantId(0000000000000000000000000000000000000000000000000000000000000003), rank: 0 })), Present(Population(PopulationId(0000000000000000000000000000000000000000000000000000000000000004)))], occ: Integer(10) })";
+
+    /// As [`DERIVED_COMPACT`], in alternate (`{:#?}`) mode.
+    const DERIVED_ALTERNATE: &str = r#"Composite(
+    CompositeValue {
+        declaration: NodeKey(0000000000000000000000000000000000000000000000000000000000000009),
+        slots: [
+            Present(
+                Option(
+                    OptionValue {
+                        payload_type: Integer,
+                        payload: Some(
+                            Integer(
+                                Integer(
+                                    1,
+                                ),
+                            ),
+                        ),
+                        occ: Integer(
+                            2,
+                        ),
+                    },
+                ),
+            ),
+            Absent,
+            Null,
+            Present(
+                Collection(
+                    CollectionValue {
+                        collection_type: CollectionType {
+                            kind: Sequence,
+                            element: Boolean,
+                            bound: None,
+                        },
+                        elements: [
+                            Boolean(
+                                true,
+                            ),
+                            Boolean(
+                                false,
+                            ),
+                        ],
+                        occ: Integer(
+                            3,
+                        ),
+                    },
+                ),
+            ),
+            Present(
+                Collection(
+                    CollectionValue {
+                        collection_type: CollectionType {
+                            kind: Sequence,
+                            element: Boolean,
+                            bound: None,
+                        },
+                        elements: [],
+                        occ: Integer(
+                            1,
+                        ),
+                    },
+                ),
+            ),
+            Present(
+                Option(
+                    OptionValue {
+                        payload_type: Option(
+                            Boolean,
+                        ),
+                        payload: None,
+                        occ: Integer(
+                            1,
+                        ),
+                    },
+                ),
+            ),
+            Present(
+                Enum(
+                    EnumMember {
+                        variant: VariantId(0000000000000000000000000000000000000000000000000000000000000003),
+                        rank: 0,
+                    },
+                ),
+            ),
+            Present(
+                Population(
+                    PopulationId(0000000000000000000000000000000000000000000000000000000000000004),
+                ),
+            ),
+        ],
+        occ: Integer(
+            10,
+        ),
+    },
+)"#;
+
+    /// `Value`'s `Debug` prints exactly what `#[derive(Debug)]` printed,
+    /// in compact and in alternate mode, through every nesting variant and
+    /// slot state.
+    #[test]
+    fn value_debug_matches_the_derived_format() {
+        let value = debug_sample();
+        assert_eq!(format!("{value:?}"), DERIVED_COMPACT);
+        assert_eq!(format!("{value:#?}"), DERIVED_ALTERNATE);
+    }
+
+    /// Levels of nesting in [`deep_value`]. A recursive walk spends at least
+    /// one stack frame per level, so this many levels overflows the 2 MiB
+    /// stack [`on_small_stack`] runs each walk on by a wide margin.
+    const DEEP: usize = 100_000;
+
+    /// A well-typed value `DEEP` levels deep that cycles through all three
+    /// nesting variants: a record `Node { next: Option<Sequence<Node>> }`,
+    /// whose declared types stay three levels deep however deep the value
+    /// goes, so the depth is value depth and never type depth.
+    fn deep_value() -> (ValueType, Value) {
+        let node = NodeKey::from_digest(digest(7));
+        let node_type = ValueType::Composite(node);
+        let sequence_type = CollectionType::new(
+            crate::collection::CollectionKind::Sequence,
+            node_type.clone(),
+            None,
+        );
+        let mut value = from_admitted_slots(node, vec![FieldValue::Absent].into_boxed_slice());
+        let mut level = 1;
+        while level < DEEP {
+            let sequence = crate::collection::from_admitted(sequence_type.clone(), vec![value]);
+            let next = OptionValue::from_admitted(
+                ValueType::collection(sequence_type.clone()),
+                Some(sequence),
+            );
+            value = from_admitted_slots(node, vec![FieldValue::Present(next)].into_boxed_slice());
+            level += 3;
+        }
+        (node_type, value)
+    }
+
+    /// Run `walk` on a thread with a 2 MiB stack, so a recursive walk
+    /// overflows whatever stack size the test harness itself was given.
+    fn on_small_stack(walk: impl FnOnce() + Send + 'static) {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(walk)
+            .expect("spawn the walk thread")
+            .join()
+            .expect("the walk completes without overflowing the stack");
+    }
+
+    /// A `fmt::Write` sink that keeps only a byte count, so formatting a
+    /// deep value needs no buffer the size of its output.
+    #[derive(Default)]
+    struct ByteCount(usize);
+
+    impl core::fmt::Write for ByteCount {
+        fn write_str(&mut self, text: &str) -> core::fmt::Result {
+            self.0 += text.len();
+            Ok(())
+        }
+    }
+
+    /// Dropping a value nested `DEEP` levels deep completes on a 2 MiB
+    /// stack.
+    #[test]
+    fn a_deep_value_drops_on_a_small_stack() {
+        on_small_stack(|| {
+            let (_, value) = deep_value();
+            drop(value);
+        });
+    }
+
+    /// Dropping one handle to a shared deep value leaves the other handle's
+    /// contents whole: the drop takes apart only nodes it owns alone.
+    #[test]
+    fn dropping_one_handle_leaves_a_shared_deep_value_whole() {
+        on_small_stack(|| {
+            let (_, value) = deep_value();
+            let parent = from_admitted_slots(
+                NodeKey::from_digest(digest(8)),
+                vec![FieldValue::Present(value.clone())].into_boxed_slice(),
+            );
+            let occ = value.occ();
+            drop(parent);
+            assert_eq!(value.occ(), occ);
+            let Value::Composite(root) = &value else {
+                panic!("the deep value is a composite");
+            };
+            assert!(matches!(
+                root.slots(),
+                [FieldValue::Present(Value::Option(_))]
+            ));
+        });
+    }
+
+    /// Formatting a value nested `DEEP` levels deep with `Debug` completes
+    /// on a 2 MiB stack, and the output closes every level it opens.
+    #[test]
+    fn a_deep_value_debug_formats_on_a_small_stack() {
+        on_small_stack(|| {
+            let (_, value) = deep_value();
+            let mut sink = ByteCount::default();
+            core::fmt::write(&mut sink, format_args!("{value:?}")).expect("format");
+            assert!(sink.0 > DEEP);
+        });
+    }
+
+    /// `admits` decides a value nested `DEEP` levels deep on a 2 MiB stack:
+    /// it reads the type the composite carries and never descends into it.
+    #[test]
+    fn a_deep_value_is_admitted_on_a_small_stack() {
+        on_small_stack(|| {
+            let (node_type, value) = deep_value();
+            assert!(node_type.admits(&value));
+            assert!(!ValueType::Boolean.admits(&value));
+        });
     }
 }

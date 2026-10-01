@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-exact-msrv ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -192,7 +192,21 @@ ci-docs:
 quire-exact-no-std:
 	cargo build --locked -p quire-exact --target thumbv7em-none-eabi
 
-ci: check-no-committed-binaries quire-exact-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
+# `quire-exact` declares an older `rust-version` than the workspace so a
+# consumer on that toolchain can depend on it. Building the library with
+# that rustc, for the no_std target, fails the moment the crate or one of its
+# dependencies needs a newer compiler. The version is read from the crate's
+# own Cargo.toml. Cargo stays the workspace's: an older cargo cannot load
+# this workspace's manifests (an edition 2024 git dependency), while
+# `RUSTC` makes the old compiler build the crate.
+QUIRE_EXACT_MSRV := $(shell sed -n 's/^rust-version = "\(.*\)"$$/\1/p' quire-exact/Cargo.toml)
+
+quire-exact-msrv:
+	test -n "$(QUIRE_EXACT_MSRV)"
+	rustup toolchain install $(QUIRE_EXACT_MSRV) --profile minimal --target thumbv7em-none-eabi --no-self-update
+	RUSTC="$$(rustup which --toolchain $(QUIRE_EXACT_MSRV) rustc)" cargo build --locked -p quire-exact --target thumbv7em-none-eabi
+
+ci: check-no-committed-binaries quire-exact-no-std quire-exact-msrv check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
