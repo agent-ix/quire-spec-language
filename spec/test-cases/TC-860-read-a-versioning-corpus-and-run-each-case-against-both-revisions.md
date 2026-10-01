@@ -33,7 +33,7 @@ violates it.
    with no `superseding`; one with an extra member `expected`; one whose
    `prior.path` is `../outside.qsl`; one whose `prior.path` is absolute;
    one whose `superseding.identity` differs from `prior.identity`. Run the
-   gate.
+   gate. Then run the gate over an empty corpus directory.
 3. One pair whose `prior` is the ConfigVersion unit at revision `b` and
    whose `superseding` is the tightened unit at revision `a`, with the
    healthy-parent case. Run the gate. Swap only the two revision labels and
@@ -53,7 +53,8 @@ Tag the tests `#[trace("TC-860", "FR-340-AC-n")]`.
   `pair.json` path and its defect (not JSON; missing `superseding`; unknown
   member `expected`; path outside the pair directory; absolute path;
   identity mismatch naming both label pairs). None of their cases ran.
-  Step 1's two case results are present.
+  Step 1's two case results are present. The empty corpus gives one
+  tool-failure result naming the corpus path; verdict tool failure, exit 30.
 - Step 3: the healthy-parent case is a `regression` (prior `admitted`,
   superseding `refused`). After the label swap the two classes and the
   result are unchanged.

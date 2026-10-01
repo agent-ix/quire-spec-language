@@ -20,7 +20,8 @@ Scope: FR-341-AC-1 to FR-341-AC-6.
 ## Test Procedure
 
 1. Compile the ConfigVersion unit.
-2. Compile the unit with a header `root` version `"1"`; without its
+2. Compile the unit with the header profile identity
+   `test:unknown-profile`; without its
    `model` package; with a dependency input that refuses; with an `import`
    of a library the input does not hold. Build a `Check` refusal holding an
    `ill_typed` cause and a `runtime_invariant` cause, in both orders.

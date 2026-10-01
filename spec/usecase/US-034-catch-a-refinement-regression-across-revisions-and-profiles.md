@@ -53,7 +53,8 @@ corpus only.
 - **When** the maintainer runs the spec-versioning gate.
 - **Then** the gate exits 10 with a violation and names exactly that case by
   the two revisions' source references and the selection, both classes and
-  the superseding run's codes; every other case holds.
+  the superseding run's codes; every other case the prior revision admits
+  holds, and a case the prior revision refuses is not applicable.
 
 ### US-034-EX-2: A dropped clause is not a regression
 

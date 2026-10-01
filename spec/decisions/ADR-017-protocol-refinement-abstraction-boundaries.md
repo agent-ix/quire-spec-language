@@ -478,6 +478,7 @@ superseding revision's. Rows are matched in order; the first match wins.
 | tool failure | any | tool failure |
 | any | tool failure | tool failure |
 | incomplete, at any stage (amended 2026-10-01) | any | unresolved (incomplete) |
+| unsupported, at any stage (amended 2026-10-01, QSpec FR-452) | any | unresolved (unsupported) |
 | any other class, at stage `compile` or `select` | any | tool failure (the prior revision must compile and select; the case is malformed) |
 | admitted | admitted | holds |
 | admitted | absent, for a `Clause` or `Frame` selection | holds: the constraint was dropped (a frame exists only while a clause or attempt names its operation, FR-105) |
@@ -810,7 +811,8 @@ Ticket-text corrections for the owner (all ticket text read as data):
 - `spec/spec.md`: index row.
 - 2026-10-01, with FR-340 to FR-345: RF-2's pair direction is the corpus's
   `prior`/`superseding` naming alone (the lexical revision-label comparison
-  is deleted); RF-2 gains the corpus layout; a prior class `incomplete` at
+  is deleted); RF-2 gains the corpus layout; a prior class `incomplete` or
+  `unsupported` at
   any stage, not only `compile` or `select`, is unresolved, so a prior
   run that reaches a limit at `admit` or `evaluate` is never `not
   applicable`; RF-4 names the reached limit

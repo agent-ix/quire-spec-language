@@ -50,7 +50,8 @@ The classification SHALL be one exhaustive `match` over
 | `Admit(Incomplete)` | `incomplete` |
 | `Admit(Fault)`, `EvaluateFault` | `tool failure` |
 | `Evaluate(Completed(Boolean(true)))` | `admitted` |
-| `Evaluate(Completed(Boolean(false)))`, `Evaluate(Refused)`, `Evaluate(Undefined)`, `FrameViolation` | `refused` |
+| `Evaluate(Completed(Boolean(false)))`, `Evaluate(Refused)`, `FrameViolation` | `refused` |
+| `Evaluate(Refuted)` with cause `UndefinedEvaluation{where, cause}` (an undefined evaluation settles refuted) | `refused` |
 | `Evaluate(Completed(Integer))` | `tool failure` (FR-109 selects only `Boolean` functions, so it cannot occur) |
 | `Evaluate(Incomplete)` | `incomplete` |
 

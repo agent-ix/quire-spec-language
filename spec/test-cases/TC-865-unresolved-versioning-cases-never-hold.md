@@ -30,6 +30,9 @@ Scope: FR-343-AC-5, FR-344-AC-4.
    run the gate.
 3. The same pair with the case's work budget set to one unit less than the
    prior run's charge. Run the gate.
+4. A pair whose `prior` unit holds the protocol `compensate` construct of
+   step 1 and whose `superseding` unit does not, with the healthy-parent
+   case. Run the gate.
 
 Each expected result is a literal in the test. Tag the tests
 `#[trace("TC-865", "<AC>")]`.
@@ -43,4 +46,6 @@ Each expected result is a literal in the test. Tag the tests
   value and the member `accounting`; verdict incomplete, exit 22.
 - Step 3: prior `incomplete` at `evaluate`; the case is `unresolved
   (incomplete)`, not `not applicable`.
+- Step 4: prior `unsupported` at `compile`; the case is `unresolved
+  (unsupported)`, not `tool failure`; verdict unsupported, exit 21.
 - No case is `holds`.

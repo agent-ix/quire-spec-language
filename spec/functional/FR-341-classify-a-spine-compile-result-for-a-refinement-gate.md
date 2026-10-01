@@ -69,7 +69,7 @@ limit's value.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-341-AC-1 | A ConfigVersion unit that compiles classifies `admitted`. | Test (TC-861) |
-| FR-341-AC-2 | Each of these classifies `tool failure`: the unit with a header profile at a `root` version other than the catalog's (`Profile`); the unit with its `model` package not supplied (`Intake`); a dependency input that refuses (`DependencyInput`); an `Import` naming a library the input does not hold; and a `Check` refusal holding a typed refusal cause and a `runtime_invariant` cause, in either order. | Test (TC-861) |
+| FR-341-AC-2 | Each of these classifies `tool failure`: the unit with a header profile whose identity names no catalog row, `test:unknown-profile` (`Profile`); the unit with its `model` package not supplied (`Intake`); a dependency input that refuses (`DependencyInput`); an `Import` naming a library the input does not hold; and a `Check` refusal holding a typed refusal cause and a `runtime_invariant` cause, in either order. | Test (TC-861) |
 | FR-341-AC-3 | A unit with an ill-typed function body classifies `refused`, carrying `ill_typed`. A `Check` refusal whose first cause is `unsupported_construct`/`not-yet-implemented` and whose second is a typed refusal classifies `refused` and carries both causes in order. | Test (TC-861) |
 | FR-341-AC-4 | The unit compiled with a forms-stage limit of one and, separately, with a type limit of one each classifies `incomplete`, naming the limit and its value one. | Test (TC-861) |
 | FR-341-AC-5 | A unit using a construct S3 refuses `unsupported_construct`/`not-yet-implemented` classifies `unsupported`; an `Omitted` refusal and a refusal holding `unsupported_projection` each classify `unsupported`. | Test (TC-861) |
