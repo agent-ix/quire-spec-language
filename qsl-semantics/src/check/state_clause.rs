@@ -39,7 +39,7 @@ use crate::family::{
     DomainKind, FamilyContract, Requirements,
 };
 use crate::model::key::DeclarationKey;
-use crate::value::operation::OperationDeclaration;
+use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`

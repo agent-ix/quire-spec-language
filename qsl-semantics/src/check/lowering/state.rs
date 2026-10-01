@@ -30,8 +30,8 @@ use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
 use crate::model::key::DeclarationKey;
+use crate::model::operation::OperationDeclaration;
 use crate::value::member::Member;
-use crate::value::operation::OperationDeclaration;
 use qsl_forms::StateClauseKind;
 
 /// The operation a `pre` or `post` clause names, as lowering reads it.

@@ -864,6 +864,7 @@ mod tests {
         (
             Scope::new(
                 TypeEnvironment::default(),
+                crate::model::operation::OperationTable::default(),
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),

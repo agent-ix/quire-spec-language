@@ -113,8 +113,8 @@
 // evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
 // module and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
-// it imports by submodule path: `enumeration`, `model_query` and
-// `operation`; `declaration`, `containment`, `quantity` and `stop` are in
+// it imports by submodule path: `enumeration`, `environment_stage` and
+// `model_query`; `declaration`, `containment`, `quantity` and `stop` are in
 // the `quire-semantic-value` crate (ADR-011 layer SV). `definition` and `semantic_node` stay
 // `pub(crate)`: their consumers outside `value` are `check`, `model` and
 // `library`, all in this crate. `decimal`, `ieee`,
@@ -127,7 +127,6 @@ pub mod enumeration;
 pub mod environment_stage;
 pub(crate) mod member;
 pub mod model_query;
-pub mod operation;
 pub(crate) mod semantic_node;
 pub(crate) mod unit;
 
@@ -155,9 +154,9 @@ pub(crate) mod unit;
 // consumer now imports `quire_exact::{DecimalType, DecimalLoss,
 // DecimalResult, evaluate_decimal}` directly -- one definition, one import
 // path, no re-export standing in for the deleted module.
-// `enumeration` and `operation` are `pub` modules, so their
+// `enumeration` and `environment_stage` are `pub` modules, so their
 // items have one public path, the submodule one
-// (`value::operation::OperationTable`); this module does not re-export
+// (`value::environment_stage::stage_failure`); this module does not re-export
 // them flat as well (the same one-path rule as for the kernel's items).
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,

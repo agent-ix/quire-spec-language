@@ -54,9 +54,9 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     StageLimitCause,
 };
+use crate::model::operation::OperationTable;
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, EnumDeclaration};
-use crate::value::operation::OperationTable;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -535,6 +535,7 @@ impl Scope {
     /// A scope over these declarations, with its by-name lookups built once.
     pub(crate) fn new(
         types: TypeEnvironment,
+        operations: OperationTable,
         enums: Vec<EnumBinding>,
         aliases: Vec<(String, ValueType)>,
         model_operations: Vec<String>,
@@ -545,19 +546,12 @@ impl Scope {
         Self {
             types,
             enums,
-            operations: OperationTable::default(),
+            operations,
             ieee_profile,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
         }
-    }
-
-    /// This scope with `operations` as its model object types' declared
-    /// operations.
-    pub(crate) fn with_operations(mut self, operations: OperationTable) -> Self {
-        self.operations = operations;
-        self
     }
 
     /// This scope with `imports`, each admitted import by its qualifier.

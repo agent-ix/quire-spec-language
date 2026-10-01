@@ -28,7 +28,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::value::operation::OperationDeclaration;
+use qsl_semantics::model::operation::OperationDeclaration;
 use quire_exact::{Integer, IntegerInterval, Presence, ValueType};
 use quire_semantic_value::declaration::ObjectTypeDeclaration;
 use serde_json::{json, Value};

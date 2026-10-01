@@ -3,17 +3,17 @@
 //! declared operations, keyed by its effective identity, and their
 //! resolution through a [`TypeEnvironment`]'s effective view.
 //!
-//! This is a layer-3 side table beside the type environment, not part of
-//! it: an operation carries the domain package's [`OperationEffect`], a
-//! `model` type, so it stays in this crate while the registry
-//! (`quire_semantic_value::declaration`) is a layer-SV leaf (ADR-011 §6.1).
+//! This is a `model` table beside the type environment, not part of it: an
+//! operation carries the domain package's [`OperationEffect`], so it stays
+//! in `model` while the registry (`quire_semantic_value::declaration`) is a
+//! layer-SV leaf (ADR-011 §6.1).
 
 use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 
-use crate::model::domain_package::OperationEffect;
+use super::domain_package::OperationEffect;
 
 /// A declared operation of an object type (FR-103, ADR-012 §15.2
 /// `StateModel`): its name, its parameters and result value types (typed by
@@ -152,5 +152,49 @@ impl OperationTable {
                 OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quire_semantic_value::declaration::ObjectTypeDeclaration;
+
+    fn ship() -> OperationDeclaration {
+        OperationDeclaration::new("ship", Vec::new(), None, OperationEffect::default())
+    }
+
+    /// An operation filed under a key the environment admits as no object
+    /// type is never visible: resolving it from that same key is `Missing`,
+    /// though `conforms` is reflexive.
+    #[test]
+    fn an_operation_of_an_unadmitted_type_resolves_missing() {
+        let unadmitted = EffectiveId::from_digest([7; 32]);
+        let mut table = OperationTable::default();
+        table.declare(unadmitted, vec![ship()]);
+        let types = TypeEnvironment::new([], []).expect("an empty environment admits");
+        assert_eq!(
+            table.resolve(&types, unadmitted, "ship"),
+            OperationLookup::Missing
+        );
+    }
+
+    /// The same operation filed under an admitted object type resolves to
+    /// it, declared by that type.
+    #[test]
+    fn an_operation_of_an_admitted_type_resolves_declared() {
+        let admitted = EffectiveId::from_digest([8; 32]);
+        let mut table = OperationTable::default();
+        table.declare(admitted, vec![ship()]);
+        let types =
+            TypeEnvironment::new([], [ObjectTypeDeclaration::new(admitted, "M::A", vec![])])
+                .expect("one object type admits");
+        assert_eq!(
+            table.resolve(&types, admitted, "ship"),
+            OperationLookup::Declared {
+                declaring: admitted,
+                operation: &ship(),
+            }
+        );
     }
 }

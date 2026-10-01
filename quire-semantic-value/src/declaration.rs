@@ -13,7 +13,7 @@
 //! §6.1), so they live in SV, over `quire_exact`'s own `Value`/`ValueType`,
 //! where QSL's layer 3 and up and a backend share them. An object type's
 //! operations carry the domain package's effect frame, a `model` type, so
-//! they stay in `qsl-semantics`' `value::operation` table beside the
+//! they stay in `qsl-semantics`' `model::operation` table beside the
 //! environment, and a reached [`TypeEnvironmentLimits`] ceiling is this
 //! module's own [`EnvironmentLimit`], which a compiler stage maps to its
 //! stage limit.

@@ -38,7 +38,7 @@ use crate::model::intake::{admit_selections, read_records};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
-use crate::value::operation::OperationDeclaration;
+use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 // ---------------------------------------------------------------------------

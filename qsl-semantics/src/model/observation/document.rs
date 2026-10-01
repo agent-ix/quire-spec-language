@@ -18,7 +18,7 @@ use super::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
-use crate::value::operation::OperationDeclaration;
+use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 /// Which wire format a document is read as (FR-106 "Document forms").

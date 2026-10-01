@@ -413,9 +413,7 @@ const LAYER_PERMITTED_MODULES: &[&str] = &[
     "value::member",
     "model",
     "value::model_query",
-    // The FR-103 operation table beside SV's type environment, which names
-    // `model`'s effect frame, and the type environment's stage-limit mapping.
-    "value::operation",
+    // The type environment's stage-limit mapping (F and SV imports only).
     "value::environment_stage",
     "library",
     // Layer 3, `check` core itself.

@@ -1840,7 +1840,15 @@ pub mod fixtures {
         types: quire_semantic_value::declaration::TypeEnvironment,
         aliases: Vec<(String, quire_exact::ValueType)>,
     ) -> Scope {
-        Scope::new(types, Vec::new(), aliases, Vec::new(), None, Vec::new())
+        Scope::new(
+            types,
+            crate::model::operation::OperationTable::default(),
+            Vec::new(),
+            aliases,
+            Vec::new(),
+            None,
+            Vec::new(),
+        )
     }
     /// A [`ValueDeclarations`] for tests exercising `check_declaration_body`
     /// or `ValueFunctionFamily::check` directly (PR #303 review round 3,

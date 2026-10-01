@@ -683,13 +683,13 @@ impl PackageDeclarations {
         // before dispatch validation, which compares resolved types.
         let scope = Scope::new(
             self.types,
+            self.operations,
             self.enums,
             self.aliases,
             self.model_operations,
             self.ieee_profile,
             self.dispatch_operations,
         )
-        .with_operations(self.operations)
         .with_imports(self.imports);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
@@ -1875,7 +1875,7 @@ impl CheckedGraph {
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
         let context = *self.object_types.get(&selection.object)?;
-        let crate::value::operation::OperationLookup::Declared {
+        let crate::model::operation::OperationLookup::Declared {
             declaring,
             operation,
         } = self.scope.operations().resolve(

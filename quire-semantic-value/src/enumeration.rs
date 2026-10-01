@@ -99,11 +99,11 @@ impl EnumValue {
 /// schedule, and `value::expression::evaluate`'s `OrderedKind::Enums` arm)
 /// resolves a `VariantId` back to its full [`EnumValue`] through this index
 /// rather than the kernel ever holding one.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
 ///
 /// The table is shared behind an `Arc`: a clone is a reference
 /// count, so every checked equality over one enum can hold that enum's
 /// table without copying it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EnumMemberIndex(Arc<BTreeMap<VariantId, EnumValue>>);
 
 impl EnumMemberIndex {
