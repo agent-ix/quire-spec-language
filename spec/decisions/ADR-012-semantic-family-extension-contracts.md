@@ -985,7 +985,7 @@ Tests (§16.8 is the bounded plan): arm-level unit tests; the non-exhaustive
 `case` refusal; the duplicate-arm refusal, which covers unreachable arms
 (§16.5); builder diagnostic order; `case` evaluation on each
 variant; the agent-ix/quire-specification#115 sum and `case` vectors (FR-143,
-FR-146); a v2 round trip; one typed `unsupported` ledger case downstream. The
+FR-146); a v2 round trip; one downstream `case` item settling `unsupported`. The
 QSL modules changed are the ones in the table; every other family module is
 unchanged.
 
@@ -1031,7 +1031,7 @@ refusal each for a missing anchor, an ambiguous name, a shadowing binder, a
 wrong target kind and a wrong channel; an attempt bound to its operation's
 frame with no second frame node; the frame run's success and violation
 verdicts; stale identity and version refusals; frame counterexample replay;
-typed `unsupported` ledger test; the backend-absence corpus case for
+a downstream `operation-contract` item settling `unsupported`; the backend-absence corpus case for
 `operation-contract`. No `Value` or `SumCase` module changes, and
 `TemporalTrace` and `Relation` do not change.
 
@@ -1805,7 +1805,7 @@ to the named cases.
 | Seam probe | `xtask seam-probe` passes with the §16.6 additions | build | FR-063 |
 | Wire totality | every new `NodeKind` variant has a lowering and emitter arm; every `SumCaseCause` variant has a catalog code with no `_` arm (recipe item 4) | S3, S4 | C-03, C-15 |
 | QSpec cases | the cases of QSpec TC-262 (construction and equality), TC-263 (recursion), TC-264 (exhaustiveness obligations) and TC-265 (evaluation). Where QSpec publishes vectors for them, they run over `QSPEC_DIR` like the existing conformance targets (`Makefile:120-181`). Otherwise they are QSL tests citing those TCs. | S3, S6a | QSpec |
-| Downstream ledger | one `value-validity` item whose function body contains `case`, settled `unsupported` with its catalog code by the IR and CG arms (§12.1 "one typed `unsupported` ledger case") | E7 | FR-331 disposition |
+| Downstream `unsupported` | one `value-validity` item whose function body contains `case`, settled `unsupported` with its catalog code by the IR and CG arms (§12.1 "one downstream `case` item settling `unsupported`") | E7 | FR-331 disposition |
 
 There is no backend-absence corpus case: `SumCase` requests no capability
 kind (recipe item 5; FR-057).
@@ -1871,13 +1871,11 @@ for STD-111 to merge. #187 follows it:
   SC-R4, SC-R5) and the refusal corpus against the in-process
   `CheckedPackage`.
 
-Until the pinned IR decodes the spelling, S4 omits each union node with
-`UnsupportedForm`, together with every node that names it (§2
+Where the IR cannot decode the QSpec FR-440 spelling, S4 omits each union
+node with `UnsupportedForm`, together with every node that names it (§2
 "Packaging"). The emitter never writes a partial body. SC-R1, SC-R3's wire
-half and the downstream ledger test wait for the QSpec merge and the IR
-decode. If QSpec merges a different spelling, the affected node ids change.
-That is allowed while prerelease: there are no users and no compatibility
-treatment (§16.9).
+half and a downstream `case` item settling `unsupported` read the FR-440
+spelling (FR-320).
 
 ### 16.11 Owner ruling
 
