@@ -60,3 +60,23 @@ the FR/TC edits match the code. FND-001 and FND-002 are accuracy defects in
 governing rows and should be fixed in this PR. FND-003 is a gap in the T12-B
 design, not in shipped code; fix the design text now, before RT builds against it.
 The lows are quick wording fixes.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The fix round edits X-6 to add SV to `qsl-semantics`' dependencies, but the same row still says the layer-3 `value` submodules "`definition`, `enumeration`, `unit`, `quantity`, `containment`, `declaration`, `stop`, `member`, `semantic_node`, `model_query`" are in the crate `qsl-semantics`. `quantity` and `stop` are now in SV, and `unit` and `semantic_node` are split. The X-11 row and the §6.2 move row say otherwise, so the ADR contradicts itself. Drop `quantity` and `stop` from X-6's list and say `unit`'s compile-side half and the rest of `semantic_node`, pointing at X-11. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1099 |
+
+## Dispositions
+
+Round 1, reviewed at 9b75cc5e0fa39a7eacd5959fb884ad1d9a9df311 (fix commit 9b75cc5e after a clean rebase onto main 0e3426e9).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9b75cc5e: FB-05 and FR-059 name SV's dependencies as K, `quire-canonical`, `serde` and `thiserror`, and no QSL layer (FR-059 adds no IR, RT or CG crate) |
+| FND-002 | fixed | 9b75cc5e: `semantic_node` (refusal vocabulary, `check_terms`, `CanonicalNodeId`, `IDENTITY_LIMITS`) is in the §6.1 SV row, the §6.2 move row and X-11, whose public paths are `quire_semantic_value::{semantic_node, stop, quantity, unit}` |
+| FND-003 | fixed | 9b75cc5e: T-12 step (3) requires the reader to decode only after §4's verified binding (IR's `read_checked_package` recomputing `package_id`, condition 2, plus the pinned library lock, condition 3), which binds the key bytes before any is decoded; step (4) says a decoded key never feeds a constructor that asserts `check` provenance, and names `from_checked_nodes`/`declared_unit_id`'s limited guarantee |
+| FND-004 | fixed | 9b75cc5e: "SV mints no `NodeKey`, `EffectiveId` or `PopulationId` ... It computes one kernel identity, a compound unit's ... `UnitId`" |
+| FND-005 | fixed | 9b75cc5e: X-11 reads "**Extracted**" and lists the contents; the edge row reads "a permitted normal edge from QSL, RT and CG"; the T-12 "Follow-up" sentence is gone |
+| FND-006 | fixed | 9b75cc5e: mermaid edge is `QSE & QPK & QEV --> SV`; the bullet says layers 3, 4, 5, R and 6 "may" import SV and that today `qsl-semantics`, `qsl-package`, `qsl-eval` and `qsl-bench` do |
+| FND-007 | fixed | 9b75cc5e: TC-390 step 2 lists exactly the test's `BELOW_CORE` roots, under `qsl-semantics/src/value/` |

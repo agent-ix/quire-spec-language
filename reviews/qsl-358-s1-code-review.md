@@ -90,3 +90,14 @@ and the no_std build is a genuine gate. The T-12 allow-list concern is not a hol
 FND-001 and FND-002 should be fixed in this PR. FND-002 is the duplicate the
 brief asked about; unifying it in SV is the right call. FND-003 and FND-004 are
 low and cheap.
+
+## Dispositions
+
+Round 1, reviewed at 9b75cc5e0fa39a7eacd5959fb884ad1d9a9df311. The branch was rebased onto main 0e3426e9; `git range-diff d1c5fa47..a7df1ff0 0e3426e9..dea56798` shows the slice commits unchanged apart from #561's rename context in `qsl-package/Cargo.toml`, so the fix round is commit 9b75cc5e alone. I did not run the gate; it is running separately.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9b75cc5e: `DimensionNode` and `UnitNode` have private fields and `checked()` constructors (`check_terms`; zero scale then non-identity root, with root-ness taken from the node's own `target`); `UnitEdge::checked` is private. `admit_unit_graph` calls them where it called `check_terms` / `UnitEdge::checked`, so refusal order is unchanged. `from_checked_nodes` and `declared_unit_id` docs state key provenance as the caller's. Two new unit tests in SV pin both constructors' refusal order |
+| FND-002 | fixed | 9b75cc5e: one `pub CanonicalNodeId` in `quire_semantic_value::semantic_node` with `From<[u8; 32]>` and `From<NodeKey>`; the `qsl-semantics` copy is deleted and its callers use `CanonicalNodeId::from(*id.as_bytes())`. `DigestHex` spells bytes as `{byte:02x}`, the same as `WireNodeId`'s and `NodeKey`'s `Display`, so preimages are byte-identical |
+| FND-003 | fixed | 9b75cc5e: `IdentifiedUnit` carries the id; `evaluate_quantity_unit` returns it, `UnitScope::form` takes it and `UnitTable::insert_identified` stores it without rehashing, so a compound `*` or `/` hashes once per evaluation (check stage: once per node) |
+| FND-004 | fixed | 9b75cc5e: `lib.rs` and the `SHARED_LEAVES`/`edge_repo` docs name K, `quire-canonical`, `serde` and `thiserror`, and no QSL layer or IR/RT/CG crate |

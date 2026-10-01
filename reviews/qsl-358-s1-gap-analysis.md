@@ -72,3 +72,11 @@ pre-merge gate on the rebased head.
 Every slice-1 item is delivered and each new AC has a test that fails on the
 defect it names. The one gap is the PR title. Accuracy defects in the ADR and FR
 text are in SR-954; code defects are in SR-952.
+
+## Dispositions
+
+Round 1, reviewed at 9b75cc5e0fa39a7eacd5959fb884ad1d9a9df311 (fix commit 9b75cc5e after a clean rebase onto main 0e3426e9).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | PR #565 title edited (not a commit; checked at head 9b75cc5e): "QSL-358 slice 1: quire-semantic-value leaf (SV); move stop/quantity/unit runtime half/semantic_node vocab" -- no `containment` |
