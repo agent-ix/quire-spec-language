@@ -286,6 +286,21 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+  - target: ix://agent-ix/quire-spec-language/FR-171
+  - target: ix://agent-ix/quire-spec-language/FR-172
+  - target: ix://agent-ix/quire-spec-language/FR-173
+  - target: ix://agent-ix/quire-spec-language/FR-174
+  - target: ix://agent-ix/quire-spec-language/FR-175
+  - target: ix://agent-ix/quire-spec-language/FR-176
+  - target: ix://agent-ix/quire-spec-language/FR-177
+  - target: ix://agent-ix/quire-spec-language/FR-178
+  - target: ix://agent-ix/quire-spec-language/FR-179
+  - target: ix://agent-ix/quire-spec-language/FR-180
+  - target: ix://agent-ix/quire-spec-language/FR-181
+  - target: ix://agent-ix/quire-spec-language/FR-182
+  - target: ix://agent-ix/quire-spec-language/FR-183
+  - target: ix://agent-ix/quire-spec-language/FR-184
+  - target: ix://agent-ix/quire-spec-language/US-021
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-165
     type: contains
@@ -590,6 +605,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
 | [US-025](usecase/US-025-check-a-protocol-under-a-weak-memory-model.md) | US | Draft |
 | [US-020](usecase/US-020-state-that-something-is-possible-in-a-model.md) | US | Draft |
+| [US-021](usecase/US-021-compare-runs-over-every-behaviour-of-a-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -803,6 +819,20 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-168](functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md) | FR | Specified: Backward reachability for `possible` and `always possible`, saturating path counting for `unique path`, witnesses, traps and path pairs decisive on partial runs, canonical evidence (ADR-022 §3); an undefined predicate refuting (ADR-022 GV-7); witnesses on a partial run are `WitnessedUnchecked` (RU-5); not yet implemented -- TC-593, TC-612, TC-613, TC-614, TC-619 planned |
 | [FR-169](functional/FR-169-settle-a-state-graph-verdict-with-its-settlement-method.md) | FR | Specified: State-graph verdicts V-9 and V-10 beside V-1 and V-4 to V-8, `ProofBasis::Witness{sources}`, and the settlement method and seed in the terminal record (ADR-022 GV-1 to GV-6); `refuted` with cause `UndefinedEvaluation`; `inconclusive`, `WellDefinednessUnchecked` (RU-5); the state-graph certificate and `check_state_graph`, `Certified` and `Uncertified` (ADR-022 GC-1 to GC-4); not yet implemented -- TC-594, TC-612, TC-613, TC-614, TC-643, TC-644 planned |
 | [FR-170](functional/FR-170-replay-state-graph-evidence.md) | FR | Specified: `replay_model_graph` replays `GraphEvidence` (witness, trap, path pair) through `ModelSystem`, re-exploring a trap's closure (ADR-022 GX-1 to GX-5); undefined-evaluation evidence; not yet implemented -- TC-595, TC-612 planned |
+| [FR-171](functional/FR-171-build-forms-for-hyper-clauses-over-behaviours.md) | FR | Specified: S2 builds forms for `hyper` clauses over `behaviours` and `relation` clauses over model executions in place of the unrepresented-production refusal (ADR-023 HS-1 to HS-9); not yet implemented -- TC-596 planned |
+| [FR-172](functional/FR-172-check-hyper-and-relation-clauses-over-model-subjects.md) | FR | Specified: S3 binds trace variables to model aliases, object parameters to universes, types indexed atoms and step labels, splits `μ` into `μ_U` and `μ_E`, checks per-variable fairness, `align skip` and execution bindings, and binds the obligation identity (ADR-023 §1, HM-3, HV-7, PA-1); not yet implemented -- TC-597 planned |
+| [FR-173](functional/FR-173-classify-hyper-clauses-into-forms.md) | FR | Specified: Form classification HP-1 to HP-6 with (`temporal-satisfaction`, `Unbounded`) records, V-8 for HP-4, one subject per alias and deadlock-freedom per subject (ADR-023 §3, HM-6); not yet implemented -- TC-598 planned |
+| [FR-174](functional/FR-174-reduce-hyper-products-and-check-copy-swap-symmetry.md) | FR | Specified: Reduction preservation rows for hyper items and compiler-checked copy-swap symmetry: detection at S3, orbit canonicalisation in EN-1, concretised counterexamples, `CopySwap` in `Reduced` (ADR-023 PH-1 to PH-6, CS-1 to CS-5); not yet implemented -- TC-599 planned |
+| [FR-175](functional/FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md) | FR | Specified: Lockstep evaluation of a hyper body over a tuple of lassos, with terminal stutter and joint-position intervals (ADR-023 HM-1, HM-2, HM-4, HM-5, HM-8); not yet implemented -- TC-600 planned |
+| [FR-176](functional/FR-176-check-a-universal-hyperproperty-by-self-composition.md) | FR | Specified: HP-2 by the `HyperProduct` self-composition on EN-1, component-scoped fairness, the shared pre-check, vacuity and `MatchUndetermined` (ADR-023 HC-1, HC-4, HC-8, HM-7); not yet implemented -- TC-601 planned |
+| [FR-177](functional/FR-177-check-a-forall-exists-safety-hyperproperty-by-witness-sets.md) | FR | Specified: HP-3 by the witness-set product with the safety automaton, violation at an empty `X` with a fair universal cycle (ADR-023 HC-2); not yet implemented -- TC-602 planned |
+| [FR-178](functional/FR-178-check-a-projection-aligned-hyperproperty.md) | FR | Specified: HP-6 by the projected product with skip and visible moves and three-valued prefix evaluation (ADR-023 PA-2 to PA-6); not yet implemented -- TC-603 planned |
+| [FR-179](functional/FR-179-check-a-step-relation-over-reachable-transitions.md) | FR | Specified: HP-1 model claim by tuple enumeration over reachable transitions with `StepTuple` counterexamples (ADR-023 HM-9, HC-3); not yet implemented -- TC-604 planned |
+| [FR-180](functional/FR-180-hand-over-a-step-relation-code-claim.md) | FR | Specified: HP-1 code claim: the `operation-contract` record and checked-package members handed to the IR/CG two-call harness, and QSL's half of Kani counterexample replay (ADR-023 XC-1 to XC-5); not yet implemented -- TC-605 planned |
+| [FR-181](functional/FR-181-check-a-single-existential-claim-through-the-possible-family.md) | FR | Specified: HP-5 single-existential claims through the possible family: body-automaton product, lasso witnesses, product traps, ADR-022's verdict map (ADR-023 SE-1 to SE-5); not yet implemented -- TC-606 planned |
+| [FR-182](functional/FR-182-settle-a-hyper-verdict.md) | FR | Specified: Hyper verdicts onto V-1 to V-8 with `MatchUndetermined` and `VacuousMatch` (ADR-023 HV-1 to HV-6); not yet implemented -- TC-607 planned |
+| [FR-183](functional/FR-183-replay-a-hyper-counterexample.md) | FR | Specified: `replay_model_trace_tuple` replays `HyperCounterexample` of kinds `Lockstep`, `WitnessExhausted`, `Projected` and `StepTuple` (ADR-023 HX-1 to HX-6, PA-7); not yet implemented -- TC-608 planned |
+| [FR-184](functional/FR-184-bound-hyper-runs-with-caller-budgets.md) | FR | Specified: `max_witness_set` (default 2^16) and `max_relation_tuples` (default 2^24) as caller-set B-5 budgets settling V-7 with the limit named (ADR-023 HC-10); not yet implemented -- TC-609 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

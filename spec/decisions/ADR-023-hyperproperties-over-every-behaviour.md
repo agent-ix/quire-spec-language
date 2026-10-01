@@ -40,8 +40,8 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Draft for plan-lead review of the key decisions; the
-QSL compiler requirements that implement it follow review. It builds on
+Proposed, 2026-10-01. The QSL compiler requirements that implement it are
+US-021 and FR-171 to FR-184, with TC-596 to TC-609. It builds on
 ADR-018, itself a draft, and follows the owner's rulings recorded there
 (ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
 fairness granularity is `whole` (ADR-018 FA-6); reachable deadlocks are
