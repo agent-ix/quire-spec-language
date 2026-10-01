@@ -30,65 +30,84 @@ use quire_exact::{
     QuotientRemainder,
 };
 
+/// The lock's `trigger_vocabulary`. [`DefinitionLock::read`] refuses a lock
+/// whose vocabulary is not exactly [`Trigger::ALL`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Trigger {
+    /// The package evaluates an IEEE `float32`/`float64` type, value or operation.
+    IeeeOperation,
+    /// The package evaluates integer `div` or `rem`.
+    IntegerDivRem,
+    /// The package declares or evaluates a text type or value.
+    TextBearing,
+}
+
+impl Trigger {
+    /// The closed vocabulary.
+    pub const ALL: [Self; 3] = [Self::IeeeOperation, Self::IntegerDivRem, Self::TextBearing];
+
+    /// Normative spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::IeeeOperation => "ieee_operation",
+            Self::IntegerDivRem => "integer_div_rem",
+            Self::TextBearing => "text_bearing",
+        }
+    }
+
+    /// Resolve a spelling.
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|trigger| trigger.as_str() == code)
+    }
+}
+
 /// A qualification-catalog role; each variant is the lock role of the same name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CatalogRole {
-    /// The `ix:native` language edition definition (`edition.md`).
+    /// The language edition definition.
     Edition,
-    /// The `quire.value.complete/v1` root value-system definition (`value-complete.md`).
+    /// The root value-system definition, the one row a header profile selects.
     Root,
-    /// The `quire.value.accounting/v1` charge-accounting definition (`value-accounting.md`).
+    /// The charge-accounting definition.
     Accounting,
-    /// The `quire.value.compound-unit/v1` compound-unit definition (`value-compound-unit.md`).
+    /// The compound-unit definition.
     CompoundUnit,
-    /// The `quire.value.compound-unit.schema/v1` JSON Schema for compound units
-    /// (`value-compound-unit.schema.json`).
+    /// The JSON Schema for compound units.
     CompoundUnitSchema,
-    /// The `quire.value.compound-unit.vectors/v1` compound-unit test vectors
-    /// (`value-compound-unit-vectors.json`).
+    /// The compound-unit test vectors.
     CompoundUnitVectors,
-    /// The `quire.value.complete.rules/v1` manifest listing the always-selected
-    /// rule roles (`value-complete-rules.json`).
+    /// The manifest listing the always-selected rule roles.
     RuleManifest,
-    /// The `quire.value.text.unicode-17.0.0/v1` text profile, selected when the
-    /// package is `text_bearing` (`value-text-unicode-17.md`).
+    /// The text profile, selected when the package is `text_bearing`.
     TextProfile,
-    /// The `quire.value.ieee754-2019-default/v1` IEEE binary32/binary64 profile,
-    /// selected when the package is `ieee_operation` (`value-ieee754-2019-default.md`).
+    /// The IEEE binary32/binary64 profile, selected when the package is
+    /// `ieee_operation`.
     IeeeProfile,
-    /// The `quire.value.integer-division.euclidean/v1` Euclidean `div`/`rem` law
-    /// (`value-integer-division-euclidean.md`).
+    /// The Euclidean `div`/`rem` law.
     IntegerDivisionEuclidean,
-    /// The `quire.value.integer-division.floor/v1` floored `div`/`rem` law
-    /// (`value-integer-division-floor.md`).
+    /// The floored `div`/`rem` law.
     IntegerDivisionFloor,
-    /// The `quire.value.integer-division.truncating/v1` truncating `div`/`rem` law
-    /// (`value-integer-division-truncating.md`).
+    /// The truncating `div`/`rem` law.
     IntegerDivisionTruncating,
-    /// The `quire.rule.package-contract/v1` package-contract rule (`../package-contract.md`).
+    /// The package-contract rule.
     RulePackageContract,
-    /// The `quire.rule.shared-grammar/v1` shared-grammar rule (`../shared-grammar.md`).
+    /// The shared-grammar rule.
     RuleSharedGrammar,
-    /// The `quire.rule.ad-005/v1` rule binding AD-005's complete-value expression
-    /// system (`AD-005-complete-value-expression-system.md`).
+    /// The rule binding the complete-value expression system.
     RuleAd005,
-    /// The `quire.rule.fr-140/v1` rule binding FR-140 exact-decimal evaluation
-    /// (`FR-140-evaluate-exact-decimals.md`).
+    /// The rule binding exact-decimal evaluation.
     RuleFr140,
-    /// The `quire.rule.fr-141/v1` rule binding FR-141 text and enumeration
-    /// evaluation (`FR-141-evaluate-text-and-enumerations.md`).
+    /// The rule binding text and enumeration evaluation.
     RuleFr141,
-    /// The `quire.rule.fr-142/v1` rule binding FR-142 quantity and unit
-    /// evaluation (`FR-142-evaluate-quantities-and-units.md`).
+    /// The rule binding quantity and unit evaluation.
     RuleFr142,
-    /// The `quire.rule.fr-147/v1` rule binding FR-147 integer-division-domain
-    /// evaluation (`FR-147-evaluate-integer-division-domains.md`).
+    /// The rule binding integer-division-domain evaluation.
     RuleFr147,
-    /// The `quire.rule.fr-148/v1` rule binding FR-148 IEEE floating-point
-    /// profile evaluation (`FR-148-evaluate-ieee-floating-profiles.md`).
+    /// The rule binding IEEE floating-point profile evaluation.
     RuleFr148,
-    /// The `quire.rule.fr-149/v1` rule binding FR-149's complete equality
-    /// matrix (`FR-149-apply-complete-equality-matrix.md`).
+    /// The rule binding the complete equality matrix.
     RuleFr149,
 }
 
@@ -393,9 +412,12 @@ pub enum LockReadError {
         /// How many rows name it.
         count: usize,
     },
-    /// The package-selection rules name a trigger outside `trigger_vocabulary`.
+    /// The package-selection rules name a trigger outside [`Trigger::ALL`].
     #[error("the package-selection rules name unknown trigger `{0}`")]
     UnknownTrigger(String),
+    /// `trigger_vocabulary` is not exactly [`Trigger::ALL`].
+    #[error("trigger_vocabulary {0:?} is not the closed trigger set")]
+    TriggerVocabulary(Vec<String>),
     /// `selection_refusal_codes` is not exactly [`SelectionRefusalCode::ALL`].
     #[error("selection_refusal_codes {0:?} is not the closed refusal set")]
     RefusalCodes(Vec<String>),
@@ -406,11 +428,10 @@ pub enum LockReadError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefinitionLock {
     revision: &'static str,
-    triggers: Vec<&'static str>,
     catalog: Vec<CatalogEntry>,
     always: Vec<CatalogRole>,
-    conditional: Vec<(&'static str, CatalogRole)>,
-    exactly_one: Vec<(&'static str, Vec<CatalogRole>)>,
+    conditional: Vec<(Trigger, CatalogRole)>,
+    exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
 }
 
 fn role(code: &str) -> Result<CatalogRole, LockReadError> {
@@ -435,8 +456,9 @@ impl DefinitionLock {
 
     /// Read a `quire.value.definition-lock/v1` document, borrowing its
     /// strings. Every lock role must be a [`CatalogRole`] with exactly one
-    /// row, every selection trigger must be in `trigger_vocabulary`, and
-    /// `selection_refusal_codes` must be the closed refusal set.
+    /// row, `trigger_vocabulary` must be exactly [`Trigger::ALL`] and name
+    /// every selection trigger, and `selection_refusal_codes` must be the
+    /// closed refusal set.
     pub fn read(bytes: &'static str) -> Result<Self, LockReadError> {
         let document: LockDocument<'static> = serde_json::from_str(bytes)?;
         let catalog = document
@@ -462,13 +484,19 @@ impl DefinitionLock {
                 return Err(LockReadError::RoleRowCount { role, count });
             }
         }
-        let triggers = document.trigger_vocabulary;
-        let trigger = |code: &'static str| {
-            if triggers.contains(&code) {
-                Ok(code)
-            } else {
-                Err(LockReadError::UnknownTrigger(code.to_owned()))
-            }
+        let vocabulary: BTreeSet<&str> = document.trigger_vocabulary.iter().copied().collect();
+        let closed: BTreeSet<&str> = Trigger::ALL.into_iter().map(Trigger::as_str).collect();
+        if vocabulary != closed || vocabulary.len() != document.trigger_vocabulary.len() {
+            return Err(LockReadError::TriggerVocabulary(
+                document
+                    .trigger_vocabulary
+                    .iter()
+                    .map(|code| (*code).to_owned())
+                    .collect(),
+            ));
+        }
+        let trigger = |code: &str| {
+            Trigger::from_code(code).ok_or_else(|| LockReadError::UnknownTrigger(code.to_owned()))
         };
         let selection = document.package_selection;
         let always = selection
@@ -509,7 +537,6 @@ impl DefinitionLock {
         }
         Ok(Self {
             revision: document.revision,
-            triggers,
             catalog,
             always,
             conditional,
@@ -537,6 +564,16 @@ impl DefinitionLock {
         &self.always
     }
 
+    /// Roles offered only when their trigger is present.
+    pub fn conditional_roles(&self) -> &[(Trigger, CatalogRole)] {
+        &self.conditional
+    }
+
+    /// Triggers that require exactly one of several roles.
+    pub fn exactly_one_roles(&self) -> &[(Trigger, Vec<CatalogRole>)] {
+        &self.exactly_one
+    }
+
     /// Admit one package's selection given its trigger and role spellings.
     ///
     /// Checks run in the normative order and report the first failure: every
@@ -546,7 +583,7 @@ impl DefinitionLock {
         triggers: &[&str],
         roles: &[&str],
     ) -> Result<AdmittedSelection, SelectionRefusalCode> {
-        let triggers = self.trigger_set(triggers)?;
+        let triggers = Self::trigger_set(triggers)?;
         let parsed = roles
             .iter()
             .map(|code| CatalogRole::from_code(code))
@@ -661,11 +698,11 @@ impl DefinitionLock {
         }
     }
 
-    /// Resolve each trigger spelling against the lock's `trigger_vocabulary`.
-    fn trigger_set(&self, codes: &[&str]) -> Result<BTreeSet<&'static str>, SelectionRefusalCode> {
+    /// Resolve each trigger spelling to its [`Trigger`].
+    fn trigger_set(codes: &[&str]) -> Result<BTreeSet<Trigger>, SelectionRefusalCode> {
         let parsed = codes
             .iter()
-            .map(|code| self.triggers.iter().copied().find(|known| *known == *code))
+            .map(|code| Trigger::from_code(code))
             .collect::<Option<Vec<_>>>()
             .ok_or(SelectionRefusalCode::SelectionUnknownTrigger)?;
         let triggers: BTreeSet<_> = parsed.iter().copied().collect();
@@ -680,14 +717,14 @@ impl DefinitionLock {
 /// An admitted package selection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedSelection {
-    triggers: BTreeSet<&'static str>,
+    triggers: BTreeSet<Trigger>,
     roles: BTreeSet<CatalogRole>,
     division: Option<DivisionProfile>,
 }
 
 impl AdmittedSelection {
     /// Present triggers.
-    pub fn triggers(&self) -> &BTreeSet<&'static str> {
+    pub fn triggers(&self) -> &BTreeSet<Trigger> {
         &self.triggers
     }
 

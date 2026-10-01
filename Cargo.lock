@@ -1614,7 +1614,7 @@ dependencies = [
 [[package]]
 name = "quire-specification-qualification"
 version = "0.0.0"
-source = "git+https://github.com/agent-ix/quire-specification?branch=task%2Fstd-130-definition-lock-accessor#ce802b78d2569db659890e1b8a4c587e850192ee"
+source = "git+https://github.com/agent-ix/quire-specification?branch=task%2Fstd-130-definition-lock-accessor#21e5a7bda4b2acfffe077af1b2649f24f1d9caf9"
 
 [[package]]
 name = "quire-verification-contracts"

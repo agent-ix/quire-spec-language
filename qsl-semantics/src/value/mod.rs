@@ -166,7 +166,7 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError,
-    PackageCause, PackageRefusal, PackageRefusalCode, SelectionRefusalCode,
+    PackageCause, PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
 };
 pub use diagnostics_catalog::native_diagnostics_catalog;
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,

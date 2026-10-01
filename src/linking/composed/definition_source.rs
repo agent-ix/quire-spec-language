@@ -163,92 +163,180 @@ impl RegisteredDefinition {
 
     fn source(self) -> RegisteredSource {
         match self {
-            Self::Edition => definition!("edition", "ix:native", "1-draft.2", [], [
-                rule!("proposals/quire-v1/shared-grammar.md"),
-                rule!("proposals/quire-v1/package-contract.md"),
-                rule!("spec/functional/FR-030-bind-composed-definitions.md"),
-                rule!("spec/functional/FR-031-report-requested-capabilities.md"),
-                rule!("spec/functional/FR-032-preserve-language-evolution.md"),
-                rule!("spec/functional/FR-035-bind-ecosystem-subjects.md"),
-                rule!("spec/functional/FR-036-retain-lexical-source-locations.md"),
-                rule!("spec/functional/FR-037-parse-shared-native-expressions.md"),
-                rule!("spec/functional/FR-038-resolve-predicate-scopes.md"),
-                rule!("spec/functional/FR-040-admit-explicit-state-extensions.md"),
-                rule!("spec/functional/FR-047-emit-typed-located-causes.md"),
-                rule!("spec/non-functional/NFR-010-bound-composed-processing.md"),
-            ]),
-            Self::StateCore => definition!("state-core", "quire.state.core/v1", "1-draft.3", [Edition], [
-                rule!("proposals/quire-v1/state-contract.md"),
-                rule!("spec/functional/FR-039-normalize-exact-rational-literals.md"),
-                rule!("spec/functional/FR-044-check-composed-numeric-definedness.md"),
-                rule!("spec/functional/FR-045-preserve-control-and-presence-facts.md"),
-                rule!("spec/functional/FR-046-validate-state-invocation-inputs.md"),
-            ]),
-            Self::StateQueries => definition!("state-queries", "quire.state.queries/v1", "1-draft.3", [StateCore], [
-                rule!("spec/functional/FR-033-admit-reusable-predicates.md"),
-                rule!("spec/functional/FR-034-bind-cross-family-predicates.md"),
-                rule!("spec/functional/FR-041-evaluate-ordered-queries.md"),
-                rule!("spec/functional/FR-042-select-pre-state-reads.md"),
-            ]),
-            Self::StateGraph => definition!("state-graph", "quire.state.graph/v1", "1-draft.3", [StateQueries], [
-                rule!("spec/functional/FR-043-evaluate-finite-graph-relations.md"),
-            ]),
-            Self::TemporalFacet => definition!("temporal-common", "quire.temporal.bounded-facet/v1", "1-draft.3", [StateGraph], [
-                rule!("spec/functional/FR-048-bind-native-temporal-syntax.md"),
-                rule!("spec/functional/FR-090-select-temporal-profile-and-clock.md"),
-                rule!("spec/functional/FR-091-evaluate-bounded-future.md"),
-                rule!("spec/functional/FR-092-evaluate-bounded-past.md"),
-                rule!("spec/functional/FR-093-bind-temporal-activation-and-captures.md"),
-                rule!("spec/functional/FR-094-interpret-progress-history-and-closure.md"),
-                rule!("spec/functional/FR-095-preserve-native-tl-correspondence.md"),
-                rule!("spec/non-functional/NFR-040-bound-temporal-state.md"),
-                rule!("spec/functional/FR-061-report-orthogonal-results.md"),
-            ]),
-            Self::EventPosition => definition!("temporal-event-position", "quire.temporal.event-position.false-extension/v1", "1-draft.3", [TemporalFacet], []),
-            Self::FixedSample => definition!("temporal-fixed-sample", "quire.temporal.fixed-sample.false-extension/v1", "1-draft.3", [TemporalFacet], []),
-            Self::TimestampedWindow => definition!("temporal-timestamped-window", "quire.temporal.timestamped-event.finite-window/v1", "1-draft.3", [TemporalFacet], []),
-            Self::Protocol => definition!("protocol-finite", "quire.protocol.finite-global/v1", "1-draft.4", [StateGraph, TemporalFacet], [
-                rule!("spec/functional/FR-049-bind-native-choreography-syntax.md"),
-                rule!("spec/functional/FR-050-bind-protocol-instances.md"),
-                rule!("spec/functional/FR-051-preserve-communication-identities.md"),
-                rule!("spec/functional/FR-052-represent-bounded-control.md"),
-                rule!("spec/functional/FR-053-enforce-choice-visibility.md"),
-                rule!("spec/functional/FR-054-bind-channel-premises.md"),
-                rule!("spec/functional/FR-055-activate-protocol-obligations.md"),
-                rule!("spec/functional/FR-056-register-compensation.md"),
-                rule!("spec/functional/FR-057-enforce-commit-recovery.md"),
-                rule!("spec/functional/FR-058-preserve-retry-and-partial-recovery.md"),
-                rule!("spec/functional/FR-059-assess-finite-global-conformance.md"),
-                rule!("spec/functional/FR-060-separate-protocol-claims.md"),
-                rule!("spec/functional/FR-061-report-orthogonal-results.md"),
-                rule!("spec/non-functional/NFR-020-bound-protocol-processing.md"),
-                rule!("spec/non-functional/NFR-021-reproduce-protocol-results.md"),
-                rule!("proposals/quire-v1/choreography-surface.md"),
-                rule!("proposals/quire-v1/protocol-contract.md"),
-            ]),
-            Self::ObservationBinding => definition!("observation-binding", "quire.observation.binding/v1", "1-draft.3", [Package, Range, TemporalFacet, Protocol], [
-                rule!("proposals/quire-v1/observation-contract.md"),
-                rule!("spec/functional/FR-061-report-orthogonal-results.md"),
-                rule!("spec/functional/FR-115-report-activation-participation-and-adequacy.md"),
-                rule!("spec/functional/FR-116-map-observation-results-to-consumers.md"),
-                rule!("proposals/quire-v1/observation-output-mapping-contract.md"),
-            ]),
-            Self::Progress => definition!("observation-progress", "quire.observation.progress/v1", "1-draft.3", [ObservationBinding, Range, TemporalFacet], [
-                rule!("proposals/quire-v1/observation-contract.md"),
-                rule!("spec/functional/FR-061-report-orthogonal-results.md"),
-            ]),
-            Self::Range => definition!("observation-range", "quire.observation.range/v1", "1-draft.1", [], [
-                rule!("proposals/quire-v1/observation-contract.md"),
-                rule!("spec/functional/FR-090-select-temporal-profile-and-clock.md"),
-            ]),
-            Self::Package => definition!("package-reference", "quire.package.composed/v1", "1-draft.2", [Edition], [
-                rule!("proposals/shared-reference-2-draft/schema.json"),
-                rule!("proposals/shared-reference-2-draft/README.md"),
-            ]),
-            Self::Diagnostics => definition!("native-diagnostics", "quire.native.diagnostics/v1", "1-draft.8", [], [
-                rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
-                rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),
-            ]),
+            Self::Edition => definition!(
+                "edition",
+                "ix:native",
+                "1-draft.2",
+                [],
+                [
+                    rule!("proposals/quire-v1/shared-grammar.md"),
+                    rule!("proposals/quire-v1/package-contract.md"),
+                    rule!("spec/functional/FR-030-bind-composed-definitions.md"),
+                    rule!("spec/functional/FR-031-report-requested-capabilities.md"),
+                    rule!("spec/functional/FR-032-preserve-language-evolution.md"),
+                    rule!("spec/functional/FR-035-bind-ecosystem-subjects.md"),
+                    rule!("spec/functional/FR-036-retain-lexical-source-locations.md"),
+                    rule!("spec/functional/FR-037-parse-shared-native-expressions.md"),
+                    rule!("spec/functional/FR-038-resolve-predicate-scopes.md"),
+                    rule!("spec/functional/FR-040-admit-explicit-state-extensions.md"),
+                    rule!("spec/functional/FR-047-emit-typed-located-causes.md"),
+                    rule!("spec/non-functional/NFR-010-bound-composed-processing.md"),
+                ]
+            ),
+            Self::StateCore => definition!(
+                "state-core",
+                "quire.state.core/v1",
+                "1-draft.3",
+                [Edition],
+                [
+                    rule!("proposals/quire-v1/state-contract.md"),
+                    rule!("spec/functional/FR-039-normalize-exact-rational-literals.md"),
+                    rule!("spec/functional/FR-044-check-composed-numeric-definedness.md"),
+                    rule!("spec/functional/FR-045-preserve-control-and-presence-facts.md"),
+                    rule!("spec/functional/FR-046-validate-state-invocation-inputs.md"),
+                ]
+            ),
+            Self::StateQueries => definition!(
+                "state-queries",
+                "quire.state.queries/v1",
+                "1-draft.3",
+                [StateCore],
+                [
+                    rule!("spec/functional/FR-033-admit-reusable-predicates.md"),
+                    rule!("spec/functional/FR-034-bind-cross-family-predicates.md"),
+                    rule!("spec/functional/FR-041-evaluate-ordered-queries.md"),
+                    rule!("spec/functional/FR-042-select-pre-state-reads.md"),
+                ]
+            ),
+            Self::StateGraph => definition!(
+                "state-graph",
+                "quire.state.graph/v1",
+                "1-draft.3",
+                [StateQueries],
+                [rule!(
+                    "spec/functional/FR-043-evaluate-finite-graph-relations.md"
+                ),]
+            ),
+            Self::TemporalFacet => definition!(
+                "temporal-common",
+                "quire.temporal.bounded-facet/v1",
+                "1-draft.3",
+                [StateGraph],
+                [
+                    rule!("spec/functional/FR-048-bind-native-temporal-syntax.md"),
+                    rule!("spec/functional/FR-090-select-temporal-profile-and-clock.md"),
+                    rule!("spec/functional/FR-091-evaluate-bounded-future.md"),
+                    rule!("spec/functional/FR-092-evaluate-bounded-past.md"),
+                    rule!("spec/functional/FR-093-bind-temporal-activation-and-captures.md"),
+                    rule!("spec/functional/FR-094-interpret-progress-history-and-closure.md"),
+                    rule!("spec/functional/FR-095-preserve-native-tl-correspondence.md"),
+                    rule!("spec/non-functional/NFR-040-bound-temporal-state.md"),
+                    rule!("spec/functional/FR-061-report-orthogonal-results.md"),
+                ]
+            ),
+            Self::EventPosition => definition!(
+                "temporal-event-position",
+                "quire.temporal.event-position.false-extension/v1",
+                "1-draft.3",
+                [TemporalFacet],
+                []
+            ),
+            Self::FixedSample => definition!(
+                "temporal-fixed-sample",
+                "quire.temporal.fixed-sample.false-extension/v1",
+                "1-draft.3",
+                [TemporalFacet],
+                []
+            ),
+            Self::TimestampedWindow => definition!(
+                "temporal-timestamped-window",
+                "quire.temporal.timestamped-event.finite-window/v1",
+                "1-draft.3",
+                [TemporalFacet],
+                []
+            ),
+            Self::Protocol => definition!(
+                "protocol-finite",
+                "quire.protocol.finite-global/v1",
+                "1-draft.4",
+                [StateGraph, TemporalFacet],
+                [
+                    rule!("spec/functional/FR-049-bind-native-choreography-syntax.md"),
+                    rule!("spec/functional/FR-050-bind-protocol-instances.md"),
+                    rule!("spec/functional/FR-051-preserve-communication-identities.md"),
+                    rule!("spec/functional/FR-052-represent-bounded-control.md"),
+                    rule!("spec/functional/FR-053-enforce-choice-visibility.md"),
+                    rule!("spec/functional/FR-054-bind-channel-premises.md"),
+                    rule!("spec/functional/FR-055-activate-protocol-obligations.md"),
+                    rule!("spec/functional/FR-056-register-compensation.md"),
+                    rule!("spec/functional/FR-057-enforce-commit-recovery.md"),
+                    rule!("spec/functional/FR-058-preserve-retry-and-partial-recovery.md"),
+                    rule!("spec/functional/FR-059-assess-finite-global-conformance.md"),
+                    rule!("spec/functional/FR-060-separate-protocol-claims.md"),
+                    rule!("spec/functional/FR-061-report-orthogonal-results.md"),
+                    rule!("spec/non-functional/NFR-020-bound-protocol-processing.md"),
+                    rule!("spec/non-functional/NFR-021-reproduce-protocol-results.md"),
+                    rule!("proposals/quire-v1/choreography-surface.md"),
+                    rule!("proposals/quire-v1/protocol-contract.md"),
+                ]
+            ),
+            Self::ObservationBinding => definition!(
+                "observation-binding",
+                "quire.observation.binding/v1",
+                "1-draft.3",
+                [Package, Range, TemporalFacet, Protocol],
+                [
+                    rule!("proposals/quire-v1/observation-contract.md"),
+                    rule!("spec/functional/FR-061-report-orthogonal-results.md"),
+                    rule!("spec/functional/FR-115-report-activation-participation-and-adequacy.md"),
+                    rule!("spec/functional/FR-116-map-observation-results-to-consumers.md"),
+                    rule!("proposals/quire-v1/observation-output-mapping-contract.md"),
+                ]
+            ),
+            Self::Progress => definition!(
+                "observation-progress",
+                "quire.observation.progress/v1",
+                "1-draft.3",
+                [ObservationBinding, Range, TemporalFacet],
+                [
+                    rule!("proposals/quire-v1/observation-contract.md"),
+                    rule!("spec/functional/FR-061-report-orthogonal-results.md"),
+                ]
+            ),
+            Self::Range => definition!(
+                "observation-range",
+                "quire.observation.range/v1",
+                "1-draft.1",
+                [],
+                [
+                    rule!("proposals/quire-v1/observation-contract.md"),
+                    rule!("spec/functional/FR-090-select-temporal-profile-and-clock.md"),
+                ]
+            ),
+            Self::Package => definition!(
+                "package-reference",
+                "quire.package.composed/v1",
+                "1-draft.2",
+                [Edition],
+                [
+                    rule!("proposals/shared-reference-2-draft/schema.json"),
+                    rule!("proposals/shared-reference-2-draft/README.md"),
+                ]
+            ),
+            // Identity and revision are QSpec's `native-diagnostics.md`
+            // header, read by reference, so this entry and the emitter's
+            // `diagnostics.catalog` name one revision.
+            Self::Diagnostics => {
+                let catalog = qsl_semantics::value::native_diagnostics_catalog();
+                RegisteredSource {
+                    identity: catalog.identity.as_str(),
+                    revision: catalog.revision.value.as_str(),
+                    ..definition!("native-diagnostics", "", "", [], [
+                        rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
+                        rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),
+                    ])
+                }
+            }
         }
     }
 }

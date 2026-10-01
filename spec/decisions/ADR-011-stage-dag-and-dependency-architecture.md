@@ -1363,8 +1363,9 @@ sections it names.
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
   `quire-edition` edition is a placeholder. The digests come from QSpec's
   lock by reference: `DefinitionLock` reads `complete-value-lock.json`
-  from the `quire-specification` crate's compiled-in bytes, and QSpec checks
-  each digest against the bytes of the file it names (§2.4).
+  from the `quire-specification` crate's compiled-in bytes (§2.4), and
+  QSpec's own TC-233 checks each digest against the bytes of the file it
+  names.
 - **SG-1: where lock evidence enters.** At E3, not E4 (§2.2, §2.4). Reason:
   node identity is minted at E3, and the FR-322 application-node key includes
   law `DefinitionRef` digests.
