@@ -199,7 +199,12 @@ fn with_record(functions: Vec<FunctionDeclaration>) -> CheckedPackage {
 
 /// `fadd(f, g) = f + g` over `Float64[mode]`.
 fn float_add(mode: &str) -> CheckedPackage {
-    let float = || form(BuiltinType::Float64, &[mode]);
+    float_add_of(BuiltinType::Float64, mode)
+}
+
+/// `fadd(f, g) = f + g` over `width[mode]`, `width` `Float32` or `Float64`.
+pub(super) fn float_add_of(width: BuiltinType, mode: &str) -> CheckedPackage {
+    let float = || form(width, &[mode]);
     package(vec![typed(
         "fadd",
         &[("f", float()), ("g", float())],

@@ -70,14 +70,19 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     node's occurrences and the source text of each `generated` source-map
     region, and read each package back through QSL's I2 read
     (FR-093-AC-18).
-11. Emit each emit test fixture: the packages of steps 1, 5, 6, 7 and 10,
-    the declared record and tuple, TC-435's and TC-442's spine fixtures,
-    TC-469's ConfigVersion unit, TC-440's records, TC-160's `q` and `t`,
-    a unit of quantifiers over a set, a bag and an ordered set with a
-    predicate, and an equality over the recursive `Tree` of step 6. Read
-    each through QSL's I2 read. Decode each checked node's (`node_tag`,
-    `semantic_form`) through IR's node kinds, and compare the families the
-    fixtures emit with the corpus table's rows (FR-093-AC-19).
+11. Classify every kind of IR's `CheckedNodeKind::all()` as a family QSL
+    writes (admitted, or one of the two cases of FR-093-AC-19) or as a
+    kind QSL never writes, with its reason. Emit a fixture for each family
+    QSL writes: the packages of steps 1, 5, 6, 7 and 10, `fadd` over
+    `Float32[nearest-even]`, the declared record and tuple, TC-435's and
+    TC-442's spine fixtures, TC-442's unit with a `Population<M::Gadget>[3]`
+    parameter, a reference to a systems interface, TC-469's ConfigVersion
+    unit, TC-440's records, TC-160's `q` and `t`, a unit of quantifiers
+    over a set, a bag and an ordered set with a predicate, a decimal
+    comparison and record and tuple values, and an equality over the
+    recursive `Tree` of step 6. Read each through QSL's I2 read, and decode
+    each checked node's (`node_tag`, `semantic_form`) through IR's node
+    kinds (FR-093-AC-19).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -119,12 +124,14 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   with `R` and `VersionUnchanged`, the `Integer` node's only occurrence is
   `generated`, region text `1 < 2`. Each function-only package reads back
   Verified (FR-093-AC-18).
-- Step 11: the families the fixtures emit equal the table's families, one
-  row each. IR admits every fixture at its emitted `package_id` with a node
-  of each of its rows' families, except the `Tree` equality, which IR
-  refuses at the `quire.op.structural.eq` node (STD-129), and `q`'s
-  compound unit, which is omitted for its absent unit with every node that
-  names it (QSL-247, IR-450). No other node is omitted (FR-093-AC-19).
+- Step 11: every IR node kind is classified exactly once, and every family
+  a fixture emits is classified as written by QSL. IR admits every fixture
+  at its emitted `package_id` with a node of each of its rows' families,
+  except the `Tree` equality, which IR refuses at the
+  `quire.op.structural.eq` node with `operation-law-missing` (STD-129), and
+  `q`'s compound unit, which the emission omits for the `metre` unit node it
+  names, with every node that names it (QSL-247, IR-450). No other node is
+  omitted (FR-093-AC-19).
 
 ## Status
 
