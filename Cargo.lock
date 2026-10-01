@@ -1580,6 +1580,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quire-semantic-value"
+version = "0.1.0"
+dependencies = [
+ "quire-exact",
+ "thiserror",
+]
+
+[[package]]
 name = "quire-spec-language"
 version = "0.2.0"
 dependencies = [

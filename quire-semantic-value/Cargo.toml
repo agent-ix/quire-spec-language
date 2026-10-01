@@ -1,0 +1,19 @@
+[package]
+name = "quire-semantic-value"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf -- runtime semantic values over the quire-exact kernel that QSL's layer 3 and up and a backend share."
+
+[dependencies]
+quire-exact = { path = "../quire-exact" }
+thiserror = { version = "=2.0.20", default-features = false }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
