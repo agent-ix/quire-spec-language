@@ -39,8 +39,8 @@ Inputs, used as given and not reopened:
   `ADR-010 A4`, `ADR-010 lane B` and so on.
 - **QSpec AD-016** (accepted, `agent-ix/quire-specification`
   `spec/assurance/AD-016-semantic-family-extension-path.md`). Its seven arrows,
-  crate graph, replay ownership, Shared-type strategy, `heads/` workspace and
-  six owner decisions are binding. This record places the QSL-internal stages
+  crate graph, replay ownership, Shared-type strategy and six owner decisions
+  are binding. This record places the QSL-internal stages
   and modules around those arrows. Where AD-016 marks a cell `OPEN — decided in
   WP<n>`, this record leaves it open unless the cell is a QSL-internal module
   placement, which #209 owns. AD-016 records four types named
@@ -80,7 +80,7 @@ decisions. It does not design their content.
 | #214 | As a `Value` family implementation ticket, the widening of the layer-6 `replay` facade for that family (ADR-013 TK-01) |
 | M-3a, M-3b | The S2 forms producer: the `forms` core (M-3a) and each family's parsed-form type (M-3b) |
 | M-5 | The check/evaluate split for function application (M-5) |
-| #215 | Exact-pin and current-head integration lanes |
+| #215 | The backend direction, API-surface and duplicate-revision checks (T-12) |
 | #216 | The single checked-package gate (Layer 2) |
 | #217 | The function-application proof and native-replay exemplar: the first widening of the skeleton spine (§1.1) |
 | #218 | Frames and scoped clauses through the proof spine |
@@ -193,7 +193,7 @@ flowchart LR
 | S6a Reference execution | `Evaluation` of a checked package: a `FamilyOutcome`, which is the kernel `Outcome` (completed, undefined, refused or incomplete) or a family-owned `FamilyResult` (refused or undefined) for an evaluation-time result the kernel does not own, beside the evaluation's location and loss records (ADR-013 O-16). A family that does not evaluate natively (`Relation`) is not an S6a input. Deterministic and free of side effects: the same package, arguments, object environment and meter budget give the same outcome. | QSL `value::expression` evaluate and `CheckedPackage::call` (the AD-016 arrow 7 path), over the `quire-exact` kernel | arrow 7 executor |
 | S6b Bounded proof | Per-item negotiation disposition, then one IR `KaniOutcome` per supported item | CG (per-item negotiation, oracle, `kani_obligations`), RT ops, host ABI and `negotiate_*` predicates, IR `src/kani` outcome | arrows 3 to 6 |
 | S7 Typed witness | QSL `WitnessEnvelope` with a `ReplaySource` | QSL `qsl-replay` types (`WitnessEnvelope`, `Witness`, `ReplaySource`), built by CG's backend adapter (ADR-013 OQ-H) | arrow 6 output |
-| S8 Native replay | Parity verdict: the S6a result under the reconstructed input, compared with the S6b result | CG replay adapter (reconstruction and comparator), QSL layer-6 `replay` (S1 to S4 recompile, then S6a as executor) | arrow 7 |
+| S8 Native replay | Parity verdict: the S6a result under the reconstructed input, compared with the S6b result | QSL layer-6 `replay` (S1 to S4 recompile, S6a as executor, and the parity settlement in each arm result's `settle`, FR-072), called by the orchestrating driver (T-13); CG replay adapter (request reconstruction, C-12) | arrow 7 |
 
 Side inputs:
 
@@ -259,7 +259,7 @@ distinct nominal type with private constructors in its stage module.
 | E6 | S4 → S6a | In-process linked checked package with its checked dependency closure (E4), typed arguments, object environment, `Meter` | `Evaluation` carrying a `FamilyOutcome` | QSL `value::expression` |
 | E7 | S5 → S6b | IR nodes; the per-item requirement records (keyed by occurrence key, ADR-012 §13.5; an operation-application record also holds its result bound and path condition, FR-062), which the driver passes from the in-process `CheckedPackage`, with each routed item's occurrence key and result bound (FR-075); bounds, and the `route` candidate sets, passed by the orchestrating driver (T-13) | `ObligationRecord` per requested item. For `supported` items: oracle, harness and one `KaniOutcome`. | CG, with RT ops and IR outcome (AD-016 arrows 3 to 6) |
 | E8 | S6b → S7 | Kani run of a `supported` item | QSL `WitnessEnvelope{source: ReplaySource}`, where `ReplaySource` is `Witness(Witness)` or `Input(values)` (ADR-013 O-25; the AD-016 amendments are ADR-013 QC-20 and QC-29) | CG |
-| E9 | S7 → S8 | The replay request: the packet plus the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run), and the digest-addressed source of the proved package and of its domain and dependency packages (QC-1 byte provision) | Parity verdict | CG replay adapter, through QSL layer-6 `replay` only. `replay` recompiles the source through S1 to S4 into a `CheckedPackage` whose closure carries the checked dependency nodes (E4). It checks that `package_id` equals the packet's (ADR-013 T-2, O-26), that each `RawSourceRef` source digest matches, and the §4 dependency binding for each dependency, selects the function by `QualifiedName`, then calls the S6a executor. No `CheckedPackage` is built from wire bytes. |
+| E9 | S7 → S8 | The replay request: the packet plus the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run), and the digest-addressed source of the proved package and of its domain and dependency packages (QC-1 byte provision) | Parity verdict | The orchestrating driver (T-13) calls `qsl_replay::replay` with the request CG's replay adapter builds (ADR-013 C-12); CG reaches QSL through layer-6 `replay` only. `replay` settles parity in each arm result's `settle` (FR-072). `replay` recompiles the source through S1 to S4 into a `CheckedPackage` whose closure carries the checked dependency nodes (E4). It checks that `package_id` equals the packet's (ADR-013 T-2, O-26), that each `RawSourceRef` source digest matches, and the §4 dependency binding for each dependency, selects the function by `QualifiedName`, then calls the S6a executor. No `CheckedPackage` is built from wire bytes. |
 
 E9 details:
 
@@ -272,13 +272,14 @@ E9 details:
   as agreement. Remaining
   work: agent-ix/quire-specification#141.
 - The recompile runs under the stage limits the request carries. A limit
-  refusal at E9 yields no verdict and carries its `LimitExceeded` cause,
-  never `inconclusive`.
+  refusal at E9 carries its `LimitExceeded` cause and yields no parity
+  verdict; ADR-013 C-09 gives the item's terminal value.
 - `CheckedPackage::call` admits its arguments before S6a and returns
   `Result<Evaluation, CallFailure>`, with `CallFailure {
   Input(InputRefusal), Fault(InternalFault) }`. `replay` carries `Input` as a
   `StageFailure::Refused` cause (an ADR-013 O-26 refusal) and `Fault` as an
-  internal fault. Neither yields a verdict, and neither is `inconclusive`.
+  internal fault. Neither yields a parity verdict; ADR-013 C-09 gives the item's terminal
+  value.
   AD-016 arrow 7 is stale here. Remaining work:
   agent-ix/quire-specification#141.
 - A packet whose `package_id` differs from the recompiled package's refuses
@@ -716,7 +717,7 @@ enforces it; before #226, §3's interim rule applies.
 | tool | `complete::editor`, `complete::edit`, `format` | tooling over S1 | 1, F |
 | 6 | `replay` | the CG-facing replay facade: S1 to S4 recompile, then S6a. Its public API includes the #231 envelopes. | layers 1 to 5, F, K; I3 under feature `quire-extraction` |
 | 6 | `command` < `cli` < `main` | orchestration of QSL stages | every layer above, including I3, R, tool and `replay`; quire-rs only through `qsl-source`; never CG |
-| driver | the orchestrating driver crate that calls both QSL and CG (T-13, implemented by #248; #225 accepts its design). It is the crate `quire-driver` in its own repository, agent-ix/quire-driver, downstream of QSL and CG. Nothing depends on it, so the QSL and CG gates never build it. | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
+| driver | the orchestrating driver crate that calls both QSL and CG, from S1 through the FR-331 terminal record (T-13, implemented by #248; #225 accepts its design). It is the crate `quire-driver` in its own repository, agent-ix/quire-driver, downstream of QSL and CG. Nothing depends on it, so the QSL and CG gates never build it. | orchestration across repositories | the QSL layer crates and CG; a separate crate downstream of CG, because CG → QSL is a normal edge and Cargo refuses a package cycle |
 
 Crate map. Layers F, 1, I3, 2, 3, 4, 5, R and the layer-6 `replay` facade are
 each their own workspace crate (§7.2). K is `quire-exact` (X-1). A layer
@@ -888,7 +889,7 @@ Module table:
 | `protocol_artifact` | SEAM-3 | |
 | `simulation` | 5 `simulation` | finite exploration engine for S6a, the crate `qsl-eval`'s module `simulation` (X-8); its implementer arrives through #220 |
 | `command`, `cli`, `main` | 6 | §5; the native `command` submodules are SEAM-1 |
-| crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket. Its executor entry is `qsl_replay::replay` (TK-01, FR-098). Its module `spine` holds the one S1-to-S4 compile, which both the executor and `command`'s CLI `compile` call: no layer below 6 may depend on S1 and S2 together, and `replay` may not depend on `command`. `spine` is public only for `command`; T-12 rule (a) refuses any CG reference to it -- a `use` of it, a path through it, a crate alias or glob import that reaches it (FR-060 T12-A). |
+| crate `qsl-replay` | 6 `replay` | the CG-facing replay facade (§6.1), widened per family by each family's implementation ticket. Its executor entry is `qsl_replay::replay` (TK-01, FR-098). Its module `spine` holds the one S1-to-S4 compile, which both the executor and `command`'s CLI `compile` call: no layer below 6 may depend on S1 and S2 together, and `replay` may not depend on `command`. `spine` is public for `command` and for the orchestrating driver (T-13), which calls `spine::compile` for S1 to S4 and the E4 emit; T-12 rule (a) refuses any CG reference to it -- a `use` of it, a path through it, a crate alias or glob import that reaches it (FR-060 T12-A). |
 | crate `qsl-route` | R `route` | the #185 registry and router, extracted as X-9. Its items are at the crate root (`qsl_route::Registry`). Among the workspace crates it depends only on `qsl-semantics` (for `check::Capability`) and `qsl-foundation`; its one other dependency is `thiserror`. No shipped root-crate module calls it, so the root crate names it only as a dev dependency. |
 | `xtask`, `tools/fixture-audit` | build tooling | not on the stage DAG, and they depend on no stage module |
 | none today | 3 `check` (`check::capability`, new) | new: the canonical FR-290 capability-kind value type and its total wire conversion (ADR-013 O-19, C-24), implemented. Placed in `check` core, not F: the per-item requirement records are made at E3, whose producer ADR-011 §2.1's E3 row names as `check`; its other two consumers, layer 4 `package` and layer R `route`, each list "3" in their §6.1 "Depends on" column, so both may import `check` directly. This differs from `AbsenceMode`'s F placement above: `AbsenceMode`'s two consumers (layer-2 `forms`, layer-3 `model`) cannot depend on each other, so neither layer may own it, while `Capability`'s three consumers (`check`, `package`, `route`) form one downward chain that already permits importing `check`. |
@@ -952,19 +953,18 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 Rules:
 
 - No cycle exists over normal, dev or test-time edges between QSL, IR, RT and
-  CG. QSL owns the replay crossing test (AD-016 as amended by
-  agent-ix/quire-specification#140). It reads IR's agreement vectors as raw
-  bytes through one data accessor in `quire-contract-model`, which QSL already
-  pins; the accessor returns no IR type. It adds no crate edge, and the QSL test
-  never reads a path inside a cargo checkout. The parity comparator stays in
+  CG. The replay crossing test lives in agent-ix/quire-integration, which
+  depends on QSL, CG and IR, so the test adds no QSL → CG edge. QSL's own tests
+  read IR's agreement vectors as raw bytes through one data accessor in
+  `quire-contract-model`, which QSL already pins; the accessor returns no IR
+  type. It adds no crate edge, and no QSL test reads a path inside a cargo
+  checkout. The parity comparator stays in
   agent-ix/quire-contract-codegen#50. The end-to-end run of proof and replay is
-  agent-ix/quire-contract-codegen#87, and head drift is the QI `heads/`
-  workspace. Remaining work: agent-ix/quire-contract-ir#146.
+  agent-ix/quire-contract-codegen#87. Remaining work:
+  agent-ix/quire-contract-ir#146.
 - QSL's own `Cargo.lock` resolves exactly one revision per quire-ecosystem
   crate. A duplicate-revision check on QSL's own lock enforces it; its owner is
   proposed as a #215 scope amendment (T-12).
-  AD-016 heads drift check 6 covers head drift only, because `[patch]` in
-  `heads/` maps every pin to one head.
 - A dependency needed only by tests is a dev dependency.
 
 ### 7.2 Extraction criteria
@@ -1121,12 +1121,12 @@ The approved crate extractions are X-1 to X-10.
 | OBS-028 | QSL `qsl-replay` owns the packet (`WitnessEnvelope`) and witness types, and CG builds the packet (ADR-013 OQ-H). CG reconstructs. QSL S6a executes. A stubbed executor is not evidence (FB-07, §2.3). |
 | OBS-029 | The IR root → QSL edge is removed: neither IR manifest (the root crate or `quire-contract-model`) declares a QSL dependency (§7.1, FB-05). |
 | OBS-030 | `CheckedPackage::call` on `qsl_package::CheckedPackage`, through the layer-5 `CheckedPackageEvaluation` trait (§4, as amended), is the S6a entry. The CG replay adapter wires it, first in the skeleton spine and then in #217. |
-| OBS-031 | QI owns the current-head `heads/` workspace (AD-016). #215 implements it and also checks QSL's own lock for duplicate revisions (§7.1). The pin-versus-head rule is a #211 secondary; the pin is ADR-013 T-9's `RevisionPin`. |
-| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the QSL replay crossing test (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. Remaining work: agent-ix/quire-contract-ir#146. |
+| OBS-031 | #215 checks QSL's own lock for duplicate revisions (§7.1). |
+| OBS-036 | The replay executor is QSL S6a (`CheckedPackage::call` on `qsl_package::CheckedPackage` through `CheckedPackageEvaluation`, §4 as amended; AD-016 arrow 7). agent-ix/quire-contract-ir#140 is the implementing change: it amends FR-031 Behavior and AC-3 and removes `replay_with_native_runtime`. IR PR #138 rewrites only FR-031's Status section and does not settle this. FR-031-AC-3 gets its own coverage row, discharged by the replay crossing test in agent-ix/quire-integration (§7.1), after agent-ix/quire-contract-ir#145 removes the stub tags. Remaining work: agent-ix/quire-contract-ir#146. |
 | OBS-037 | Forbidden bypass FB-03. The handoffs to IR are deleted in the PRs that land S4 emission over the checked graph (#218, #223; M-6d). |
 | OBS-038 | Closed against #205 as amended (2026-09-19): "Runtime owns executable operations, exact numeric predicates and the host ABI. QSL owns reference semantics and the native replay executor (`CheckedPackage::call`, AD-016 arrow 7); Codegen reconstructs the replay request and Contract IR holds the counterexample packet." ADR-013 OQ-H and QC-29 amend its last clause: QSL `qsl-replay` owns the counterexample packet (`WitnessEnvelope`) and CG builds it. No native replay surface belongs in IR (agent-ix/quire-contract-ir#140). |
 | OBS-039 | Closed against the same #205 text. #205 and AD-016 agree. |
-| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in the already-pinned `quire-contract-model` (Remaining work: agent-ix/quire-contract-ir#146). QSL owns the replay crossing test; the parity comparator is agent-ix/quire-contract-codegen#50, the end-to-end run is agent-ix/quire-contract-codegen#87, and head drift is QI `heads/` (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
+| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in the already-pinned `quire-contract-model` (Remaining work: agent-ix/quire-contract-ir#146). The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
 | OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. QSL's lock holds one revision per quire crate, checked by the duplicate-revision check (Tickets to open at #212). A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |
@@ -1399,7 +1399,7 @@ sections it names.
 | T-10 | CG generated-harness gate under §2.3: claimed-module list, `unreached` failure, SUCCESS-only discharge floor, mutation control, shared-helper list, and a run mutation of each shared helper that fails the proof (#245) | CG |
 | T-11 | Proof-stage acceptance (§2.3) as a proposed QSpec NFR binding RT and CG proof gates | QSpec |
 | T-12 | Proposed #215 scope amendment: backend direction check (FB-05, FB-11); the single API-surface check, which fails any caller outside these rules: (a) CG calls only the layer-6 `replay` facade (FB-05), (b) only QSL `check` calls the kernel `NodeKey` constructor (ADR-013 O-04), (c) only QSL `model` calls the kernel `EffectiveId` constructor (ADR-013 O-05), (d) only QSL `model` calls the kernel `PopulationId` constructor (ADR-013 QC-21); and duplicate-revision check on QSL's lock (§7.1). The API-surface check scans every crate that depends on `quire-exact`, and a `NodeKey`, `EffectiveId` or `PopulationId` constructor call outside QSL `check` and `model` fails it. #215 ships it as one reusable tool; RT runs it in its lint gate under agent-ix/quire-contract-runtime#56, and CG under agent-ix/quire-contract-codegen#89. Until then #216 and #219 check all four by inspection. | QSL #215 (issue text); agent-ix/quire-contract-runtime#56 and agent-ix/quire-contract-codegen#89 run it |
-| T-13 | The orchestrating driver crate (§6.1 driver row; ADR-012 §7): S1 to S4 compile, E4 emit, the `route` candidate step, the pre-negotiation `BackendId` conversion (ADR-012 §7.2), E7 CG `negotiate_*`, the `route` routing step after E7, and CG generation with the returned `BackendId`s. #225 accepts its design. The crate is `quire-driver`, in the repository agent-ix/quire-driver, downstream of QSL and CG. | QSL #248, in agent-ix/quire-driver |
+| T-13 | The orchestrating driver crate (§6.1 driver row; ADR-012 §7): S1 to S4 compile, E4 emit, the `route` candidate step, the pre-negotiation `BackendId` conversion (ADR-012 §7.2), E7 CG `negotiate_*`, the `route` routing step after E7, CG generation with the returned `BackendId`s, then for each generated harness: the S6b Kani run of its obligation, which CG's backend adapter parses into IR's `KaniOutcome` (ADR-013 O-24); for a `Counterexample`, the E8 packet, which CG builds as the O-25 `WitnessEnvelope` with a `ReplaySource::Witness` source (ADR-013 C-10), and the E9 replay of it through the `qsl-replay` facade (`qsl_replay::replay`); and the item's FR-331 terminal record, which CG's C-09 map settles from the Kani outcome and the replay's result (ADR-013 O-16) and the driver writes. A replay whose verdict disagrees, or that completes no value, settles the item `inconclusive` with cause `replay_parity`; a replay that refuses (a `ReplayRefusal` other than a fault: an identity mismatch, a decode refusal, a stale dependency, a limit reached) settles it `inconclusive` with cause `replay_refused`, carrying the refusal's catalog code; a replay that faults (an `InternalFault`) settles it `failed`. Every Kani counterexample therefore settles exactly one terminal record, and only a reproduced one settles `refuted`. The driver orchestrates these steps and holds no outcome map, packet type or replay type of its own: CG owns the C-09 map and the O-25 packet, and `qsl-replay` owns the replay request, the replay result and the terminal record (ADR-013 O-26, O-27, O-24). #225 accepts its design. The crate is `quire-driver`, in the repository agent-ix/quire-driver, downstream of QSL and CG. | QSL #248, in agent-ix/quire-driver |
 | T-14 | Repoint CG's normal dependency on QSL from the root crate `quire-spec-language` to `qsl-replay` (§7.1), after X-10 | agent-ix/quire-contract-codegen |
 
 ## Consequences

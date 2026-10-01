@@ -623,9 +623,7 @@ the table, independent of registration order.
   defined: S5 in QSL, IR, RT and CG with #218; S6 by
   agent-ix/quire-contract-ir#141; S7 by #185 for the registry arm and by
   agent-ix/quire-contract-codegen#86 for the CG arm; S8 in IR with each backend
-  outcome enum; S9 by agent-ix/quire-contract-codegen#86. AD-016's `make heads`
-  drift checks 1 (clause and tag wire strings total both ways) and 7 (every
-  layer's `catalog_code()` total) are the evidence that the repositories agree.
+  outcome enum; S9 by agent-ix/quire-contract-codegen#86.
 - **Mapping mutants.** AD-016's `cargo mutants` requirement covers the
   conversions at S1 and S4 (`catalog_code()`) and S5–S9, which are ADR-013
   C-05, C-06, C-09, C-15 and C-20. A surviving `cargo mutants` mutant in any
@@ -827,7 +825,8 @@ Each family result maps to the eight ADR-013 O-16 categories through the three
 outcome families of O-16. `check` refusals are the refusal category. A `check`
 limit failure and an S6a `Incomplete` are the incomplete category. `evaluate`
 returns the kernel `Outcome<T>`. Dispositions come from CG. Proof results come
-from IR's `KaniOutcomeKind` map. No family adds a category.
+from CG's C-09 map over IR's `KaniOutcomeKind` and the E9 replay result
+(ADR-013 C-09). No family adds a category.
 
 The witness envelope follows ADR-013 O-25, the replay request O-26 and the
 replay result O-27. #231 implements them. The replay executor's key is a typed

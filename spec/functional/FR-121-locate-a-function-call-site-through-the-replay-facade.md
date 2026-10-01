@@ -51,7 +51,7 @@ not make one.
 
 CG needs this because it reaches QSL only through `qsl_replay` (ADR-011
 FB-05) and may not name `qsl_replay::spine` (ADR-011 §3 FB-05, T-12 rule
-(a): `spine` is public only for `command`), yet must know these identities
+(a): `spine` is public for `command` and the orchestrating driver), yet must know these identities
 to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal

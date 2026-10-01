@@ -394,26 +394,26 @@ has the eight values in the first column. It is not a kernel type.
 | --- | --- | --- |
 | Evaluation outcome | `quire-exact` `Outcome<T>{Completed, Undefined, Refused, Incomplete}` (AD-005, AD-016) | FR-323 per-item disposition |
 | Negotiation disposition | CG `ObligationRecord.disposition`: `supported`, `requires-bound`, `unsupported`, `invalid-request` | FR-331 `dispositions` |
-| Proof result | IR `KaniOutcomeKind` (10 kinds) mapped by one exhaustive CG-owned function (C-09) to one FR-331 terminal record | FR-331 `results` or `dispositions` |
+| Proof result | IR `KaniOutcomeKind` (10 kinds), together with the E9 replay result of a `Counterexample` (O-27: its settlement, or the `ReplayRefusal` that stopped it), mapped by one exhaustive CG-owned function (C-09) to one FR-331 terminal record | FR-331 `results` or `dispositions` |
 
 Category mapping. Every source value has exactly one row.
 
 | Category | Evaluation (kernel → FR-323) | Negotiation (FR-331) | Proof (IR kind → FR-331 terminal record) |
 | --- | --- | --- | --- |
 | success | `Completed(value)`, except `Completed(false)` of a claim → value | `supported` | `Proved` with at least one SUCCESS check → result `proved`. A backend result `tested` is also success; it keeps the value `tested`, is never promoted to `proved`, and never counts as proof evidence. Only `proved` does. |
-| violation | `Completed(false)` of a claim → false/violation | not applicable | `Counterexample` → result `refuted` |
+| violation | `Completed(false)` of a claim → false/violation | not applicable | `Counterexample` whose E9 replay settles `ReproducedWithEvaluatedWitness` (FR-072 `WitnessArmResult`) → result `refuted` |
 | undefined | `Undefined` → `undefined` (FR-323-AC-1); S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(_))` → `undefined` | not applicable | not produced |
 | refusal | `Refused(Refusal)` → refusal; S6a `FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))` → refusal | `invalid-request` | `Refused`, `InvalidInput`, `IncompleteInput` → one FR-331 result with a typed refusal cause; the result value is QC-9 |
 | unsupported | not an evaluation outcome | `unsupported` or `requires-bound` | `Unavailable` (solver or backend absent after negotiation) → one FR-331 result with a typed unavailability cause; the result value is QC-9 |
 | incomplete (timeout, cancellation, bound exhaustion) | `Incomplete` with its charge point and limit → incomplete | not applicable | `TimedOut`, `Cancelled`, `ResourceExhausted` → result `incomplete`, cause kept |
-| inconclusive | not an evaluation outcome | not applicable | `Inconclusive` → result `inconclusive`. A vacuous `Proved` (a `Proved` run with zero SUCCESS checks in the obligation) maps to the existing `KaniOutcomeKind::Inconclusive` variant with the typed cause `kani_vacuous_proof`, following IR's typed-cause convention (Remaining work: agent-ix/quire-contract-ir#146, agent-ix/quire-specification#141). A replay parity disagreement (O-27) is also `inconclusive`, with a typed cause. |
-| internal failure | not a kernel outcome; the executor produces `failed` when a runtime invariant breaks (`runtime_invariant`/`established-invariant-broken`, FR-323-AC-1) | not applicable | an IR invariant breaking while mapping → result `failed` |
+| inconclusive | not an evaluation outcome | not applicable | `Inconclusive` → result `inconclusive`. A vacuous `Proved` (a `Proved` run with zero SUCCESS checks in the obligation) maps to the existing `KaniOutcomeKind::Inconclusive` variant with the typed cause `kani_vacuous_proof`, following IR's typed-cause convention (Remaining work: agent-ix/quire-contract-ir#146, agent-ix/quire-specification#141). A `Counterexample` whose E9 replay settles `Inconclusive` (an FR-072 `WitnessArmResult` carrying a `DisagreementCause`: the replayed verdict differs from the proved one, or the replay completed no value) maps to result `inconclusive` with the typed cause `replay_parity`, never to `refuted`. A `Counterexample` whose E9 replay refuses (a `ReplayRefusal` other than a fault: an identity mismatch, a decode refusal, a stale dependency, a limit reached) maps to result `inconclusive` with the typed cause `replay_refused`, carrying the refusal's catalog code (`ReplayRefusal::code`), never to `refuted` or `proved`. |
+| internal failure | not a kernel outcome; the executor produces `failed` when a runtime invariant breaks (`runtime_invariant`/`established-invariant-broken`, FR-323-AC-1) | not applicable | an IR invariant breaking while mapping → result `failed`; a `Counterexample` whose E9 replay faults (`ReplayRefusal::Fault`, or `ReplayRefusal::Admission` with `AdmissionFailure::Fault`: an `InternalFault`) → result `failed` (`TerminalValue::Failed`) |
 
 Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
 proof column fixes the category part of AD-016's `OPEN — decided in WP9` cell
-(QC-16); IR implements the map. Runtime `ExecutionOutcome`/`EvaluationOutcome`,
+(QC-16); CG implements the map over the Kani outcome and the E9 replay result (C-09). Runtime `ExecutionOutcome`/`EvaluationOutcome`,
 state `EvaluationOutcome` and the lane-D simulation outcome before convergence are lane-private (§6); the converged `qsl_eval::simulation::Outcome` is canonical, mapped by `Outcome::category()` (ADR-014 §7, ADR-017 FP-4); a
 family result wraps kernel outcomes and maps to these categories under its
 family contract (Q210-3). S6a returns `Result<Evaluation<T>, InternalFault>`,
@@ -626,7 +626,7 @@ each record.
 Implementing tickets: #213 S-1 builds the kernel outcome and refusal types;
 #213 S-5a builds the category type in F `diagnostic` (landed, #258); #231
 carries them unchanged in its envelopes and builds the FR-331 result reader
-(C-23). CG owns C-09. CG keeps its disposition type.
+(C-23). CG owns C-09. CG keeps its disposition type. C-09's terminal step takes two inputs: the IR `KaniOutcome` and, for a `Counterexample`, the result of its E9 replay: the `qsl-replay` `WitnessArmResult`, or the `ReplayRefusal` that `qsl_replay::replay` returned. A Kani counterexample's packet is `Witness`-sourced (C-10), so its replay returns the `ReplayResult::Witness` arm; an `Input`-arm result comes only from a corpus counterexample, which is no Kani outcome and has no C-09 row; the orchestrating driver (ADR-011 T-13) runs the Kani obligation and the replay and passes both. A replay refusal settles `inconclusive` with cause `replay_refused`; a replay fault (an `InternalFault`) settles `TerminalValue::Failed`, so a defect stays a tool failure. The `inconclusive` causes are `kani_vacuous_proof`, `replay_parity` and `replay_refused`. A vacuous proof is `TerminalValue::Proved { success_checks: 0 }`; its cause `InconclusiveCause::KaniVacuousProof` is derived by `TerminalValue::vacuous_proof_cause` and carried in the envelope's `inconclusive_cause` (C-09 row). In `qsl-replay`, `InconclusiveCause` gains `ReplayParity`, which carries the `DisagreementCause`, and `ReplayRefused`, which carries the refusal's catalog `Code`, and `TerminalValue` gains an `Inconclusive` variant carrying an `InconclusiveCause`. C-09 produces `TerminalValue::Inconclusive` only with `ReplayParity` or `ReplayRefused`, never with `KaniVacuousProof`.
 
 Validation and diagnostics: one test per row of the category table (C-08, C-09,
 C-23); each map is exhaustive with no `_` arm; a source value with no row fails
@@ -802,22 +802,11 @@ Equality: not an identity. Each bound value compares under its owning type.
 
 | Pin | Authority | Rule |
 | --- | --- | --- |
-| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | A revision literal elsewhere that restates a Cargo pin is checked equal to the lock by a test. This covers the package view's `ir_revision` and `STANDARD` literals (OBS-022) and CG's `IR_CANDIDATE_REVISION`, `RUNTIME_REVISION` and `assurance/pins.json` statements (OBS-034). One lock holds one revision of each git dependency (OBS-041). |
+| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | One lock holds one revision of each git dependency (OBS-041). |
 
-Exact release pins versus the current-head lane:
-
-- **Release pins** are exact revisions in each repository's own manifest and
-  lock. They are the only qualified dependency selection, and AD-011 ecosystem
-  locks qualify them.
-- **The current-head lane** is the AD-016 `quire-integration/heads/` workspace:
-  a manifest of full shas, with `[patch]` only in `heads/Cargo.toml`. It is a
-  drift check. It never changes a release pin, never produces release evidence
-  and never publishes. A green heads run precedes each pin-bump PR. Whether QI
-  owns that workspace (OBS-031) is answered by ADR-011: it does (Q209-7).
-
-Implementing tickets: #215 builds the pin-equality tests and the heads lane
-(QSL literals, OBS-022; CG literals and `pins.json`, OBS-034); #226 turns them
-into drift gates.
+Release pins are exact revisions in each repository's own manifest and lock.
+They are the only qualified dependency selection, and AD-011 ecosystem locks
+qualify them.
 
 Pin representation (OBS-034 secondary, T-9): a `RevisionPin` is the
 repository source exactly as `Cargo.lock` records it, plus the full
@@ -829,11 +818,11 @@ Equality: lexical on both fields of a `RevisionPin`.
 
 | Field | Decision |
 | --- | --- |
-| Owner | QSL `qsl-replay` owns the FR-331 terminal record (`TerminalValue`, `TerminalRecord`), its O-16 category map (`TerminalValue::category`) and the proof-result envelope (`ProofResultEnvelope`, FR-069), OQ-H ruling. IR keeps `KaniOutcome`, the typed result of one Kani run before it becomes a terminal record. CG maps it into QSL's `TerminalValue` (C-09) and produces the FR-331 envelope as the backend provider. |
-| Implementing ticket | #231 for the terminal record, its category map, the proof-result envelope and the FR-331 reader (FR-069). CG for the `KaniOutcomeKind` → `TerminalValue` map (C-09, TK-05). |
-| Public type | QSL: `TerminalValue` (eight FR-331 result values, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable), `TerminalRecord` (request-scoped item identity and value) and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19), the tool pin and the typed vacuous-proof cause. IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
+| Owner | QSL `qsl-replay` owns the FR-331 terminal record (`TerminalValue`, `TerminalRecord`), its O-16 category map (`TerminalValue::category`) and the proof-result envelope (`ProofResultEnvelope`, FR-069), OQ-H ruling. IR keeps `KaniOutcome`, the typed result of one Kani run before it becomes a terminal record. CG maps it, with the E9 replay result of a `Counterexample`, into QSL's `TerminalValue` (C-09) and settles the FR-331 `dispositions` at E7 as the backend provider. The orchestrating driver (ADR-011 T-13) is the one writer of each item's FR-331 terminal record in `results`. |
+| Implementing ticket | #231 for the terminal record, its category map, the proof-result envelope and the FR-331 reader (FR-069). CG for the map from `KaniOutcomeKind` and the E9 replay result to `TerminalValue` (C-09, TK-05). |
+| Public type | QSL: `TerminalValue` (eight FR-331 result values, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable), `TerminalRecord` (request-scoped item identity and value) and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19), the tool pin and the typed `inconclusive` cause (`kani_vacuous_proof`, `replay_parity` or `replay_refused`). IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
 | Serialized authority | QSpec FR-331 `quire.backend-provider/v1` `results`, `dispositions`, `counterexamples`, `accounting`, manifest and tool lock. |
-| Conversions | Kani run → `KaniOutcome` (IR). `KaniOutcomeKind` → QSL `TerminalValue` (CG, O-16 proof column, C-09). `TerminalValue` → O-16 category (QSL `TerminalValue::category`, one exhaustive map). FR-331 → QSL envelope (#231, C-23). |
+| Conversions | Kani run → `KaniOutcome` (IR). `KaniOutcomeKind` with the E9 replay result of a `Counterexample` (settlement or `ReplayRefusal`) → QSL `TerminalValue` (CG, O-16 proof column, C-09). `TerminalValue` → O-16 category (QSL `TerminalValue::category`, one exhaustive map). FR-331 → QSL envelope (#231, C-23). |
 | Validation and diagnostics | Exactly one terminal record per `request_index` (AD-016); unknown version, duplicate keys and non-canonical encodings refuse before consumption (FR-331). |
 | Equality | lexical over the RFC 8785 encoding of the FR-331 result-identity members (artifacts, results, execution provenance). FR-331 defines no digest domain for it. |
 
@@ -925,14 +914,14 @@ stores one and derives four (QC-13).
 | Public type | Typed replay request. It is the O-25 packet plus the #231 envelope members, and nothing else: from the packet, the exact FR-322 package reference (`package_id`, contract version, source digests, and one `dependencies` entry per `dependency_selections` entry naming that dependency's identity, version, `package_id` and source digests, ADR-015 D-4), the selected function's `QualifiedName` (OQ-5 ruling), the `ReplaySource`, the originating counterexample identity and the `backend` member (O-19); from the #231 envelope, the state environment, the `quire.value.accounting/v1` limits, and the S1 to S4 stage limits copied from the proving run (QC-8). QSpec fixes the outcome → verdict map per O-16 category (FR-323, QC-8), and `Undefined` and `FamilyOutcome::FamilyEvaluated` never count as agreement. Arguments are keyed by parameter `WireNodeId`, taken from the `ReplaySource`; the `replay` facade converts the keys to `NodeKey`s (O-04). The packet and the replay request are separate types. |
 | Serialized authority | QSpec FR-323 `quire.native-runtime/v1` (`package`, `selection`, `state_environment`, `limits`, `replay`), plus the digest-addressed byte provision QC-1 adds. |
 | Conversions | Packet + #231 envelope members → request (CG, C-12); CG copies them and invents no member. Request → execution (QSL executor, C-13): the executor obtains every source, definition and domain-package input by digest from the byte provision the request names. It never reads a path, environment variable or search location. It recompiles under the stage limits the request carries, recomputes `package_id` and requires equality with the request, requires every recompiled `RawSourceRef` digest to equal the request's, resolves the `QualifiedName` by name lookup in the recompiled package's declarations (OQ-5 ruling), and calls the selected function. `CheckedPackage::call` admits the arguments before any evaluation. |
-| Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S1 to S4 and verifying the emitted v2 bytes under the ADR-011 §4 binding, and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain (an `InputRefusal`, carried by `replay` as a `StageFailure::Refused` cause and never `inconclusive`); a recompile that reaches a stage limit (`LimitExceeded`); and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
+| Validation and diagnostics | Unknown version; an input absent from the byte provision or whose bytes do not match their digest (`stale_dependency`/`byte-digest-mismatch`); a dependency whose view `replay` builds by compiling its QC-1 source through S1 to S4 and verifying the emitted v2 bytes under the ADR-011 §4 binding, and whose recomputed `package_id` differs from the one the proved package records (QC-10) (`DependencyIdentityMismatch`, `stale_dependency`); stale `package_id`; a source digest that differs (spans would come from another revision); a selection naming no function node; arity or type mismatch; a value outside the declared domain (an `InputRefusal`, carried by `replay` as a `StageFailure::Refused` cause, which yields no parity verdict; C-09 gives the item's terminal value); a recompile that reaches a stage limit (`LimitExceeded`); and a limit above the reader limit each refuse with a structured outcome and no partial substitute. |
 | Equality | lexical over the RFC 8785 encoding of the FR-323 request-identity members (package, selection, inputs, limits, options). |
 
 #### O-27 Replay results
 
 | Field | Decision |
 | --- | --- |
-| Owner | QSL owns the result type (`ReplayResult`, FR-072) and the executor produces it; CG's replay adapter compares parity. IR takes no part in a replay result (OQ-H). |
+| Owner | QSL owns the result type (`ReplayResult`, FR-072) and the executor produces it and settles parity in each arm result's `settle` (FR-072). The orchestrating driver (ADR-011 T-13) calls the executor. CG's parity comparator builds its sealed backend-evidence verdict only from an agreeing `Witness`-arm result (AD-016 Replay-ownership). IR takes no part in a replay result (OQ-H). |
 | Implementing ticket | #231 for the common result type and record carrier; #186 for the `native-run-result/2` serializer and its state-specific payload. |
 | Public type | One typed per-item result carrying the O-16 category, the evaluated value, the FR-351 separating witness when the settlement basis is decisive, the resolved nested regions (O-12), the replay charges, and the executor's toolchain pin. Parity is an identical verdict under the same package and input domain, each verdict taken from the QSpec outcome → verdict map per O-16 category (QC-8); a disagreement is `inconclusive` with a typed cause and is never repaired (AD-016 arrow 7). Agreement on an `Input`-sourced packet settles `reproduced-without-witness` (AD-016 WP9), not backend evidence. |
 | Serialized authority | `native-run-result/2` (FR-352, AD-014) carries the FR-351 record; FR-323 carries per-item dispositions. FR-352 `native-run-result/2` is the replay-result record, and FR-323 keeps the request and the per-item disposition vocabulary (OQ-2 ruling). The per-item result's member `arm` is a sum of the `Witness`-arm and `Input`-arm result types, and each arm result carries its own `settlement` (#231; AD-016 as amended by agent-ix/quire-specification#140, QC-7). |
@@ -975,7 +964,7 @@ mutant is allow-listed (ADR-012 §5.3).
 | C-06 | IR `ClauseKind` (6) → RT observation kind | RT | Each of the six kinds maps to an RT kind or refuses with a typed cause; none is dropped | RT test over all six IR kinds that fixes RT's mapping table (RT work, no ticket, §7); `cargo mutants` on the mapping functions |
 | C-07 | v2 literal ↔ kernel `Value` | QSL emitter, kernel | v2 literal → `Value` is total over the closed `value_kind` set. `Value` → literal is total over the values that have a `value_kind`; any other value refuses with a typed cause. Exact round trip on that set | Round trip of every `value_kind` in the v2 positive fixtures and QSpec complete-value vectors (#213 S-1) |
 | C-08 | kernel `Outcome` → FR-323 disposition | QSL executor | Category-preserving (O-16) | One adverse test per O-16 evaluation row (#213 S-1) |
-| C-09 | `KaniOutcomeKind` → QSL `TerminalValue` | CG | One exhaustive map, O-16 proof column. A vacuous Kani proof maps to `Proved { success_checks: 0 }`, which keeps its check count; `TerminalValue` has no separate vacuous variant, and `TerminalValue::category` puts `Proved { success_checks: 0 }` in the `Inconclusive` category with cause `kani_vacuous_proof` (`TerminalValue::vacuous_proof_cause`) | CG test enumerating all ten kinds against O-16, plus a run mutation of the map that loses the check count (a vacuous proof mapped to `Proved { success_checks: 1 }`, so its category becomes `Success`) and turns C-09 red; `cargo mutants` on the mapping functions |
+| C-09 | `KaniOutcomeKind` with the E9 replay result → QSL `TerminalValue` | CG | One exhaustive map, O-16 proof column. A `Counterexample` maps to `Refuted` only when its `WitnessArmResult` settles `ReproducedWithEvaluatedWitness`; one that settles `Inconclusive` maps to `inconclusive` with cause `replay_parity`; a replay refusal maps to `inconclusive` with cause `replay_refused` and the refusal's catalog code; a replay fault maps to `Failed`. A vacuous Kani proof maps to `Proved { success_checks: 0 }`, which keeps its check count; `TerminalValue` has no separate vacuous variant, and `TerminalValue::category` puts `Proved { success_checks: 0 }` in the `Inconclusive` category with cause `kani_vacuous_proof` (`TerminalValue::vacuous_proof_cause`) | CG test enumerating all ten kinds against O-16, and a `Counterexample` under each `WitnessArmResult` settlement, under a replay refusal and under a replay fault, plus a run mutation of the map that loses the check count (a vacuous proof mapped to `Proved { success_checks: 1 }`, so its category becomes `Success`) and turns C-09 red; `cargo mutants` on the mapping functions |
 | C-10 | Kani run output → transcript → `Witness` | CG backend adapter (parser), QSL `Witness::parse` (admission) | Stores the selected, trimmed assertion block; cover and unwinding refuse | QSL FR-070 admission tests; #231 byte-for-byte envelope round trip |
 | C-11 | `ReplaySource` + bindings → reconstructed arguments keyed by `WireNodeId` | QSL `Witness::decode`, CG | `Witness` decodes its transcript; `Input` carries the canonical assignments. Lossless widening; join by parameter `WireNodeId`; mismatch refuses. The `replay` facade converts the ids to `NodeKey`s at E9 (O-04) | AD-016 seed counterexample vector; CG widening test at `i64::MIN` and `i64::MAX` (agent-ix/quire-contract-codegen#50) |
 | C-12 | Packet + #231 envelope members → FR-323 replay request | CG | Copies every O-25 member and the envelope's state environment and accounting limits, and the S1 to S4 stage limits copied from the proving run; invents none (O-26) | CG contract test (agent-ix/quire-contract-codegen#50); #231 round trip of the request type |
@@ -1031,8 +1020,7 @@ flowchart LR
   Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
   ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
   builds the carrier and #186 the serializer. No build produces both.
-- Exact release pins are authoritative; the current-head lane is a drift check
-  and never a substitute (O-23).
+- Exact release pins are authoritative (O-23).
 
 ### 6. Lane-private representations
 
@@ -1073,7 +1061,7 @@ duplicates that #213 S-2 folds into the O-18 record.
 | #231 | QSL-side envelopes, in the ADR-011 layer-6 `replay` module and part of its public API, which is CG's only route to them (FB-05): proof-result envelope and FR-331 reader (O-24, C-23), counterexample envelope with the O-25 members, replay request type (O-26), result type and record carrier (O-27), round trips and adverse tests. No replay execution. | #213 S-1, QC-13, QC-1, QC-6, QC-8; the proof-result half also waits on QC-9 |
 | #186 | `native-run-result/2` serializer and state payload (O-27), and deletion of `/1` in the same change (OQ-1 ruling). | #231 |
 | #131 / QSL PR #200 | O-01 intake wiring, O-03 native references as `ValueTypeRef::Native` with an adverse test for the `quire/native` refusal. | FCD PR #200 |
-| #215, #226 | O-23 pin-equality tests, heads lane and drift gates; R-09 and R-06 static checks. | #209 accepted |
+| #215, #226 | R-09 and R-06 static checks. | #209 accepted |
 | agent-ix/quire-contract-codegen#50 | C-11 widening, C-12 reconstruction, parity comparison (O-27). agent-ix/quire-contract-codegen#50 uses #231's counterexample envelope and builds no second one, and it targets the QSL executor entry (TK-01), not `runtime::execute`. Amending the agent-ix/quire-contract-codegen#50 body to say so is an owner action. | #231, QC-8 |
 | agent-ix/quire-specification#114 | FR-351 and `native-run-result/2` (O-25, O-27). | — |
 | agent-ix/quire-specification#81, spec-objects-business PR #8 (merged), agent-ix/filament-core-data#172, agent-ix/filament-core-data#173, agent-ix/filament-core-data#199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
@@ -1125,7 +1113,7 @@ open, because each names its contract owner (QSpec) and the blocked work.
 | QC-5 | FR-321: a refusal code for a second selection of the same domain-package identity, if the catalog has none. | #213 S-2 |
 | QC-6 | FR-331 `counterexamples`: an entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript, never both (O-25). | #231 counterexample envelope |
 | QC-7 | AD-016 WP9 as amended by agent-ix/quire-specification#140: the parity carrier is the `ReplaySource` arm, and each arm has its own result type. | agent-ix/quire-contract-codegen#50 parity, #231 result type |
-| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined` and `FamilyOutcome::FamilyEvaluated` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`); the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
+| QC-8 | FR-323 request and FR-331 `counterexamples`: the replay members O-25 and O-26 add: the `ReplaySource` variant and the rule that an `Input`-sourced replay settles `reproduced-without-witness` and never counts as backend evidence; the selected function's `QualifiedName`; the #231 envelope members (state environment, accounting limits, and the S1 to S4 stage limits copied from the proving run); the outcome → verdict map, fixed by QSpec per O-16 category, with `Undefined` and `FamilyOutcome::FamilyEvaluated` never counting as agreement; arguments keyed by parameter node id; the semantic profile selections; the failing node's occurrence key (O-07) in the packet and in the obligation identity (O-09); the O-16 vacuity row (`kani_vacuous_proof`), replay-parity row (`replay_parity`) and replay-refusal row (`replay_refused`, carrying the refusal's catalog code) as FR-331 typed `inconclusive` causes, and a replay fault as FR-331 `failed`; the proof bounds and declared domains; the trace position; the `backend` member (O-19); and the executor toolchain pin in the result (O-27). Remaining work: agent-ix/quire-specification#141. | #231 counterexample envelope and request type, agent-ix/quire-contract-codegen#50 |
 | QC-9 | FR-331: the result value for a `supported` item whose Kani run ends in `Refused`, `InvalidInput`, `IncompleteInput` or `Unavailable`, so the item keeps exactly one terminal record with a typed cause (O-16). | CG C-09, #231 C-23 |
 | QC-10 | FR-322: the member for a reference to a dependency package's node, (`package_id`, node id) (T-3), if FR-322 has none. Resolved: QSpec FR-322 defines `dependency_reference` as `PackageNodeKey{package, node}`, where `package` is the dependency's `quire.package.semantic/v2` identity and `node` is a `WireNodeId` naming the declaration in that dependency's own wire package, resolved only against the named dependency's admitted package and refused `missing_declaration`/`missing-selection` for a `package` absent from `dependency_selections` (FR-322-AC-26). This is T-3's shape. | #213 S-3, the v2 emitter (ADR-011 T-8) |
 | QC-11 | `quire.native.diagnostics/v1`: one catalog code per stage limit kind and one for internal fault (T-4), if the catalog has none. | #213 S-5a (the internal-fault code) and S-5b (each limit-kind code) |
@@ -1158,7 +1146,6 @@ Questions for #209:
 | Q209-4 | Creation and dependency direction of `quire-exact`. ADR-011 X-1 answers it: a leaf crate, extracted first, that QSL, RT and CG depend on. T-6 lists the edge cuts. |
 | Q209-5 | Retirement of IR `replay_with_native_runtime` and the CG → QSL normal edge for the executor (OBS-028, OBS-039, AD-016 WP9). Answered by ADR-011 FB-05 (§3): no backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the public API of the QSL layer-6 `replay` module. T-12 checks it. IR names no QSL type (OQ-H), so CG is the only backend on the `replay` facade. |
 | Q209-6 | Where the diagnostic envelope sits in the module DAG (OBS-016). ADR-011 §6.1 answers it: `diagnostic` is foundation. T-5 fixes the locus. |
-| Q209-7 | Whether QI owns the heads workspace (OBS-031). ADR-011 answers it: QI owns it and #215 implements it. |
 | Q209-8 | Does ADR-011's I2 reader yield checked values? Answered and applied by ADR-011 (`102c8bb`): I2 yields `VerifiedPackage` and `ImportView`, neither checked typestate, and E9 recompiles source (R-10, T-2). |
 
 Questions for #210, answered in ADR-012 §13.5:
@@ -1217,7 +1204,7 @@ Codegen lead ruled this; IR PR #202 records the same fact in IR's AD-001.
 
 | ID | Question | Ruling | Reason | Reopen if |
 | --- | --- | --- | --- | --- |
-| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, its `decode` input and output types `WitnessBinding`, `WitnessValue` and `WitnessValueType`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord`, `ProofResultEnvelope`, `ObligationIdentity`, `ReplayRequest` and `ReplayResult` (O-24, O-25, O-26, O-27). IR names no QSL type. CG, which depends on IR and on the `qsl-replay` facade, maps IR's `KaniOutcome` into `TerminalValue` (C-09), builds the O-25 packet as QSL's `WitnessEnvelope` over the `qsl-replay` witness types, uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10); IR has no obligation identity type. IR keeps `KaniOutcome`, `KaniProfile`, `CapabilityEntry` and its lowering requests, which are its lowering vocabulary, not replay types. CG's replay paths move onto the `qsl-replay` witness and outcome types first, and IR deletes its witness and replay copies after that (TK-04, TK-05). The AD-016 Packet owner amendment is QC-29. | The same concepts were defined in QSL, IR and CG. CG already depends on both IR and `qsl-replay`, so placing the C-09 map and the packet in CG adds no dependency edge. IR stays off QSL (ADR-011 FB-05): an IR → `qsl-replay` edge would close a QSL ⇄ IR repository cycle through `qsl-package` → `quire-contract-model` (ADR-011 FB-11). QSL builds every one of these types (FR-069 to FR-072), including the three `decode` types (O-25). | IR needs a replay type in its own code. |
+| OQ-H | Which repository owns the witness, the replay source, the counterexample envelope, the FR-331 terminal record and the obligation identity type? | QSL, in `qsl-replay`: `Witness`, its `decode` input and output types `WitnessBinding`, `WitnessValue` and `WitnessValueType`, `ReplaySource`, `WitnessEnvelope`, `TerminalValue`, `TerminalRecord`, `ProofResultEnvelope`, `ObligationIdentity`, `ReplayRequest` and `ReplayResult` (O-24, O-25, O-26, O-27). IR names no QSL type. CG, which depends on IR and on the `qsl-replay` facade, maps IR's `KaniOutcome`, with the E9 replay result of a `Counterexample`, into `TerminalValue` (C-09), builds the O-25 packet as QSL's `WitnessEnvelope` over the `qsl-replay` witness types, uses QSL's `ObligationIdentity` directly and keeps the Kani transcript parser in its backend adapter (C-10); IR has no obligation identity type. IR keeps `KaniOutcome`, `KaniProfile`, `CapabilityEntry` and its lowering requests, which are its lowering vocabulary, not replay types. CG's replay paths move onto the `qsl-replay` witness and outcome types first, and IR deletes its witness and replay copies after that (TK-04, TK-05). The AD-016 Packet owner amendment is QC-29. | The same concepts were defined in QSL, IR and CG. CG already depends on both IR and `qsl-replay`, so placing the C-09 map and the packet in CG adds no dependency edge. IR stays off QSL (ADR-011 FB-05): an IR → `qsl-replay` edge would close a QSL ⇄ IR repository cycle through `qsl-package` → `quire-contract-model` (ADR-011 FB-11). QSL builds every one of these types (FR-069 to FR-072), including the three `decode` types (O-25). | IR needs a replay type in its own code. |
 
 Owner ruling (2026-09-29), SC-Q1 union kernel shape (ADR-012 §16.11). The
 ADR-013 owner ruled this and, per this record's Status (a #209, #210, #222
@@ -1238,7 +1225,7 @@ opened.
 | TK-02 | The v2 emitter (AD-016 WP6, O-02, C-03). Covered by ADR-011 T-8 (M-4); no second ticket. | QSL (ADR-011 T-8) |
 | TK-03 | RT and CG adoption of `quire-exact` (AD-016 WP5a, WP5b) and the RT C-06 mapping table. The QSL-side extraction is ADR-011 T-6 and the RT agreement retarget ADR-011 T-9. | RT and CG |
 | TK-04 | IR: FR-322 reader code completeness (OBS-035); the raw-byte agreement-vector accessor in `quire-contract-model` (ADR-011 §7.1); and deletion of IR's `Witness`, `ReplaySource`, packet, terminal-record, `WitnessBinding`, `WitnessValue` and `WitnessValueType` copies (OQ-H), after CG's replay paths move onto the `qsl-replay` witness and outcome types (TK-05). IR keeps `KaniOutcome`, `KaniProfile`, `CapabilityEntry` and its lowering requests. FR-031-AC-3 is retired on the IR side, because IR no longer crosses into replay. Remaining work: agent-ix/quire-contract-ir#144, agent-ix/quire-contract-ir#146. | IR |
-| TK-05 | CG obligation identity conformance (O-09, C-19, C-20, C-22, C-25); the WP9 map (C-09) from IR's `KaniOutcomeKind` into QSL's `TerminalValue`, with the `kani_vacuous_proof` row; the O-25 packet, built as QSL's `WitnessEnvelope` over the `qsl-replay` witness types (#231, FR-070); and CG's replay paths unified onto the `qsl-replay` witness and outcome types. | CG |
+| TK-05 | CG obligation identity conformance (O-09, C-19, C-20, C-22, C-25); the WP9 map (C-09) from IR's `KaniOutcomeKind` and the E9 replay result into QSL's `TerminalValue`, with the `kani_vacuous_proof`, `replay_parity` and `replay_refused` rows; the O-25 packet, built as QSL's `WitnessEnvelope` over the `qsl-replay` witness types (#231, FR-070); and CG's replay paths unified onto the `qsl-replay` witness and outcome types. | CG |
 | TK-06 | FR-323 and FR-331 replay and counterexample members: QC-1, QC-6, QC-8, QC-9. | QSpec (`quire-specification`) |
 | TK-07 | FR-201 digest domains: QC-2 and QC-4. | QSpec |
 | TK-08 | Model-owned node-identity vectors (QC-3), FR-321 duplicate-selection code (QC-5), FR-322 dependency node reference (QC-10, resolved by FR-322's `dependency_reference`), catalog codes for stage limits and internal fault (QC-11), the node-identity preimage owner scope and the structural-node arm (QC-18), the unknown-node-kind code (QC-19), the parameter and function node shapes (QC-24) and the `dependencies` rule for every node kind with the all-families fixture corrections (QC-27). | QSpec |
@@ -1275,13 +1262,13 @@ Primary-owner items:
 | OBS-019 | O-13, O-14: one value kernel; lane types private. |
 | OBS-020 | O-13: kernel rational semantics canonical. |
 | OBS-021 | O-12: the occurrence-key-keyed source map (O-07), occurrence key → regions, is the authority; body↔document map is a source-stage helper. |
-| OBS-022 | O-23: revision literals checked equal to the lock by a test (#215). |
+| OBS-022 | O-23: `Cargo.toml` and `Cargo.lock` are the one revision authority. QSL's native package reader in `src/package` deletes its `ir_revision` and `STANDARD` revision literals. |
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
 | OBS-025 | O-21: `model::accounting` does not fold into the kernel meter; it is a separate layer-3 `model` rung meter over disjoint counters, and only `value::accounting` consolidates onto it. |
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: QSL `Witness{transcript}` admitted through `parse`, with derived accessors; IR's copy is deleted (OQ-H). |
 | OBS-032 | O-13: single kernel ends the RT/QSL drift. |
-| OBS-034 | O-23, T-9: pin literals and `pins.json` checked equal to the lock (#215); `RevisionPin` representation. |
+| OBS-034 | O-23, T-9: `Cargo.toml` and `Cargo.lock` are the one revision authority, so CG deletes its pin literals and `pins.json`; `RevisionPin` representation. |
 | OBS-035 | O-17: FR-322 code set canonical; IR conformance work. |
 
 Secondary-owner items (the #211 part only):
@@ -1289,7 +1276,7 @@ Secondary-owner items (the #211 part only):
 | Item | Decision |
 | --- | --- |
 | OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
-| OBS-031 | O-23: the pin versus current-head rule; QI ownership Q209-7. |
+| OBS-031 | O-23: release pins are the only qualified dependency selection. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
 | OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling). ADR-011 closes OBS-039 against the amended #205 text. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |
@@ -1299,7 +1286,7 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
 | Item | Disposition |
 | --- | --- |
 | #120 | O-14, O-03, O-05: IR type-node shape, native references and effective identity. |
-| #132 | O-23 and SEAM-3: pins checked equal to the lock; the seam's lane-private types are deleted with it. |
+| #132 | SEAM-3: the seam's lane-private types are deleted with it. |
 | #164 | O-14: the canonical type representation; `TypeEnvironment` stays in layer 3. |
 | #199, #195, #193, #184 | O-17 refusal causes and catalog codes; O-21 kernel meter. |
 | #183 | O-21: bounds and accounting. |
