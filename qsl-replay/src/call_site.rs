@@ -11,7 +11,8 @@
 //! and locates one selection in the result: the compiled package's own
 //! `package_id` and a named function's parameters, each paired with its own
 //! node id, a named operation's anchor, frame and state clause identities,
-//! or a named state clause's identities. Every node id is the same
+//! or a named state clause's identities. It also returns the compiled
+//! package's own `quire.checked-package/v2` bytes. Every node id is the same
 //! `WireNodeId` a `CanonicalAssignment`, a witness transcript or a
 //! counterexample names, joined by declared identity, never by position (ADR-013 O-25).
 //! It builds no [`crate::execute::replay`] call and no
@@ -81,14 +82,18 @@ mod sealed {
 }
 
 /// What [`call_site`] returns: the compiled package's own content-addressed
-/// identity and what the selection located, a [`FunctionSite`], an
-/// [`OperationSite`] or a [`ClauseSite`].
+/// identity, its lowered bytes, and what the selection located, a
+/// [`FunctionSite`], an [`OperationSite`] or a [`ClauseSite`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallSite<S> {
     /// The compiled package's `package_id`, as a `quire.package.semantic/v2`
     /// digest record -- the same shape `ReplayRequestWire::package_id` and
     /// a witness envelope's package identity carry.
     pub package_id: DigestRecord,
+    /// The compiled package's `quire.checked-package/v2` bytes, exactly as
+    /// the S4 emitter wrote them when it minted `package_id`: their
+    /// `identity_preimage` member's RFC 8785 bytes digest to `package_id`.
+    pub package: Vec<u8>,
     /// The located function or operation.
     pub site: S,
 }
@@ -235,7 +240,11 @@ pub fn call_site<'a, S: CallSiteSelection>(
     .map_err(|refusal| Box::new(CallSiteRefusal::from(*refusal)))?;
     let package_id = compiled.emitted.package_id().record();
     let site = selection.locate(&compiled.package, package_id)?;
-    Ok(CallSite { package_id, site })
+    Ok(CallSite {
+        package_id,
+        package: compiled.emitted.bytes().to_vec(),
+        site,
+    })
 }
 
 impl From<CompileRefusal> for CallSiteRefusal {
@@ -582,5 +591,39 @@ mod tests {
             }
             other => panic!("expected UnknownFunction, got {other:?}"),
         }
+    }
+
+    /// FR-121-AC-12: a `CallSite` carries the compiled package's
+    /// `quire.checked-package/v2` bytes, exactly the S4 emitter's, and the
+    /// RFC 8785 bytes of their `identity_preimage` member digest, under
+    /// `quire.package.semantic/v2`, to the `CallSite`'s own `package_id`,
+    /// which the bytes' own `package_id` member also spells.
+    #[trace("TC-516", "FR-121-AC-12")]
+    #[test]
+    fn call_site_returns_the_checked_package_bytes_its_package_id_names() {
+        let site = function_site(UNIT.as_bytes(), "f").expect("f is a declared function");
+        let compiled = crate::spine::compile(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            UNIT.as_bytes(),
+            &qsl_semantics::model::intake::package_input([]),
+            &DependencyInput::default(),
+            crate::spine::SpineLimits::default(),
+        )
+        .expect("the fixture unit compiles");
+        assert_eq!(site.package, compiled.emitted.bytes());
+
+        let wire: serde_json::Value =
+            serde_json::from_slice(&site.package).expect("the package bytes are JSON");
+        assert_eq!(wire["contract_version"], "quire.checked-package/v2");
+        let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
+            .expect("MAX_DEPTH is within MAX_DEPTH");
+        let digest = quire_canonical::sha256(&wire["identity_preimage"], limits)
+            .expect("the identity preimage is canonical JSON");
+        assert_eq!(
+            DigestRecord::mint(DigestDomain::PackageSemanticV2, *digest.as_bytes()),
+            site.package_id
+        );
+        assert_eq!(wire["package_id"]["digest"], site.package_id.hex());
     }
 }

@@ -57,7 +57,10 @@ execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
 `SourceHolder` and `OperationName`, and the kernel `Origin` and `Role`
-that `OccurrenceKey::new(WireNodeId, Origin)` takes. A caller reads a
+that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
+re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
+`DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
+kernel `Integer`, `IntegerInterval` and `EmptyInterval`. A caller reads a
 library identity, catalog code or host cause through the methods of the
 value that carries it (`LibraryName::as_str`, `DependencyInputRefusal::code`
 and `host_cause`).
@@ -84,8 +87,10 @@ declaration by declared identity, never by position.
 
 ## Outputs
 
-- A `CallSite` on success: `package_id` (`DigestRecord`) and `site`, whose
-  type the selection decides:
+- A `CallSite` on success: `package_id` (`DigestRecord`), `package`
+  (`Vec<u8>`, the compiled package's `quire.checked-package/v2` bytes
+  exactly as the S4 emitter wrote them when it minted `package_id`), and
+  `site`, whose type the selection decides:
   - for a `QualifiedName`, a `FunctionSite`: `parameters`,
     `Vec<(Identifier, WireNodeId)>`, in declared order;
   - for an `OperationName`, an `OperationSite`: `anchor` and `frame`
@@ -167,6 +172,8 @@ declaration by declared identity, never by position.
 | FR-121-AC-9 | The AC-6 unit with no domain package supplied refuses `CallSiteRefusal::ModelIntake` with the alias `Config`. | Test (TC-516) |
 | FR-121-AC-10 | For the AC-4 unit, a `DependencyInput` supplying the imported library from a source with the unit's own authority and identity refuses `CallSiteRefusal::DependencyInput`, carrying `DependencyInputRefusal::SharedOwner` with `first` the unit, `second` the library and that shared authority and identity. | Test (TC-516) |
 | FR-121-AC-11 | For the AC-4 unit, a `DependencyInput` supplying the imported library from source bytes that do not parse refuses `CallSiteRefusal::Dependency`, its `path` exactly that library's identity. | Test (TC-516) |
+| FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the RFC 8785 bytes of its `identity_preimage` member digest, under `quire.package.semantic/v2`, to the `CallSite`'s `package_id`. | Test (TC-516) |
+| FR-121-AC-13 | From outside the crate, a `DeclaredDomain` over an integer range on a parameter node `call_site` returned is built through `qsl_replay`'s root paths alone (`ProofBound`, `DomainKey`, `FiniteBound`, `Integer`), its kind is `FiniteBoundKind::IntegerRange` and its interval equals the `IntegerInterval` built there; an inverted range refuses `EmptyFiniteBound::InvertedIntegerRange` through `FiniteBound::integer_range` and `EmptyInterval` through `IntegerInterval::new`. | Test (TC-516) |
 
 ## Dependencies
 
