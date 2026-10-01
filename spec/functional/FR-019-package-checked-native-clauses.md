@@ -35,7 +35,7 @@ with actual package-stage usage and no partial package.
 ## Behavior
 
 The artifact identifies original native/formal source, selected native models,
-the exact adopted semantic definitions, every authored clause and resolved
+the semantic selection, every authored clause and resolved
 occurrence, and every runtime input obligation. Its model artifacts preserve
 typed declarations, nominal scalar roles, units, bounds, object universes and
 operation/frame declarations, including unused declarations in selected models.
@@ -62,7 +62,7 @@ method, plan, result or evidence schema is introduced.
 | FR-019-AC-2 | The package retains exact native/formal source identity and byte digest while excluding the local display path from artifact identity. | Test |
 | FR-019-AC-3 | Every selected import retains its alias, owner, complete native-model artifact and digest; changed unused declarations or roles in a selected model change package bytes. | Test |
 | FR-019-AC-4 | Every formal/local resolved occurrence and runtime context/universe/observation/operation/frame obligation matches the retained CheckedPackage. | Test |
-| FR-019-AC-5 | The package identifies both adopted base-profile and semantic-rules definitions by exact revision/digest without claiming that the old profile-file digest covers the amendment. | Test |
+| FR-019-AC-5 | **RETIRED.** The package carried base-profile and semantic-rules definition members, each an exact revision and digest. Both members are deleted from the wire: the revisions restated version pins that `Cargo.toml` and `Cargo.lock` own, and nothing recomputed either digest over a definition's bytes, so a reader only compared one recorded value with another. | Retired |
 | FR-019-AC-6 | Required features are the exact duplicate-free sorted set derived from all selected model declarations and source syntax, including unused declarations and unreachable syntax. | Test |
 | FR-019-AC-7 | Every clause retains available native-reference and unlowered executable-IR dispositions with original clause identity and location; no IR proof view is exported as executable code. | Test |
 | FR-019-AC-8 | Repeated construction with identical checked inputs emits identical bytes and digests; changing runtime populations or evaluator budgets cannot change the static artifact. | Test |

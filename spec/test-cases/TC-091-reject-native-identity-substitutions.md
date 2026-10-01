@@ -18,7 +18,7 @@ expected canonical content and begin with a successfully checked native fixture.
 
 ## Test Procedure
 
-Independently change each semantic-definition selection, native/formal source
+Independently change each semantic selector, native/formal source
 binding, selected used/unused model declaration or role, authored clause,
 resolution, location and runtime obligation in canonical fixture data. Compare
 the expected hash with the original. For admissible source/model/authorship

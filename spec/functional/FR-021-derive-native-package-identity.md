@@ -18,7 +18,7 @@ When a native package identity is derived, the compiler shall hash the complete 
 
 The actual CheckedPackage, from which the identity derivation reads the static
 manifest defined in the shared wire contract, including original source,
-selected models, semantic definitions, feature set, authored clauses, resolution
+selected models, semantic selection, feature set, authored clauses, resolution
 and runtime obligations. The exact projection and byte algorithm are defined in
 [the package identity contract](../../docs/native-linked-packages.md#native-static-identity).
 
@@ -48,7 +48,7 @@ existing closed shared-reference schemas are not silently extended here.
 | --- | --- | --- |
 | FR-021-AC-1 | Independently authored canonical bytes and domain-prefix hash vectors match the producer, including Unicode escaping and a revision above the binary64 exact-integer range. | Test |
 | FR-021-AC-2 | Reordered JSON members and unique feature order preserve reconstructed canonical identity while their differing raw artifact bytes retain distinct ByteDigests. | Test |
-| FR-021-AC-3 | Each changed semantic definition, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test |
+| FR-021-AC-3 | Each changed semantic selector, source binding, selected model declaration/role, authored clause, resolution or runtime obligation changes the independently computed static identity. | Test |
 | FR-021-AC-4 | The canonical input omits projection availability, and a forged excluded projection claim still refuses package reconstruction despite an unchanged canonical identity. | Test |
 | FR-021-AC-5 | An unknown canonical domain/version/algorithm refuses selection; a wrong digest or raw/IR/JCS digest substitution refuses correspondence without a package. | Test |
 | FR-021-AC-6 | Canonical derivation obeys its separately reported package-pass limits before excess work; runtime populations, evaluator budgets and local display paths do not enter its bytes. | Test |

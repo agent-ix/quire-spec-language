@@ -40,12 +40,6 @@ complete output with these files; a private unit test observes the actual
 canonical pass and compares its bytes before hashing. Neither test rewrites
 fixtures or substitutes the package compiler.
 
-| Family | Canonical SHA-256 |
-| --- | --- |
-| minimal | `d32fe8abfce4f244d618bb9aaa4ae3d682976768de848e40a6d70041a55ed075` |
-| controls | `47398e63f9746c622a8577b16fab876dba194cb2e7d30fe04fe359bdc8b62aae` |
-| multiple | `ded21240a09f3d81f2bf30d5f77c28c27275d25c9b08b922b6afd68668cd7604` |
-
 The Rust maintenance example `examples/author_native_package_vectors.rs` writes
 candidate files from the independent recipe above. It calls model admission
 for the upstream input, but never the package producer, parser, linker or

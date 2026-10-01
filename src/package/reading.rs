@@ -184,45 +184,12 @@ fn select(
             expected.checking_contract,
             Code::UnknownProfile,
         ),
-        (
-            "ir_revision",
-            actual.ir_revision.as_str(),
-            expected.ir_revision,
-            Code::UnknownProfile,
-        ),
     ] {
         if actual != expected {
             return Err(request.error(
                 code,
                 path(&["semantics", field]),
                 "unsupported package semantic selection",
-            ));
-        }
-    }
-    for (field, actual, expected) in [
-        (
-            "base_definition",
-            &actual.base_definition,
-            expected.base_definition,
-        ),
-        (
-            "rules_definition",
-            &actual.rules_definition,
-            expected.rules_definition,
-        ),
-    ] {
-        if actual.revision != expected.revision {
-            return Err(request.error(
-                Code::UnknownProfile,
-                path(&["semantics", field, "revision"]),
-                "unsupported semantic definition revision",
-            ));
-        }
-        if actual.digest.0.to_string() != expected.digest {
-            return Err(request.error(
-                Code::UnknownProfile,
-                path(&["semantics", field, "digest"]),
-                "unsupported semantic definition bytes",
             ));
         }
     }
