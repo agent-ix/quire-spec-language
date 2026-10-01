@@ -4,6 +4,9 @@ resolver = "2"
 
 [workspace.dependencies]
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main" }
+# QSpec's authored definition documents (the complete value lock and the
+# native diagnostics catalog), read by reference rather than copied.
+quire-specification = { package = "quire-specification-qualification", git = "https://github.com/agent-ix/quire-specification", branch = "task/std-130-definition-lock-accessor" }
 
 [package]
 name = "quire-spec-language"

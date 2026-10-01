@@ -163,9 +163,10 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
 // (ADR-011 §6.1).
 pub use definition::{
-    divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
-    PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
+    divide, modulo, native_diagnostics_catalog, AdmittedIeeeProfile, AdmittedIntegerDivision,
+    AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
+    DefinitionRevision, LockReadError, PackageCause, PackageRefusal, PackageRefusalCode,
+    SelectionRefusalCode,
 };
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/

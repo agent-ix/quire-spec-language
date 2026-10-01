@@ -17,7 +17,7 @@ use qsl_semantics::check::{LockEvidence, PackageDeclarations};
 use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
-use qsl_semantics::value::{DefinitionReference, DefinitionRevision};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
 
 use crate::check::source;
@@ -55,16 +55,10 @@ fn record(index: usize, records: usize) -> CompositeDeclaration {
 
 /// QSpec's text-profile definition, the law each text leaf names.
 fn text_profile() -> DefinitionReference {
-    DefinitionReference {
-        authority: "agent-ix".to_owned(),
-        identity: "quire.value.text.unicode-17.0.0/v1".to_owned(),
-        revision: DefinitionRevision {
-            namespace: "quire-draft".to_owned(),
-            value: "1-draft.1".to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "cd4a985a0d7d2f2b3d3625caee3787832c00c5244e805fb49e1c2c7075b9de5e".to_owned(),
-    }
+    DefinitionLock::pinned()
+        .entry(CatalogRole::TextProfile)
+        .expect("QSpec's lock has a `text_profile` row")
+        .reference()
 }
 
 /// `records` mutually referencing, Text-reachable records and one

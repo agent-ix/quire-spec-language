@@ -1498,6 +1498,7 @@ dependencies = [
  "qsl-foundation",
  "quire-canonical",
  "quire-exact",
+ "quire-specification-qualification",
  "serde",
  "serde_json",
  "sha2",
@@ -1609,6 +1610,11 @@ dependencies = [
  "unicode-normalization",
  "xtask",
 ]
+
+[[package]]
+name = "quire-specification-qualification"
+version = "0.0.0"
+source = "git+https://github.com/agent-ix/quire-specification?branch=task%2Fstd-130-definition-lock-accessor#ce802b78d2569db659890e1b8a4c587e850192ee"
 
 [[package]]
 name = "quire-verification-contracts"

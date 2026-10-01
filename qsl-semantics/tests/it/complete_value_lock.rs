@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The closed `quire.value.definition-lock/v1` catalog and its package
-//! selection admission, exercised directly against the compiled-in lock with
-//! synthetic trigger/role vectors.
+//! QSpec's `quire.value.definition-lock/v1` catalog, read by reference, and
+//! its package selection admission, exercised directly against the
+//! compiled-in lock with synthetic trigger/role vectors.
 
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, SelectionRefusalCode, Trigger};
+use qsl_semantics::value::{
+    native_diagnostics_catalog, CatalogRole, DefinitionLock, LockReadError, SelectionRefusalCode,
+};
+use sha2::{Digest, Sha256};
 
 fn lock() -> &'static DefinitionLock {
     DefinitionLock::pinned()
@@ -23,7 +26,6 @@ fn always_roles() -> Vec<&'static str> {
 #[test]
 fn the_catalog_covers_every_role_exactly_once() {
     let lock = lock();
-    assert_eq!(lock.revision(), "1-draft.1");
     let roles: BTreeSet<_> = lock.catalog().iter().map(|entry| entry.role).collect();
     assert_eq!(roles, CatalogRole::ALL.into_iter().collect());
     for entry in lock.catalog() {
@@ -38,6 +40,68 @@ fn the_catalog_covers_every_role_exactly_once() {
         assert!(!entry.revision_value.is_empty(), "{:?}", entry.role);
         assert_eq!(lock.entry(entry.role), Some(entry));
     }
+}
+
+/// The compiled-in QSpec lock reads, so `DefinitionLock::pinned` cannot
+/// panic, and its rows are QSpec's own: each row's identity and digest are
+/// the ones QSpec's document records for that role.
+#[test]
+fn the_compiled_in_lock_reads() {
+    let read = DefinitionLock::read(quire_specification::COMPLETE_VALUE_LOCK)
+        .expect("QSpec's complete-value-lock.json reads");
+    assert_eq!(&read, lock());
+    let document: serde_json::Value =
+        serde_json::from_str(quire_specification::COMPLETE_VALUE_LOCK).unwrap();
+    let rows = document["qualification_catalog"].as_array().unwrap();
+    assert_eq!(rows.len(), read.catalog().len());
+    for (row, entry) in rows.iter().zip(read.catalog()) {
+        assert_eq!(row["role"], entry.role.as_str());
+        assert_eq!(row["definition"]["identity"], entry.identity);
+        assert_eq!(row["definition"]["digest"], entry.digest);
+    }
+    assert_eq!(read.revision(), document["revision"]);
+}
+
+/// A lock naming a role QSL has no `CatalogRole` for, or missing a role,
+/// does not read.
+#[test]
+fn a_lock_with_an_unknown_or_missing_role_does_not_read() {
+    let unknown = quire_specification::COMPLETE_VALUE_LOCK
+        .replacen("\"role\": \"edition\"", "\"role\": \"editio\"", 1)
+        .leak();
+    assert!(matches!(
+        DefinitionLock::read(unknown),
+        Err(LockReadError::UnknownRole(role)) if role == "editio"
+    ));
+    let duplicated = quire_specification::COMPLETE_VALUE_LOCK
+        .replacen("\"role\": \"root\"", "\"role\": \"edition\"", 1)
+        .leak();
+    assert!(matches!(
+        DefinitionLock::read(duplicated),
+        Err(LockReadError::RoleRowCount {
+            role: CatalogRole::Edition,
+            count: 2
+        })
+    ));
+}
+
+/// The diagnostics catalog's `DefinitionRef` is QSpec's document: its
+/// identity and revision from the document's header, its digest the SHA-256
+/// of the document's bytes.
+#[test]
+fn the_native_diagnostics_catalog_reads_its_header() {
+    let catalog = native_diagnostics_catalog();
+    let document = quire_specification::NATIVE_DIAGNOSTICS;
+    assert_eq!(catalog.identity, "quire.native.diagnostics/v1");
+    assert!(document.contains(&format!(
+        "Interpretation identity: `{}`; revision: `{}`.",
+        catalog.identity, catalog.revision.value
+    )));
+    assert_eq!(
+        catalog.digest,
+        format!("{:x}", Sha256::digest(document.as_bytes()))
+    );
+    assert_eq!(catalog.digest_domain, "quire.definition.bytes/v1");
 }
 
 #[trace("QSpec-TC-192")]
@@ -59,16 +123,13 @@ fn admit_selection_accepts_every_trigger_combination_exactly_once() {
     assert_eq!(no_trigger.division_profile(), None);
 
     let text_bearing = accept(&["text_bearing"], &["text_profile"]);
-    assert_eq!(
-        text_bearing.triggers(),
-        &BTreeSet::from([Trigger::TextBearing])
-    );
+    assert_eq!(text_bearing.triggers(), &BTreeSet::from(["text_bearing"]));
     assert_eq!(text_bearing.division_profile(), None);
 
     let ieee_operation = accept(&["ieee_operation"], &["ieee_profile"]);
     assert_eq!(
         ieee_operation.triggers(),
-        &BTreeSet::from([Trigger::IeeeOperation])
+        &BTreeSet::from(["ieee_operation"])
     );
 
     for role in [
@@ -79,7 +140,7 @@ fn admit_selection_accepts_every_trigger_combination_exactly_once() {
         let division = accept(&["integer_div_rem"], &[role]);
         assert_eq!(
             division.triggers(),
-            &BTreeSet::from([Trigger::IntegerDivRem]),
+            &BTreeSet::from(["integer_div_rem"]),
             "{role}"
         );
         assert!(division.division_profile().is_some(), "{role}");
@@ -91,11 +152,7 @@ fn admit_selection_accepts_every_trigger_combination_exactly_once() {
     );
     assert_eq!(
         every_trigger.triggers(),
-        &BTreeSet::from([
-            Trigger::TextBearing,
-            Trigger::IeeeOperation,
-            Trigger::IntegerDivRem
-        ])
+        &BTreeSet::from(["text_bearing", "ieee_operation", "integer_div_rem"])
     );
     assert!(every_trigger.division_profile().is_some());
 }
