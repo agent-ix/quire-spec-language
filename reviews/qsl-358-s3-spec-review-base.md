@@ -65,3 +65,12 @@ Round 1 at 35d3cc0c (fix commit 35d3cc0c).
 | FND-003 | fixed | 35d3cc0c: row 915 drops `semantic_node`. Row 917 says it is the compile side and that its vocabulary, `check_terms`, `CanonicalNodeId` and `IDENTITY_LIMITS` are in SV. Row 914 has one `semantic_node` clause. |
 | FND-004 | fixed | 35d3cc0c: the "K is a leaf" sentence names the structural enum declaration and the definition vocabulary. The SV bullet states the enumeration and definition compile-side halves and that "SV takes enum declaration and member keys as given". It adds the `EnumValue::variant` retype sentence. |
 | FND-005 | still-open | New this round. X-6 still lists `definition`, `enumeration`, `containment` and `declaration` as whole `qsl-semantics` modules once rebased onto main; fix it in the rebase. |
+
+Round 2 at 799e33b8 (rebased onto main 3802cf1f; fix commit 799e33b8).
+`git range-diff` marks the four earlier slice-3 commits `=` (identical
+patches). The non-spec, non-reviews diff `3802cf1f..799e33b8` is byte-identical
+to `9d4a29fd..35d3cc0c`, so the rebase changed no code.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 799e33b8: X-6 lists only the layer-3 remainder in `qsl-semantics`: `definition`'s lock catalog and admission, the compile-side halves of `enumeration`, `semantic_node` and `unit`, `environment_stage`, `member` and `model_query`. It names every SV item: `stop`, `quantity`, `declaration`, `containment`, the runtime halves of `unit` and `enumeration` (including `EnumDeclaration`), the `semantic_node` vocabulary, `check_terms`, `CanonicalNodeId`, `IDENTITY_LIMITS` and the `definition` vocabulary. This agrees with rows 715, 914, 915 and X-11. |
