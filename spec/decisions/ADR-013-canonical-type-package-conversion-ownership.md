@@ -119,7 +119,8 @@ ADR-011 E9, the one exception R-06 names.
 
 One RFC 8785 JCS implementation produces every RFC 8785 encoding: the
 `quire-canonical` crate (`agent-ix/quire-canonical`; implementing ticket
-PLAT-987, adopted, IR-274 and PLAT-989). Every normalized identity
+PLAT-987). QSL encodes through it. IR's adoption (IR-274) and quoin's
+(PLAT-989) are required. Every normalized identity
 above and every lexical comparison over an RFC 8785 encoding (O-24, O-26,
 O-27) encodes through it, in every repository that produces or reads one. It
 orders object members by UTF-16 code unit itself, so its bytes do not depend
@@ -376,7 +377,7 @@ checkers; neither is a semantic authority.
 | Owner | QSL. Stage order is ADR-011's (#209): S3 check, then the S4 link step. |
 | Implementing ticket | #213 S-3. |
 | Public type | One nominal type per stage output (T-1): unchecked `ParsedSource`; checked `CheckedGraph` (S3) and `CheckedPackage` (S4 in-process, defined in layer-4 `package`, with `call` in `value::expression`); packaged `EmittedPackage` (v2 bytes with their `package_id`); wire-admitted `VerifiedPackage` and `ImportView` (I2, both in layer-3 `library`, fields and constructors private; the verified binding `verify_binding` and the ADR-011 §4 condition-1 witness minter `SupportedV2Wire::attest_ir_admitted_v2` are `pub` for the X-6 crate boundary, and arch-lint rule T12-E confines the minter's callers to layer-4 `qsl-package`'s `checked_v2`, as T12-B does for the `pub` kernel `NodeKey` constructor, O-04). `ResolvedSourcePackage` (complete-V1 lane C2) maps to I2 and `library` (ADR-011 §8) and is replaced by `VerifiedPackage` and `ImportView`. `checking::CheckedPackage<'a>` is lane-private (§6). |
-| Invariants | The checked type has no public constructor and no conversion from an unchecked or wire-admitted value. A package with an error diagnostic produces no checked package (AD-016 arrow 1). Wire-admitted values, including `protocol_artifact` reads and v2 bytes, never become checked typestate (R-10); the replay executor obtains a `CheckedPackage` by recompiling digest-addressed source (O-26). |
+| Invariants | The checked type has no public constructor and no conversion from an unchecked or wire-admitted value. A package with an error diagnostic produces no checked package (AD-016 arrow 1). Wire-admitted values, including `protocol_artifact` reads and v2 bytes, never become checked typestate (R-10); the replay executor obtains a `CheckedPackage` by recompiling digest-addressed source (O-26). S3 refuses every recursive call-graph component with an unproved `decreases` obligation (QSpec FR-146), so a checked package, and every IR-admitted v2 package emitted from one, has every `decreases` measure discharged; admission carries the discharge, and the v2 wire has no per-function termination flag. |
 | Serialized authority | None for unchecked and checked; `quire.checked-package/v2` for packaged. |
 | Conversions | unchecked → checked graph (checker only); checked graph → checked package (link step only); checked package → packaged (emitter only); packaged bytes → `VerifiedPackage` (the layer-4 `package` reader reads the bytes and calls down into layer-3 `library`, which checks the §4 binding and constructs the value, T-2); `VerifiedPackage` → `ImportView` (`library`). No reverse conversion, and no conversion into a checked type from wire bytes. |
 | Validation and diagnostics | Check refusals (O-17); `compile_fail` tests for every forbidden construction. |

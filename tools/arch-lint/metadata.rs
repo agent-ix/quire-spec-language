@@ -328,6 +328,51 @@ mod tests {
         );
     }
 
+    /// tc_arch_lint_metadata_007: the kernel leaf `quire-exact`, git-sourced
+    /// from the QSL repository, classifies as no ecosystem repository, so an
+    /// RT dependency on it yields no edge and no finding; RT's dependency on
+    /// `qsl-eval`, from the same QSL git source, is still an RT -> QSL edge
+    /// and an FB-05 violation.
+    #[trace("TC-156", "FR-059-AC-8")]
+    #[test]
+    fn tc_arch_lint_metadata_007_quire_exact_leaf_is_exempt_but_qsl_eval_is_not() {
+        let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let document = json!({
+            "packages": [
+                {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": qsl_git},
+                {"id": "eval 0.1.0", "name": "qsl-eval", "source": qsl_git},
+            ],
+            "resolve": {
+                "nodes": [
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]},
+                        {"name": "qsl_eval", "pkg": "eval 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]}
+                    ]},
+                    {"id": "exact 0.1.0", "deps": []},
+                    {"id": "eval 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]}
+                    ]}
+                ]
+            }
+        });
+        let edges = parse_edges(&document).unwrap();
+        let expected = Edge {
+            from: Repo::Rt,
+            to: Repo::Qsl,
+            kind: EdgeKind::Normal,
+            via_crate: "qsl-eval".to_owned(),
+        };
+        assert_eq!(edges, vec![expected.clone()]);
+        let report = crate::graph::check(&edges);
+        assert_eq!(report.fb05.len(), 1, "{report:?}");
+        assert_eq!(report.fb05[0].edge, expected);
+        assert!(report.fb11.is_empty(), "{report:?}");
+    }
+
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four
     /// ADR-011 repositories (for example `serde`) contributes no edge.
     #[trace("TC-156")]

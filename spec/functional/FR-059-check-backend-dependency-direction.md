@@ -43,7 +43,10 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 The check SHALL classify a resolved package as one of the four repositories by
 package name and dependency source URL, treating `quire-contract-model` (the
 crate name quire-contract-ir's workspace member publishes under) as
-`quire-contract-ir`.
+`quire-contract-ir`. The check SHALL classify the package `quire-exact` as no
+ecosystem repository, wherever it is sourced from: it is the kernel leaf
+(ADR-011 §6.1 "K is a leaf", FB-05), so an edge into it closes no cycle. Every
+other package sourced from the QSL repository classifies as QSL.
 
 The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
@@ -96,6 +99,7 @@ unstated clone state.
 | FR-059-AC-5 | An acyclic graph with edges only running toward QSL and CG reports no FB-11 violation. | Test (TC-156) |
 | FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
 | FR-059-AC-7 | A local `--ir`/`--rt`/`--cg` clone whose head does not match that repository's remote `main` fails distinctly, naming both revisions and the url; a clone that matches passes; `--offline` skips the comparison; every resolved revision, including `--qsl`'s, is printed regardless of outcome. | Test (TC-156) |
+| FR-059-AC-8 | A resolved RT dependency on the git-sourced `quire-exact` yields no edge and no finding; a resolved RT dependency on another crate sourced from the QSL repository, such as `qsl-eval`, yields an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 
 ## Dependencies
 
