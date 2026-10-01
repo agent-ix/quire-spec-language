@@ -89,7 +89,7 @@ names different artifacts in each.
 | TC-208 | The S7 seam probe fails to compile the registry arm on an unhandled capability-kind variant | Integration | P1 | FR-080-AC-5 | 🚧 No tagged test; `make seam-probe` (part of `make ci`) confirms the S7 location `qsl-route/src/lib.rs::same_kind` |
 | TC-177 | The proof-result envelope maps every FR-331 outcome to its exact O-16 category | Property | P1 | FR-069-AC-1 | ✅ Passed locally |
 | TC-178 | The proof-result reader refuses an unknown version, vocabulary, or oversized envelope before consumption | Unit | P1 | FR-069-AC-2, FR-069-AC-4 | ✅ Passed locally |
-| TC-179 | A positive proof-result envelope round-trips its backend identity, tool pin and dispositions exactly | Unit | P1 | FR-069-AC-3 | ✅ Passed locally |
+| TC-179 | A positive proof-result envelope round-trips its backend identity and dispositions exactly | Unit | P1 | FR-069-AC-3 | ✅ Passed locally |
 | TC-180 | The witness envelope stores the transcript once and derives every other fact from it | Unit | P1 | FR-070-AC-1 | ✅ Passed locally |
 | TC-181 | The witness envelope refuses a malformed transcript, an out-of-domain digest, or an oversized encoding | Property | P1 | FR-070-AC-2, FR-070-AC-6, FR-070-AC-7 | ✅ Passed locally |
 | TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | ✅ Passed locally |
@@ -369,7 +369,7 @@ as a row that was.
 
 - TC-177 (FR-069-AC-1): `qsl-replay/src/proof_result.rs::tests::tc_177_every_fr331_value_maps_to_its_exact_category`
 - TC-178 (FR-069-AC-2, FR-069-AC-4): `qsl-replay/src/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
-- TC-179 (FR-069-AC-3): `qsl-replay/src/proof_result.rs::tests::tc_179_round_trip_preserves_backend_tool_pin_and_dispositions`
+- TC-179 (FR-069-AC-3): `qsl-replay/src/proof_result.rs::tests::tc_179_round_trip_preserves_backend_and_dispositions`
 - TC-180 (FR-070-AC-1): `qsl-replay/src/witness.rs::witness_tests::tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript`
 - TC-181 (FR-070-AC-2, FR-070-AC-6, FR-070-AC-7): `qsl-replay/src/witness.rs::witness_tests::tc_181_refuses_malformed_transcripts`, `::envelope_tests::tc_181_refuses_an_out_of_domain_digest`, `::envelope_tests::tc_181_refuses_an_oversized_encoding`
 - TC-182 (FR-070-AC-3): `qsl-replay/src/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`

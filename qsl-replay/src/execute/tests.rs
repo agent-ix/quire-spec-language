@@ -197,7 +197,7 @@ fn p(x: i64) -> ReplayRequestWire {
 /// from the byte provision alone, keeps its `package_id`, joins `x` by
 /// its parameter node id, and `small(7)` is `false`: the replay agrees
 /// with the refuted property and settles `reproduced-without-witness`,
-/// with the executor's toolchain pin and the call's charges.
+/// with the call's charges.
 #[trace("TC-444", "FR-098-AC-1", "FR-098-AC-2")]
 #[test]
 fn tc_444_an_input_counterexample_replays_and_agrees() {
@@ -211,7 +211,6 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
     assert_eq!(result.category(), ProofCategory::Violation);
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.disagreement(), None);
-    assert_eq!(result.toolchain_pin().as_str(), TOOLCHAIN);
     assert!(result.charges().work_units > 0);
 }
 

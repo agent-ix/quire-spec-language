@@ -39,7 +39,7 @@ an FR-331 terminal value.
 
 - An FR-331 `quire.backend-provider/v1` envelope's `results`, `dispositions`
   and `accounting` members for one requested item, and its `manifest`
-  member for the `backend` identity and tool pin.
+  member for the `backend` identity.
 
 ## Outputs
 
@@ -77,7 +77,7 @@ an FR-331 terminal value.
 |----|----------|--------------|
 | FR-069-AC-1 | Given an FR-331 terminal record for each of the seven O-16 categories the proof column produces, including a vacuous `Proved` (zero SUCCESS checks, category `inconclusive`) and a `tested` backend result (category `success`, distinct from and never promoted to `proved`), the reader maps each to its exact O-16 category with no collapsing. | Test (TC-177) |
 | FR-069-AC-2 | Given an envelope whose `contract_version` or `capability_vocabulary` does not match the expected identifier, the reader refuses with a structured, typed cause before reading any result, disposition, counterexample or accounting member. | Test (TC-178) |
-| FR-069-AC-3 | Given a positive envelope, a construct → serialize → read round trip preserves the `backend` member (identity and manifest digest), the executor/tool pin, and every per-item disposition byte-for-byte. | Test (TC-179) |
+| FR-069-AC-3 | Given a positive envelope, a construct → serialize → read round trip preserves the `backend` member (identity and manifest digest) and every per-item disposition byte-for-byte. | Test (TC-179) |
 | FR-069-AC-4 | Given an envelope whose encoded size exceeds the configured reader bound, the reader refuses with a bound-exceeded cause and returns no truncated or partially-populated envelope. | Test (TC-178) |
 
 ## Dependencies

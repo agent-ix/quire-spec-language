@@ -22,8 +22,7 @@ whose `arm` member is a sum of two distinct, independently-typed arm
 results — a `Witness`-arm result and an `Input`-arm result — each carrying
 its own settlement, the O-16 category, the evaluated value, the nested FR-351
 separating-witness record when the settlement basis is decisive, the
-resolved nested regions (ADR-013 O-12), the replay charges, and the
-executor's toolchain pin.
+resolved nested regions (ADR-013 O-12), and the replay charges.
 
 Parity is agreement between the proved and replayed verdicts, each verdict
 taken from the QSpec outcome-to-verdict map fixed per O-16 category
@@ -46,13 +45,12 @@ exemplar.
   replayed item.
 - The originating `ReplaySource` arm (`Witness` or `Input`) and, for the
   `Witness` arm, the FR-351 separating-witness record decoded from it.
-- Replay accounting charges and the executor's toolchain pin.
+- Replay accounting charges.
 
 ## Outputs
 
 - A typed replay result carrying the O-16 category, arm-specific settlement,
-  nested FR-351 witness record where decisive, resolved regions, charges and
-  toolchain pin.
+  nested FR-351 witness record where decisive, resolved regions and charges.
 
 ## Behavior
 

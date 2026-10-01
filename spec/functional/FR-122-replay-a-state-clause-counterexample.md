@@ -104,8 +104,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   `occurrence_key`,
   the identity and digest of every document admission read, for a
   `PreCall` observation its self object and parameter values, the
-  evaluated value when there is one, the evaluation charges and the executor's
-  toolchain pin.
+  evaluated value when there is one, and the evaluation charges.
 - A `Witness`-arm result that reproduces (`false`) carries the FR-351
   record FR-098 gives a Boolean verdict (FR-072, FR-098-AC-2): the
   evaluated Boolean as its deciding element, index 0, an empty value path

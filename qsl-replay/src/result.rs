@@ -13,7 +13,7 @@ use quire_exact::ScalarLimits;
 
 use crate::bounds::BoundExceeded;
 use crate::identity::TracePosition;
-use crate::proof_result::{ProofCategory, ToolPin};
+use crate::proof_result::ProofCategory;
 use qsl_foundation::source::provenance::SourceRegion;
 
 /// The verdict a proved or replayed outcome settles to, taken from the
@@ -160,7 +160,6 @@ pub struct WitnessArmResult {
     record: Option<SeparatingWitnessRecord>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
-    toolchain_pin: ToolPin,
 }
 
 impl WitnessArmResult {
@@ -178,7 +177,6 @@ impl WitnessArmResult {
         decisive: Option<(EvaluatedValue, SeparatingWitnessRecord)>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
-        toolchain_pin: ToolPin,
     ) -> Self {
         let disagreement = DisagreementCause::of(proved, replayed, decisive.is_some());
         let (value, record) = match decisive {
@@ -197,7 +195,6 @@ impl WitnessArmResult {
             record: record.filter(|_| disagreement.is_none()),
             resolved_regions,
             charges,
-            toolchain_pin,
         }
     }
 
@@ -233,10 +230,6 @@ impl WitnessArmResult {
     pub fn charges(&self) -> ScalarLimits {
         self.charges
     }
-    /// The executor/tool pin this arm's replay run used.
-    pub fn toolchain_pin(&self) -> &ToolPin {
-        &self.toolchain_pin
-    }
 }
 
 /// FR-072/ADR-013 O-27: the `Input`-arm per-item result. Structurally
@@ -252,7 +245,6 @@ pub struct InputArmResult {
     value: Option<EvaluatedValue>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
-    toolchain_pin: ToolPin,
 }
 
 impl InputArmResult {
@@ -267,7 +259,6 @@ impl InputArmResult {
         value: Option<EvaluatedValue>,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
-        toolchain_pin: ToolPin,
     ) -> Self {
         let disagreement = DisagreementCause::of(proved, replayed, value.is_some());
         Self {
@@ -281,7 +272,6 @@ impl InputArmResult {
             value,
             resolved_regions,
             charges,
-            toolchain_pin,
         }
     }
 
@@ -311,10 +301,6 @@ impl InputArmResult {
     pub fn charges(&self) -> ScalarLimits {
         self.charges
     }
-    /// The executor/tool pin this arm's replay run used.
-    pub fn toolchain_pin(&self) -> &ToolPin {
-        &self.toolchain_pin
-    }
 }
 
 /// FR-072/ADR-013 O-27: one per-item replay result, a sum of the
@@ -329,20 +315,19 @@ pub enum ReplayResult {
     Input(InputArmResult),
 }
 
-/// `resolved_regions`'/`toolchain_pin`'s combined byte length -- shared by
-/// both arms of [`measured_encoded_bytes`].
-fn common_measured_bytes(resolved_regions: &[SourceRegion], toolchain_pin: &ToolPin) -> usize {
-    toolchain_pin.as_str().len()
-        + resolved_regions
-            .iter()
-            .map(|region| {
-                let source = region.source();
-                source.authority().len()
-                    + source.identity().len()
-                    + source.revision().namespace().len()
-                    + source.revision().value().len()
-            })
-            .sum::<usize>()
+/// `resolved_regions`' combined byte length -- shared by both arms of
+/// [`measured_encoded_bytes`].
+fn common_measured_bytes(resolved_regions: &[SourceRegion]) -> usize {
+    resolved_regions
+        .iter()
+        .map(|region| {
+            let source = region.source();
+            source.authority().len()
+                + source.identity().len()
+                + source.revision().namespace().len()
+                + source.revision().value().len()
+        })
+        .sum::<usize>()
 }
 
 /// [`read_bounded`]'s own measurement of `result`'s encoded size
@@ -353,7 +338,7 @@ fn common_measured_bytes(resolved_regions: &[SourceRegion], toolchain_pin: &Tool
 fn measured_encoded_bytes(result: &ReplayResult) -> usize {
     match result {
         ReplayResult::Witness(arm) => {
-            common_measured_bytes(arm.resolved_regions(), arm.toolchain_pin())
+            common_measured_bytes(arm.resolved_regions())
                 + arm.record().map_or(0, |record| {
                     record.value_path.iter().map(String::len).sum::<usize>()
                         + record
@@ -362,9 +347,7 @@ fn measured_encoded_bytes(result: &ReplayResult) -> usize {
                             .map_or(0, |position| position.as_str().len())
                 })
         }
-        ReplayResult::Input(arm) => {
-            common_measured_bytes(arm.resolved_regions(), arm.toolchain_pin())
-        }
+        ReplayResult::Input(arm) => common_measured_bytes(arm.resolved_regions()),
     }
 }
 
@@ -429,15 +412,11 @@ mod tests {
     /// site expecting `WitnessArmResult::record()` cannot be satisfied by
     /// `InputArmResult`, which has no such method).
     /// A resolved region's measured bytes are its source's authority,
-    /// identity, revision namespace and revision value lengths, plus the
-    /// toolchain pin's: `registry` 8 + `pkg-a` 5 + `git` 3 + `rev-1` 5 +
-    /// `kani-0.67.0` 11 = 32.
+    /// identity, revision namespace and revision value lengths: `registry`
+    /// 8 + `pkg-a` 5 + `git` 3 + `rev-1` 5 = 21.
     #[test]
     fn common_measured_bytes_counts_each_source_member() {
-        assert_eq!(
-            common_measured_bytes(&regions(), &ToolPin::new("kani-0.67.0")),
-            32
-        );
+        assert_eq!(common_measured_bytes(&regions()), 21);
     }
 
     #[trace("TC-189", "FR-072-AC-1")]
@@ -450,7 +429,6 @@ mod tests {
             Some((EvaluatedValue::Boolean(true), record(vec!["field"]))),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         let input_result = InputArmResult::settle(
             Verdict::from_category(ProofCategory::Success),
@@ -459,7 +437,6 @@ mod tests {
             Some(EvaluatedValue::Boolean(true)),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
 
         assert_eq!(
@@ -494,7 +471,6 @@ mod tests {
             Some((EvaluatedValue::Boolean(false), record(vec!["field"]))),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         assert_eq!(disagreeing.settlement(), WitnessSettlement::Inconclusive);
         assert_eq!(
@@ -514,7 +490,6 @@ mod tests {
             Some(EvaluatedValue::Boolean(false)),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         assert_eq!(
             disagreeing_input.settlement(),
@@ -536,7 +511,6 @@ mod tests {
             None,
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         assert_eq!(witness.settlement(), WitnessSettlement::Inconclusive);
         assert_eq!(
@@ -556,7 +530,6 @@ mod tests {
             None,
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         assert_eq!(input.settlement(), InputSettlement::Inconclusive);
         assert_eq!(
@@ -589,7 +562,6 @@ mod tests {
             )),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
 
         // "Serialize": read the record's own typed fields back out.
@@ -605,7 +577,6 @@ mod tests {
             Some((EvaluatedValue::Boolean(true), read_back_record.clone())),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         assert_eq!(round_tripped.record(), Some(&read_back_record));
         assert_eq!(
@@ -632,7 +603,6 @@ mod tests {
             )),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         // Same rendered `{:?}` shape modulo the path text, but `PartialEq`
         // (derived, structural) says unequal because the value path
@@ -657,7 +627,6 @@ mod tests {
             )),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         );
         let oversized = read_bounded(ReplayResult::Witness(oversized_result));
         assert!(oversized.is_err());
@@ -692,7 +661,6 @@ mod tests {
             capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
             manifest_digest: qsl_foundation::digest::ManifestDigest::from_digest([1; 32]),
-            tool_pin: "kani-0.67.0".to_owned(),
             items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
         };
         let proof_envelopes = read_backend_provider_envelope(&proof_source).unwrap();
@@ -769,7 +737,6 @@ mod tests {
             Some((EvaluatedValue::Boolean(true), record(vec!["x"]))),
             regions(),
             charges(),
-            ToolPin::new("kani-0.67.0"),
         ));
         assert!(matches!(result, ReplayResult::Witness(_)));
     }
