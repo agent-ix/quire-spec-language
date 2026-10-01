@@ -201,6 +201,18 @@ impl CollectionValue {
         &self.occ
     }
 
+    /// Every field, in declaration order, for `Value`'s hand-written
+    /// `Debug`. Destructured whole, so a new field is a compile error here
+    /// until `Debug` prints it too.
+    pub(crate) fn debug_fields(&self) -> (&CollectionType, &[Value], &Integer) {
+        let Self {
+            collection_type,
+            elements,
+            occ,
+        } = self;
+        (collection_type, elements, occ)
+    }
+
     /// Move the elements out, leaving none, so a uniquely owned collection
     /// can be taken apart without recursion (`value::drop_nested`).
     pub(crate) fn take_elements(&mut self) -> Box<[Value]> {

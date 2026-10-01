@@ -193,18 +193,32 @@ quire-exact-no-std:
 	cargo build --locked -p quire-exact --target thumbv7em-none-eabi
 
 # `quire-exact` declares an older `rust-version` than the workspace so a
-# consumer on that toolchain can depend on it. Building the library with
-# that rustc, for the no_std target, fails the moment the crate or one of its
-# dependencies needs a newer compiler. The version is read from the crate's
-# own Cargo.toml. Cargo stays the workspace's: an older cargo cannot load
-# this workspace's manifests (an edition 2024 git dependency), while
-# `RUSTC` makes the old compiler build the crate.
+# no_std consumer on that toolchain can depend on it. This target builds it
+# the way such a consumer does: that version's cargo and rustc, building a
+# throwaway crate with a path dependency on `quire-exact`, for the no_std
+# target. It fails when the crate, its manifest or a dependency needs a newer
+# cargo or rustc. The workspace itself cannot be the consumer: an older cargo
+# cannot load this workspace's manifests (an edition 2024 git dependency).
+#
+# The consumer starts from a copy of the workspace Cargo.lock, so it builds
+# the dependency versions the workspace tests, and it builds `--offline`.
+# `--locked` cannot work here, because cargo must add the consumer and prune
+# the rest of the lock. Crates are fetched online only when that cargo's own
+# cache lacks them, and the toolchain is installed only when it is missing,
+# so after the first run the target needs no network.
 QUIRE_EXACT_MSRV := $(shell sed -n 's/^rust-version = "\(.*\)"$$/\1/p' quire-exact/Cargo.toml)
+QUIRE_EXACT_MSRV_CONSUMER := $(abspath $(or $(CARGO_TARGET_DIR),target))/quire-exact-msrv-consumer
 
 quire-exact-msrv:
 	test -n "$(QUIRE_EXACT_MSRV)"
-	rustup toolchain install $(QUIRE_EXACT_MSRV) --profile minimal --target thumbv7em-none-eabi --no-self-update
-	RUSTC="$$(rustup which --toolchain $(QUIRE_EXACT_MSRV) rustc)" cargo build --locked -p quire-exact --target thumbv7em-none-eabi
+	rustup target list --toolchain $(QUIRE_EXACT_MSRV) --installed 2>/dev/null | grep -qx thumbv7em-none-eabi || rustup toolchain install $(QUIRE_EXACT_MSRV) --profile minimal --target thumbv7em-none-eabi --no-self-update
+	rm -rf $(QUIRE_EXACT_MSRV_CONSUMER)
+	mkdir -p $(QUIRE_EXACT_MSRV_CONSUMER)/src
+	printf '[package]\nname = "quire-exact-msrv-consumer"\nversion = "0.0.0"\nedition = "2021"\npublish = false\n\n[dependencies]\nquire-exact = { path = "$(CURDIR)/quire-exact" }\n\n[workspace]\n' > $(QUIRE_EXACT_MSRV_CONSUMER)/Cargo.toml
+	printf '#![no_std]\npub use quire_exact;\n' > $(QUIRE_EXACT_MSRV_CONSUMER)/src/lib.rs
+	cp Cargo.lock $(QUIRE_EXACT_MSRV_CONSUMER)/Cargo.lock
+	cd $(QUIRE_EXACT_MSRV_CONSUMER) && { cargo +$(QUIRE_EXACT_MSRV) fetch --offline --target thumbv7em-none-eabi || cargo +$(QUIRE_EXACT_MSRV) fetch --target thumbv7em-none-eabi; }
+	cd $(QUIRE_EXACT_MSRV_CONSUMER) && cargo +$(QUIRE_EXACT_MSRV) build --offline --target thumbv7em-none-eabi
 
 ci: check-no-committed-binaries quire-exact-no-std quire-exact-msrv check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
