@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+pub mod enumeration;
 pub mod quantity;
 pub mod semantic_node;
 pub mod stop;

@@ -112,6 +112,9 @@ xtask = { path = "xtask" }
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "quire-exact", features = ["test-support"] }
+# The ADR-011 layer-SV runtime values (`quire_semantic_value::enumeration`)
+# the enum identity tests compare.
+quire-semantic-value = { path = "quire-semantic-value" }
 # TC-251's signature scanner (`tests/it/name_resolution_confinement.rs`)
 # walks a parameter/return type's own AST directly (an exact path-segment
 # match, `syn::visit::Visit`) rather than text-matching a `Debug`-formatted

@@ -22,7 +22,6 @@ use qsl_semantics::value::declaration::{
     DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
 };
-use qsl_semantics::value::enumeration::EnumMemberIndex;
 use qsl_semantics::value::{
     GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph,
 };
@@ -36,6 +35,7 @@ use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
 };
+use quire_semantic_value::enumeration::EnumMemberIndex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

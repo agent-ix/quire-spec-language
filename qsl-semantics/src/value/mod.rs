@@ -8,14 +8,14 @@
 //! 1. typed values: `quire_exact::Integer`,
 //!    `quire_exact::IntegerInterval`/`quire_exact::BoundedInteger`,
 //!    [`Rational`](quire_exact::Rational), [`Decimal`](quire_exact::Decimal),
-//!    [`Text`](quire_exact::Text), [`EnumValue`](enumeration::EnumValue) and FR-142
+//!    [`Text`](quire_exact::Text), `quire_semantic_value::enumeration::EnumValue` and FR-142
 //!    `quire_exact::Quantity` values read against a
 //!    `quire_semantic_value::quantity::UnitTable` over an admitted
 //!    `quire_semantic_value::unit::UnitGraph`;
 //! 2. explicit operation tables: [`evaluate_decimal`](quire_exact::evaluate_decimal)
 //!    (FR-140), [`divide`] and [`modulo`] (FR-147),
 //!    [`admit_text`](quire_exact::admit_text),
-//!    [`compare_text`](quire_exact::compare_text) and [`compare_enum`](enumeration::compare_enum)
+//!    [`compare_text`](quire_exact::compare_text) and `quire_semantic_value::enumeration::compare_enum`
 //!    (FR-141), `quire_semantic_value::quantity`'s `evaluate_quantity` and
 //!    `convert_quantity` (FR-142), after
 //!    the type-checking [`IllTyped`](quire_exact::IllTyped) refusal;

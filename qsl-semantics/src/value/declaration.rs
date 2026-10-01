@@ -79,6 +79,7 @@ use quire_exact::{compare_text, evaluate_decimal};
 use quire_semantic_value::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
+use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use std::fmt;
 

@@ -59,7 +59,7 @@ use crate::value::declaration::{
     FieldDeclaration, TypeEnvironment,
 };
 use crate::value::definition::AdmittedIeeeProfile;
-use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
+use crate::value::enumeration::{mint_variant_id, EnumDeclaration};
 use crate::value::operation::OperationTable;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -79,6 +79,7 @@ use quire_exact::{Value, ValueType};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
+use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
 
 /// The largest expression nesting depth a checker may declare. The typing,
 /// facts and lowering walks run over explicit heap stacks, so this bounds the

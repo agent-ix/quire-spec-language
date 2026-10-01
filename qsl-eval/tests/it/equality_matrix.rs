@@ -27,7 +27,7 @@ use qsl_semantics::value::declaration::{
     FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use qsl_semantics::value::enumeration::{
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
+    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::{
     admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
@@ -52,6 +52,7 @@ use quire_exact::{
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
 use quire_semantic_value::quantity::UnitTable;
+use quire_semantic_value::enumeration::EnumMemberIndex;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -214,7 +215,7 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
 fn enum_value(
     declaration: &EnumDeclaration,
     case: &str,
-) -> qsl_semantics::value::enumeration::EnumValue {
+) -> quire_semantic_value::enumeration::EnumValue {
     let preimage = json!({
         "version": "quire.enum-member-node/v1",
         "declaration_node_id": node_id(declaration.key()),

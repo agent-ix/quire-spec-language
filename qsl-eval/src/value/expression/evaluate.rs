@@ -25,7 +25,6 @@ use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::declaration::{operand_value, CompositeShape, FieldRef};
-use qsl_semantics::value::enumeration::{compare_enum, EnumMemberIndex};
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use quire_exact::Rational;
 use quire_exact::{
@@ -50,6 +49,7 @@ use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
+use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
