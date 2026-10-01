@@ -22,7 +22,11 @@ FR-106's examples, labelled as there, held in in-memory provisions keyed by
 their `sha256-jcs` digest.
 
 1. Admit the healthy-parent snapshot for `ParentOrder` with `Current {
-   snapshot, anchor: {handler, validate}, self: {config_history, child} }`.
+   snapshot, anchor: {handler, validate}, self: {config_history, child} }`;
+   then, over the package variant where `Sub` specializes `ConfigVersion`
+   and a second population `archive` has member type `Sub` (TC-465's
+   `archive` fixture), with `child.parent` naming `k`, a `Sub` object of a
+   complete `archive`.
 2. Re-serialize the same snapshot with other whitespace and reversed member
    order, and admit it with the same selection.
 3. Admit the changed-version invocation for `VersionUnchanged`, with its pre
@@ -38,7 +42,13 @@ their `sha256-jcs` digest.
    `ConfigVersion` and a second population `archive` has member type `Sub`
    (TC-465's `archive` fixture), with `target` naming `a1` in an `archive`
    listed with no objects and marked `complete: false`; with the snapshot
-   marked `complete: false`.
+   marked `complete: false`; in that variant, with `target` naming `k`, a
+   `Sub` object of a complete `archive`; over the base unit plus an object
+   type `Other` unrelated to `ConfigVersion` and a population `others` over
+   it, with `target` naming `o`, an `Other` object of a complete `others`;
+   over the variant plus an operation `probeSub(target: Sub)` on
+   `ConfigVersion` and a precondition `SubTargetHolds` on it, `PreCall`
+   for `SubTargetHolds` with `target` naming `a`.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
@@ -47,7 +57,8 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 - Step 1: one current observation; population `config_history` complete;
   `root.versionNumber` 1, `root.parent` absent, `child.versionNumber` 2,
   `child.parent` present naming `root`; `self` is `child`; the snapshot's
-  identity and digest are retained.
+  identity and digest are retained. In the `archive` variant, the snapshot
+  admits with `child.parent` present naming `k`, typed `Sub`.
 - Step 2: the same digest and an equal admitted value.
 - Step 3: distinct pre and post observations, `self` `child` in both,
   `result` true, no parameters, empty created and deleted.
@@ -59,7 +70,8 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   `absent-target-in-complete-population` naming `ghost` and
   `config_history`; `Incomplete` with `incomplete_population`/
   `incomplete-scope` naming `archive`; `Incomplete` with `incomplete_population`/
-  `incomplete-scope`.
+  `incomplete-scope`; admitted with `target` naming `k`, typed `Sub`;
+  `invalid_runtime_input`/`wrong-value-kind` at `target` twice.
 
 ## Status
 

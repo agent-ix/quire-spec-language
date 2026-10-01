@@ -824,6 +824,10 @@ fn object_field_kind_matches(
 /// a reference resolves whatever the walk order of its target.
 pub(super) struct References<'a> {
     views: &'a [ModelView],
+    /// The checked package's type environment, whose closed supertypes
+    /// graph decides whether an admitted object conforms to a reference's
+    /// declared type ([`TypeEnvironment::conforms`]).
+    types: &'a TypeEnvironment,
     /// Every object of the snapshot whose type and key resolve, by its wire
     /// `(population, key)`.
     admitted: BTreeMap<(&'a str, &'a str), ObjectReference>,
@@ -839,7 +843,11 @@ impl<'a> References<'a> {
     /// Indexes `populations`' objects. An object whose type or key does not
     /// resolve is left out: check 6 refuses it in walk order before any
     /// reference to it is used.
-    pub(super) fn over(views: &'a [ModelView], populations: &'a [RawPopulation]) -> Self {
+    pub(super) fn over(
+        views: &'a [ModelView],
+        types: &'a TypeEnvironment,
+        populations: &'a [RawPopulation],
+    ) -> Self {
         let mut admitted = BTreeMap::new();
         let mut completeness = BTreeMap::new();
         for population in populations {
@@ -862,6 +870,7 @@ impl<'a> References<'a> {
         }
         Self {
             views,
+            types,
             admitted,
             completeness,
             unresolved: Vec::new(),
@@ -899,9 +908,10 @@ impl<'a> References<'a> {
 
     /// The typed reference `reference` names, for a value of declared type
     /// `Reference<declared>`. A reference to an admitted object resolves to
-    /// that object, which the declared type must admit
-    /// ([`quire_exact::ValueType::admits`]: the object's most-specific type
-    /// is `declared`), else `wrong-value-kind` (check 6.5). A reference to no
+    /// that object, whose most-specific type must conform to `declared`
+    /// (QSpec FR-151, [`TypeEnvironment::conforms`]: the same type, or a
+    /// chain of declared supertypes leads from it to `declared`), else
+    /// `wrong-value-kind` (check 6.5). A reference to no
     /// admitted object -- a dangling target, which check 8 refuses in a
     /// complete population and skips in an incomplete one -- is typed by
     /// `declared` and recorded.
@@ -912,8 +922,7 @@ impl<'a> References<'a> {
     ) -> Result<ObjectReference, AdmissionRecord> {
         let wire = (reference.population.as_str(), reference.key.as_str());
         if let Some(target) = self.admitted.get(&wire) {
-            let value = Value::Reference(target.clone());
-            return if quire_exact::ValueType::Reference(declared).admits(&value) {
+            return if self.types.conforms(target.object_type(), declared) {
                 Ok(target.clone())
             } else {
                 Err(admission_record(
@@ -1074,7 +1083,7 @@ pub(super) fn admit_population_values<'t>(
     let mut keys_by_population: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut object_count: u64 = 0;
     let mut value_count: u64 = 0;
-    let mut references = References::over(views, populations);
+    let mut references = References::over(views, types, populations);
 
     for entry in populations {
         completeness.insert(entry.population.clone(), entry.complete);
@@ -1706,7 +1715,8 @@ mod tests {
             empty_population("complete", true),
             empty_population("partial", false),
         ];
-        let references = References::over(&[], &populations);
+        let types = TypeEnvironment::new([], []).expect("an empty environment admits");
+        let references = References::over(&[], &types, &populations);
 
         let record = references
             .check_closure(&SnapshotValue::Present(Box::new(reference(

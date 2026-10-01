@@ -2064,6 +2064,196 @@ fn tc464_step5_a_non_reference_parameter_requires_no_population() {
     assert_eq!(record.fields.get("field").map(String::as_str), Some("b"));
 }
 
+// ---------------------------------------------------------------------------
+// Check 6.5/10 subtype admission (QSpec FR-151): a `Reference<T>` parameter
+// admits an object whose most-specific type conforms to `T` under the
+// declared supertypes graph, and refuses `wrong-value-kind` otherwise.
+// ---------------------------------------------------------------------------
+
+/// `document` with `Other`, an object type unrelated to `ConfigVersion` (no
+/// supertypes, nothing specializes it), and the population `others` whose
+/// only declared member is `Other`.
+fn with_unrelated_population(document: Vec<u8>) -> Vec<u8> {
+    let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
+    let other = "ix://example/config-version/Other";
+    let others = "ix://example/config-version/others";
+    envelope["types"].as_array_mut().unwrap().push(json!({
+        "identity": other,
+        "displayName": other,
+        "kind": {"module": "example/config-version", "name": "object_type"},
+        "roles": [],
+        "origin": {
+            "generated": {
+                "generatorIdentity": other,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [other],
+            }
+        },
+        "constraints": [],
+        "extensions": [],
+        "unknownPolicy": "reject",
+        "supertypes": [],
+        "fields": [],
+        "operations": [],
+    }));
+    envelope["populations"].as_array_mut().unwrap().push(json!({
+        "identity": others,
+        "displayName": others,
+        "kind": {"module": "example/config-version", "name": "population"},
+        "members": [other],
+        "extent": "closed",
+        "origin": {
+            "generated": {
+                "generatorIdentity": others,
+                "generatorVersion": "1.0.0",
+                "inputIdentities": [others],
+            }
+        },
+    }));
+    serde_json::to_vec(&envelope).expect("valid JSON")
+}
+
+/// A complete `archive` holding the one `Sub` object `k`.
+fn archive_with_sub_object() -> serde_json::Value {
+    json!({
+        "population": "ix://example/config-version/archive",
+        "complete": true,
+        "objects": [{
+            "key": "k", "type": "ix://example/config-version/Sub",
+            "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
+        }],
+    })
+}
+
+/// `probe(target: ConfigVersion)` bound to `k`, a `Sub` object of the
+/// complete `archive` (`Sub` specializes `ConfigVersion`), admits, and the
+/// admitted `target` is `k` typed by its own most-specific type `Sub`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn a_subtype_object_binds_a_supertype_parameter() {
+    let document = tc465_document_with_archive_population();
+    let snapshot = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![archive_with_sub_object()],
+    );
+    let observations = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        snapshot,
+        vec![(
+            "target",
+            tc464_reference("ix://example/config-version/archive", "k"),
+        )],
+    )
+    .expect("a Sub object admits for a ConfigVersion parameter");
+    let [(name, quire_exact::Value::Reference(target))] = &observations.parameters[..] else {
+        panic!("one reference parameter: {:?}", observations.parameters);
+    };
+    assert_eq!(name, "target");
+    assert_eq!(target.object().as_str(), "k");
+    let pre = observations.pre.as_ref().expect("one pre observation");
+    assert_eq!(
+        pre.environment.find(target.universe(), "k"),
+        Some(target),
+        "target is archive's k, typed by k's own type"
+    );
+    assert_ne!(
+        target.object_type(),
+        observations.self_object.object_type(),
+        "target keeps Sub, not the declared ConfigVersion"
+    );
+}
+
+/// `probe(target: ConfigVersion)` bound to `o`, an object of `Other`, a type
+/// with no declared-supertype chain to `ConfigVersion`, refuses check 10
+/// `invalid_runtime_input`/`wrong-value-kind` at `target`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn an_unrelated_type_object_refuses_a_parameter_with_wrong_value_kind() {
+    let document = with_unrelated_population(tc465_document());
+    let others = "ix://example/config-version/others";
+    let snapshot = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({
+            "population": others,
+            "complete": true,
+            "objects": [{"key": "o", "type": "ix://example/config-version/Other", "fields": {}}],
+        })],
+    );
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        snapshot,
+        vec![("target", tc464_reference(others, "o"))],
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("target")
+    );
+}
+
+/// `probeSub(target: Sub)` bound to `a`, a `ConfigVersion` object: the
+/// supertype does not conform to its subtype, so check 10 refuses
+/// `invalid_runtime_input`/`wrong-value-kind` at `target`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn a_supertype_object_refuses_a_subtype_parameter_with_wrong_value_kind() {
+    let probe_sub = operation(
+        "probeSub",
+        json!([operation_parameter(
+            "probeSub",
+            "target",
+            "ix://example/config-version/Sub"
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        probe_sub,
+    ]));
+    let clauses = format!(
+        "{TC465_CLAUSES}pre SubTargetHolds using v on Config::ConfigVersion::probeSub {{ true }}\n"
+    );
+    let snapshot_bytes = tc464_chain(&document, "pre", true);
+    let snapshot = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&snapshot_bytes),
+        ..frame_label("pre-call-snap")
+    };
+    let result = run_tc465_with_clauses(
+        &document,
+        &clauses,
+        "SubTargetHolds",
+        qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+            snapshot: snapshot.clone(),
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: TC464_CONFIG_HISTORY.to_owned(),
+                key: "a".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                quire_exact::Identifier::new("target").unwrap(),
+                tc464_reference(TC464_CONFIG_HISTORY, "a"),
+            )]),
+        },
+        BTreeMap::from([(snapshot.digest, snapshot_bytes)]),
+        BTreeMap::new(),
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("target")
+    );
+}
+
 /// Step 5's archive case over an invocation (FR-106 required populations:
 /// "of an invocation or a `PreCall` selection, in the pre snapshot"): the
 /// `probe` invocation's `target` naming `a1` in an `archive` its pre
@@ -3844,32 +4034,89 @@ fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
     result.expect("an incomplete population no reference names still admits");
 }
 
+/// The healthy-parent current snapshot with `child.parent` naming `{archive,
+/// k}`, `k` a `Sub` object of the complete `archive`.
+fn tc465_current_with_parent_in_archive(
+    document: &[u8],
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_tc465_current(
+        document,
+        |value| {
+            value["populations"][0]["objects"][1]["fields"]["parent"] = json!({"present": {
+                "reference": {"population": "ix://example/config-version/archive", "key": "k"}
+            }});
+            value["populations"]
+                .as_array_mut()
+                .unwrap()
+                .push(archive_with_sub_object());
+        },
+        None,
+    )
+}
+
 /// SR-750 FND-016: a reference resolves against the population the wire
 /// names, not only the field's declared type. `child.parent` names
 /// `{archive, k}`; `archive` is complete and holds `k` of type `Sub`, and
-/// `config_history` holds no `k`. `k` exists, so check 8 does not apply;
-/// but a `Reference<ConfigVersion>` value admits only a `ConfigVersion`
-/// object (`ValueType::admits`), so this refuses `wrong-value-kind` at
-/// `child`'s `parent` (check 6.5) -- never admitting a `ConfigVersion`-typed
-/// reference that names no admitted object.
+/// `config_history` holds no `k`. `k` exists, so check 8 does not apply,
+/// and `Sub` specializes `ConfigVersion`, so the `Reference<ConfigVersion>`
+/// field admits it by conformance (QSpec FR-151, check 6.5): the admitted
+/// `child.parent` is `k`, keeping its own type `Sub`.
+#[trace("TC-464", "FR-106-AC-1")]
+#[test]
+fn a_field_reference_to_an_admitted_subtype_object_admits() {
+    let document = tc465_document_with_archive_population();
+    let observations = tc465_current_with_parent_in_archive(&document)
+        .expect("a Sub object admits into a Reference<ConfigVersion> field");
+    let graph = admit_and_assemble_with_body(&document, TC465_CLAUSES)
+        .expect("the package assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let types = graph.scope().types();
+    let current = observations.current.expect("one current observation");
+    let child = &observations.self_object;
+    let parent = types
+        .attribute(child.object_type(), "parent")
+        .expect("ConfigVersion declares parent");
+    let field = qsl_semantics::value::declaration::FieldRef::new(parent.owner(), "parent");
+    let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) =
+        current.environment.attribute(types, child, &field)
+    else {
+        panic!("child.parent is a present reference");
+    };
+    assert_eq!(target.object().as_str(), "k");
+    assert_eq!(
+        current.environment.find(target.universe(), "k"),
+        Some(target),
+        "child.parent is archive's k, typed by k's own type"
+    );
+    assert_ne!(
+        target.object_type(),
+        child.object_type(),
+        "k keeps Sub, not the declared ConfigVersion"
+    );
+}
+
+/// Check 6.5's refusal half for an object field: `child.parent` names `o`,
+/// an admitted object of `Other`, a type with no declared-supertype chain to
+/// `ConfigVersion`. Admission refuses `invalid_runtime_input`/
+/// `wrong-value-kind` at `child`'s `parent`, never an internal fault.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
-fn a_reference_to_an_admitted_object_of_another_type_refuses_wrong_value_kind() {
-    let document = tc465_document_with_archive_population();
-    let archive = "ix://example/config-version/archive";
-    let sub = "ix://example/config-version/Sub";
+fn a_field_reference_to_an_unrelated_type_object_refuses_wrong_value_kind() {
+    let document = with_unrelated_population(tc465_document());
+    let others = "ix://example/config-version/others";
     let result = run_tc465_current(
         &document,
         move |value| {
             value["populations"][0]["objects"][1]["fields"]["parent"] =
-                json!({"present": {"reference": {"population": archive, "key": "k"}}});
+                json!({"present": {"reference": {"population": others, "key": "o"}}});
             value["populations"].as_array_mut().unwrap().push(json!({
-                "population": archive,
+                "population": others,
                 "complete": true,
-                "objects": [{
-                    "key": "k", "type": sub,
-                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
-                }],
+                "objects": [{"key": "o", "type": "ix://example/config-version/Other", "fields": {}}],
             }));
         },
         None,

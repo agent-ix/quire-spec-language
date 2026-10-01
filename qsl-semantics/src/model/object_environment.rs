@@ -114,7 +114,7 @@ impl ObjectEnvironment {
             let Some(declared) = types.attributes(reference.object_type()) else {
                 return Err(refuse(ObjectEnvironmentCause::UnknownObjectType));
             };
-            let slots = fill_slots(declared, attributes)
+            let slots = fill_slots(types, declared, attributes)
                 .map_err(|refusal| refuse(ObjectEnvironmentCause::Attribute(refusal)))?;
             if admitted.contains_key(&reference) {
                 return Err(refuse(ObjectEnvironmentCause::DuplicateObject));
