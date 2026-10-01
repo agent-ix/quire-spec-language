@@ -42,7 +42,8 @@ pub enum Observation {
 /// therefore always went through checking. Building one from outside `check`
 /// does not compile:
 /// ```compile_fail,E0451
-/// use qsl_semantics::check::{Location, Node, NodeKind};
+/// use qsl_semantics::check::{Node, NodeKind};
+/// use quire_semantic_value::location::Location;
 /// fn forge(kind: NodeKind, location: Location) -> Node {
 ///     Node { kind, value_type: quire_exact::ValueType::Boolean, location }
 /// }

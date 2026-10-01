@@ -299,7 +299,8 @@ impl CheckedPackage {
     /// through `check` and linked, does compile and succeed.
     /// ```no_run
     /// use qsl_package::CheckedPackage;
-    /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    /// use qsl_semantics::check::PackageDeclarations;
+    /// use quire_semantic_value::checking::CheckingLimits;
     /// fn build(
     ///     source: qsl_foundation::source::provenance::RawSourceRef,
     /// ) -> CheckedPackage {
