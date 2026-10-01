@@ -623,9 +623,7 @@ the table, independent of registration order.
   defined: S5 in QSL, IR, RT and CG with #218; S6 by
   agent-ix/quire-contract-ir#141; S7 by #185 for the registry arm and by
   agent-ix/quire-contract-codegen#86 for the CG arm; S8 in IR with each backend
-  outcome enum; S9 by agent-ix/quire-contract-codegen#86. AD-016's `make heads`
-  drift checks 1 (clause and tag wire strings total both ways) and 7 (every
-  layer's `catalog_code()` total) are the evidence that the repositories agree.
+  outcome enum; S9 by agent-ix/quire-contract-codegen#86.
 - **Mapping mutants.** AD-016's `cargo mutants` requirement covers the
   conversions at S1 and S4 (`catalog_code()`) and S5–S9, which are ADR-013
   C-05, C-06, C-09, C-15 and C-20. A surviving `cargo mutants` mutant in any

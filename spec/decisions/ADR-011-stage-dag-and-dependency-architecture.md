@@ -80,7 +80,7 @@ decisions. It does not design their content.
 | #214 | As a `Value` family implementation ticket, the widening of the layer-6 `replay` facade for that family (ADR-013 TK-01) |
 | M-3a, M-3b | The S2 forms producer: the `forms` core (M-3a) and each family's parsed-form type (M-3b) |
 | M-5 | The check/evaluate split for function application (M-5) |
-| #215 | Exact-pin and current-head integration lanes |
+| #215 | The backend direction, API-surface and duplicate-revision checks (T-12) |
 | #216 | The single checked-package gate (Layer 2) |
 | #217 | The function-application proof and native-replay exemplar: the first widening of the skeleton spine (§1.1) |
 | #218 | Frames and scoped clauses through the proof spine |
