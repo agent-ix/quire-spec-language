@@ -6,8 +6,8 @@
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::ValueType;
+use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
 use crate::simulation::explore::TransitionSystem;

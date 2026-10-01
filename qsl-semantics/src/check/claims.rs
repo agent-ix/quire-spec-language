@@ -53,7 +53,7 @@ use super::{
     Capability,
 };
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, DomainKind, Requirements};
-use crate::value::declaration::TypeEnvironment;
+use quire_semantic_value::declaration::TypeEnvironment;
 
 /// The fault stage name this module reports.
 const STAGE: &str = "check.requirements";

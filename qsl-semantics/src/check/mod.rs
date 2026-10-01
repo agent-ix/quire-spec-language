@@ -2077,9 +2077,11 @@ mod tests {
     #[trace("TC-259", "FR-088-AC-7")]
     #[test]
     fn composite_declaration_becomes_a_real_checked_type_node() {
-        use crate::value::declaration::FieldDeclaration;
-        use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
+        use quire_semantic_value::declaration::FieldDeclaration;
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, TypeEnvironment,
+        };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x11; 32]);
@@ -2125,9 +2127,11 @@ mod tests {
     #[trace("TC-252", "FR-088-AC-9")]
     #[test]
     fn composite_type_node_for_a_qualified_declared_name() {
-        use crate::value::declaration::FieldDeclaration;
-        use crate::value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
         use quire_exact::{NodeKey, Presence};
+        use quire_semantic_value::declaration::FieldDeclaration;
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, CompositeShape, TypeEnvironment,
+        };
 
         let field = FieldDeclaration::new("flag", ValueType::Boolean, Presence::Required);
         let key = NodeKey::from_digest([0x22; 32]);

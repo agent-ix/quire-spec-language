@@ -24,7 +24,6 @@ use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::population::PopulationBinding;
-use qsl_semantics::value::declaration::{operand_value, CompositeShape, FieldRef};
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use quire_exact::Rational;
 use quire_exact::{
@@ -46,6 +45,7 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::declaration::{operand_value, CompositeShape, FieldRef};
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
@@ -2042,10 +2042,10 @@ mod tests {
             .get(&DeclarationKey::fixture("model.A"))
             .copied()
             .expect("model.A has a type-level effective declaration");
-        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+        let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
-                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                quire_semantic_value::declaration::ObjectTypeDeclaration::new(
                     a,
                     "M::A",
                     Vec::new(),
@@ -2333,13 +2333,13 @@ mod tests {
             .get(&DeclarationKey::fixture("model.A"))
             .copied()
             .expect("model.A has a type-level effective declaration");
-        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+        let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
-                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                quire_semantic_value::declaration::ObjectTypeDeclaration::new(
                     a,
                     "M::A",
-                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                    vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
                         quire_exact::ValueType::Integer,
                         quire_exact::Presence::Required,
@@ -2441,13 +2441,13 @@ mod tests {
             .get(&DeclarationKey::fixture("model.A"))
             .copied()
             .expect("model.A has a type-level effective declaration");
-        let types = qsl_semantics::value::declaration::TypeEnvironment::new(
+        let types = quire_semantic_value::declaration::TypeEnvironment::new(
             [],
             [
-                qsl_semantics::value::declaration::ObjectTypeDeclaration::new(
+                quire_semantic_value::declaration::ObjectTypeDeclaration::new(
                     a,
                     "M::A",
-                    vec![qsl_semantics::value::declaration::FieldDeclaration::new(
+                    vec![quire_semantic_value::declaration::FieldDeclaration::new(
                         "x",
                         quire_exact::ValueType::Integer,
                         quire_exact::Presence::Required,

@@ -7,8 +7,8 @@ use std::collections::{HashSet, VecDeque};
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::CatalogCode;
-use qsl_semantics::value::declaration::TypeEnvironment;
 use quire_exact::ValueType;
+use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
 use crate::simulation::frontier::{Frontier, Limit};

@@ -82,7 +82,7 @@ impl EnumValue {
     /// `quire.checked-semantic-node/v1` bytes as [`Self::member`], retyped.
     /// [`Self::member`]'s bytes are already the OQ-F-ruled `quire.enum-
     /// member-node/v1` preimage digest -- verified against that exact
-    /// preimage at [`EnumDeclaration::admit_member`] -- so this needs no
+    /// preimage at `qsl-semantics`' `EnumDeclaration::admit_member` -- so this needs no
     /// fresh computation, only the kernel's own opaque wrapper.
     pub fn variant(&self) -> VariantId {
         VariantId::from_digest(*self.member.as_bytes())

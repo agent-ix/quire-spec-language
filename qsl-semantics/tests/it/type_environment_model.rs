@@ -35,15 +35,15 @@ use qsl_semantics::model::population::{
     admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
     PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
 };
-use qsl_semantics::value::declaration::{
-    Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
-    TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
-};
 use qsl_semantics::value::environment_stage::stage_failure;
 use quire_exact::{
     FieldValue, Integer, IntegerInterval, Meter, ObjectId, ObjectReference, Presence, ScalarLimits,
     UniverseId, Value, ValueType,
+};
+use quire_semantic_value::declaration::{
+    Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
+    TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
 };
 use sha2::{Digest, Sha256};
 
@@ -404,7 +404,7 @@ fn divergence_chain_past_the_ceiling_refuses_at_check_and_at_evaluation() {
 #[trace("TC-220", "FR-082-AC-6")]
 #[test]
 fn check_and_evaluation_share_one_default_ancestor_ceiling() {
-    use qsl_semantics::value::declaration::DEFAULT_ANCESTOR_STEPS;
+    use quire_semantic_value::declaration::DEFAULT_ANCESTOR_STEPS;
     assert_eq!(
         ModelNormalizationLimits::default().ancestor_steps,
         DEFAULT_ANCESTOR_STEPS

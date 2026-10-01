@@ -3,7 +3,6 @@
 //! evaluator runs.
 
 use super::refusal::Location;
-use crate::value::declaration::{CheckedEquality, EqualityOperand, EqualityOperator, FieldRef};
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -12,6 +11,9 @@ use quire_exact::RoundingMode;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionKind, CollectionType, IntegerInterval, RationalDomain};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::declaration::{
+    CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
+};
 use std::collections::BTreeSet;
 
 /// A local slot of one function frame or checked expression.

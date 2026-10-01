@@ -54,10 +54,6 @@ use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Location, Obligation,
     StageLimitCause,
 };
-use crate::value::declaration::{
-    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
-    FieldDeclaration, TypeEnvironment,
-};
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, EnumDeclaration};
 use crate::value::operation::OperationTable;
@@ -76,11 +72,14 @@ use quire_exact::Rational;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CardinalityBound, CollectionKind, CollectionType, Integer};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::declaration::{
+    admits_equality_conversion, CompositeShape, EqualityOperand, EqualityOperator,
+    FieldDeclaration, TypeEnvironment,
+};
+use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
-use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
-use quire_semantic_value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 
 /// The largest expression nesting depth a checker may declare. The typing,
 /// facts and lowering walks run over explicit heap stacks, so this bounds the
@@ -2230,7 +2229,7 @@ impl<'a> Typer<'a> {
     /// `ill_typed`/`type-mismatch` at check time when `S` does not conform to
     /// `T` (TC-198 L03's last case, "before any charge"): decided here from
     /// the package's own admitted generalization graph
-    /// ([`crate::value::declaration::TypeEnvironment::conforms`]), whose
+    /// ([`quire_semantic_value::declaration::TypeEnvironment::conforms`]), whose
     /// admission bound makes it agree with the model's own walk at
     /// evaluation (`crate::model::population::lookup`), which still decides
     /// `S` against `T` for a runtime binding.

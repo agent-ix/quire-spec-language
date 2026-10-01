@@ -292,8 +292,8 @@ mod family_contract_tests {
     };
     use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
-    use qsl_semantics::value::declaration::TypeEnvironment;
     use quire_exact::Meter;
+    use quire_semantic_value::declaration::TypeEnvironment;
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing

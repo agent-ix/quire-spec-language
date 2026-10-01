@@ -1469,6 +1469,7 @@ dependencies = [
  "qsl-source",
  "quire-canonical",
  "quire-exact",
+ "quire-semantic-value",
  "serde_json",
  "thiserror",
 ]

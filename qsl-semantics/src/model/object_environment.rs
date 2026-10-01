@@ -28,10 +28,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
-use crate::value::declaration::{fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment};
 use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
 use quire_exact::{FieldValue, Value};
+use quire_semantic_value::declaration::{
+    fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment,
+};
 
 /// Why an object environment is not closed.
 ///

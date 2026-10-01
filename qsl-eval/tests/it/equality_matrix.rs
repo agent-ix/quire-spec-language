@@ -21,11 +21,6 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::declaration::{
-    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
-    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
-};
 use qsl_semantics::value::enumeration::{
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
@@ -50,6 +45,11 @@ use quire_exact::{
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
+};
+use quire_semantic_value::declaration::{
+    CheckedEquality, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
+    ConstructionRefusal, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::quantity::UnitTable;

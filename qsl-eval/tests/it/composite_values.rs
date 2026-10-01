@@ -17,14 +17,6 @@ use qsl_semantics::library::{
 use qsl_semantics::model::object_environment::{
     ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
 };
-use qsl_semantics::value::declaration::{
-    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
-    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
-    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
-};
-use qsl_semantics::value::{
-    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph,
-};
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -34,6 +26,14 @@ use quire_exact::{
 use quire_exact::{CollectionType, FieldValue, OptionValue, Value, ValueType};
 use quire_exact::{
     EmptyObjectIdentity, IllTyped, IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId,
+};
+use quire_semantic_value::containment::{
+    GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph,
+};
+use quire_semantic_value::declaration::{
+    Component, CompositeDeclaration, CompositeShape, ConstructionCause, ConstructionRefusal,
+    DeclarationCause, EqualityOperand, EqualityOperator, FieldDeclaration, FieldExpression,
+    FieldRef, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use serde_json::json;

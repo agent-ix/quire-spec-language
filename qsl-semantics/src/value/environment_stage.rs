@@ -7,11 +7,11 @@
 //! ceiling as a stage limit (ADR-014 B-3) with no locus: the object types
 //! come from an admitted domain package, not a source unit (FR-096).
 //!
-//! [`TypeEnvironmentLimits`]: super::declaration::TypeEnvironmentLimits
+//! [`TypeEnvironmentLimits`]: quire_semantic_value::declaration::TypeEnvironmentLimits
 
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, StageFailure};
 
-use super::declaration::{
+use quire_semantic_value::declaration::{
     EnvironmentFailure, EnvironmentLimit, EnvironmentLimitKind, InvalidDeclaration,
 };
 

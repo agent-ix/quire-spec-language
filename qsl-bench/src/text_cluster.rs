@@ -19,6 +19,9 @@ use qsl_semantics::value::declaration::{
 };
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::{NodeKey, Presence, TextProfile, TextType, ValueType};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+};
 
 use crate::check::source;
 

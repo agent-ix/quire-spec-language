@@ -28,9 +28,9 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::meaning;
 use qsl_semantics::model::intake::{admit_unit, package_input, UnitIntakeCause};
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::value::declaration::ObjectTypeDeclaration;
 use qsl_semantics::value::operation::OperationDeclaration;
 use quire_exact::{Integer, IntegerInterval, Presence, ValueType};
+use quire_semantic_value::declaration::ObjectTypeDeclaration;
 use serde_json::{json, Value};
 
 pub(super) const PACKAGE_IDENTITY: &str = "example/config-version";

@@ -44,16 +44,16 @@ use qsl_semantics::model::population::{
     InvocationDelta, PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
     PopulationMember,
 };
-use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
-    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
-};
 use quire_exact::NodeKey;
 use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Integer, LimitKind, Meter, Outcome, ScalarLimits,
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
+    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
+};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

@@ -307,7 +307,7 @@ fn node_reference(node_effective: EffectiveId, key: &str) -> ObjectReference {
 /// An [`ObjectEnvironment`] of `Node` objects along `chain`, each pointing
 /// to the next; the last object's `next` is absent.
 fn node_environment(
-    types: &qsl_semantics::value::declaration::TypeEnvironment,
+    types: &quire_semantic_value::declaration::TypeEnvironment,
     node_effective: EffectiveId,
     chain: &[&str],
 ) -> ObjectEnvironment {

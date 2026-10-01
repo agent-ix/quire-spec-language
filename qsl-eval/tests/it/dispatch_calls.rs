@@ -43,12 +43,12 @@ use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_exact::EffectiveId;
 use quire_exact::IllTypedCause;
 use quire_exact::{Integer, IntegerInterval, LimitKind, Meter, Outcome, ScalarLimits};
 use quire_exact::{ObjectId, ObjectReference, UniverseId};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,

@@ -25,6 +25,9 @@ use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
     NODE_KEY_DOMAIN,
 };
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+};
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 

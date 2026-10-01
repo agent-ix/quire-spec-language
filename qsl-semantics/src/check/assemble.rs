@@ -64,14 +64,14 @@ use crate::model::domain_package::{
 };
 use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
-};
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::environment_stage::stage_failure;
 use crate::value::operation::{OperationDeclaration, OperationLookup, OperationTable};
 use crate::value::semantic_node::OwnerSelection;
+use quire_semantic_value::declaration::{
+    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
+    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
+};
 use quire_semantic_value::semantic_node::InvalidSemanticGraph;
 
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).

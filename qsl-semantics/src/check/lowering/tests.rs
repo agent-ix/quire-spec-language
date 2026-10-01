@@ -19,9 +19,9 @@ use serde_json::{json, Value as Json};
 use super::*;
 use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
 use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
-use crate::value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::SourceIdentity;
+use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
 mod binder_scope;
 mod depth;

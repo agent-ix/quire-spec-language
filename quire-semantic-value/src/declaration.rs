@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The FR-143 declared record, tuple and model object-type registry, and
-//! the FR-149 checked equality layer over it: QSL's `semantic_value`
-//! registry module (ADR-011 §6.2).
+//! the FR-149 checked equality layer over it (ADR-011 §6.1 layer SV).
 //!
 //! It owns the registry (`TypeEnvironment`, `ObjectTypeDeclaration`,
 //! `CompositeDeclaration`, `CompositeShape`, `InvalidDeclaration`,
@@ -10,10 +9,14 @@
 //! `CheckedEquality`, `TypeEnvironment::check_equality`,
 //! `admits_equality_conversion`, `operand_value`). The environment also
 //! carries the package's quantity [`UnitTable`], since a `ValueType::Quantity`
-//! names its unit only by id. None of these are kernel
-//! types (ADR-011 §6.1: "`TypeEnvironment` and `ObjectTypeDeclaration` ...
-//! are not kernel types and stay in layer 3"), so this is a layer-3
-//! `semantic_value` module, over `quire_exact`'s own `Value`/`ValueType`.
+//! names its unit only by id. None of these are kernel types (ADR-011
+//! §6.1), so they live in SV, over `quire_exact`'s own `Value`/`ValueType`,
+//! where QSL's layer 3 and up and a backend share them. An object type's
+//! operations carry the domain package's effect frame, a `model` type, so
+//! they stay in `qsl-semantics`' `value::operation` table beside the
+//! environment, and a reached [`TypeEnvironmentLimits`] ceiling is this
+//! module's own [`EnvironmentLimit`], which a compiler stage maps to its
+//! stage limit.
 //!
 //! The equality layer lives here because it is parameterized over a
 //! `TypeEnvironment` and a checked `ValueType`. The occurrence-pair walk it
@@ -60,8 +63,13 @@
 //! the FR-089-AC-5 compensation, since `Population<T>[N]` is reachable there
 //! directly as a bare parameter type.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use alloc::borrow::ToOwned;
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
@@ -70,17 +78,17 @@ use quire_exact::{
 };
 use quire_exact::{from_admitted_slots, retain_composite, Deferred, FieldValue, Value, ValueType};
 
+use crate::enumeration::{compare_enum, EnumMemberIndex};
+use crate::quantity::{
+    compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
+};
+use crate::stop::{outcome_from_stop, outcome_into_stop, Stop};
+use core::fmt;
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
 use quire_exact::EnumShape;
 use quire_exact::NodeKey;
 use quire_exact::{compare_text, evaluate_decimal};
-use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
-use quire_semantic_value::quantity::{
-    compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
-};
-use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
-use std::fmt;
 
 /// One object-type field's identity: the object type that declares it and
 /// its declared name (FR-151 field redefinition names its target this way).
@@ -266,7 +274,7 @@ fn match_names<'n, F: AsRef<FieldDeclaration>, T>(
 /// ([`TypeEnvironment::attributes`]), so an inherited field has a slot. A
 /// present value must be admitted by its field's type under `types`'
 /// conformance ([`TypeEnvironment::admits`]).
-pub(crate) fn fill_slots<F: AsRef<FieldDeclaration>>(
+pub fn fill_slots<F: AsRef<FieldDeclaration>>(
     types: &TypeEnvironment,
     declared: &[F],
     supplied: Vec<(&str, FieldValue)>,
@@ -881,7 +889,7 @@ impl TypeEnvironment {
     }
 
     /// Every admitted record and tuple declaration in key order.
-    pub(crate) fn composites(&self) -> impl Iterator<Item = &CompositeDeclaration> {
+    pub fn composites(&self) -> impl Iterator<Item = &CompositeDeclaration> {
         self.composites.values()
     }
 
@@ -892,7 +900,7 @@ impl TypeEnvironment {
 
     /// Every admitted object type in key order, for resolving a type name
     /// to `ValueType::Reference` alongside [`Self::composites`].
-    pub(crate) fn object_types(&self) -> impl Iterator<Item = &ObjectTypeDeclaration> {
+    pub fn object_types(&self) -> impl Iterator<Item = &ObjectTypeDeclaration> {
         self.object_types.values()
     }
 
@@ -908,7 +916,7 @@ impl TypeEnvironment {
     /// conformance: a `Reference<T>` admits a reference whose object's
     /// most-specific type conforms to `T` (QSpec FR-151, [`Self::conforms`]);
     /// every other pair is [`ValueType::admits`].
-    pub(crate) fn admits(&self, value_type: &ValueType, value: &Value) -> bool {
+    pub fn admits(&self, value_type: &ValueType, value: &Value) -> bool {
         match (value_type, value) {
             (ValueType::Reference(declared), Value::Reference(reference)) => {
                 self.conforms(reference.object_type(), *declared)
@@ -2155,7 +2163,7 @@ impl EqualityOperand {
     }
 
     /// The `convert<target>` target, when the operand converts.
-    pub(crate) fn target(&self) -> Option<&ValueType> {
+    pub fn target(&self) -> Option<&ValueType> {
         self.target.as_ref()
     }
 
@@ -2230,7 +2238,7 @@ impl TypeEnvironment {
     /// the member index of one compared enum shape: exactly its own
     /// members (SR-511 M2). `check`'s `Scope` answers it from a table built
     /// once per shape, so an equality does not copy its enum.
-    pub(crate) fn check_equality_in(
+    pub fn check_equality_in(
         &self,
         units: &UnitScope<'_>,
         operator: EqualityOperator,
@@ -2392,7 +2400,7 @@ fn invariant() -> Stop {
 /// equality-conversion table, decided from declared bounds alone and, for a
 /// quantity pair, from the units `units` resolves; an unresolved unit admits
 /// no conversion.
-pub(crate) fn admits_equality_conversion(
+pub fn admits_equality_conversion(
     source: &ValueType,
     target: &ValueType,
     units: &UnitScope<'_>,

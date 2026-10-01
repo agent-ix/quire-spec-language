@@ -10,8 +10,8 @@
 
 use std::collections::BTreeMap;
 
-use super::declaration::TypeEnvironment;
 use quire_exact::{EffectiveId, ValueType};
+use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::model::domain_package::OperationEffect;
 

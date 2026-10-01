@@ -348,9 +348,9 @@ pub struct DispatchRoot {
 /// translated from the records of `view`'s own domain package
 /// ([`EffectiveView::domain_package`]) from [`DeclarationKey`]s into
 /// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
-/// the exact shape [`crate::value::declaration::ObjectTypeDeclaration::with_supertypes`]
+/// the exact shape [`quire_semantic_value::declaration::ObjectTypeDeclaration::with_supertypes`]
 /// needs (ADR-013 O-05). No production code builds a
-/// [`crate::value::declaration::TypeEnvironment`]'s object types yet (only
+/// [`quire_semantic_value::declaration::TypeEnvironment`]'s object types yet (only
 /// test scaffolding does); a real model intake calls it exactly as tests do.
 ///
 /// The re-key must be injective: two object-type records that map to one
