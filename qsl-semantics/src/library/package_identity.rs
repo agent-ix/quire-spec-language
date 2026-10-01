@@ -152,7 +152,7 @@ impl ProjectedDeclarations {
     /// freshly wire-read [`crate::library::LibraryPackage::exports`].
     #[allow(
         dead_code,
-        reason = "no production caller yet: reachable only through `library::declared_exports`, itself unused pending ADR-011 §4's round trip, which no open ticket owns, to wire the I2 reader in"
+        reason = "no production caller yet: reachable only through `library::declared_exports`, itself unused pending ADR-011 §4's round trip (QSL-347) to wire the I2 reader in"
     )]
     pub(crate) fn declared_names(&self) -> Vec<&str> {
         let mut names: Vec<&str> = self.0.values().map(String::as_str).collect();

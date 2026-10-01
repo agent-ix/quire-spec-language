@@ -70,3 +70,25 @@ false status that the PR created or left in a sentence it edited: an M-2c
 label with no row, an undefined "slice A4b" label on merged work, FR-088's
 Status contradicting spec.md, and two verbatim quotes whose sources the PR
 changed. Four low findings cover leftovers. Every fix is text-only.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | The fix wrote "Planned; no owner" for the replay facade's typed `QualifiedName` selection (TC-166, FR-062-AC-10, FR-065-AC-6). QSL-346 ("Back TC-166 ...") was filed on 2026-10-01 and is in Coding, so the work now has an open owner and the cell is no longer true. Under the keep rule, an id that points at open work stays: name QSL-346 in all three places. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1136; spec/functional/FR-062-implement-checked-family-contract.md:580,606; spec/functional/FR-065-migrate-function-application-to-checked-family.md (AC-6 owner line) |
+
+## Dispositions
+
+Round 1, reviewed at bd660f04c13517e9735b98f2941c90556f9f7036 (fix commits a0326826 and bd660f04 on top of the rebased 0a71b797/ebb231a7). Coordinator's capped make ci on a0326826: exit 0 (not re-run). bd660f04 changes markdown only. The extra S-5b commit (bd660f04) was checked against the tests: TC-381 (`nodes_limit_is_enforced_across_the_whole_package_not_per_declaration` asserts `ResourceExhausted` with Typing, NodeCount, limit 4, actual 5) and TC-423 (leaves.rs and rows.rs assert `stage_limit_exceeded` with node-count-, work-budget- and input-bytes-exceeded, and rows.rs:607 covers the 250-case `Country` package) both justify ✅.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a0326826: the ADR-011 §7.3 rows are now X-1a, X-1b and M-2c, and every prose reference uses M-2c (ADR-011:793,994,1026,1036,1038,1396; FR-074:48-49; FR-068:521). No QSL-146/165/166 id remains in spec/ |
+| FND-002 | fixed | a0326826: no "A4b" remains in spec/. Each status now cites #384 and was checked against traced tests: TC-413 step 9 (lowering/tests.rs:427-585), TC-415 steps 8 and 9 (leaves.rs:160,214,469) and step 4's nested `fm` (lowering/tests.rs:1290), TC-418 C3 (lowering/model/tests.rs:897-906), TC-481 (assemble/tests.rs, source_call.rs). TC-415 stays 🚧 only for step 6's lock accessor |
+| FND-003 | fixed | a0326826: FR-088 Status reads "AC-11 (TC-409) and AC-12 (TC-411) are implemented and pass locally". The AC-7 rewrite is also true: check/mod.rs:2075 asserts that the node id is the graph key, not the caller's handle |
+| FND-004 | fixed | a0326826: FR-065 quotes "#240 with M-4, before #216", which matches ADR-011:1070 |
+| FND-005 | fixed | a0326826: FR-078 quotes "#213 S-1b removed them", which matches ADR-012's OBS-004 row |
+| FND-006 | fixed | a0326826: the ADR-012 §14.1 string-edge row reads "the workspace scan is clean, same-crate named `const NAME: &str` operands included", which agrees with FR-064 Status |
+| FND-007 | fixed | a0326826: the replay-facade row reads "`TC-166` is Planned and has zero tests | Planned; no owner". #243 is gone. QSL-346 was filed afterwards; see FND-010 |
+| FND-008 | fixed | a0326826: ADR-016 Open dependencies item 2, ADR-017's QSL-16 link corrections and "QSL-20 blocks QSL-16" are deleted. The open QSL-36/39/40 edge notes remain |
+| FND-009 | fixed | a0326826: FR-060 describes the change ("deleting qsl-eval's second v2 producer (`checked-function-package/v2`)"). No bare G2 remains outside the FR-092 vector names |

@@ -454,7 +454,7 @@ impl V2ReadRefusal {
     /// catalog mapping is IR conformance work (ADR-013 O-17).
     #[allow(
         dead_code,
-        reason = "no production caller yet: unused pending ADR-011 §4's round trip, which no open ticket owns; until then only this module's own tests call it"
+        reason = "no production caller yet: unused pending ADR-011 §4's round trip (QSL-347); until then only this module's own tests call it"
     )]
     pub(crate) fn unsupported_wire_record(&self) -> Option<RefusalRecord> {
         match self {

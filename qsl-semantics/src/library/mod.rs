@@ -721,7 +721,7 @@ impl PinnedRequest {
     /// selection is refused.
     #[allow(
         dead_code,
-        reason = "no production caller yet: unused pending ADR-011 §4's round trip, which no open ticket owns, to build the consumer's pinned request; until then only tests call it"
+        reason = "no production caller yet: unused pending ADR-011 §4's round trip (QSL-347) to build the consumer's pinned request; until then only tests call it"
     )]
     pub(crate) fn new(
         entries: impl IntoIterator<Item = (LibraryName, Selection)>,

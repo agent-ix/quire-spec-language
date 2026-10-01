@@ -577,7 +577,7 @@ tags as they exist in the delivered code today:
   `metre` unit node.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
-  but no test carries this criterion's own trace tag. Planned; no owner.
+  but no test carries this criterion's own trace tag. Planned; QSL-346.
 - FR-062-AC-12: backed (`TC-432`):
   `nesting_depth_limit_is_the_proximate_cause`,
   `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
@@ -603,4 +603,4 @@ Eleven of this requirement's thirteen Acceptance Criteria are backed (AC-1,
 AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12 and AC-13); one
 (AC-11) is partly backed, for the clause named in its own row above.
 AC-10 is unbacked (untagged): its implementation exists, but no test carries
-the criterion's own trace tag. Planned; no owner.
+the criterion's own trace tag. Planned; QSL-346.

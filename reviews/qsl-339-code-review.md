@@ -48,3 +48,23 @@ The code side of the diff changes comments only, and the rewrites keep their
 meaning. One medium finding: three dead-code allow reasons name a Done ticket
 as the future owner. The low findings are leftovers the sweep missed or kept
 without cause. No behaviour changes, so gap analysis has nothing to trace.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The three rewritten dead-code reasons say the ADR-011 §4 round trip is one "which no open ticket owns". QSL-347 ("ADR-011 §4 I2 round trip: wire the v2 reader into a real consumer, or delete the three unused readers", Backlog) was filed on 2026-10-01, so the reasons are now false. Name QSL-347: it is an open-work pointer, which the keep rule allows. | qsl-package/src/checked_v2.rs:457; qsl-semantics/src/library/mod.rs:724; qsl-semantics/src/library/package_identity.rs:155 |
+
+## Dispositions
+
+Round 1, reviewed at bd660f04c13517e9735b98f2941c90556f9f7036 (fix commit a0326826). Coordinator's capped make ci on a0326826: exit 0 (not re-run). Non-comment code changes in a0326826 are string-literal and toml `description` edits only. Each `fault_reason` is compared only with itself. The arch-lint `reason` strings are allow-list prose.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a0326826: all three reasons now read "unused pending ADR-011 §4's round trip, which no open ticket owns". QSL-6 is no longer named as the owner. QSL-347 was filed afterwards; see FND-008 |
+| FND-002 | fixed | a0326826: qsl-semantics/Cargo.toml has no QSL id left |
+| FND-003 | fixed | a0326826: digest.rs no longer says "tracked/recorded on QSL-26" |
+| FND-004 | fixed | a0326826: family.rs no longer retells QSL-148's ticket text. The only QSL-148 left is the testing-policy ruling link at :1897, which is kept as a ruling citation |
+| FND-005 | fixed | a0326826: the probe output, assert message, fault strings, arch-lint reasons and output, and the qsl-bench and quire-exact descriptions carry no QSL-NNN id |
+| FND-006 | fixed | a0326826: qsl-bench/BASELINE.md, examples/config-version/README.md and tests/fixtures/native-package/README.md carry no QSL-NNN id |
+| FND-007 | fixed | a0326826: the code comments in qsl-eval/Cargo.toml, dispatch_calls.rs, emit/tests.rs, family/contract.rs, api_surface.rs and typestate_scan.rs no longer use a bare G2 |

@@ -353,7 +353,7 @@ delivered code today:
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
   in the delivered code (see FR-065's own Test Matrix / TC-166). Planned;
-  no owner.
+  QSL-346.
 - FR-065-AC-7: backed (`TC-380`). The contract's
   `check` hook type-checks the body, and `f`'s checked identity is
   FR-092 vector F1.
