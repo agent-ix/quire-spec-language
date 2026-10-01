@@ -46,10 +46,10 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
-use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
 use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation

@@ -80,6 +80,7 @@ use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
 use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
+use quire_semantic_value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 
 /// The largest expression nesting depth a checker may declare. The typing,
 /// facts and lowering walks run over explicit heap stacks, so this bounds the

@@ -35,6 +35,7 @@ use quire_semantic_value::semantic_node::{
 };
 use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use quire_semantic_value::enumeration::EnumValue;
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
 const DECLARATION_VERSION: &str = "quire.enum-declaration-node/v1";
 const MEMBER_VERSION: &str = "quire.enum-member-node/v1";

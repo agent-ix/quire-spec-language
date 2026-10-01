@@ -51,8 +51,8 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
-use quire_semantic_value::quantity::UnitTable;
 use quire_semantic_value::enumeration::EnumMemberIndex;
+use quire_semantic_value::quantity::UnitTable;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

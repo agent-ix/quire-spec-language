@@ -26,8 +26,8 @@ use quire_exact::{
     ChargePoint, Incomplete, InjectedDenial, Integer, LimitKind, Meter, Outcome, Refusal,
     ScalarLimits,
 };
-use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::enumeration::{compare_enum, EnumValue};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
