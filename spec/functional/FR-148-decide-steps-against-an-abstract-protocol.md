@@ -105,10 +105,10 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-148-AC-1 | `check_initial` on `CasTwice`'s concrete initial state gives one abstract state, at rest at `a1` with `value` 0. After `beginA`, `commitA` the set holds the state at rest at `a2` with `value` 1; after a second commit, the state with `value` 2 and the protocol finished, since the closure takes the internal `finish`. | Test (TC-553) |
-| FR-148-AC-2 | `CasTwice` settles `proved`, `closed-scope` over universe `counters = {c}`. | Test (TC-553) |
+| FR-148-AC-2 | `CasTwice` settles `proved`, basis `closed-scope`, as QSpec FR-379 settles a completed explicit-state run with no failure, holding for the concrete initial states and universe `counters = {c}`. | Test (TC-553) |
 | FR-148-AC-3 | The lost-update model (ADR-020 §8) with `peek` removed, against `Twice` with the same rows, settles `refuted` with `NoAbstractMatch` at the commit that leaves `value` unchanged, and the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-553) |
 | FR-148-AC-4 | `CasTwice` against the protocol `Once` (`a1` then `finish`) settles `refuted` with `NoAbstractMatch{position: 4}`, whose step is the second commit, and the counterexample replays. | Test (TC-553) |
-| FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted` by QSpec FR-177's divergence-freedom check, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled, and with no `assume` or `ensure` row present. | Test (TC-553) |
+| FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted`, basis `decisive-counterexample`, by QSpec FR-177's divergence-freedom check with divergence observable, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled. It refutes with no `assume` or `ensure` row present, because QSpec FR-177-AC-6 refutes an observable internal loop under every fairness set, including an empty one. | Test (TC-553) |
 
 ## Dependencies
 
@@ -121,5 +121,5 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 
 ## References
 
-- The QSpec half (QSpec FR-177's relation and its further checks, QS-8):
-  Linear STD-133.
+- QSpec FR-177 (the relation over QSpec FR-377's step rules, and its
+  further checks, QS-8); Linear STD-133.

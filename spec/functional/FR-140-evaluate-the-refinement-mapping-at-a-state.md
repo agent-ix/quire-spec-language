@@ -127,5 +127,4 @@ pub struct MappingUndetermined {
 
 ## References
 
-- The QSpec half (the population map and reference lifting): Linear
-  STD-133.
+- The QSpec half (the population map and reference lifting): QSpec FR-377 (Linear STD-133).

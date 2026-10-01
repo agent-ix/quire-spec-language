@@ -62,10 +62,11 @@ beside it as a separate item.
   with `PropertyForm::Refinement{liveness: bool}` (TP-5), where `liveness`
   is `true` exactly when `F_A` is non-empty. FR-123's `PropertyForm` gains
   this variant.
-- `InconclusiveCause::MappingUndetermined` beside FR-127's causes.
+- `InconclusiveCause::MappingUndetermined` beside FR-127's causes, written
+  on the wire as cause `mapping-undetermined` (QSpec FR-379).
 - One FR-331 terminal record per refinement item, carrying the item's
   `TerminalValue`, each half's `TerminalValue`, the method
-  `explicit-state`, its QSpec FR-341 (infinite-trace) label, QSpec FR-243
+  `explicit-state`, its QSpec FR-360 label, QSpec FR-243
   basis and O-16 category by FR-127's table.
 
 ## Behavior
@@ -105,7 +106,8 @@ beside it as a separate item.
   (ADR-020 RE-5).
 - A `Violated` half SHALL settle `refuted` only through its replay (FR-145)
   settling `reproduced-with-evaluated-witness`; a replay that settles
-  `inconclusive` SHALL settle V-6 with `ReplayParity`, a refusal V-6 with
+  `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
+  `replay-parity`, QSpec FR-379), a refusal V-6 with
   `ReplayRefused`, and a fault `failed`.
 - The record SHALL read neither model's `terminal` member; its value SHALL
   be the same under every combination of them.
@@ -134,5 +136,4 @@ beside it as a separate item.
 
 ## References
 
-- The QSpec half (claim kinds and the `MappingUndetermined` cause): Linear
-  STD-133.
+- The QSpec half (claim kinds and the `mapping-undetermined` cause): QSpec FR-379 (Linear STD-133).

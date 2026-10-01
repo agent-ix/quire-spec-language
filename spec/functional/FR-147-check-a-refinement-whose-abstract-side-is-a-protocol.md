@@ -142,5 +142,5 @@ mapped `-> stutter`, and `internal Spec::Twice::finish`.
 
 ## References
 
-- The QSpec half (QSpec FR-177's relation over the shared step rules, QS-8):
-  Linear STD-133.
+- The QSpec half: QSpec FR-177 (its relation over QSpec FR-377's step
+  rules, QS-8) and FR-377 (Linear STD-133).

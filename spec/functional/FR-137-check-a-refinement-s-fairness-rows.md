@@ -94,4 +94,4 @@ written again.
 
 ## References
 
-- The QSpec half (fairness rows in the grammar): Linear STD-133.
+- The QSpec half (fairness rows in the grammar): QSpec FR-375 and FR-377 (Linear STD-133).

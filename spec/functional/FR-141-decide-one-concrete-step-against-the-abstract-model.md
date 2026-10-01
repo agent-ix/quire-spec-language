@@ -31,7 +31,9 @@ each concrete step of a refinement, `check_step`, and one that decides each
 concrete initial state, `check_initial` (ADR-020 RS-1 to RS-6, AX-2). The
 explicit-state product (FR-142, FR-143) and replay (FR-145) call these and
 no other step rule, as every temporal engine answers to the trace evaluator
-(ADR-018 SM-1). The step semantics they implement is QSpec's (ADR-020 QS-2).
+(ADR-018 SM-1). The initial-state and step rules they decide are QSpec
+FR-377's, and the hidden-field candidate set is QSpec FR-378's (ADR-020
+QS-2); this requirement states how QSL decides them and what it reports.
 
 ## Use case
 
@@ -87,15 +89,18 @@ FR-143.
 
 ### Initial states (RS-2)
 
+QSpec FR-377's initial-state rule, with QSpec FR-378's initial candidate
+set when the abstract side has hidden fields, is the rule `check_initial`
+decides.
+
 - `check_initial` SHALL compute `h0` by FR-138's `initial_history` and
   `map(c0, h0)` by FR-140.
-- With no hidden field, it SHALL pass when the mapped state's key equals
-  the key of one initial state of the abstract subject (its own FR-106
-  snapshots), with `abstract_states` that one state.
-- With hidden fields, its candidates SHALL be every abstract initial state
-  whose visible fields equal the mapped ones, and it SHALL pass when there
-  is at least one.
-- Otherwise it SHALL return `Fails(InitialNotAbstract{initial})`.
+- It SHALL take the abstract initial states from the abstract subject's
+  own FR-106 snapshots, compare them by state key, and return `Passes`
+  with `abstract_states` the one matching state, or with hidden fields the
+  candidate set in state-key order.
+- When the rule rejects the state it SHALL return
+  `Fails(InitialNotAbstract{initial})`.
 
 ### Selecting the row
 
@@ -116,45 +121,40 @@ FR-143.
   pre-state SHALL return `Undefined`; one that is refused or incomplete
   SHALL return `Undetermined(MappingUndetermined)`.
 
-### Rules, with no hidden field
+### Deciding the step rules
 
-- **`stutter` (RS-3).** The step SHALL pass when the post mapped state's key
-  equals the pre mapped state's key, with `Taken::Stutter`; otherwise it
-  SHALL fail `StutterChanged{position}`.
-- **Abstract operation (RS-4).** The checker SHALL evaluate the row's
-  receiver and arguments at the pre-state (with the concrete arguments and
-  history), giving one abstract transition identity, or one per value of
-  each `_` argument's parameter domain in FR-120's canonical order. For
-  each, it SHALL make the calls `ModelSystem` makes when it expands the
-  pre mapped state `a`, applied to the one candidate post-state `a'`: the
-  effective precondition at `a`, `StateModel::check_frame` over `(a, a')`,
-  and the effective postcondition over `(a, a', delta)`, with the abstract
-  result bound to the concrete step's result when the row has
-  `binds_result`, and otherwise true for some value of the result domain.
-  The step SHALL pass when one identity is accepted, with `Taken::Abstract`
-  listing every accepted identity. Otherwise it SHALL fail
-  `AbstractStepRejected` with the first identity in canonical order and the
-  first check that rejected it: `Precondition{clause}`, `Frame{code}` or
-  `Postcondition`.
-- **`any` (RS-5).** The step SHALL pass when it passes RS-3, or RS-4 for some
-  abstract transition identity enabled at `a` (FR-120's successor relation
-  gives it a successor), with `Taken` listing what it matched; otherwise it
-  SHALL fail `NoAbstractMatch{position}`.
+QSpec FR-377's step rules (`stutter`, abstract operation and `any`; ADR-020
+RS-3 to RS-5) and, with hidden fields, QSpec FR-378's candidate-set rule
+(ADR-020 AX-2) are the rules `check_step` decides. QSL's obligations are
+how it evaluates them and what it reports:
+
+- **Abstract-operation evaluation.** `check_step` SHALL evaluate the row's
+  receiver and arguments at the pre-state, with the concrete arguments and
+  history, enumerating each `_` argument's parameter domain in FR-120's
+  canonical order. For each abstract transition identity it SHALL make the
+  calls `ModelSystem` makes when it expands the pre mapped state `a`,
+  applied to the one candidate post-state `a'`: the effective
+  precondition at `a`, `StateModel::check_frame` over `(a, a')`, and the
+  effective postcondition over `(a, a', delta)`, binding the abstract
+  result to the concrete step's result when the row has `binds_result`.
+- **`any` enabling.** An abstract transition identity SHALL count as
+  enabled at `a` when FR-120's successor relation gives it a successor.
+- **Passing.** A passing step SHALL return `Passes` with `Taken::Stutter`
+  when the `stutter` rule admitted it, and otherwise `Taken::Abstract`
+  listing every accepted abstract transition identity in canonical order.
+- **Failure kinds.** A rejected step SHALL return:
+  - `StutterChanged{position}` for a `stutter` row;
+  - `AbstractStepRejected` for an abstract-operation row, naming the first
+    identity in canonical order and the first check that rejected it:
+    `Precondition{clause}`, `Frame{code}` or `Postcondition`;
+  - `NoAbstractMatch{position}` for an `any` row, and for any row whose
+    post candidate set is empty.
+- **Candidate sets.** With hidden fields, `check_step` SHALL apply the
+  rules to each member of `pre.abstract_states` and return the post set
+  sorted by state key. Each abstract successor computed SHALL count toward
+  FR-101's `max_transitions` of the run that called `check_step`.
 - An undecided contract conjunction of either model SHALL return
   `Undetermined(UndecidedSuccessor)`.
-
-### Rules, with hidden fields (AX-2)
-
-- The rules SHALL be applied to each member of `pre.abstract_states`:
-  - after a `stutter` step the post set SHALL be the same set, provided the
-    visible part is unchanged, and otherwise the step SHALL fail
-    `StutterChanged{position}`;
-  - after an abstract-operation or `any` step the post set SHALL be every
-    RS-4 or RS-5 abstract successor of a member whose visible fields equal
-    the post mapped state's, sorted by state key;
-  - a step whose post set is empty SHALL fail `NoAbstractMatch{position}`.
-- Each abstract successor computed SHALL count toward FR-101's
-  `max_transitions` of the run that called `check_step`.
 
 ### Purity
 
@@ -183,4 +183,5 @@ FR-143.
 
 ## References
 
-- The QSpec half (step rules RS-2 to RS-8): Linear STD-133.
+- QSpec FR-377 (initial-state and step rules) and QSpec FR-378 (the
+  candidate set); Linear STD-133.

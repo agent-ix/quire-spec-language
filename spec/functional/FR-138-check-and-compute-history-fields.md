@@ -135,4 +135,4 @@ range is left only at run time.
 
 ## References
 
-- The QSpec half (history field semantics): Linear STD-133.
+- The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).

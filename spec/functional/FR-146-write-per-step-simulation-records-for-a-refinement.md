@@ -138,4 +138,4 @@ by an occurrence key derived from the refinement node and the obligation.
 ## References
 
 - The QSpec half (the per-step records as QSpec FR-290's
-  `operation-contract` row): Linear STD-133.
+  `operation-contract` row): QSpec FR-377 and FR-379 (Linear STD-133).

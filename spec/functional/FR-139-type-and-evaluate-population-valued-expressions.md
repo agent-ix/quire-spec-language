@@ -103,5 +103,4 @@ Fixture: ADR-020 §8's `RingIsQueue` with universes `rings = {r}` and `slots
 
 ## References
 
-- The QSpec half (the forms, their typing and `seq`'s maximum length):
-  Linear STD-133.
+- The QSpec half (the forms, their typing and `seq`'s maximum length): QSpec FR-376 (Linear STD-133).

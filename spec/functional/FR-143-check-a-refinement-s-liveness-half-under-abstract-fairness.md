@@ -134,6 +134,6 @@ the concrete subject with failure `Divergence{constraint}` or
 
 ## References
 
-- The QSpec half (abstract progress through `F_A`, RS-7): Linear STD-133.
+- The QSpec half (abstract progress through `F_A`, RS-7): QSpec FR-377 (Linear STD-133).
 - Liveness refinement with hidden abstract fields, explored later: Linear
   QSL-380.

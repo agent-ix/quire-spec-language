@@ -148,4 +148,4 @@ pub enum StepTarget {
 
 ## References
 
-- The QSpec half (grammar and step semantics): Linear STD-133.
+- The QSpec half (grammar and step semantics): QSpec FR-375 and FR-377 (Linear STD-133).

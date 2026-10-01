@@ -168,5 +168,4 @@ pub fn check_refinement(
 
 ## References
 
-- The QSpec half (semantics and the `RefinementFailure` wire): Linear
-  STD-133.
+- The QSpec half (semantics and the `RefinementFailure` wire): QSpec FR-377 and FR-379 (Linear STD-133).

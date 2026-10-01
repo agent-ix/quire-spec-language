@@ -171,4 +171,4 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 
 ## References
 
-- The QSpec half (grammar, semantics, wire node): Linear STD-133.
+- The QSpec half (grammar, semantics, wire node): QSpec FR-375 (Linear STD-133).

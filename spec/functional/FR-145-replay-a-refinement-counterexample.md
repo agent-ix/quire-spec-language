@@ -138,5 +138,4 @@ count.
 
 ## References
 
-- The QSpec half (the `RefinementFailure` wire and replay rules): Linear
-  STD-133.
+- The QSpec half (the `RefinementFailure` wire and replay rules): QSpec FR-379 (Linear STD-133).
