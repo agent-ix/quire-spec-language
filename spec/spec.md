@@ -186,6 +186,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-018
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -565,3 +567,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (#220) |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR | Proposed; protocol/frame, refinement and abstraction-relation boundary mapping: identities, entry selection, frame replay identity checks, spec-versioning and profile-layering gate comparison, abstraction relation keys, export and unbound refusal (#223) |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
+| [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, and the downstream sequencing |
