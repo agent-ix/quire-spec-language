@@ -150,6 +150,13 @@ half, which needs the QSpec `complete-value-lock.json` accessor (ADR-011
 §2.4). Steps 10 and 11 cover the case where a debug build once aborted at
 20 nested `a and (…)`.
 
-The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(FR-096). Until S-5b lands, the tests observe the same limit as
-`ResourceExhausted`, and the code and outcome assertions move with S-5b.
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
+`stage_limit_exceeded`/`node-count-exceeded` directly; the depth steps'
+(`check/lowering/tests/expression_depth.rs`,
+`check/lowering/model/tests/expression_depth.rs`) assert the full depth
+cause, bound and actual counter.

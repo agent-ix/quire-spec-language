@@ -36,6 +36,11 @@ together when their combined node count exceeds it. Scope: FR-062-AC-11.
 Backed: `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
 (`qsl-eval/tests/it/total_functions.rs`), tagged `#[trace("TC-381", "FR-062-AC-11")]`.
 
-The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(FR-096). Until S-5b lands, the tests observe the same limit as
-`ResourceExhausted`, and the code and outcome assertions move with S-5b.
+`PackageDeclarations::check` reports a family's `StageFailure::Limit` as a
+`CheckRefusal` whose cause is `CheckCause::ResourceExhausted` carrying the
+stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
+cause's code is always `stage_limit_exceeded` and its cause the limit kind's
+(`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
+The test asserts the full cause (`Typing`, node count, bound 4, actual 5),
+which fixes `stage_limit_exceeded`/`node-count-exceeded`; it does not compare
+the code string itself.

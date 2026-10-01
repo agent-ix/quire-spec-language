@@ -582,15 +582,15 @@ tags as they exist in the delivered code today:
   `nesting_depth_limit_is_the_proximate_cause`,
   `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
   `work_budget_kind_refuses_from_a_denied_meter_charge`
-  (`qsl-semantics/src/check/family.rs`, `checking_tests`). The counter is
-  not yet reported past `check`: package checking still reports these
-  limits as `resource_exhausted` under catalog revision `1-draft.3`.
-- FR-062-AC-11: partly backed (`TC-381`): the whole-package count passes;
-  the `Limit` outcome is pending S-5b.
+  (`qsl-semantics/src/check/family.rs`, `checking_tests`). Package
+  checking reports the limit past `check` as `CheckCause::ResourceExhausted`
+  carrying the kind, bound and actual counter, code `stage_limit_exceeded`
+  (`check/mod.rs`, `limit_cause`; ADR-013 §7 slice S-5b, FR-096).
+- FR-062-AC-11: backed (`TC-381`):
   `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
-  (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
-  `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
-  here, is ADR-013 §7 slice S-5b's (FR-096).
+  (`qsl-eval/tests/it/total_functions.rs`). Package checking reports the
+  `StageFailure::Limit` as `ResourceExhausted` with the node-count cause,
+  bound 4 and actual 5, whose code is `stage_limit_exceeded`/`node-count-exceeded`.
 - FR-062-AC-13: backed (`TC-160`):
   `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-17 (RR-15
   in both operand orders, RR-5 twice), guards, binder scope and `fold`,
