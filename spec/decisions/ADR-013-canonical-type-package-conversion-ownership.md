@@ -802,22 +802,11 @@ Equality: not an identity. Each bound value compares under its owning type.
 
 | Pin | Authority | Rule |
 | --- | --- | --- |
-| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | A revision literal elsewhere that restates a Cargo pin is checked equal to the lock by a test. This covers the package view's `ir_revision` and `STANDARD` literals (OBS-022) and CG's `IR_CANDIDATE_REVISION`, `RUNTIME_REVISION` and `assurance/pins.json` statements (OBS-034). One lock holds one revision of each git dependency (OBS-041). |
+| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | One lock holds one revision of each git dependency (OBS-041). |
 
-Exact release pins versus the current-head lane:
-
-- **Release pins** are exact revisions in each repository's own manifest and
-  lock. They are the only qualified dependency selection, and AD-011 ecosystem
-  locks qualify them.
-- **The current-head lane** is the AD-016 `quire-integration/heads/` workspace:
-  a manifest of full shas, with `[patch]` only in `heads/Cargo.toml`. It is a
-  drift check. It never changes a release pin, never produces release evidence
-  and never publishes. A green heads run precedes each pin-bump PR. Whether QI
-  owns that workspace (OBS-031) is answered by ADR-011: it does (Q209-7).
-
-Implementing tickets: #215 builds the pin-equality tests and the heads lane
-(QSL literals, OBS-022; CG literals and `pins.json`, OBS-034); #226 turns them
-into drift gates.
+Release pins are exact revisions in each repository's own manifest and lock.
+They are the only qualified dependency selection, and AD-011 ecosystem locks
+qualify them.
 
 Pin representation (OBS-034 secondary, T-9): a `RevisionPin` is the
 repository source exactly as `Cargo.lock` records it, plus the full
@@ -1031,8 +1020,7 @@ flowchart LR
   Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
   ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
   builds the carrier and #186 the serializer. No build produces both.
-- Exact release pins are authoritative; the current-head lane is a drift check
-  and never a substitute (O-23).
+- Exact release pins are authoritative (O-23).
 
 ### 6. Lane-private representations
 
@@ -1073,7 +1061,7 @@ duplicates that #213 S-2 folds into the O-18 record.
 | #231 | QSL-side envelopes, in the ADR-011 layer-6 `replay` module and part of its public API, which is CG's only route to them (FB-05): proof-result envelope and FR-331 reader (O-24, C-23), counterexample envelope with the O-25 members, replay request type (O-26), result type and record carrier (O-27), round trips and adverse tests. No replay execution. | #213 S-1, QC-13, QC-1, QC-6, QC-8; the proof-result half also waits on QC-9 |
 | #186 | `native-run-result/2` serializer and state payload (O-27), and deletion of `/1` in the same change (OQ-1 ruling). | #231 |
 | #131 / QSL PR #200 | O-01 intake wiring, O-03 native references as `ValueTypeRef::Native` with an adverse test for the `quire/native` refusal. | FCD PR #200 |
-| #215, #226 | O-23 pin-equality tests, heads lane and drift gates; R-09 and R-06 static checks. | #209 accepted |
+| #215, #226 | R-09 and R-06 static checks. | #209 accepted |
 | agent-ix/quire-contract-codegen#50 | C-11 widening, C-12 reconstruction, parity comparison (O-27). agent-ix/quire-contract-codegen#50 uses #231's counterexample envelope and builds no second one, and it targets the QSL executor entry (TK-01), not `runtime::execute`. Amending the agent-ix/quire-contract-codegen#50 body to say so is an owner action. | #231, QC-8 |
 | agent-ix/quire-specification#114 | FR-351 and `native-run-result/2` (O-25, O-27). | — |
 | agent-ix/quire-specification#81, spec-objects-business PR #8 (merged), agent-ix/filament-core-data#172, agent-ix/filament-core-data#173, agent-ix/filament-core-data#199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
@@ -1158,7 +1146,6 @@ Questions for #209:
 | Q209-4 | Creation and dependency direction of `quire-exact`. ADR-011 X-1 answers it: a leaf crate, extracted first, that QSL, RT and CG depend on. T-6 lists the edge cuts. |
 | Q209-5 | Retirement of IR `replay_with_native_runtime` and the CG → QSL normal edge for the executor (OBS-028, OBS-039, AD-016 WP9). Answered by ADR-011 FB-05 (§3): no backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the public API of the QSL layer-6 `replay` module. T-12 checks it. IR names no QSL type (OQ-H), so CG is the only backend on the `replay` facade. |
 | Q209-6 | Where the diagnostic envelope sits in the module DAG (OBS-016). ADR-011 §6.1 answers it: `diagnostic` is foundation. T-5 fixes the locus. |
-| Q209-7 | Whether QI owns the heads workspace (OBS-031). ADR-011 answers it: QI owns it and #215 implements it. |
 | Q209-8 | Does ADR-011's I2 reader yield checked values? Answered and applied by ADR-011 (`102c8bb`): I2 yields `VerifiedPackage` and `ImportView`, neither checked typestate, and E9 recompiles source (R-10, T-2). |
 
 Questions for #210, answered in ADR-012 §13.5:
@@ -1275,13 +1262,13 @@ Primary-owner items:
 | OBS-019 | O-13, O-14: one value kernel; lane types private. |
 | OBS-020 | O-13: kernel rational semantics canonical. |
 | OBS-021 | O-12: the occurrence-key-keyed source map (O-07), occurrence key → regions, is the authority; body↔document map is a source-stage helper. |
-| OBS-022 | O-23: revision literals checked equal to the lock by a test (#215). |
+| OBS-022 | O-23: `Cargo.toml` and `Cargo.lock` are the one revision authority; a literal elsewhere that restates a Cargo pin is deleted. |
 | OBS-023 | O-17, O-23: one catalog revision per build; the native-v1 copy is lane-private. |
 | OBS-025 | O-21: `model::accounting` does not fold into the kernel meter; it is a separate layer-3 `model` rung meter over disjoint counters, and only `value::accounting` consolidates onto it. |
 | OBS-026 | O-27: `native-run-result/2` is QSpec-owned and QSL-produced; #231 builds the common carrier, #186 the serializer; `run` produces `/2` only (OQ-1 ruling). |
 | OBS-027 | O-25: QSL `Witness{transcript}` admitted through `parse`, with derived accessors; IR's copy is deleted (OQ-H). |
 | OBS-032 | O-13: single kernel ends the RT/QSL drift. |
-| OBS-034 | O-23, T-9: pin literals and `pins.json` checked equal to the lock (#215); `RevisionPin` representation. |
+| OBS-034 | O-23, T-9: `Cargo.toml` and `Cargo.lock` are the one revision authority, so CG's pin literals and `pins.json` are deleted; `RevisionPin` representation. |
 | OBS-035 | O-17: FR-322 code set canonical; IR conformance work. |
 
 Secondary-owner items (the #211 part only):
@@ -1289,7 +1276,7 @@ Secondary-owner items (the #211 part only):
 | Item | Decision |
 | --- | --- |
 | OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
-| OBS-031 | O-23: the pin versus current-head rule; QI ownership Q209-7. |
+| OBS-031 | O-23: release pins are the only qualified dependency selection. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
 | OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling). ADR-011 closes OBS-039 against the amended #205 text. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |

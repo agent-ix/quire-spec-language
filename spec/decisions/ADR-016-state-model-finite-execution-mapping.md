@@ -422,14 +422,14 @@ gets a `blocks` edge from QSL-68 to QSL-67 for G-3 before G-4.
 FE-1, FE-4's unreachability, §6 and EX-9 are verified by inspection or
 analysis, not by a test.
 
-### 11. Pinned and current-head integration
+### 11. Pinned integration
 
 | ID | Requirement |
 | --- | --- |
 | PI-1 | `quire-contract-model`'s checked-package reader decides the reference edge of `quire.op.model.reaches_field` (IR-370). TC-463 step 1 and TC-469 step 6 run and pass, backing FR-105-AC-3 and FR-108-AC-6's I04 `read` half; no state-node emission test is ignored or weakened. |
 | PI-2 | FCD `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` are consumed at their exact git revisions through `model::intake` only (ADR-011 §7.1). A change to intake shapes is a filament-core-data ticket. |
 | PI-3 | QSpec contracts selected by this family: diagnostics catalog `1-draft.8`, sampler `quire.simulation.sampler/v1` `1-draft.1`, QSpec FR-181's typed canonical form, STD-111's state node rules. Each is selected by exact revision and refused otherwise (ADR-013 R-08). |
-| PI-4 | The current-head lane (#215, QI `heads/`) is informational: a drift report. The gate for a pin-bump PR is `make ci` (ADR-013 O-23). |
+| PI-4 | The gate for a pin-bump PR is `make ci` (ADR-013 O-23). |
 | PI-5 | No state-clause proof evidence is claimed until IR `lower` admits `state` nodes and CG has an `operation-contract` arm for them. Neither has a ticket yet (Open dependencies). Gate QSL-20 (#219) counts no evidence from this family before then. |
 
 ### 12. Evidence from implemented behavior
