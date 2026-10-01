@@ -1951,12 +1951,16 @@ impl<'a> Lowering<'a> {
     pub(crate) fn enum_nodes(&mut self, binding: &EnumBinding) -> Result<(), CheckRefusal> {
         let site = type_declaration(&binding.name);
         let declaration = binding.declaration.key();
-        let preimage = binding.declaration.preimage();
         let name = identifiers(
-            preimage.qualified_declaration().iter().map(String::as_str),
+            binding
+                .declaration
+                .qualified_declaration()
+                .iter()
+                .map(String::as_str),
             &site,
         )?;
-        let bytes = preimage
+        let bytes = binding
+            .declaration
             .preimage_bytes()
             .map_err(|_| fault(&site, KeyFault::NonCanonicalNominal(declaration)))?;
         let inserted = self.insert_nominal(
@@ -1973,7 +1977,7 @@ impl<'a> Lowering<'a> {
                     members: Vec::new(),
                 },
             },
-            NominalNode::EnumDeclaration(preimage.clone()),
+            NominalNode::EnumDeclaration(binding.declaration.preimage()),
         )?;
         // Two bindings of one admitted declaration are one node, declared
         // once.

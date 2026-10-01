@@ -709,6 +709,18 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
         SemanticGraphCause::UnsortedUnorderedMembers
     );
 
+    // Unsorted members refuse before an unselected owner is joined, and
+    // before a stale key is recomputed.
+    let mut unsorted_foreign = unsorted.clone();
+    unsorted_foreign["owner"] =
+        json!({"kind": "definition", "authority": "agent-ix", "identity": "not-selected"});
+    assert_eq!(
+        declaration(&unsorted_foreign, fixture_key(&unsorted))
+            .unwrap_err()
+            .cause,
+        SemanticGraphCause::UnsortedUnorderedMembers
+    );
+
     // Owner, case and order changes that keep old keys are stale; recomputed
     // keys are a new identity that is ill-typed against the old one.
     let base = declaration_preimage(["Example", "Status"], true, &["READY", "DONE"]);
@@ -745,7 +757,7 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
         assert_ne!(new_key, old_key);
         let new = AdmittedEnumDeclaration::admit(preimage, new_key, &selection).unwrap();
         let old_ready = member(&old, "READY");
-        let new_case = new.preimage().members()[0].clone();
+        let new_case = new.declaration().members()[0].clone();
         let new_member = member(&new, &new_case);
         assert_eq!(
             enum_compared(Equal, &old_ready, &new_member),

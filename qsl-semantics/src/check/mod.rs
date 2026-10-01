@@ -903,7 +903,7 @@ impl PackageDeclarations {
                 .collect();
             let variants = identity::SumVariants::new(
                 variants,
-                enum_binding.declaration.preimage().is_ordered(),
+                enum_binding.declaration.declaration().is_ordered(),
             )
             .expect(
                 "an EnumBinding's own AdmittedEnumDeclaration admission already refuses two \

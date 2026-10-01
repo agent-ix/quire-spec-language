@@ -617,7 +617,7 @@ fn enum_shape(
         })
         .collect();
     ValueType::Enum(quire_exact::EnumShape::new(
-        declaration.preimage().is_ordered(),
+        declaration.declaration().is_ordered(),
         variants,
     ))
 }

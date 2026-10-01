@@ -19,9 +19,21 @@ use quire_exact::{
     Meter, NodeKey, Outcome, VariantId,
 };
 
+/// Whether `members` is a schema member list: nonempty, distinct
+/// identifiers. The one statement of the rule, shared by
+/// [`EnumDeclaration::new`] and `qsl-semantics`' preimage readers.
+pub fn is_member_list(members: &[String]) -> bool {
+    let distinct: BTreeSet<_> = members.iter().collect();
+    !members.is_empty()
+        && distinct.len() == members.len()
+        && members.iter().all(|case| is_identifier(case))
+}
+
 /// An admitted enum declaration node: its key, its ordering and its member
-/// cases. The key itself is computed and verified by the compiler; this
-/// type checks the structural rules a declaration is compared under.
+/// cases. This type checks the structural rules a declaration is compared
+/// under. It does not mint or verify the key: SV takes the declaration key
+/// the caller admitted as given (only the compiler's `check` mints and
+/// verifies node keys, ADR-011 §6.1).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnumDeclaration {
     key: NodeKey,
@@ -36,17 +48,15 @@ impl EnumDeclaration {
     ///
     /// An empty, repeated or non-identifier member list is
     /// `NonCanonicalPreimage`; an unordered declaration whose cases are not
-    /// sorted is `UnsortedUnorderedMembers`.
+    /// sorted is `UnsortedUnorderedMembers`. `key` is taken as given: it is
+    /// the caller's admitted declaration key, not checked against the
+    /// members.
     pub fn new(
         key: NodeKey,
         ordered: bool,
         members: Vec<String>,
     ) -> Result<Self, InvalidSemanticGraph> {
-        let distinct: BTreeSet<_> = members.iter().collect();
-        let well_formed = !members.is_empty()
-            && distinct.len() == members.len()
-            && members.iter().all(|case| is_identifier(case));
-        if !well_formed {
+        if !is_member_list(&members) {
             return Err(InvalidSemanticGraph {
                 cause: SemanticGraphCause::NonCanonicalPreimage,
             });
@@ -80,6 +90,12 @@ impl EnumDeclaration {
 
     /// The value of member `case`, whose admitted member node key is
     /// `member`. A case outside the declaration is `UndeclaredCase`.
+    ///
+    /// The position and the ordered flag come from this declaration. The
+    /// member key is taken as given: it is the caller's admitted
+    /// `quire.enum-member-node/v1` key for `case`, and nothing here checks
+    /// it against the case (SV mints and verifies no key). A wrong key gives
+    /// a value whose `=` (member keys) and ordering (positions) disagree.
     pub fn member(&self, case: &str, member: NodeKey) -> Result<EnumValue, InvalidSemanticGraph> {
         let position = self
             .members
@@ -141,12 +157,12 @@ impl EnumValue {
     }
 
     /// This member's kernel `VariantId` (ADR-013 O-14, OQ-F ruling): the same
-    /// `quire.checked-semantic-node/v1` bytes as [`Self::member`], retyped.
-    /// [`Self::member`]'s bytes are already the OQ-F-ruled `quire.enum-
-    /// member-node/v1` preimage digest -- verified against that exact
-    /// preimage at `qsl-semantics`' `AdmittedEnumDeclaration::admit_member`
-    /// -- so this needs no
-    /// fresh computation, only the kernel's own opaque wrapper.
+    /// `quire.checked-semantic-node/v1` bytes as [`Self::member`], retyped,
+    /// with no fresh computation. It is the OQ-F `quire.enum-member-node/v1`
+    /// identity exactly when the member key the value was built with is:
+    /// `qsl-semantics`' `AdmittedEnumDeclaration::admit_member` verifies
+    /// that against the preimage, while [`EnumDeclaration::member`] takes
+    /// the key as given.
     pub fn variant(&self) -> VariantId {
         VariantId::from_digest(*self.member.as_bytes())
     }
@@ -170,10 +186,13 @@ impl EnumValue {
 pub struct EnumMemberIndex(Arc<BTreeMap<VariantId, EnumValue>>);
 
 impl EnumMemberIndex {
-    /// Record one admitted member, keyed by its own `VariantId`. The last
-    /// write for a given `VariantId` wins; two structurally identical
-    /// members (same declaration, same case) always share one `VariantId`
-    /// (content-addressed, ADR-013 O-04), so recording either is equivalent.
+    /// Record one admitted member, keyed by its own `VariantId`
+    /// ([`EnumValue::variant`], its member key retyped). The last write for
+    /// a given `VariantId` wins. When member keys are the verified
+    /// content-addressed identities (ADR-013 O-04), two structurally
+    /// identical members (same declaration, same case) share one
+    /// `VariantId`, so recording either is equivalent; with keys taken as
+    /// given, the index is keyed by whatever key the caller admitted.
     pub fn record(&mut self, member: EnumValue) {
         Arc::make_mut(&mut self.0).insert(member.variant(), member);
     }

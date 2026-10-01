@@ -225,7 +225,7 @@ impl EnumBinding {
     /// that order, so each member's rank is exactly its index here.
     pub fn shape(&self) -> EnumShape {
         EnumShape::new(
-            self.declaration.preimage().is_ordered(),
+            self.declaration.declaration().is_ordered(),
             self.members.iter().map(EnumValue::variant),
         )
     }

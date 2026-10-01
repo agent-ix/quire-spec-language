@@ -22,8 +22,6 @@
 //! [`AdmittedEnumDeclaration`] pairs that declaration with the preimage its
 //! key was verified against.
 
-use std::collections::BTreeSet;
-
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
@@ -34,7 +32,7 @@ use qsl_foundation::digest::WireNodeId;
 use quire_exact::is_identifier;
 use quire_exact::NodeKey;
 use quire_exact::VariantId;
-use quire_semantic_value::enumeration::{EnumDeclaration, EnumValue};
+use quire_semantic_value::enumeration::{is_member_list, EnumDeclaration, EnumValue};
 use quire_semantic_value::semantic_node::{
     CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
 };
@@ -93,13 +91,10 @@ impl EnumDeclarationPreimage {
     pub fn from_json(value: serde_json::Value) -> Result<Self, InvalidSemanticGraph> {
         let document: DeclarationDocument = serde_json::from_value(value)
             .map_err(|_| refuse(SemanticGraphCause::NonCanonicalPreimage))?;
-        let distinct: BTreeSet<_> = document.members.iter().collect();
         let well_formed = document.version == DECLARATION_VERSION
             && document.owner.is_well_formed()
             && is_qualified_name(&document.qualified_declaration)
-            && !document.members.is_empty()
-            && distinct.len() == document.members.len()
-            && document.members.iter().all(|case| is_identifier(case));
+            && is_member_list(&document.members);
         if !well_formed {
             return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
         }
@@ -122,12 +117,9 @@ impl EnumDeclarationPreimage {
         ordered: bool,
         members: Vec<String>,
     ) -> Result<Self, InvalidSemanticGraph> {
-        let distinct: BTreeSet<_> = members.iter().collect();
         let well_formed = owner.is_well_formed()
             && is_qualified_name(&qualified_declaration)
-            && !members.is_empty()
-            && distinct.len() == members.len()
-            && members.iter().all(|case| is_identifier(case));
+            && is_member_list(&members);
         if !well_formed {
             return Err(refuse(SemanticGraphCause::NonCanonicalPreimage));
         }
@@ -162,19 +154,29 @@ impl EnumDeclarationPreimage {
 
 impl EnumDeclarationPreimage {
     fn canonical(&self) -> CanonicalDeclaration<'_> {
-        CanonicalDeclaration {
-            members: &self.members,
-            ordered: self.ordered,
-            owner: self.owner.canonical(),
-            qualified_declaration: &self.qualified_declaration,
-            version: DECLARATION_VERSION,
-        }
+        canonical_declaration(
+            &self.owner,
+            &self.qualified_declaration,
+            self.ordered,
+            &self.members,
+        )
     }
+}
 
-    /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
-    /// checked graph node's preimage (FR-092 rule 1).
-    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
-        preimage_bytes(&self.canonical())
+/// The JCS form of a `quire.enum-declaration-node/v1` preimage, from its
+/// parts: one statement for the preimage and the admitted declaration.
+fn canonical_declaration<'a>(
+    owner: &'a NodeOwner,
+    qualified_declaration: &'a [String],
+    ordered: bool,
+    members: &'a [String],
+) -> CanonicalDeclaration<'a> {
+    CanonicalDeclaration {
+        members,
+        ordered,
+        owner: owner.canonical(),
+        qualified_declaration,
+        version: DECLARATION_VERSION,
     }
 }
 
@@ -247,13 +249,15 @@ impl NodeIdentityPreimage for EnumMemberPreimage {
     }
 }
 
-/// An admitted enum declaration node: the runtime
-/// [`EnumDeclaration`] together with the preimage whose digest its retained
-/// key was verified against.
+/// An admitted enum declaration node: the runtime [`EnumDeclaration`]
+/// (key, ordering, members) together with the rest of the preimage its key
+/// was verified against (owner and qualified name). The members are held
+/// once, by the runtime declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedEnumDeclaration {
     declaration: EnumDeclaration,
-    preimage: EnumDeclarationPreimage,
+    owner: NodeOwner,
+    qualified_declaration: Vec<String>,
 }
 
 impl AdmittedEnumDeclaration {
@@ -265,17 +269,34 @@ impl AdmittedEnumDeclaration {
         key: NodeKey,
         owners: &OwnerSelection,
     ) -> Result<Self, InvalidSemanticGraph> {
-        let declaration = EnumDeclaration::new(key, preimage.ordered, preimage.members.clone())?;
-        if !owners.contains(&preimage.owner) {
+        let EnumDeclarationPreimage {
+            owner,
+            qualified_declaration,
+            ordered,
+            members,
+        } = preimage;
+        let declaration = EnumDeclaration::new(key, ordered, members)?;
+        if !owners.contains(&owner) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected));
         }
-        if !retains(key, &preimage)? {
+        let admitted = Self {
+            declaration,
+            owner,
+            qualified_declaration,
+        };
+        if preimage_digest(&admitted.canonical())? != *key.as_bytes() {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
-        Ok(Self {
-            declaration,
-            preimage,
-        })
+        Ok(admitted)
+    }
+
+    fn canonical(&self) -> CanonicalDeclaration<'_> {
+        canonical_declaration(
+            &self.owner,
+            &self.qualified_declaration,
+            self.declaration.is_ordered(),
+            self.declaration.members(),
+        )
     }
 
     /// The declaration node key.
@@ -288,9 +309,30 @@ impl AdmittedEnumDeclaration {
         &self.declaration
     }
 
-    /// The admitted content.
-    pub fn preimage(&self) -> &EnumDeclarationPreimage {
-        &self.preimage
+    /// The owner projection.
+    pub fn owner(&self) -> &NodeOwner {
+        &self.owner
+    }
+
+    /// Qualified declaration name segments.
+    pub fn qualified_declaration(&self) -> &[String] {
+        &self.qualified_declaration
+    }
+
+    /// The admitted content, as a preimage.
+    pub fn preimage(&self) -> EnumDeclarationPreimage {
+        EnumDeclarationPreimage {
+            owner: self.owner.clone(),
+            qualified_declaration: self.qualified_declaration.clone(),
+            ordered: self.declaration.is_ordered(),
+            members: self.declaration.members().to_vec(),
+        }
+    }
+
+    /// The RFC 8785 bytes whose SHA-256 is the declaration's node key: the
+    /// checked graph node's preimage (FR-092 rule 1).
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+        preimage_bytes(&self.canonical())
     }
 
     /// Admit a member node of this declaration whose graph retains `key`.
