@@ -34,3 +34,11 @@ What was checked:
 
 The spec change is correct and states FR-151 by reference to QSpec. One low
 wording finding on AC-8's fixtures.
+
+## Dispositions
+
+Round 1, reviewed at 7ba3a212430669eca995281d090a319420cbc4fe (fix commit 7ba3a212 over the rebased 877d9701; content diff d0a4b6ef..7ba3a212 restricted to qsl-semantics and spec, minus main's #542 changes). Coder's make ci on 7ba3a212: exit 0 (not re-run). Reviewer focused runs: qsl-semantics --features test-support --test it, 446 tests pass; mutants re-run (tuple exact, resolve always-admit, resolve exact, admits exact) each killed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7ba3a212: AC-8 names the extra fixtures: the base `probe` unit plus object type `Other` and population `others` for the unrelated case, and the variant plus `probeSub(target: Sub)` with a precondition for the supertype case |

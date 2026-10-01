@@ -45,3 +45,13 @@ The ruling is implemented and its three required tests have real oracles:
 each mutant of the fix is caught. The gaps are around the edges. The field
 path's refusal is untested (FND-001, which should get a test in this PR). The
 admit test's trace (FND-002) and TC-464's text (FND-003) lag the spec.
+
+## Dispositions
+
+Round 1, reviewed at 7ba3a212430669eca995281d090a319420cbc4fe (fix commit 7ba3a212 over the rebased 877d9701; content diff d0a4b6ef..7ba3a212 restricted to qsl-semantics and spec, minus main's #542 changes). Coder's make ci on 7ba3a212: exit 0 (not re-run). Reviewer focused runs: qsl-semantics --features test-support --test it, 446 tests pass; mutants re-run (tuple exact, resolve always-admit, resolve exact, admits exact) each killed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7ba3a212: `a_field_reference_to_an_unrelated_type_object_refuses_wrong_value_kind` refuses `invalid_runtime_input`/`wrong-value-kind` at `child`/`parent`, traced TC-465/FR-106-AC-3 (AC-3 and TC-465 row 44 name the case); the resolve-always-admits mutant now fails it |
+| FND-002 | fixed | 7ba3a212: FR-106-AC-1 states field-level subtype admission (`child.parent` naming `k` typed `Sub`); the admit test is retraced `#[trace("TC-464", "FR-106-AC-1")]` and TC-464 step 1 carries the case |
+| FND-003 | fixed | 7ba3a212: TC-464 step 5 procedure and expected results list the Sub admit, the unrelated-type refusal and the `probeSub` refusal; TC-465's prose claiming a Sub object can never be referenced by a ConfigVersion field is removed |

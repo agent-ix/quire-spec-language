@@ -82,3 +82,12 @@ the ruling requires exist and pass. Open question 2 is unreachable (see
 Summary). Open question 1 is FND-001: the same rule, a one-line fix, and in
 scope because this PR is what made `record` and `tuple` diverge. FND-001
 should be fixed in this PR.
+
+## Dispositions
+
+Round 1, reviewed at 7ba3a212430669eca995281d090a319420cbc4fe (fix commit 7ba3a212 over the rebased 877d9701; content diff d0a4b6ef..7ba3a212 restricted to qsl-semantics and spec, minus main's #542 changes). Coder's make ci on 7ba3a212: exit 0 (not re-run). Reviewer focused runs: qsl-semantics --features test-support --test it, 446 tests pass; mutants re-run (tuple exact, resolve always-admit, resolve exact, admits exact) each killed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7ba3a212: `TypeEnvironment::tuple` uses `!self.admits(value_type, value)` (declaration.rs:1754); `type_environment_model::record_and_tuple_admit_a_subtype_reference_by_conformance` builds a record and a tuple each admitting a Sub reference and refusing an unrelated one with `TypeMismatch`; reverting the line fails that test (reviewer mutant, test-support build) |
+| FND-002 | fixed | 7ba3a212: both admit tests assert `environment.find(target.universe(), "k") == Some(target)`; `ObjectReference` derives `PartialEq` over its identity triple, type included, so this pins the target to archive's `k` with its own type `Sub`; the field test now reads `child.parent` from the admitted environment (state_clauses.rs:2157-2162, 4069-4096) |
