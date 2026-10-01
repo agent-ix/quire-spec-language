@@ -72,3 +72,14 @@ the single construction path, the leaf boundary, #558 parity and the no
 re-export rule all check out. FND-001 is a documentation fix: the trust
 boundary on the member key has to be stated where RT will read it. FND-002 is a
 cleanup. Mergeable after #565 and #566, once FND-001 is fixed.
+
+## Dispositions
+
+Round 1 at 35d3cc0c (fix commit 8aa7a9cf, isolated with `git range-diff
+bcc946cd..f0166db0 9d4a29fd..35d3cc0c`: the first two commits are rebases with
+no content change beyond slice 2's renames).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8aa7a9cf: `EnumDeclaration` and `new` say SV takes the declaration key as given. `member` says the member key is taken as given and a wrong key makes `=` and ordering disagree. `EnumValue::variant` and `EnumMemberIndex::record` say the identity holds only when the key was verified. The broken wrap is gone. |
+| FND-002 | fixed | 8aa7a9cf: `quire_semantic_value::enumeration::is_member_list` is the one check, called by `EnumDeclaration::new` and both preimage readers. `AdmittedEnumDeclaration` holds `declaration`, `owner` and `qualified_declaration`, so the members are held once. The stale check recomputes the same digest (`preimage_digest` over the same `CanonicalDeclaration`, which is what `retains` computed). check.rs:228 and mod.rs:906 read `declaration().is_ordered()`. |

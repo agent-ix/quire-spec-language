@@ -41,3 +41,27 @@ stale text that slice 3 left in lines it rewrote, and they conflict with slice
 1's agreed fixes. The cleanest way to land: rebase slices 2 and 3 after slice
 1's fix round merges, then apply FND-001 to FND-004 to the merged rows in one
 pass.
+
+## New findings (disposition pass 1)
+
+Re-review of 35d3cc0c's ADR-011 against slice 1 as merged on main
+(0a399675). The branch sits on old slice 1 9b75cc5e. Between 9b75cc5e and
+0a399675 the ADR differs in one line: main's squash rewrote X-6. The branch's
+rows SV (715), the §6.1 sentences, 914, 915, 917 and X-11 agree with
+0a399675's text and extend it. X-6 does not, see FND-005.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | X-6 is the one ADR row the coder's statement does not cover ("its ADR rows agree with slice 1's merged text"). At 35d3cc0c it still has old slice 1's text: `quantity`, `stop`, `unit` and `semantic_node` are listed in `qsl-semantics`. Main's 0a399675 changed it to say `stop`, `quantity`, `unit`'s runtime half and `semantic_node`'s vocabulary are in SV. No slice 2 or slice 3 commit touches X-6, so the rebase onto main will take main's text without a conflict. That text still lists `definition`, `enumeration`, `containment` and `declaration` as whole layer-3 modules in `qsl-semantics`, which contradicts slices 2 and 3 (`declaration` and `containment` moved, `enumeration`'s runtime half and `definition`'s vocabulary moved). After rebasing, edit X-6 to list the layer-3 remainder: `definition`'s lock catalog and admission, the compile-side halves of `enumeration`, `unit` and `semantic_node`, `environment_stage`, `member`, `model_query`. Also name everything else as SV's (X-11). This can be done in slice 2's or slice 3's rebase. | spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:1108 |
+
+## Dispositions
+
+Round 1 at 35d3cc0c (fix commit 35d3cc0c).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 35d3cc0c: the SV row lists `semantic_node` (refusal vocabulary, the `check_terms` term check, `CanonicalNodeId`, `IDENTITY_LIMITS`), the structural `EnumDeclaration`, and `definition`. "Depends on" reads "K; `quire-canonical`, `serde` and `thiserror`, each without `std`", which is slice 1's merged text. |
+| FND-002 | fixed | 35d3cc0c: X-11 reads "**Extracted**:" and lists every module, `definition` included, in both the prose and the path list. |
+| FND-003 | fixed | 35d3cc0c: row 915 drops `semantic_node`. Row 917 says it is the compile side and that its vocabulary, `check_terms`, `CanonicalNodeId` and `IDENTITY_LIMITS` are in SV. Row 914 has one `semantic_node` clause. |
+| FND-004 | fixed | 35d3cc0c: the "K is a leaf" sentence names the structural enum declaration and the definition vocabulary. The SV bullet states the enumeration and definition compile-side halves and that "SV takes enum declaration and member keys as given". It adds the `EnumValue::variant` retype sentence. |
+| FND-005 | still-open | New this round. X-6 still lists `definition`, `enumeration`, `containment` and `declaration` as whole `qsl-semantics` modules once rebased onto main; fix it in the rebase. |

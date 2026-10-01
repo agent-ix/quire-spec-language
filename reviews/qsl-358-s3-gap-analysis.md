@@ -49,3 +49,11 @@ whether that test fails if the claim breaks:
 Mostly backed. Every slice claim has a test that fails if it breaks, except
 that unsorted-before-owner precedence is not pinned (FND-001, low). No missing
 production behaviour.
+
+## Dispositions
+
+Round 1 at 35d3cc0c (fix commit 8aa7a9cf).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8aa7a9cf: `t09` adds `unsorted_foreign`, an unordered and unsorted preimage with an unselected owner and a stale key. It asserts `UnsortedUnorderedMembers`, so moving `EnumDeclaration::new` below the owner or stale-key check now fails. |
