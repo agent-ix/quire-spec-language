@@ -174,8 +174,9 @@ automaton states and the depth reached.
   SHALL end the first phase with a violation.
 - The engine SHALL end the first phase at the first product state in
   FR-101 canonical breadth-first order whose letter is undefined or whose
-  monitor state rejects; when both hold at one state, the engine SHALL
-  report the undefined evaluation (ADR-018 UE-4).
+  monitor state rejects. An undefined position SHALL rank like any other
+  violation: the shortest prefix first, then canonical transition order
+  (ADR-018 UE-4).
 - When a model state's FR-120 expansion gives no successor and FR-124
   classifies it as deadlocked, the engine SHALL end a `DeadlockFreedom`
   item's first phase with a violation (ADR-018 DL-7).
