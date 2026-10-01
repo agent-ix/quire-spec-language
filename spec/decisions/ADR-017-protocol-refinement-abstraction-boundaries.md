@@ -176,8 +176,9 @@ relation-family refinement gate)" as `operation-contract`, one claim per
 clause implication, and ADR-012 §3 says the gates "emit
 `operation-contract` claims". QSpec FR-177 is protocol implementation
 refinement (FR-290 `refinement`). Spine `compile` resolves a header profile
-only against the `DefinitionLock` `root` row; the catalog's other rows are
-selected by package-selection rules, not by the author (FR-110). No
+against the `DefinitionLock` `root` row, and a header naming any QSpec AD-003
+layer resolves to that layer (FR-110, "Layer selection"); the catalog's other
+rows are selected by package-selection rules, not by the author. No
 `Relation` checker, form or gate exists: only `FamilyKind::Relation`
 (`qsl-semantics/src/family/mod.rs:101`) and a CST `RelationClause`
 production that S2 refuses (`qsl-forms/src/value.rs:1044`).
@@ -489,19 +490,24 @@ A typed compile refusal of the superseding revision is class refused for
 every case of the pair, so every case the prior revision admits is a
 regression.
 
-#### RF-3 Profile layering (#192, V1-TOOL-012): waits on Q-5
+#### RF-3 Profile layering (#192, V1-TOOL-012)
 
-No QSL build compiles one unit under a QSpec AD-003 parent definition and again
-under its child: a header selects only `root`, and the other rows follow the
-catalog's package-selection rules (FR-110). So #192 has no live parent side.
-A hand-written "parent refused" expectation that no compile checks is not
-V1-TOOL-012 evidence, and this record does not adopt one. Q-5 asks QSpec
-which layering V1-TOOL-012 covers for a compiler whose selection is fixed by
-its catalog. #192 waits on Q-5 for its pair source.
+Q-5 is answered (amended 2026-10-01; QSpec FR-453): every QSpec AD-003 layer
+is header-selectable, and the gate compares all five `requires` edges (state
+core to state queries, state queries to state graph, state core to complete
+value, state graph to complete model, complete value to complete model).
+FR-110's layer selection resolves a header naming any of the five layers, and
+S3 admits each declaration under that layer's admitted-form set, so both
+sides of every edge compile in the running build. A hand-written "parent
+refused" expectation that no compile checks is not V1-TOOL-012 evidence, and
+this record does not adopt one.
 
-The comparison is decided now, for when Q-5 answers. A #192 case is one
-unit compiled through spine `compile` under each side and classified by
-RF-2's compile classification.
+A #192 case is one edge and two units, byte-equal except for the identity
+string of one header `profile` declaration, each compiled through spine
+`compile` and classified by RF-2's compile classification. The gate also
+checks that each parent layer is a subset a user would select: each layer
+admits its witness unit, and each parent prohibits its child's
+distinguishing form (FR-345).
 
 Per case (parent `R`, child `C`), first match wins: tool failure on either
 side → tool failure; `R` refused and `C` refused → holds, both codes
@@ -560,16 +566,16 @@ does not read (the real corpus is under `tests/fixtures/refinement/`).
    any row reordering, with no fault injected into a compile.
 4. **Determinism.** Two runs give byte-equal reports.
 
-#192's seed and controls follow the same rules once Q-5 fixes its pairs.
+#192's seed and controls follow the same rules, one seed per edge.
 
 #### RF-6 Version effects
 
 - A new revision of a specification adds a pair; old pairs keep running.
 - A new edition or `root` revision changes no pair's meaning: both revisions
   of every pair compile under the running build, so the gate compares within
-  one build and never across two (ADR-013 R-08). A source whose header pins
-  the old `root` revision refuses at compile (`Profile`), which is tool
-  failure, until its header moves with the build.
+  one build and never across two. A header profile resolves by identity
+  alone (FR-110), so a source whose header names an earlier revision label
+  compiles under the running build's definition of that identity.
 - The gate compares classes, never `package_id`s.
 
 ### 3. Abstraction relation (#198)
@@ -711,7 +717,7 @@ There is no totality check.
 | Mapping | Types and owners | Conversions | Version effect | Failure oracle | Tests | Tickets |
 | --- | --- | --- | --- | --- | --- | --- |
 | Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `revision-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
-| Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 after Q-5 |
+| Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 |
 | Abstraction relation | AR-2, AR-3; `check` core; layer-4 export | checked relation → v2 node (Q-2); export → driver → CG | AR-4 relation revision | AR-3 and AR-4 refusals | AR-7 | #198 slices; Q-1, Q-2 |
 
 #### AR-7 Abstraction-relation tests
@@ -746,8 +752,9 @@ reader, the all-causes accessor on `CompileRefusal`, RF-2's classifications
 and comparison, the RF-4 report and exit, the corpus under
 `tests/fixtures/refinement/`, and RF-5's tests.
 
-**#192 (QSL-39)** waits on Q-5. It then builds `xtask refinement layering`
-over RF-2's compile classification, RF-3 and RF-4. It cites QSpec AD-003 and
+**#192 (QSL-39)** builds `xtask refinement layering` over all five AD-003
+edges, on RF-2's compile classification, RF-3, RF-4 and FR-110's layer
+selection. It cites QSpec AD-003 and
 V1-TOOL-012, not QSpec FR-250.
 
 **Downstream asks.**
@@ -773,7 +780,7 @@ These are proposed; the team lead files them.
 | Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values. Decided: QSpec FR-451 (STD-116) | QSpec | QSpec |
 | Q-3 | QSpec FR-290 claim-form row: remove "(a relation-family refinement gate)"; re-trace V1-TOOL-011 and V1-TOOL-012 from QSpec FR-177 and TC-208 to the #191 and #192 gate tests | QSpec | QSpec |
 | Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50) | QSpec, CG | QSpec |
-| Q-5 | Which profile layering V1-TOOL-012 covers for a compiler whose selections are fixed by its catalog, and which QSpec AD-003 edges V1 requires | QSpec | QSpec |
+| Q-5 | Which profile layering V1-TOOL-012 covers for a compiler whose selections are fixed by its catalog, and which QSpec AD-003 edges V1 requires. Answered by QSpec FR-453: every layer header-selectable, all five edges | QSpec | QSpec |
 | Q-6 | A catalog cause for an implementation-gap `unsupported_construct` refusal (QSL's `not-yet-implemented`) | QSpec | QSpec |
 | Q-7 | QSpec FR-353-AC-1: accept a frame binding keyed by the operation (declaring type key, operation identifier), with the frame and anchor identities derived from it, or amend AC-1. Decided: QSpec FR-353-AC-1 accepts the derived key (STD-121) | QSpec | QSpec |
 
@@ -807,13 +814,16 @@ Ticket-text corrections for the owner (all ticket text read as data):
   any stage, not only `compile` or `select`, is unresolved, so a prior
   run that reaches a limit at `admit` or `evaluate` is never `not
   applicable`; RF-4 names the reached limit
-  of an incomplete case. RF-3's pair source still waits on Q-5.
+  of an incomplete case.
+- 2026-10-01, Q-5 answered (QSpec FR-453): RF-3 covers all five AD-003
+  edges with header-selected layers (FR-110 layer selection) and the
+  user-subset check; RF-6 resolves a header by identity alone.
 
 ### 8. Open dependencies and ticket edges
 
 1. **Q-1 and Q-2 (QSpec)** block #198's feature slice and ARCH-G4 scenario 8.
    CG#84 waits on Q-2 and on IR-33.
-2. **Q-5 (QSpec)** blocks #192.
+2. **Q-5 (QSpec)** is answered by QSpec FR-453; #192 is unblocked.
 3. **IR-339 and CG#49**: a frame record settles `unsupported` until each
    lands (PF-2).
 4. **Linear edges** for the owner: QSL-39 blocks QSL-36 today, but #198 needs
@@ -823,8 +833,8 @@ Ticket-text corrections for the owner (all ticket text read as data):
 ## Consequences
 
 - #191 and #198's enablement slice can be built now with no further
-  ownership decision. #198's feature slice waits on Q-1 and Q-2, and #192
-  waits on Q-5.
+  ownership decision, and so can #192 over FR-110's layer selection.
+  #198's feature slice waits on Q-1 and Q-2.
 - Protocol/frame needs no redesign. Three bounded defects (G-1 to G-3) are
   ticketed.
 - Refinement gates produce test evidence only. A regression names its case by
@@ -836,14 +846,13 @@ Ticket-text corrections for the owner (all ticket text read as data):
 ## Alternatives Considered
 
 - **Read #191 as one source compiled under two language editions.**
-  Rejected. A build selects one edition and one revision of each definition
-  (ADR-013 R-08, ADR-014 N-4), so the prior side could only be a recorded
-  outcome, and a header that pins the old `root` revision refuses after the
-  move. QSL-40's "versioned spec pair" and QSpec#116's "spec versioning" name
+  Rejected. A build carries one definition of each edition and profile
+  identity, and keeps no earlier one (ADR-014 N-4), so the prior side could
+  only be a recorded outcome. QSL-40's "versioned spec pair" and QSpec#116's "spec versioning" name
   two revisions of one specification, which one build compiles.
 - **Hand-authored parent outcomes for #192.** Rejected. No compile checks
   them, so the gate would test the author's expectation, not refusal
-  preservation (Q-5).
+  preservation (QSpec FR-453).
 - **Treat `unsupported_construct` as a refusal #192 preserves.** Rejected. A
   child profile admits forms its parent prohibits; QSpec AD-003 keeps
   "prohibited by the selected profile" apart from a typed refusal.

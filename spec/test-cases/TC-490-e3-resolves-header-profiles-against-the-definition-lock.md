@@ -12,8 +12,9 @@ relationships:
 
 Verify that spine `compile` admits a header profile only when it selects
 the `DefinitionLock` catalog's `root` row exactly, and refuses every other
-header profile with its catalogued code and cause. Scope: FR-110-AC-1 to
-FR-110-AC-6.
+header profile with its catalogued code and cause, and that a header
+naming a QSpec AD-003 layer restricts its declarations to that layer.
+Scope: FR-110-AC-1 to FR-110-AC-8.
 
 This catches a resolver that reads the header as informational, one that
 compares only the identity, one that accepts any catalog row as a profile,
@@ -37,8 +38,16 @@ identity, revision value and digest from the catalog, never from literals.
 6. Compile a unit with profiles `v` (exact `R`), `w` (`R`'s identity,
    version `"1"`) and `x` (`test:unknown-profile`). Then compile a unit
    with profiles `v` and `u`, both exact `R`.
+7. For each QSpec AD-003 layer (`quire.state.core/v1`,
+   `quire.state.queries/v1`, `quire.state.graph/v1`,
+   `quire.value.complete/v1`, `quire.model.complete/v1`), compile a unit
+   whose one profile `v` names the layer and whose one declaration uses
+   only that layer's forms. Read each emitted lock.
+8. Compile a unit whose profile `v` names `quire.state.core/v1` and whose
+   declaration calls a named predicate, then the same unit with `v` naming
+   `quire.state.queries/v1`.
 
-Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-6", "TC-490")]` over the
+Tag the test `#[trace("FR-110-AC-1", …, "FR-110-AC-8", "TC-490")]` over the
 criteria each step backs.
 
 ## Expected Results
@@ -57,8 +66,14 @@ criteria each step backs.
   selection and `R`'s digest.
 - Step 6's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
+- Step 7: each unit compiles; each lock's `definition_selections` holds the
+  layer and every layer it requires and no layer that requires it, written
+  out per layer as a literal in the test.
+- Step 8: the state-core unit refuses `unsupported_construct`/
+  `declaration-form` at the call's span naming `quire.state.core/v1`, with
+  no package; the state-queries unit compiles.
 
 ## Status
 
 Implemented: `a_header_profile_resolves_only_against_the_root_row`
-(`qsl-replay/src/spine.rs`) backs steps 1-6.
+(`qsl-replay/src/spine.rs`) backs steps 1-6. Steps 7 and 8 are planned.

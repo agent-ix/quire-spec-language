@@ -78,6 +78,16 @@ corpus only.
 - **Then** the gate exits 10 naming the case, the parent and child edge and
   the parent's codes.
 
+### US-034-EX-5: A restricted layer stays a smaller language
+
+- **Given** a user who selects `quire.state.core/v1` in a unit's header to
+  keep it inside an embedded or runtime-monitor target's subset.
+- **When** the profile-layering gate runs.
+- **Then** the gate confirms that state core admits a bounded-scalar
+  monitor invariant and prohibits a named predicate that state queries
+  admits; a state core that admitted the predicate fails the gate naming
+  the edge.
+
 ## Priority and Risk (Informative)
 
 Priority: High. V1-TOOL-011 and V1-TOOL-012 are Required V1 capability

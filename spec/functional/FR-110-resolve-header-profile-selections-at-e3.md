@@ -17,6 +17,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-453
+    type: depends_on
 ---
 # FR-110: E3 resolves a unit's header profile selections against the DefinitionLock catalog
 
@@ -30,7 +32,8 @@ profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
 This requirement specifies the `Value` family's catalog,
 `DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which reads
 QSpec's `complete-value-lock.json` by reference and whose one
-header-selectable row is `root`. A clause profile (FR-322 roles
+header-selectable row is `root`; the other QSpec AD-003 layers resolve as
+"Layer selection" states. A clause profile (FR-322 roles
 `temporal_profile` and `protocol_profile`) resolves in its clause family's
 catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
 #218), which also writes its `profile_selections` row.
@@ -112,6 +115,27 @@ D-1), after I1 and the S4 source resolution and before the FR-091
 assembler. Replay recompiles through the same spine (ADR-011 §2.1 E9), so
 it applies the same resolution.
 
+### Layer selection
+
+Every layer of QSpec AD-003's state and value/model hierarchy is
+header-selectable (QSpec FR-453; QSpec definitions README, "Header-selectable
+layers"): `quire.state.core/v1`, `quire.state.queries/v1`,
+`quire.state.graph/v1`, `quire.value.complete/v1` and
+`quire.model.complete/v1`.
+
+- When a header profile's identity names one of these five layers, E3 SHALL
+  resolve it to that layer, before the `DefinitionLock` table above is
+  consulted.
+- When a declaration's `using` alias names a header profile resolved to a
+  layer, S3 SHALL admit the declaration under exactly that layer's
+  admitted-form set, which includes the sets of the layers it requires.
+- When such a declaration uses a form outside that set, S3 SHALL refuse it
+  with `unsupported_construct`/`declaration-form` at the form's span, naming
+  the selected layer. It never admits the form under a wider layer.
+- The emitted lock's `definition_selections` SHALL hold the selected layer
+  and every layer it requires, and no layer that requires it, so the two
+  sides of a QSpec AD-003 `requires` edge compile to distinct packages.
+
 ### Model selections
 
 E3 SHALL resolve each `model` declaration only against the domain package
@@ -146,6 +170,8 @@ unchanged.
 | FR-110-AC-4 | The same unit with the `root` identity and version `"1"` refuses `stale_dependency`/`revision-mismatch`, retaining the selected triple and the `root` row's identity, revision and digest. | Test (TC-490) |
 | FR-110-AC-5 | The same unit with the `root` identity and revision value and a digest of 64 `a`s refuses `stale_dependency`/`byte-digest-mismatch`, retaining the selected triple and the `root` row's digest. | Test (TC-490) |
 | FR-110-AC-6 | A unit with three header profiles, the exact `root` selection under alias `v`, a `revision-mismatch` selection under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the exact `root` selection under two aliases compiles. | Test (TC-490) |
+| FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` holds the layer and every layer it requires and no layer that requires it. | Test (TC-490) |
+| FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`declaration-form` at the call's span naming `quire.state.core/v1`; the same unit naming `quire.state.queries/v1` compiles. | Test (TC-490) |
 
 ## Dependencies
 
@@ -160,6 +186,8 @@ unchanged.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),
   whose assembler resolves each `using` alias to a header profile
   (FR-091-AC-22) after this resolution.
+- QSpec FR-453 and the QSpec definitions README "Header-selectable layers"
+  table (each layer's identity, `requires` edges and admitted-form set).
 - QSpec `proposals/quire-v1/definitions/complete-value-lock.json` (the
   catalog rows), `native-diagnostics.md` (the codes and causes) and
   FR-322 (the lock members).

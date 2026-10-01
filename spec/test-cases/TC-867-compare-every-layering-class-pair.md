@@ -23,8 +23,8 @@ Scope: FR-345-AC-1 to FR-345-AC-3.
    derived by hand from FR-345's rows.
 2. Take as the parent side the compile result of a unit with an ill-typed
    function body (`refused`) and as the child side the compile result of
-   the ConfigVersion unit (`admitted`), naming the case by the unit's
-   `RawSourceRef` and the edge `quire.state.core/v1` to
+   the ConfigVersion unit (`admitted`), naming the case by the two units'
+   `RawSourceRef`s and the edge `quire.state.core/v1` to
    `quire.state.queries/v1`. Compare and report.
 3. Take as the parent side a refusal whose every cause is
    `unsupported_construct`/`declaration-form` (`prohibited`) and as the
@@ -35,6 +35,6 @@ Tag the tests `#[trace("TC-867", "FR-345-AC-n")]`.
 ## Expected Results
 
 - Step 1: every pair returns its literal expected result.
-- Step 2: `regression` naming the `RawSourceRef`, both edge identities and
+- Step 2: `regression` naming both `RawSourceRef`s, both edge identities and
   the parent's `ill_typed` code; verdict violation, exit 10.
 - Step 3: `not applicable`.

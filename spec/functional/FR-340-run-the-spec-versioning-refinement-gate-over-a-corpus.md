@@ -140,8 +140,8 @@ passed to FR-344's report.
 
 - ADR-017 §2 RF-1, RF-2 (amended 2026-10-01: corpus layout, pair
   direction), RF-5, RF-6.
-- QSpec half: STD-117 (QSpec FR-290 claim-form row and the V1-TOOL-011
-  re-trace).
+- QSpec half: QSpec FR-452 and FR-290 (the claim-form row and the
+  V1-TOOL-011 re-trace), STD-117.
 - Implementation ticket QSL-40; specification ticket QSL-386.
 
 ## Status

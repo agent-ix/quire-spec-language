@@ -25,8 +25,8 @@ verdict.
 
 ## Inputs
 
-The case results of FR-343 or FR-345, and FR-340's pair-level tool-failure
-results.
+The case results of FR-343 or FR-345, FR-345's layer and edge results, and
+FR-340's pair-level tool-failure results.
 
 ## Outputs
 
