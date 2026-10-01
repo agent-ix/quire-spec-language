@@ -1,8 +1,7 @@
 # Native package vector provenance
 
-After specification correction 2c6b9b8 and all-eight re-review at 1c3aa50, the
-Rust vector helper in tests/package_construction_cases/vectors.rs independently
-composes a complete positive manifest for a real imported model and constant
+The Rust vector helper in tests/package_construction_cases/vectors.rs
+independently composes a complete positive manifest for a real imported model and constant
 clause. Model loci follow physical input-fragment boundaries; native offsets
 follow fixed clause fragments. Package fields/order, Unicode escapes and domain
 prefix are authored independently of the package encoder. The opaque admitted
