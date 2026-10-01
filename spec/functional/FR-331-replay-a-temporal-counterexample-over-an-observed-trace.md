@@ -94,6 +94,11 @@ formula is false on it.
   pending, or false at another position), the facade SHALL settle
   `inconclusive` with `InconclusiveCause::ReplayParity` (ADR-013 C-09,
   O-27).
+- For a packet whose refutation is `UndefinedEvaluation`, an evaluation
+  that returns `Undefined` at the packet's `trace_position` with an equal
+  cause SHALL settle `reproduced-with-evaluated-witness`: the reproduced
+  undefined value is the witness (ADR-018 UE-5). Anything else SHALL settle
+  `inconclusive`, `ReplayParity`.
 - Replay SHALL need no backend and no solver.
 
 ## Acceptance Criteria
@@ -103,6 +108,7 @@ formula is false on it.
 | FR-331-AC-1 | A packet for the `Counter` unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) with an observed lasso, empty prefix, loop 0, 1, and `trace_position` `0` settles `reproduced-with-evaluated-witness`; the same packet with loop 0, 1, 2 settles `inconclusive`, `ReplayParity`. | Test (TC-841) |
 | FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `[0,1]` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `[0,2]` it refuses `stale_dependency`/`revision-mismatch` naming the interval. | Test (TC-841) |
 | FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`revision-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
+| FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome with `trace_position` `2` settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` `1` settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 
 ## Dependencies
 

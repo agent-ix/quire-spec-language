@@ -61,7 +61,9 @@ loop is never reported as a violation.
 
 - `Completed(true)` (`tested`, evidence for this lasso only);
   `Completed(false)` (violation) with the `TemporalPosition` of the first
-  activation that evaluated false; or `Incomplete` with its charge point.
+  activation that evaluated false; `Undefined` (violation) as FR-327
+  states, reading every unrolled position; or `Incomplete` with its charge
+  point.
 - A refusal `invalid_runtime_input`/`invalid-value`, with no truth value,
   for a malformed or unfair lasso.
 
@@ -126,6 +128,7 @@ loop is never reported as a violation.
 | FR-329-AC-3 | A lasso with an empty loop refuses `invalid_runtime_input`/`invalid-value`. A `Lasso::Model` whose last loop post-state differs from its entry state refuses the same way. | Test (TC-839) |
 | FR-329-AC-4 | On ADR-018 §6's three-step `upd(a)` lasso as `Lasso::Model`, `always eventually holds(b.versionNumber = 2)` under `fair weak attemptUpdate` is `Completed(false)` at position 0; under `fair weak each attemptUpdate` it refuses `invalid_runtime_input`/`invalid-value` naming the constraint (`upd(b)` is enabled throughout the loop and never taken). The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-839) |
 | FR-329-AC-5 | AC-1's first clause with a meter one unit short of its visit count returns `Incomplete` and no truth value. | Test (TC-839) |
+| FR-329-AC-6 | On the observed `Counter` lasso with an empty prefix and loop `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` returns `Undefined{where: 2, cause: division-by-zero}`, category violation. | Test (TC-847) |
 
 ## Dependencies
 

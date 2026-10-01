@@ -59,8 +59,9 @@ with an incomplete result, never a guess, when the work budget runs out.
 - `TemporalPosition(u64)`: a zero-based index into the represented trace,
   prefix first, then loop.
 - An evaluation outcome: `Completed(true)`; `Completed(false)` with the
-  `TemporalPosition` of the first activation that evaluated false; or
-  `Incomplete` with its charge point.
+  `TemporalPosition` of the first activation that evaluated false;
+  `Undefined(UndefinedEvaluation{where, cause})` with `where` a
+  `TemporalPosition`; or `Incomplete` with its charge point.
 - `TemporalPosition` encodes into `qsl_replay::TracePosition` as decimal
   ASCII with no leading zero, `0` for position zero.
 
@@ -91,6 +92,24 @@ with an incomplete result, never a guess, when the work budget runs out.
   otherwise `Completed(false)` naming the first activation in position
   order that evaluated false.
 
+### Undefined evaluation
+
+- At each position the clause reads, the evaluator SHALL read the clause's
+  letter, the value of every atom of the clause there (ADR-018 UE-1). An
+  activation `on origin` under a bounded profile SHALL read positions 0 to
+  its horizon; every other clause SHALL read every represented position.
+  A position a false-extension profile supplies after the trace SHALL
+  evaluate no atom.
+- When an atom evaluates `Undefined` at a position the clause reads, the
+  evaluator SHALL return `Undefined(UndefinedEvaluation{where, cause})`,
+  `where` the first such position and `cause` the `UndefinedRecord` of the
+  first such atom in clause-node order, in place of a truth value. An
+  activation that evaluates false at an earlier position SHALL be returned
+  instead: the claim fails at the first refuting position.
+- `Undefined` SHALL map to the O-16 category violation, with cause
+  `UndefinedEvaluation`: a claim that is not defined on the trace does not
+  hold on it.
+
 ### Work
 
 - The evaluator SHALL charge `quire_exact::LimitKind::WorkUnits` once for
@@ -112,6 +131,7 @@ with an incomplete result, never a guess, when the work budget runs out.
 | FR-327-AC-2 | Over the same trace, `always[0,0] holds(c.value <= 1)` with activation `on each` is `Completed(false)` at position 2. | Test (TC-837) |
 | FR-327-AC-3 | `TracePosition` `0` and `2` decode to positions 0 and 2; `02`, `-1`, the empty string and `18446744073709551616` refuse `invalid_runtime_input`/`invalid-value`; position `3` on the three-position trace refuses `invalid_runtime_input`/`invalid-value` at reconstruction. Position 12 encodes as `12`. | Test (TC-837) |
 | FR-327-AC-4 | `eventually[0,2] holds(c.value = 2)` with a meter of 2 work units returns `Incomplete` at the `WorkUnits` charge point and no truth value; with an unlimited meter, the work charged equals the number of (temporal node, position) visits the evaluation made. | Test (TC-837) |
+| FR-327-AC-5 | Over the closed `Counter` trace with `c.value` 0, 1, 2 under event-position false-extension, `always[0,2] holds(2 / (2 - c.value) >= 1)` `on origin` returns `Undefined{where: 2, cause: division-by-zero}`, category violation; `eventually[0,1] holds(2 / (2 - c.value) = 2)` reads positions 0 and 1 only and returns `Completed(true)`. | Test (TC-847) |
 
 ## Dependencies
 

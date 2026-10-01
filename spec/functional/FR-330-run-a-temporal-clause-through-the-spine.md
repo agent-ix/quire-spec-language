@@ -86,6 +86,8 @@ result) and `unsupported` (a missing fairness premise), and whose
   `evaluate`, category `refusal`, with its record.
 - The entry SHALL map `Completed(true)` to `success` (exit 0),
   `Completed(false)` to `violation` (exit 10) with the failing position,
+  `Undefined` to `violation` (exit 10) with its position and its
+  `UndefinedEvaluation` cause,
   `Pending` to `inconclusive` (exit 0, completed without violation), a
   missing fairness premise to `unsupported` (exit 21), and `Incomplete` to
   `incomplete` (exit 22), by QSpec FR-301's exit contract.
@@ -101,6 +103,7 @@ result) and `unsupported` (a missing fairness premise), and whose
 | FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `inconclusive`, exit 0, with no `truth`; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |
+| FR-330-AC-5 | From source, FR-327-AC-5's first clause over the `Finite` snapshots with `c.value` 0, 1, 2 reports `violation`, exit 10, position 2 and cause `UndefinedEvaluation` with `division-by-zero`. | Test (TC-847) |
 
 ## Dependencies
 
