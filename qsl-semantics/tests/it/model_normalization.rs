@@ -810,6 +810,7 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     assert_ne!(universe.identity(), universe_v1.identity());
 }
 
+#[trace("TC-238", "FR-081-AC-7")]
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-4")]
 #[test]
 fn n07_record_order_does_not_affect_identity_or_view() {
@@ -1280,6 +1281,7 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
 // member") — asserting the refusal names both contending redefiners' rule
 // paths is exactly that. Not AC-1: nothing here links a normalized
 // identity to its contributing declarations.
+#[trace("TC-237", "FR-081-AC-6")]
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-5")]
 #[test]
 fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
@@ -1455,6 +1457,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
 // the winner's/hidden target's derivation facts link to every contributing
 // original declaration and rule — AC-1's own language. It never checks
 // replay/record-order independence, which is what AC-4 actually requires.
+#[trace("TC-215", "FR-081-AC-3")]
 #[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
 #[test]
 fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
@@ -2388,6 +2391,7 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
 /// recorded scope decision (the refusal's shape is reproduced exactly; the
 /// exact six-`normalize.cycle-check`-charge accounting across both types'
 /// walks is not).
+#[trace("TC-219", "FR-082-AC-2")]
 #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {

@@ -337,14 +337,12 @@ fn product(left: &IntegerInterval, right: &IntegerInterval) -> IntegerInterval {
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
 
-    /// TC-332: `Rational::new` reduces to lowest terms and normalizes the
+    /// `Rational::new` reduces to lowest terms and normalizes the
     /// sign onto the numerator, so `2/4` and `-1/-2` both construct the same
     /// canonical `1/2`.
-    #[trace("TC-332")]
     #[test]
     fn tc_332_new_reduces_and_normalizes_sign() {
         let two_fourths = Rational::new(Integer::from(2_u64), Integer::from(4_u64)).unwrap();
@@ -358,9 +356,8 @@ mod tests {
         assert_eq!(neg_over_neg, half);
     }
 
-    /// TC-333: a zero denominator is refused, never silently treated as an
+    /// a zero denominator is refused, never silently treated as an
     /// undefined or infinite value.
-    #[trace("TC-333")]
     #[test]
     fn tc_333_zero_denominator_is_refused() {
         assert_eq!(
@@ -369,9 +366,8 @@ mod tests {
         );
     }
 
-    /// TC-334: `RationalDomain::contains` is exactly the closed
+    /// `RationalDomain::contains` is exactly the closed
     /// numerator/denominator interval product membership test.
-    #[trace("TC-334")]
     #[test]
     fn tc_334_domain_contains_checks_both_intervals() {
         let domain = RationalDomain::new(

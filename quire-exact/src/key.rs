@@ -170,9 +170,8 @@ mod tests {
     use super::*;
     use crate::integer::Integer;
 
-    /// TC-312: two equal integers key-compare equal; unequal integers key
+    /// two equal integers key-compare equal; unequal integers key
     /// in the same order as their value ordering.
-    #[trace("TC-312")]
     #[test]
     fn tc_312_integer_keys_follow_value_ordering() {
         let one = Value::Integer(Integer::one());
@@ -181,9 +180,8 @@ mod tests {
         assert_eq!(compare_keys(&one, &two), Some(Ordering::Less));
     }
 
-    /// TC-313: comparing values of unrelated types (a checked program never
+    /// comparing values of unrelated types (a checked program never
     /// produces this) returns `None`, not a panic.
-    #[trace("TC-313")]
     #[test]
     fn tc_313_mismatched_leaf_types_return_none() {
         let boolean = Value::Boolean(true);
@@ -208,9 +206,8 @@ mod tests {
         assert_eq!(compare_keys(&left, &right), None);
     }
 
-    /// TC-349 (M-2): a same-type `Value::Float` pair has no key, matching
+    /// (M-2): a same-type `Value::Float` pair has no key, matching
     /// its exclusion from `=` in `crate::equality`'s leaf match.
-    #[trace("TC-349")]
     #[test]
     fn tc_349_float_pair_has_no_key() {
         use crate::ieee::IeeeValue;

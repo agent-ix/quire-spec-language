@@ -246,9 +246,8 @@ mod tests {
         Meter::new(generous_limits())
     }
 
-    /// TC-346: `plan_equality` reports the exact pair count of two equal
+    /// `plan_equality` reports the exact pair count of two equal
     /// integers without charging (H-7/H-8: previously untested).
-    #[trace("TC-346")]
     #[test]
     fn tc_346_plan_equality_reports_pairs_without_charge() {
         let left = Value::Integer(Integer::one());
@@ -257,13 +256,12 @@ mod tests {
         assert_eq!(plan.pair_events(), &Integer::one());
     }
 
-    /// TC-347: `planned_equality` completes true for two equal integers
+    /// `planned_equality` completes true for two equal integers
     /// under a generous meter, and a meter with no `value_occurrences` left
     /// cannot admit `equality.plan-form`, so the identical comparison
     /// returns `Outcome::Incomplete` instead (H-7/H-8: `planned_equality`'s
     /// public API and metering path were previously untested, and metering
     /// accumulation/`Incomplete` was unproven end to end for any operation).
-    #[trace("TC-347")]
     #[test]
     fn tc_347_planned_equality_charges_and_a_tight_meter_is_incomplete() {
         let left = Value::Integer(Integer::one());
@@ -281,8 +279,7 @@ mod tests {
         assert!(matches!(outcome, Outcome::Incomplete(_)));
     }
 
-    /// TC-321: two equal integers plan one pair and compare equal.
-    #[trace("TC-321")]
+    /// two equal integers plan one pair and compare equal.
     #[test]
     fn tc_321_equal_integers_plan_one_equal_pair() {
         let left = Value::Integer(Integer::one());
@@ -313,10 +310,9 @@ mod tests {
         ));
     }
 
-    /// TC-322: a reference pair of different universes refuses with
+    /// a reference pair of different universes refuses with
     /// `ForeignReference` rather than comparing structurally, carrying the
     /// left operand's universe as `required` and the right's as `supplied`.
-    #[trace("TC-322")]
     #[test]
     fn tc_322_foreign_reference_pair_is_refused() {
         use crate::identity::{EffectiveId, ObjectId, UniverseId};

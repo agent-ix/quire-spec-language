@@ -3,8 +3,6 @@ id: IT-011
 title: "Adopt the frozen complete-V1 contracts and delivery lane"
 type: IT
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-055
-    type: verifies
   - target: ix://agent-ix/quire-specification/Task-010
     type: depends_on
   - target: ix://agent-ix/quire-specification/AD-003
@@ -104,7 +102,7 @@ downstream work cannot claim a smaller semantic profile as complete V1.
 
 - Priority: P0
 - Target Integration: QSpec complete-V1 contract to QSL/WASM delivery plan
-- Automation: Automated Rust structural audit plus local inspection
+- Automation: local inspection
 
 ## Dependencies
 
@@ -123,7 +121,5 @@ versioned interfaces and does not claim their implementation.
 
 ## Traceability
 
-TC-144 verifies [FR-055](../functional/FR-055-govern-complete-v1-lane.md) and
-checks the local allocation and serial task graph. The central TestCase
-artifacts remain the normative behavior definitions and become executable
-evidence only in their owning downstream tickets.
+The central TestCase artifacts remain the normative behavior definitions and
+become executable evidence only in their owning downstream tickets.

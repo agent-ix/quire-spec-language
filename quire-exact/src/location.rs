@@ -123,7 +123,6 @@ impl Location {
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
 
@@ -133,10 +132,9 @@ mod tests {
         bytes
     }
 
-    /// TC-305: two locations naming the same node and the same
+    /// two locations naming the same node and the same
     /// `(role, ordinal)` occurrence are equal; a different ordinal makes
     /// them distinct (ADR-013 O-07).
-    #[trace("TC-305")]
     #[test]
     fn tc_305_location_equality_follows_node_and_occurrence() {
         let node = NodeKey::from_digest(digest(1));
@@ -147,11 +145,10 @@ mod tests {
         assert_ne!(a, c);
     }
 
-    /// TC-306 (H-7/H-8, strengthened): `Origin`'s derived `Ord` orders
+    /// (H-7/H-8, strengthened): `Origin`'s derived `Ord` orders
     /// first by role, then by ordinal within the same role -- the field
     /// order the derive relies on, exercised rather than merely round-
     /// tripped through the accessors.
-    #[trace("TC-306")]
     #[test]
     fn tc_306_origin_orders_by_role_then_ordinal() {
         let declaration_0 = Origin::new(Role::from("declaration"), 0);

@@ -479,7 +479,6 @@ fn check_length(bound: Option<&TextType>, sequences: &[&str]) -> Result<(), Stop
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
     use crate::accounting::ScalarLimits;
@@ -499,9 +498,8 @@ mod tests {
         })
     }
 
-    /// TC-341: a runtime UTF-8 payload within its declared length bounds is
+    /// a runtime UTF-8 payload within its declared length bounds is
     /// admitted unchanged.
-    #[trace("TC-341")]
     #[test]
     fn tc_341_utf8_payload_within_bound_is_admitted() {
         let payload = TextPayload::from_utf8("café".as_bytes()).unwrap();
@@ -513,9 +511,8 @@ mod tests {
         assert_eq!(text.retained(), "café");
     }
 
-    /// TC-342: a payload longer than the declared maximum is refused with
+    /// a payload longer than the declared maximum is refused with
     /// `TextLengthOutOfDomain`, never silently truncated.
-    #[trace("TC-342")]
     #[test]
     fn tc_342_admit_refuses_past_the_declared_maximum() {
         let payload = TextPayload::from_utf8("hello".as_bytes()).unwrap();

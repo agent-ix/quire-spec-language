@@ -49,7 +49,7 @@ fn catalog() -> (ProfileCatalog, DefinitionRef) {
     )
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-1")]
 #[test]
 fn formatting_is_idempotent_and_preserves_semantic_tokens() {
     let (catalog, profile) = catalog();
@@ -152,7 +152,7 @@ fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
     }
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-2")]
 #[test]
 fn incremental_and_full_reparse_publish_identical_language_outputs() {
     let (catalog, profile) = catalog();
@@ -203,7 +203,7 @@ fn incremental_and_full_reparse_publish_identical_language_outputs() {
         .any(|item| item.spelling == "Complete"));
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-2")]
 #[test]
 fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
     let (catalog, profile) = catalog();
@@ -246,7 +246,7 @@ fn non_lexical_whitespace_falls_back_and_matches_full_reparse() {
     }
 }
 
-#[trace("Task-047")]
+#[trace("QSpec-TC-223", "QSpec-FR-303-AC-2")]
 #[test]
 fn lowered_parse_limits_force_full_incremental_validation() {
     let (_, profile) = catalog();
@@ -298,7 +298,6 @@ fn lowered_parse_limits_force_full_incremental_validation() {
     }
 }
 
-#[trace("Task-047")]
 #[trace("TC-424", "FR-001-AC-12")]
 #[test]
 fn stale_profile_and_cancelled_editor_requests_are_typed() {
@@ -343,7 +342,6 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
     );
 }
 
-#[trace("Task-047")]
 #[test]
 fn formatter_reparse_uses_the_callers_explicit_limits() {
     let (catalog, profile) = catalog();
@@ -377,7 +375,6 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
     );
 }
 
-#[trace("Task-047")]
 #[test]
 fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection() {
     let (catalog, profile) = catalog();
@@ -492,7 +489,6 @@ fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection()
     }
 }
 
-#[trace("Task-047")]
 #[test]
 fn formatter_checks_trailing_comment_and_newline_capacity_before_append() {
     let (catalog, profile) = catalog();

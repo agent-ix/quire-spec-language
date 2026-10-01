@@ -475,9 +475,8 @@ mod tests {
         })
     }
 
-    /// TC-314: an empty bound `[0, 3]` admits an empty sequence with zero
+    /// an empty bound `[0, 3]` admits an empty sequence with zero
     /// occurrences retained.
-    #[trace("TC-314")]
     #[test]
     fn tc_314_empty_sequence_within_bound_completes() {
         let bound = CardinalityBound::new(0, 3).unwrap();
@@ -489,9 +488,9 @@ mod tests {
         assert_eq!(value.occ(), Integer::one());
     }
 
-    /// TC-315: forming a sequence past its declared maximum is refused with
+    /// forming a sequence past its declared maximum is refused with
     /// `AboveMaximum` and no collection is materialized.
-    #[trace("TC-315")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-3")]
     #[test]
     fn tc_315_sequence_above_maximum_is_refused() {
         let bound = CardinalityBound::new(0, 1).unwrap();

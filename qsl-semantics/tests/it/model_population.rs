@@ -367,6 +367,7 @@ fn lookup_key(
 /// declared maximum unreflected in the Outputs — the
 /// `selected_a.bound().maximum() == 3` assertion went red as expected,
 /// reverted.
+#[trace("TC-242", "FR-084-AC-6")]
 #[test]
 #[trace(
     "QSpec-TC-198",
@@ -525,6 +526,7 @@ fn l01_all_instances_incomplete_at_result_retain() {
 /// `population.extent == Extent::Closed` in `admit_binding`, so the
 /// open-extent population fell through instead of returning
 /// `UnknownClosure` — red as expected, reverted.
+#[trace("TC-226", "FR-084-AC-1")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-2")]
 fn l02_unknown_closure_is_incomplete_not_refused() {
@@ -611,6 +613,7 @@ fn admitted_binding(view: &EffectiveView, document: &PopulationDocument) -> Popu
 /// queried type `M::A` for the reference key's own static type `M::B` — the
 /// `Completed(Some(TypedReference::new(DeclarationKey::fixture("model.A"), ...)))`
 /// assertion went red as expected, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_undefined_mode() {
@@ -667,6 +670,7 @@ fn l03_lookup_undefined_mode() {
 ///
 /// Mutation used (typed result): same as `l03_lookup_undefined_mode`'s typed-
 /// result mutation, confirmed independently red here too, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_empty_mode() {
@@ -716,6 +720,7 @@ fn l03_lookup_empty_mode() {
 /// Mutation used: in `lookup`, changed the `AbsenceMode::Refused` arm's
 /// `Code::InvalidRuntimeInput` to `Code::IllTyped` — the code assertion went
 /// red as expected, reverted.
+#[trace("TC-228", "FR-084-AC-3")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-2", "QSpec-FR-153-AC-4")]
 fn l03_lookup_refused_mode() {
@@ -1066,6 +1071,7 @@ fn oqe_lookup_across_connected_components_refuses_as_foreign_universe() {
 /// match), so the conflicting second `a1` record was admitted instead of
 /// refused — the `AdmissionOutcome::Refused` assertion went red as expected,
 /// reverted.
+#[trace("TC-229", "FR-084-AC-4")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
@@ -1118,6 +1124,7 @@ fn l05_conflicting_identity_refuses_after_fourth_member_charge() {
 /// duplicate fall into the conflicting-identity check (it shares an object
 /// with an already-admitted entry) and wrongly refuse — the
 /// `AdmissionOutcome::Admitted` assertion went red as expected, reverted.
+#[trace("TC-229", "FR-084-AC-4")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
 fn l05_duplicate_collapses_and_recovers_l01() {
@@ -1164,6 +1171,7 @@ fn l05_duplicate_collapses_and_recovers_l01() {
 /// (always matching the first type-level entry found), so the foreign
 /// `model.Z` member no longer refused — the `AdmissionOutcome::Refused`
 /// assertion went red as expected, reverted.
+#[trace("TC-226", "FR-084-AC-1")]
 #[test]
 #[trace("QSpec-TC-198", "QSpec-FR-153-AC-3")]
 fn l05_foreign_type_refuses() {

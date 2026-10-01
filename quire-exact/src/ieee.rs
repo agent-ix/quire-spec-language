@@ -1708,7 +1708,6 @@ fn convert_width(
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
     use crate::accounting::ScalarLimits;
@@ -1729,9 +1728,8 @@ mod tests {
         })
     }
 
-    /// TC-325: a canonical quiet-NaN bit pattern decodes as NaN, and a
+    /// a canonical quiet-NaN bit pattern decodes as NaN, and a
     /// finite bit pattern does not.
-    #[trace("TC-325")]
     #[test]
     fn tc_325_is_nan_follows_the_bit_pattern() {
         let nan = IeeeValue::binary64(0x7ff8_0000_0000_0000);
@@ -1740,10 +1738,9 @@ mod tests {
         assert!(!one.is_nan());
     }
 
-    /// TC-350 (H-7/H-8): `1.0 + 1.0` under `NearestEven` completes to the
+    /// (H-7/H-8): `1.0 + 1.0` under `NearestEven` completes to the
     /// canonical binary64 `2.0` bit pattern with no flags raised
     /// (`evaluate_ieee` had no test before this).
-    #[trace("TC-350")]
     #[test]
     fn tc_350_evaluate_ieee_adds_two_finite_values() {
         let mut meter = generous_meter();
@@ -1759,10 +1756,9 @@ mod tests {
         assert_eq!(result.flags(), IeeeFlags::EMPTY);
     }
 
-    /// TC-351 (H-7/H-8): `compare_ieee` finds two identical bit patterns
+    /// (H-7/H-8): `compare_ieee` finds two identical bit patterns
     /// `NumericEqual`, and cross-width operands are ill-typed before any
     /// charge (`compare_ieee` had no test before this).
-    #[trace("TC-351")]
     #[test]
     fn tc_351_compare_ieee_numeric_equal_and_cross_width_is_ill_typed() {
         let mut meter = generous_meter();
@@ -1776,11 +1772,10 @@ mod tests {
         assert!(compare_ieee(IeeeComparison::NumericEqual, one64, one32, &mut meter).is_err());
     }
 
-    /// TC-352 (H-7/H-8): explicitly converting binary64 `1.0` to binary32
+    /// (H-7/H-8): explicitly converting binary64 `1.0` to binary32
     /// under `NearestEven` produces the canonical binary32 `1.0` bit
     /// pattern with no flags raised (`convert_ieee_width` had no test
     /// before this).
-    #[trace("TC-352")]
     #[test]
     fn tc_352_convert_ieee_width_narrows_exactly() {
         let mut meter = generous_meter();
@@ -1796,11 +1791,10 @@ mod tests {
         assert_eq!(result.flags(), IeeeFlags::EMPTY);
     }
 
-    /// TC-353 (H-7/H-8): converting finite binary64 `1.0` to a generous
+    /// (H-7/H-8): converting finite binary64 `1.0` to a generous
     /// `Rational[..]` target produces the exact `1/1`, and a NaN is
     /// undefined rather than converted (`ieee_to_exact` had no test before
     /// this).
-    #[trace("TC-353")]
     #[test]
     fn tc_353_ieee_to_exact_converts_finite_and_refuses_nan() {
         use crate::integer::IntegerInterval;
@@ -1830,10 +1824,9 @@ mod tests {
         ));
     }
 
-    /// TC-326: converting the exact integer `1` to binary64 under
+    /// converting the exact integer `1` to binary64 under
     /// nearest-even rounding produces the canonical IEEE bit pattern for
     /// `1.0`, with no exception flags raised.
-    #[trace("TC-326")]
     #[test]
     fn tc_326_exact_to_ieee_of_one_is_canonical() {
         let mut meter = generous_meter();

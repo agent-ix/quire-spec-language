@@ -20,7 +20,6 @@ fn always_roles() -> Vec<&'static str> {
         .collect()
 }
 
-#[trace("Task-048")]
 #[test]
 fn the_catalog_covers_every_role_exactly_once() {
     let lock = lock();

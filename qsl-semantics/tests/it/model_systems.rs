@@ -328,6 +328,7 @@ fn a_relationship_end_naming_a_record_value_type_refuses_malformed() {
     assert!(refusals[0].detail.contains("model.Money"));
 }
 
+#[trace("TC-235", "FR-086-AC-3")]
 #[trace("QSpec-TC-197")]
 #[test]
 fn y01_every_kind_resolves_to_its_exact_producer_key() {
@@ -370,6 +371,7 @@ fn y01_every_kind_resolves_to_its_exact_producer_key() {
     }
 }
 
+#[trace("TC-235", "FR-086-AC-3")]
 #[trace("QSpec-TC-197", "QSpec-FR-152-AC-2")]
 #[test]
 fn y02_wrong_export_substitutions_name_the_required_and_actual_kind() {

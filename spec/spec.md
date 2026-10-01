@@ -48,8 +48,6 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-054
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-055
-    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-056
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-057
@@ -474,7 +472,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-053](functional/FR-053-preserve-opaque-semantic-trigger-identity.md) | FR | **Retired (M-6d)**, for the same reason as FR-052 |
 | [FR-054](functional/FR-054-publish-control-temporal-activation-map.md) | FR | Planned immutable compiled-protocol v3 control-to-temporal activation mapping for QSpec FR-300 |
 | [NFR-009](non-functional/NFR-009-bound-composed-evaluation.md) | NFR | Implemented charge-before-work bounds for shared `/1` and `/2` composed evaluation |
-| [FR-055](functional/FR-055-govern-complete-v1-lane.md) | FR | Implemented; audited in the complete-v1 test matrix |
 | [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) | FR | Planned domain-package model intake; #131; the compiled-protocol `Model` naming this admits directly is specified under #132 (FR-042-AC-11, FR-042-AC-12); FR-056-AC-9 (spine I1 and model type names in the assembler, TC-442) implemented |
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies; canonical `Capability` type implemented (TC-153 partial); requests carry it and `report` reads no backend, registration and candidate sets are in `route`; carrier-version refusal and admission remain under #213, the post-E7 routing step under #185; kind applicability is FR-057-AC-11 (TC-115) |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |

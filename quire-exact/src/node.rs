@@ -109,7 +109,6 @@ impl fmt::Debug for NodeKey {
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
 
@@ -119,12 +118,11 @@ mod tests {
         bytes
     }
 
-    /// TC-300 (H-7/H-8, strengthened): equal digests mint interchangeable
+    /// (H-7/H-8, strengthened): equal digests mint interchangeable
     /// `NodeKey`s (ADR-013 O-04 normalized identity) -- not just `==`, but
     /// hashing equal (so either stands in for the other as a set/map key)
     /// and ordering equal to zero. Unequal digests mint keys that order by
     /// raw digest bytes, not merely compare unequal.
-    #[trace("TC-300")]
     #[test]
     fn tc_300_equal_digest_bytes_mint_interchangeable_node_keys() {
         use std::collections::HashSet;
@@ -139,9 +137,8 @@ mod tests {
         assert!(a < c);
     }
 
-    /// TC-301: `Display` renders exactly 64 lowercase hex digits, the wire
+    /// `Display` renders exactly 64 lowercase hex digits, the wire
     /// spelling QSL's emitter writes for `NodeId{digest}` (ADR-013 O-04).
-    #[trace("TC-301")]
     #[test]
     fn tc_301_display_is_64_lowercase_hex_digits() {
         let key = NodeKey::from_digest(digest(0xab));

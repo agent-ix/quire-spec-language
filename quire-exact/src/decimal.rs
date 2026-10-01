@@ -1283,10 +1283,9 @@ mod tests {
         assert!(admitted(2).into_integer().is_none());
     }
 
-    /// TC-348 (M-7): every `RoundingMode` variant round-trips its source
+    /// (M-7): every `RoundingMode` variant round-trips its source
     /// spelling through `as_str`/`from_code`, and `ALL` names exactly the
     /// six declared variants.
-    #[trace("TC-348")]
     #[test]
     fn tc_348_rounding_mode_spellings_round_trip() {
         assert_eq!(RoundingMode::ALL.len(), 6);
@@ -1295,9 +1294,8 @@ mod tests {
         }
     }
 
-    /// TC-339: `1.00 + 2.00` completes to the exact `3.00` coefficient at
+    /// `1.00 + 2.00` completes to the exact `3.00` coefficient at
     /// the target's declared scale.
-    #[trace("TC-339")]
     #[test]
     fn tc_339_decimal_addition_completes_exactly() {
         let target = generous_type();
@@ -1311,9 +1309,8 @@ mod tests {
             .numerically_equal(&Decimal::new(Integer::from(300_u64), 2)));
     }
 
-    /// TC-340: a value's normalized coefficient outside the declared bound
+    /// a value's normalized coefficient outside the declared bound
     /// is not a member, at any representation of the same numeric value.
-    #[trace("TC-340")]
     #[test]
     fn tc_340_contains_rejects_outside_the_declared_bound() {
         let target = DecimalType::new(
@@ -1328,12 +1325,11 @@ mod tests {
         assert!(!target.contains(&Decimal::new(Integer::from(1_100_u64), 2)));
     }
 
-    /// TC-344: dividing `1 / 3` at scale 2 under `TowardZero` (not
+    /// dividing `1 / 3` at scale 2 under `TowardZero` (not
     /// `NearestEven`) rounds and records a loss whose `exact()`/
     /// `exact_denominator()` reconstruct the exact pre-rounding `1/3` (H-7:
     /// both were untested; also exercises `evaluate_decimal` under a
     /// non-`NearestEven` rounding mode).
-    #[trace("TC-344")]
     #[test]
     fn tc_344_decimal_loss_exact_reconstructs_the_pre_rounding_rational() {
         let target = DecimalType::new(

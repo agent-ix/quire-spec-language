@@ -88,25 +88,12 @@
 //! `TC-192`/`TC-186`. What is new here is only this crate's own kernel-level
 //! slice: `division`'s `tc_323_division_by_zero_is_undefined` now also
 //! carries `#[trace("QSpec-TC-192", "QSpec-FR-147-AC-2")]`, verified to fail (panic on
-//! an unguarded zero divisor) when the zero-divisor check is removed. No
-//! other test in this crate was given a QSpec AC tag in this PR: a test
-//! only earns one where its own assertions, not merely its module doc's
-//! FR citation, actually distinguish the AC's claim from a wrong
-//! implementation (H1/H2) -- `division`'s Euclidean-`mod`
-//! test and `text`'s two bound tests do not (a floor-law `mod` and a
-//! byte-counted length both pass them too), so they keep only their local
-//! `TC-3NN` id. Extending real, distinguishing bindings to this crate's
-//! remaining untagged tests is QSL-133's scope, not invented here.
-//!
-//! This crate's ids run `TC-300` to `TC-356`, but that range names 57 ids
-//! for 56 tests: **`TC-343` is retired, not reused.** It named
-//! `text::tests::tc_343_unquoted_literal_is_refused`, which tested only
-//! `TextPayload::from_source_literal`'s malformed-input path; M-6 removed
-//! `from_source_literal` from the kernel entirely (with no in-crate caller
-//! outside that test), and the test went with it rather than being
-//! repointed at unrelated behavior. Do not mint a new `TC-343` to fill the
-//! hole -- an id that once named one thing should not silently come to
-//! name another.
+//! an unguarded zero divisor) when the zero-divisor check is removed. A test
+//! carries a QSpec AC tag only where its own assertions, not merely its
+//! module doc's FR citation, distinguish the AC's claim from a wrong
+//! implementation (H1/H2). `division`'s Euclidean-`mod` test and `text`'s
+//! two bound tests do not (a floor-law `mod` and a byte-counted length both
+//! pass them too), so they carry no tag.
 
 #![forbid(unsafe_code)]
 

@@ -169,9 +169,8 @@ mod tests {
         UnitId::compound(bytes)
     }
 
-    /// TC-319: adding two quantities in the same unit completes with the
+    /// adding two quantities in the same unit completes with the
     /// summed magnitude in that unit.
-    #[trace("TC-319")]
     #[test]
     fn tc_319_same_unit_addition_completes() {
         let metres = unit(1);
@@ -189,9 +188,9 @@ mod tests {
         );
     }
 
-    /// TC-320: comparing or adding quantities of different units is
+    /// comparing or adding quantities of different units is
     /// ill-typed with `DistinctUnits`, before any charge.
-    #[trace("TC-320")]
+    #[trace("QSpec-TC-187", "QSpec-FR-142-AC-9")]
     #[test]
     fn tc_320_distinct_units_are_ill_typed() {
         let metres = Quantity::new(Rational::from_integer(Integer::one()), unit(1));
@@ -202,11 +201,11 @@ mod tests {
         assert_eq!(err.cause, IllTypedCause::DistinctUnits);
     }
 
-    /// TC-345: same-unit quantities compare under a generous meter, and a
+    /// same-unit quantities compare under a generous meter, and a
     /// meter with no `integer_bits` left cannot admit `ordering.operands`,
     /// so the same comparison returns `Outcome::Incomplete` instead (H-5's
     /// added metering, proved end to end).
-    #[trace("TC-345")]
+    #[trace("QSpec-TC-187", "QSpec-FR-142-AC-7")]
     #[test]
     fn tc_345_compare_quantity_charges_and_a_tight_meter_is_incomplete() {
         let metres = unit(1);

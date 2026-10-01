@@ -432,7 +432,6 @@ pub fn retain_boolean(
 
 #[cfg(test)]
 mod tests {
-    use ix_trace_rs::trace;
 
     use super::*;
     use crate::accounting::ScalarLimits;
@@ -452,8 +451,7 @@ mod tests {
         })
     }
 
-    /// TC-337: `2 + 3` completes to `5` and charges the metered result.
-    #[trace("TC-337")]
+    /// `2 + 3` completes to `5` and charges the metered result.
     #[test]
     fn tc_337_integer_addition_completes() {
         let mut meter = generous_meter();
@@ -463,9 +461,8 @@ mod tests {
         assert_eq!(outcome.completed(), Some(Integer::from(5_u64)));
     }
 
-    /// TC-338: `a implies b` is false only when `a` is true and `b` is
+    /// `a implies b` is false only when `a` is true and `b` is
     /// false, matching its logical definition exactly.
-    #[trace("TC-338")]
     #[test]
     fn tc_338_implies_is_false_only_for_true_and_false() {
         let mut meter = generous_meter();
