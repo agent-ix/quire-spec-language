@@ -1751,7 +1751,7 @@ impl TypeEnvironment {
         if let Some(position) = declared
             .iter()
             .zip(&positions)
-            .position(|(value_type, value)| !value_type.admits(value))
+            .position(|(value_type, value)| !self.admits(value_type, value))
         {
             return refuse(
                 Component::Position(position),

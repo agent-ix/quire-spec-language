@@ -1012,6 +1012,64 @@ fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
     assert!(exposed.stands_for(&field_ref("M::A", "o")));
 }
 
+/// Record and tuple construction admit a reference by the same FR-151
+/// conformance (`TypeEnvironment::admits`): a `Reference<M::CV>` field and
+/// position each admit a reference to a `M::Sub` object (`M::Sub`
+/// specializes `M::CV`), and each refuses `TypeMismatch` for a reference to
+/// the unrelated `M::Other`.
+#[trace("TC-219", "FR-082-AC-6")]
+#[test]
+fn record_and_tuple_admit_a_subtype_reference_by_conformance() {
+    let record_key = quire_exact::NodeKey::from_digest([0x21; 32]);
+    let tuple_key = quire_exact::NodeKey::from_digest([0x22; 32]);
+    let target = ValueType::Reference(effective("M::CV"));
+    let environment = TypeEnvironment::new(
+        [
+            CompositeDeclaration::new(
+                record_key,
+                "R",
+                CompositeShape::Record(vec![FieldDeclaration::new(
+                    "r",
+                    target.clone(),
+                    Presence::Required,
+                )]),
+            ),
+            CompositeDeclaration::new(tuple_key, "T", CompositeShape::Tuple(vec![target])),
+        ],
+        [
+            object("M::CV", vec![], &[]),
+            object("M::Sub", vec![], &["M::CV"]),
+            object("M::Other", vec![], &[]),
+        ],
+    )
+    .unwrap();
+
+    let sub = Value::Reference(reference("M::Sub", "k"));
+    let other = Value::Reference(reference("M::Other", "o"));
+    environment
+        .record(record_key, vec![("r", FieldValue::Present(sub.clone()))])
+        .expect("a Sub reference fits a Reference<M::CV> field");
+    environment
+        .tuple(tuple_key, vec![sub])
+        .expect("a Sub reference fits a Reference<M::CV> position");
+    assert_eq!(
+        environment
+            .record(record_key, vec![("r", FieldValue::Present(other.clone()))])
+            .unwrap_err(),
+        ConstructionRefusal {
+            component: Component::Field("r".to_owned()),
+            cause: ConstructionCause::TypeMismatch,
+        }
+    );
+    assert_eq!(
+        environment.tuple(tuple_key, vec![other]).unwrap_err(),
+        ConstructionRefusal {
+            component: Component::Position(0),
+            cause: ConstructionCause::TypeMismatch,
+        }
+    );
+}
+
 // ---- admission work budget -------------------------------------------------
 
 /// A linear chain `M::T0 <- M::T1 <- ...` of `depth` types, each declaring

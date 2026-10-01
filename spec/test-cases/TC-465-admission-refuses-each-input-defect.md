@@ -69,6 +69,7 @@ mutated document except where the row says otherwise.
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
 | 42 | 1.7 label order | blank `revision_namespace` and blank `revision` in document and selection | `invalid_source_identity`/`blank-label`, `label` `revision_namespace` |
 | 43 | 8 over a parameter | probe invocation with `target` `{config_history, missing}` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
+| 44 | 6.5 | a package variant that adds object type `Other`, unrelated to `ConfigVersion`, and a population `others` over it; `child.parent` naming `o`, an `Other` object of a complete `others` | `invalid_runtime_input`/`wrong-value-kind` at `child`, `parent` |
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive`. Every population declaration is an unbounded `Population(None)`
@@ -80,15 +81,11 @@ coverage is by conformance downward only, so a population whose member is
 sole population `ConfigVersion`'s own clauses resolve against), and two
 unbounded populations both declaring `ConfigVersion` directly would still
 refuse ambiguous_declaration/ambiguous-name at S3 regardless of any maximum
-(FR-104-AC-5, TC-461 step 5). Rows 40 and 41 further substitute a present
-reference to an existing exact-`ConfigVersion` object (`config_history`'s
-`child`) wherever the row's own scenario would otherwise need a `Sub`-typed
-object to be the *target* of a `Reference<ConfigVersion>` field: a
-reference field's target is admitted under the field's own declared type,
-never the referenced object's own possibly-subtyped admitted type
-(`qsl-semantics/src/model/observation/document.rs`'s `admit_scalar`,
-`Reference` arm), so a `Sub`-typed object can never itself be validly
-referenced by a `ConfigVersion`-typed field. Rows 35 to 38 and 43 use
+(FR-104-AC-5, TC-461 step 5). Rows 40 and 41 set `a1.parent` to a present
+reference to `config_history`'s `child`. A `Reference<ConfigVersion>` field
+also admits a `Sub` object, since `Sub` conforms to `ConfigVersion`
+(FR-106 check 6.5); row 44's `Other` conforms to no type of the package but
+itself, so its reference refuses. Rows 35 to 38 and 43 use
 TC-466 step 3's `probe` package variant: `probe(target: ConfigVersion)` on
 `ConfigVersion`, no result, empty frame, with `ReachesTarget` selected. Their
 base invocation has `operation` `probe`, `self` `{config_history, child}`,

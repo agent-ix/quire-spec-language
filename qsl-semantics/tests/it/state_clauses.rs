@@ -2154,6 +2154,12 @@ fn a_subtype_object_binds_a_supertype_parameter() {
     };
     assert_eq!(name, "target");
     assert_eq!(target.object().as_str(), "k");
+    let pre = observations.pre.as_ref().expect("one pre observation");
+    assert_eq!(
+        pre.environment.find(target.universe(), "k"),
+        Some(target),
+        "target is archive's k, typed by k's own type"
+    );
     assert_ne!(
         target.object_type(),
         observations.self_object.object_type(),
@@ -4028,35 +4034,102 @@ fn tc465_row25_an_incomplete_population_no_reference_names_still_admits() {
     result.expect("an incomplete population no reference names still admits");
 }
 
+/// The healthy-parent current snapshot with `child.parent` naming `{archive,
+/// k}`, `k` a `Sub` object of the complete `archive`.
+fn tc465_current_with_parent_in_archive(
+    document: &[u8],
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_tc465_current(
+        document,
+        |value| {
+            value["populations"][0]["objects"][1]["fields"]["parent"] = json!({"present": {
+                "reference": {"population": "ix://example/config-version/archive", "key": "k"}
+            }});
+            value["populations"]
+                .as_array_mut()
+                .unwrap()
+                .push(archive_with_sub_object());
+        },
+        None,
+    )
+}
+
 /// SR-750 FND-016: a reference resolves against the population the wire
 /// names, not only the field's declared type. `child.parent` names
 /// `{archive, k}`; `archive` is complete and holds `k` of type `Sub`, and
 /// `config_history` holds no `k`. `k` exists, so check 8 does not apply,
 /// and `Sub` specializes `ConfigVersion`, so the `Reference<ConfigVersion>`
-/// field admits it by conformance (QSpec FR-151, check 6.5).
-#[trace("TC-465", "FR-106-AC-3")]
+/// field admits it by conformance (QSpec FR-151, check 6.5): the admitted
+/// `child.parent` is `k`, keeping its own type `Sub`.
+#[trace("TC-464", "FR-106-AC-1")]
 #[test]
 fn a_field_reference_to_an_admitted_subtype_object_admits() {
     let document = tc465_document_with_archive_population();
-    let archive = "ix://example/config-version/archive";
-    let sub = "ix://example/config-version/Sub";
+    let observations = tc465_current_with_parent_in_archive(&document)
+        .expect("a Sub object admits into a Reference<ConfigVersion> field");
+    let graph = admit_and_assemble_with_body(&document, TC465_CLAUSES)
+        .expect("the package assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let types = graph.scope().types();
+    let current = observations.current.expect("one current observation");
+    let child = &observations.self_object;
+    let parent = types
+        .attribute(child.object_type(), "parent")
+        .expect("ConfigVersion declares parent");
+    let field = qsl_semantics::value::declaration::FieldRef::new(parent.owner(), "parent");
+    let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) =
+        current.environment.attribute(types, child, &field)
+    else {
+        panic!("child.parent is a present reference");
+    };
+    assert_eq!(target.object().as_str(), "k");
+    assert_eq!(
+        current.environment.find(target.universe(), "k"),
+        Some(target),
+        "child.parent is archive's k, typed by k's own type"
+    );
+    assert_ne!(
+        target.object_type(),
+        child.object_type(),
+        "k keeps Sub, not the declared ConfigVersion"
+    );
+}
+
+/// Check 6.5's refusal half for an object field: `child.parent` names `o`,
+/// an admitted object of `Other`, a type with no declared-supertype chain to
+/// `ConfigVersion`. Admission refuses `invalid_runtime_input`/
+/// `wrong-value-kind` at `child`'s `parent`, never an internal fault.
+#[trace("TC-465", "FR-106-AC-3")]
+#[test]
+fn a_field_reference_to_an_unrelated_type_object_refuses_wrong_value_kind() {
+    let document = with_unrelated_population(tc465_document());
+    let others = "ix://example/config-version/others";
     let result = run_tc465_current(
         &document,
         move |value| {
             value["populations"][0]["objects"][1]["fields"]["parent"] =
-                json!({"present": {"reference": {"population": archive, "key": "k"}}});
+                json!({"present": {"reference": {"population": others, "key": "o"}}});
             value["populations"].as_array_mut().unwrap().push(json!({
-                "population": archive,
+                "population": others,
                 "complete": true,
-                "objects": [{
-                    "key": "k", "type": sub,
-                    "fields": {"versionNumber": {"integer": "1"}, "parent": {"absent": {}}},
-                }],
+                "objects": [{"key": "o", "type": "ix://example/config-version/Other", "fields": {}}],
             }));
         },
         None,
     );
-    result.expect("a Sub object admits into a Reference<ConfigVersion> field");
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("child")
+    );
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("parent")
+    );
 }
 
 /// SR-750 FND-019: only a population the snapshot lists as incomplete
