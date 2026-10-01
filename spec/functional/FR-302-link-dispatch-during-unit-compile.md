@@ -77,6 +77,7 @@ caller's value, with the published default of
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-302-AC-1 | A unit with dispatched calls on two operations, `size` redefined at `A` and at `B` (`B` a subtype of `A`) and `area` declared at `A`, each called twice, compiles into a checked package carrying exactly one linked dispatch table per called operation; the `size` table maps `A` to `A`'s candidate and `B` to `B`'s, and the checked node of every dispatched call names the table of the operation it calls. | Test (TC-793) |
+| FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
 | FR-302-AC-2 | A unit whose dispatched call's family has two undominated candidates for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`multiple-undominated`, naming the subtype, both candidates and the dominance pairs, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-3 | A unit whose dispatched call's family has no applicable candidate for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`no-applicable`, naming the subtype, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |

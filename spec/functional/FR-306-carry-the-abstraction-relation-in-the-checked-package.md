@@ -47,7 +47,7 @@ emitted package.
 ### One authority
 
 The relation SHALL be emitted as the v2 node whose tag, form and body QSpec
-spells for the QSpec FR-353 relation (STD-116, Q-2), carrying ADR-017 AR-2's
+spells for the QSpec FR-353 relation (QSpec FR-451), carrying ADR-017 AR-2's
 keys and values. Its node ids enter the `package_id` (ADR-013 O-02). Kani and
 Verus generation read the relation only from the v2 bytes (ADR-011 FB-05).
 
@@ -81,7 +81,7 @@ through S6a (ADR-012 §8; ADR-017 AR-5).
 ## Dependencies
 
 - **Upstream:** QSpec FR-353 and FR-290 own the relation's semantics and its
-  absence of a capability kind; STD-116 (Q-2) spells the v2 node; ADR-017
+  absence of a capability kind; QSpec FR-451 spells the v2 node; ADR-017
   AR-4 and AR-5 fix the authority and the dispatch rules.
 - **Downstream:** [FR-307](FR-307-export-the-bindings-each-item-references.md)
   exports bindings from the checked package; CG's Kani and Verus generators
@@ -90,5 +90,5 @@ through S6a (ADR-012 §8; ADR-017 AR-5).
 ## References
 
 - ADR-017 §3 AR-4 ("One authority", "Relation revision") and AR-5.
-- QSpec STD-116 (Q-2).
+- QSpec FR-451 (specification ticket STD-116, Q-2).
 - Linear QSL-388 (specification), QSL-36 (implementation).

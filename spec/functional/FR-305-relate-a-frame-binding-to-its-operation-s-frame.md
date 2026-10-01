@@ -59,8 +59,7 @@ its return value the result. The operation's parameters are read at entry
 through the binding's `parameters`, the framed state at entry and exit
 through its `receiver`, a framed field through its object type's
 `ObjectBinding.fields`, and a created or deleted object through its
-population's `PopulationBinding`. The key derivation is the one STD-121 (Q-7)
-records for QSpec FR-353-AC-1.
+population's `PopulationBinding`. The key derivation is QSpec FR-353-AC-1's.
 
 ### Inherited operations bind at their declaring type
 
@@ -81,7 +80,7 @@ a type that declares no such operation, and refuses as FR-304 states
 ## Dependencies
 
 - **Upstream:** QSpec FR-353, FR-012 and FR-013 own the frame and anchor
-  identities; STD-121 (Q-7) records the derived key for QSpec FR-353-AC-1;
+  identities; QSpec FR-353-AC-1 fixes the derived key;
   ADR-017 AR-2 fixes the key; [FR-105](FR-105-emit-state-nodes.md) gives one
   anchor and one frame per operation.
 - **Downstream:** [FR-307](FR-307-export-the-bindings-each-item-references.md)
@@ -90,5 +89,5 @@ a type that declares no such operation, and refuses as FR-304 states
 ## References
 
 - ADR-017 §3 AR-2 ("Anchors", "Frame identity").
-- QSpec STD-121 (Q-7).
+- QSpec FR-353-AC-1 (specification ticket STD-121, Q-7).
 - Linear QSL-388 (specification), QSL-36 (implementation).
