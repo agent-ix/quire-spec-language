@@ -48,3 +48,15 @@ call_site test -> TC-166 (correct).
 Both ACs are backed on every clause, and the traces match each AC's text. One medium
 finding: TC-166's Status claims step 2, which the test does not run. Fix it in this PR
 with either a two-declaration fixture or a reworded step.
+
+## Dispositions
+
+Round 1, reviewed at dd5bad9eddc2028a16c1be66346fecc922797ace (fix commit dd5bad9e). Coder's make ci on dd5bad9e: exit 0 (not re-run); both new tests show `ok` in it. `tc_166_case_variant_functions_each_replay_their_own_body` declares `small` (`x < 5`) and `Small` (`x > 5`), replays each at x = 7 by its exact name, and asserts `false` and `true`. That is TC-166 step 2 as written. Mutation re-check at dd5bad9e:
+- Case-folding the evaluator's `CheckedPackage::call` lookup (qsl-eval `.callable(&name.to_lowercase())`): this test fails, and tc_444 does not.
+- Case-folding replay's `select`: this test passes, because `call` still resolves the original name, but tc_444 fails.
+
+Together the two tests cover both lookups. `tc_166_call_site_locates_each_case_variant_function` fails under a case-folding `Locate`. The TC-166 Status now matches the tests. Bindings: case-variant test -> TC-166, FR-062-AC-10, FR-065-AC-6 (correct); call_site case-variant test -> TC-166 (correct); tc_444 -> TC-166, FR-062-AC-10, FR-065-AC-6 (correct).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dd5bad9e: `tc_166_case_variant_functions_each_replay_their_own_body` and `tc_166_call_site_locates_each_case_variant_function` run step 2 as written, and the TC-166 Status names them |

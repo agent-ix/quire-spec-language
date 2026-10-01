@@ -53,3 +53,11 @@ tautology, no production `unwrap`, no new pub surface.
 Correct. The doctests fail only because of the `&str`, and the refusal tests kill both a
 case-folding regression and a module-path-ignoring regression. One low duplication
 finding. Mergeable as is; FND-001 is optional cleanup.
+
+## Dispositions
+
+Round 1, reviewed at dd5bad9eddc2028a16c1be66346fecc922797ace (fix commit dd5bad9e). Coder's make ci on dd5bad9e: exit 0 (not re-run). I checked the folded tests line by line against the deleted ones. `tc_444_a_selection_naming_no_function_refuses` now takes `large`, `Small` and `module::small` and asserts the selection, the recompiled package and `Code::MissingDeclaration`. `call_site_refuses_an_unknown_function_name` takes `nope`, `F` and `module::f` and asserts the selection and package. `nope` replaces the deleted test's `g`, and both are undeclared names. No case-sensitivity or module-path assertion was lost. The deleted test's positive `replay(small(7))` check is still covered by `tc_444_an_input_counterexample_replays_and_agrees`. Mutation re-check at dd5bad9e: with a case-folding `select`/`Locate`, both folded tests fail.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dd5bad9e: the tc_166 duplicates are deleted; their `Small`/`F` inputs, the code assertion and the TC-166 (and FR-062-AC-10, FR-065-AC-6 on the execute test) traces moved into the existing tests |

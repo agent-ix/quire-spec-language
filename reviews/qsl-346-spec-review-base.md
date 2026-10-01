@@ -31,3 +31,15 @@ text is left in spec/.
 
 The status edits for AC-10, AC-6 and TC-166 are accurate. One low finding: FR-062's
 partly-backed AC is named inconsistently in three places. Fix it in this PR.
+
+## Dispositions
+
+Round 1, reviewed at dd5bad9eddc2028a16c1be66346fecc922797ace (fix commit dd5bad9e). The FR-062 count now says all thirteen ACs are backed, and every per-AC row says "backed". I checked the two in question against the tests:
+- AC-4: `tc_160_the_requirements_function_yields_one_claim_per_scalar_application` checks that `b and c` yields none, that `x + y` over `Int[0, 9]` yields exactly one `ValueValidity` at the root `+` application, and that two calls are equal. Its `none`/`again` pair and `claims == again` cover the twice-equal clause. `a_function_declaration_has_no_requirements` adds the no-kind case at hook level. The with-kind clause is backed. spec.md's old "pending QSL-42" text was stale.
+- AC-11: `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration` checks that `a` alone is admitted at `CheckingLimits::new(4, 128)`, `a`+`b` at `(100, 128)`, and that `a`+`b` at `(4, 128)` refuses `ResourceExhausted{Typing, Nodes, limit 4, actual 5}`. `resource_exhausted_reports_stage_limit_exceeded_per_kind` maps that cause to `stage_limit_exceeded`/`node-count-exceeded`. The AC names `StageFailure::Limit`, while the public entry reports it as `CheckCause::ResourceExhausted`. The AC-11 row has reconciled that since #544, so I raise no new finding for it.
+
+The spec.md FR-062 and FR-065 rows now read "implemented", with all ACs backed. That agrees with each FR's own rows.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dd5bad9e: FR-062 count sentence, AC rows and spec.md row all agree on thirteen of thirteen backed. AC-4 and AC-11 verified against their tests |
