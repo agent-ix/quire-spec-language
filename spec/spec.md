@@ -195,6 +195,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
+  - target: ix://agent-ix/quire-spec-language/ADR-028
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-020
     type: contains
@@ -954,3 +955,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-023](decisions/ADR-023-hyperproperties-over-every-behaviour.md) | ADR | Proposed; hyperproperties over every behaviour of a model: trace variables bound to model aliases, lockstep or projection alignment with input matching, per-variable fairness, the admitted fragment (step relations on model and code, universal formulas, `∀∃` with safety bodies, single-existential claims routed to the possible family), the self-composition, projected and witness-set products on EN-1, compiler-verified copy-swap symmetry, tuple counterexamples and their replay, and the owner's rulings (§12) |
 | [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
 | [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |
+| [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
