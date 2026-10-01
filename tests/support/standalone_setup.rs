@@ -130,7 +130,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<(Value, String)> {
     let program = checked.linked().unit().source();
     std::fs::write(directory.join("model.json"), model.source().source().text())?;
     std::fs::write(directory.join("program.native"), program.text())?;
-    let owner = |owner: &quire_contract_ir::RequirementRef| json!({"package":owner.package().as_str(),"requirement":owner.requirement().as_str(),"revision":owner.revision().get()});
+    let owner = |owner: &quire_contract_model::RequirementRef| json!({"package":owner.package().as_str(),"requirement":owner.requirement().as_str(),"revision":owner.revision().get()});
     let clauses: Vec<_> = checked.bindings().clauses.iter().map(|clause| json!({"name":clause.name,"owner":owner(&clause.requirement),"clause":clause.clause.as_str(),"point":clause.execution_point})).collect();
     let snapshots: Vec<_> = input
         .snapshots

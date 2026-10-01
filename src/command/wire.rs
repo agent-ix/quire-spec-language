@@ -6,7 +6,7 @@ use crate::runtime::{
     ExecutionSelection, InvocationRef, ObjectIdentity, ObservationSelection, SnapshotRef,
 };
 use qsl_foundation::serde_object::{deserialize_objects, from_object};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 

@@ -4,7 +4,7 @@
 use super::super::wire;
 use crate::runtime::{EvaluationUsage, InvocationRef, QualifiedName, SnapshotRef, ValidationUsage};
 use qsl_foundation::{LocatedSpan, SourceIdentity, Span};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::Serialize;
 use std::borrow::Cow;
 

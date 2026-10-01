@@ -16,7 +16,7 @@ use std::{
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::{
     formal_source::FormalSource,
     model_source::{self, ModelSourceLimits},

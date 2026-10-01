@@ -3,8 +3,8 @@
 //! for `quire.checked-package/v2` wire artifacts (QSpec FR-322).
 //!
 //! Envelope parsing, contract-version dispatch and the FR-322 `package_id`
-//! recompute are delegated to `quire_contract_ir`'s I04 `checked_package`
-//! reader ([`quire_contract_ir::read_checked_package`]): this module defines
+//! recompute are delegated to `quire_contract_model`'s I04 `checked_package`
+//! reader ([`quire_contract_model::read_checked_package`]): this module defines
 //! no wire member set, digest domain or contract-version spelling of its
 //! own, and never mints a `NodeKey` or `PackageId` from wire text (R-10,
 //! ADR-013 O-02). ADR-011 §4 condition 2 (`package_id` recompute-and-match)
@@ -33,7 +33,7 @@
 //! IR's v2 reader validates the whole I04 contract unconditionally (the
 //! lock, the complete semantic graph, source-map and diagnostics) -- there
 //! is no narrower "envelope and `package_id` only" entry point. A caller
-//! therefore supplies [`quire_contract_ir::CheckedPackageEvidence`]
+//! therefore supplies [`quire_contract_model::CheckedPackageEvidence`]
 //! alongside the bytes: the domain package documents, admitted dependency
 //! packages and supported features this reader does not itself hold.
 //!
@@ -42,7 +42,7 @@
 //! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`,
 //! which this reader checks itself and also hands to IR as `bytes`,
 //! `depth`, handed to IR as its `depth`, and IR's other five
-//! [`quire_contract_ir::CheckedPackageReadLimits`] ceilings (`nodes`,
+//! [`quire_contract_model::CheckedPackageReadLimits`] ceilings (`nodes`,
 //! `edges`, `occurrences`, `diagnostics`, `work`), passed through unchanged.
 //! Every one is the caller's, used as given; the defaults are IR's own
 //! `bounded()` values plus this reader's 16 MiB byte default and a depth of
@@ -50,7 +50,7 @@
 //! FR-019, SEAM-1 until M-6): that type's `string_bytes` and `entries` exist
 //! only for the native encode/intake path and have no IR counterpart. Every
 //! IR ceiling a caller can hit is reported, verbatim, as
-//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_ir::CheckedPackageLimit`].
+//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_model::CheckedPackageLimit`].
 //! Two facts shape `depth`:
 //!
 //! - **Charged at most IR's fixed maximum.** IR charges a caller's depth
@@ -91,7 +91,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use quire_contract_ir::{
+use quire_contract_model::{
     read_checked_package, CheckedArtifactRef, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
@@ -542,7 +542,7 @@ impl Artifact {
     /// invariant between IR and this reader, never a property of the bytes.
     fn at_ir(
         &self,
-        pointer: Option<&quire_contract_ir::JsonPointer>,
+        pointer: Option<&quire_contract_model::JsonPointer>,
     ) -> Result<Option<Locus>, InternalFault> {
         let Some(pointer) = pointer else {
             return Ok(None);
@@ -592,7 +592,7 @@ fn refused(refusal: V2ReadRefusal) -> V2ReadOutcome {
 /// ADR-013:113) under a byte ceiling of the reader's own `artifact_bytes`.
 /// Refuses with the encoder's reason.
 fn canonical_preimage(
-    preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
+    preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
     artifact_bytes: usize,
 ) -> Result<Vec<u8>, String> {
     let limits = quire_canonical::Limits::new(

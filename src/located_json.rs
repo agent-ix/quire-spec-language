@@ -3,7 +3,7 @@
 
 use crate::formal_source::{FormalSource, FormalSourceError};
 use qsl_foundation::Span;
-use quire_contract_ir::SourceSpan;
+use quire_contract_model::SourceSpan;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 

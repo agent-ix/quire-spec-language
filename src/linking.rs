@@ -7,7 +7,7 @@ mod native;
 
 use std::collections::BTreeSet;
 
-use quire_contract_ir::{
+use quire_contract_model::{
     CanonicalProfile, DeclarationEnvironment, RecordDeclaration, RequirementRef, SourceSpan,
     SymbolName, TypeDeclaration, ValueDeclarationKind, ValueType,
 };
@@ -300,7 +300,7 @@ pub struct LinkingError {
     /// Related formal declarations, sorted by identity and source location.
     pub related: Vec<DeclarationLocation>,
     /// Structured upstream formal diagnostic, when canonicalization failed.
-    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+    pub upstream: Option<Box<quire_contract_model::Diagnostic>>,
 }
 
 impl std::fmt::Display for LinkingError {
@@ -399,7 +399,7 @@ fn formal_catalog<'a>(
             .canonical_declaration_with_limit(CanonicalProfile::V1, maximum)
             .map_err(|upstream| {
                 let code = if upstream.code
-                    == quire_contract_ir::DiagnosticCode::CanonicalizationResourceExhausted
+                    == quire_contract_model::DiagnosticCode::CanonicalizationResourceExhausted
                 {
                     Code::ResourceExhausted
                 } else {
@@ -744,7 +744,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         &self,
         name: &str,
         span: Span,
-    ) -> Result<&'a quire_contract_ir::ValueDeclaration, Box<LinkingError>> {
+    ) -> Result<&'a quire_contract_model::ValueDeclaration, Box<LinkingError>> {
         self.models[self.current]
             .environment
             .values()
@@ -764,7 +764,7 @@ impl<'u, 'a> Resolver<'u, 'a> {
         &mut self,
         id: ExprId,
         span: Span,
-        value: &'a quire_contract_ir::ValueDeclaration,
+        value: &'a quire_contract_model::ValueDeclaration,
     ) -> Shape<'a> {
         let environment = self.models[self.current].environment;
         self.occurrence(
@@ -1046,7 +1046,7 @@ mod profile_tests {
     use crate::{parse, Limits};
     use ix_trace_rs::trace;
     use qsl_foundation::SourceIdentity;
-    use quire_contract_ir as ir;
+    use quire_contract_model as ir;
 
     #[test]
     #[trace("TC-120", "FR-041-AC-4")]

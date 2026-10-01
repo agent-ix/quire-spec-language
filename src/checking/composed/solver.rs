@@ -19,7 +19,7 @@ use crate::linking::composed::{DependencyKind, DependencySite};
 use crate::native_model::{NativeModel, ScalarKind, ScalarSite, Unit};
 use crate::syntax::{composed as c, BinaryOp, Builtin, ExprKind, UnaryOp};
 use qsl_semantics::model::domain_package::DomainPackageRecord;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::BTreeMap;
 
 type Result<T> = std::result::Result<T, Exhaustion>;

@@ -6,7 +6,7 @@ use crate::support::composed_types as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::proofs::{
     CauseKind, DeclarationProof, ProofDisposition, ProofLimits, ProofReport,
 };

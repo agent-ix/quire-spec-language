@@ -6,7 +6,7 @@ use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{Code, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::model_source::{
     read, EntryKind, ModelSourceCause, ModelSourceLimits, FORMAT,

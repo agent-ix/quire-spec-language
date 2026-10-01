@@ -2,7 +2,7 @@
 //! IT-005 / FR-025: fixture setup through the public model-source frontend.
 
 use qsl_foundation::{Diagnostic, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::native_model::{ModelLimits, NativeModel, NativeRoles};
 

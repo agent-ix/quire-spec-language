@@ -3,7 +3,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Source, SourceIdentity, Span, Spanned};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::NativeType;
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::linking::composed::binding_work::{Limits as BindingLimits, Work};

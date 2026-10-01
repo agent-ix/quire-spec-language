@@ -5,7 +5,7 @@
 use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::{
     lowering::{lower, lower_for, LoweringCode, LoweringLimits, ProjectionTarget},
     native_model::NativeModel,

@@ -8,7 +8,7 @@ use crate::located_json::Located;
 use crate::native_model::{
     Frame, NativeRoles, ObjectRole, OperationRole, ScalarKind, ScalarRole, ScalarSite, Unit,
 };
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::{btree_map::Entry, BTreeMap};
 
 fn try_symbol(name: &str) -> Result<ir::SymbolName> {

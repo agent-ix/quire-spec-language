@@ -13,7 +13,7 @@ use crate::native_model::{
 use decode::decode_model;
 use lower::lower_model;
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 /// Category charged against the model source's shared entry ceiling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

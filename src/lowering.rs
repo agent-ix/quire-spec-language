@@ -15,7 +15,7 @@ pub use target::{ProjectionTarget, UnknownProjectionTarget};
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use crate::checking::{CheckedClause, ClauseBinding, NativeType, Observation};
 use crate::linking::{DeclarationKey, DeclarationLocation, ResolutionTarget};

@@ -2,7 +2,7 @@
 //! Public-API qualification of the native-formal-environment/1 binding profile.
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, Phase, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::linking::{DeclarationKey, ResolutionTarget};
 use quire_spec_language::{link, parse, Limits, LinkLimits, ParsedUnit};
 

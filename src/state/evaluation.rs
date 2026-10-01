@@ -12,7 +12,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use super::input::*;
 use super::work::{Dimension, Exhaustion, Work};

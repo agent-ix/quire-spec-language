@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-022: compile one mapped native clause without losing its original source.
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use crate::checking::{check, CheckBindings, CheckLimits, ClauseBinding};
 use crate::formal_source::FormalSource;

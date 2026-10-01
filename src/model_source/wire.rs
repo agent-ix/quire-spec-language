@@ -2,7 +2,7 @@
 //! FR-025: closed wire shapes, borrowing undecoded entry groups from the source.
 
 use qsl_foundation::serde_object::{deserialize_empty_object, from_object as deserialize_object};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 

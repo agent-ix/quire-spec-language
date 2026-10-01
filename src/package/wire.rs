@@ -3,7 +3,7 @@
 
 use qsl_foundation::serde_object::from_object;
 use qsl_foundation::ByteDigest;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 

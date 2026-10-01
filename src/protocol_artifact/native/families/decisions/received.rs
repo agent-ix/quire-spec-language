@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use crate::checking::NativeType;
 use crate::linking::composed::scopes::{

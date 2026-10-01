@@ -18,7 +18,7 @@
 //! is a bug, not a row.
 
 use qsl_forms::TypeFormHead;
-use quire_contract_ir::{
+use quire_contract_model::{
     BoundedDomainForm, CheckedNodeKind, CheckedPackageRefusalCause, ClaimForm, CompositeTypeForm,
     CorrespondenceForm, ExpressionForm, FunctionForm, ModelForm, ProtocolForm, RelationForm,
     ScalarTypeForm, StateForm, TemporalForm,

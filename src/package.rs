@@ -219,7 +219,7 @@ impl NativePackageRef {
 /// ```compile_fail,E0308
 /// use quire_spec_language::package::NativePackageIdentity;
 /// fn substitute(identity: NativePackageIdentity) {
-///     let _: quire_contract_ir::CanonicalDigest = identity;
+///     let _: quire_contract_model::CanonicalDigest = identity;
 /// }
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

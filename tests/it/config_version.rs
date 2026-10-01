@@ -8,7 +8,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 #[cfg(feature = "quire-extraction")]
 use qsl_foundation::Span;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, path::Path, process::Command};
 

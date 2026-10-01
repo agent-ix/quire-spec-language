@@ -13,7 +13,7 @@ mod provenance;
 
 use native_rule_model::{parts, symbol, Parts};
 use qsl_foundation::{Code, Phase};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::native_model::{
     ModelLimits, NativeModel, NativeModelError, ScalarKind, ScalarRole, ScalarSite, Unit,
 };

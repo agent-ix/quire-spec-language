@@ -4,7 +4,7 @@
 use super::{failure, LoweringCode, Result};
 use crate::checking::ClauseBinding;
 use crate::formal_source::FormalSource;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{ser::SerializeMap, Serialize, Serializer};
 
 #[derive(Serialize)]

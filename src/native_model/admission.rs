@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use super::{
     failure, ModelLimits, NativeModelError, NativeModelProfile, NativeRoles, ScalarKind,

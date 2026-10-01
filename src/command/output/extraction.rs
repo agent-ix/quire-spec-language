@@ -9,7 +9,7 @@ use qsl_source::{
     ClauseRef, ClausesOutcome, KindAvailability, SemanticDiagnostic, SemanticFailure,
     CONTRACT_VERSION, SEMANTIC_CORE_VERSION,
 };
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 

@@ -52,7 +52,7 @@ use crate::{
     },
 };
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 const AUTHORITY: &str = "ix://agent-ix/quire-spec-language";
 const STANDARD: &str = "ix://agent-ix/quire-specification";

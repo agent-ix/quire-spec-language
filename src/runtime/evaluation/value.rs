@@ -2,7 +2,7 @@
 //! FR-008: constant-size immutable runtime views preserving captured observations.
 
 use super::super::{FieldBinding, ObjectIdentity, ValueId, ValueNode};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 #[derive(Clone, Copy)]
 pub(super) struct Arena<'a> {
