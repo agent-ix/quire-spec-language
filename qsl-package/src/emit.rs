@@ -90,8 +90,8 @@ use qsl_semantics::value::{
     Member, NodeOwner,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 use quire_semantic_value::location::Location;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use super::{CheckedPackage, EmittedPackage};
 
