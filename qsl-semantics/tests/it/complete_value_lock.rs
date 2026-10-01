@@ -7,9 +7,9 @@ use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
 use qsl_semantics::value::{
-    native_diagnostics_catalog, CatalogRole, DefinitionLock, LockReadError, SelectionRefusalCode,
-    Trigger,
+    native_diagnostics_catalog, CatalogRole, DefinitionLock, LockReadError, Trigger,
 };
+use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
