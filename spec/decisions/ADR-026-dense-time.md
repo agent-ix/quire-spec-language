@@ -44,18 +44,22 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Design draft. §1 records the owner's two rulings: QSL
-specifies dense time, for robots and embedded real-time systems, and
-model-claim intervals count time units through a clock binding. This record
-designs the language half: clocks, constraints, timed semantics, time
-divergence, the clock binding and the seam into ADR-018. The engine, hybrid
-dynamics and the embedded real-time property set are open (§11). It adds no
+Proposed, 2026-10-01. Design draft. §1 records the owner's rulings: QSL
+specifies dense time, for robots and embedded real-time systems; model-claim
+intervals count time units through a clock binding, with both bindings kept;
+a non-local time-lock reuses ADR-022's trap evidence; and stochastic delays
+are specified with statistical checking. This record designs the language
+half: clocks, constraints, timed semantics, time divergence, the clock
+binding, stochastic delays and the seam into ADR-018. The engine, hybrid
+dynamics, the embedded real-time property set and exact probabilistic-timed
+checking are open (§12). It adds no
 requirement. The owning ticket and related work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
 requirement. Item ids `RU-`, `CK-`, `TS-`, `TD-`, `CB-`, `DF-`, `TV-`, `CT-`,
-`EG-`, `DC-`, `OV-` and `OQ-` are local to this record. Other artifacts cite
-them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`.
+`EG-`, `DC-`, `SD-`, `SS-` and `OV-` are local to this record. Other artifacts cite
+them as `ADR-026 TS-3`. ADR-018 items are cited as `ADR-018 SM-3`, and the
+sibling drafts ADR-022 and ADR-024 likewise.
 
 ## Context
 
@@ -86,7 +90,7 @@ integer time (§9 example).
 
 **Hybrid models.** QSpec FR-193 analyses continuous and hybrid models under a
 selected sound solver contract and names no solver. Clocks are the hybrid
-variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
+variables whose rate is 1 everywhere; other rates are hybrid dynamics (§12).
 
 ## Decision
 
@@ -96,6 +100,9 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 | --- | --- | --- |
 | RU-1 | **Dense time is specified.** QSL supports robots and embedded real-time systems, so a model may declare real-valued clocks with strict and non-strict constraints, under timed-automata semantics | §2 to §8 |
 | RU-2 | **Model-claim intervals count time units through a clock binding.** A deadline like "within 5 ms" is an interval of a claim bound to the model's time | §5; ADR-018 §1 amended; overlap items OV-1 and OV-2 |
+| RU-3 | **Both bindings are kept.** A timed model counts time by default and an untimed model counts steps; a claim that wants the other binding writes it | CB-1, CB-5 |
+| RU-4 | **A non-local time-lock reuses ADR-022's trap evidence.** `TimeLock` stays its own counterexample kind | TD-3, TV-1 |
+| RU-5 | **Stochastic delays are specified now, with statistical checking.** ADR-024's engine samples the delays. Exact probabilistic-timed checking belongs to research and is added only if that research finds a real need | §10; §12 |
 
 ### 2. Clocks and constraints
 
@@ -129,7 +136,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 | --- | --- |
 | TD-1 | **Time-lock.** A time-lock is a reachable timed state from which no time-divergent behaviour exists. It is *local* when no positive delay is admissible and no discrete step is enabled at it, so time stops there; otherwise every continuation is Zeno. A time-lock silently removes behaviours from TS-4's admitted set, so every claim over a time-locked state holds vacuously. |
 | TD-2 | **Time-lock-freedom item.** For each distinct timed subject among a request's items, the request writer (ADR-013 O-20) adds one derived **time-lock-freedom** item, alongside ADR-018 DL-3's deadlock-freedom item. It has no opt-out: no physical system stops time. Its obligation identity is the subject and the fixed item kind `time-lock-freedom` (ADR-013 O-09). It settles with ADR-018's verdict kinds. |
-| TD-3 | **Time-lock counterexample.** A time-lock refutation is a finite prefix to the time-locked state, ending with the delay that reaches it, with `TemporalCounterexample.kind` `TimeLock` (ADR-018 DL-4 adds `kind`). Replay (CT-3) re-executes the prefix. For a local time-lock it then checks, at the last timed state, that no positive delay is admissible and no transition identity is enabled; agreement settles `refuted`, disagreement `inconclusive`, `ReplayParity`. For a non-local time-lock the prefix replays and the absence of a divergent continuation is a closed-scope fact of the engine's explored graph, recorded with the prefix (OQ-2). |
+| TD-3 | **Time-lock counterexample.** A time-lock refutation is a finite prefix to the time-locked state, ending with the delay that reaches it, with `TemporalCounterexample.kind` `TimeLock` (ADR-018 DL-4 adds `kind`). Replay (CT-3) re-executes the prefix. For a local time-lock it then checks, at the last timed state, that no positive delay is admissible and no transition identity is enabled; agreement settles `refuted`, disagreement `inconclusive`, `ReplayParity`. For a non-local time-lock the evidence is ADR-022's trap (ADR-022 GV-2, GX-1): the stem is the prefix, and the trap's target is "a time-divergent continuation", a quiescent state (TS-5) or a cycle that admits positive total delay. The trap's forward closure is closed, in ADR-022 GM-6's sense, and holds no target, so its decision scope is complete. Replay follows ADR-022 GX-3: it re-executes the stem, then explores the forward closure of the last timed state afresh, unreduced, under the request's limits, with the subject's timed exploration (FR-101 `explore` for a digital source), and settles `refuted` only when that exploration completes with no target; a target found is `inconclusive`, `ReplayParity`, and a stopped exploration is V-7. A local time-lock is the trap whose closure is its one state. |
 | TD-4 | **Deadlocks in a timed subject.** A timed state is terminal when no discrete step is enabled at it or after any admissible delay (ADR-018 SM-4, read over time). A terminal state at a quiescent discrete state reads by TS-5's idle tail; it is a deadlock when it is not intended (ADR-018 DL-1, DL-2), and the deadlock-freedom item reports it. A terminal state where delay is bounded is a local time-lock, reported by TD-2. ADR-018 DL-7's `deadlocked` predicate quantifies over admissible delays. |
 | TD-5 | **Fairness over time.** ADR-018 FA-2 reads enabledness at a timed state. A behaviour satisfies weak fairness for a constraint when from no instant onward the constraint stays enabled at every instant, positions and the delays between them, while none of its transitions is taken. On a timed lasso (CT-2) the constraint is taken somewhere in the loop or disabled at some instant of the loop. Weak fairness and time divergence both filter behaviours; they are independent premises, and an accepting cycle refutes only when it is fair and its loop has positive total delay. |
 | TD-6 | **Vacuity.** A proof over a timed subject whose initial state has no fair time-divergent behaviour settles `inconclusive`, `NoAdmittedBehaviour`, a new ADR-018 V-6 cause, so a premise that admits nothing never reads as proof. |
@@ -138,10 +145,11 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 
 | ID | Rule |
 | --- | --- |
-| CB-1 | **Bindings over a model subject.** A temporal claim over a model subject names one clock binding. `model-steps` is ADR-018's: the step sequence as the event-position sequence authority, and an interval counts steps. `model-time` binds the claim to the subject's time source (CK-1), and an interval counts time units. A `model-time` claim selects the timed profile (DF-1); a `model-time` binding over a model with no `time` member refuses at S3. |
+| CB-1 | **Bindings over a model subject.** A temporal claim over a model subject has one clock binding. `model-steps` is ADR-018's: the step sequence as the event-position sequence authority, and an interval counts steps. `model-time` binds the claim to the subject's time source (CK-1), and an interval counts time units. A `model-time` claim selects the timed profile (DF-1); a `model-time` binding over a model with no `time` member refuses at S3. |
 | CB-2 | **Time sources.** A dense source gives each position the time stamp of TS-3. A digital source gives it the time stamp of TS-6. Both give non-decreasing exact rational time stamps in unit `u`, with the step order as admitted order. The evaluator and every engine read time stamps only, so one profile serves both. |
 | CB-3 | **Binding identity.** The binding's QSpec FR-252 key is the timed profile identity, the clock identity (the model's qualified name and its time source kind), the unit, the period for a digital source, and the sequence authority (step order). Changing the source kind, unit or period changes the binding identity (QSpec FR-090-AC-3). |
 | CB-4 | **Interval values.** An interval bound in a `model-time` claim is a time quantity, converted exactly to `u` (QSpec FR-142). The interval's QSpec FR-255 key carries the timed profile identity and the binding, so it never equals a step-counting interval. |
+| CB-5 | **Default binding.** A claim over a timed model (CK-1) binds `model-time` unless it writes `clock "model-steps"`; a claim over an untimed model binds `model-steps`. Writing the default is admitted and changes nothing: the binding, not its spelling, enters the obligation identity (CB-3). |
 
 ### 6. Temporal forms over dense time
 
@@ -159,7 +167,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 
 | ID | Rule |
 | --- | --- |
-| TV-1 | **Verdict kinds.** A timed item settles with ADR-018 V-1 to V-8 unchanged. The length of a counterexample is its number of discrete steps, so V-5 keeps its one definition. New causes: `NoAdmittedBehaviour` (V-6, TD-6) and `PunctualInterval` (V-8, DF-5). |
+| TV-1 | **Verdict kinds.** A timed item settles with ADR-018 V-1 to V-8 unchanged. The length of a counterexample is its number of discrete steps, so V-5 keeps its one definition. New causes: `NoAdmittedBehaviour` (V-6, TD-6) and `PunctualInterval` (V-8, DF-5). The time-lock-freedom item settles a refutation as ADR-022's V-10, `refuted` with basis `closed-scope`, on trap evidence (TD-3), and a proof as V-1. |
 | CT-1 | **Step content.** ADR-018 CX-2's step content gains `delay`, an exact non-negative rational in the binding's unit (QSpec FR-205), the delay before the step. The post-state digest is the canonical identity digest of the discrete state and the exact clock valuation. A time-lock counterexample ends with a final delay (TD-3). |
 | CT-2 | **Timed lasso.** A liveness counterexample is a lasso whose loop has positive total delay `D`. At the loop's end the discrete state equals the entry's; each clock the loop resets has the entry's value; each clock the loop never resets is, at entry, above the largest constant it is compared with in the model and the claim, so every constraint on it keeps its truth on every repetition. Repeating the loop with the same delays is then a time-divergent behaviour, and its time stamps grow by `D` per repetition. An idle tail (TS-5) is the lasso whose loop is one stutter step with a positive delay. |
 | CT-3 | **Replay through `ModelSystem`.** `replay_model_trace` (ADR-018 CX-3) starts every clock at 0 and, for each step, checks the delay is admissible (TS-2), applies it, checks the transition identity is enabled at the delayed state, selects the successor by the post-state digest, applies the resets and checks the target's time invariants, all in exact rational arithmetic. A violated delay or guard refuses `invalid_runtime_input`/`invalid-value`; a digest with no matching successor refuses `stale_dependency`/`revision-mismatch`, as CX-3 states. It checks CT-2's loop closure and `D > 0`, checks fairness by TD-5, and evaluates the formula with SM-1 over the timed lasso: the evaluator unrolls the loop until the unrolled time span covers the formula's time reach, the timed counterpart of ADR-018 SM-8. Agreement settles `refuted`; disagreement `inconclusive`, `ReplayParity`. |
@@ -169,7 +177,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 
 | ID | Rule |
 | --- | --- |
-| EG-1 | **Placement.** A timed engine is a backend placed by ADR-018 §3 negotiation, advertising (`temporal-satisfaction`, `unbounded`) for timed subjects. Which engine fills it is open (§11). |
+| EG-1 | **Placement.** A timed engine is a backend placed by ADR-018 §3 negotiation, advertising (`temporal-satisfaction`, `unbounded`) for timed subjects. Which engine fills it is open (§12). |
 | EG-2 | **What every timed engine does.** It decides TT-1 to TT-4, the deadlock-freedom item and the time-lock-freedom item over time-divergent behaviours; it gives V-1 to V-8 with ADR-018's meanings; and it returns CT-1 to CT-2 counterexamples that replay by CT-3. |
 | EG-3 | **Budgets.** Every limit is a caller-set ADR-014 B-5 budget in the engine's `ModelCheckLimits`: states, transitions, symbolic states (zones, for a zone engine), automaton states, time, memory, cancellation. Reaching one settles V-7. Extrapolation by maximal constants is part of the semantics-preserving abstraction, not a cap. |
 | EG-4 | **Digitization as optimisation.** When every clock constraint, time invariant and timed interval of a subject and claim is closed, an engine may explore integer-valued clocks after scaling every constant to an integer by the common denominator (Henzinger, Manna and Pnueli; Ouaknine and Worrell). It gives the same verdict for TT-1 over the discrete state, the deadlock-freedom item and location reachability, and its counterexamples have integer delays, which are valid dense delays. |
@@ -182,7 +190,7 @@ variables whose rate is 1 everywhere; other rates are hybrid dynamics (§11).
 | DC-1 | **Steps.** `model-steps` intervals count operations, which states step-bounded properties of a protocol. |
 | DC-2 | **Observed traces.** A live system's timestamps are integer ticks of a declared unit: the timestamped-event and fixed-sample profiles state its deadlines (QSpec FR-090, FR-094), and QSpec FR-160 states its clock uncertainty as exact intervals. |
 | DC-3 | **Digital models.** A model whose time is a periodic tick (a scheduler tick, a sampled controller's period) declares `time tick O period p`, and its `model-time` claims count time units (TS-6, CB-2). |
-| DC-4 | **Clock drift.** A local timer whose rate lies in `[1 − ρ, 1 + ρ]` reads `T` at a time in `[T/(1 + ρ), T/(1 − ρ)]`. A dense model states it exactly: a guard `x >= T/(1 + ρ)` on the firing operation and a time invariant `x <= T/(1 − ρ)` while armed, both rational. A clock whose rate itself varies is hybrid dynamics (§11). |
+| DC-4 | **Clock drift.** A local timer whose rate lies in `[1 − ρ, 1 + ρ]` reads `T` at a time in `[T/(1 + ρ), T/(1 − ρ)]`. A dense model states it exactly: a guard `x >= T/(1 + ρ)` on the firing operation and a time invariant `x <= T/(1 − ρ)` while armed, both rational. A clock whose rate itself varies is hybrid dynamics (§12). |
 
 **Example: what integer time loses.** Clock `x` measures time since a
 request and clock `y` time since a heartbeat. The heartbeat is admitted while
@@ -193,7 +201,29 @@ proved for the digital model; half ticks still prove it, and only ticks of a
 third reach the retry. Dense time is the semantics, so the retry is found, and
 EG-4 digitizes only when constraints are closed.
 
-### 10. Worked example: a timeout racing a reply
+### 10. Stochastic delays and statistical checking
+
+A timed model becomes stochastic when its delays carry distributions. With
+ADR-024's random parameters and workload it then defines a probability
+measure over timed behaviours, and ADR-024's statistical engine EN-4 checks
+its probabilistic claims by sampling timed runs.
+
+| ID | Rule |
+| --- | --- |
+| SD-1 | **Delay distributions.** An operation of a `time dense` model may declare `delay ~ D`, with `D` one of four families, every parameter an exact rational: `uniform`, uniform over the operation's window (SD-2); `uniform[a, b]`, uniform over the delays in `[a, b]`; `exponential(λ)`, rate `λ` a positive exact rational per time unit; `discrete { d1: w1, …, dn: wn }`, finitely many distinct delays `di`, each a non-negative exact rational time quantity, with positive exact rational weights, as ADR-024 PM-1 states for a random parameter. Delays are time quantities converted exactly to the model's unit (QSpec FR-142). An operation with no `delay` member has `uniform`. Uniform over a set is uniform in length; over a set of zero length, such as a window of one point, it is uniform over its finitely many points. Spelling is illustrative; QSpec owns it (OV-7). |
+| SD-2 | **Windows.** At a timed state `(s, v)`, the **window** of a scheduled identity (ADR-024 PM-2) is the set of delays `d` for which `(s, v + d)` is reached by an admissible delay (TS-2) and its data precondition and guard hold there. Guards are Boolean combinations of clock constraints, so a window is a finite union of intervals with exact rational ends, open or closed, computed exactly. An identity with an empty window, or whose distribution has zero mass in its window, does not race. |
+| SD-3 | **The race.** At each timed state every scheduled identity with a non-empty window draws a delay from its distribution conditioned on its window. The smallest draw wins: the model delays by it and takes the winning identity with random arguments drawn by ADR-024 PM-1. When several identities tie at the smallest draw, the workload orders them, drawing without replacement by ADR-024 PM-2's weights and then uniformly within an operation; the model delays once and takes them in that order at the same instant, each only when it is still enabled at its turn. Every identity then redraws at the new state. With exponential delays the race is memoryless, and a model whose every delay is exponential with no clock guard is a continuous-time Markov chain. A model with bounded windows under `uniform` is the stochastic semantics of timed automata that UPPAAL SMC uses (David et al.). |
+| SD-4 | **Stochastic conditions.** A timed state where an identity with an unbounded window has `uniform`, or where no identity races and delay is bounded, has no defined race; the item settles `unsupported`, `NotStochastic{state, identity}`, ADR-024 SV-5, as `NotMarkov` does. ADR-024 PM-3's Markov condition holds per winning identity and drawn arguments. A quiescent state where no identity races takes TS-5's idle tail. |
+| SD-5 | **Measure.** For an initial state `s0` and a workload `W`, the race defines the probability measure `Pr[s0, W]` on timed behaviours, extending ADR-024 PM-4. A probabilistic claim over a timed subject holds when it holds under that measure for every `s0` and `over` binding. ADR-018 claims and ADR-026's TT forms read a stochastic model as a timed one and ignore distributions, as ADR-024 PM-6 states for weights. |
+| SS-1 | **Events and measures in time.** Under the timed profile, an ADR-024 PF-1 event is a TT-2 bounded-window formula with activation `on origin`, decided by the positions with time stamp up to its time horizon. An ADR-024 PF-2 measure with `within h` under `model-time` takes `h` as a time quantity. `elapsed from holds(A) until holds(B) within h` is the time-stamp difference between the two positions, which PF-4's quantile reads as a latency. `weighted by delay` weights each position by the delay of the step that leaves it, so PF-6's long-run fraction becomes the fraction of time `P` holds. |
+| SS-2 | **Sampling timed runs.** EN-4 (ADR-024 ST-1) samples a timed run by repeating SD-3 from the initial state. Each delay draw and each tie-break is one more choice in ADR-024 ST-2's step, with its own choice index in the sampler preimage (OV-8). A `discrete` draw selects by exact integer weights as ST-2 does. A `uniform` or `exponential` draw takes a uniform value `u` on a grid of `2^-q` from the generator and returns the conditioned inverse distribution function at `u`, computed by ADR-024 ST-9's rational method and rounded up, so every sampled delay is an exact rational and the run is a timed behaviour that replays by CT-3. `q` is a method parameter of the request, recorded in the result's provenance. A sample ends when its next position's time stamp passes the event's or measure's time horizon, or at an idle tail. |
+| SS-3 | **What a timed measurement means.** A sampled delay is the declared distribution quantised to the grid of `2^-q` in the uniform value, which changes each draw's distribution function by at most `2^-q`. The `measured` verdict (ADR-024 SV-1) is a measurement of the quantised model, and its basis records `q` beside ADR-024 SV-2's method and confidence. |
+| SS-4 | **Stops and budgets.** A sample that takes more steps than the request's per-sample step budget before passing its horizon stops the run, ADR-024 SV-4; it is how a Zeno-prone model shows up under sampling. The budget, `q`, `max_draws` and the other ADR-024 ST-8 values are caller-set B-5 values with published defaults. |
+| SS-5 | **Regeneration.** ADR-024 ST-7's regenerative method cuts a timed run at each return to `(s0, 0)`, the initial discrete state with every clock 0, which a step that resets every clock produces. A model that never returns there settles `undecided`, `NoRegeneration`, as ST-7 does. |
+| SS-6 | **Witnesses.** An ADR-024 SV-6 sampled witness over a timed subject carries the delays of its steps (CT-1). It replays by CT-3, plus ADR-024 SV-8's draw recomputation, which recomputes each delay from the seed, trace index, step, choice index and `q`. It refutes the qualitative claim as ADR-024 SV-7 states. |
+| SS-7 | **Exact checking.** ADR-024 SV-9's `exact` evidence for a probabilistic claim over a timed subject settles `unsupported-requested-capability` at negotiation while no candidate advertises it. Its design is open (§12). |
+
+### 11. Worked example: a timeout racing a reply
 
 A client sends a request and times out at `T`; the server replies at least
 1 ms after the request. Spelling is illustrative, as in ADR-018 §6.
@@ -266,9 +296,10 @@ exact boundary value.
 `x > 3 ms` (strictly after its own deadline) and the timeout to `x > T`,
 with `T = 3 ms`. At `Waiting`, `x = 3`, the time invariants admit no
 positive delay, and `reply` and `timeout` both need `x > 3`. The
-time-lock-freedom item (TD-2) settles `refuted` with the prefix `send` at 0
-and a final delay of 3; replay checks that no positive delay is admissible and
-no transition identity is enabled there (TD-3). The deadlock-freedom item
+time-lock-freedom item (TD-2) settles `refuted`, V-10, with `TimeLock`
+evidence: the stem `send` at 0 and a final delay of 3. The trap's closure is
+that one timed state, so replay checks that no positive delay is admissible
+and no transition identity is enabled there (TD-3). The deadlock-freedom item
 settles `proved`: the time-locked state is not quiescent, so TD-4 reports it
 as a time-lock and not a deadlock. With non-strict guards (`x >= 3`) the item
 settles `proved`.
@@ -278,18 +309,47 @@ settles `proved`.
 `timeout` enabled at or before its time bound, so the deadlock-freedom and
 time-lock-freedom items settle `proved`, V-1, under both values of `T`.
 
-### 11. Open, pending research
+**Bindings.** `Settles` writes `clock "model-time"`, which is the default
+for this timed model (CB-5); `NoLateReply` writes `clock "model-steps"` to
+count steps instead, which it may, since its formula has no interval.
 
-These items are open pending the owning research ticket's findings (listed
-under References). This record decides none of them.
+**A stochastic variant.** Start the subject in the state just after `send`
+(`Waiting`, in flight, `x = 0`), give `reply` the delay distribution
+`discrete { 1 ms: 90, 3 ms: 10 }`, give `send` and `reset`
+`exponential(1 per s)`, take `T = 3 ms` and the workload `Even` with every
+operation weighted 1, and claim
+
+```text
+probabilistic RareLate using timed on Rpc under Even on origin {
+  probability <= 0.01 [ eventually[0 ms, 3 ms] holds(c.late) ]
+}
+```
+
+At the start `reply`'s window is `[1, 3]` and `timeout`'s is `[3, 3]`
+(SD-2). `reply` draws 1 ms with probability 0.9 and wins. It draws 3 ms with
+probability 0.1 and ties with `timeout`, and the workload orders the two
+evenly (SD-3). With `timeout` first, `reply` is still enabled at its turn and
+sets `late` at 3 ms; with `reply` first, `timeout` is no longer enabled. The exact probability of the event is
+`0.1 × 0.5 = 0.05`, so EN-4 settles `measured`, `Rejected` (ADR-024 SV-1).
+With `reply` under `uniform` instead, the draw is 3 ms with probability 0,
+the event's probability is 0 and EN-4 settles `measured`, `Accepted`, while
+the qualitative `NoLateReply` stays `refuted` (V-4): the late reply is a
+behaviour of the model of probability 0. Every draw is an exact rational
+(SS-2), and each sample replays by CT-3.
+
+### 12. Open, pending research
+
+These items are open pending the research tickets' findings (listed under
+References). This record decides none of them.
 
 | Item | Open question |
 | --- | --- |
 | Engine | A native zone engine in QSL layer 5 (difference-bound matrices, extrapolation, a non-Zeno check for liveness, as Tripakis, Yovine and Bouajjani give), or an external tool such as UPPAAL behind EG-1's backend interface, or both. EG-1 to EG-4 bind any choice. |
 | Hybrid robot dynamics | Variables with rates other than 1, flows and resets for robot plants: whether QSL specifies hybrid automata, which decidable classes, and how bounded hybrid checking settles under ADR-018's verdict kinds and QSpec FR-193's provider contract. |
 | Embedded real-time property set | Which properties embedded real-time users need beyond TT-1 to TT-4: for example schedulability, worst-case response time and jitter, and their forms. |
+| Exact probabilistic-timed checking | Exact computation of probabilities over a stochastic timed subject (SS-7), for example over probabilistic timed automata, and whether there is a real need for it beyond §10's statistical checking. |
 
-### 12. Interactions with the sibling records
+### 13. Interactions with the sibling records
 
 - **ADR-019 (strong fairness).** Strong fairness reads enabledness over time
   as TD-5 reads weak fairness.
@@ -298,13 +358,15 @@ under References). This record decides none of them.
 - **ADR-021 (reductions).** Symmetry permutes objects with their clocks. Under
   POR-4 a delay writes every clock, so two transitions are independent only
   when neither reads a clock; reductions that exploit clock independence
-  belong to the engine question (§11).
-- **ADR-024 (statistical).** Its workload resolves discrete choice, and a
-  timed subject's delays carry no distribution, so a probabilistic claim over
-  a timed subject settles `unsupported` (OQ-3). Its `duration` reward and
-  CT-1's delays are the same time-dimension quantity type.
+  belong to the engine question (§12).
+- **ADR-024 (statistical).** §10 extends its model with delay distributions
+  and its engine EN-4 with timed sampling; its random parameters, workloads,
+  property forms and `measured` verdict apply unchanged. Its `duration` reward
+  and CT-1's delays are the same time-dimension quantity type.
+- **ADR-022 (possible properties).** The time-lock-freedom item reuses its
+  trap evidence, V-10 verdict and trap replay (TD-3).
 
-### 13. Overlap items
+### 14. Overlap items
 
 | ID | Item | Owner |
 | --- | --- | --- |
@@ -314,7 +376,9 @@ under References). This record decides none of them.
 | OV-4 | QSpec FR-255: interval end openness and the timed profile identity in the key (CB-4, DF-2) | QSpec |
 | OV-5 | QSpec FR-161 and FR-181: the timed subject, delay moves, the time-divergence premise, quiescent states, time-locks and the timed lasso (TS-1 to TS-6, TD-1, CT-2) | QSpec |
 | OV-6 | QSpec FR-331 and the counterexample contract: the step `delay`, the final delay, the `TimeLock` kind, the time-lock-freedom item and the two new causes (CT-1, TD-2, TD-3, TV-1) | QSpec |
-| OV-7 | The shared grammar: the `time` member, `Clock` fields, resets, clock constraints, time invariants, `urgent`, timed intervals and the `model-time` binding | QSpec |
+| OV-7 | The shared grammar: the `time` member, `Clock` fields, resets, clock constraints, time invariants, `urgent`, timed intervals, the `model-time` binding and its default (CB-5), and `delay ~ D` with its four families (SD-1) | QSpec |
+| OV-8 | ADR-024 and its QSpec half: delay distributions beside PM-1, the race beside PM-2 (SD-3), `NotStochastic` beside SV-5, timed events and measures (SS-1), and the `quire.simulation.sampler/v1` revision (ADR-024 QS-8) gaining delay draws with the `2^-q` grid and the conditioned inverse distribution function (SS-2) | ADR-024 when both records land; QSpec |
+| OV-9 | ADR-022's trap evidence and V-10 for the time-lock-freedom item (TD-3, TV-1) | ADR-022 when both records land |
 
 ## Consequences
 
@@ -329,8 +393,11 @@ under References). This record decides none of them.
   carry timed subjects with additive changes only.
 - Discrete time remains for step counting, observed traces and digital
   models, and digitization is an engine optimisation for closed constraints.
-- The engine, hybrid dynamics and the embedded real-time property set wait
-  on research.
+- A stochastic timed model gets statistical measurements of probabilities,
+  latency quantiles and time-weighted availability from ADR-024's engine,
+  with exact rational delays in every sample.
+- The engine, hybrid dynamics, the embedded real-time property set and exact
+  probabilistic-timed checking wait on research.
 
 ## Amendments made with this record
 
@@ -363,22 +430,23 @@ Each amended text carries an "Amended by ADR-026" note.
 - **An opt-out for time-lock freedom.** Not taken. No intended behaviour stops
   time, unlike an intended terminal state (ADR-018 DL-1).
 - **Steps as the only interval measure over models.** Replaced by RU-2.
-
-## Open questions for the owner
-
-| ID | Question |
-| --- | --- |
-| OQ-1 | RU-2 reads "intervals count time units" as the `model-time` binding beside ADR-018's `model-steps`, which sibling records use. Should `model-steps` intervals stay, or should every model-claim interval count time? |
-| OQ-2 | A non-local time-lock's absence half is an engine fact over the explored graph (TD-3). Should its witness take the same shape as the AG EF witness of the possible-properties record when that lands? |
-| OQ-3 | Probabilistic claims over timed subjects (ADR-024) settle `unsupported` here. Should stochastic delays (probabilistic timed automata) join the research scope? |
+- **Generalized semi-Markov clocks that keep their age across steps.** Not
+  taken. The race redraws at every state (SD-3), which keeps a sample's
+  state the timed state alone; exponential delays are memoryless either way.
+- **Floating-point delay sampling.** Not taken. Every sampled delay is an
+  exact rational from a recorded grid (SS-2), so a sample replays exactly.
 
 ## References
 
 - Owning ticket: Linear QSL-373. The owner's rulings of 2026-10-01 are on
   that ticket. Research on the engine, hybrid robot dynamics and the embedded
-  real-time property set: Linear RES-54. Built on ADR-018 (Linear QSL-366).
-  Sibling drafts read for interactions: ADR-019 (QSL-365), ADR-020 (QSL-367),
-  ADR-021 (QSL-368), ADR-024 (QSL-371).
+  real-time property set: Linear RES-54. Research on exact
+  probabilistic-timed checking: Linear RES-53. Built on ADR-018 (Linear
+  QSL-366). Sibling drafts read for interactions: ADR-019 (QSL-365), ADR-020
+  (QSL-367), ADR-021 (QSL-368), ADR-022 (QSL-369), ADR-024 (QSL-371).
+- A. David, K. G. Larsen, A. Legay, M. Mikučionis, D. B. Poulsen, J. van Vliet
+  and Z. Wang, "Statistical model checking for networks of priced timed
+  automata", FORMATS, 2011.
 - R. Alur and D. L. Dill, "A theory of timed automata", Theoretical Computer
   Science, 1994.
 - J. Bengtsson and W. Yi, "Timed automata: semantics, algorithms and tools",

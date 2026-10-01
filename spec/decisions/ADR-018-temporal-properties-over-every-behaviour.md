@@ -131,8 +131,9 @@ infinite-trace. Both read one admitted semantic-event position per step, and
 a model's behaviour is a sequence of steps. Amended by ADR-026: a model with a
 `time` member also admits the timed profile through a `model-time` clock
 binding, whose intervals count time units of the model's time source
-(ADR-026 CB-1 to CB-4); its claims take the forms TT-1 to TT-4 and the
-verdicts of this section (ADR-026 DF-4, TV-1). The fixed-sample and
+(ADR-026 CB-1 to CB-5); a claim over such a model binds `model-time` unless
+it writes `model-steps` (ADR-026 CB-5), and its claims take the forms TT-1 to
+TT-4 and the verdicts of this section (ADR-026 DF-4, TV-1). The fixed-sample and
 timestamped-event profiles need a clock that a model behaviour carries no
 value for, so a claim under either over a model subject settles
 `unsupported`, `unsupported-requested-capability`, at negotiation.
