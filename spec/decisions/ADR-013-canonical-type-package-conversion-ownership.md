@@ -805,10 +805,6 @@ Equality: not an identity. Each bound value compares under its owning type.
 | --- | --- | --- |
 | Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | One lock holds one revision of each git dependency (OBS-041). |
 
-Release pins are exact revisions in each repository's own manifest and lock.
-They are the only qualified dependency selection, and AD-011 ecosystem locks
-qualify them.
-
 #### O-24 Proof results
 
 | Field | Decision |
@@ -1014,7 +1010,6 @@ flowchart LR
   Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
   ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
   builds the carrier and #186 the serializer. No build produces both.
-- Exact release pins are authoritative (O-23).
 
 ### 6. Lane-private representations
 
@@ -1270,7 +1265,7 @@ Secondary-owner items (the #211 part only):
 | Item | Decision |
 | --- | --- |
 | OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
-| OBS-031 | O-23: release pins are the only qualified dependency selection. |
+| OBS-031 | O-23: each repository's `Cargo.toml` and `Cargo.lock` select its dependency revisions. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
 | OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling). ADR-011 closes OBS-039 against the amended #205 text. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |
