@@ -125,5 +125,6 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 ## References
 
 - QSpec half, which owns the aggregate grammar, windows under both profiles,
-  nearest-rank quantiles and `InsufficientData`: Linear STD-137.
+  nearest-rank quantiles and `InsufficientData`: QSpec FR-414 (Linear
+  STD-137).
 - Owning ticket: Linear QSL-371.

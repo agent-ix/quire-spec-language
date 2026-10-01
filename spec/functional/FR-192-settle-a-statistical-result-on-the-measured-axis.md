@@ -141,5 +141,6 @@ pub enum Coverage { FiniteSample, Asymptotic }
 ## References
 
 - QSpec half, which owns the FR-331 value `measured`, the `measured` axis,
-  the evidence kinds and the no-substitution rule: Linear STD-137.
+  the evidence kinds and the no-substitution rule: QSpec FR-409, FR-410 and
+  FR-290 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

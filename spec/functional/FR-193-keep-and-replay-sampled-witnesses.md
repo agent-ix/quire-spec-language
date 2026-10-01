@@ -130,5 +130,5 @@ pub fn replay_sampled_witness(
 ## References
 
 - QSpec half, which owns the sampled-witness wire and its replay checks:
-  Linear STD-137.
+  QSpec FR-410 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

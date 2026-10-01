@@ -20,7 +20,9 @@ EN-4's cost SHALL be bounded only by caller-set budgets,
 `StatisticalLimits{max_samples, max_draws, max_cycle_steps}`, each an
 ADR-014 B-5 budget with a published default, plus time, the clause meter and
 cancellation (ADR-024 ST-8). Reaching a budget SHALL stop the run and name
-the budget, its value and the request member that raises it. EN-4 SHALL
+the budget, its value and the request member that raises it; reaching
+`max_cycle_steps` ends a regenerative test `NoRegeneration` with the same
+names (FR-190). EN-4 SHALL
 identify a statistical run by its provenance, from which the run reproduces
 exactly (ADR-024 RP-1 to RP-3).
 
@@ -40,7 +42,7 @@ pub struct StatisticalLimits {
     pub max_draws: u64,        // samples drawn, counted or not, per test; default 67_108_864 (2^26)
     pub max_cycle_steps: u64,  // steps in one regeneration cycle; default 16_777_216 (2^24)
 }
-pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMeter, Cancelled }
+pub enum StatisticalLimit { MaxSamples, MaxDraws, Time, ClauseMeter, Cancelled }
 ```
 
 ## Outputs
@@ -58,12 +60,13 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 - Each `StatisticalLimits` member SHALL be set by the request, with the
   published default above when the request omits it. No member SHALL be
   fixed by the language, and none enters the obligation identity.
-- When a test would count one more sample or cycle than `max_samples`, draw
-  one more sample than `max_draws`, or take one more step in a cycle than
-  `max_cycle_steps`, EN-4 SHALL stop and return `Stopped` with cause
-  `ResourceExhausted`, the limit, its value, the member name
-  (`limits.max_samples`, `limits.max_draws`, `limits.max_cycle_steps`) and
-  the counts reached. A time budget, the clause meter and a `true` poll
+- When a test would count one more sample or cycle than `max_samples`, or
+  draw one more sample than `max_draws`, EN-4 SHALL stop and return
+  `Stopped` with cause `ResourceExhausted`, the limit, its value, the member
+  name (`limits.max_samples`, `limits.max_draws`) and the counts reached.
+  A cycle that would take one more step than `max_cycle_steps` SHALL end its
+  test Undecided, `NoRegeneration`, naming `limits.max_cycle_steps` and its
+  value (FR-190). A time budget, the clause meter and a `true` poll
   SHALL stop the run the same way with their own causes.
 - A run stopped before its method completes SHALL never carry a decision; an
   Undecided decision is kept for a run that completed its method.
@@ -88,7 +91,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-191-AC-1 | `NoFault` (ADR-024 §7.1) with Okamoto and `max_samples` set to 1,000,000 stops before deciding: `Stopped`, `ResourceExhausted`, limit `MaxSamples`, value 1,000,000, member `limits.max_samples`, 1,000,000 samples counted and no decision. With `max_samples` 9,210,341, Okamoto's `N`, it completes and decides. A request that omits `max_samples` runs with 16,777,216. | Test (TC-626) |
-| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `limits.max_draws`; FR-190-AC-2's transient variant stops naming `limits.max_cycle_steps`; a `true` poll stops with `Cancelled`. None of the three carries a decision. | Test (TC-626) |
+| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `limits.max_draws`; a `true` poll stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant settles Undecided, `NoRegeneration`, naming `limits.max_cycle_steps`. | Test (TC-626) |
 | FR-191-AC-3 | `P95` with SPRT and seed 7 run twice gives byte-equal results: provenance, per-test counts, estimates and decision. The run stopped by `max_samples` 100 and the rerun with the default limit draw equal samples at trace indices 0 to 99. A run with seed 8 records seed 8, the same obligation identity, and a different sample at some trace index. | Test (TC-626) |
 | FR-191-AC-4 | A two-test run records per test its initial state index, binding and trace-index range, with test 1's first trace index equal to 1 and its step 2. Changing the method from Okamoto to SPRT changes the result's method and leaves its obligation identity unchanged. | Test (TC-626) |
 
@@ -100,5 +103,5 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 ## References
 
 - QSpec half, which owns `StatisticalLimits` in the request and the
-  trace-index assignment: Linear STD-137.
+  trace-index assignment: QSpec FR-408 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

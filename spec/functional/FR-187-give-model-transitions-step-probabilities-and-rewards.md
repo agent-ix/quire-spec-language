@@ -123,5 +123,6 @@ impl ModelSystem {
 ## References
 
 - QSpec half, which owns the step probability, the Markov condition and the
-  support graph in QSpec FR-181's successor relation: Linear STD-137.
+  support graph in QSpec FR-181's successor relation: QSpec FR-406 (Linear
+  STD-137).
 - Owning ticket: Linear QSL-371.

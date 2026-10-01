@@ -155,5 +155,5 @@ pub struct Confidence { pub alpha: Rational, pub beta: Rational, pub indifferenc
 ## References
 
 - QSpec half, which owns the claim grammar, the forms and the FR-290 kind:
-  Linear STD-137.
+  QSpec FR-407 and FR-290 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

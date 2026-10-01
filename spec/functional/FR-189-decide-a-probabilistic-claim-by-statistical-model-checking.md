@@ -77,12 +77,14 @@ pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Bi
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
-pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
+pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor, NoRegeneration { max_cycle_steps: u64 } }
 ```
 
 `StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's
-`RequiresBound`, or `NotStatistical` for a claim `under every scheduler` or
-without confidence parameters, which negotiation never routes here (FR-192).
+`RequiresBound`, `EveryScheduler` for a claim `under every scheduler` and
+`MissingConfidence` for a claim without confidence parameters, which
+negotiation never routes here (FR-192), or `NotStatistical` for a method
+the claim's form does not admit (FR-190, SPRT below).
 
 ## Behavior
 
@@ -185,5 +187,6 @@ without confidence parameters, which negotiation never routes here (FR-192).
 ## References
 
 - QSpec half, which owns the normative statistical methods and the rational
-  bounds for logarithms, square roots and normal quantiles: Linear STD-137.
+  bounds for logarithms, square roots and normal quantiles: QSpec FR-408
+  (Linear STD-137).
 - Owning ticket: Linear QSL-371.

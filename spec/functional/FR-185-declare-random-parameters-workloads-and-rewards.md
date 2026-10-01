@@ -116,5 +116,5 @@ integers in lowest terms.
 ## References
 
 - QSpec half of the work, which owns the grammar and semantics of random
-  parameters, workloads and rewards: Linear STD-137.
+  parameters, workloads and rewards: QSpec FR-405 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

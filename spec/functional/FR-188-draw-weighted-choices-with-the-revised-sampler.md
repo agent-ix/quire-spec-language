@@ -65,8 +65,10 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
   generator at the choice point and rejecting draws outside the largest
   multiple of `N` below the generator's range, as the generator definition
   states.
-- The generator's preimage SHALL include the choice index, so two choices of
-  one step use distinct preimages.
+- The generator's preimage SHALL be the canonical JSON object `{choice,
+  draw, seed, step, trace}` of QSpec FR-181's sampler definition, with
+  `choice` the 0-based choice index within the step, so two choices of one
+  step use distinct preimages and QSpec TC-210's vectors reproduce.
 - With unit weights and one choice per step, `weighted_choice` at choice
   index 0 SHALL select the index FR-101's uniform selection selects.
 - `sample_probabilistic` SHALL start at the given state, with no draw
@@ -104,5 +106,6 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
 ## References
 
 - QSpec half, which owns the generator revision (weighted selection, the
-  choice index, the vectors): Linear STD-137.
+  choice index in the preimage, the vectors): QSpec FR-181 and TC-210, with
+  FR-408's step order (Linear STD-137).
 - Owning ticket: Linear QSL-371.
