@@ -237,6 +237,13 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-273
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-028
+  - target: ix://agent-ix/quire-spec-language/FR-123
+  - target: ix://agent-ix/quire-spec-language/FR-124
+  - target: ix://agent-ix/quire-spec-language/FR-125
+  - target: ix://agent-ix/quire-spec-language/FR-126
+  - target: ix://agent-ix/quire-spec-language/FR-127
+  - target: ix://agent-ix/quire-spec-language/FR-128
+  - target: ix://agent-ix/quire-spec-language/US-015
     type: contains
 ---
 # Master Requirements Specification
@@ -420,6 +427,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-013](usecase/US-013-receive-a-typed-family-evaluation-outcome.md) | US | Draft |
 | [US-014](usecase/US-014-compile-value-source-through-the-forms-stage.md) | US | Draft |
 | [US-028](usecase/US-028-trust-one-definition-per-canonical-type.md) | US | Draft |
+| [US-015](usecase/US-015-check-a-temporal-property-over-every-behaviour-of-a-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -560,6 +568,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-306](functional/FR-306-carry-the-abstraction-relation-in-the-checked-package.md) | FR | Specified: the relation is one v2 node (QSpec FR-451) entering the `package_id`, records no requirement record and is no S6a input; not yet implemented -- TC-804, TC-805 planned |
 | [FR-307](functional/FR-307-export-the-bindings-each-item-references.md) | FR | Specified: the layer-4 export returns each requested item's bindings or a per-item unbound-element refusal; not yet implemented -- TC-806, TC-807 planned |
 | [US-031](usecase/US-031-bind-model-elements-to-implementation-code.md) | US | Draft |
+| [FR-123](functional/FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md) | FR | Specified: S3 admits weak fairness constraints with `whole` (unmarked) or `each` granularity and closed interval operators nested under unbounded ones under infinite-trace, and records each clause's property form (ADR-018 TP-1 to TP-4); not yet implemented -- TC-518 planned |
+| [FR-124](functional/FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md) | FR | Specified: the `terminal when P` / `terminal any` state-model member and the request writer's derived deadlock-freedom item per model subject, with `terminal any` as the opt-out (ADR-018 DL-1 to DL-3); not yet implemented -- TC-519 planned |
+| [FR-125](functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md) | FR | Specified: the model subject, behaviours as maximal paths, positions and anchors, the closed reading under bounded profiles and the terminal stutter under infinite-trace, interval operators over a lasso (ADR-018 SM-1 to SM-5, IV-2); not yet implemented -- TC-520 planned |
+| [FR-126](functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md) | FR | Specified: layer-5 `model_check` (ADR-018 EN-1): the product with the property automaton over FR-101's engine, SCC-based fair-cycle search, deadlock detection, the canonical counterexample and the `max_automaton_states` limit; not yet implemented -- TC-521 planned |
+| [FR-127](functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md) | FR | Specified: the map from model-check outcomes and counterexample replay to `TerminalValue` with `ProofBasis` and the new inconclusive causes, FR-341 labels, FR-243 bases and O-16 categories (ADR-018 V-1 to V-8); not yet implemented -- TC-522 planned |
+| [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR | Specified: `replay_model_trace` replays a `TemporalCounterexample` over a model subject through `ModelSystem`: loop closure, fairness, digest and enabledness checks, formula evaluation or the deadlock check (ADR-018 CX-3, DL-5); not yet implemented -- TC-523 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

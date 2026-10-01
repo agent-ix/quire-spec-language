@@ -54,8 +54,9 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Draft for plan-lead review of the key decisions; the
-QSL compiler requirements that implement it follow review. §9 records the
+Proposed, 2026-10-01. Draft for plan-lead review of the key decisions. The
+QSL compiler requirements that implement it are FR-123 to FR-128 (use case
+US-015). §9 records the
 owner's rulings on the draft's four questions; §10 and §11 carry the two that
 add design. The owning ticket and related work are listed under References.
 
@@ -374,8 +375,8 @@ ADR-011 §6.1 layer 5 gains `model_check` after `simulation`; layer 6
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | Layer 5 `model_check`: the product `TransitionSystem`, edge retention in the FR-101 engine, the bounded monitor and Büchi translations with interval unrolling (IV-3), the automaton-state limit (IV-6), SCC decomposition and the fairness filter, deadlock detection (DL-7), the canonical counterexample. S3: property form classification, the fairness constraint check with its unmarked granularity (FA-6), interval operators under infinite-trace (IV-1), and the `terminal` member (DL-1). The request writer: the deadlock-freedom item (DL-3). Layer-5 evaluator: interval operators over a lasso (IV-2). `qsl-replay`: `ProofBasis`, the new `InconclusiveCause` variants, `TemporalCounterexample` over a model subject with its `kind` (DL-4), `ReplaySource::ModelTrace` and its result arm with the deadlock check (DL-5). The EN-1 provider manifest. |
-| DS-2 | CG | A `negotiate_*` arm for EN-1 and one for the SMT temporal arm, each reading the property form and the subject classification; the deadlock-freedom item goes through the TP-1 path of each. The map from each engine's outcome into `TerminalValue`, extending C-09 for `ProofBasis`. Obligation identity binds the subject. |
+| DS-1 | QSL | Layer 5 `model_check`: the product `TransitionSystem`, edge retention in the FR-101 engine, the bounded monitor and Büchi translations with interval unrolling (IV-3), the automaton-state limit (IV-6), SCC decomposition and the fairness filter, deadlock detection (DL-7), the canonical counterexample. S3: property form classification, the fairness constraint check with its unmarked granularity (FA-6), interval operators under infinite-trace (IV-1), and the `terminal` member (DL-1). The request writer: the deadlock-freedom item (DL-3). Layer-5 evaluator: interval operators over a lasso (IV-2). `qsl-replay`: `ProofBasis`, the new `InconclusiveCause` variants, `TemporalCounterexample` over a model subject with its `kind` (DL-4), `ReplaySource::ModelTrace` and its result arm with the deadlock check (DL-5). The EN-1 provider manifest, and the map from EN-1's outcome into `TerminalValue` (FR-127). |
+| DS-2 | CG | A `negotiate_*` arm for EN-1 and one for the SMT temporal arm, each reading the property form and the subject classification; the deadlock-freedom item goes through the TP-1 path of each. The map from the SMT backend's outcome into `TerminalValue`, extending C-09 for `ProofBasis`. Obligation identity binds the subject. |
 | DS-3 | IR | Admission of `state` nodes (ADR-016 PI-5), a transition-relation form for operations with frames and contracts, temporal intake for bounded and infinite-trace forms (ADR-014 §13 item 1) with interval operators inside infinite-trace forms (IV-1), and the SMT encodings of EN-2 and EN-3, including the `deadlocked` predicate (DL-7). |
 | DS-4 | Driver | Runs an item routed to EN-1 in process and writes its terminal record; runs E9 for its counterexample. |
 | DS-5 | QSpec | §8. |
@@ -403,11 +404,7 @@ already planned. The SMT path depends on IR and CG work that has not started.
      over the retained graph, and its witness shape is that ticket's
      decision.
    - *State-space reduction* changes which product states EN-1 stores.
-     Symmetry over universe keys keeps the verdict. Partial-order reduction
-     keeps it for formulas with no interval operator; a formula with one
-     counts positions (IV-7) and is checked on the unreduced graph. The
-     reduction applied enters the result's method, and the
-     canonical counterexample is defined over the reduced graph.
+     ADR-021 specifies it.
    - *Refinement mappings* check an abstract model's temporal formula,
      with its fairness, over the concrete subject's behaviours through a state
      mapping (ADR-017 §3's relation). It reuses SM-5, EN-1 and the lasso, and
@@ -474,7 +471,7 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 | IV-4 | **Safety fragment.** ADR-014 A-4's safety fragment admits every interval operator, in negation normal form: the truth of an interval operator at a position is decided within `b` positions of it. A formula in the fragment is TP-3, so `always (req implies eventually[0,5] ack)` is TP-3. A formula with an interval operator under an unbounded `eventually` or `until` is TP-4, so the recovery-stability formula is TP-4. |
 | IV-5 | **Cost.** *Size.* An interval operator with upper bound `b` unrolls to `b + 1` positions: an `a`-step shift and `b - a + 1` copies of its operand. Nested interval operators multiply, so a chain with upper bounds `b1 … bn` unrolls to `O(n × (b1 + 1) × … × (bn + 1))` for a formula of `n` nodes. *States.* The automaton records, for each interval operator, which of its obligations are still open over its window. For an operator with lower bound 0 whose operand has no interval operator, the open obligations reduce to one counter with `b + 1` values (the earliest open deadline for `eventually` and `until`, the furthest required position for `always` and `release`), so its factor is `f = b + 1`, linear in the bound. A nonzero lower bound keeps the activations of up to `b + 1` positions as a set, factor at most `f = 2^(b+1)`. Nested interval operators multiply their factors. The automaton has at most `c × f1 × … × fn` states, with `c` the size the unbounded operators alone give, and the EN-1 product has at most the reachable model states times that. EN-1 explores reachable product pairs only and materializes automaton states as it reaches them, so the cost paid is the reachable part. *Example.* The negation of the recovery-stability formula is `eventually (fail and always eventually[0,10] not healthy)`. Its automaton has 12 states: one before the failure and a counter of positions since the last unhealthy state, 0 to 10. With bound `b` it has `b + 2`. EN-2 encodes an interval operator over its `b + 1` positions at each unrolled step, so its encoding grows linearly in `b` per operator. |
 | IV-6 | **Limit.** No syntactic cap on interval length applies beyond TR-3's `u64` bounds. EN-1's limits are FR-101's `Limits` plus `max_automaton_states`, an ADR-014 B-2 run limit with a published default of 2^20 (1,048,576) automaton states, which a request sets like the other limits. EN-1 counts distinct automaton states as the translation materializes them during product exploration, with checked arithmetic. Reaching the limit stops the run and settles V-7: QSpec FR-341 (infinite-trace) `failed`, execution `resource-incomplete`, basis `unavailable`, `Incomplete(ResourceExhausted)` naming `max_automaton_states`. V-7 is the stopped-run verdict of §1; `inconclusive` (V-5, V-6) is kept for a run that completed its method. Either way the result is non-Boolean, and the caller raises the limit or narrows the interval and reruns. |
-| IV-7 | **Position counting.** An interval operator counts positions, so a formula that has one is not stutter-invariant: inserting a step that repeats a state can change its truth. A reduction or a transfer that relies on stutter invariance applies only to formulas with no interval operator (§7 item 4). |
+| IV-7 | **Position counting.** An interval operator counts positions, so a formula that has one is not stutter-invariant: inserting a step that repeats a state can change its truth. Reductions are specified in ADR-021. A transfer of a claim through a refinement mapping that relies on stutter invariance holds only for formulas with no interval operator. |
 
 ## Consequences
 
@@ -504,26 +501,28 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 
 ## Amendments made with this record
 
-- ADR-014 §3 TR-3: under infinite-trace an operator holds a closed interval
-  or none (IV-1). §2 B-1 table, row "Temporal interval under
-  `quire.temporal.infinite-trace/v1`": optional, refused only as `[a,*]` or
-  `a > b`. §5 A-2: the infinite-trace admission admits closed intervals.
-  §5 A-4: the safety fragment admits interval operators (IV-4).
+Each amended cell carries an "Amended by ADR-018" note.
 
-## Amendments to make on acceptance
-
-- ADR-011 §1 and §2.1: S6c and E10; S6b's output role covers any negotiated
-  IR-lowered backend. §6.1: layer 5 `model_check` after `simulation`.
-- ADR-013 O-16 proof column and the `TerminalValue` row: `ProofBasis` on
-  `Proved`, the four new `InconclusiveCause` variants and their categories.
+- ADR-011 §1: the S6c stage row and the E10 edge in the stage diagram; the
+  S6b output role covers any negotiated IR-lowered backend. §2.1: the E10
+  row. §6.1: layer 5 `model_check` after `simulation`, serving S6c.
+- ADR-013 O-16: the proof column takes the model-check verdicts, with
+  `ProofBasis` on `Proved`, the four new `InconclusiveCause` variants and
+  their categories. O-24 public type: `Proved` carries a `ProofBasis`.
 - ADR-014 §1 B-5 "When reached": a completed depth settles `inconclusive`
-  `BoundReached`; a run stopped before its depth settles `incomplete`. §3 TR-8
-  and §10 scenario 1: EN-1 is a registered liveness backend. §5 A-4: lasso
-  evaluation is the semantics every engine answers to (SM-1).
+  `BoundReached`; a run stopped before its depth settles `incomplete`. §2 B-1
+  table, row "Temporal interval under `quire.temporal.infinite-trace/v1`":
+  optional, refused only as `[a,*]` or `a > b`. §3 TR-3: under infinite-trace
+  an operator holds a closed interval or none (IV-1). §3 TR-8 and §10
+  scenario 1: EN-1 is a registered liveness backend. §5 A-2: the
+  infinite-trace admission admits closed intervals. §5 A-4: the safety
+  fragment admits interval operators (IV-4), and lasso evaluation is the
+  semantics every engine answers to (SM-1).
 - ADR-016 §6: its rules hold for `explore` and `sample`; a model-check result
-  reaches proof accounting through negotiation as §3 of this record states,
-  and a model counterexample enters E9 (§5).
-- `spec/spec.md`: index row.
+  reaches proof accounting through negotiation (§3), and a model
+  counterexample enters E9 (§5).
+- `spec/spec.md`: the index row for this record and for the compiler
+  requirements that implement it.
 
 ## Alternatives Considered
 
