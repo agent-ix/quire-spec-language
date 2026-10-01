@@ -33,8 +33,10 @@ const CAUSE_TYPES: [&str; 4] = [
 /// covers it). X-6b moved every layer-3 module into
 /// `qsl-semantics`. X-11 moved `value::stop`, `value::quantity` and the
 /// runtime half of `value::unit` into the layer-SV crate
-/// `quire-semantic-value`, which is below the core as a whole.
-const BELOW_CORE: [&str; 10] = [
+/// `quire-semantic-value`, which is below the core as a whole; QSL-358
+/// slice 2 moved `value::declaration` there too, and added the layer-3
+/// `value::operation` and `value::environment_stage` beside it.
+const BELOW_CORE: [&str; 11] = [
     "qsl-cst/src",
     "qsl-forms/src",
     "quire-semantic-value/src",
@@ -43,8 +45,9 @@ const BELOW_CORE: [&str; 10] = [
     "qsl-semantics/src/value/definition.rs",
     "qsl-semantics/src/value/enumeration.rs",
     "qsl-semantics/src/value/unit.rs",
-    "qsl-semantics/src/value/declaration.rs",
     "qsl-semantics/src/value/model_query.rs",
+    "qsl-semantics/src/value/operation.rs",
+    "qsl-semantics/src/value/environment_stage.rs",
 ];
 
 fn workspace_root() -> PathBuf {
