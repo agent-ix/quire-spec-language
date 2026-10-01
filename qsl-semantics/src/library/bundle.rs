@@ -20,7 +20,7 @@ use qsl_foundation::selection::{
 };
 use qsl_foundation::{ByteDigest, Code};
 
-use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// Unforgeable crate-issued proof that typed definition parts came from
 /// the owning reader boundary.

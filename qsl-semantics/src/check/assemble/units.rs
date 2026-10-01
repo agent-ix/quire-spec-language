@@ -17,7 +17,7 @@ use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
 use crate::check::lowering::strongly_connected;
 use crate::check::node_key::{nominal_key, SourceOwner};
 use crate::value::semantic_node::OwnerSelection;
-use crate::value::unit::{admit_unit_graph, empty_unit_graph, DimensionPreimage, UnitPreimage};
+use crate::value::unit::{admit_unit_graph, DimensionPreimage, UnitPreimage};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::unit::UnitGraph;
 
@@ -168,7 +168,7 @@ pub(super) fn assemble(
 ) -> Result<Assembled, Vec<AssemblyError>> {
     if dimensions.is_empty() && units.is_empty() {
         return Ok(Assembled {
-            graph: empty_unit_graph(),
+            graph: UnitGraph::default(),
             spans: BTreeMap::new(),
         });
     }

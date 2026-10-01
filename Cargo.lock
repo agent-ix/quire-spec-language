@@ -1374,6 +1374,7 @@ dependencies = [
  "qsl-semantics",
  "quire-canonical",
  "quire-exact",
+ "quire-semantic-value",
  "serde_json",
  "sha2",
 ]
@@ -1526,7 +1527,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#1d73f93f6b8139f10eb5bd5082a0b877958344fa"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=task%2Fno-std-alloc#6141cbc19e3bd6d551991e0a53d67edff4ebc422"
 dependencies = [
  "ryu-js",
  "serde",
@@ -1586,7 +1587,9 @@ dependencies = [
 name = "quire-semantic-value"
 version = "0.1.0"
 dependencies = [
+ "quire-canonical",
  "quire-exact",
+ "serde",
  "thiserror",
 ]
 

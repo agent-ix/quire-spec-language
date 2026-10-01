@@ -43,7 +43,7 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::Code;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::library::{LibraryName, PackageId, Selection};
-use qsl_semantics::value::IDENTITY_LIMITS;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use crate::emit::{emit_checked, EmitRefusal};
 

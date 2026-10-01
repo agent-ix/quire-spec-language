@@ -54,10 +54,10 @@ use crate::model::domain_package::{
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
 use crate::model::refusal::IntakeLimit;
-use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 use quire_exact::Presence;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 mod unit;
 pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};

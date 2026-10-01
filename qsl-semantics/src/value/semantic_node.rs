@@ -20,11 +20,11 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use quire_canonical::Limits;
-
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
-use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
+use quire_semantic_value::semantic_node::{
+    InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
+};
 
 /// The stable subject projection of the exact admitted owner of a nominal
 /// declaration.
@@ -219,34 +219,6 @@ pub trait NodeIdentityPreimage {
     /// The SHA-256 digest of this preimage's RFC 8785 JCS encoding.
     fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph>;
 }
-
-/// The limits every QSL identity preimage encodes under.
-///
-/// ADR-013 §2 (ADR-013:113, "One RFC 8785 JCS implementation produces every
-/// RFC 8785 encoding"): every QSL normalized identity -- checked node keys,
-/// nominal and unit preimages, `EffectiveId`, `UniverseId`, `PopulationId`,
-/// `package_id` and the domain-package `sha256-jcs` digest -- is encoded by
-/// the `quire-canonical` crate, called directly at each identity site. This
-/// constant is no encoder: it fixes only the limits those calls share, so the
-/// bound is stated once. It lives here, in the lowest identity-preimage
-/// module, so every layer-3 module may name it (FR-068-AC-6).
-///
-/// Depth is [`Limits::MAX_DEPTH`], the encoder's own ceiling. It is above the
-/// deepest preimage QSL builds: a typed preimage nests a fixed schema depth,
-/// a checked node body is already bounded by `check::MAX_CHECKING_DEPTH`,
-/// and an intake document by the intake reader's `MAX_DEPTH` (200).
-///
-/// The byte ceiling is `u64::MAX`, i.e. none of its own: every preimage is
-/// built from values an earlier stage already bounded (intake's
-/// `MAX_INPUT_BYTES`, the check stage's limits, a package reader's
-/// `artifact_bytes`), and a caller with a tighter byte budget of its own
-/// passes its own [`Limits`] instead (the v2 reader does).
-pub const IDENTITY_LIMITS: Limits = match Limits::new(u64::MAX, Limits::MAX_DEPTH) {
-    Ok(limits) => limits,
-    // `Limits::MAX_DEPTH` is by definition within `Limits::MAX_DEPTH`; this
-    // arm is evaluated at compile time and is unreachable.
-    Err(_) => panic!("Limits::MAX_DEPTH is within Limits::MAX_DEPTH"),
-};
 
 /// The SHA-256 digest of `value`'s RFC 8785 bytes, encoded and hashed by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785

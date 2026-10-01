@@ -54,7 +54,8 @@ which turns `FamilyResult` back into a shared cause list.
    check whether any of them names the `ProtocolClause` snapshot cause type,
    `ModelRefusal` or the `StateModel` undefined cause type.
 4. Read the `[dependencies]` tables of `quire-exact/Cargo.toml`,
-   `quire-semantic-value/Cargo.toml` (exactly `quire-exact` and `thiserror`),
+   `quire-semantic-value/Cargo.toml` (exactly `quire-exact`,
+   `quire-canonical`, `serde` and `thiserror`),
    `qsl-foundation/Cargo.toml` and `qsl-cst/Cargo.toml`, and both dependency
    tables of `qsl-package/Cargo.toml` (layer 4) and
    `qsl-eval/Cargo.toml` (layer 5).

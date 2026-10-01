@@ -250,9 +250,9 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
 /// The compound unit `metre^2` formed at runtime over the admitted golden
 /// dimension and unit carries the golden `quire.value.compound-unit/v1` id
 /// byte for byte, whether built from its preimage's terms or by multiplying
-/// `metre` by itself: the `quire-semantic-value` unit graph takes the id
-/// from QSL's `COMPOUND_UNIT_MINT`, the encoder `CompoundUnitPreimage::id`
-/// uses.
+/// `metre` by itself. `quire-semantic-value` mints it through
+/// `quire-canonical` without `std`, so this pins that build to the golden
+/// bytes.
 #[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {

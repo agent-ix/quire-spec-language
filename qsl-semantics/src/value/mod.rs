@@ -206,7 +206,7 @@ pub use member::Member;
 // `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
 // import them from there, not through a re-export here.
 pub use semantic_node::{
-    ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject, IDENTITY_LIMITS,
+    ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a
@@ -223,11 +223,8 @@ pub use semantic_node::{
 // `quire_exact::TextPayload::from_source_literal(text, spelling)`
 // constructor (infallible, over already-decoded text) to tag the result.
 // `value::unit` keeps the compile-side half of the unit graph: the preimage
-// readers, admission and the compound-unit mint. The runtime half
-// (`Dimension`, `Unit`, `UnitEdge`, `UnitGraph`, `CompoundUnit`,
-// `InvalidCompoundUnit`, `CompoundUnitCause`, `NotAUnitKey`) is
-// `quire_semantic_value::unit`, which every caller names directly.
-pub use unit::{
-    admit_unit_graph, empty_unit_graph, CompoundUnitPreimage, DimensionPreimage, UnitPreimage,
-    COMPOUND_UNIT_MINT,
-};
+// readers and admission. The runtime half (`Dimension`, `Unit`, `UnitEdge`,
+// `UnitGraph`, `CompoundUnit`, `compound_unit_id`, `InvalidCompoundUnit`,
+// `CompoundUnitCause`, `NotAUnitKey`) is `quire_semantic_value::unit`, which
+// every caller names directly.
+pub use unit::{admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, UnitPreimage};

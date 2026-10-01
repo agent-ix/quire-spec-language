@@ -13,9 +13,9 @@
 //! document stays a [`WireNodeId`] until `quire_semantic_value`'s unit graph
 //! resolves its bytes by lookup among the admitted nodes' retained keys.
 //!
-//! It computes the compound-arm kernel [`UnitId`] (ADR-013 T-6, OQ-B): the
-//! `quire.value.compound-unit/v1` digest ([`CompoundUnitPreimage::id`], and
-//! [`COMPOUND_UNIT_MINT`], which the admitted graph's compound units use).
+//! A compound-unit preimage's kernel [`UnitId`] ([`CompoundUnitPreimage::id`])
+//! is `quire_semantic_value::unit::compound_unit_id` of its spelled terms,
+//! the same digest the runtime `CompoundUnit::id` computes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,13 +26,12 @@ use super::semantic_node::{
     CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     RationalDocument,
 };
-use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
 use quire_semantic_value::semantic_node::{check_terms, InvalidSemanticGraph, SemanticGraphCause};
 use quire_semantic_value::unit::{
-    CompoundUnit, CompoundUnitCause, CompoundUnitMint, DimensionNode, InvalidCompoundUnit,
-    UnitEdge, UnitGraph, UnitNode,
+    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, UnitEdge, UnitGraph,
+    UnitNode,
 };
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
@@ -350,8 +349,7 @@ struct Provenance {
 /// ([`UnitGraph::from_checked_nodes`]). Finally every owner must join the
 /// selection and every retained key must equal its recomputed key. Every
 /// refusal is `invalid_semantic_graph`; the typed cause names the first
-/// failed check. The graph's compound units take their ids from
-/// [`COMPOUND_UNIT_MINT`].
+/// failed check.
 pub fn admit_unit_graph(
     dimensions: impl IntoIterator<Item = (DimensionPreimage, NodeKey)>,
     units: impl IntoIterator<Item = (UnitPreimage, NodeKey)>,
@@ -399,8 +397,7 @@ pub fn admit_unit_graph(
             },
         );
     }
-    let graph =
-        UnitGraph::from_checked_nodes(&admitted_dimensions, &admitted_units, COMPOUND_UNIT_MINT)?;
+    let graph = UnitGraph::from_checked_nodes(&admitted_dimensions, &admitted_units)?;
     if provenance.iter().any(|node| !owners.contains(&node.owner)) {
         return Err(refuse(SemanticGraphCause::OwnerNotSelected));
     }
@@ -408,12 +405,6 @@ pub fn admit_unit_graph(
         return Err(refuse(SemanticGraphCause::StaleKey));
     }
     Ok(graph)
-}
-
-/// The unit graph with no nodes, whose compound units take their ids from
-/// [`COMPOUND_UNIT_MINT`].
-pub fn empty_unit_graph() -> UnitGraph {
-    UnitGraph::empty(COMPOUND_UNIT_MINT)
 }
 
 // ---- compound units ----------------------------------------------------------
@@ -430,44 +421,6 @@ struct CompoundTermDocument {
 struct CompoundDocument {
     version: String,
     terms: Vec<CompoundTermDocument>,
-}
-
-#[derive(Serialize)]
-struct CanonicalCompoundTerm {
-    exponent: String,
-    unit_node_id: CanonicalNodeId,
-}
-
-#[derive(Serialize)]
-struct CanonicalCompound {
-    terms: Vec<CanonicalCompoundTerm>,
-    version: &'static str,
-}
-
-/// The compound-arm [`UnitId`] of exactly these terms: the SHA-256 of their
-/// JCS `quire.value.compound-unit/v1` preimage, encoded and hashed by
-/// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
-/// implementation).
-fn compound_id<'a, K: Into<CanonicalNodeId>>(
-    terms: impl IntoIterator<Item = (K, &'a Integer)>,
-) -> UnitId {
-    let preimage = CanonicalCompound {
-        terms: terms
-            .into_iter()
-            .map(|(unit, exponent)| CanonicalCompoundTerm {
-                exponent: exponent.to_string(),
-                unit_node_id: unit.into(),
-            })
-            .collect(),
-        version: COMPOUND_UNIT_DOMAIN,
-    };
-    // A struct of strings, arrays and a constant always has an RFC 8785
-    // encoding, and `LIMITS` sets no byte ceiling; the one refusal left is a
-    // failed heap reservation, which the `serde_json` encoder this replaced
-    // aborted the process on.
-    let digest = quire_canonical::sha256(&preimage, LIMITS)
-        .unwrap_or_else(|error| panic!("a compound-unit preimage encodes: {error}"));
-    UnitId::compound(*digest.as_bytes())
 }
 
 /// A schema-valid `quire.value.compound-unit/v1` preimage, as spelled.
@@ -508,19 +461,6 @@ impl CompoundUnitPreimage {
 
     /// The compound-arm [`UnitId`] of exactly these spelled terms.
     pub fn id(&self) -> UnitId {
-        compound_id(
-            self.terms
-                .iter()
-                .map(|(id, exponent)| (WireNodeId::from_digest(*id), exponent)),
-        )
+        compound_unit_id(self.terms.iter().map(|(id, exponent)| (*id, exponent)))
     }
-}
-
-/// The [`CompoundUnitMint`] of every unit graph QSL admits: a compound unit's
-/// id is the `quire.value.compound-unit/v1` digest of its terms, encoded and
-/// hashed by `quire-canonical`.
-pub const COMPOUND_UNIT_MINT: CompoundUnitMint = CompoundUnitMint::new(compound_unit_id);
-
-fn compound_unit_id(unit: &CompoundUnit) -> UnitId {
-    compound_id(unit.terms())
 }

@@ -23,17 +23,23 @@
 //! `quire.checked-semantic-node/v1` label ([`Unit::id`], and C-30's
 //! [`UnitGraph::declared_unit_id`], which refuses any key that is not an
 //! admitted unit's). A compound unit's is its `quire.value.compound-unit/v1`
-//! digest ([`CompoundUnit::id`]), which the graph's [`CompoundUnitMint`]
-//! computes.
+//! digest ([`CompoundUnit::id`], [`compound_unit_id`]), encoded and hashed by
+//! `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
+//! implementation).
 
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 
-use quire_exact::{Integer, NodeKey, Rational, UnitId};
+use serde::Serialize;
 
-use crate::semantic_node::{check_terms, InvalidSemanticGraph, SemanticGraphCause};
+use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN};
+
+use crate::semantic_node::{
+    check_terms, InvalidSemanticGraph, SemanticGraphCause, IDENTITY_LIMITS,
+};
 
 /// The graph refusal of `cause`.
 fn refuse(cause: SemanticGraphCause) -> InvalidSemanticGraph {
@@ -157,7 +163,6 @@ pub struct Unit {
     root: NodeKey,
     path: Vec<UnitEdge>,
     canonical: UnitEdge,
-    mint: CompoundUnitMint,
 }
 
 impl Unit {
@@ -229,13 +234,12 @@ pub struct UnitNode {
 }
 
 /// An admitted closed set of dimension and unit nodes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UnitGraph {
     dimensions: BTreeMap<NodeKey, Dimension>,
     units: BTreeMap<NodeKey, Unit>,
     /// Resolves a unit node id to an admitted unit's key.
     unit_ids: BTreeMap<[u8; 32], NodeKey>,
-    mint: CompoundUnitMint,
 }
 
 /// A unit node whose dimension and target resolved to admitted keys.
@@ -256,17 +260,6 @@ fn resolve(index: &BTreeMap<[u8; 32], NodeKey>, id: [u8; 32]) -> Option<NodeKey>
 }
 
 impl UnitGraph {
-    /// The graph with no nodes, whose compound units take their ids from
-    /// `mint`.
-    pub fn empty(mint: CompoundUnitMint) -> Self {
-        Self {
-            dimensions: BTreeMap::new(),
-            units: BTreeMap::new(),
-            unit_ids: BTreeMap::new(),
-            mint,
-        }
-    }
-
     /// Admit the topology of dimension and unit nodes that already passed
     /// their per-node checks, keyed by their distinct retained keys.
     ///
@@ -274,12 +267,10 @@ impl UnitGraph {
     /// dimension terms, unknown dimensions, unknown and cross-dimension
     /// targets, per-dimension root count and target cycles, in that order.
     /// Every refusal is `invalid_semantic_graph`; the typed cause names the
-    /// first failed check. Compound units formed over the graph take their
-    /// ids from `mint`.
+    /// first failed check.
     pub fn from_checked_nodes(
         dimensions: &BTreeMap<NodeKey, DimensionNode>,
         units: &BTreeMap<NodeKey, UnitNode>,
-        mint: CompoundUnitMint,
     ) -> Result<Self, InvalidSemanticGraph> {
         let dimension_ids = id_index(dimensions.keys().copied());
         let dimension_maps = dimension_maps(dimensions, &dimension_ids)?;
@@ -287,13 +278,11 @@ impl UnitGraph {
         let units = unit_paths(
             &resolve_units(units, &dimension_ids, &unit_ids)?,
             &dimension_maps,
-            mint,
         )?;
         Ok(Self {
             dimensions: dimension_maps,
             units,
             unit_ids,
-            mint,
         })
     }
 
@@ -347,7 +336,7 @@ impl UnitGraph {
             dimension = dimension.multiply(&root.dimension.power(exponent));
             compound_terms.insert(key, exponent.clone());
         }
-        Ok(CompoundUnit::new(compound_terms, dimension, self.mint))
+        Ok(CompoundUnit::new(compound_terms, dimension))
     }
 }
 
@@ -424,7 +413,6 @@ fn resolve_units(
 fn unit_paths(
     units: &BTreeMap<NodeKey, ResolvedUnit>,
     dimensions: &BTreeMap<NodeKey, Dimension>,
-    mint: CompoundUnitMint,
 ) -> Result<BTreeMap<NodeKey, Unit>, InvalidSemanticGraph> {
     let targets = || units.values().filter_map(|unit| Some((unit, unit.target?)));
     if targets().any(|(unit, target)| {
@@ -484,7 +472,6 @@ fn unit_paths(
                     root: current.0,
                     path,
                     canonical,
-                    mint,
                 },
             ))
         })
@@ -516,45 +503,64 @@ pub enum CompoundUnitCause {
     NotRootUnit,
 }
 
-/// Computes a compound unit's `quire.value.compound-unit/v1` [`UnitId`]: the
-/// SHA-256 of the RFC 8785 encoding of its terms' preimage.
-///
-/// The one RFC 8785 encoder (ADR-013 §2, `quire-canonical`) builds only with
-/// `std`, and this crate may not carry a second one, so the caller that
-/// admits a [`UnitGraph`] supplies the mint (`qsl-semantics`' `value::unit`).
-/// Every unit and compound unit formed over the graph carries it. The mint
-/// grants no authority the kernel does not already give: `UnitId::compound`
-/// is public. The target is that `quire-canonical` gains a `no_std` +
-/// `alloc` build, this crate computes the id itself, and this type goes.
-///
-/// A mint is not part of a unit's value: every mint computes the one
-/// compound-unit identity, so two mints compare equal and hash alike.
-#[derive(Clone, Copy)]
-pub struct CompoundUnitMint(fn(&CompoundUnit) -> UnitId);
-
-impl CompoundUnitMint {
-    /// The mint that computes a compound unit's id with `mint`.
-    pub const fn new(mint: fn(&CompoundUnit) -> UnitId) -> Self {
-        Self(mint)
-    }
+// RFC 8785 JCS: `quire-canonical` orders members itself, so field
+// declaration order carries no meaning.
+#[derive(Serialize)]
+struct CanonicalNodeId {
+    digest: String,
+    domain: &'static str,
 }
 
-impl PartialEq for CompoundUnitMint {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
+#[derive(Serialize)]
+struct CanonicalCompoundTerm {
+    exponent: String,
+    unit_node_id: CanonicalNodeId,
 }
 
-impl Eq for CompoundUnitMint {}
-
-impl Hash for CompoundUnitMint {
-    fn hash<H: Hasher>(&self, _: &mut H) {}
+#[derive(Serialize)]
+struct CanonicalCompound {
+    terms: Vec<CanonicalCompoundTerm>,
+    version: &'static str,
 }
 
-impl fmt::Debug for CompoundUnitMint {
+/// A node id's 32 digest bytes as 64 lowercase hexadecimal digits, the
+/// spelling `NodeKey`'s `Display` uses.
+struct DigestHex([u8; 32]);
+
+impl fmt::Display for DigestHex {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("CompoundUnitMint")
+        self.0
+            .iter()
+            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
     }
+}
+
+/// The compound-arm [`UnitId`] of exactly these `(unit node id, exponent)`
+/// terms, each id as its 32 digest bytes: the SHA-256 of their JCS
+/// `quire.value.compound-unit/v1` preimage, encoded and hashed by
+/// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
+/// implementation).
+pub fn compound_unit_id<'a>(terms: impl IntoIterator<Item = ([u8; 32], &'a Integer)>) -> UnitId {
+    let preimage = CanonicalCompound {
+        terms: terms
+            .into_iter()
+            .map(|(unit, exponent)| CanonicalCompoundTerm {
+                exponent: exponent.to_string(),
+                unit_node_id: CanonicalNodeId {
+                    digest: DigestHex(unit).to_string(),
+                    domain: NODE_KEY_DOMAIN,
+                },
+            })
+            .collect(),
+        version: COMPOUND_UNIT_DOMAIN,
+    };
+    // A struct of strings, arrays and a constant always has an RFC 8785
+    // encoding, and `IDENTITY_LIMITS` sets no byte ceiling; the one refusal
+    // left is a failed heap reservation, which the `serde_json` encoder this
+    // replaced aborted the process on.
+    let digest = quire_canonical::sha256(&preimage, IDENTITY_LIMITS)
+        .unwrap_or_else(|error| panic!("a compound-unit preimage encodes: {error}"));
+    UnitId::compound(*digest.as_bytes())
 }
 
 /// A normalized compound unit: canonical root-unit keys to nonzero exponents.
@@ -564,7 +570,6 @@ impl fmt::Debug for CompoundUnitMint {
 pub struct CompoundUnit {
     terms: BTreeMap<NodeKey, Integer>,
     dimension: Dimension,
-    mint: CompoundUnitMint,
 }
 
 impl PartialEq for CompoundUnit {
@@ -582,25 +587,13 @@ impl Hash for CompoundUnit {
 }
 
 impl CompoundUnit {
-    fn new(
-        terms: BTreeMap<NodeKey, Integer>,
-        dimension: Dimension,
-        mint: CompoundUnitMint,
-    ) -> Self {
-        Self {
-            terms,
-            dimension,
-            mint,
-        }
+    fn new(terms: BTreeMap<NodeKey, Integer>, dimension: Dimension) -> Self {
+        Self { terms, dimension }
     }
 
     /// The single-term compound unit `root^1` of a declared unit's root.
     pub(crate) fn of_root(unit: &Unit) -> Self {
-        Self::new(
-            [(unit.root, Integer::one())].into(),
-            unit.dimension.clone(),
-            unit.mint,
-        )
+        Self::new([(unit.root, Integer::one())].into(), unit.dimension.clone())
     }
 
     /// Ascending `(root unit, exponent)` terms.
@@ -614,17 +607,19 @@ impl CompoundUnit {
     }
 
     /// The compound-arm [`UnitId`]: the `quire.value.compound-unit/v1`
-    /// digest of the terms (ADR-013 T-6, OQ-B), computed by the graph's
-    /// [`CompoundUnitMint`].
+    /// digest of the terms (ADR-013 T-6, OQ-B), computed on each call.
     pub fn id(&self) -> UnitId {
-        (self.mint.0)(self)
+        compound_unit_id(
+            self.terms
+                .iter()
+                .map(|(key, exponent)| (*key.as_bytes(), exponent)),
+        )
     }
 
     pub(crate) fn multiply(&self, other: &Self) -> Self {
         Self::new(
             combine(&self.terms, &other.terms, Integer::add),
             self.dimension.multiply(&other.dimension),
-            self.mint,
         )
     }
 
@@ -632,7 +627,6 @@ impl CompoundUnit {
         Self::new(
             combine(&self.terms, &other.terms, Integer::sub),
             self.dimension.divide(&other.dimension),
-            self.mint,
         )
     }
 
@@ -640,7 +634,6 @@ impl CompoundUnit {
         Self::new(
             scale_exponents(&self.terms, exponent),
             self.dimension.power(exponent),
-            self.mint,
         )
     }
 }

@@ -252,15 +252,15 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
 /// `model::intake` names its FCD dependencies. `quire-exact` names
-/// none, `quire-semantic-value` (layer SV) names exactly `quire-exact` and
-/// `thiserror`, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
+/// none, `quire-semantic-value` (layer SV) names exactly `quire-exact`,
+/// `quire-canonical`, `serde` and `thiserror`, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)
-/// names exactly `qsl-foundation`, `qsl-semantics` and
-/// `quire-exact` among the workspace crates in `[dependencies]`; its
+/// names exactly `qsl-foundation`, `qsl-semantics`, `quire-exact` and
+/// `quire-semantic-value` among the workspace crates in `[dependencies]`; its
 /// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
-/// `qsl-cst` (the FR-091 S1-to-S4 round trip) and `quire-semantic-value`. `qsl-route` (layer R)
+/// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R)
 /// names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
 /// in `[dependencies]`, has no `[build-dependencies]`, and its
 /// `[dev-dependencies]` may also name layer K's `quire-exact`. `qsl-eval` (layer
@@ -338,8 +338,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-foundation",
                 "qsl-semantics",
                 "quire-exact",
+                "quire-semantic-value",
             ][..],
-            &["qsl-cst", "qsl-forms", "quire-semantic-value"][..],
+            &["qsl-cst", "qsl-forms"][..],
         ),
         (
             "qsl-route",
@@ -376,14 +377,14 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         }
         if crate_name == "quire-semantic-value" {
             // Layer SV: the shared `no_std` leaf (ADR-011 §6.1, X-11)
-            // depends on K and `thiserror` only -- no wire format, no
-            // RFC 8785 encoder and no hashing crate -- and has no build
-            // dependencies.
+            // depends on K, ADR-013 §2's one RFC 8785 encoder
+            // (`quire-canonical`, for the compound-unit id), `serde` and
+            // `thiserror` only, and has no build dependencies.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
                 normal,
-                ["quire-exact", "thiserror"],
+                ["quire-canonical", "quire-exact", "serde", "thiserror"],
                 "{crate_name}'s [dependencies]"
             );
             assert!(
@@ -454,6 +455,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "quire-canonical",
                     "quire-contract-model",
                     "quire-exact",
+                    "quire-semantic-value",
                     "serde",
                     "thiserror"
                 ],

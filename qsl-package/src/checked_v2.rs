@@ -114,8 +114,8 @@ use qsl_semantics::model::key::hex;
 
 use crate::checked::{CheckedPackage, ResolvedDependency};
 use crate::emit::{emit_checked, Emission, EmitRefusal};
-use qsl_semantics::value::IDENTITY_LIMITS;
 use quire_exact::{Origin, Role};
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 #[cfg(test)]
 mod tests;

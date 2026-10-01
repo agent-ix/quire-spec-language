@@ -34,7 +34,8 @@ serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] 
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation. Every QSL
 # normalized identity encodes through it; arch-lint's
 # `canonical-encoder` check refuses a second encoder.
-quire-canonical = { workspace = true }
+# `std` for `model::key`'s `WriteSink` over `io::sink`.
+quire-canonical = { workspace = true, features = ["std"] }
 # QSpec's `complete-value-lock.json` and `native-diagnostics.md` bytes:
 # `value::definition` reads its catalog and the diagnostics catalog's
 # `DefinitionRef` from them instead of holding a copy.

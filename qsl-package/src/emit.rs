@@ -87,12 +87,12 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
-use qsl_semantics::value::IDENTITY_LIMITS;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
     Member, NodeOwner,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use super::{CheckedPackage, EmittedPackage};
 

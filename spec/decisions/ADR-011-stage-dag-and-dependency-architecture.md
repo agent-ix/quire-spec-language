@@ -712,7 +712,7 @@ enforces it; before #226, §3's interim rule applies.
 | Layer | Modules, in order | Stage | Depends on |
 |---|---|---|---|
 | K | `quire-exact` crate: the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8) (`Value`, `ValueType`, `Outcome`, `Refusal`, `Undefined`, `BoundViolation`, `CardinalityBound`, `BoundedInteger`, `NodeKey`, `EffectiveId`, `UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`, `PopulationId`, `Origin`/`Location`, `ChargePoint`, `Meter`, `Incomplete`) and the scalar and collection operations over them | foundation | none in the ecosystem |
-| SV | `quire-semantic-value` crate: the shared `no_std` semantic-value leaf. It holds `stop` (the `Stop` early-exit carrier), `quantity` (FR-142 quantities, the `UnitTable`/`UnitScope` over kernel `UnitId`s and the quantity operations) and `unit`'s runtime half (`Dimension`, `Unit`, `UnitEdge`, `UnitGraph`'s topology and lookups, `CompoundUnit`, `InvalidCompoundUnit`) | runtime semantic values that S3 checking, S6a evaluation and a backend share | K |
+| SV | `quire-semantic-value` crate: the shared `no_std` semantic-value leaf. It holds `stop` (the `Stop` early-exit carrier), `quantity` (FR-142 quantities, the `UnitTable`/`UnitScope` over kernel `UnitId`s and the quantity operations) and `unit`'s runtime half (`Dimension`, `Unit`, `UnitEdge`, `UnitGraph`'s topology and lookups, `CompoundUnit`, `InvalidCompoundUnit`) | runtime semantic values that S3 checking, S6a evaluation and a backend share | K; `quire-canonical` without `std` for the compound-unit id |
 | F | `absence` < `json_number` < `serde_object` < `digest` < `wire_format` < `source` (with `source_map`) < `selection` < `diagnostic` < `located_json` | foundation | K |
 | 1 | `token` < `lexer` < `cst` | S1 | F |
 | 2 | `qsl-forms` crate: `forms` core < family form builders | S2 | 1, F, K |
@@ -778,26 +778,21 @@ Rules that close the ADR-010 OBS-016 cycles:
   (`quire-semantic-value`). `TypeEnvironment` and `ObjectTypeDeclaration`
   are in `value::declaration`, at layer 3.
 - **SV is a shared leaf.** `quire-semantic-value` depends on K and on no
-  other ecosystem crate. It is `#![no_std]`, uses only `core` and `alloc`,
-  and adds only `thiserror` (without default features) as an external
-  dependency. A no_std backend therefore depends on it directly (FB-05's
-  shared-leaf class), and QSL layers 3, 4, 5, R and 6 import its items by
-  their `quire_semantic_value::` path; no QSL crate re-exports them
-  (§7.2). SV computes no digest and mints no kernel identity: it resolves a
-  node id read from a preimage by lookup among the admitted keys, and it
-  never calls a `NodeKey` constructor (T-12 rule (b)). The compile-side half
-  of a module whose runtime half is in SV stays at layer 3: for `unit` that
-  is the preimage reading (`serde`), the node-key digests and the per-node
-  provenance checks. One identity is injected rather than computed. A
-  compound unit's `UnitId` is the SHA-256 of its RFC 8785
-  `quire.value.compound-unit/v1` preimage, ADR-013 §2's one RFC 8785 encoder
-  (`quire-canonical`) builds only with `std`, and SV may not carry a second
-  encoder. So SV's `CompoundUnit` takes a `CompoundUnitMint`, a function
-  that layer 3 supplies over `quire-canonical`, when the unit graph is
-  admitted. The mint grants no new authority, because the kernel's
-  `UnitId::compound` constructor is already public. The target is that
-  `quire-canonical` gains a `no_std` + `alloc` build, SV mints compound
-  ids itself, and the mint parameter is deleted.
+  QSL layer. It is `#![no_std]` and uses only `core` and `alloc`; its
+  external dependencies are ADR-013 §2's one RFC 8785 encoder
+  (`quire-canonical`, built without its `std` feature), `serde` and
+  `thiserror`, none with `std`. A no_std backend therefore depends on it
+  directly (FB-05's shared-leaf class), and QSL layers 3, 4, 5, R and 6
+  import its items by their `quire_semantic_value::` path; no QSL crate
+  re-exports them (§7.2). SV mints no kernel identity: it resolves a node id
+  read from a preimage by lookup among the admitted keys and never calls a
+  `NodeKey` constructor (T-12 rule (b)). The one digest it computes is a
+  compound unit's `quire.value.compound-unit/v1` `UnitId`
+  (`compound_unit_id`), through `quire-canonical`, under the shared
+  `IDENTITY_LIMITS`, which now live in SV so every layer from SV up names
+  one constant. The compile-side half of a module whose runtime half is in
+  SV stays at layer 3: for `unit` that is the preimage reading (`serde`
+  JSON), the node-key digests and the per-node provenance and owner checks.
 - **Layer 2 holds kernel types.** `forms` depends on K and carries kernel
   types directly as parsed-form payloads, for example
   `quire_exact::Integer` for an integer literal and
@@ -902,7 +897,7 @@ Module table:
 | crate `qsl-source` | I3 | the extraction adapter stops at S0: verified body bytes plus their document `SourceMap`. The native compile join is in `command::extraction` (SEAM-1). `qsl-source` builds the clause-only Quire context (`clause_context`) and re-exports the Quire result and failure types `command` renders; the root crate names no quire-rs dependency. |
 | `package` | 4 `package` | `NativePackage` and the native-linked-package/1 submodules (`intake`, `reading`, `wire`, `encoding`, `features`, `view`) are SEAM-1 and stay in the root crate's module `package` until M-6 deletes them; the v2 emitter and the I2 byte reader are new in M-4. Layer-4 `package`'s content — `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader — is the crate `qsl-package` (X-7), whose crate root is layer-4 `package`. Every rule this ADR states for layer-4 `package` applies to `qsl-package`. |
 | `value` kernel submodules: `numeric`, `integer`, `rational`, `decimal`, `ieee` and `division` (operations), `text`, `collection`, `comparison`, `equality`, `outcome`, `accounting`, `composite` | K `quire-exact` | only the types in the AD-016 Shared-type row as amended by QC-15, QC-21 and QC-22 (TK-10; ADR-013 §8), and the operations over them. QSL has no `value::` copy of any of these thirteen: every QSL caller imports the kernel item from `quire_exact`. |
-| `value::stop`, `value::quantity` and the runtime half of `value::unit` | SV `quire-semantic-value` | moved out of `qsl-semantics` (X-11). Every caller imports the item from `quire_semantic_value::{stop, quantity, unit}`; no QSL crate re-exports it. `unit`'s compile-side half (preimage reading, node-key digests, provenance and owner checks, and the compound-unit mint over `quire-canonical`) stays in `qsl-semantics`' `value::unit`. |
+| `value::stop`, `value::quantity` and the runtime half of `value::unit` | SV `quire-semantic-value` | moved out of `qsl-semantics` (X-11). Every caller imports the item from `quire_semantic_value::{stop, quantity, unit}`; no QSL crate re-exports it. `unit`'s compile-side half (preimage reading, node-key digests, provenance and owner checks) stays in `qsl-semantics`' `value::unit`. |
 | `value` non-kernel submodules: `definition`, `enumeration`, the compile-side half of `unit`, `declaration`, `member` | 3 `semantic_value` | not in the AD-016 kernel row; used by `model`, `check` and S6a. `declaration` holds the FR-143 registry (`TypeEnvironment`, `ObjectTypeDeclaration`) and the FR-149 check-level equality layer; it imports only K, SV and its `semantic_value` sibling `enumeration`, and `check`, `model` (`value::model_query`) and S6a consume it. `stop`, now in SV, is the early-exit carrier that `declaration`, `enumeration`, `quantity`, `model_query` and S6a convert to and from the kernel `Outcome`. `member` is ADR-013 O-06's structured checked member identity; it imports only F and K. |
 | `check::node_key` | 3 `check` | the FR-322 checked application-node key, the FR-092 structural-node key and recursion-group keying. It imports `check`'s `MAX_CHECKING_DEPTH` as its body-depth bound, so it cannot sit below `check` core. The FR-093 lowering of checked expressions to FR-322 nodes sits beside it in `check::lowering`; the `package` v2 emission arm serializes those nodes and lowers nothing. |
 | `value::semantic_node` | 3 `semantic_value` | the I04 node-identity preimage machinery (owner projection, JCS digest, `WireNodeId` reading) shared by `enumeration` and `unit`; moved out of the deleted K-copy `value::node`, whose only kernel types, `NodeKey` and `NODE_KEY_DOMAIN`, are imported from `quire_exact` |
@@ -1101,7 +1096,7 @@ is not blocked.
 | X-8 | Extract crate `qsl-eval`. **Extracted**: layer 5 — the S6a evaluator `value::expression` (with `causes`, the `s6a` seam and the `Value` family evaluator) and `simulation` — is the crate `qsl-eval`, at `qsl_eval::value` and `qsl_eval::simulation`. Its `[dependencies]` are exactly `qsl-package` (4), `qsl-semantics` (3), `qsl-foundation` (F), `quire-exact` (K), `quire-canonical`, `serde` and `thiserror`. `quire-canonical` and `serde` encode FR-101's simulation state key and sampler preimage through ADR-013 §2's one RFC 8785 encoder, which also takes their SHA-256, so `sha2` stays a dev dependency. Its `[dev-dependencies]` may name layer 2 (`qsl-forms`), layer 1 (`qsl-cst`) and `serde_json`, for its tests only. TC-390's dependency check asserts the exact `[dependencies]` set and refuses any other workspace crate in the dev and build tables. It has no `test-support` feature. The old `state` and `temporal` evaluators are SEAM code and stay in the root crate until M-6c; `qsl-eval` imports neither. No shipped root-crate code calls a layer-5 item yet, so the root crate does not depend on `qsl-eval` in any table, which TC-390 asserts. The tests that exercise only layer 5 and below are in `qsl-eval/tests/`. | 5 | the layer-5 modules' public items | after X-7, on the same condition | none: no root-crate re-export (§7.2) |
 | X-9 | Extract crate `qsl-route`. **Extracted:** `route` is the crate `qsl-route`, with its items at the crate root (`qsl_route::Registry`, `BackendDescriptor`, `CandidateOutcome`, ...). Its `[dependencies]` name `qsl-semantics` (3) and `qsl-foundation` (F) among the workspace crates; `route` imports nothing of layer 4 or K, so it did not wait for X-7. TC-390's dependency check enforces the list. No shipped root-crate module calls `route`, so the root crate names `qsl-route` only as a dev dependency (§7.1), and the `xtask seam-probe` S7 build compiles `qsl-route` separately. The tests that exercise only `route` are in `qsl-route/tests/`. | R | `route` | after X-6; X-7 is not a prerequisite, since `route` imports no layer-4 item | none: no root-crate re-export (§7.2) |
 | X-10 | Extract crate `qsl-replay`. **Extracted**: `bounds`, `call_site`, `execute`, `identity`, `proof_result`, `request`, `result`, `spine` and `witness` are in the crate `qsl-replay`. Its `[dependencies]` are exactly `qsl-cst` (1), `qsl-forms` (2), `qsl-semantics` (3), `qsl-package` (4), `qsl-eval` (5), `qsl-foundation` (F), `quire-exact` (K), the tool-attribute crate `qsl-attrs` and `thiserror`, and `qsl-source` (I3) under its feature `quire-extraction`; the facade re-exports items of `qsl-semantics`, `qsl-forms`, `qsl-foundation` and `quire-exact`. | 6 | the `replay` facade, including the #231 envelopes | none | none: no root-crate re-export (§7.2) |
-| X-11 | Extract crate `quire-semantic-value` (SV). **Extracted** in part: `value::stop`, `value::quantity` and the runtime half of `value::unit` are in the crate. Its `[dependencies]` are exactly `quire-exact` (K) and `thiserror` (without default features); it is `#![no_std]`, and `make ci` builds it for `thumbv7em-none-eabi`. TC-390's dependency check asserts the exact table. | SV: a shared leaf that QSL layers 3 and up, RT and CG depend on (FB-05) | the moved modules' public items, at `quire_semantic_value::{stop, quantity, unit}` | after X-10 | none: no re-export from `qsl-semantics` or any other crate (§7.2) |
+| X-11 | Extract crate `quire-semantic-value` (SV). **Extracted** in part: `value::stop`, `value::quantity` and the runtime half of `value::unit` are in the crate. Its `[dependencies]` are exactly `quire-exact` (K), `quire-canonical`, `serde` and `thiserror`, each without `std`; it is `#![no_std]`, and `make ci` builds it for `thumbv7em-none-eabi`. TC-390's dependency check asserts the exact table. | SV: a shared leaf that QSL layers 3 and up, RT and CG depend on (FB-05) | the moved modules' public items, at `quire_semantic_value::{stop, quantity, unit}` | after X-10 | none: no re-export from `qsl-semantics` or any other crate (§7.2) |
 
 M-6 is split by lane (owner ruling, 2026-09-19). There is no window in which
 a working path is removed before its replacement, and no window in which an

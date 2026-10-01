@@ -15,7 +15,7 @@ use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
 use crate::model::refusal::ModelRefusalCause;
-use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 /// The kernel's canonical `EffectiveId` (ADR-013 O-05, QC-15): 32 bytes in
 /// domain `quire.model.effective-declaration/v1`, minted only through

@@ -387,7 +387,7 @@ impl PackageDeclarations {
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
             embedding: None,
-            units: crate::value::unit::empty_unit_graph(),
+            units: quire_semantic_value::unit::UnitGraph::default(),
             nominal_spans: BTreeMap::new(),
             imports: BTreeMap::new(),
             function_selections: BTreeMap::new(),
