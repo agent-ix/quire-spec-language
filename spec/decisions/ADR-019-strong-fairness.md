@@ -26,8 +26,7 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Draft for plan-lead review. It builds on ADR-018, which
-is itself a draft. It follows ADR-018's rulings: unmarked fairness
+Proposed, 2026-10-01. It builds on ADR-018. It follows ADR-018's rulings: unmarked fairness
 granularity is `whole` (ADR-018 FA-6), deadlocks are reported by a derived
 deadlock-freedom item (ADR-018 DL-1 to DL-7), and the infinite-trace profile
 admits interval operators nested under unbounded ones (ADR-018 IV-1 to IV-7).
@@ -232,8 +231,8 @@ whole while process 1 starves (SF-6).
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | S3: admit the `strong` kind and check the constraint (SY-1 to SY-5). Layer 5 `model_check`: enabled sets per model state (SR-1), the recursive filter (SR-2), the canonical component and loop (SR-6, SR-7). `qsl-replay`: the strong check in CX-3 replay and in the lasso monitor, `MissingFairnessPremise`, the SV-6 hint. The EN-1 manifest's fairness kinds. |
-| DS-2 | CG | Route an item with a strong constraint only to a candidate advertising `strong` (SV-1); the kind in the obligation identity (SV-5). |
+| DS-1 | QSL | S3: admit the `strong` kind and check the constraint (SY-1 to SY-5). Layer 5 `model_check`: enabled sets per model state (SR-1), the recursive filter (SR-2), the canonical component and loop (SR-6, SR-7). `qsl-replay`: the strong check in CX-3 replay and in the lasso monitor, `MissingFairnessPremise`, the SV-6 hint. The EN-1 manifest's fairness kinds, and the layer-R registry's candidate filter on fairness kinds (DS-2). |
+| DS-2 | QSL and CG | QSL's layer-R registry filters candidates by fairness kind: a backend that does not advertise `strong` is not a candidate for an item with a strong constraint, and when no candidate is left the item settles V-8 `unsupported`, `unsupported-requested-capability`, naming the missing fairness capability (SV-1). The registry already computes candidates (FR-075), so the correctness decision stays where candidates are made. CG negotiates over the filtered set and carries the kind in the obligation identity (SV-5). |
 | DS-3 | IR | The EN-2 loop-segment encoding of BE-2, as part of EN-2. |
 | DS-4 | QSpec | §8. |
 
@@ -280,7 +279,10 @@ The owner ruled on the draft's open questions on 2026-10-01.
 - A strong premise reaches only back ends that decide it, and a supplied
   trace without enabledness settles `unsupported` with a named cause.
 
-## Amendments to make on acceptance
+## Amendments made with this record
+
+Each amended cell or paragraph of ADR-018 and ADR-014 carries an "Amended by
+ADR-019" note.
 
 - **AM-1, ADR-018 FA-5:** `FairnessKind::Strong` is added; the fairness
   filter is SR-2, recursive when a strong constraint fails.
