@@ -14,9 +14,7 @@ use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, Evaluation};
 use qsl_forms::Expression;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{
@@ -26,6 +24,7 @@ use quire_exact::{
 use quire_semantic_value::declaration::{
     FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

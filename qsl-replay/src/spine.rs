@@ -34,11 +34,12 @@ use qsl_package::{
 };
 use qsl_semantics::check::{
     resolve_profiles, AdmittedImport, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal,
-    CheckingLimits, PackageDeclarations, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
+    PackageDeclarations, ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration,
 };
 use qsl_semantics::library::{ImportView, LibraryName, PackageId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause, UnitIntakeRefusal};
+use quire_semantic_value::checking::CheckingLimits;
 
 mod call;
 pub use call::{
@@ -1208,8 +1209,8 @@ mod tests {
     use super::{compile, CompileRefusal, DependencyInput, ImportRefusal, SpineLimits, SpineStage};
     use ix_trace_rs::trace;
     use qsl_foundation::{Code, SourceIdentity};
-    use qsl_semantics::check::CheckingLimits;
     use qsl_semantics::value::{CatalogRole, DefinitionLock};
+    use quire_semantic_value::checking::CheckingLimits;
     use std::collections::BTreeMap;
 
     /// FR-096 at the CLI's compile: `Typer`'s depth stop on

@@ -12,12 +12,11 @@ use std::cell::Cell;
 use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, LocatedLoss, ValueLoss};
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
 use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
-    PackageDeclarations,
+    CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -53,6 +52,8 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::quantity::UnitTable;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 

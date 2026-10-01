@@ -73,10 +73,10 @@ use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
 
-use super::MAX_CHECKING_DEPTH;
 use crate::value::definition::DefinitionReference;
 use crate::value::member::Member;
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+use quire_semantic_value::checking::MAX_CHECKING_DEPTH;
 
 /// FR-322's application-node preimage version.
 pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";

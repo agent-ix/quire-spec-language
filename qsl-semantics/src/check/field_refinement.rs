@@ -39,7 +39,7 @@
 
 use super::facts::{established_field_fact, Established};
 use super::ir::{Connective, Node, NodeKind, OrderedKind};
-use super::refusal::{Location, Origin, ProvedInterval};
+use super::refusal::ProvedInterval;
 use crate::model::conformance::{missing_member, AxisFailure, ConformanceOutcome};
 use crate::model::domain_package::PostconditionClause;
 use crate::model::index::ModelIndex;
@@ -49,6 +49,7 @@ use qsl_foundation::diagnostic::Code;
 use quire_exact::OrderingOperator;
 use quire_exact::{Integer, IntegerInterval};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::location::{Location, Origin};
 
 /// `self`, bound as local slot 0, for every synthetic guard tree
 /// [`self_field_node`] builds — the one variable a [`PostconditionClause`]

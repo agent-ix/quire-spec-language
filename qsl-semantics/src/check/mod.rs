@@ -163,16 +163,14 @@ pub use assemble::{
     DEFAULT_DECIMAL_SCALE,
 };
 pub use capability::{Capability, UnknownCapabilityLabel};
-pub use check::{
-    CheckingLimits, DepthAboveMaximum, DispatchOperation, EnumBinding, PackageDeclarations,
-    ResolvedSignatures, DEFAULT_CHECKING_INPUT_BYTES, DEFAULT_CHECKING_NODES,
-    DEFAULT_CHECKING_WORK_BUDGET, MAX_CHECKING_DEPTH,
-};
+pub use check::{DispatchOperation, EnumBinding, PackageDeclarations, ResolvedSignatures};
 pub use checked_dispatch::{
     checked_dispatch_operation, object_type_supertypes, DispatchBridgeRefusal, DispatchRoot,
     MissingClauseField, OperationClauses,
 };
 pub use field_refinement::check_field_refinement_obligation;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+use quire_semantic_value::location::{Location, Origin};
 pub use region::DeclarationRegions;
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
@@ -195,19 +193,9 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
 pub use refusal::{
     AliasKind, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchFunctionRole,
-    InvalidDispatchDeclaration, KeyFault, Location, MeasureObligation, Obligation, Origin,
-    ProtocolAnchorCause, ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
+    InvalidDispatchDeclaration, KeyFault, MeasureObligation, Obligation, ProtocolAnchorCause,
+    ProvedInterval, ShadowedDeclaration, StageLimitCause, WrongSnapshotCause,
 };
-
-/// How a standalone expression is checked.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum CheckMode {
-    /// Linking: typing and every static definedness obligation.
-    Linked,
-    /// Direct kernel evaluation over supplied values: typing only, so an
-    /// empty `reduce` or `value(none)` is a located undefined outcome.
-    Kernel,
-}
 
 /// A checked function.
 #[derive(Debug)]

@@ -6,8 +6,9 @@ use std::collections::VecDeque;
 
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
 use super::ir::{Node, NodeKind, Slot};
-use super::refusal::{CheckCause, CheckRefusal, Location, MeasureObligation};
+use super::refusal::{CheckCause, CheckRefusal, MeasureObligation};
 use quire_exact::ValueType;
+use quire_semantic_value::location::Location;
 
 /// One element of a measure, naming the parameter it measures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -576,8 +577,8 @@ mod tests {
     use ix_trace_rs::trace;
     use quire_exact::{Integer, IntegerInterval, NodeKey};
 
-    use super::super::refusal::Origin;
     use super::*;
+    use quire_semantic_value::location::Origin;
 
     /// The earlier component partition, kept only as this module's
     /// differential oracle: a reachability set per member, then an
@@ -956,8 +957,8 @@ mod tests {
 /// `cargo test --release -p qsl-semantics termination_scaling -- --ignored --nocapture`.
 #[cfg(test)]
 mod scaling {
-    use super::super::refusal::Origin;
     use super::*;
+    use quire_semantic_value::location::Origin;
 
     #[test]
     #[ignore = "timing lane: prints wall time, asserts only the refusal count"]

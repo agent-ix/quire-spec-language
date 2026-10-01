@@ -439,7 +439,8 @@ fn eq_over_node(
 }
 
 fn node_limit(nodes: u64) -> CheckingLimits {
-    CheckingLimits::new(nodes, crate::check::MAX_CHECKING_DEPTH).expect("the depth is allowed")
+    CheckingLimits::new(nodes, quire_semantic_value::checking::MAX_CHECKING_DEPTH)
+        .expect("the depth is allowed")
 }
 
 /// The smallest node limit `checks` passes under.
@@ -614,7 +615,7 @@ fn a_checked_result_records_its_effective_limits() {
                 vec![("x".to_owned(), ValueType::Boolean)],
                 &name_expr("x"),
                 None,
-                crate::check::CheckMode::Linked,
+                quire_semantic_value::checking::CheckMode::Linked,
                 limits,
             )
             .expect("a Boolean name checks");

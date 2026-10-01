@@ -16,6 +16,6 @@ mod expression;
 // over the foreign-to-`value` `CheckedPackage` typestate, since an inherent
 // impl here is E0116: `CheckedPackage` is `qsl-package`'s own type (X-7).
 pub use expression::{
-    CallFailure, CheckedPackageEvaluation, Evaluation, FrameEvaluation, InputRefusal,
-    InvalidQualifiedName, LocatedLoss, QualifiedName, ValueLoss,
+    input_refusal_code, CallFailure, CheckedPackageEvaluation, Evaluation, FrameEvaluation,
+    InvalidQualifiedName, QualifiedName,
 };

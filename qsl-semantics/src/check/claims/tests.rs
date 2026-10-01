@@ -10,7 +10,8 @@ use quire_exact::{Integer, RationalDomain, Role};
 
 use super::*;
 use crate::check::node_key::NodeTag;
-use crate::check::{CheckedGraph, CheckingLimits, PackageDeclarations};
+use crate::check::{CheckedGraph, PackageDeclarations};
+use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\" version \"1\" digest \

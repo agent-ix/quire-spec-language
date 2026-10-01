@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal, QualifiedName};
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::key::hex;
@@ -30,6 +30,7 @@ use quire_exact::{
     ChargePoint, EffectiveId, FieldValue, InjectedDenial, LimitKind, Meter, NodeKey, ObjectId,
     ObjectReference, Outcome, UniverseId, Value,
 };
+use quire_semantic_value::call::InputRefusal;
 use serde_json::json;
 
 use super::{

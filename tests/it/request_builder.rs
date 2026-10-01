@@ -18,9 +18,10 @@ use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode, Registry,
     ToolIdentity,
 };
-use qsl_semantics::check::{Capability, CheckedGraph, CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use qsl_semantics::family::DomainKind;
 use quire_exact::{Integer, IntegerInterval, ValueType};
+use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\" version \"1\" digest \

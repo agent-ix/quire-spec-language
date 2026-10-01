@@ -19,18 +19,16 @@
 //! `one`'s smaller slot count.
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
-};
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits};
 use quire_exact::{Value, ValueType};
+use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
 /// FR-090: `CheckedPackage::call`/`evaluate` return `Evaluation { outcome:
 /// FamilyOutcome, .. }` (FR-090-OQ-3, ruled option A); every fixture in this

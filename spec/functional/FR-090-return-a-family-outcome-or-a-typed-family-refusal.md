@@ -189,7 +189,7 @@ unchanged (ADR-011 §2.2 E6: carried, never re-derived). The caller receives
 them only inside the `Evaluation`, so it cannot drop them apart from the
 outcome. `FamilyOutcome`, `FamilyResult` and `EvalOutcome` hold no
 location.
-`location` is `check::Location` (`qsl-semantics/src/check/refusal.rs`), the declaration
+`location` is `check::Location` (`quire-semantic-value/src/location.rs`), the declaration
 origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
 not complete stopped, or `None` when the evaluation completed or stopped

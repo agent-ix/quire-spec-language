@@ -4,10 +4,10 @@ use crate::spine::DependencyInput;
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::{CatalogCoded, UndefinedCoded, UndefinedReason, UndefinedRecord};
 use qsl_foundation::SourceIdentity;
-use qsl_semantics::check::Origin;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::refusal::ModelRefusalCause;
 use quire_exact::{BoundViolation, CardinalityBound, CollectionKind, Incomplete, UniverseId};
+use quire_semantic_value::location::Origin;
 use std::collections::BTreeMap;
 
 #[test]
@@ -793,8 +793,9 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
 fn tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes() {
     use qsl_eval::value::CheckedPackageEvaluation;
     use qsl_forms::Expression;
-    use qsl_semantics::check::{CheckMode, CheckingLimits, PackageDeclarations};
+    use qsl_semantics::check::PackageDeclarations;
     use quire_exact::{CardinalityBound, CollectionType, Integer, IntegerInterval, Meter};
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
     let pos = ValueType::Int(IntegerInterval::spanning(
         Integer::one(),
@@ -894,7 +895,8 @@ fn tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes() {
 /// `CallFailure::Fault` straight through, unchanged.
 #[test]
 fn convert_call_failure_maps_wrong_value_kind_and_forwards_faults() {
-    use qsl_eval::value::{CallFailure, InputRefusal};
+    use qsl_eval::value::CallFailure;
+    use quire_semantic_value::call::InputRefusal;
 
     match *convert_call_failure(CallFailure::Input(InputRefusal::WrongValueKind {
         parameter: 2,

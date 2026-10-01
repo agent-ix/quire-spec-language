@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 
 use super::ir::{Node, NodeKind, Observation, Slot};
-use super::refusal::Location;
+use quire_semantic_value::location::Location;
 
 /// The observation of every model read of one state clause body, by the
 /// read's own location.

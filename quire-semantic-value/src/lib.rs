@@ -11,10 +11,14 @@
 
 extern crate alloc;
 
+pub mod call;
+pub mod checking;
 pub mod containment;
 pub mod declaration;
 pub mod definition;
 pub mod enumeration;
+pub mod location;
+pub mod loss;
 pub mod quantity;
 pub mod semantic_node;
 pub mod stop;

@@ -5,11 +5,12 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
 use quire_exact::{IeeeFlag, IeeeValue, Meter, Outcome, Refusal, ScalarLimits, Value};
+use quire_semantic_value::checking::CheckingLimits;
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,

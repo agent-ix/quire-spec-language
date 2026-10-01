@@ -7,6 +7,7 @@ use qsl_foundation::Span;
 use quire_exact::EffectiveId;
 use quire_exact::Integer;
 use quire_exact::{IllTyped, IllTypedCause};
+use quire_semantic_value::location::Location;
 
 /// FR-113: why a protocol's `ProtocolClause` checker refused one scoped
 /// anchor, or a name it declares. Each variant's `span` is the refusal's
@@ -261,86 +262,6 @@ impl ProtocolAnchorCause {
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
             Self::BinderType { fault, .. } => type_fault_class(fault).1,
-        }
-    }
-}
-
-/// The declaration a location belongs to.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Origin {
-    /// The body of the named function, at this zero-based declaration index.
-    Body {
-        /// The declared name.
-        function: String,
-        /// The declaration index in the package.
-        index: usize,
-    },
-    /// The `decreases` measure of the named function.
-    Measure {
-        /// The declared name.
-        function: String,
-        /// The declaration index in the package.
-        index: usize,
-    },
-    /// A standalone checked expression.
-    Expression,
-    /// A declared record, tuple or enum type, by its declared name. Its
-    /// `declaration` occurrence is located here (FR-322), and so is the
-    /// `generated` occurrence of a node that no function body, measure,
-    /// state clause or protocol attempt reaches, when this is the least
-    /// declared name that reaches it (`lowering::enclosing_declarations`). It
-    /// names the declared name's region when the FR-091 assembler read the
-    /// name from the unit, and no region for a type declared by hand
-    /// (FR-096).
-    TypeDeclaration {
-        /// The declared name.
-        name: String,
-    },
-    /// The body of the named state clause (FR-104), at this zero-based
-    /// index among the unit's state clauses in source order. The clause's
-    /// `claim` occurrence is located at its root.
-    StateClause {
-        /// The declared clause name.
-        clause: String,
-        /// The clause's index among the package's state clauses.
-        index: usize,
-    },
-    /// One protocol `attempt`'s own operation binding (FR-114), by
-    /// the protocol's index among the package's protocols and the
-    /// attempt's index among that protocol's own `attempts`, both in
-    /// source order. An `operation_anchor`/`frame` node names no position
-    /// of its own, so this names a real position of the unit (the
-    /// attempt's own declared name) to resolve its generated occurrence's
-    /// region, the same way `Origin::StateClause` does for a `pre`/`post`
-    /// clause's own anchor (FR-096).
-    ProtocolAttempt {
-        /// The protocol's index among the package's protocols.
-        protocol: usize,
-        /// The attempt's index among the protocol's own `attempts`.
-        attempt: usize,
-    },
-}
-
-/// A located expression: its declaration and the child-index path from that
-/// declaration's root expression.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct Location {
-    /// The owning declaration.
-    pub origin: Origin,
-    /// Child indices from the root, as [`Expression::children`] numbers them.
-    ///
-    /// [`Expression::children`]: qsl_forms::Expression::children
-    pub path: Vec<usize>,
-}
-
-impl Location {
-    /// A child of this location.
-    pub(crate) fn child(&self, index: usize) -> Self {
-        let mut path = self.path.clone();
-        path.push(index);
-        Self {
-            origin: self.origin.clone(),
-            path,
         }
     }
 }

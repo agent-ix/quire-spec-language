@@ -20,12 +20,13 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
 use super::{refuse, Lowering};
 use crate::check::node_key::{ModelOwner, NodeTag, Owner, SemanticTerm};
-use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
+use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
 use qsl_forms::DeclaredClauseKind;
 use quire_semantic_value::quantity::QuantityUnit;
+use quire_semantic_value::location::Location;
 
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and

@@ -82,9 +82,7 @@ use serde::Serialize;
 
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
-use qsl_semantics::check::{
-    CheckedGraph, Location, NodeTag, NominalNode, SemanticNode, SemanticTerm,
-};
+use qsl_semantics::check::{CheckedGraph, NodeTag, NominalNode, SemanticNode, SemanticTerm};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
@@ -93,6 +91,7 @@ use qsl_semantics::value::{
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
+use quire_semantic_value::location::Location;
 
 use super::{CheckedPackage, EmittedPackage};
 

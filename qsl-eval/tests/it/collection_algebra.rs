@@ -595,8 +595,7 @@ mod checked {
     use qsl_forms::{BinaryOperator, BinderQuery, Expression, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
-        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, EnumBinding,
-        PackageDeclarations,
+        CheckCause, CheckRefusal, CheckedExpression, EnumBinding, PackageDeclarations,
     };
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::value::enumeration::{
@@ -605,6 +604,7 @@ mod checked {
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
     use quire_exact::NODE_KEY_DOMAIN;
     use quire_semantic_value::semantic_node::SemanticGraphCause;
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

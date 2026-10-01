@@ -7,8 +7,9 @@
 use ix_trace_rs::trace;
 
 use qsl_forms::{ClauseKind, Expression, FunctionDeclaration};
-use qsl_semantics::check::{CheckCause, CheckMode, CheckingLimits, NodeKind, PackageDeclarations};
+use qsl_semantics::check::{CheckCause, NodeKind, PackageDeclarations};
 use quire_exact::{IllTypedCause, Integer, ValueType};
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
 use crate::support::type_form::type_form;
 

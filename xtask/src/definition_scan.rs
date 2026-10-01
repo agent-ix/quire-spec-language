@@ -228,6 +228,7 @@ pub fn scan_crate(workspace_root: &Path) -> Result<CrateDefinitions> {
             "qsl-semantics/src",
             "qsl-package/src",
             "qsl-eval/src",
+            "quire-semantic-value/src",
         ],
     )
 }
@@ -368,11 +369,44 @@ mod tests {
         );
     }
 
+    /// QSL-358 slice 5: `name` moved from `check`/`value::expression` into
+    /// the layer-SV leaf `quire-semantic-value`, so it is defined exactly
+    /// once across the three directories, and that once is under
+    /// `quire-semantic-value/src/`: a copy left behind in either old home,
+    /// or a second definition beside the moved one, fails this.
+    fn assert_defined_exactly_once_in_semantic_value(name: &str, locations: &[Definition]) {
+        let relevant: Vec<&Definition> = locations
+            .iter()
+            .filter(|location| {
+                location.file.starts_with("qsl-semantics/src/check/")
+                    || location.file.starts_with("qsl-eval/src/value/expression/")
+                    || location.file.starts_with("quire-semantic-value/src/")
+            })
+            .collect();
+        assert_eq!(
+            relevant.len(),
+            1,
+            "{name} has {} defining location(s) under qsl-semantics/src/check/, qsl-eval/src/value/expression/ or quire-semantic-value/src/: {relevant:?} (all locations: {locations:?})",
+            relevant.len()
+        );
+        assert!(
+            relevant[0].file.starts_with("quire-semantic-value/src/"),
+            "{name} is defined at {:?}, not under quire-semantic-value/src/",
+            relevant[0]
+        );
+    }
+
     /// TC-170 steps 4-5: each of the four checking methods, and each of the
     /// twenty-one CON-3-named symbols, has exactly one defining location
     /// under `check`/`value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
     /// rather than crate-wide).
+    ///
+    /// **Amended (QSL-358 slice 5).** `Location`, `Origin`,
+    /// `CheckingLimits`, `DepthAboveMaximum`, `MAX_CHECKING_DEPTH` and
+    /// `CheckMode` moved, unchanged in shape, into the layer-SV leaf
+    /// `quire-semantic-value`; each is still defined exactly once, now there
+    /// ([`assert_defined_exactly_once_in_semantic_value`]).
     ///
     /// **Updated.** `check`'s S3 output type was renamed
     /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
@@ -411,31 +445,38 @@ mod tests {
             "CheckingLimitKind",
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
-            "Location",
-            "Origin",
             "ProvedInterval",
             "WrongSnapshotCause",
             "CheckedGraph",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",
-            "CheckingLimits",
-            "DepthAboveMaximum",
             "DispatchOperation",
             "EnumBinding",
-            "MAX_CHECKING_DEPTH",
-            "CheckMode",
         ];
         for symbol in symbols {
             let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
             assert_defined_exactly_once_under_check(symbol, &locations);
+        }
+        for symbol in [
+            "Location",
+            "Origin",
+            "CheckingLimits",
+            "DepthAboveMaximum",
+            "MAX_CHECKING_DEPTH",
+            "CheckMode",
+        ] {
+            let locations = definitions.items.get(symbol).cloned().unwrap_or_default();
+            assert_defined_exactly_once_in_semantic_value(symbol, &locations);
         }
     }
 
     /// TC-173 step 1: the twelve check-cause types are all defined under
     /// `check`, none under `value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
-    /// rather than crate-wide).
+    /// rather than crate-wide). **Amended (QSL-358 slice 5):** `Location`
+    /// and `Origin` moved into the layer-SV leaf `quire-semantic-value` and
+    /// are defined exactly once there; the other ten stay in `check`.
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
     fn twelve_check_cause_types_are_defined_exactly_once_under_check() {
@@ -449,14 +490,16 @@ mod tests {
             "CheckingLimitKind",
             "DispatchFunctionRole",
             "InvalidDispatchDeclaration",
-            "Location",
-            "Origin",
             "ProvedInterval",
             "WrongSnapshotCause",
         ];
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_defined_exactly_once_under_check(name, &locations);
+        }
+        for name in ["Location", "Origin"] {
+            let locations = definitions.items.get(name).cloned().unwrap_or_default();
+            assert_defined_exactly_once_in_semantic_value(name, &locations);
         }
     }
 
@@ -490,24 +533,18 @@ mod tests {
         }
     }
 
-    /// TC-173 step 2: `InputRefusal` is defined exactly once, and it is
-    /// under `value::expression`, not `check`.
+    /// TC-173 step 2, amended by QSL-358 slice 5: `InputRefusal` is
+    /// defined exactly once, in the layer-SV leaf `quire-semantic-value`,
+    /// and neither `check` nor `value::expression` defines it.
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
-    fn input_refusal_is_defined_exactly_once_under_value_expression() {
+    fn input_refusal_is_defined_exactly_once_in_semantic_value() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
         let locations = definitions
             .items
             .get("InputRefusal")
             .cloned()
             .unwrap_or_default();
-        assert_eq!(locations.len(), 1, "{locations:?}");
-        assert!(
-            locations[0]
-                .file
-                .starts_with("qsl-eval/src/value/expression/"),
-            "InputRefusal: {locations:?}"
-        );
-        assert!(!locations[0].file.starts_with("qsl-semantics/src/check/"));
+        assert_defined_exactly_once_in_semantic_value("InputRefusal", &locations);
     }
 }

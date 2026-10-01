@@ -18,10 +18,11 @@ use serde_json::{json, Value as Json};
 
 use super::*;
 use crate::check::family::fixtures::{admitted_source, empty_scope, fixture_source, scope_with};
-use crate::check::{CheckedGraph, CheckedTypeNode, CheckingLimits, PackageDeclarations};
+use crate::check::{CheckedGraph, CheckedTypeNode, PackageDeclarations};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_foundation::SourceIdentity;
 use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
+use quire_semantic_value::checking::CheckingLimits;
 
 mod binder_scope;
 mod depth;
@@ -143,7 +144,7 @@ fn type_nodes(
         &[],
         scope.types().units().clone(),
         &lock,
-        crate::check::MAX_CHECKING_DEPTH,
+        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,
@@ -2024,7 +2025,7 @@ fn tc_441_an_unbounded_population_refuses_to_lower() {
         &[],
         scope.types().units().clone(),
         &lock,
-        crate::check::MAX_CHECKING_DEPTH,
+        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,
