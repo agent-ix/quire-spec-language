@@ -116,6 +116,6 @@ deadlock.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the time-lock-freedom item, time-locks and
-  the `TimeLock` counterexample kind on the wire (ADR-026 OV-5, OV-6); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-417 (Linear STD-139) owns the time-lock-freedom
+  item, time-locks and the `TimeLock` counterexample kind on the wire
+  (ADR-026 OV-5, OV-6).

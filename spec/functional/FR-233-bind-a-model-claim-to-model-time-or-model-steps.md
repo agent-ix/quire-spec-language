@@ -105,7 +105,6 @@ QSpec FR-255 key under that binding.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the `model-steps` and `model-time`
-  bindings in QSpec FR-252, the timed profile identity in QSpec FR-255's
-  key, and the default-binding grammar (ADR-026 OV-3, OV-4, OV-7); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-416 (Linear STD-139) owns the `model-steps` and
+  `model-time` bindings in QSpec FR-252, the timed profile identity in QSpec
+  FR-255's key, and the default-binding grammar (ADR-026 OV-3, OV-4, OV-7).

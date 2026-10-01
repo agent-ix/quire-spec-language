@@ -120,6 +120,6 @@ refuted, with its trap evidence.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the verdict rows on the wire, the new
-  causes and the `TimeLock` kind in QSpec FR-331 (ADR-026 OV-6); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-416 and FR-417 (Linear STD-139) own the verdict
+  rows, the new causes and the `TimeLock` kind in QSpec FR-331 (ADR-026
+  OV-6).

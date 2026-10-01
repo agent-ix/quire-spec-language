@@ -84,5 +84,5 @@ each timing obligation outside the code model.
 ## References
 
 - The CG obligation shapes: ADR-026 OV-13.
-- QSpec half: Linear STD-139; this requirement cites it until its QSpec FRs
-  merge.
+- QSpec half: QSpec FR-415 and FR-416 (Linear STD-139), the timed model
+  and claim semantics the obligations carry.

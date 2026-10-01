@@ -94,9 +94,8 @@ The FR-331 terminal record of the claim.
 
 ## References
 
-- QSpec half: Linear STD-139 owns QSpec FR-193's source form of continuous
-  variables and flows and the verdict map with `BoundedSolver` and
-  `SolverInconclusive` on the wire (ADR-026 OV-11); this requirement cites
-  it until those QSpec FRs merge.
+- QSpec half: QSpec FR-193 (Linear STD-139) owns the source form of
+  continuous variables and flows and the verdict map with `BoundedSolver`
+  and `SolverInconclusive` on the wire (ADR-026 OV-11).
 - S. Gao, S. Kong and E. Clarke, 2014; T. A. Henzinger, P. W. Kopke, A. Puri
   and P. Varaiya, 1998 (ADR-026 References).

@@ -100,7 +100,7 @@ pub struct TimedMonitorPlan {
 ## References
 
 - The monitor contract handed to the runtime repository: ADR-026 OV-13.
-- QSpec half: Linear STD-139; this requirement cites it until its QSpec FRs
-  merge.
+- QSpec half: QSpec FR-416 (Linear STD-139), the timed claim semantics the
+  monitor plan evaluates.
 - D. Basin, F. Klaedtke and E. Zălinescu, 2011; H.-M. Ho, J. Ouaknine and
   J. Worrell, 2014 (ADR-026 References).

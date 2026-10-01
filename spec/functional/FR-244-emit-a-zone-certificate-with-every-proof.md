@@ -94,8 +94,7 @@ pub struct ZoneCertificate {
 
 ## References
 
-- QSpec half: Linear STD-139 owns the zone certificate wire and its place in
-  QSpec FR-331 (ADR-026 OV-12); this requirement cites it until those QSpec
-  FRs merge.
+- QSpec half: QSpec FR-418 (Linear STD-139) owns the zone certificate wire
+  and its place in QSpec FR-331 (ADR-026 OV-12).
 - S. Wimmer and J. von Mutius, 2020; S. Wimmer, F. Herbreteau and J. van de
   Pol, 2020 (ADR-026 References).

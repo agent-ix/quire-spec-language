@@ -162,6 +162,6 @@ span on refusal.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the shared grammar of the `time` member,
-  `Clock` fields, resets, clock constraints, time invariants and `urgent`
-  (ADR-026 OV-7); this requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-415 (Linear STD-139) owns the shared grammar of the
+  `time` member, `Clock` fields, resets, clock constraints, time invariants
+  and `urgent` (ADR-026 OV-7).

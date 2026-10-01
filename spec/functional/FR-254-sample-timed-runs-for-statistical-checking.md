@@ -38,8 +38,11 @@ server is available. Each estimate comes with its confidence and the grid
 ## Inputs
 
 - A probabilistic claim over a stochastic timed subject, its workload, a
-  seed, the method settings of the statistical design (its ST-8) and `q`,
-  default 64, a caller-set method parameter.
+  seed, the method settings of the statistical design (its ST-8), and
+  `TimedSampling { q: u32, max_sample_steps: u64 }`: `q`, the grid
+  exponent, default 64, a caller-set method parameter; `max_sample_steps`,
+  the steps one sample may take before passing its horizon, default
+  16_777_216 (2^24), an ADR-014 B-5 budget.
 
 ## Outputs
 
@@ -56,17 +59,21 @@ server is available. Each estimate comes with its confidence and the grid
   h` SHALL be the time-stamp difference of the two positions. `weighted by
   delay` SHALL weight each position by the delay of the step that leaves
   it.
+- **Given delays only.** If an identity with a free delay (FR-253) races
+  at a sampled timed state, then EN-4 SHALL settle the item `unsupported`,
+  `NotStochastic{state, identity}`, at the first such state.
 - **Draws.** A `discrete` draw SHALL select by exact integer weights. A
-  `uniform` or `exponential` draw SHALL take a uniform value `u` on a grid
+  `uniform`, `uniform[a, b]` or `exponential` draw SHALL take a uniform value `u` on a grid
   of `2^-q` from the generator and return the conditioned inverse
   distribution function at `u`, computed by the statistical design's
   rational method and rounded up, an exact rational. Each delay draw and
   each tie-break SHALL be one more choice with its own choice index.
 - A sample SHALL end when its next position's time stamp passes the
   horizon, or at an idle tail.
-- **Budgets.** A sample that takes more steps than the per-sample step
-  budget before its horizon SHALL stop the run as the statistical design's
-  budgets state; every budget and `q` SHALL be a caller-set value with a
+- **Budgets.** A sample that takes more than `max_sample_steps` steps
+  before its horizon SHALL stop the run as the statistical design's budgets
+  state, naming `max_sample_steps`, its value and the request member that
+  raises it; every budget and `q` SHALL be a caller-set value with a
   published default.
 - **Regeneration.** The regenerative method SHALL cut a run at each return
   to the initial discrete state with every clock 0; a model that never
@@ -75,8 +82,8 @@ server is available. Each estimate comes with its confidence and the grid
   by FR-237, plus recomputation of each draw from the seed, trace index,
   step, choice index and `q`.
 - **Exact route.** The request writer SHALL route a request for `exact`
-  evidence over a timed subject to EN-5, where a strict constraint or a
-  `delay` distribution settles `unsupported`.
+  evidence over a timed subject to EN-5, whose digital route (ADR-028 TA-1,
+  TA-2) decides which constraints and delay distributions it admits.
 - EN-4 SHALL compute the verdict as a function of the claim, the subject,
   the workload, the seed and the settings.
 
@@ -86,7 +93,7 @@ server is available. Each estimate comes with its confidence and the grid
 |----|----------|--------------|
 | FR-254-AC-1 | `RareLate` (`probability <= 0.01 [eventually[0 ms, 3 ms] holds(c.late)]`) over FR-253-AC-1's model, whose exact event probability is `1/20`, settles `measured`, `Rejected`, with `q` 64 in its basis; with `reply` under `uniform` it settles `measured`, `Accepted`. Two runs with one seed give equal verdicts. | Test (TC-709) |
 | FR-254-AC-2 | Every sampled delay is an exact rational; a sampled witness replays by FR-237 and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. | Test (TC-709) |
-| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `undecided`, `NoRegeneration` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. | Test (TC-709) |
+| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `undecided`, `NoRegeneration` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(ResourceExhausted)` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
 
 ## Dependencies
 
@@ -101,6 +108,7 @@ server is available. Each estimate comes with its confidence and the grid
 
 ## References
 
-- QSpec half: Linear STD-139 owns timed events and measures and the sampler
-  revision with delay draws on the `2^-q` grid (ADR-026 OV-8); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-420 (Linear STD-139) owns timed events and
+  measures, free delays and the sampler revision with delay draws on the
+  `2^-q` grid (ADR-026 OV-8); QSpec FR-408 (Linear STD-137) owns the
+  statistical methods.

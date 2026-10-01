@@ -102,6 +102,6 @@ pub enum ScheduleClaim { Schedulable(SchedulingPolicy), Response { task: Name, b
 
 ## References
 
-- QSpec half: Linear STD-139 owns the `taskset` grammar, the `schedulable`
-  and `response` claims and the FR-290 capability kind `schedulability`
-  (ADR-026 OV-10); this requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-419 (Linear STD-139) owns the `taskset` grammar,
+  the `schedulable` and `response` claims and the FR-290 capability kind
+  `schedulability` (ADR-026 OV-10).

@@ -120,6 +120,6 @@ for a clause DF-5 does not admit over a timed subject.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the timed profile row, its pointwise
-  semantics and interval openness (ADR-026 OV-1, OV-4); this requirement
-  cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-416 (Linear STD-139) owns the timed profile row,
+  its pointwise semantics and interval openness, with QSpec FR-250 and
+  FR-255 (ADR-026 OV-1, OV-4).

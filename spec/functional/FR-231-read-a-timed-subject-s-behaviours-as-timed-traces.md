@@ -136,5 +136,5 @@ false when they replay it.
 
 ## References
 
-- QSpec half: Linear STD-139 (the timed subject in QSpec FR-161 and FR-181);
-  this requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-415 and FR-416, with the timed subject in QSpec
+  FR-161 and FR-181 (Linear STD-139).

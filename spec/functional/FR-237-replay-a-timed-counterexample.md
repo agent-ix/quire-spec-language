@@ -124,6 +124,6 @@ refutation.
 
 ## References
 
-- QSpec half: Linear STD-139 owns the replay rules of a timed counterexample
-  and of the time-lock trap on the wire (ADR-026 OV-6, OV-9); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-416 and FR-417, with QSpec FR-181 (Linear
+  STD-139), own the replay rules of a timed counterexample and of the
+  time-lock trap on the wire (ADR-026 OV-6, OV-9).

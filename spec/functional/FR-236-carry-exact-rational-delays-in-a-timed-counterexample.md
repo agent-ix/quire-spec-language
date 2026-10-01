@@ -97,6 +97,6 @@ pub struct ModelStep {
 
 ## References
 
-- QSpec half: Linear STD-139 owns the step `delay`, the final delay and the
-  timed lasso on the counterexample wire (ADR-026 OV-5, OV-6); this
-  requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-416 and FR-417, with QSpec FR-181 and FR-331
+  (Linear STD-139), own the step `delay`, the final delay and the timed
+  lasso on the counterexample wire (ADR-026 OV-5, OV-6).

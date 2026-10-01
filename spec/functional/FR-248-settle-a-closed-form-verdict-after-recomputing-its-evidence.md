@@ -95,5 +95,5 @@ The FR-331 terminal record of the claim.
 ## References
 
 - The checker as an in-core entry beside `replay`: ADR-029 CB-2 (draft).
-- QSpec half: Linear STD-139 owns the closed-form evidence wire (ADR-026
-  OV-10); this requirement cites it until those QSpec FRs merge.
+- QSpec half: QSpec FR-419 (Linear STD-139) owns the closed-form evidence
+  wire (ADR-026 OV-10).
