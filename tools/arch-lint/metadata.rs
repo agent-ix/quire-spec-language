@@ -10,6 +10,25 @@ use serde_json::Value;
 use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Edge, EdgeKind, Repo};
 
+/// The package name of the kernel crate K (ADR-011 §6.1), published from the
+/// QSL repository and depended on by RT and CG (ADR-011 §7.1).
+const KERNEL_LEAF: &str = "quire-exact";
+
+/// The ecosystem repository a resolved package contributes to the FR-059
+/// edge graph: `classify`'s answer, except that the kernel leaf
+/// [`KERNEL_LEAF`] contributes none. K depends on no QSL module and no
+/// ecosystem crate (ADR-011 §6.1 "K is a leaf"), so an edge into it closes no
+/// FB-11 cycle, and ADR-011 FB-05 places it outside the bypass. The exemption
+/// is local to edge extraction: FR-061's duplicate-revision check still
+/// classifies a QSL-sourced `quire-exact` as QSL through `classify`.
+fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
+    if name == KERNEL_LEAF {
+        None
+    } else {
+        classify(name, source)
+    }
+}
+
 /// Run `cargo metadata` for the crate at `manifest_path` and return every
 /// resolved normal/dev edge whose source and target both classify as one of
 /// the four ADR-011 repositories (`classify`, by package name and source
@@ -147,7 +166,7 @@ fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
         let source = package.get("source").and_then(Value::as_str);
-        id_repo.push((id, classify(name, source), name));
+        id_repo.push((id, edge_repo(name, source), name));
     }
 
     let nodes = document
@@ -329,8 +348,8 @@ mod tests {
     }
 
     /// tc_arch_lint_metadata_007: the kernel leaf `quire-exact`, git-sourced
-    /// from the QSL repository, classifies as no ecosystem repository, so an
-    /// RT dependency on it yields no edge and no finding; RT's dependency on
+    /// from the QSL repository, contributes no repository to the edge graph
+    /// (`edge_repo`), so an RT dependency on it yields no edge and no finding; RT's dependency on
     /// `qsl-eval`, from the same QSL git source, is still an RT -> QSL edge
     /// and an FB-05 violation.
     #[trace("TC-156", "FR-059-AC-8")]

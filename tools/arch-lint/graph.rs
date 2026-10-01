@@ -39,10 +39,6 @@ impl fmt::Display for Repo {
     }
 }
 
-/// The package name of the kernel crate K (ADR-011 §6.1), published from the
-/// QSL repository and depended on by RT and CG (ADR-011 §7.1).
-const KERNEL_LEAF: &str = "quire-exact";
-
 /// Classify a resolved package as one of the four ADR-011 ecosystem
 /// repositories, by package name or by its `source` string. Shared by the
 /// FR-059 direction check (`metadata::edges_for_manifest`) and the FR-061
@@ -51,16 +47,7 @@ const KERNEL_LEAF: &str = "quire-exact";
 /// published from the same git repository under a different crate name (for
 /// example IR's own workspace member, published as `quire-contract-model`)
 /// still classifies as that one repository, never a second, distinct one.
-///
-/// The kernel crate [`KERNEL_LEAF`] classifies as no repository, wherever it
-/// is sourced from: it depends on no QSL module and no ecosystem crate
-/// (ADR-011 §6.1 "K is a leaf"), so an edge into it closes no FB-11 cycle,
-/// and ADR-011 FB-05 places it outside the bypass. Only that one package name
-/// is exempt; every other package sourced from the QSL repository is QSL.
 pub(crate) fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
-    if name == KERNEL_LEAF {
-        return None;
-    }
     let haystack = source.unwrap_or(name);
     if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
         Some(Repo::Qsl)

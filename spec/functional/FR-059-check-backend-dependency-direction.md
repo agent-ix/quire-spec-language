@@ -43,10 +43,13 @@ violating FB-11, and passes only when neither set of findings is non-empty.
 The check SHALL classify a resolved package as one of the four repositories by
 package name and dependency source URL, treating `quire-contract-model` (the
 crate name quire-contract-ir's workspace member publishes under) as
-`quire-contract-ir`. The check SHALL classify the package `quire-exact` as no
-ecosystem repository, wherever it is sourced from: it is the kernel leaf
-(ADR-011 §6.1 "K is a leaf", FB-05), so an edge into it closes no cycle. Every
-other package sourced from the QSL repository classifies as QSL.
+`quire-contract-ir`. When it extracts edges, the check SHALL give the package
+`quire-exact` no ecosystem repository, wherever it is sourced from: it is the
+kernel leaf (ADR-011 §6.1 "K is a leaf", FB-05), so an edge into it closes no
+cycle. Every other package sourced from the QSL repository classifies as QSL.
+This exemption is local to edge extraction; the shared `graph::classify`, and
+so [FR-061](FR-061-check-duplicate-ecosystem-revisions.md), classifies a QSL-sourced
+`quire-exact` as QSL.
 
 The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
