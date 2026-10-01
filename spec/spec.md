@@ -184,6 +184,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-017
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-032
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -538,3 +540,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (#220) |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR | Proposed; protocol/frame, refinement and abstraction-relation boundary mapping: identities, entry selection, frame replay identity checks, spec-versioning and profile-layering gate comparison, abstraction relation keys, export and unbound refusal (#223) |
+| [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
