@@ -383,10 +383,12 @@ names different artifacts in each.
 | TC-590 | S3 checks state-graph claims, refuses non-state predicates and fairness, and the request carries deadlock-freedom items | Unit | P1 | FR-165-AC-1, FR-165-AC-2, FR-165-AC-3 | 🚧 Planned |
 | TC-591 | Phase 0 samples seeded witnesses for possible claims, on by default | Integration | P1 | FR-166-AC-1, FR-166-AC-2, FR-166-AC-3, FR-166-AC-4 | 🚧 Planned |
 | TC-592 | EN-1 explores a state-graph subject once, labels it and tracks open nodes | Integration | P1 | FR-167-AC-1, FR-167-AC-2, FR-167-AC-3, FR-167-AC-4, FR-167-AC-5 | 🚧 Planned |
-| TC-593 | Backward reachability and path counting decide state-graph claims with canonical evidence | Integration | P1 | FR-168-AC-1, FR-168-AC-2, FR-168-AC-3, FR-168-AC-4, FR-168-AC-5 | 🚧 Planned |
+| TC-593 | Backward reachability and path counting decide state-graph claims with canonical evidence | Integration | P1 | FR-168-AC-1, FR-168-AC-2, FR-168-AC-3, FR-168-AC-4, FR-168-AC-6 | 🚧 Planned |
 | TC-594 | State-graph outcomes settle as terminal records that state their settlement method | Unit | P1 | FR-169-AC-1, FR-169-AC-2, FR-169-AC-3, FR-169-AC-4, FR-169-AC-5 | 🚧 Planned |
 | TC-595 | The replay facade replays witnesses, traps and path pairs through ModelSystem | Integration | P1 | FR-170-AC-1, FR-170-AC-2, FR-170-AC-3, FR-170-AC-4 | 🚧 Planned |
 | TC-612 | An undefined predicate refutes a state-graph claim and replays | Integration | P1 | FR-168-AC-5, FR-169-AC-6, FR-170-AC-5 | 🚧 Planned |
+| TC-613 | A witness proves possible only after exploration rules out an undefined evaluation | Integration | P1 | FR-166-AC-5, FR-168-AC-7, FR-169-AC-7 | 🚧 Planned |
+| TC-614 | A witness on a stopped run settles inconclusive with well-definedness unchecked | Integration | P1 | FR-166-AC-6, FR-168-AC-8, FR-169-AC-8 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

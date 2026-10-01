@@ -34,9 +34,9 @@ Tag the tests `#[trace("TC-591", "FR-166-AC-n")]`.
 ## Expected Results
 
 - Step 1: each instance's witness ends at the first visited state where the
-  bound config's `versionNumber` is 2, source `Sampled`, seed
-  `DEFAULT_WITNESS_SEED`, trace index below 64; phase 1 evaluates nothing
-  more for the item.
+  bound config's `versionNumber` is 2, source `Sampled`, seed 0
+  (`DEFAULT_WITNESS_SEED`), trace index below 64; phase 1 searches for no
+  explored witness for the item.
 - Step 2: no walk is drawn and witnesses come from phase 1; 64 walks per
   instance, no witness, and the item is left to phase 1.
 - Step 3: initial state 1's witness has a trace index in `64..128`; seed 7

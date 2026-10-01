@@ -29,8 +29,9 @@ it can still be reached from every reachable state, or that every state of
 one kind has exactly one way to reach a state of another kind
 **So that** I get `proved` with a path I can replay when the condition is
 reachable, `refuted` with a state from which it is not when it is not, and
-a result that says how it was settled: by a sampled walk, with its seed and
-trace index, or by exhaustive exploration.
+a result that says how the witness was found: by a sampled walk, with its
+seed and trace index, or by exhaustive exploration. A `proved` always rests
+on an exploration that found no state where the claim has no value.
 
 ## Context
 
@@ -48,9 +49,10 @@ graph.
 - **Given** ADR-022 §7.1's ConfigVersion subject and `possible ReachesTwo`
   over each config.
 - **When** the operator requests the claim with the default limits.
-- **Then** each instance settles `proved`, basis `decisive-witness`, and the
-  result names the sampled walk, its seed and its trace index, that found
-  the witness.
+- **Then** each instance settles `proved`, basis `decisive-witness`, after
+  exploration finds no undefined evaluation of the target, and the result
+  names the sampled walk, its seed and its trace index, that found the
+  witness.
 
 ### US-020-EX-2: Winning stops being possible
 
@@ -94,4 +96,5 @@ witness shape.
 
 ## References
 
-- ADR-022. Owning ticket: Linear QSL-369. QSpec half: Linear STD-135.
+- ADR-022. Owning ticket: Linear QSL-369. QSpec half: QSpec
+  FR-390 to FR-394 (Linear STD-135).

@@ -25,7 +25,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-331
     type: depends_on
-  - target: ix://agent-ix/quire-specification/FR-341
+  - target: ix://agent-ix/quire-specification/FR-360
     type: depends_on
 ---
 # ADR-022: Possible properties and state-graph queries over a model
@@ -33,7 +33,7 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-020 and FR-165 to FR-170, with TC-590 to TC-595. It builds on
+US-020 and FR-165 to FR-170, with TC-590 to TC-595 and TC-612 to TC-614. It builds on
 ADR-018, itself a draft, and follows the owner's rulings recorded there
 (ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
 fairness granularity is `whole`; reachable deadlocks are reported by a
@@ -41,12 +41,13 @@ derived deadlock-freedom item; and the infinite-trace profile admits interval
 operators nested under unbounded ones. It reads the strong-fairness record
 (ADR-019), the refinement record (ADR-020) and the state-space reduction
 record (ADR-021), all drafts, for their interactions (§6). §10 records the
-owner's rulings on the draft's four questions. The owning ticket and related
+owner's rulings on the draft's four questions and on well-definedness
+(RU-5). The owning ticket and related
 work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
-requirement. "QSpec FR-341 (infinite-trace)" is the infinite-trace result
-disposition vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
+requirement. "QSpec FR-360" is the infinite-trace result disposition
+vocabulary, as in ADR-018. Item ids `SG-`, `GM-`, `GE-`, `GV-`,
 `GX-`, `GR-`, `DS-`, `QS-` and `RU-` are local to this record. Other artifacts cite
 them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 
@@ -139,8 +140,8 @@ and evidence shape.
 | ID | Engine | Forms and verdicts |
 | --- | --- | --- |
 | GE-1 | **EN-1, explicit-state** (ADR-018 §3), in layer 5 `model_check`. A state-graph claim needs no property automaton: EN-1 explores the subject's `TransitionSystem` directly, retains every edge, and labels each node with the truth of the claim's predicates under each instance's binding. One exploration serves every state-graph item, every instance and the deadlock-freedom item of one subject under one method. | SG-1, SG-2, SG-3. GV-1, GV-2, GV-4 to GV-6 |
-| GE-2 | **EN-1 phase 0, witness sampling, on by default.** Before exploration, for an SG-1 item, EN-1 draws `witness_samples` random walks per initial state with FR-101 `sample`, each at most `max_depth` steps. Walk `r` from initial state `i` is the FR-101 sampled trace with the request's seed and trace index `i × witness_samples + r`, so each walk has its own `SampleProvenance`. A walk that reaches a node where `P` holds is a witness for its initial state, and it stops there. When every initial state has a witness, the item settles from them (GV-1) after replay, and phase 1 does not run for it. Otherwise phase 1 runs, keeps the sampled witnesses, and finds the rest. Zero walks reaching `P` decides nothing. `witness_samples` is a member of `ModelCheckLimits`, a B-5 budget the caller sets, with a published default of 64; 0 turns phase 0 off. The seed is a request member with a published default; the run's seed is recorded in its terminal record either way. | SG-1. GV-1 |
-| GE-3 | **EN-2, SMT unrolling** (ADR-018 §3), when the SMT backend exists. For SG-1 it searches for a path of at most `k` steps from each initial state to `P`. A path found is a witness (GV-1); none for some initial state settles V-5. | SG-1 only. An SG-2 or SG-3 item routed to it settles `unsupported` (ADR-014 §6 step 4) |
+| GE-2 | **EN-1 phase 0, witness sampling, on by default.** Before exploration, for an SG-1 item, EN-1 draws `witness_samples` random walks per initial state with FR-101 `sample`, each at most `max_depth` steps. Walk `r` from initial state `i` is the FR-101 sampled trace with the request's seed and trace index `i × witness_samples + r`, so each walk has its own `SampleProvenance`. A walk that reaches a node where `P` holds is a witness for its initial state, and it stops there. Exploration (GE-1) still runs to completion for the item, because a `proved` needs every reachable node checked for an undefined evaluation of `P` (GV-7, RU-5); phase 1 skips the witness search for each initial state that already has a sampled witness and finds the rest. Zero walks reaching `P` decides nothing. `witness_samples` is a member of `ModelCheckLimits`, a B-5 budget the caller sets, with a published default of 64; 0 turns phase 0 off. The seed is a request member with the published default 0 (QSpec FR-392); the run's seed is recorded in its terminal record either way. | SG-1. GV-1 |
+| GE-3 | **EN-2, SMT unrolling** (ADR-018 §3), when the SMT backend exists. For SG-1 it searches for a path of at most `k` steps from each initial state to `P`. A path found is a witness, but EN-2 does not explore every reachable state, so its witnesses settle V-6 `WellDefinednessUnchecked` (GV-1, RU-5); none for some initial state settles V-5. | SG-1 only. An SG-2 or SG-3 item routed to it settles `unsupported` (ADR-014 §6 step 4) |
 
 **Phase 1 algorithms.** After exploration, each runs in time linear in the
 retained graph's nodes and edges.
@@ -164,14 +165,16 @@ retained graph's nodes and edges.
 the claim, the limits and the seed (ADR-018 §3 "Determinism"). A request that
 names no seed runs under the published default seed, so phase 0 on by default
 keeps every run reproducible: the walks are FR-101 counter-based samples
-named by their `SampleProvenance`, and phase 1 is canonical. Phase 0 changes
-how an SG-1 item is settled, never which verdict it reaches: it only adds
-witnesses, a witness proves SG-1 whichever phase found it (GV-1), and on a
-run that phase 1 completes, `proved` from a sampled witness is the verdict
-phase 1 alone would give. A sampled witness can settle an item that phase 1
-would leave V-5 or V-7 under the same limits; it never settles one that
-phase 1 refutes, since a witness and a trap at the same initial state cannot
-both exist.
+named by their `SampleProvenance`, and phase 1 is canonical. Whether an SG-1
+item is `proved` never depends on `witness_samples` or the seed: `proved`
+needs a completed exploration with no open node and no undefined evaluation
+of `P` (GV-1, GV-7), and on such a run every initial state in `E(P)` has an
+explored witness, so phase 0 changes only each witness's source. A completed
+exploration that refutes the item refutes it whatever phase 0 found. Phase 0
+changes the result only of a run that ends with open nodes or that a limit
+stops: there a sampled witness for every initial state settles V-6
+`WellDefinednessUnchecked` (GV-1) where the same run without it settles V-5
+or V-7. Both are non-proofs.
 
 **Canonical evidence.** Edges out of a
 node are ordered by their transition identity's canonical bytes (QSpec
@@ -199,35 +202,36 @@ state-graph claim: a state-graph claim has no truth on one trace.
 
 ### 4. Verdicts
 
-Every verdict is one QSpec FR-341 label with one QSpec FR-243 basis, carried
+Every verdict is one QSpec FR-360 label with one QSpec FR-243 basis, carried
 by an existing `TerminalValue` variant. Two verdict kinds join ADR-018's
 V-1 to V-8.
 
 | ID | Rule |
 | --- | --- |
-| GV-1 | **V-9 Witnessed.** Every initial state has a witness path to `P`, and each replays (GX-2). SG-1 settles `proved`, basis `decisive-witness`, `TerminalValue::Proved{basis: Witness{sources}}`, O-16 success. A witness decides SG-1 whatever the rest of the graph holds, so it settles the item even when other nodes are open or a limit later stopped the run. `ProofBasis` gains `Witness{sources}`, which `TerminalValue::category` maps to success. `sources` names, per initial state, how its witness was found: `Sampled(SampleProvenance)`, the phase 0 walk with its seed and trace index (GE-2); `Explored`, the canonical shortest path of phase 1; or `Unrolled{depth}`, an EN-2 path (GE-3). |
+| GV-1 | **V-9 Witnessed.** Every initial state has a witness path to `P`, and each replays (GX-2). SG-1 settles `proved`, basis `decisive-witness`, `TerminalValue::Proved{basis: Witness{sources}}`, O-16 success, only when exploration completed with no open node and found no reachable node where `P` evaluates undefined (GV-7): well-definedness is a property of every reachable state, so a witness alone does not establish it. When every initial state has a witness but the run ended with open nodes or a limit stopped it, the item settles V-6, `inconclusive`, `unsettled`, cause `WellDefinednessUnchecked{sources}`: witness found, well-definedness unchecked. That cause is new; it names each witness's source, and each witness replays (GX-2) before it is reported. `ProofBasis` gains `Witness{sources}`, which `TerminalValue::category` maps to success. `sources` names, per initial state, how its witness was found: `Sampled(SampleProvenance)`, the phase 0 walk with its seed and trace index (GE-2); `Explored`, the canonical shortest path of phase 1; or `Unrolled{depth}`, an EN-2 path (GE-3). |
 | GV-2 | **V-10 Refuted by trap.** A trap node is reachable where the form requires reaching `P` (or `Y`): an initial state for SG-1, a node where `Q` holds for SG-2, a node where `X` holds for SG-3. The forward closure of the trap is closed and holds no target node, so its decision scope is complete. The item settles `refuted`, basis `closed-scope`, `TerminalValue::Refuted`, O-16 violation, with a trap counterexample (GX-1) that replays (GX-3). A trap found before a run stops settles the item. |
 | GV-3 | **V-4 for SG-3 with too many paths.** A known node where `X` holds counts 2. SG-3 settles `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted` (ADR-018 V-4), with a path-pair counterexample (GX-1): two distinct paths are enough, whatever the rest of the graph holds. |
 | GV-4 | **V-1 for SG-2 and SG-3.** Exploration completed with no open node, and every reachable node where `Q` holds is in `E(P)` (SG-2), or every reachable node where `X` holds counts exactly 1 (SG-3). The item settles `proved`, basis `closed-scope`, `Proved{basis: Exhaustive}` (ADR-018 V-1), or `Proved{basis: Reduced{…}}` under a reduction GR-1 admits (ADR-021 RV-1). SG-1 never needs V-1: with no open node, every initial state in `E(P)` has a witness (GV-1). |
 | GV-5 | **No decisive evidence.** When the run ends with no GV-1 to GV-4 result, ADR-018's map applies: a run a limit stopped settles V-7 `Incomplete`; a completed run with open nodes settles V-6 with `UndecidedSuccessor` when an undecided expansion is among them, else V-6 `ConstraintReached` (ADR-021 RV-4) when a boundary state is, else V-5 `BoundReached{depth: max_depth}`, or V-7 under POR (ADR-021 RV-5). A subject with no initial state settles V-6 `NoInitialState`. A selected reduction GR-1 does not admit settles V-6 `ReductionNotPreserving` (ADR-021 RV-2). |
 | GV-6 | **Replay disagreement.** Evidence that fails its replay check settles V-6 `ReplayParity`, as ADR-018 SM-7 states for counterexamples. A witness proof also answers to replay: no `proved` from a witness reaches an item before GX-2 reproduces it. |
-| GV-7 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply. When a predicate of the claim (`P`, `Q`, `X` or `Y`) evaluates undefined at an explored node, the item settles `refuted`, V-4, basis `decisive-counterexample`, with cause `UndefinedEvaluation{where, cause}`: `where` is that node, `cause` the evaluator's undefined cause. Its evidence is the canonical breadth-first path to the first such node in discovery order. An undefined evaluation settles the item in place of a witness or a V-1 proof; between refuting evidence, the first in discovery order settles it. |
+| GV-7 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply. When a predicate of the claim (`P`, `Q`, `X` or `Y`) evaluates undefined at an explored node, the item settles `refuted`, V-4, basis `decisive-counterexample`, with cause `UndefinedEvaluation{where, cause}`: `where` is that node, `cause` the evaluator's undefined cause. Its evidence is the canonical breadth-first path to the first such node in discovery order. An undefined evaluation settles the item in place of a witness or a V-1 proof, even when every initial state has a sampled witness; between refuting evidence, the first in discovery order settles it. Because `proved` waits for a completed exploration (GV-1), an undefined evaluation at any reachable node is always found before an SG-1 item settles `proved`. |
 
 **Settlement method.** Every state-graph result states how it was settled,
 in its `ProofBasis` and in its FR-331 terminal record's method: V-9 by
 `Witness{sources}`, per initial state sampled (with seed and trace index),
 explored or unrolled; V-1 by exhaustive exploration (`Exhaustive`, or
 `Reduced` with its reductions); V-10 and V-4 by exploration, with the evidence
-(GX-1) that replays; V-5 to V-7 with the limits the run used. The verdict
-does not depend on the method: a sampled and an explored witness give the
-same `proved`.
+(GX-1) that replays; V-5 to V-7 with the limits the run used; V-6 `WellDefinednessUnchecked`
+with each witness's source and the limits. The verdict does not depend on
+the method: a sampled and an explored witness give the same `proved`.
 
 V-5 for a state-graph claim means: the search completed to depth `k` and
 found neither a witness for every initial state nor a trap. It is
 `inconclusive`, so a depth-limited search never reads as proof or as
-refutation. No new `InconclusiveCause` is added.
+refutation. The one new `InconclusiveCause` is `WellDefinednessUnchecked`
+(GV-1).
 
-A state-graph claim has no infinite-trace profile, and QSpec FR-341 names its
+A state-graph claim has no infinite-trace profile, and QSpec FR-360 names its
 vocabulary for infinite-trace results. The five labels and their FR-241,
 FR-242 and FR-243 combinations fit state-graph results unchanged, so QSpec
 extends that vocabulary's scope to state-graph claims (QS-4).
@@ -248,14 +252,14 @@ extends that vocabulary's scope to state-graph claims (QS-4).
 | --- | --- |
 | GR-1 | **Reductions (ADR-021).** A state-graph claim admits each reduction exactly where its row below reads "yes", which extends ADR-021 PT-2. "No" settles the item before expansion, V-6 `ReductionNotPreserving`. |
 | GR-2 | **Symmetry.** The predicates `P`, `Q`, `X` and `Y` join the clauses ADR-021 SYM-3 requires to be identity-transparent. Under an admitted declaration (ADR-021 SYM-5) the quotient graph is bisimilar to the subject on symmetric predicates, and bisimulation preserves `EF` and `AG EF` (Emerson and Sistla; Clarke, Emerson, Jha and Sistla). An instance's binding is handled as ADR-021 SYM-6 states. A quotient node stands for many nodes and a quotient edge for many edges, so path counts are not preserved. |
-| GR-3 | **Partial-order reduction.** With every transition that writes a location `P` reads made visible (ADR-021 POR-5), the reduced graph holds, for every behaviour, a stutter-equivalent behaviour on the visible atoms; a path that reaches a `P` node has a representative that reaches one, and every reduced path is a path of the subject, so SG-1 is preserved. `AG EF` is a branching property: a node the reduction omits can be a trap, and a reduced node can reach `P` only through omitted nodes. Branching-time reduction needs a further ample-set condition that ADR-021 does not build, so SG-2 is not preserved. Pruned interleavings are distinct paths, so SG-3 is not preserved. |
-| GR-4 | **State constraints.** Boundary states are open (GM-6). A witness through expanded states, or ending at a boundary state where `P` holds, is a path of the subject. A trap's closure holds no open node, so it lies wholly inside the expanded graph and is a trap of the subject. A proof needs no open node. |
+| GR-3 | **Partial-order reduction.** With every transition that writes a location `P` reads made visible (ADR-021 POR-5), the reduced graph holds, for every behaviour, a stutter-equivalent behaviour on the visible atoms; a path that reaches a `P` node has a representative that reaches one, and every reduced path is a path of the subject, so SG-1 is preserved. Whether `P` is undefined at a node is a function of `P`'s reads, so a reachable node where `P` is undefined has a representative in the reduced graph where it is undefined, and a completed reduced exploration rules out an undefined evaluation as GV-1 requires. `AG EF` is a branching property: a node the reduction omits can be a trap, and a reduced node can reach `P` only through omitted nodes. Branching-time reduction needs a further ample-set condition that ADR-021 does not build, so SG-2 is not preserved. Pruned interleavings are distinct paths, so SG-3 is not preserved. |
+| GR-4 | **State constraints.** Boundary states are open (GM-6). A witness through expanded states, or ending at a boundary state where `P` holds, is a path of the subject; the nodes past a boundary state are unexplored, so a witnessed SG-1 item on a run that reached a boundary state settles V-6 `WellDefinednessUnchecked` (GV-1). A trap's closure holds no open node, so it lies wholly inside the expanded graph and is a trap of the subject. A proof needs no open node. |
 | GR-5 | **Strong fairness (ADR-019).** GM-7 refuses every fairness constraint on a state-graph claim, so the fairness kind plays no part. |
 | GR-6 | **Refinement (ADR-020).** Refinement is inclusion of behaviours. A state-graph claim of the abstract model reads which paths exist, and the concrete model may have fewer, so a state-graph claim is outside ADR-020 CO-3's transfer fragment and is checked on the concrete subject directly. |
 
 | Form | Symmetry (admitted, ADR-021 SYM-5) | POR (ADR-021 POR-6) | State constraint |
 | --- | --- | --- | --- |
-| SG-1 possible | yes | yes, with `P`'s reads visible | witness real; trap real (its closure holds no boundary state); otherwise `ConstraintReached` |
+| SG-1 possible | yes | yes, with `P`'s reads visible | witness real, settling `WellDefinednessUnchecked` when a boundary state is reached; trap real (its closure holds no boundary state); otherwise `ConstraintReached` |
 | SG-2 always possible | yes | no: branching property | trap real; proof only when no boundary state is reached |
 | SG-3 unique path | no: the quotient merges paths | no: prunes distinct paths | path pair real; trap real; proof only when no boundary state is reached |
 
@@ -295,10 +299,20 @@ successors `upd(a)` and `upd(b)`.
 `upd(b)`. Each instance settles `proved`, `decisive-witness`,
 `Proved{basis: Witness{sources}}` (V-9), after GX-2 replays two steps and evaluates
 `c.versionNumber = 2` true at the last node. With phase 0 on, as by
-default, a walk from `(0, 0)` that reaches `va = 2` settles the instance
-first, with source `Sampled` and that walk's seed and trace index, and may be
+default, a walk from `(0, 0)` that reaches `va = 2` is the instance's
+witness, with source `Sampled` and that walk's seed and trace index, and the
+instance settles once exploration has checked all 9 nodes; the walk may be
 longer than the explored witness; with `witness_samples` 0 the source is
 `Explored`. The verdict is `proved` either way.
+
+**Well-definedness (RU-5).** The target `2 / (2 - c.versionNumber) = 2` for
+`c = a` holds at `(1, 0)`, and a sampled walk from `(0, 0)` finds that
+witness. Exploration still runs and reaches `(2, 0)`, where the division has
+no value, so the item settles `refuted`, cause `UndefinedEvaluation` at
+`(2, 0)` (GV-7), not `proved`. `ReachesTwo` under `max_states` 2 gets its
+sampled witnesses, but the exploration stops after two nodes, so it settles
+`inconclusive`, `WellDefinednessUnchecked`; with `witness_samples` 0 the same
+run settles V-7 `failed`, naming `max_states`.
 
 **`ReachesThree`.** `versionNumber` ranges over `Int[0, 1000]`, but the post
 clause keeps it in `{0, 1, 2}`, so no node satisfies `P`. `E⁺` is empty and
@@ -412,15 +426,15 @@ as an EN-1 counterexample does.
 
 | ID | Item | Where |
 | --- | --- | --- |
-| QS-1 | The state-graph claim family in the shared grammar: `possible`, `always possible … from`, `unique path … from … to`, with keywords distinct from `reaches` (V1-TYPE-024); refusal of a temporal operator, an anchor or pre-state read, or a fairness constraint inside one | shared grammar; a new FR beside QSpec FR-161 |
-| QS-2 | Semantics over a model subject: the state graph with no stutter step (GM-1), reachability (GM-2), state-only predicates (GM-3), the fixpoint `E(P)` and the truth of SG-1 and SG-2 (GM-4), paths and SG-3 (GM-5), the `over` binding (ADR-018 QS-5), and why fairness is not admitted (GM-7) | the new FR |
-| QS-3 | Open and closed nodes (GM-6) and which evidence is decisive in a partial exploration: a witness, a trap with a closed closure, a path pair through known nodes | the new FR |
-| QS-4 | Verdicts: V-9 (`proved`, `decisive-witness`) and V-10 (`refuted`, `closed-scope`), V-4 for a path pair, V-1 for SG-2 and SG-3, and V-5 to V-8 as GV-5 states; extend QSpec FR-341's scope from infinite-trace results to state-graph results, with its five labels unchanged | QSpec FR-341 (infinite-trace), FR-331, the new FR |
-| QS-5 | The `GraphEvidence` wire (GX-1) and its replay rules (GX-2 to GX-4), including trap replay as an exhaustive exploration from a recorded state | the counterexample contract; QSpec FR-331 |
+| QS-1 | The state-graph claim family in the shared grammar: `possible`, `always possible … from`, `unique path … from … to`, with keywords distinct from `reaches` (V1-TYPE-024); refusal of a temporal operator, an anchor or pre-state read, or a fairness constraint inside one | QSpec FR-390 |
+| QS-2 | Semantics over a model subject: the state graph with no stutter step (GM-1), reachability (GM-2), state-only predicates (GM-3), the fixpoint `E(P)` and the truth of SG-1 and SG-2 (GM-4), paths and SG-3 (GM-5), the `over` binding (ADR-018 QS-5), and why fairness is not admitted (GM-7) | QSpec FR-390 |
+| QS-3 | Open and closed nodes (GM-6) and which evidence is decisive in a partial exploration: a witness, a trap with a closed closure, a path pair through known nodes | QSpec FR-391 |
+| QS-4 | Verdicts: V-9 (`proved`, `decisive-witness`) and V-10 (`refuted`, `closed-scope`), V-4 for a path pair, V-1 for SG-2 and SG-3, V-5 to V-8 as GV-5 states, and the `WellDefinednessUnchecked` inconclusive cause with its rule that `proved` waits for a completed exploration (GV-1, RU-5); extend QSpec FR-360's scope from infinite-trace results to state-graph results, with its five labels unchanged | QSpec FR-391, FR-360, FR-331 |
+| QS-5 | The `GraphEvidence` wire (GX-1) and its replay rules (GX-2 to GX-4), including trap replay as an exhaustive exploration from a recorded state | QSpec FR-393 and FR-394; FR-331 |
 | QS-6 | QSpec FR-181: exhaustive exploration from a given state (the trap closure, GX-3) and the explored graph's edges as the subject of state-graph claims; FR-181-AC-5's replay covers witness paths | QSpec FR-181 |
-| QS-7 | Request members: `witness_samples` in `ModelCheckLimits` with its published default 64, the seed with its published default, and the settlement method in the terminal record (GE-2, GV-1); the state-graph forms in the provider manifest and a negotiation that routes a form only to a candidate that discharges it | QSpec FR-331, FR-290 |
+| QS-7 | Request members: `witness_samples` in `ModelCheckLimits` with its published default 64, the seed with its published default 0, and the settlement method in the terminal record (GE-2, GV-1); the state-graph forms in the provider manifest and a negotiation that routes a form only to a candidate that discharges it | QSpec FR-392, FR-331, FR-290 |
 | QS-8 | The deadlock-freedom item is added for subjects of state-graph items too (GM-8) | ADR-018 QS-12's FR |
-| QS-9 | The GR-1 rows in the preservation table of ADR-021 QS-5 | ADR-021 QS-5's FR |
+| QS-9 | The GR-1 rows in the preservation table of ADR-021 QS-5 | QSpec FR-385 |
 | QS-10 | Conformance vectors, each with expected verdict kind and evidence that must replay (validity is checked, not the exact evidence): (a) §7.1, `ReachesTwo` witnessed and `ReachesThree` refuted by a trap at the initial state; (b) §7.2, the trap at `Lost`, the `from` variant proved, the restart variant proved, and the deadlock-freedom item with and without `terminal when`; (c) §7.3, the path pair and the sequenced variant; (d) a cycle on a path to `Y`, refuted with a path pair; (e) a partial run: a trap found with `max_depth` reached elsewhere settles V-10, and a run with no trap and open nodes settles V-5; (f) replay disagreements: a witness whose last node fails `P`, a trap whose closure reaches the target, a path pair whose paths are equal | new TCs |
 
 ### 10. Rulings on the draft's questions
@@ -432,7 +446,8 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 | RU-1 | Initial-state quantifier for `possible` | **Every initial state**, the CTL reading | Every other verdict in ADR-018 and here quantifies over every initial state, and CTL reads a model that way. An author who means one start lists that one initial snapshot in the subject | SG-1, GM-4; a witness per initial state (GV-1, GX-1) |
 | RU-2 | `from (Q)` on `always possible` | **Kept** | It states "recovery is possible from every non-lost state", and it costs nothing in the algorithm: the trap search reads `Q` at the candidate node | SG-2, GM-4, GV-2; §7.2 |
 | RU-3 | How `unique path` counts | **Per `X` node** | Each reachable `X` node has exactly one path to `Y`; a refutation names the one node that fails, with a path pair or a trap from it | SG-3, GM-5, GV-2, GV-3 |
-| RU-4 | Phase 0 default | **On by default**, `witness_samples` with a published default of 64, settable to 0. The result states how it was settled: a sampled witness with its seed and trace index, or exploration | Sampling is cheap and settles many `possible` items early. Naming the method in the result keeps a sampled proof visible as one, and the verdict is the same either way. The seed has a published default, so a run with phase 0 on is reproducible | GE-2, §3 "Determinism", GV-1 "Settlement method", GX-1 |
+| RU-4 | Phase 0 default | **On by default**, `witness_samples` with a published default of 64, settable to 0. The result states how it was settled: a sampled witness with its seed and trace index, or exploration | Sampling is cheap and finds many witnesses before exploration does. Naming the method in the result keeps a sampled witness visible as one, and the verdict is the same either way. The seed has a published default, so a run with phase 0 on is reproducible | GE-2, §3 "Determinism", GV-1 "Settlement method", GX-1 |
+| RU-5 | Whether a witness settles `possible` before exploration completes | **No.** A `possible` item, and any witness-settled state-graph item, settles `proved` only after exploration has ruled out a reachable undefined evaluation of the claim. A run that a limit stops, or that ends with open nodes, with a witness for every initial state settles `inconclusive`, `WellDefinednessUnchecked`: witness found, well-definedness unchecked. **Cost:** sampling speeds up finding witnesses and gives a budget-limited run a witness to report; it does not speed up the proof, which always costs a full exploration | Well-definedness is a property of every reachable state (ADR-018 UE-1 to UE-6), so a witness path cannot establish it, and a `proved` that an undefined evaluation elsewhere would refute is a false proof. The verdict then never depends on `witness_samples` | GE-2, GE-3, §3 "Determinism", GV-1, GV-7, "Settlement method" |
 
 ## Consequences
 
@@ -446,9 +461,13 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 - Every `proved` from a witness and every `refuted` replays without the engine
   that found it. A trap's unreachability is re-established by a fresh
   exploration of its closure, which costs replay the size of that closure.
-- A partial exploration still settles an item when its evidence is decisive:
-  a witness proves `possible`, and a trap with a closed closure refutes
-  `possible` and `always possible`, whatever else remains open.
+- A partial exploration still refutes an item when its evidence is decisive:
+  a trap with a closed closure refutes `possible` and `always possible`, and
+  an undefined evaluation refutes any form, whatever else remains open. A
+  `proved` from a witness waits for a completed exploration (RU-5), so
+  sampling makes witnesses cheaper to find but never makes a proof cheaper;
+  on a partial exploration a witness settles `inconclusive`,
+  `WellDefinednessUnchecked`.
 
 ## Amendments made with this record
 
@@ -465,10 +484,13 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 - **ADR-020** (when accepted): CO-3 notes that state-graph claims do not
   transfer and are checked on the concrete subject (GR-6).
 - **ADR-013** O-16 and the `TerminalValue` row: `ProofBasis::Witness` maps to
-  success.
+  success; `InconclusiveCause::WellDefinednessUnchecked` maps to
+  inconclusive.
+- **ADR-018** V-6: `InconclusiveCause` gains `WellDefinednessUnchecked{sources}`
+  (GV-1, RU-5).
 - **ADR-011** §6.1: layer 5 `model_check` gains state-graph checking; layer 6
   `replay` gains the model-graph arm.
-- **QSpec FR-181** (through the paired QSpec ticket): QS-6.
+- **QSpec FR-181**: QS-6.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered
@@ -510,7 +532,8 @@ The owner ruled on the four questions the draft left open, on 2026-10-01.
 
 - Owning ticket: Linear QSL-369. Built on ADR-018 (Linear QSL-366).
   Interacts with ADR-019 (Linear QSL-365), ADR-020 (Linear QSL-367) and
-  ADR-021 (Linear QSL-368). A paired QSpec STD ticket carries §9.
+  ADR-021 (Linear QSL-368). QSpec FR-390 to FR-394 carry §9 (Linear
+  STD-135).
 - Later research, outside this record: Linear RES-40 (a planner whose plan
   is a `possible` witness, and a runtime monitor that asks whether recovery
   is still possible from the live state).

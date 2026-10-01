@@ -180,4 +180,5 @@ pub enum GraphEvidence {
 
 ## References
 
-- ADR-022. QSpec half: Linear STD-135 (ADR-022 QS-5, QS-6).
+- ADR-022. QSpec half: QSpec FR-393 and FR-394 (Linear STD-135; ADR-022
+  QS-5, QS-6).

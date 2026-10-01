@@ -148,4 +148,4 @@ pub enum StateGraphForm {
 
 ## References
 
-- ADR-022. QSpec half: Linear STD-135 (ADR-022 QS-1, QS-8).
+- ADR-022. QSpec half: QSpec FR-390 (Linear STD-135; ADR-022 QS-1, QS-8).

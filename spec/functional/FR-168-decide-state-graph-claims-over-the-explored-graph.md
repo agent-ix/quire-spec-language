@@ -24,9 +24,11 @@ When FR-167's exploration ends, QSL's layer-5 `model_check` SHALL decide each
 state-graph item instance by one pass over the explored graph, linear in its
 nodes and edges (ADR-022 §3): backward reachability for `possible` and
 `always possible`, and path counting for `unique path`. It SHALL return
-evidence only where open nodes cannot change it (ADR-022 GM-6): a witness, a
-trap whose forward closure is closed, or a pair of paths through known
-nodes. Evidence is canonical, so the same request gives the same evidence.
+evidence only where open nodes cannot change it (ADR-022 GM-6): a trap whose
+forward closure is closed, a pair of paths through known nodes, or an
+undefined evaluation. A witness for every initial state decides `possible`
+only when the exploration reached every reachable node and found no
+undefined evaluation of the target (ADR-022 GV-1, RU-5). Evidence is canonical, so the same request gives the same evidence.
 
 ## Use case
 
@@ -49,7 +51,11 @@ left undecided, never guessed.
 
 - `Witnessed { paths }`: one `ModelPath` per initial state, each ending at a
   node where the target holds, each with its source, `Sampled(…)` (FR-166)
-  or `Explored`;
+  or `Explored`, on a run that completed with no open node;
+- `WitnessedUnchecked { paths, end, open }`: the same witnesses on a run
+  that a limit stopped or that ended with open nodes, so a reachable
+  undefined evaluation of the target is not ruled out, with the run's end
+  and its open causes;
 - `Trapped { stem }`: a `ModelPath` ending at a trap node;
 - `PathPair { stem, first, second }`: a stem ending at a node where `from`
   holds and two distinct step sequences from it, each ending at its first
@@ -83,9 +89,10 @@ Each carries its instance's `over` binding.
   closed or target nodes to a target node SHALL get the **explored witness**:
   from the initial state, at each node, the first edge in canonical order
   whose target is a node at distance one less, ending at a target node.
-- `Possible` SHALL return `Witnessed` when every initial state has a sampled
-  or explored witness. Otherwise, if an initial state is a trap, it SHALL
-  return `Trapped` with that initial state and an empty stem.
+- When every initial state has a sampled or explored witness, `Possible`
+  SHALL return `Witnessed` if the run completed with no open node, and
+  `WitnessedUnchecked` otherwise. Otherwise, if an initial state is a trap,
+  it SHALL return `Trapped` with that initial state and an empty stem.
 - `AlwaysPossible` SHALL return `Trapped` when a trap where `from` holds is
   reachable: the first such trap in FR-101 canonical breadth-first discovery
   order, with the canonical breadth-first path to it as its stem.
@@ -126,15 +133,18 @@ Each carries its instance's `over` binding.
   SHALL return `Undefined` with the canonical breadth-first path to the
   first such node in discovery order, `where` that node and `cause` the
   evaluator's undefined cause (ADR-022 GV-7, ADR-018 UE-1).
-- `Undefined` SHALL take the place of `Witnessed` and `Holds`. When a trap
+- `Undefined` SHALL take the place of `Witnessed`, `WitnessedUnchecked`
+  and `Holds`, whether the witnesses were sampled or explored. When a trap
   or a path pair is found at a node earlier in discovery order, the engine
   SHALL return that evidence instead.
 
 ### Partial runs
 
-- A witness, a trap, a path pair and an undefined evaluation SHALL be returned whether `end` is
-  `Completed` or `Stopped`, and whatever other nodes are open.
-- `Holds` SHALL be returned only when the run completed with no open node.
+- A trap, a path pair and an undefined evaluation SHALL be returned whether
+  `end` is `Completed` or `Stopped`, and whatever other nodes are open.
+- `Witnessed` and `Holds` SHALL be returned only when the run completed with
+  no open node. Witnesses for every initial state on any other run SHALL be
+  returned as `WitnessedUnchecked`.
 - Every instance with none of the above SHALL return `NoDecision`, carrying
   the run's end and the set of open causes.
 
@@ -142,8 +152,8 @@ Each carries its instance's `over` binding.
 
 - The outcome and its evidence SHALL be functions of the subject, the
   item, the limits and the seed. Phase 0 changes which source a witness
-  has, never which outcome kind an instance reaches on a run that phase 1
-  completes.
+  has, never which outcome kind an instance reaches on a run that completes
+  with no open node.
 
 ## Acceptance Criteria
 
@@ -154,12 +164,14 @@ Each carries its instance's `over` binding.
 | FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds{Exhaustive}`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
 | FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]` and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
 | FR-168-AC-5 | Over §7.1's subject, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
-| FR-168-AC-5 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
+| FR-168-AC-6 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
+| FR-168-AC-7 | FR-168-AC-5's item with default `witness_samples` holds a sampled witness from `(0, 0)` ending at `(1, 0)` and still returns `Undefined` at `(2, 0)`, not `Witnessed`; `ReachesTwo` with default limits returns `Witnessed` with `Sampled` sources from a run that completed with no open node. | Test (TC-613) |
+| FR-168-AC-8 | `ReachesTwo` with default `witness_samples` and `max_states` 2 returns `WitnessedUnchecked` with `Sampled` sources and `end` `Stopped(ResourceExhausted, MaxStates)`; with `witness_samples` 0 and `max_states` 2 it returns `NoDecision` with the same `end`. | Test (TC-614) |
 
 ## Dependencies
 
 - ADR-022 §2 GM-4 to GM-6; §3 "Phase 1 algorithms", "Determinism" and
-  "Canonical evidence"; §4 GV-1 to GV-5 (which outcomes are decisive); §7
+  "Canonical evidence"; §4 GV-1 to GV-5 and GV-7 (which outcomes are decisive); §10 RU-5; §7
   worked examples.
 - [FR-167](FR-167-explore-a-state-graph-subject-and-track-open-nodes.md)
   (the explored graph and open nodes),
@@ -168,9 +180,10 @@ Each carries its instance's `over` binding.
   [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
   (canonical discovery order).
 - FR-169 settles the outcome; FR-170 replays its evidence.
-- QSpec owns the graph semantics and which evidence is decisive on a partial
-  run (ADR-022 QS-2, QS-3).
+- QSpec FR-390 and FR-391 own the graph semantics and which evidence is
+  decisive on a partial run (ADR-022 QS-2, QS-3).
 
 ## References
 
-- ADR-022. QSpec half: Linear STD-135 (ADR-022 QS-2, QS-3).
+- ADR-022. QSpec half: QSpec FR-390 and FR-391 (Linear STD-135; ADR-022
+  QS-2, QS-3).

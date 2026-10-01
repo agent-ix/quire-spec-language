@@ -168,4 +168,5 @@ pub enum RunEnd {
 
 ## References
 
-- ADR-022. QSpec half: Linear STD-135 (ADR-022 QS-3, QS-6, QS-7, QS-9).
+- ADR-022. QSpec half: QSpec FR-390, FR-391 and FR-392 (Linear STD-135;
+  ADR-022 QS-3, QS-6, QS-7, QS-9).

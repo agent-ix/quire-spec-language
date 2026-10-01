@@ -14,7 +14,7 @@ Verify witnesses, traps, path pairs and proofs on ADR-022 §7's worked
 examples and their variants, decisive evidence on a partial run, and that
 phase 0 changes only a witness's source.
 
-Scope: FR-168-AC-1 to FR-168-AC-5.
+Scope: FR-168-AC-1 to FR-168-AC-4 and FR-168-AC-6.
 
 ## Test Procedure
 
