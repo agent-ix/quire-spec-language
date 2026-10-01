@@ -203,4 +203,4 @@ pub struct HyperTrace {
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-6).
+- ADR-023. QSpec half: QSpec FR-400 and FR-401 (Linear STD-136; ADR-023 QS-6).

@@ -105,4 +105,4 @@ pub struct ModelRelationForm {
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-1).
+- ADR-023. QSpec half: QSpec FR-395 and FR-402 (Linear STD-136; ADR-023 QS-1).

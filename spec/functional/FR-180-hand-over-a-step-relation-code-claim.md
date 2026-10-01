@@ -131,4 +131,4 @@ body, with no reachability path.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-4, QS-6).
+- ADR-023. QSpec half: QSpec FR-397 (Linear STD-136; ADR-023 QS-4, QS-6).

@@ -106,4 +106,4 @@ each with a path from an initial state to its pre-state.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-2, QS-6).
+- ADR-023. QSpec half: QSpec FR-397 (Linear STD-136; ADR-023 QS-2, QS-6).

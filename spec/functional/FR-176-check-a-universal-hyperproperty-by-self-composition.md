@@ -143,4 +143,4 @@ public outputs differ.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-2, QS-9).
+- ADR-023. QSpec half: QSpec FR-395 and FR-399 (Linear STD-136; ADR-023 QS-2, QS-9).

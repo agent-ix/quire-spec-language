@@ -116,4 +116,4 @@ clause is proved.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-2, QS-6).
+- ADR-023. QSpec half: QSpec FR-398 (Linear STD-136; ADR-023 QS-2, QS-6).

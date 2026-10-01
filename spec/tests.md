@@ -404,6 +404,8 @@ names different artifacts in each.
 | TC-604 | EN-1 checks a step relation over every tuple of reachable transitions | Integration | P1 | FR-179-AC-1, FR-179-AC-2, FR-179-AC-3 | 🚧 Planned |
 | TC-605 | A bound step relation hands over its code claim, and its Kani counterexample replays | Integration | P1 | FR-180-AC-1, FR-180-AC-2, FR-180-AC-3 | 🚧 Planned |
 | TC-606 | A single-existential claim is proved by a lasso witness and refuted by a trap | Integration | P1 | FR-181-AC-1, FR-181-AC-2, FR-181-AC-3, FR-181-AC-4 | 🚧 Planned |
+| TC-615 | A single-existential witness proves only after exploration rules out an undefined evaluation | Integration | P1 | FR-181-AC-5 | 🚧 Planned |
+| TC-616 | A single-existential witness on a stopped run settles well-definedness unchecked | Integration | P1 | FR-181-AC-6 | 🚧 Planned |
 | TC-607 | Hyper and step-relation outcomes settle as terminal records with their causes | Unit | P1 | FR-182-AC-1, FR-182-AC-2, FR-182-AC-3, FR-182-AC-4 | 🚧 Planned |
 | TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4 | 🚧 Planned |
 | TC-609 | max_witness_set and max_relation_tuples are caller budgets with published defaults | Unit | P1 | FR-184-AC-1, FR-184-AC-2, FR-184-AC-3 | 🚧 Planned |

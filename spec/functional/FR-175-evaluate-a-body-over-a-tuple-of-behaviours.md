@@ -95,4 +95,4 @@ the first position where the outputs differ.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-2).
+- ADR-023. QSpec half: QSpec FR-395 (Linear STD-136; ADR-023 QS-2).

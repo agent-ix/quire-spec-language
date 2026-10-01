@@ -27,9 +27,12 @@ QSL's layer-5 `model_check` SHALL check an HP-5 claim, a `hyper` clause over
 possibility claim with a temporal body (ADR-023 SE-1 to SE-5): from every
 initial state of the subject, some behaviour fair under the clause's
 fairness set satisfies the body. It is settled by the possible family's
-verdict map and evidence shapes (ADR-022 GV-1, GV-2, GV-5, GX-1): a witness
-lasso per initial state proves it, a closed part of the product with no
-fair accepting cycle refutes it, and anything else stays undecided. The
+verdict map and evidence shapes (ADR-022 GV-1, GV-2, GV-5, GV-7, GX-1, RU-5):
+a witness lasso per initial state proves it once exploration of the product
+has completed with no open node and no undefined evaluation of the body, a
+closed part of the product with no fair accepting cycle refutes it, an
+undefined evaluation of the body at a reachable position refutes it, and
+anything else stays undecided. The
 possible family's requirements (FR-166, FR-169 and FR-170) apply as stated
 here.
 
@@ -52,8 +55,9 @@ that no trace exists.
 ## Outputs
 
 - FR-168's `StateGraphOutcome` shapes: `Witnessed` with one lasso per
-  initial state and its source, `Trapped` naming an initial state with an
-  empty stem, `NoDecision`, or `NoInitialState`; settled by FR-169's map.
+  initial state and its source, `WitnessedUnchecked` with the same lassos,
+  `Trapped` naming an initial state with an empty stem, `Undefined`,
+  `NoDecision`, or `NoInitialState`; settled by FR-169's map.
 - `GraphEvidence::Witness` whose paths are ADR-018 CX-2 model lassos
   (FR-128's `TemporalCounterexample` step and loop shape), and
   `GraphEvidence::Trap`, each replayed as stated below.
@@ -78,6 +82,8 @@ that no trace exists.
   give a candidate lasso. A candidate SHALL count as a witness only when its
   loop is fair under the clause's fairness set and the body evaluates `true`
   on it by FR-125.
+- Phase 0 SHALL NOT settle the item: the product exploration SHALL run
+  whatever phase 0 found.
 
 ### Outcomes
 
@@ -85,8 +91,18 @@ that no trace exists.
   witness, SHALL have a witness lasso: the canonical lasso of FR-126 for an
   explored one, source `Explored`; the candidate, source `Sampled`, for a
   sampled one.
-- `Witnessed` SHALL be returned when every initial state has a witness,
-  whether or not the run later stopped.
+- When every initial state has a witness, the engine SHALL return
+  `Witnessed` if the product exploration completed with no open node, and
+  `WitnessedUnchecked` with the run's end and open causes otherwise, since a
+  reachable undefined evaluation of the body is then not ruled out
+  (ADR-022 RU-5).
+- If a letter of the body evaluates `Undefined` at a reachable product
+  state, the engine SHALL return `Undefined` with FR-126's canonical
+  breadth-first path to the first such product state, `where` naming that
+  position and `cause` the evaluator's undefined cause (ADR-023 HV-8,
+  ADR-018 UE-4). `Undefined` SHALL take the place of `Witnessed` and
+  `WitnessedUnchecked`; between it and a trap, the first in canonical
+  breadth-first order SHALL be returned.
 - `Trapped` SHALL be returned for the first initial state, in subject
   order, whose part of the product is closed (no open node) and holds no
   fair accepting cycle.
@@ -105,6 +121,9 @@ that no trace exists.
   `reproduced-with-evaluated-witness`; one found SHALL settle
   `inconclusive`, `Verdicts`; a stopped exploration SHALL return the replay
   result stopped with its limit.
+- An `Undefined` path SHALL replay as FR-170 replays undefined-evaluation
+  evidence, re-executing the path and evaluating the body's letter at its
+  last position.
 - Each result SHALL state how it was settled, as FR-169 requires: the
   refutation's basis is `closed-scope` and its method exhaustive
   exploration of the trap's closure.
@@ -117,11 +136,14 @@ that no trace exists.
 | FR-181-AC-2 | `exists trace b of V { eventually holds(v.l @ b = 2) }` returns `Trapped` for initial state 0 with an empty stem; replay re-explores its part of the product, finds no accepting cycle, and the item settles `refuted`, `closed-scope`. | Test (TC-606) |
 | FR-181-AC-3 | Over the secure vault with FR-176-AC-3's `reset` operation, `exists trace b of V fair { weak V::Vault::reset } { eventually always holds(v.l @ b = 1) }` settles `refuted`, `closed-scope`, and the same clause with no fairness set settles `proved`. | Test (TC-606) |
 | FR-181-AC-4 | AC-1's claim with `max_depth` 1 and `witness_samples` 0 returns `NoDecision` and settles `inconclusive`, `BoundReached{depth: 1}`. AC-1's witness with its loop's last step removed refuses as FR-128 refuses a loop that does not close. | Test (TC-606) |
+| FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(v.l @ b = 0 and 1 / (1 - v.l @ b) = 1) }` has a witness lasso looping `step(0)` at `(h, 0)` for each initial state, and still returns `Undefined` at the first product state with `l = 1`, cause `division-by-zero`, settling `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
+| FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `failed`, `resource-incomplete`, naming `max_states`. | Test (TC-616) |
 
 ## Dependencies
 
-- ADR-023 §15 SE-1 to SE-5, §12 RU-3; ADR-022 §3 GE-2, §4 GV-1, GV-2, GV-5
-  and "Settlement method", §5 GX-1 and GX-3; ADR-018 §3 EN-1, CX-2, CX-3.
+- ADR-023 §15 SE-1 to SE-5, §12 RU-3, HV-8; ADR-022 §3 GE-2, §4 GV-1, GV-2,
+  GV-5, GV-7 and "Settlement method", §10 RU-5, §5 GX-1 and GX-3; ADR-018
+  §3 EN-1, CX-2, CX-3.
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (product phases, fairness filter, canonical lasso),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md),
@@ -135,5 +157,6 @@ that no trace exists.
 
 ## References
 
-- ADR-023, ADR-022. QSpec halves: Linear STD-136 (ADR-023 QS-3) and Linear
-  STD-135 (the possible family).
+- ADR-023, ADR-022. QSpec halves: QSpec FR-396's single-existential rows
+  (Linear STD-136; ADR-023 QS-3) and QSpec FR-390 to FR-394, the possible
+  family (Linear STD-135).

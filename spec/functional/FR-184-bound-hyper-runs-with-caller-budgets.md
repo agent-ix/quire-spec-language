@@ -96,4 +96,4 @@ pub enum ModelCheckLimit {
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-5).
+- ADR-023. QSpec half: QSpec FR-399 (Linear STD-136; ADR-023 QS-5).

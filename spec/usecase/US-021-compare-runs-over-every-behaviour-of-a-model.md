@@ -123,4 +123,5 @@ the property and squares the model.
 
 ## References
 
-- ADR-023. Owning ticket: Linear QSL-370. QSpec half: Linear STD-136.
+- ADR-023. Owning ticket: Linear QSL-370. QSpec half: QSpec
+  FR-395 to FR-403 (Linear STD-136).

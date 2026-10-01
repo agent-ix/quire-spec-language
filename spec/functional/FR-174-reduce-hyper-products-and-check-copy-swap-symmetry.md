@@ -126,4 +126,4 @@ swap.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-8).
+- ADR-023. QSpec half: QSpec FR-403 (Linear STD-136; ADR-023 QS-8).

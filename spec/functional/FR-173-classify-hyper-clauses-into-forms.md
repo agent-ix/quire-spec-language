@@ -123,4 +123,4 @@ pub enum HyperForm {
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-3, QS-4).
+- ADR-023. QSpec half: QSpec FR-396 (Linear STD-136; ADR-023 QS-3, QS-4).

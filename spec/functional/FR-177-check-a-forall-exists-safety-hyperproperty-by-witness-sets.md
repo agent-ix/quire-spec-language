@@ -118,4 +118,4 @@ partner has failed.
 
 ## References
 
-- ADR-023. QSpec half: Linear STD-136 (ADR-023 QS-3, QS-6).
+- ADR-023. QSpec half: QSpec FR-399 (Linear STD-136; ADR-023 QS-3, QS-6).
