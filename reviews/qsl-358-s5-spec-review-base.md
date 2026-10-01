@@ -35,11 +35,19 @@ contradict the text they amend, instead of restating the requirement. ADR-011's
 SV module list is stale. The FR-090 fix corrects the path but keeps a name that
 no longer resolves.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-068 still assigns the moved items to `check` in two places the rewrite missed. The Outputs bullet (176-196) lists `Location` and `Origin` in "the check-cause content of `refusal.rs`" moving to `check`. It also says `CheckMode` moves "to `check` alongside them", since "it has no remaining reason to stay in `value::expression`". AC-3 (494) says "this requirement's Outputs allocate it [`CheckMode`] to `check` ... so a `check` file defining `CheckMode` is the required shape". Both contradict the rewritten CON-3, AC-4 and Behavior paragraph, which put `Location`, `Origin` and `CheckMode` in `quire-semantic-value`. The coder's own disposition text says "the Outputs bullet ... now state[s] the current layout", but only the `value::expression` bullet was changed. Fix: drop `Location`/`Origin` from the `check` Outputs list, and say `CheckMode` is defined in SV `checking`. Reword AC-3's `CheckMode` sentence to match, or delete it now that the source scan it qualifies is gone. | spec/functional/FR-068-split-expression-checking-into-check-stage.md:176-196,494 |
+
 ## Dispositions
 
-| ID | Outcome |
-| --- | --- |
-| FND-001 | fixed 49ae8c6c: FR-068 AC-4, CON-3, CON-4, the Behavior refusal-split paragraph, the Outputs bullet and the summary now state the current layout; no appended notes, and "unchanged in shape" is gone. |
-| FND-002 | fixed 49ae8c6c: the "Amended (QSL-358)" markers are removed with the rewrite. |
-| FND-003 | fixed 49ae8c6c: ADR-011's SV row, the SV prose, the §6.2 move row, the `value::expression::refusal` row, X-7's qsl-package reason and X-11 list `checking`, `location`, `call` and `loss`. |
-| FND-004 | fixed 49ae8c6c: every `check::Location` in spec/ (FR-062, FR-090, FR-095, FR-096, FR-100, ADR-011, ADR-012, ADR-013, TC-407, TC-426) now reads `quire_semantic_value::location::Location`. |
+Round 1 at 553729e5 (rebased onto main 09eb9dc6, which includes slices 2 and 3). The fix commit is 49ae8c6c. `git range-diff 0a399675..0ff6644b 09eb9dc6..a97741d9` shows the seven reviewed commits carried over with only rebase import and Cargo-comment changes. a97741d9 adds import fixups for slice 2. Ids remapped by the coder because of a collision with #562: SR-963 -> SR-965, SR-964 -> SR-966, SR-965 -> SR-967. Cross-references inside the original findings text keep the old ids. Process note: the coder wrote a `## Dispositions` section into each committed copy under `reviews/` (eb7c147b, 553729e5). Only the reviewer records dispositions. The tables below replace those sections, and the next commit of these files must take this copy.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 49ae8c6c: AC-4, CON-3, CON-4 and the Behavior refusal-split paragraph were rewritten in place to state the current split, with no appended notes, and "unchanged in shape" is gone for InputRefusal. FND-005 records the residue in Outputs and AC-3. |
+| FND-002 | fixed | 49ae8c6c: no "Amended (QSL-358)" marker or ticket id is left in FR-068. |
+| FND-003 | fixed | 49ae8c6c: after the rebase over slices 2 and 3, the following all name `checking`, `location`, `call` and `loss`: the ADR-011 SV row (with the Depends-on cell now `K; quire-canonical, serde and thiserror, each without std`), the SV prose bullet, the §6.2 move row (`quire_semantic_value::{..., checking, location, call, loss}`), the `value::expression::refusal` row, X-6, X-7 (qsl-package's SV reason), X-10 (qsl-replay's SV edge) and X-11. |
+| FND-004 | fixed | 49ae8c6c: FR-090:25,121,192 read `quire_semantic_value::location::Location`. So do FR-062, FR-095, FR-096, FR-100, ADR-011, ADR-012, ADR-013, TC-407 and TC-426. A grep of spec/ finds no `check::Location`. |

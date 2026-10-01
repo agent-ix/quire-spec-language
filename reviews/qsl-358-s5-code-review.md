@@ -88,10 +88,12 @@ that this slice exists to close. FND-003 to FND-005 are cleanups.
 
 ## Dispositions
 
-| ID | Outcome |
-| --- | --- |
-| FND-001 | fixed 49ae8c6c: `assert_defined_exactly_once_in_semantic_value` counts every definition across all `scan_crate` trees and requires the one to be under `quire-semantic-value/src/`; the only uncounted name is the unrelated `src/package/view.rs` `Location<'a>`, listed by file. A copy of `InputRefusal` in `qsl-eval/src/value/mod.rs` and of `ValueLoss` in `qsl-semantics/src/value/mod.rs` now fail the scan (measured). |
-| FND-002 | fixed 49ae8c6c: `InputRefusal::code() -> &'static str` in SV names the catalog code; qsl-eval's test asserts `input_refusal_code(r).as_str() == r.code()` for all six variants, and the SV test pins all six strings. |
-| FND-003 | fixed 49ae8c6c: ticket ids and amendment history removed from the definition_scan comments. |
-| FND-004 | fixed 49ae8c6c: `semantic_node.rs` links `crate::checking::MAX_CHECKING_DEPTH`; `emit.rs` and `qsl-forms/src/spans.rs` name `quire_semantic_value::location::Location`. |
-| FND-005 | fixed 49ae8c6c: the redundant SV dev-dependency in qsl-eval is deleted (and the same redundancy in qsl-replay and the root crate after the rebase onto slice 2). |
+Round 1 at 553729e5 (rebased onto main 09eb9dc6, which includes slices 2 and 3). The fix commit is 49ae8c6c. `git range-diff 0a399675..0ff6644b 09eb9dc6..a97741d9` shows the seven reviewed commits carried over with only rebase import and Cargo-comment changes. a97741d9 adds import fixups for slice 2. Ids remapped by the coder because of a collision with #562: SR-963 -> SR-965, SR-964 -> SR-966, SR-965 -> SR-967. Cross-references inside the original findings text keep the old ids. Process note: the coder wrote a `## Dispositions` section into each committed copy under `reviews/` (eb7c147b, 553729e5). Only the reviewer records dispositions. The tables below replace those sections, and the next commit of these files must take this copy.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 49ae8c6c: `assert_defined_exactly_once_in_semantic_value` counts every location `scan_crate` returns, except one named namesake (`Location` in `src/package/view.rs`, matched by exact file). Re-measured in a throwaway worktree at 553729e5: copies of `InputRefusal` (qsl-eval value/mod.rs), `CheckMode` (qsl-semantics value/mod.rs), `ValueLoss` (evaluate.rs), `LocatedLoss` (src/lib.rs), `DEFAULT_CHECKING_NODES` (qsl-package lib.rs) and `Location` (check/refusal.rs) each now fail a definition_scan test. |
+| FND-002 | fixed | 49ae8c6c: SV `InputRefusal::code() -> &'static str` returns missing_declaration / invalid_runtime_input / dangling_reference. The SV test pins all six strings. The qsl-eval test asserts `code.as_str() == refusal.code()` for all six variants, so RT can read the code from SV without copying the mapping. |
+| FND-003 | fixed | 49ae8c6c: no QSL-358 ticket id or amendment history is left in the definition_scan.rs comments. No added .rs or .toml line in the PR diff carries a ticket id. |
+| FND-004 | fixed | 49ae8c6c: semantic_node.rs links `crate::checking::MAX_CHECKING_DEPTH`. emit.rs:39 and qsl-forms spans.rs:6 name `quire_semantic_value::location::Location`. A grep finds no `check::Location`/`check::MAX_CHECKING_DEPTH` left outside reviews/. |
+| FND-005 | fixed | 49ae8c6c plus the rebase: qsl-eval/Cargo.toml has one SV entry (line 24). The root crate and qsl-replay each have one. |
