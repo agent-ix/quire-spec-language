@@ -526,6 +526,39 @@ fn tc_444_a_selection_naming_no_function_refuses() {
     }
 }
 
+/// TC-166 steps 2 and 3: the executor resolves a request's typed
+/// `QualifiedName` against the recompiled package's declarations, exact
+/// segment for exact segment. `small` resolves and replays. A well-formed
+/// name that resolves to none refuses `UnknownFunction`, naming the exact
+/// selection and the recompiled package: an undeclared name, a name equal to
+/// `small` but for case, and a qualified name whose last segment is `small`.
+/// None of them falls back to a display-name match against `small`.
+#[trace("TC-166", "FR-062-AC-10", "FR-065-AC-6")]
+#[test]
+fn tc_166_an_unresolvable_qualified_name_refuses_unknown_function() {
+    replay(small(7)).expect("`small` resolves against the recompiled package");
+    let recompiled = spine(&proved(), &BTreeMap::new()).emitted.package_id();
+    for selection in [
+        name(&["large"]),
+        name(&["Small"]),
+        name(&["module", "small"]),
+    ] {
+        let mut wire = small(7);
+        wire.selected_function = selection.clone();
+        let refused = replay(wire).unwrap_err();
+        let ReplayRefusal::UnknownFunction {
+            selection: named,
+            package,
+        } = &refused
+        else {
+            panic!("expected an unknown function for {selection}, got {refused:?}");
+        };
+        assert_eq!(named, &selection);
+        assert_eq!(package, &recompiled);
+        assert_eq!(refused.code(), Code::MissingDeclaration);
+    }
+}
+
 /// FR-098-AC-4: arity mismatches refuse by parameter node id -- a parameter
 /// with no argument, an argument naming no parameter of the selected
 /// function (here `flag`'s parameter) and a parameter bound twice.

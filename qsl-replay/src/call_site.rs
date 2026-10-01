@@ -221,6 +221,54 @@ pub enum CallSiteRefusal {
 /// the documents of its byte provision -- as I1's package input and
 /// `dependencies` as the dependency input, and locate `selection` in the
 /// result.
+///
+/// # Function selection (TC-166)
+///
+/// A function is selected by a typed [`QualifiedName`]; a name that
+/// resolves to no function refuses [`CallSiteRefusal::UnknownFunction`].
+/// No selection takes a bare `&str`: this call, which differs from the one
+/// after it only in its last argument, does not compile.
+///
+/// ```compile_fail,E0277
+/// # use qsl_replay::{call_site, DependencyInput, Identifier, QualifiedName, SourceIdentity};
+/// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
+/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
+/// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+/// let site = call_site(
+///     SourceIdentity::new("a", "u", "git", "1"),
+///     "u",
+///     unit.as_bytes(),
+///     [],
+///     &DependencyInput::default(),
+///     "f",
+/// )
+/// .unwrap();
+/// assert_eq!(site.site.parameters[0].0.as_str(), "x");
+/// ```
+///
+/// The same call selecting `f` by its `QualifiedName` compiles and locates
+/// `f`'s parameter:
+///
+/// ```
+/// # use qsl_replay::{call_site, DependencyInput, Identifier, QualifiedName, SourceIdentity};
+/// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
+/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
+/// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
+/// let site = call_site(
+///     SourceIdentity::new("a", "u", "git", "1"),
+///     "u",
+///     unit.as_bytes(),
+///     [],
+///     &DependencyInput::default(),
+///     &f,
+/// )
+/// .unwrap();
+/// assert_eq!(site.site.parameters[0].0.as_str(), "x");
+/// ```
 pub fn call_site<'a, S: CallSiteSelection>(
     source: SourceIdentity,
     path: &str,
@@ -590,6 +638,43 @@ mod tests {
                 assert_eq!(package, compiled.package_id);
             }
             other => panic!("expected UnknownFunction, got {other:?}"),
+        }
+    }
+
+    /// TC-166 step 3, at `call_site`: a well-formed `QualifiedName` that
+    /// names no function of the compiled package refuses `UnknownFunction`,
+    /// naming the exact selection and the compiled package -- an undeclared
+    /// name, a name equal to `f` but for case, and a qualified name whose
+    /// last segment is `f`. None of them falls back to a display-name match
+    /// against `f`, which resolves.
+    #[trace("TC-166")]
+    #[test]
+    fn tc_166_call_site_refuses_an_unresolvable_qualified_name() {
+        let compiled = function_site(UNIT.as_bytes(), "f").expect("f resolves");
+        let qualified = QualifiedName::new(vec![
+            Identifier::new("module").unwrap(),
+            Identifier::new("f").unwrap(),
+        ])
+        .unwrap();
+        for selection in [name("g"), name("F"), qualified] {
+            let refusal = call_site(
+                SourceIdentity::new("a", "u", "git", "1"),
+                "unit.native",
+                UNIT.as_bytes(),
+                [],
+                &DependencyInput::default(),
+                &selection,
+            )
+            .expect_err("the selection names no function of the package");
+            let CallSiteRefusal::UnknownFunction {
+                selection: named,
+                package,
+            } = *refusal
+            else {
+                panic!("expected UnknownFunction for {selection}, got {refusal:?}");
+            };
+            assert_eq!(named, selection);
+            assert_eq!(package, compiled.package_id);
         }
     }
 
