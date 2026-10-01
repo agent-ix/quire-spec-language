@@ -76,12 +76,11 @@ use quire_semantic_value::declaration::{
     FieldDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::{EnumMemberIndex, EnumValue};
+use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{
     check_comparable, result_unit, IdentifiedUnit, UnitOperation, UnitScope,
 };
-use quire_semantic_value::checking::CheckingLimits;
-use quire_semantic_value::location::Location;
-use quire_semantic_value::quantity::{check_comparable, result_unit, UnitOperation, UnitScope};
 
 /// An enum declaration bound to its source name, with its admitted members.
 /// A member `m` is named `name::m`.
