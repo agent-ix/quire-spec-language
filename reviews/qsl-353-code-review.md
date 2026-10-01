@@ -91,3 +91,9 @@ A residual limit, not a finding: `NOT_EMITTED_BY_QSL` is a claim the test cannot
 | FND-001 | fixed | c29e7b33: the test walks `CheckedNodeKind::all()` and requires each kind to be exactly one of an admitted row, a gap row or a `NOT_EMITTED_BY_QSL` entry with a reason. Fixtures come from `Fixture::ALL`, a fixture backing no row fails, and an emitted family with no row fails even when it is listed as not emitted |
 | FND-002 | fixed | c29e7b33: the STD-129 row requires `refusal.cause == Some(OperationLawMissing)` only |
 | FND-003 | fixed | c29e7b33: `units_named_by` reads the compound unit's own `unit` bindings, and the row requires `NamesAbsentNode(absent)` with `absent` among them |
+
+Round 2, reviewed at 7c75866509ba02a9e3e0c00a8849c72b6bfc9f9e (fix commit 7c758665 on c29e7b33). The change touches only the reason string; no test logic changed. The `reviews/` files committed at 7c758665 are byte-identical to the round-1 SR files.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 7c758665: the collection_value reason names both paths, the collection constructor expression and the constant `Value::Collection` refused as `UnbuiltLiteral` |
