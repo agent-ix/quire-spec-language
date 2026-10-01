@@ -300,9 +300,9 @@ names different artifacts in each.
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 Planned |
 | TC-518 | S3 checks fairness constraints and interval operators of infinite-trace clauses | Unit | P1 | FR-123-AC-1, FR-123-AC-2, FR-123-AC-3, FR-123-AC-4 | 🚧 Planned |
 | TC-519 | Terminal declarations check, and the request carries one deadlock-freedom item per subject | Unit | P1 | FR-124-AC-1, FR-124-AC-2, FR-124-AC-3 | 🚧 Planned |
-| TC-520 | A model subject's behaviours read as temporal traces, with terminal stutter and interval wrap | Integration | P1 | FR-125-AC-1, FR-125-AC-2, FR-125-AC-3, FR-125-AC-4 | 🚧 Planned |
-| TC-521 | The explicit-state model checker proves, refutes and stops over model subjects | Integration | P1 | FR-126-AC-1, FR-126-AC-2, FR-126-AC-3, FR-126-AC-4, FR-126-AC-5, FR-126-AC-6 | 🚧 Planned |
-| TC-522 | Model-check outcomes settle as FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4 | 🚧 Planned |
+| TC-520 | A model subject's behaviours read as temporal traces, with terminal stutter and interval wrap | Integration | P1 | FR-125-AC-1, FR-125-AC-2, FR-125-AC-3, FR-125-AC-4, FR-125-AC-5 | 🚧 Planned |
+| TC-521 | The explicit-state model checker proves, refutes and stops over model subjects | Integration | P1 | FR-126-AC-1, FR-126-AC-2, FR-126-AC-3, FR-126-AC-4, FR-126-AC-5, FR-126-AC-6, FR-126-AC-7 | 🚧 Planned |
+| TC-522 | Model-check outcomes settle as FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4, FR-127-AC-5 | 🚧 Planned |
 | TC-523 | The replay facade replays a model counterexample through ModelSystem | Integration | P1 | FR-128-AC-1, FR-128-AC-2, FR-128-AC-3, FR-128-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage

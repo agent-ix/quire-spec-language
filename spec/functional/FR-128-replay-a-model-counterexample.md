@@ -52,6 +52,13 @@ closes and is fair, and evaluates the claim false on it. A lasso edited by
 hand, or produced by an engine that disagrees with the evaluator, does not
 count as a refutation.
 
+## Semantic authority and boundary
+
+QSpec owns the counterexample wire, the replay rules for a model
+counterexample and the request's subject members (ADR-018 QS-8, QS-9,
+QS-12; References). This requirement specifies QSL's replay entry, its
+refusal order and its results.
+
 ## Inputs
 
 - FR-098's request: package reference, byte provision and limits. The byte
@@ -70,11 +77,9 @@ count as a refutation.
 
 ## Outputs
 
-- An FR-072 replay result on the `ModelTrace` arm, or a typed
-  `ReplayRefusal` with no partial result. A result retains the source
-  identity and digest, the `package_id`, the clause identities, the initial
-  state's document identity and digest, each replayed post-state digest, and
-  the evaluated value.
+- An FR-072 replay result on the `ModelTrace` arm, holding the evaluated
+  value and the `trace_position`, or a typed `ReplayRefusal` with no
+  partial result.
 
 ## Behavior
 
@@ -96,9 +101,14 @@ count as a refutation.
   - if a step's transition is not enabled at its pre-state, then the
     executor SHALL refuse `invalid_runtime_input`/`invalid-value`, naming
     the step;
-  - if a step's recomputed post-state digest differs from the recorded one,
-    then the executor SHALL refuse `stale_dependency`/`revision-mismatch`,
-    naming the step and both digests;
+  - the executor SHALL take as a step's post-state the successor of its
+    transition identity whose `quire.simulation.state-key/v1` digest equals
+    the step's recorded digest, since one transition identity can have
+    several post-states (FR-120, FR-101-AC-5);
+  - if no successor of a step's transition identity has the recorded
+    digest, then the executor SHALL refuse
+    `stale_dependency`/`revision-mismatch` (FR-101's key mismatch), naming
+    the step and the recorded digest;
   - if the loop does not end at its entry state, then the executor SHALL
     refuse `invalid_runtime_input`/`invalid-value`;
   - if the payload carries a stutter marker and the loop's state is not
@@ -128,9 +138,9 @@ count as a refutation.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-128-AC-1 | FR-126-AC-1's `fair weak` lasso replays to `reproduced-with-evaluated-witness` with `trace_position` 0, holding the initial snapshot's identity and digest and the three post-state digests. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. | Test (TC-523) |
-| FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces; the same payload replayed against the `Counter` unit with `terminal when` covering value 3 settles `inconclusive`, `Verdicts`; the payload truncated to end at value 2 settles `inconclusive`, `Verdicts`, since `inc` is enabled there. | Test (TC-523) |
-| FR-128-AC-3 | Refusals settle no result: the `fair weak` lasso with its last step removed (the loop does not close); the same lasso in an envelope for the `fair weak each attemptUpdate` clause, carrying that clause's identities and fairness set (unfair); the `fair weak` envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and both digests); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop. | Test (TC-523) |
+| FR-128-AC-1 | FR-126-AC-1's lasso under the weak constraint with no granularity replays to `reproduced-with-evaluated-witness` with `trace_position` 0. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. Over the `Branch` subject (one object `x`, field `v: Int[0, 2]`, initial 0, and operation `step` with no precondition and postcondition `self.v != pre(self.v)`, so `step` from 0 has the two post-states 1 and 2 under one transition identity), for the clause `always holds(x.v != 2)`, a prefix whose one step records the digest of `v = 2` replays through that successor and reproduces with `trace_position` 1, and one recording a digest that no successor of `step` has refuses `stale_dependency`/`revision-mismatch` naming the step and that digest. | Test (TC-523) |
+| FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `Verdicts`. The original payload truncated to end at value 2 settles `inconclusive`, `Verdicts`, since `inc` is enabled there. | Test (TC-523) |
+| FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop. | Test (TC-523) |
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `Verdicts`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`revision-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
 
 ## Dependencies
@@ -144,5 +154,8 @@ count as a refutation.
   (`replay`), [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md).
-- QSpec owns the counterexample wire and its replay rules (ADR-018 QS-8)
-  and the request's subject members (QS-9).
+
+## References
+
+- QSpec half of ADR-018, carrying ADR-018 QS-8, QS-9 and QS-12: Linear
+  STD-131.

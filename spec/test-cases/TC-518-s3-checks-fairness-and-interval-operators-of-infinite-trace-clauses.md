@@ -22,17 +22,18 @@ Scope: FR-123-AC-1 to FR-123-AC-4.
 Use ADR-018 §6's ConfigVersion example unit (post clause `Cycles`) and the
 `Health` unit of FR-126-AC-4.
 
-1. Check `always eventually holds(c.versionNumber = 2)` with `fair weak
-   attemptUpdate`, `fair weak whole attemptUpdate` and `fair weak each
-   attemptUpdate`; compare fairness sets and node identities.
-2. Check `fair weak Absent`; a fairness constraint on a clause under the
-   event-position false-extension profile; `fair weak attemptUpdate`
-   written twice.
+1. Check `always eventually holds(c.versionNumber = 2)` with a weak
+   constraint on `attemptUpdate` written with no granularity, with `whole`
+   and with `each`; compare fairness sets and node identities.
+2. Check a weak constraint on `Absent`; a fairness constraint on a clause
+   under the event-position false-extension profile; one constraint written
+   twice.
 3. Under infinite-trace, check the recovery-stability formula over
    `Health`, `eventually[3,*] holds(p)` and `eventually[5,3] holds(p)`;
    compare the `[0,2]` interval's key with `[0,2]` under event-position.
 4. Check the five clauses of FR-123-AC-4 and read their property forms and
-   requirement records.
+   requirement records; check a clause over the ConfigVersion subject under
+   the fixed-sample profile.
 
 Tag the tests `#[trace("TC-518", "FR-123-AC-n")]`.
 
@@ -49,4 +50,5 @@ Tag the tests `#[trace("TC-518", "FR-123-AC-n")]`.
   spans; the two `[0,2]` keys differ.
 - Step 4: `ReachableInvariant`, `BoundedMltl`, `Safety`, `Liveness`,
   `Liveness`; each infinite-trace clause records (`temporal-satisfaction`,
-  `Unbounded`).
+  `Unbounded`); the fixed-sample clause has no property form and keeps its
+  profile in its requirement record.

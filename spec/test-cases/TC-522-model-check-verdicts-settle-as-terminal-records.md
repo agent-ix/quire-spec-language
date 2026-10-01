@@ -10,37 +10,42 @@ relationships:
 
 ## Description
 
-Verify the map from model-check outcomes and replay results to
-`TerminalValue`, QSpec FR-341 labels, FR-243 bases and O-16 categories,
-including `ProofBasis`, the new inconclusive causes and the
-`max_automaton_states` settlement.
+Verify the map from EN-1's outcomes and their replay results to
+`TerminalValue`, QSpec FR-341 labels, FR-243 bases and O-16 categories; the
+category of every `ProofBasis` and new inconclusive cause; each replay
+refusal path; a faulting replay; and the named limit of a stopped run.
 
-Scope: FR-127-AC-1 to FR-127-AC-4.
+Scope: FR-127-AC-1 to FR-127-AC-5.
 
 ## Test Procedure
 
-1. Map one input of each FR-127 row (V-1 to V-8), with V-2 at depth 5, V-3
-   at depth 2 and V-5 at depth 1; map `Proved{Checks{0}}` and
-   `Proved{Checks{1}}`.
-2. Settle FR-126-AC-1's outcomes: the `fair weak each` proof; the `fair
-   weak` counterexample with its replay; the same counterexample with one
-   post-state digest altered; one whose formula evaluates `true` on replay.
-3. Settle FR-126-AC-5's `max_automaton_states` and `max_depth` runs.
-4. Settle FR-126-AC-3's deadlock-freedom violation with its replay; a claim
-   under the fixed-sample profile over a model subject.
+1. Settle one input of each row of FR-127-AC-1.
+2. Read `TerminalValue::category` for each value of FR-127-AC-2.
+3. Settle FR-126-AC-1's outcomes: the weak `each` proof; the counterexample
+   under the constraint with no granularity, with its replay; that
+   counterexample with one post-state digest altered; in an envelope for
+   the weak `each` clause; with its last step removed; one whose formula
+   evaluates `true` on replay; one whose replay returns `InternalFault`
+   through a replay stand-in.
+4. Settle FR-126-AC-6's `max_automaton_states` run and FR-126-AC-5's
+   `max_depth` 2 and evaluation-meter runs.
+5. Settle FR-126-AC-3's deadlock-freedom violation with its replay.
 
 Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: each row exactly as FR-127's table, depths and method carried;
-  inconclusive `KaniVacuousProof`; success.
-- Step 2: `proved`, `closed-scope`, `Proved{Exhaustive}`, success;
+- Step 1: each row exactly as FR-127's table; depth 2 and method
+  `explicit-state` on V-5; the stopped record names `max_states`, value 2.
+- Step 2: inconclusive `KaniVacuousProof`; success four times; inconclusive
+  four times.
+- Step 3: `proved`, `closed-scope`, `Proved{Exhaustive}`, success;
   `refuted`, `decisive-counterexample`, violation; `inconclusive`,
-  `ReplayRefused`; `inconclusive`, `ReplayParity`.
-- Step 3: `failed`, `resource-incomplete`, `unavailable`,
-  `Incomplete(ResourceExhausted)` naming `max_automaton_states`;
-  `inconclusive`, `BoundReached{depth: 1}`, execution `completed`, truth
-  `pending`.
-- Step 4: `refuted` with a counterexample of `kind: Deadlock`;
-  `unsupported`, `unsupported-requested-capability`.
+  `ReplayRefused` three times; `inconclusive`, `ReplayParity`; `failed`,
+  category failed.
+- Step 4: `failed`, `resource-incomplete`, `unavailable`,
+  `Incomplete(ResourceExhausted)` naming `max_automaton_states`, value 50;
+  `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth
+  `pending`; a stopped record naming `EvaluationMeter`, value 0.
+- Step 5: `refuted` with a counterexample of `kind: Deadlock`, and an
+  obligation identity distinct from the authored claims'.
