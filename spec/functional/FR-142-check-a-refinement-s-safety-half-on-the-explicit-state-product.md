@@ -117,10 +117,12 @@ pub fn check_refinement(
   cause.
 - A concrete subject with no initial state SHALL return
   `Undecided(NoInitialState)`.
-- Reaching `max_depth` with no failure SHALL return `BoundReached{depth}`;
-  reaching `max_states`, `max_transitions` (which counts abstract
-  successors computed by `check_step`), a meter or a `true` poll SHALL
-  return `Stopped` with that limit.
+- The checker SHALL apply FR-126's limits and poll with FR-126's outcomes:
+  `BoundReached{depth}` at `max_depth` with no failure, and `Stopped`
+  naming the limit and its value for `max_states`, `max_transitions`,
+  `max_candidates` or the evaluation meter, or `Cancelled` for a `true`
+  poll. `max_transitions` SHALL also count the abstract successors that
+  `check_step` computes.
 - A phase that explores every reachable product state with no failure
   SHALL return `Holds{basis: Exhaustive}` for the safety half.
 
@@ -138,7 +140,7 @@ pub fn check_refinement(
 | FR-142-AC-4 | `RegisterHistory` (FR-138) returns `Holds{Exhaustive}` with 4 product states. With the update `on write: self.value` it returns `Violated`, `AbstractStepRejected{position: 1, transition: write(r, 1), cause: Postcondition}`. With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }`, which no row reads, it returns `Undecided(MappingUndetermined)` naming `writes`, at the second write of a behaviour. | Test (TC-547) |
 | FR-142-AC-5 | `Coin` (FR-141-AC-4) with `side` hidden returns `Holds{Exhaustive}`; with the row `side = self.face` it returns `Violated` with prefix `toss`, `reveal` to `face = 1` and `AbstractStepRejected{position: 2, transition: show(c), cause: Frame{…}}`. | Test (TC-547) |
 | FR-142-AC-6 | `RingIsQueue` with universes `rings = {r}`, `slots = {s0, s1}` returns `Holds{Exhaustive}`; with the broken `take` it returns `Violated` with `AbstractStepRejected{…, transition: deq(r), cause: Postcondition}`; with FR-140-AC-3's `only` it returns `Undecided(MappingUndetermined)` naming the `items` row. | Test (TC-547) |
-| FR-142-AC-7 | `CasRefinesCounter` with `max_states` 5 returns `Stopped(ResourceExhausted, MaxStates)`; with `max_depth` 2, `BoundReached{depth: 2}`; with a `true` poll, `Stopped(Cancelled, …)`. Running AC-2's two requests twice gives equal outcomes and byte-equal counterexamples. | Test (TC-547) |
+| FR-142-AC-7 | `CasRefinesCounter` with `max_states` 5 returns `Stopped{ResourceExhausted, {MaxStates, 5}}`; with `max_depth` 2, `BoundReached{depth: 2}`; with a `true` poll, `Stopped{Cancelled, None}`. Running AC-2's two requests twice gives equal outcomes and byte-equal counterexamples. | Test (TC-547) |
 
 ## Dependencies
 

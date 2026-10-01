@@ -50,5 +50,5 @@ Tag the tests `#[trace("TC-547", "FR-142-AC-n")]`.
   Frame{…}}`.
 - Step 6: `Holds{Exhaustive}`; `AbstractStepRejected{…, deq(r),
   Postcondition}`; `Undecided(MappingUndetermined)` naming `items`.
-- Step 7: `Stopped(ResourceExhausted, MaxStates)`; `BoundReached{depth: 2}`;
-  `Stopped(Cancelled, …)`; equal outcomes and byte-equal counterexamples.
+- Step 7: `Stopped{ResourceExhausted, {MaxStates, 5}}`; `BoundReached{depth: 2}`;
+  `Stopped{Cancelled, None}`; equal outcomes and byte-equal counterexamples.
