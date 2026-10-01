@@ -575,9 +575,14 @@ tags as they exist in the delivered code today:
   nothing; `an_unplaced_occurrence_refuses` covers the refusal half under
   FR-093-AC-9. The fixture's omission relies on lowering not building the
   `metre` unit node.
-- FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
-  `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
-  but no test carries this criterion's own trace tag. Planned; QSL-346.
+- FR-062-AC-10: backed (`TC-166`), implemented and tested. The `replay`
+  facade selects by a typed `QualifiedName` (`ReplayRequestWire::selected_function`):
+  a `compile_fail` doctest on `replay` shows a bare `&str` selection does not
+  compile, beside an otherwise identical request that compiles and replays,
+  and `tc_166_an_unresolvable_qualified_name_refuses_unknown_function`
+  (`qsl-replay/src/execute/tests.rs`) refuses an undeclared, a case-variant
+  and a qualified name with `ReplayRefusal::UnknownFunction`, naming the
+  selection and the recompiled package.
 - FR-062-AC-12: backed (`TC-432`):
   `nesting_depth_limit_is_the_proximate_cause`,
   `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
@@ -599,8 +604,6 @@ tags as they exist in the delivered code today:
   `tests/it/request_builder.rs` reads RR-5's records through
   `CheckedPackage::graph()`.
 
-Eleven of this requirement's thirteen Acceptance Criteria are backed (AC-1,
-AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12 and AC-13); one
+Twelve of this requirement's thirteen Acceptance Criteria are backed (AC-1,
+AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-12 and AC-13); one
 (AC-11) is partly backed, for the clause named in its own row above.
-AC-10 is unbacked (untagged): its implementation exists, but no test carries
-the criterion's own trace tag. Planned; QSL-346.

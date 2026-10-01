@@ -48,3 +48,18 @@ FR-065-AC-6.
   `QualifiedName`; it does not fall back to matching any function by a
   display-name string comparison.
 - Step 4: resolution reads only the recompiled package's declaration table.
+
+## Status
+
+Passed locally, `qsl-replay`. Step 1: `compile_fail` doctests on `replay`
+(a `ReplayRequestWire` whose `selected_function` is a bare `&str`, E0308)
+and on `call_site` (a bare `&str` selection, E0277), each beside an
+otherwise identical doctest that selects by `QualifiedName` and compiles.
+Steps 2 and 3: `tc_166_an_unresolvable_qualified_name_refuses_unknown_function`
+(`qsl-replay/src/execute/tests.rs`) resolves `small` exactly and refuses
+`large`, the case variant `Small` and the qualified `module::small` with
+`ReplayRefusal::UnknownFunction`, naming the selection and the recompiled
+package; `tc_166_call_site_refuses_an_unresolvable_qualified_name`
+(`qsl-replay/src/call_site.rs`) refuses the same shapes at `call_site` with
+`CallSiteRefusal::UnknownFunction`. Step 4: the refusal names the recompiled
+package's own `package_id`.

@@ -349,11 +349,14 @@ delivered code today:
   in place of the earlier symbol-absence and enum-variant conditions, which
   ADR-012 §4.3 contradicts (`Expression::Call` is a `Value`-owned variant of
   the one `Expression` enum) and the testing policy does not admit.
-- FR-065-AC-6: unbacked. No `#[trace(..., "FR-065-AC-6")]` tag exists,
-  though `CheckedPackage::call`'s typed-`QualifiedName` lookup
-  (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
-  in the delivered code (see FR-065's own Test Matrix / TC-166). Planned;
-  QSL-346.
+- FR-065-AC-6: backed (`TC-166`), implemented and tested. The `replay`
+  executor entry resolves the request's typed `QualifiedName` against the
+  recompiled package's declarations: a `compile_fail` doctest on `replay`
+  shows a bare `&str` selection does not compile, and
+  `tc_166_an_unresolvable_qualified_name_refuses_unknown_function`
+  (`qsl-replay/src/execute/tests.rs`) refuses an undeclared, a case-variant
+  and a qualified name with `ReplayRefusal::UnknownFunction` rather than
+  matching any function by display name.
 - FR-065-AC-7: backed (`TC-380`). The contract's
   `check` hook type-checks the body, and `f`'s checked identity is
   FR-092 vector F1.
@@ -369,13 +372,13 @@ delivered code today:
   key builder in `qsl-semantics/src/check/node_key/` reproduces QSpec's
   operation vectors under the opt-in `make conformance`.
 
-Seven of this requirement's eight Acceptance Criteria are backed (AC-1, the
+All eight of this requirement's Acceptance Criteria are backed (AC-1, the
 packaging API's checked-node-only entry; AC-2, identity/provenance; AC-3,
 occurrence-span survival across check, linking and a v2 round trip; AC-4,
 the application check's verdicts; AC-5, the same call verdict at every
-entry point; AC-7, the contract `check` hook's typing verdict and F1; AC-8, the
-FR-092 and FR-093 keys); the other one (AC-6) is unbacked, for the reason above.
-`TC-166` has zero tests in the delivered code.
+entry point; AC-6, the `replay` executor's typed `QualifiedName` selection,
+`TC-166`; AC-7, the contract `check` hook's typing verdict and F1; AC-8, the
+FR-092 and FR-093 keys).
 
 ## Open Questions
 
