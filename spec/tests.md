@@ -386,6 +386,7 @@ names different artifacts in each.
 | TC-593 | Backward reachability and path counting decide state-graph claims with canonical evidence | Integration | P1 | FR-168-AC-1, FR-168-AC-2, FR-168-AC-3, FR-168-AC-4, FR-168-AC-5 | 🚧 Planned |
 | TC-594 | State-graph outcomes settle as terminal records that state their settlement method | Unit | P1 | FR-169-AC-1, FR-169-AC-2, FR-169-AC-3, FR-169-AC-4, FR-169-AC-5 | 🚧 Planned |
 | TC-595 | The replay facade replays witnesses, traps and path pairs through ModelSystem | Integration | P1 | FR-170-AC-1, FR-170-AC-2, FR-170-AC-3, FR-170-AC-4 | 🚧 Planned |
+| TC-612 | An undefined predicate refutes a state-graph claim and replays | Integration | P1 | FR-168-AC-5, FR-169-AC-6, FR-170-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

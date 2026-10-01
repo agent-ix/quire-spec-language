@@ -58,6 +58,9 @@ left undecided, never guessed.
   admitted reduction;
 - `NoDecision { end, open }`: the run's end and the causes of its open
   nodes, which FR-169 maps;
+- `Undefined { stem, undefined }`: a `ModelPath` ending at the first node, in
+  discovery order, where a predicate of the claim evaluates undefined, and
+  its `UndefinedEvaluation{where, cause}`;
 - `NoInitialState`.
 
 Each carries its instance's `over` binding.
@@ -115,9 +118,21 @@ Each carries its instance's `over` binding.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
   node where `from` holds counts exactly 1.
 
+### Undefined evaluation
+
+- The engine SHALL evaluate the claim's predicates through the one clause
+  evaluator (FR-107) at every explored node.
+- If a predicate evaluates `Undefined` at an explored node, then the engine
+  SHALL return `Undefined` with the canonical breadth-first path to the
+  first such node in discovery order, `where` that node and `cause` the
+  evaluator's undefined cause (ADR-022 GV-7, ADR-018 UE-1).
+- `Undefined` SHALL take the place of `Witnessed` and `Holds`. When a trap
+  or a path pair is found at a node earlier in discovery order, the engine
+  SHALL return that evidence instead.
+
 ### Partial runs
 
-- A witness, a trap and a path pair SHALL be returned whether `end` is
+- A witness, a trap, a path pair and an undefined evaluation SHALL be returned whether `end` is
   `Completed` or `Stopped`, and whatever other nodes are open.
 - `Holds` SHALL be returned only when the run completed with no open node.
 - Every instance with none of the above SHALL return `NoDecision`, carrying
@@ -138,6 +153,7 @@ Each carries its instance's `over` binding.
 | FR-168-AC-2 | §7.2: `CanStillWin` returns `Trapped` at `Lost` with stem `play, lose`; with `from (x.phase != Lost)` it returns `Holds{Exhaustive}`; with the `restart` operation and no `from` it returns `Holds{Exhaustive}`. | Test (TC-593) |
 | FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds{Exhaustive}`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
 | FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]` and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
+| FR-168-AC-5 | Over §7.1's subject, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
 | FR-168-AC-5 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
 
 ## Dependencies

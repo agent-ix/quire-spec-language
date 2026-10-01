@@ -68,6 +68,8 @@ pub enum GraphEvidence {
     Trap { stem: ModelPath, over: Option<OverBinding> },
     PathPair { stem: ModelPath, first: Vec<ModelStep>, second: Vec<ModelStep>,
                over: Option<OverBinding> },
+    Undefined { stem: ModelPath, undefined: UndefinedEvaluation,
+                over: Option<OverBinding> },
 }
 ```
 
@@ -133,6 +135,15 @@ pub enum GraphEvidence {
   differ. All checks true SHALL settle `reproduced-with-evaluated-witness`;
   any false SHALL settle `inconclusive`, `Verdicts`.
 
+### Undefined
+
+- The executor SHALL re-execute the stem and evaluate the claim's
+  predicates at each of its states in order (ADR-018 UE-5). When the first
+  undefined evaluation is at the stem's last state, with an undefined cause
+  equal to the payload's, the executor SHALL settle
+  `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
+  the value; otherwise `inconclusive`, `Verdicts`.
+
 ### Engine independence
 
 - Evidence found under a reduction SHALL be concretised before it is
@@ -150,6 +161,7 @@ pub enum GraphEvidence {
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
 | FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns a result stopped with `max_states`. Replaying one envelope twice gives equal results. | Test (TC-595) |
+| FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 
 ## Dependencies
 

@@ -80,6 +80,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | V-9 | `Witnessed` whose replay settles `reproduced-with-evaluated-witness` | `proved` | `decisive-witness` | `Proved{basis: Witness{sources}}` | success |
 | V-10 | `Trapped` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-4 | `PathPair` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
+| V-4 | `Undefined` whose replay reproduces the undefined value at `where` (FR-170) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-1 | `Holds{basis}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
 | V-5 | `NoDecision` with `end` `Completed`, open causes only `MaxDepth`, and no partial-order reduction | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: max_depth})` | inconclusive |
 | V-6 | `NoDecision` with `end` `Completed` and an `UndecidedSuccessor` open cause (`UndecidedSuccessor`), else a `ConstraintBoundary` one (`ConstraintReached`); `NoInitialState`; `ReductionNotPreserving` (FR-167); evidence whose replay settles `inconclusive` (`ReplayParity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
@@ -88,8 +89,11 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 
 - `TerminalValue::category` SHALL map `Proved{basis: Witness{…}}` to
   success.
-- No item SHALL settle `proved` from a witness, or `refuted` from a trap or
-  path pair, before its evidence replays (FR-170).
+- No item SHALL settle `proved` from a witness, or `refuted` from a trap,
+  path pair or undefined evaluation, before its evidence replays (FR-170).
+- An `Undefined` item SHALL settle `refuted` with cause
+  `UndefinedEvaluation{where, cause}`, adding no label, basis or category
+  (ADR-022 GV-7).
 - **Settlement method.** The record SHALL carry the method
   `explicit-state` (or the SMT method for an unrolled witness) and:
   - for V-9, each initial state's `WitnessSource`; a `Sampled` source SHALL
@@ -115,6 +119,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | FR-169-AC-3 | §7.2's `CanStillWin` settles `refuted`, `closed-scope` (V-10); its `from` variant `proved`, `closed-scope`, `Proved{Exhaustive}` (V-1). §7.3's `InOneWay` settles `refuted`, `decisive-counterexample` (V-4). | Test (TC-594) |
 | FR-169-AC-4 | FR-168-AC-4's trap settles `refuted` (V-10) and its `NoDecision` settles `inconclusive`, `BoundReached{depth: 3}`, execution `completed`, truth `pending`. A run stopped by `max_states` settles `failed`, `resource-incomplete`, naming `max_states` and its value; an undecided node with no decisive evidence settles `inconclusive`, `UndecidedSuccessor`; a subject with no initial state settles `inconclusive`, `NoInitialState`. | Test (TC-594) |
 | FR-169-AC-5 | A `Witnessed` outcome whose replay settles `inconclusive` settles `inconclusive`, `ReplayParity`, never `proved`; a `Trapped` outcome whose replay a limit stops settles `failed`, `resource-incomplete`. | Test (TC-594) |
+| FR-169-AC-6 | FR-168-AC-5's `Undefined` outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-170 replay reproduces it, with cause `UndefinedEvaluation` naming the node `(2, 0)` and `division-by-zero`. | Test (TC-612) |
 
 ## Dependencies
 
