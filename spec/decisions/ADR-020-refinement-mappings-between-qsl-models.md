@@ -105,7 +105,8 @@ weak fairness (ADR-018 FA-1 to FA-5). Behaviours are maximal paths, each
 position carries the transition that reached it, and a terminal state is
 extended by a terminal stutter step (ADR-018 SM-3, SM-4). Counterexamples are
 model traces replayed through `ModelSystem` (ADR-018 CX-1 to CX-4). ADR-018
-§7 lists refinement mappings as a feature built on EN-1.
+IV-7 records that a transfer through a refinement mapping relies on stutter
+invariance.
 
 QSpec FR-290 already names the claim form for step-wise refinement of state
 models: "Refinement between two operation contracts or state models",
@@ -276,7 +277,7 @@ SMT arm routes RE-2 and RE-3 records after IR admits state nodes and transition 
 | ID | Rule |
 | --- | --- |
 | RC-1 | **Content.** A refinement counterexample is ADR-018's `TemporalCounterexample` over the concrete subject (ADR-018 CX-2) with a `RefinementFailure` member: `InitialNotAbstract{initial}` (RS-2); `StutterChanged{position}` (RS-3); `AbstractStepRejected{position, transition, cause}` with cause `Precondition{clause}`, `Frame{code}` or `Postcondition` (RS-4); `NoAbstractMatch{position}` (RS-5, or an empty AX-2 set); `Divergence{constraint}` (RS-7: an `F_A` constraint violated by a lasso whose loop has only `stutter` steps, including the concrete terminal stutter); `AbstractUnfair{constraint}` (an `F_A` constraint violated by a lasso whose loop takes abstract steps). A safety failure is a finite prefix ending at its failing step; a liveness failure is a lasso fair under `F_C`. The counterexample carries concrete steps only; replay recomputes mapped states and history values. |
-| RC-2 | **Replay.** E9 replay recompiles the concrete package and the abstract subject's package (FR-098, ADR-015), re-executes the concrete steps through the concrete `ModelSystem` as ADR-018 CX-3 does, recomputes history values, `map` and the AX-2 sets along the trace, and reruns `check_step` at the failing position or, for a lasso, checks it fair under `F_C` and evaluates the violated `F_A` constraint over its loop (RS-7). Agreement settles `reproduced-with-evaluated-witness` and the item `refuted`. A recomputed failure of a different kind or at a different position settles `inconclusive`, `ReplayParity`. ADR-018 CX-3's refusals apply unchanged. |
+| RC-2 | **Replay.** E9 replay recompiles the concrete package and the abstract subject's package (FR-098, ADR-015), re-executes the concrete steps through the concrete `ModelSystem` as ADR-018 CX-3 does, recomputes history values, `map` and the AX-2 sets along the trace, and reruns `check_step` at the failing position or, for a lasso, checks it fair under `F_C` and evaluates the violated `F_A` constraint over its loop (RS-7). For a lasso, replay recomputes history values and the AX-2 sets over the prefix and one pass of the loop, and refuses `invalid_runtime_input`/`invalid-value` when the history values or the set at the loop's last position differ from those at its entry, as ADR-018 CX-3 refuses a loop that does not close: EN-1's lasso closes in the product state, which holds them. Positions past the recomputed loop are read by ADR-018 SM-8's lasso evaluation; the `F_A` constraints and RS-7 read state only, so their past reach is 0 and one loop pass decides them. Agreement settles `reproduced-with-evaluated-witness` and the item `refuted`. A recomputed failure of a different kind or at a different position settles `inconclusive`, `ReplayParity`. ADR-018 CX-3's refusals apply unchanged. |
 | RC-3 | **Source arm.** The packet uses ADR-018's `ReplaySource::ModelTrace` with the refinement node's identity, and the arm result names the `RefinementFailure` it reproduced. |
 
 ### 7. One mechanism, with the abstraction relation as its code-side premise
@@ -509,11 +510,12 @@ mapping-row evaluation is a value-typed use of the FE-3 clause evaluator.
 7. **Transfer** (CO-3, CO-5), as QSpec specifies it (QS-7). It waits on that
    QSpec work, with no interim QSL form.
 8. **SMT per-step simulation** (RE-2, RE-3), after IR admits state nodes and
-   transition relations and the SMT backend exists (ADR-018 step 5).
+   transition relations and the SMT backend in the contract IR lane exists
+   (ADR-018 RU-1, DS-3).
 9. **Protocol refinement** (QSpec FR-177) on the same product, once protocol
    nodes reach S4 and a protocol `TransitionSystem` exists (MC-1).
 
-State-space reduction (ADR-018 §7) applies to the refinement product with
+State-space reduction (the record ADR-018 IV-7 cites) applies to the refinement product with
 one restriction: symmetry over universe keys is sound when the mapping and
 the step map treat keys uniformly, which every RM-2 key-preserving map does.
 
@@ -585,8 +587,9 @@ decisions above carry each ruling.
 - **ADR-018** §1: property form TP-5 Refinement, settled by EN-1 (both
   halves), the SMT backend per-step (RE-2) and SMT unrolling (RE-3). V-6:
   `MappingUndetermined`. §5 CX-2: the optional `RefinementFailure` member.
-  §7 item 4 "Refinement mappings": replaced by a reference to this record;
-  the stuttering it anticipates is RS-3, RS-6 and RS-7.
+  IV-7: its transfer restriction is this record's CO-3 and CO-4, which
+  also exclude previous operators; References: this record as the
+  refinement-mapping record.
 - **ADR-012** §3 `Relation` row: the refinement declaration and its S3
   checks.
 - `spec/spec.md`: index row.
