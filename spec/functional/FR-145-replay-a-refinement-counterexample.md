@@ -103,6 +103,12 @@ count.
   Agreement with the recorded failure SHALL settle
   `reproduced-with-evaluated-witness`; disagreement SHALL settle
   `inconclusive`, `ReplayParity`.
+- **Undefined mapping.** For `kind: UndefinedEvaluation` it SHALL run
+  `check_initial` and `check_step` along the prefix and stop at the first
+  `Undefined`. One at `where`, with an undefined cause equal to the
+  payload's, SHALL settle `reproduced-with-evaluated-witness` (ADR-020
+  RC-2, ADR-018 UE-5); any other result SHALL settle `inconclusive`,
+  `ReplayParity`.
 - A `MappingUndetermined` or `UndecidedSuccessor` during replay SHALL
   settle `inconclusive`, `ReplayParity`.
 - An internal fault SHALL refuse with an `InternalFault`. Replay SHALL read
@@ -117,6 +123,7 @@ count.
 | FR-145-AC-2 | FR-143-AC-1's divergence lasso reproduces `Divergence{constraint: inc}`; FR-143-AC-2's terminal-stutter lasso reproduces `Divergence`; FR-143-AC-3's lasso reproduces `AbstractUnfair{constraint: flipB}`. | Test (TC-550) |
 | FR-145-AC-3 | The lost-update counterexample with its recorded failure changed to position 3 settles `inconclusive`, `ReplayParity`; the divergence lasso with its recorded failure changed to `AbstractUnfair` settles `inconclusive`, `ReplayParity`; the divergence lasso replayed against the `CasRefinesCounter` envelope's fairness, carrying that refinement's node identity and `F_C`, refuses as unfair, since `beginA` is enabled and never taken at `(0, 0, f, 0, f)`. | Test (TC-550) |
 | FR-145-AC-4 | Refusals settle no result: an envelope naming another refinement node (`stale_dependency`/`revision-mismatch` naming both identities); a payload fairness set with `inc`'s granularity changed (`stale_dependency`/`revision-mismatch` naming both sets); a lasso over `RegisterHistory` with `ensure fair weak Spec::Register::write`, stem `write(r, 1)` and loop `write(r, 1)`, whose loop returns to its entry concrete state (`value` 1) with `last` 0 at entry and 1 at its end (`invalid_runtime_input`/`invalid-value`); an abstract package source edit that changes its `package_id` (FR-098's stale rule). Replaying one envelope twice gives equal results. | Test (TC-550) |
+| FR-145-AC-5 | FR-142-AC-8's counterexample replays to `reproduced-with-evaluated-witness`; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `ReplayParity`. | Test (TC-554) |
 
 ## Dependencies
 

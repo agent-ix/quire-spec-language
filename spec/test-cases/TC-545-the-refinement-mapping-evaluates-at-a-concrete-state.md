@@ -12,7 +12,7 @@ relationships:
 
 Verify `map_state`: the key-preserving population image, reference lifting,
 field rows through the clause evaluator, history reads, hidden slots, and
-`MappingUndetermined` for a row that does not evaluate.
+`MappingFailure::Undefined` for a row that evaluates undefined.
 
 Scope: FR-140-AC-1 to FR-140-AC-4.
 
@@ -34,5 +34,6 @@ Tag the tests `#[trace("TC-545", "FR-140-AC-n")]`.
 - Step 1: `c.value = 1` with a key equal to `Spec`'s; the last two keys are
   equal.
 - Step 2: one `Queue` `r` with `items = [1, 0]` and no slot objects.
-- Step 3: `MappingUndetermined` naming the `items` row and `r`.
+- Step 3: `MappingFailure::Undefined` naming the `items` row, `r` and the
+  undefined cause.
 - Step 4: `value = 1`, `prev = 0`; then `hidden = [(r, prev)]`.

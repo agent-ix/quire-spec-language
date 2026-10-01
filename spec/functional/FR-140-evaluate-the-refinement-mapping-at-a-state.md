@@ -61,12 +61,17 @@ pub fn map_state(
     abstract_system: &ModelSystem<'_>,
     state: &ModelState,
     history: &HistoryValues,
-) -> Result<MappedState, MappingUndetermined>;
+) -> Result<MappedState, MappingFailure>;
+
+pub enum MappingFailure {
+    Undefined { row: MappingRowRef, object: Option<ObjectKey>, cause: UndefinedRecord },
+    Undetermined(MappingUndetermined),
+}
 
 pub struct MappingUndetermined {
     pub row: MappingRowRef,           // field row, argument or history update
     pub object: Option<ObjectKey>,
-    pub cause: EvalFailure,           // undefined, refused, incomplete, out of type
+    pub cause: EvalFailure,           // refused, incomplete, out of type
 }
 ```
 
@@ -84,10 +89,13 @@ pub struct MappingUndetermined {
   per evaluation.
 - A concrete reference value SHALL map to the abstract reference with the
   same key.
-- If a row's evaluation is undefined, refused or incomplete, or its value
-  lies outside the abstract field's declared type, then `map_state` SHALL
-  return `MappingUndetermined` naming the row and the object, and no partial
-  state.
+- If a row's evaluation is `Undefined`, then `map_state` SHALL return
+  `MappingFailure::Undefined` naming the row, the object and the
+  evaluator's undefined cause, and no partial state (ADR-020 RE-5).
+- If a row's evaluation is refused or incomplete, or its value lies outside
+  the abstract field's declared type, then `map_state` SHALL return
+  `MappingFailure::Undetermined(MappingUndetermined)` naming the row and the
+  object, and no partial state.
 - When the refinement has no hidden field, `map_state` SHALL return a
   complete abstract state in `MappedState.visible`.
 - `model_check` SHALL compare mapped states by the FR-101 state key that the
@@ -104,12 +112,12 @@ pub struct MappingUndetermined {
 |----|----------|--------------|
 | FR-140-AC-1 | Over ADR-020 §8's `CasRefinesCounter`, the concrete state `(1, 0, f, 0, t)` maps to the abstract state with `c.value = 1`, whose key equals the key of that state built directly in `Spec`'s `ModelSystem`. `(0, 0, t, 0, f)` and `(0, 0, f, 0, f)` map to equal keys. | Test (TC-545) |
 | FR-140-AC-2 | Over `RingIsQueue` (FR-139's fixture) at `head = 1`, `size = 2`, `s0.value = 0`, `s1.value = 1`, the mapped state holds one `Queue` with key `r` and `items = [1, 0]`, and no object for `s0` or `s1`. | Test (TC-545) |
-| FR-140-AC-3 | `RingIsQueue` with the `items` row's `only` condition changed to `s.ring = self` returns `MappingUndetermined` naming the `items` row, object `r` and an undefined cause, at every state with `size >= 1`. | Test (TC-545) |
+| FR-140-AC-3 | `RingIsQueue` with the `items` row's `only` condition changed to `s.ring = self` returns `MappingFailure::Undefined` naming the `items` row, object `r` and the evaluator's undefined cause, at every state with `size >= 1`. | Test (TC-545) |
 | FR-140-AC-4 | Over `RegisterHistory` (FR-138's fixture), the concrete state `value = 1` with `last = 0` maps to `value = 1`, `prev = 0`. With the `prev` row removed, the same state maps to `visible` with `value = 1` and `hidden = [(r, prev)]`. | Test (TC-545) |
 
 ## Dependencies
 
-- ADR-020 §1 RM-2, RM-3, RM-7 and §5 RE-4; ADR-016 FE-3 and ID-10.
+- ADR-020 §1 RM-2, RM-3, RM-7 and §5 RE-4, RE-5; ADR-016 FE-3 and ID-10.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
   (state key), [FR-107](FR-107-evaluate-state-clauses-at-s6a.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),

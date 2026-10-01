@@ -98,7 +98,8 @@ Fixture: ADR-020 §8's `RingIsQueue` with universes `rings = {r}` and `slots
 - ADR-020 §1 RM-8, §8 data refinement and §11 RU-5; ADR-016 FE-3 and FE-4.
 - [FR-135](FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md),
   [FR-107](FR-107-evaluate-state-clauses-at-s6a.md).
-- FR-140 reads an undefined form as an undetermined mapping.
+- FR-140 reads an undefined form as an undefined mapping row, which refutes
+  the refinement (ADR-020 RE-5).
 
 ## References
 

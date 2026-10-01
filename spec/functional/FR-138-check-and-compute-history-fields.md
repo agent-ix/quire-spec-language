@@ -51,7 +51,7 @@ exactly as they were.
 - `fn initial_history(&CheckedRefinement, &ModelState) -> HistoryValues` and
   `fn step_history(&CheckedRefinement, &HistoryValues, pre: &ModelState,
   transition: &ModelTransition, post: &ModelState) -> Result<HistoryValues,
-  MappingUndetermined>`.
+  MappingFailure>`, with `MappingFailure` FR-140's.
 
 ## Behavior
 
@@ -90,10 +90,14 @@ exactly as they were.
   history value.
 - An object the step creates SHALL get the initial literal; an object the
   step deletes SHALL lose its history values.
-- If an update evaluates undefined, refused or incomplete, or its value
-  lies outside the declared type, then `step_history` SHALL return
-  `MappingUndetermined` naming the history field, the object and the step;
-  the step SHALL remain a step of the behaviour (ADR-020 AX-3).
+- If an update evaluates `Undefined`, then `step_history` SHALL return
+  `MappingFailure::Undefined` naming the history field, the object, the
+  step and the evaluator's undefined cause (ADR-020 AX-3, RE-5).
+- If an update evaluates refused or incomplete, or its value lies outside
+  the declared type, then `step_history` SHALL return
+  `MappingFailure::Undetermined(MappingUndetermined)` naming the history
+  field, the object and the step.
+- Either way the step SHALL remain a step of the behaviour (ADR-020 AX-3).
 - History values SHALL be a function of the concrete prefix, and SHALL be
   read by the mapping (FR-140) and the product key (FR-142) only.
 
@@ -118,7 +122,8 @@ range is left only at run time.
 | FR-138-AC-1 | `RegisterHistory` checks with one `HistoryRow` (`last`, `Int[0, 1]`, initial 0, one update on `write`). The concrete model's state nodes, the node identities of its clauses and the successors `ModelSystem` gives from its initial state are equal whether or not the refinement declares the history row. | Test (TC-543) |
 | FR-138-AC-2 | Refusals: `history Impl::Register.value: …` (`invalid_model_binding`/`conflicting-binding`); `last: Int` with no bounds (`ill_typed`/`type-mismatch`); initial literal `true` (`ill_typed`/`type-mismatch`); two `on write` updates (`invalid_model_binding`/`conflicting-binding`); `on Impl::Register::erase` (`missing_declaration`/`missing-name`); an invariant of `Impl::Register` reading `self.last` (`missing_declaration`/`missing-name`). | Test (TC-543) |
 | FR-138-AC-3 | Along `write(r, 1)`, `write(r, 0)`, `write(r, 1)` from the initial state, `step_history` gives `last` = 0, 1, 0 after each step. | Test (TC-543) |
-| FR-138-AC-4 | With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }` added, `step_history` along `write(r, 0)`, `write(r, 0)` gives `writes` 1 after the first step and returns `MappingUndetermined` naming `writes`, `r` and the second step, whose post-state is still the concrete successor `ModelSystem` gives. | Test (TC-543) |
+| FR-138-AC-4 | With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }` added, `step_history` along `write(r, 0)`, `write(r, 0)` gives `writes` 1 after the first step and returns `MappingFailure::Undetermined(MappingUndetermined)` naming `writes`, `r` and the second step, whose post-state is still the concrete successor `ModelSystem` gives. | Test (TC-543) |
+| FR-138-AC-5 | With a second history field `inv: Int[0, 1] = 0 { on Impl::Register::write: 1 / x; }` added, `step_history` along `write(r, 1)` gives `inv` 1, and along `write(r, 0)` returns `MappingFailure::Undefined` naming `inv`, `r`, the step and cause `division-by-zero`; the post-state is still the concrete successor `ModelSystem` gives. | Test (TC-554) |
 
 ## Dependencies
 

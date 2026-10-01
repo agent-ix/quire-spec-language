@@ -427,6 +427,7 @@ names different artifacts in each.
 | TC-551 | Per-step simulation records are written for functional refinements and never settle refuted | Unit | P1 | FR-146-AC-1, FR-146-AC-2, FR-146-AC-3, FR-146-AC-4 | 🚧 Planned |
 | TC-552 | S3 checks a refinement whose abstract side is a protocol and writes a refinement record | Unit | P1 | FR-147-AC-1, FR-147-AC-2, FR-147-AC-3 | 🚧 Planned |
 | TC-553 | Concrete steps are decided against an abstract protocol with internal closure and observation labels | Integration | P1 | FR-148-AC-1, FR-148-AC-2, FR-148-AC-3, FR-148-AC-4, FR-148-AC-5 | 🚧 Planned |
+| TC-554 | An undefined mapping row or history update refutes a refinement and replays | Integration | P1 | FR-138-AC-5, FR-141-AC-6, FR-142-AC-8, FR-145-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

@@ -67,7 +67,9 @@ pub fn check_refinement(
 - `RefinementOutcome{safety: ModelCheckOutcome, liveness:
   Option<LivenessHalf>}` (FR-143 fills `liveness`; FR-144 settles both).
   `ModelCheckOutcome` is FR-126's, with `Undecided` carrying the cause
-  `MappingUndetermined` (ADR-020 RE-4) as well as FR-126's causes.
+  `MappingUndetermined` (ADR-020 RE-4) as well as FR-126's causes, and
+  `Violated` carrying an `UndefinedEvaluation` counterexample for an
+  undefined mapping (ADR-020 RE-5).
 - A `Violated` safety outcome carries a `TemporalCounterexample` over the
   concrete subject (FR-126) with its `refinement` member set to the
   `RefinementFailure` (ADR-020 RC-1) and `kind: Formula`. It holds concrete
@@ -112,6 +114,13 @@ pub fn check_refinement(
   prefix SHALL be the canonical path to that edge's pre-state followed by
   the edge, and its failure the one `check_step` returned, with `position`
   the index of the failing step's post-state.
+- The first edge or initial state, in canonical breadth-first order, whose
+  `check_step` or `check_initial` returns `Undefined` SHALL end the phase
+  with `Violated`. Its counterexample's prefix SHALL be the canonical path
+  to that edge's pre-state followed by the edge, or empty for an initial
+  state, with `kind: UndefinedEvaluation{where, cause}` and no
+  `RefinementFailure`. An undefined mapping SHALL rank with a `Fails` edge
+  by the same order (ADR-020 RE-5).
 - `Undetermined(MappingUndetermined)` or `Undetermined(UndecidedSuccessor)`
   from `check_initial` or `check_step` SHALL return `Undecided` with that
   cause.
@@ -139,8 +148,9 @@ pub fn check_refinement(
 | FR-142-AC-3 | The compare-and-set model with concrete initial `value` 1 returns `Violated`, `InitialNotAbstract{initial: 0}`, empty prefix. With `commitA` mapped `-> stutter` it returns `Violated` with prefix `beginA`, `commitA` and `StutterChanged{position: 2}`. | Test (TC-547) |
 | FR-142-AC-4 | `RegisterHistory` (FR-138) returns `Holds{Exhaustive}` with 4 product states. With the update `on write: self.value` it returns `Violated`, `AbstractStepRejected{position: 1, transition: write(r, 1), cause: Postcondition}`. With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }`, which no row reads, it returns `Undecided(MappingUndetermined)` naming `writes`, at the second write of a behaviour. | Test (TC-547) |
 | FR-142-AC-5 | `Coin` (FR-141-AC-4) with `side` hidden returns `Holds{Exhaustive}`; with the row `side = self.face` it returns `Violated` with prefix `toss`, `reveal` to `face = 1` and `AbstractStepRejected{position: 2, transition: show(c), cause: Frame{…}}`. | Test (TC-547) |
-| FR-142-AC-6 | `RingIsQueue` with universes `rings = {r}`, `slots = {s0, s1}` returns `Holds{Exhaustive}`; with the broken `take` it returns `Violated` with `AbstractStepRejected{…, transition: deq(r), cause: Postcondition}`; with FR-140-AC-3's `only` it returns `Undecided(MappingUndetermined)` naming the `items` row. | Test (TC-547) |
+| FR-142-AC-6 | `RingIsQueue` with universes `rings = {r}`, `slots = {s0, s1}` returns `Holds{Exhaustive}`; with the broken `take` it returns `Violated` with `AbstractStepRejected{…, transition: deq(r), cause: Postcondition}`; with FR-140-AC-3's `only` it returns `Violated` with a prefix ending at the first state with `size >= 1` in canonical order and `kind: UndefinedEvaluation` naming that position, the `items` row and object `r`. | Test (TC-547) |
 | FR-142-AC-7 | `CasRefinesCounter` with `max_states` 5 returns `Stopped{ResourceExhausted, {MaxStates, 5}}`; with `max_depth` 2, `BoundReached{depth: 2}`; with a `true` poll, `Stopped{Cancelled, None}`. Running AC-2's two requests twice gives equal outcomes and byte-equal counterexamples. | Test (TC-547) |
+| FR-142-AC-8 | `RegisterHistory` with FR-138's `inv` update returns `Violated` with prefix `write(r, 0)` and `kind: UndefinedEvaluation{where: (position 1, the inv update, r), cause: division-by-zero}`; FR-142-AC-4's `writes` variant still returns `Undecided(MappingUndetermined)`. | Test (TC-554) |
 
 ## Dependencies
 

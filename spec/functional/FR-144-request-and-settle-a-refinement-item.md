@@ -100,7 +100,9 @@ beside it as a separate item.
     `Proved{basis: Exhaustive}` beside it (ADR-020 AX-5).
 - Each half's value SHALL come from FR-127's map, with
   `Undecided(MappingUndetermined)` settling V-6 `inconclusive`,
-  `Inconclusive(MappingUndetermined)`.
+  `Inconclusive(MappingUndetermined)`, and an `UndefinedEvaluation`
+  counterexample settling V-4 `refuted` with that cause once it replays
+  (ADR-020 RE-5).
 - A `Violated` half SHALL settle `refuted` only through its replay (FR-145)
   settling `reproduced-with-evaluated-witness`; a replay that settles
   `inconclusive` SHALL settle V-6 with `ReplayParity`, a refusal V-6 with
@@ -114,7 +116,7 @@ beside it as a separate item.
 |----|----------|--------------|
 | FR-144-AC-1 | `CasRefinesCounter` writes one requirement record (`temporal-satisfaction`, `PropertyForm::Refinement{liveness: true}`); with its `ensure` row removed, `liveness: false`. The record routes to the explicit-state provider. The request carries the concrete subject's deadlock-freedom item and none for the abstract subject; with `terminal any` on `Impl::Counter` it carries none. | Test (TC-549) |
 | FR-144-AC-2 | `CasRefinesCounter` settles `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, method `explicit-state`, both halves `Proved{basis: Exhaustive}`. The divergence variant settles `refuted`, `decisive-counterexample`, after its lasso replays, with safety half `Proved{basis: Exhaustive}` and liveness half `Refuted`. | Test (TC-549) |
-| FR-144-AC-3 | FR-142-AC-6's undetermined `RingIsQueue` settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive}` on the record. | Test (TC-549) |
+| FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive}` on the record. | Test (TC-549) |
 | FR-144-AC-4 | The lost-update refinement whose counterexample is replayed with its recorded failure changed to `AbstractStepRejected{position: 3, …}` settles `inconclusive`, `Inconclusive(ReplayParity)`, never `refuted`; replayed with an `initial` index of 1 over its one-snapshot subject, it settles `inconclusive`, `Inconclusive(ReplayRefused)`. | Test (TC-549) |
 | FR-144-AC-5 | Two `CasRefinesCounter` requests that differ only in the abstract subject's initial snapshots (`value` 0 and `value` 1) have different obligation identities; the second settles `refuted` with `InitialNotAbstract`. | Test (TC-549) |
 

@@ -70,6 +70,7 @@ pub fn check_step(
 pub enum StepVerdict {
     Passes { post: RefinementPosition, taken: Taken },
     Fails(RefinementFailure),
+    Undefined(UndefinedEvaluation),   // ADR-020 RE-5: a mapping row, argument or history update
     Undetermined(InconclusiveCause),  // MappingUndetermined, UndecidedSuccessor
 }
 
@@ -105,8 +106,15 @@ FR-143.
   PR-1). The concrete terminal stutter step (ADR-018 SM-4, FR-125) SHALL be
   decided as a `stutter` row (RS-6).
 - It SHALL compute the post history by FR-138's `step_history` and the post
-  mapped state by FR-140. A `MappingUndetermined` from either SHALL return
-  `Undetermined(MappingUndetermined)`.
+  mapped state by FR-140. A `MappingFailure::Undefined` from either SHALL
+  return `Undefined` with `where` naming the step's post-state position,
+  the row and the object (ADR-020 RE-5). A `MappingFailure::Undetermined`
+  from either SHALL return `Undetermined(MappingUndetermined)`.
+- `check_initial` SHALL return `Undefined` with position 0 when FR-140
+  returns `MappingFailure::Undefined` at an initial state.
+- An argument expression of the row that evaluates `Undefined` at the
+  pre-state SHALL return `Undefined`; one that is refused or incomplete
+  SHALL return `Undetermined(MappingUndetermined)`.
 
 ### Rules, with no hidden field
 
@@ -161,6 +169,7 @@ FR-143.
 | FR-141-AC-3 | Over `RingIsQueue`, `take` from `head = 1`, `size = 2`, `s0.value = 0`, `s1.value = 1` returning 1 passes RS-4 as `deq(r)` with the result bound; the broken `take` returning 0 from the same state fails `AbstractStepRejected{transition: deq(r), cause: Postcondition}`. `put -> enq(self.ring, _)` with `put(1)` from the empty queue passes with `Taken::Abstract([enq(r, 1)])` only. | Test (TC-546) |
 | FR-141-AC-4 | Fixture `Coin`: abstract `Spec::Coin` with `tossed: Boolean`, `side: Int[0, 1]`, `shown: Boolean`, `face: Int[0, 1]`, operation `toss()` (precondition `not self.tossed`, frame `modifies [tossed, side]`, postcondition `self.tossed`) and `show()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown and self.face = self.side`), initial all false and 0; concrete `Impl::Coin` with `tossed`, `shown`, `face`, operations `toss()` (precondition `not self.tossed`, frame `modifies [tossed]`, postcondition `self.tossed`) and `reveal()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown`); rows `tossed`, `shown` and `face` mapped by name, `side` hidden, `toss -> Spec::Coin::toss(self)`, `reveal -> Spec::Coin::show(self)`. After concrete `toss` the candidate set holds two states, `side` 0 and `side` 1; after `reveal` to `face = 1` it holds the one with `side` 1. With the row `side = self.face` added, `reveal` to `face = 1` fails `AbstractStepRejected{transition: show(c), cause: Frame{…}}`. | Test (TC-546) |
 | FR-141-AC-5 | Over FR-136-AC-4's protocol subject with branch `A`'s attempt node mapped `-> any` and `incA` mapped `-> Spec::Counter::inc(self)`, a step of that attempt node that leaves `value` unchanged passes RS-5 with `Taken::Stutter`, so the node row was selected; the `fork` step, mapped `-> stutter`, passes RS-3. | Test (TC-546) |
+| FR-141-AC-6 | Over `RegisterHistory` with FR-138's `inv` update, `check_step` on `write(r, 0)` from the initial state returns `Undefined` with `where` position 1, the `inv` update and object `r`, cause `division-by-zero`; with the `writes` update of FR-138-AC-4 instead, the second `write(r, 0)` returns `Undetermined(MappingUndetermined)`. | Test (TC-554) |
 
 ## Dependencies
 
