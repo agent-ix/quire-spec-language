@@ -53,3 +53,11 @@ is tested as such.
 Every AC and TC step in scope is delivered and tested. Each test is traced
 to the right AC and its oracle is independent: identities come from the
 compiled package and expected values are constants. One low gap.
+
+## Dispositions
+
+Round 1, reviewed at 4aa30e7bf719768fffc2c1ad3eeb1bd26ef83b93.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4aa30e7b: `an_input_arm_envelope_reproduces_without_a_witness` now asserts the source digest, `package_id`, clause, `clause_node` and `occurrence_key` alongside `documents()`. |

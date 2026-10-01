@@ -72,3 +72,21 @@ refusals all have strong oracles, and the facade surface passes arch-lint.
 FND-001 and FND-002 are real edge defects in shared admission and evaluation
 code. Both should be fixed in this PR along with FND-003, which is a small
 test. FND-004 is a comment.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The FND-002 fix adds a public `CheckedStateClause::observation()` that repeats, line for line, the private `StateClauseDeclaration::observation()` match 320 lines above it in the same file: `Invariant => Current, Precondition => Pre, Postcondition => Post`. The typer types a clause's reads with the private copy, and S6a picks the observation to evaluate with the public copy, so the two must agree. A later edit to one, such as a new clause kind or a precondition read in `post`, would make the checker type a clause against one observation while S6a evaluates it against another. The private method cannot call the public one because they are on different structs, but both can call one `fn observation_of(kind: StateClauseKind) -> Observation` (or a `StateClauseKind`-keyed helper in `check`). That gives a single source with no layering change: `qsl-eval` still reaches the rule only through `CheckedStateClause`. | qsl-semantics/src/check/state_clause.rs:192-198,510-516 |
+| FND-006 | low | Half of the FND-001 fix is untested: the `holds_references` filter, which drops declared parameters whose type cannot hold a reference. Turning it off (`if false && !holds_references(..)`) passes all `qsl-semantics` tests (reviewer mutant M8, exit 0), because no fixture has a declared non-reference parameter. The undeclared-parameter half is pinned (mutant M9b, exit 101). Without the filter, a declared Boolean or Integer parameter given a reference value into an incomplete population returns `Incomplete` instead of check 10's `wrong-value-kind`. One test with such a parameter would pin it. | qsl-semantics/src/model/observation/document.rs:1251-1253; qsl-semantics/tests/it/state_clauses.rs |
+
+## Dispositions
+
+Round 1, reviewed at 4aa30e7bf719768fffc2c1ad3eeb1bd26ef83b93.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4aa30e7b: `parameter_populations` now walks only `operation.parameters()` whose type `holds_references`, on both the PreCall and invocation paths. `tc464_step5_an_undeclared_parameter_requires_no_population` asserts `unknown-member` naming `zextra`. Mutant M9b, which restores the pre-fix walk over every supplied parameter, fails it (exit 101). |
+| FND-002 | fixed | 4aa30e7b: `evaluate_clause` matches `declaration.observation()`: Current reads `current`, Post reads `post`, Pre reads `post.or(pre)`. Anything else faults `clause-observations-missing-the-clause-observation`. `a_postcondition_with_only_a_pre_observation_faults` pins it, and mutant M7 (Post falling back to `pre`) fails it (exit 101). The duplication this fix introduces is FND-005. |
+| FND-003 | fixed | 4aa30e7b: `tc464_step5_an_invocation_target_in_an_incomplete_archive_is_incomplete`. Mutant M6 (no seeding on the invocation path) now fails it (exit 101). Mutant M5 (no seeding on the PreCall path) still fails (exit 101). |
+| FND-004 | fixed | 4aa30e7b: the comment now says FR-106 admits the observation each clause kind reads, and that a pre-call precondition leaves `current` and `post` `None` and is read through `pre`. |

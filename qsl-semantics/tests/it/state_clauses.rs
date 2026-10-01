@@ -2004,6 +2004,66 @@ fn tc464_step5_an_undeclared_parameter_requires_no_population() {
     );
 }
 
+/// Step 5 (FR-106-AC-8): only a reference-valued parameter makes a
+/// population required. Over an operation `flag(b: Boolean)` with the
+/// precondition `FlagHolds { b }`, a `b` given a reference to `a1` in the
+/// incomplete `archive` refuses check 10 `invalid_runtime_input`/
+/// `wrong-value-kind`, not check 7 `Incomplete`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_non_reference_parameter_requires_no_population() {
+    let flag = operation(
+        "flag",
+        json!([operation_parameter(
+            "flag",
+            "b",
+            "ix://quire/native/Boolean"
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        flag,
+    ]));
+    let clauses =
+        format!("{TC465_CLAUSES}pre FlagHolds using v on Config::ConfigVersion::flag {{ b }}\n");
+    let archive = "ix://example/config-version/archive";
+    let snapshot_bytes = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({"population": archive, "complete": false, "objects": []})],
+    );
+    let snapshot = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&snapshot_bytes),
+        ..frame_label("pre-call-snap")
+    };
+    let result = run_tc465_with_clauses(
+        &document,
+        &clauses,
+        "FlagHolds",
+        qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+            snapshot: snapshot.clone(),
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: TC464_CONFIG_HISTORY.to_owned(),
+                key: "a".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                quire_exact::Identifier::new("b").unwrap(),
+                tc464_reference(archive, "a1"),
+            )]),
+        },
+        BTreeMap::from([(snapshot.digest, snapshot_bytes)]),
+        BTreeMap::new(),
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("b"));
+}
+
 /// Step 5's archive case over an invocation (FR-106 required populations:
 /// "of an invocation or a `PreCall` selection, in the pre snapshot"): the
 /// `probe` invocation's `target` naming `a1` in an `archive` its pre
@@ -2453,7 +2513,14 @@ fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
 /// `config_history` the sole population `ConfigVersion`'s own clauses
 /// resolve against -- no S3 `ambiguous_declaration`/`ambiguous-name`.
 fn tc465_document_with_archive_population() -> Vec<u8> {
-    let document = add_sub_type(tc465_document(), &[]);
+    with_archive_population(tc465_document())
+}
+
+/// `document` with `Sub` (see [`add_sub_type`]) and the unbounded
+/// population `archive` whose only declared member is `Sub`
+/// ([`tc465_document_with_archive_population`]).
+fn with_archive_population(document: Vec<u8>) -> Vec<u8> {
+    let document = add_sub_type(document, &[]);
     let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
     let sub = "ix://example/config-version/Sub";
     let archive = "ix://example/config-version/archive";
@@ -2638,8 +2705,32 @@ fn run_tc465_with_limits(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_with_clauses(
+        document,
+        TC465_CLAUSES,
+        clause_name,
+        selection,
+        snapshots,
+        invocations,
+        limits,
+    )
+}
+
+/// [`run_tc465_with_limits`] over the unit declaring `clauses`.
+fn run_tc465_with_clauses(
+    document: &[u8],
+    clauses: &str,
+    clause_name: &str,
+    selection: qsl_semantics::model::observation::ClauseSelectionInput,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let packages = qsl_semantics::model::intake::package_input([document]);
-    let declarations = admit_and_assemble_with_body(document, TC465_CLAUSES)
+    let declarations = admit_and_assemble_with_body(document, clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
         .check(CheckingLimits::default())
