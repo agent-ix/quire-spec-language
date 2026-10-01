@@ -28,7 +28,8 @@
 //! from adversarial input, so it takes no charge and needs no bound the way
 //! [`crate::Meter`]-charged materializations do.
 
-use std::fmt;
+use alloc::string::String;
+use core::fmt;
 
 use crate::node::NodeKey;
 

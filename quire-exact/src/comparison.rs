@@ -12,7 +12,7 @@
 //! already-computed `Ordering`, so exposing it exposes no unmetered
 //! computation.
 
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 /// A comparison request.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -148,7 +148,7 @@ impl IllTypedCause {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
+    use core::cmp::Ordering;
 
     use super::*;
 

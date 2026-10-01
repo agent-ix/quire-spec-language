@@ -22,7 +22,8 @@
 //! their now-meaningless `_profile: &AdmittedIeeeProfile` parameter; every
 //! other item ports verbatim.
 
-use std::cmp::Ordering;
+use alloc::{boxed::Box, vec, vec::Vec};
+use core::cmp::Ordering;
 
 use num_bigint::{BigInt, BigUint, Sign};
 use num_integer::Integer as _;

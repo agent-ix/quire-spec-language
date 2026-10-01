@@ -752,7 +752,8 @@ Rules that close the ADR-010 OBS-016 cycles:
   with it (M-6). The locus is ADR-013 T-5's `Locus` (`Region`, `Occurrence`,
   `Artifact`), which uses the kernel `Location` (DA-13).
 - **K is a leaf.** `quire-exact` depends on no QSL module and no ecosystem
-  crate, so K → `model` → K cannot exist. Each kernel `Value` and `ValueType`
+  crate, so K → `model` → K cannot exist. It is `#![no_std]` and uses only
+  `core` and `alloc`, so a no_std consumer depends on it directly. Each kernel `Value` and `ValueType`
   payload is a kernel shape (ADR-013 T-6, against the AD-016 Shared-type row
   as amended by QC-15, QC-21 and QC-22): `Value::Quantity` carries the
   kernel `Quantity` (a magnitude and a `UnitId`), `Value::Enum` carries an

@@ -16,6 +16,7 @@
 use crate::accounting::{Charge, ChargePoint, LimitKind, Meter};
 use crate::integer::{Integer, IntegerDomain, IntegerInterval};
 use crate::outcome::{Outcome, Refusal, Stop, Undefined};
+use alloc::boxed::Box;
 
 /// A selectable `div`/`rem` law.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

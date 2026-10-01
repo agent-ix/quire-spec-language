@@ -34,9 +34,10 @@
 //! exposed: QSL adapts the `Outcome` return with its own `value::stop`
 //! helpers, the same way it already adapts [`form_grouped`].
 
-use std::cell::Cell;
-use std::cmp::Ordering;
-use std::sync::Arc;
+use alloc::sync::Arc;
+use alloc::{boxed::Box, vec::Vec};
+use core::cell::Cell;
+use core::cmp::Ordering;
 
 use crate::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use crate::equality::plan_pairs;
@@ -400,7 +401,7 @@ fn coalesce(
     }
     Ok(members
         .into_iter()
-        .flat_map(|(member, multiplicity)| std::iter::repeat_n(member, multiplicity))
+        .flat_map(|(member, multiplicity)| core::iter::repeat_n(member, multiplicity))
         .collect())
 }
 

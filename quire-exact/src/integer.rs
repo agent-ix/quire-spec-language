@@ -38,9 +38,9 @@
 //! `Integer`/`IntegerInterval`, but only as a type, never calling one of
 //! these 17 methods, so reverting any of the 17 alone never errors there.)
 
-use std::fmt;
-use std::num::NonZeroU32;
-use std::str::FromStr;
+use core::fmt;
+use core::num::NonZeroU32;
+use core::str::FromStr;
 
 use num_bigint::{BigInt, BigUint};
 use num_integer::Integer as _;
@@ -458,7 +458,8 @@ impl Integer {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use alloc::string::ToString;
+    use core::str::FromStr;
 
     use super::*;
 

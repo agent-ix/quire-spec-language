@@ -37,8 +37,9 @@
 //! so `unicode_normalization`'s own `Recompositions`/`Decompositions` types
 //! never appear in this crate's public API.
 
-use std::cmp::Ordering;
-use std::str::Chars;
+use alloc::{borrow::ToOwned, boxed::Box, string::String};
+use core::cmp::Ordering;
+use core::str::Chars;
 
 use unicode_normalization::{Decompositions, Recompositions, UnicodeNormalization};
 
@@ -283,7 +284,7 @@ pub struct TextPayload {
 impl TextPayload {
     /// Read runtime payload bytes; invalid UTF-8 refuses before any profile.
     pub fn from_utf8(bytes: &[u8]) -> Result<Self, InvalidUtf8> {
-        let text = std::str::from_utf8(bytes).map_err(|error| InvalidUtf8 {
+        let text = core::str::from_utf8(bytes).map_err(|error| InvalidUtf8 {
             valid_up_to: error.valid_up_to(),
         })?;
         Ok(Self {

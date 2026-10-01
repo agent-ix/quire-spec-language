@@ -12,8 +12,8 @@
 //! and [`Integer::shifted_left`](crate::integer::Integer::shifted_left)
 //! already require of their own callers.
 
-use std::cmp::Ordering;
-use std::fmt;
+use core::cmp::Ordering;
+use core::fmt;
 
 use crate::integer::{Integer, IntegerInterval};
 use crate::numeric::ArithmeticOperator;

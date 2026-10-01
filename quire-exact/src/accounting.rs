@@ -16,6 +16,7 @@
 //! FR-323 wire-to-`ScalarLimits` conversion stays entirely QSL's job.
 
 use crate::integer::Integer;
+use alloc::vec::Vec;
 
 /// A `usize` length or count as an accounting amount.
 ///
@@ -543,7 +544,7 @@ pub struct Meter {
 // glue holds no `Vec`, `Box` or `String`, so a heap-owning field added to it
 // fails the build rather than a test.
 #[cfg(not(feature = "test-support"))]
-const _: () = assert!(!std::mem::needs_drop::<Meter>());
+const _: () = assert!(!core::mem::needs_drop::<Meter>());
 
 impl Meter {
     /// A fresh meter with nothing consumed.
@@ -781,7 +782,7 @@ mod tests {
     #[test]
     fn production_meter_heap_is_constant_as_charges_grow() {
         assert!(
-            !std::mem::needs_drop::<Meter>(),
+            !core::mem::needs_drop::<Meter>(),
             "a production Meter must hold no heap-owning field"
         );
         let mut meter = Meter::new(unlimited());

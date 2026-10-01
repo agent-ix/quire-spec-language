@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -186,7 +186,13 @@ ci-clean-build:
 ci-docs:
 	RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps --all-features
 
-ci: check-no-committed-binaries check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
+# `quire-exact` is `#![no_std]` + `alloc` so no_std consumers can depend on
+# it directly. Building it for a bare-metal target, which ships no `std`,
+# fails the moment any `std` use or std-requiring dependency feature returns.
+quire-exact-no-std:
+	cargo build --locked -p quire-exact --no-default-features --target thumbv7em-none-eabi
+
+ci: check-no-committed-binaries quire-exact-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the

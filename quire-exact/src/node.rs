@@ -30,7 +30,8 @@
 //! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`). `arch-lint` is not part of `make ci` (Makefile), so
 //! it is advisory, not gating, today.
 
-use std::fmt;
+use alloc::string::String;
+use core::fmt;
 
 /// Digest domain of every checked semantic node key.
 pub const NODE_KEY_DOMAIN: &str = "quire.checked-semantic-node/v1";
@@ -109,6 +110,7 @@ impl fmt::Debug for NodeKey {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
 
     use super::*;
 
@@ -132,7 +134,7 @@ mod tests {
         let c = NodeKey::from_digest(digest(2));
         assert_eq!(a, b);
         assert_eq!(a.as_bytes(), b.as_bytes());
-        assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal);
+        assert_eq!(a.cmp(&b), core::cmp::Ordering::Equal);
         assert_eq!(HashSet::from([a, b, c]).len(), 2);
         assert!(a < c);
     }

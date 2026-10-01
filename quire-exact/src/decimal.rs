@@ -34,7 +34,8 @@
 //! let _ = admitted.retain(&narrow);
 //! ```
 
-use std::cmp::Ordering;
+use alloc::{boxed::Box, vec, vec::Vec};
+use core::cmp::Ordering;
 
 use crate::accounting::{length_amount, Charge, ChargePoint, LimitKind, Meter};
 use crate::comparison::{IllTyped, IllTypedCause};

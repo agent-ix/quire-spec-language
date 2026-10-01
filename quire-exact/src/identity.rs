@@ -61,8 +61,9 @@
 //! kept for that reason -- but their domain *strings* are not to be treated
 //! as ratified until the FR-201 amendment lands.
 
-use std::cmp::Ordering;
-use std::fmt;
+use alloc::{boxed::Box, string::String};
+use core::cmp::Ordering;
+use core::fmt;
 
 use crate::node::{NodeKey, NODE_KEY_DOMAIN};
 
@@ -308,6 +309,7 @@ impl fmt::Display for ObjectId {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use ix_trace_rs::trace;
 
     use super::*;

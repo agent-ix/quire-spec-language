@@ -42,6 +42,7 @@ use crate::ieee::{IeeeFlags, IeeeWidth};
 use crate::integer::IntegerInterval;
 use crate::rational::RationalDomain;
 use crate::text::TextType;
+use alloc::boxed::Box;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
 #[derive(Clone, Debug, Eq, PartialEq)]
