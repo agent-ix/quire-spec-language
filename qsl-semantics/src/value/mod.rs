@@ -126,6 +126,7 @@ pub mod declaration;
 pub(crate) mod definition;
 mod diagnostics_catalog;
 pub mod enumeration;
+pub mod environment_stage;
 pub(crate) mod member;
 pub mod model_query;
 pub mod operation;

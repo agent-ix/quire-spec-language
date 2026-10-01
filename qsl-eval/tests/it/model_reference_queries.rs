@@ -23,7 +23,7 @@ use qsl_eval::value::{
 };
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::diagnostic::{StageFailure, UndefinedReason};
+use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits,
@@ -45,8 +45,8 @@ use qsl_semantics::model::population::{
     PopulationMember,
 };
 use qsl_semantics::value::declaration::{
-    CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    ObjectTypeDeclaration, TypeEnvironment,
+    CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
+    FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -1606,7 +1606,7 @@ fn population_refused_as_record_field() {
         ],
     );
     match result {
-        Err(StageFailure::Refused(invalid)) => assert_eq!(
+        Err(EnvironmentFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),
@@ -1638,7 +1638,7 @@ fn population_refused_as_object_attribute() {
         ],
     );
     match result {
-        Err(StageFailure::Refused(invalid)) => assert_eq!(
+        Err(EnvironmentFailure::Refused(invalid)) => assert_eq!(
             invalid.cause,
             DeclarationCause::Type(IllTypedCause::OperatorIneligible)
         ),

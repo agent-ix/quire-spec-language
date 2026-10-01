@@ -71,6 +71,7 @@ use crate::value::declaration::{
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::OwnerSelection;
 use quire_semantic_value::semantic_node::InvalidSemanticGraph;
+use crate::value::environment_stage::stage_failure;
 use crate::value::operation::{OperationDeclaration, OperationLookup, OperationTable};
 
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
@@ -1077,7 +1078,9 @@ fn admit_types(
 ) -> Result<TypeEnvironment, AssemblyRefusal> {
     let mut errors = Vec::new();
     loop {
-        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned()) {
+        match TypeEnvironment::new(declarations.clone(), object_types.iter().cloned())
+            .map_err(stage_failure)
+        {
             Ok(types) if errors.is_empty() => return Ok(types),
             Ok(_) => return refuse(errors),
             Err(StageFailure::Limit(limit)) => {

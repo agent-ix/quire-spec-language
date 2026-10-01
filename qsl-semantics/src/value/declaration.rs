@@ -63,8 +63,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind as StageLimitKind, StageFailure};
-
 use quire_exact::{
     compare_shifted, power_of_ten_bits, sbits, sdigits, Charge, ChargePoint, ComparisonOperator,
     Decimal, DecimalOperation, DecimalType, IllTyped, IllTypedCause, Integer, LimitKind, Meter,
@@ -494,7 +492,8 @@ pub struct TypeEnvironmentLimits {
     /// Cumulative work units admission may spend building the ancestor
     /// closure and flattening every object type's attributes. One unit is
     /// one ancestor or attribute copied into a type's set, or one field a
-    /// lineage names. Running out is a work-budget stage limit.
+    /// lineage names. Running out is an
+    /// [`EnvironmentLimitKind::WorkUnits`] limit.
     pub work_units: u64,
 }
 
@@ -518,18 +517,18 @@ impl WorkBudget {
         Self { spent: 0, limit }
     }
 
-    /// Charge `units`, or the work-budget stage limit (FR-082, ADR-014 B-3)
+    /// Charge `units`, or the [`EnvironmentLimitKind::WorkUnits`] limit (FR-082)
     /// once the budget would be passed, naming the cumulative total the
     /// refused charge would have reached.
-    fn charge(&mut self, units: usize) -> Result<(), LimitExceeded> {
+    fn charge(&mut self, units: usize) -> Result<(), EnvironmentLimit> {
         let units = u64::try_from(units).unwrap_or(u64::MAX);
         match self.spent.checked_add(units) {
             Some(spent) if spent <= self.limit => {
                 self.spent = spent;
                 Ok(())
             }
-            _ => Err(LimitExceeded::new(
-                StageLimitKind::WorkBudget,
+            _ => Err(EnvironmentLimit::new(
+                EnvironmentLimitKind::WorkUnits,
                 self.limit,
                 u128::from(self.spent) + u128::from(units),
             )),
@@ -538,10 +537,10 @@ impl WorkBudget {
 }
 
 /// Why admitting one declaration stopped: a refusal of the input, or a
-/// reached stage limit, which names no declaration.
+/// reached ceiling, which names no declaration.
 enum Stopped {
     Refused(DeclarationCause),
-    Limit(LimitExceeded),
+    Limit(EnvironmentLimit),
 }
 
 impl From<DeclarationCause> for Stopped {
@@ -550,8 +549,8 @@ impl From<DeclarationCause> for Stopped {
     }
 }
 
-impl From<LimitExceeded> for Stopped {
-    fn from(limit: LimitExceeded) -> Self {
+impl From<EnvironmentLimit> for Stopped {
+    fn from(limit: EnvironmentLimit) -> Self {
         Self::Limit(limit)
     }
 }
@@ -559,22 +558,90 @@ impl From<LimitExceeded> for Stopped {
 impl Stopped {
     /// This stop as the admission's stage failure, a refusal naming
     /// `declaration`.
-    fn at(self, declaration: &str) -> StageFailure<InvalidDeclaration> {
+    fn at(self, declaration: &str) -> EnvironmentFailure {
         match self {
-            Self::Refused(cause) => StageFailure::Refused(InvalidDeclaration {
+            Self::Refused(cause) => EnvironmentFailure::Refused(InvalidDeclaration {
                 declaration: declaration.to_owned(),
                 cause,
             }),
-            Self::Limit(limit) => StageFailure::Limit(limit),
+            Self::Limit(limit) => EnvironmentFailure::Limit(limit),
         }
     }
 }
 
-/// Type-environment admission's outcome (FR-082): a refusal of the
-/// declarations, or a `TypeEnvironmentLimits` ceiling reached, which is a
-/// stage limit (ADR-014 B-3) with no locus, since the object types come
-/// from an admitted domain package, not a source unit (FR-096).
-pub type Admission<T> = Result<T, StageFailure<InvalidDeclaration>>;
+/// Which [`TypeEnvironmentLimits`] ceiling admission reached.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EnvironmentLimitKind {
+    /// `ancestor_steps`: one object type's conformance walk would expand
+    /// more types than the ceiling, itself included (FR-082).
+    AncestorSteps,
+    /// `work_units`: the admission's cumulative ancestor-closure and
+    /// flattening work.
+    WorkUnits,
+}
+
+/// A [`TypeEnvironmentLimits`] ceiling reached during admission: which one,
+/// its configured bound, and the counter the refused step would have
+/// reached. It is wider than the bound because a cumulative total of two
+/// `u64` counters can exceed `u64::MAX`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct EnvironmentLimit {
+    kind: EnvironmentLimitKind,
+    configured_bound: u64,
+    actual: u128,
+}
+
+impl EnvironmentLimit {
+    /// The `kind` ceiling, configured at `configured_bound`, where the
+    /// admission's counter reached `actual`.
+    pub const fn new(kind: EnvironmentLimitKind, configured_bound: u64, actual: u128) -> Self {
+        Self {
+            kind,
+            configured_bound,
+            actual,
+        }
+    }
+
+    /// The ceiling that was reached.
+    pub const fn kind(&self) -> EnvironmentLimitKind {
+        self.kind
+    }
+
+    /// The ceiling's configured bound.
+    pub const fn configured_bound(&self) -> u64 {
+        self.configured_bound
+    }
+
+    /// The value the refused step would have taken the counter to.
+    pub const fn actual(&self) -> u128 {
+        self.actual
+    }
+}
+
+/// Why type-environment admission produced no environment (FR-082): a
+/// refusal of the declarations, or a [`TypeEnvironmentLimits`] ceiling
+/// reached first, which names no declaration. A compiler stage reports the
+/// ceiling as its own stage limit (ADR-014 B-3).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EnvironmentFailure {
+    /// A ceiling was reached first.
+    Limit(EnvironmentLimit),
+    /// The declarations are refused.
+    Refused(InvalidDeclaration),
+}
+
+impl EnvironmentFailure {
+    /// The refusal, or the ceiling reached instead.
+    pub fn into_refused(self) -> Result<InvalidDeclaration, EnvironmentLimit> {
+        match self {
+            Self::Refused(invalid) => Ok(invalid),
+            Self::Limit(limit) => Err(limit),
+        }
+    }
+}
+
+/// Type-environment admission's outcome (FR-082).
+pub type Admission<T> = Result<T, EnvironmentFailure>;
 
 /// Why a declaration set is not admitted.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
@@ -705,13 +772,14 @@ impl TypeEnvironment {
     /// `limits.ancestor_steps` is the FR-082 ceiling the model walks this
     /// package's conformance under at evaluation (the population binding's
     /// own `ancestor_steps`). An object type whose walk would expand more
-    /// types than that, itself included, stops admission with a node-count
-    /// stage limit (FR-082, ADR-014 B-3). Check time is the stricter
+    /// types than that, itself included, stops admission with an
+    /// [`EnvironmentLimitKind::AncestorSteps`] limit (FR-082). Check time is the stricter
     /// side: every conformance question the checker answers from this
     /// environment is one evaluation completes with the same verdict.
     ///
     /// `limits.work_units` bounds the whole admission's ancestor-closure
-    /// and flattening work; running out is a work-budget stage limit.
+    /// and flattening work; running out is an
+    /// [`EnvironmentLimitKind::WorkUnits`] limit.
     pub fn bounded(
         composites: impl IntoIterator<Item = CompositeDeclaration>,
         object_types: impl IntoIterator<Item = ObjectTypeDeclaration>,
@@ -720,7 +788,7 @@ impl TypeEnvironment {
         let mut environment = Self::default();
         for declaration in composites {
             let refuse = |cause| {
-                StageFailure::Refused(InvalidDeclaration {
+                EnvironmentFailure::Refused(InvalidDeclaration {
                     declaration: declaration.name.clone(),
                     cause,
                 })
@@ -740,7 +808,7 @@ impl TypeEnvironment {
         }
         for declaration in object_types {
             let refuse = |cause| {
-                StageFailure::Refused(InvalidDeclaration {
+                EnvironmentFailure::Refused(InvalidDeclaration {
                     declaration: declaration.name.clone(),
                     cause,
                 })
@@ -757,23 +825,23 @@ impl TypeEnvironment {
         }
         environment
             .check_member_types()
-            .map_err(StageFailure::Refused)?;
+            .map_err(EnvironmentFailure::Refused)?;
         environment
             .check_recursion(RecursionEdges::Unnamed)
-            .map_err(StageFailure::Refused)?;
+            .map_err(EnvironmentFailure::Refused)?;
         environment
             .check_recursion(RecursionEdges::NonEscaping)
-            .map_err(StageFailure::Refused)?;
+            .map_err(EnvironmentFailure::Refused)?;
         let mut budget = WorkBudget::new(limits.work_units);
         environment.check_supertypes(&mut budget)?;
         environment.ancestry = environment.compute_ancestors(&mut budget)?;
         environment
             .check_ancestor_steps(limits.ancestor_steps)
-            .map_err(StageFailure::Limit)?;
+            .map_err(EnvironmentFailure::Limit)?;
         let table = FieldTable::new(&environment.object_types);
         environment
             .check_redefinitions(&table)
-            .map_err(StageFailure::Refused)?;
+            .map_err(EnvironmentFailure::Refused)?;
         let effective = environment.compute_effective(&table, &mut budget)?;
         environment.effective = effective;
         Ok(environment)
@@ -1112,7 +1180,7 @@ impl TypeEnvironment {
         for declaration in self.object_types.values() {
             for supertype in &declaration.supertypes {
                 if !self.object_types.contains_key(supertype) {
-                    return Err(StageFailure::Refused(InvalidDeclaration {
+                    return Err(EnvironmentFailure::Refused(InvalidDeclaration {
                         declaration: declaration.name.clone(),
                         cause: DeclarationCause::UnknownObjectType(*supertype),
                     }));
@@ -1140,7 +1208,7 @@ impl TypeEnvironment {
                     continue;
                 };
                 *next += 1;
-                budget.charge(1).map_err(StageFailure::Limit)?;
+                budget.charge(1).map_err(EnvironmentFailure::Limit)?;
                 if on_path.contains(target) {
                     // Found once, on the refusal path only.
                     let start = path
@@ -1150,7 +1218,7 @@ impl TypeEnvironment {
                     let mut cycle: Vec<String> =
                         path.iter().skip(start).map(|(key, _)| name(key)).collect();
                     cycle.push(name(target));
-                    return Err(StageFailure::Refused(InvalidDeclaration {
+                    return Err(EnvironmentFailure::Refused(InvalidDeclaration {
                         declaration: name(target),
                         cause: DeclarationCause::GeneralizationCycle { cycle },
                     }));
@@ -1183,8 +1251,8 @@ impl TypeEnvironment {
         // budget would have to reach.
         if u32::try_from(self.object_types.len()).is_err() {
             let types = u128::try_from(self.object_types.len()).unwrap_or(u128::MAX);
-            return Err(StageFailure::Limit(LimitExceeded::new(
-                StageLimitKind::WorkBudget,
+            return Err(EnvironmentFailure::Limit(EnvironmentLimit::new(
+                EnvironmentLimitKind::WorkUnits,
                 budget.limit,
                 types.max(u128::from(budget.limit) + 1),
             )));
@@ -1220,7 +1288,7 @@ impl TypeEnvironment {
                 }
                 path.pop();
                 let own = Self::own_ancestors(node, &positions, &ancestors, budget)
-                    .map_err(StageFailure::Limit)?;
+                    .map_err(EnvironmentFailure::Limit)?;
                 if let Some(slot) = positions
                     .get(&node.key)
                     .and_then(|position| ancestors.get_mut(*position as usize))
@@ -1248,7 +1316,7 @@ impl TypeEnvironment {
         positions: &BTreeMap<EffectiveId, u32>,
         ancestors: &[Option<Vec<u32>>],
         budget: &mut WorkBudget,
-    ) -> Result<Vec<u32>, LimitExceeded> {
+    ) -> Result<Vec<u32>, EnvironmentLimit> {
         let mut own: Vec<u32> = Vec::new();
         for supertype in &node.supertypes {
             let Some(position) = positions.get(supertype).copied() else {
@@ -1288,7 +1356,7 @@ impl TypeEnvironment {
     }
 
     /// Stop at the first object type, in key order, whose FR-082 conformance
-    /// walk expands more than `limit` types: a node-count stage limit whose
+    /// walk expands more than `limit` types: an [`EnvironmentLimitKind::AncestorSteps`] limit whose
     /// actual counter is the ceiling plus one, the step the walk would stop
     /// at (FR-082). The model's walk from `S`
     /// (`ModelIndex::conforms`) expands `S` and then each distinct ancestor
@@ -1296,15 +1364,15 @@ impl TypeEnvironment {
     /// ancestor count is the most any walk from `S` expands. Admitting only
     /// types within `limit` makes every walk from an admitted type complete
     /// under the same ceiling at evaluation.
-    fn check_ancestor_steps(&self, limit: u64) -> Result<(), LimitExceeded> {
+    fn check_ancestor_steps(&self, limit: u64) -> Result<(), EnvironmentLimit> {
         for declaration in self.object_types.values() {
             let ancestors = self.ancestry.count(declaration.key);
             let expanded = u64::try_from(ancestors)
                 .unwrap_or(u64::MAX)
                 .saturating_add(1);
             if expanded > limit {
-                return Err(LimitExceeded::new(
-                    StageLimitKind::NodeCount,
+                return Err(EnvironmentLimit::new(
+                    EnvironmentLimitKind::AncestorSteps,
                     limit,
                     u128::from(limit) + 1,
                 ));
@@ -1798,7 +1866,7 @@ fn merge<'a>(
     group: impl IntoIterator<Item = &'a EffectiveAttribute>,
     table: &FieldTable<'_>,
     budget: &mut WorkBudget,
-) -> Result<EffectiveAttribute, LimitExceeded> {
+) -> Result<EffectiveAttribute, EnvironmentLimit> {
     let mut members: Vec<usize> = Vec::new();
     for attribute in group {
         budget.charge(attribute.0.members.len())?;
@@ -2583,7 +2651,7 @@ fn decimal_to_rational(value: &Decimal, meter: &mut Meter) -> Result<Value, Stop
 #[cfg(test)]
 mod work_budget_tests {
     use super::WorkBudget;
-    use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
+    use super::{EnvironmentLimit, EnvironmentLimitKind};
 
     /// FR-082: a denied charge names the cumulative total it would have
     /// reached: 3 spent, a budget of 4 and a charge of 2 report 5. The
@@ -2594,7 +2662,7 @@ mod work_budget_tests {
         assert_eq!(budget.charge(3), Ok(()));
         assert_eq!(
             budget.charge(2),
-            Err(LimitExceeded::new(LimitKind::WorkBudget, 4, 5))
+            Err(EnvironmentLimit::new(EnvironmentLimitKind::WorkUnits, 4, 5))
         );
         assert_eq!(budget.spent, 3);
         assert_eq!(budget.charge(1), Ok(()));
