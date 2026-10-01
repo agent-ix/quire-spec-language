@@ -64,7 +64,7 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 - `LimitKind` and `LimitExceeded` in F `diagnostic`.
 - `RefusalRecord` in F `diagnostic`, and a second `CatalogCoded` method,
   `catalog_fields`.
-- The resolution of a check-stage `check::Location` to a `SourceRegion`.
+- The resolution of a check-stage `quire_semantic_value::location::Location` to a `SourceRegion`.
 - The I2 reader's refusals and limits, each with its locus.
 - The kernel value refusals' target domains and widths, carried in their
   `quire-exact` variants, and the kernel undefined reason
@@ -78,7 +78,7 @@ One set of package declarations holds the declarations of one source unit.
 They SHALL be checked under that unit's `RawSourceRef` (FR-001), and their
 source owner is that reference's `SourceOwner{authority, identity}`.
 
-A `check::Location` names a declaration origin and a child-index path. For a
+A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. For a
 declaration the assembler built from the unit, it SHALL resolve to a
 `SourceRegion` under the unit's `RawSourceRef`, as follows:
 
@@ -113,7 +113,7 @@ embedded in:
    spans more than one document region (a layout deletion the C-21 map
    admits splits it). No single region of the document names it.
 
-The checked package SHALL resolve a `check::Location` of its own
+The checked package SHALL resolve a `quire_semantic_value::location::Location` of its own
 declarations by the same rule, so a consumer holding an S6a `Evaluation`
 resolves `Evaluation.location` without the forms.
 
@@ -171,8 +171,8 @@ Each producer's locus is the position at which its charge failed:
 | --- | --- | --- |
 | S2 (`forms`) | nesting depth (FR-091-AC-9) | `Locus::Region` over the span of the first node past the bound, under the unit's `RawSourceRef` |
 | S3, a family `check`, for a declaration as a whole | the contract's nesting entry, and the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
-| S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `check::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
-| S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `check::Location` |
+| S3, `Typer` and lowering, under `CheckingLimits` | nesting depth, and the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
+| S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::Location` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Depth`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, nesting depth, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
 
 `LimitExceeded`'s locus SHALL be absent in exactly these cases:

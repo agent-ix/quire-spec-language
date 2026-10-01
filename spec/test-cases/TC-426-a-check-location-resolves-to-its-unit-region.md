@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify FR-096's `check::Location` resolution: a body or measure location
+Verify FR-096's `quire_semantic_value::location::Location` resolution: a body or measure location
 follows its child path to the node's span under the unit's `RawSourceRef`,
 the checked package resolves the same way, and a position in a tree not
 read from the unit has no region. This catches a resolver that returns the

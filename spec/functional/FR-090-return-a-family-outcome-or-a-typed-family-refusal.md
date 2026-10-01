@@ -22,7 +22,7 @@ relationships:
 
 ADR-011 S6a reference evaluation SHALL return
 `Result<Evaluation<T>, InternalFault>`, where
-`Evaluation<T> { outcome: FamilyOutcome<T>, location: Option<check::Location>,
+`Evaluation<T> { outcome: FamilyOutcome<T>, location: Option<quire_semantic_value::location::Location>,
 losses: Vec<LocatedLoss> }` is a layer-5 `value::expression` type and `T` is
 the evaluated family's `ReferenceEvaluation::Observed`. `CheckedPackage::call`
 and `CheckedPackage::evaluate` return `Evaluation<Value>`, written
@@ -118,7 +118,7 @@ This requirement carries testable criteria for decisions already taken:
   - `FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause))`, where
     `cause.undefined_record()` is the family cause's `UndefinedRecord`: its
     undefined reason and that reason's catalog payload.
-- `e.location`, the `check::Location` of the node at which an evaluation that
+- `e.location`, the `quire_semantic_value::location::Location` of the node at which an evaluation that
   did not complete stopped, or `None` when the evaluation completed or
   stopped before any node ran (a meter charge denied at call entry).
 - `e.losses`, the loss records of the operations a completed evaluation
@@ -189,7 +189,7 @@ unchanged (ADR-011 §2.2 E6: carried, never re-derived). The caller receives
 them only inside the `Evaluation`, so it cannot drop them apart from the
 outcome. `FamilyOutcome`, `FamilyResult` and `EvalOutcome` hold no
 location.
-`location` is `check::Location` (`quire-semantic-value/src/location.rs`), the declaration
+`location` is `quire_semantic_value::location::Location`, the declaration
 origin and child-index path that every checked expression node carries. It
 is the one locus of the evaluation: the node at which an evaluation that did
 not complete stopped, or `None` when the evaluation completed or stopped

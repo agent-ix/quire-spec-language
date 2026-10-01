@@ -36,7 +36,8 @@
 //! # Source regions
 //!
 //! FR-322 maps every occurrence to at least one byte region. `check` records
-//! each occurrence at a `check::Location` (a declaration and a child path).
+//! each occurrence at a `quire_semantic_value::location::Location` (a
+//! declaration and a child path).
 //! [`emit_checked`] places it through the checked unit's own form spans
 //! (`CheckedGraph::region`, FR-096, ADR-013 O-12); [`emit_package`] takes
 //! the conversion as a parameter. An occurrence that cannot be placed, or is

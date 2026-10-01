@@ -212,7 +212,7 @@ in the function's `decreases` measure is not in the body. The claim covers
 one site. A claim site (design name `ClaimSite`; the implementing ticket
 chooses the Rust spelling) holds:
 
-- the checked application's `check::Location`: the region of the unit the
+- the checked application's `quire_semantic_value::location::Location`: the region of the unit the
   checked expression was read from (FR-096);
 - the application's **result bound**: the target range of the
   `quire.op.numeric.narrow` that wraps it, when a narrow's operand is this

@@ -49,9 +49,10 @@ pub use family::{InvalidQualifiedName, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedExpression;
 
-/// The F-layer diagnostic code of an [`InputRefusal`]. The refusal itself
-/// lives in the `no_std` leaf `quire-semantic-value`, which cannot name
-/// `qsl-foundation`'s catalog, so the catalog mapping is made here, beside
+/// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
+/// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
+/// names the same code as a string ([`InputRefusal::code`]) but cannot name
+/// `qsl-foundation`'s enum, so the enum mapping is made here, beside
 /// [`CheckedPackage::call`]'s and [`CheckedPackage::evaluate`]'s admission
 /// code.
 pub fn input_refusal_code(refusal: &InputRefusal) -> qsl_foundation::diagnostic::Code {
@@ -539,6 +540,8 @@ mod tests {
     /// Each admission refusal maps to its catalog code: a missing name to
     /// `missing_declaration`, a wrong argument or role mapping to
     /// `invalid_runtime_input`, a dangling reference to `dangling_reference`.
+    /// The enum's spelling equals the leaf's own `InputRefusal::code` string
+    /// for every variant, so a backend reading the string agrees with QSL.
     #[test]
     fn input_refusal_code_maps_each_refusal_to_its_catalog_code() {
         use qsl_foundation::diagnostic::Code;
@@ -573,6 +576,7 @@ mod tests {
         ];
         for (refusal, code) in cases {
             assert_eq!(input_refusal_code(&refusal), code, "{refusal:?}");
+            assert_eq!(code.as_str(), refusal.code(), "{refusal:?}");
         }
     }
 

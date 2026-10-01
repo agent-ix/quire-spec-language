@@ -4,10 +4,12 @@
 //! code produces it; a backend admitting arguments to checked code refuses
 //! the same way.
 //!
-//! The F-layer diagnostic `Code` each refusal carries is mapped above this
-//! leaf, in `qsl-eval` (`input_refusal_code`): this crate depends on
-//! `quire-exact` only, so it names the closed cause tag ([`InputRefusal::cause`])
-//! and leaves the catalog code to the layer that owns the catalog.
+//! Each refusal names its stable catalog code as a string
+//! ([`InputRefusal::code`]) and its closed cause tag ([`InputRefusal::cause`]).
+//! This crate depends on `quire-exact` only, so it cannot name the F-layer
+//! diagnostic `Code` enum; `qsl-eval`'s `input_refusal_code` maps each
+//! refusal to that enum, and its test pins the enum's spelling to this
+//! string for every variant.
 
 use alloc::string::String;
 
@@ -53,6 +55,18 @@ pub enum InputRefusal {
 }
 
 impl InputRefusal {
+    /// The stable catalog code: `missing_declaration`,
+    /// `invalid_runtime_input` or `dangling_reference`.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnknownFunction(_) | Self::UnknownClause(_) => "missing_declaration",
+            Self::Arity { .. } | Self::WrongValueKind { .. } | Self::ObservationsMismatch => {
+                "invalid_runtime_input"
+            }
+            Self::DanglingReference { .. } => "dangling_reference",
+        }
+    }
+
     /// The closed cause tag.
     pub fn cause(&self) -> &'static str {
         match self {
@@ -68,16 +82,18 @@ impl InputRefusal {
 mod tests {
     use super::*;
 
-    /// Each refusal names its closed cause tag.
+    /// Each refusal names its catalog code and its closed cause tag.
     #[test]
-    fn each_refusal_names_its_cause() {
+    fn each_refusal_names_its_code_and_cause() {
         let cases = [
             (
                 InputRefusal::UnknownFunction(String::from("f")),
+                "missing_declaration",
                 "missing-name",
             ),
             (
                 InputRefusal::UnknownClause(String::from("c")),
+                "missing_declaration",
                 "missing-name",
             ),
             (
@@ -85,19 +101,27 @@ mod tests {
                     declared: 1,
                     supplied: 2,
                 },
+                "invalid_runtime_input",
                 "wrong-value-kind",
             ),
             (
                 InputRefusal::WrongValueKind { parameter: 0 },
+                "invalid_runtime_input",
                 "wrong-value-kind",
             ),
             (
                 InputRefusal::DanglingReference { parameter: 0 },
+                "dangling_reference",
                 "absent-target-in-complete-population",
             ),
-            (InputRefusal::ObservationsMismatch, "wrong-role-mapping"),
+            (
+                InputRefusal::ObservationsMismatch,
+                "invalid_runtime_input",
+                "wrong-role-mapping",
+            ),
         ];
-        for (refusal, cause) in cases {
+        for (refusal, code, cause) in cases {
+            assert_eq!(refusal.code(), code, "{refusal:?}");
             assert_eq!(refusal.cause(), cause, "{refusal:?}");
         }
     }
