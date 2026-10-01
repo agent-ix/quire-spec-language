@@ -1527,7 +1527,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=task%2Fno-std-alloc#6141cbc19e3bd6d551991e0a53d67edff4ebc422"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#9572a21687058279bc1b729a4830a28f26ef7173"
 dependencies = [
  "ryu-js",
  "serde",
