@@ -27,11 +27,9 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::Identifier;
 
-use super::{
-    charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal, TOOLCHAIN,
-};
+use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
 use crate::identity::RawSourceRef;
-use crate::proof_result::{ProofCategory, ToolPin};
+use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
@@ -269,7 +267,6 @@ pub fn replay_state_clause(
     };
     let proved = Verdict::from_category(ProofCategory::Violation);
     let charges = charges(report.usage.evaluation_consumed.iter().copied());
-    let pin = ToolPin::new(TOOLCHAIN);
     let result = match envelope.source() {
         ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
@@ -289,7 +286,6 @@ pub fn replay_state_clause(
             }),
             Vec::new(),
             charges,
-            pin,
         )),
         ReplaySource::Input(_) => ReplayResult::Input(InputArmResult::settle(
             proved,
@@ -298,7 +294,6 @@ pub fn replay_state_clause(
             value,
             Vec::new(),
             charges,
-            pin,
         )),
     };
     Ok(StateClauseReplayResult {

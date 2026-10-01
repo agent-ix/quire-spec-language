@@ -181,23 +181,6 @@ impl TerminalRecord {
     }
 }
 
-/// The executor/tool pin an FR-331 manifest carries alongside its `backend`
-/// member.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ToolPin(String);
-
-impl ToolPin {
-    /// Wrap an already-read tool pin string.
-    pub fn new(pin: impl Into<String>) -> Self {
-        Self(pin.into())
-    }
-
-    /// The tool pin's raw string form.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
 /// item. No public constructor other than [`read_backend_provider_envelope`]
 /// (FR-069-CON-1): a caller cannot name an arbitrary category directly.
@@ -206,7 +189,6 @@ pub struct ProofResultEnvelope {
     category: ProofCategory,
     record: TerminalRecord,
     backend: Backend,
-    tool_pin: ToolPin,
     inconclusive_cause: Option<InconclusiveCause>,
 }
 
@@ -224,11 +206,6 @@ impl ProofResultEnvelope {
     /// The `backend` member (ADR-013 O-19).
     pub fn backend(&self) -> &Backend {
         &self.backend
-    }
-
-    /// The executor/tool pin.
-    pub fn tool_pin(&self) -> &ToolPin {
-        &self.tool_pin
     }
 
     /// FR-069 Behavior's typed vacuous-proof cause: `Some(KaniVacuousProof)`
@@ -262,7 +239,7 @@ const CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
 
 /// A minimal, already-parsed representation of one FR-331
 /// `quire.backend-provider/v1` envelope: exactly the members FR-069's
-/// Inputs section names (`results`, `manifest`, tool pin), enough to build
+/// Inputs section names (`results`, `manifest`), enough to build
 /// and round-trip a [`ProofResultEnvelope`] per item. This is not a general
 /// FR-331 wire reader; it is the input shape FR-069's reader consumes.
 #[derive(Clone, Debug)]
@@ -279,8 +256,6 @@ pub struct BackendProviderSource {
     /// `quire.tool-manifest.jcs/v1` ([`ManifestDigest`] cannot be
     /// constructed with any other domain).
     pub manifest_digest: ManifestDigest,
-    /// The executor/tool pin the manifest carries alongside `backend`.
-    pub tool_pin: String,
     /// The per-item terminal records this envelope reports.
     pub items: Vec<TerminalRecord>,
 }
@@ -294,7 +269,6 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
         + source.capability_vocabulary.as_deref().map_or(0, str::len)
         + source.backend_identity.len()
         + source.manifest_digest.record().as_bytes().len()
-        + source.tool_pin.len()
         + source
             .items
             .iter()
@@ -329,7 +303,6 @@ pub fn read_backend_provider_envelope(
     }
 
     let backend = Backend::new(source.backend_identity.clone(), source.manifest_digest);
-    let tool_pin = ToolPin::new(source.tool_pin.clone());
     Ok(source
         .items
         .iter()
@@ -338,7 +311,6 @@ pub fn read_backend_provider_envelope(
             inconclusive_cause: record.value.vacuous_proof_cause(),
             record: record.clone(),
             backend: backend.clone(),
-            tool_pin: tool_pin.clone(),
         })
         .collect())
 }
@@ -348,7 +320,7 @@ impl ProofResultEnvelope {
     /// into the [`BackendProviderSource`] shape [`read_backend_provider_envelope`]
     /// consumes, for round-tripping a positive read through the reader again
     /// (FR-069-AC-3's construct -> serialize -> read round trip). Every
-    /// envelope this reader ever produces shares one `backend`/`tool_pin`
+    /// envelope this reader ever produces shares one `backend`
     /// (they all come from the one source it read), so the first envelope's
     /// is representative. An empty slice has no `backend` to serialize and
     /// is refused with [`EmptyEnvelopeSet`].
@@ -359,14 +331,13 @@ impl ProofResultEnvelope {
             capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             backend_identity: first.backend.identity().to_owned(),
             manifest_digest: first.backend.manifest_digest(),
-            tool_pin: first.tool_pin.as_str().to_owned(),
             items: envelopes.iter().map(|e| e.record.clone()).collect(),
         })
     }
 }
 
 /// [`ProofResultEnvelope::to_source`]'s refusal: there is no envelope to
-/// take the source's `backend` and tool pin from.
+/// take the source's `backend` from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("no proof-result envelope to serialize")]
 pub struct EmptyEnvelopeSet;
@@ -386,7 +357,6 @@ mod tests {
             capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
             manifest_digest: manifest_digest(),
-            tool_pin: "kani-0.67.0".to_owned(),
             items,
         }
     }
@@ -537,13 +507,13 @@ mod tests {
     /// byte-level wire serializer for the backend envelope, so this is the
     /// in-process shape that stands in for one), read via
     /// [`read_backend_provider_envelope`] again -- preserves the `backend`
-    /// member, tool pin and every per-item disposition byte for byte, with
+    /// member and every per-item disposition byte for byte, with
     /// no re-derivation of the manifest digest. N2: this is a real
     /// construct/serialize/read round trip through `to_source`, not two
     /// reads of the same untouched source.
     #[trace("TC-179", "FR-069-AC-3")]
     #[test]
-    fn tc_179_round_trip_preserves_backend_tool_pin_and_dispositions() {
+    fn tc_179_round_trip_preserves_backend_and_dispositions() {
         let items = vec![
             TerminalRecord::new("a", TerminalValue::Proved { success_checks: 3 }),
             TerminalRecord::new("b", TerminalValue::Refuted),
@@ -556,7 +526,6 @@ mod tests {
         for envelope in &first {
             assert_eq!(envelope.backend().identity(), "kani-backend-1");
             assert_eq!(envelope.backend().manifest_digest(), manifest_digest());
-            assert_eq!(envelope.tool_pin().as_str(), "kani-0.67.0");
         }
 
         // Step 4: a mutated manifest digest is a different `Backend`, never

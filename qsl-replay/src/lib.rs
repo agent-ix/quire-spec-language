@@ -53,7 +53,7 @@ pub use identity::{
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
+    TerminalRecord, TerminalValue, UnavailabilityCause,
 };
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads

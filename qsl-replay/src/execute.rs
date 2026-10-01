@@ -33,7 +33,7 @@ use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Val
 
 use crate::bounds::MAX_ENCODED_BYTES;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
-use crate::proof_result::{ProofCategory, ToolPin};
+use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
@@ -283,9 +283,6 @@ pub enum DependencySelectionsCause {
     },
 }
 
-/// The executor's toolchain pin in every result it settles (ADR-013 O-27).
-const TOOLCHAIN: &str = concat!("qsl-replay/", env!("CARGO_PKG_VERSION"));
-
 /// ADR-013 C-13: replay `wire` and settle its verdict. The counterexample a
 /// request replays refuted its property, so the proved verdict is
 /// `violation`; the replayed verdict is the selected predicate's: `false`
@@ -527,7 +524,6 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
         .into_iter()
         .collect();
     let charges = consumed(&meter);
-    let pin = ToolPin::new(TOOLCHAIN);
     Ok(match request.source() {
         ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
@@ -548,7 +544,6 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             }),
             regions,
             charges,
-            pin,
         )),
         ReplaySource::Input(_) => ReplayResult::Input(InputArmResult::settle(
             proved,
@@ -557,7 +552,6 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             value,
             regions,
             charges,
-            pin,
         )),
     })
 }

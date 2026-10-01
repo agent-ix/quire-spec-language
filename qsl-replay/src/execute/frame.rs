@@ -23,11 +23,9 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{DocumentRef, FrameWitness, ObservationLimits, Provisions};
 
-use super::{
-    charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal, TOOLCHAIN,
-};
+use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
 use crate::identity::RawSourceRef;
-use crate::proof_result::{ProofCategory, ToolPin};
+use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
@@ -318,7 +316,6 @@ pub fn replay_frame(
         })?;
     let proved = Verdict::from_category(ProofCategory::Violation);
     let charges = charges(report.usage.evaluation_consumed.iter().copied());
-    let pin = ToolPin::new(TOOLCHAIN);
     // The frame check reports no evaluation location, so the result cites
     // no region; its identities are the payload's and the documents'.
     let result = match envelope.source() {
@@ -340,7 +337,6 @@ pub fn replay_frame(
             }),
             Vec::new(),
             charges,
-            pin,
         )),
         ReplaySource::Input(_) => ReplayResult::Input(InputArmResult::settle(
             proved,
@@ -349,7 +345,6 @@ pub fn replay_frame(
             value,
             Vec::new(),
             charges,
-            pin,
         )),
     };
     Ok(FrameReplayResult {
