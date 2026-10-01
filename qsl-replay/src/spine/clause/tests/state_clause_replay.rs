@@ -368,7 +368,8 @@ fn a_violated_invariant_reproduces_keeping_its_snapshot() {
 }
 
 /// `result`'s witness arm settled `inconclusive`, `Verdicts`, `violation`
-/// proved and `success` replayed, with the evaluated `true`.
+/// proved and `success` replayed, with the evaluated `true` and no FR-351
+/// record.
 fn assert_inconclusive_by_verdicts(result: &StateClauseReplayResult) {
     let arm = witness_arm(result);
     assert_eq!(arm.settlement(), WitnessSettlement::Inconclusive);
@@ -380,6 +381,10 @@ fn assert_inconclusive_by_verdicts(result: &StateClauseReplayResult) {
         })
     );
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(true)));
+    assert!(
+        arm.record().is_none(),
+        "a disagreement carries no decisive record"
+    );
 }
 
 /// TC-517 step 2 (FR-122-AC-2): `VersionUnchanged` over unchanged-version
