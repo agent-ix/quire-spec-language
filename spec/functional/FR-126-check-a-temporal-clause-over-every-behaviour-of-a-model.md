@@ -65,7 +65,7 @@ pub enum ModelCheckItem<'a> {
 
 pub struct ModelCheckLimits {
     pub limits: Limits,                     // FR-101: max_states, max_depth, max_transitions
-    pub max_automaton_states: u64,          // published default 1_048_576 (2^20)
+    pub max_automaton_states: u64,
 }
 
 pub fn check_model(
@@ -74,9 +74,14 @@ pub fn check_model(
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal>;
 ```
 
-Every member of `ModelCheckLimits` is an ADR-014 B-5 budget of QSL's own
-provider, set by the request (ADR-018 §1, IV-6). `max_depth` is the method
-depth `k`: a run that completes it settles V-5, not V-7. The subject's
+`max_states`, `max_transitions` and `max_automaton_states` are
+caller-raisable ADR-014 B-5 budgets of QSL's own provider (ADR-018 §1,
+IV-6). `ModelCheckLimits::default()` publishes `max_states` 10,000,000,
+`max_transitions` 100,000,000 and `max_automaton_states` 1,048,576 (2^20),
+with `Limits` at FR-101's defaults. `max_depth` is the search horizon `k`
+of a bounded search, a method parameter and not a resource budget: a run
+that completes it settles V-5, not V-7, and the result states the `k` it
+used. Its default, `usize::MAX`, sets no horizon. The subject's
 FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelSubject` (FR-125).
 
@@ -257,6 +262,7 @@ automaton states and the depth reached.
 | FR-126-AC-5 | Limits over the example subject and the TP-4 claim of AC-1 with no granularity: `max_depth` 2 returns `BoundReached{depth: 2}`, since the length-3 loop needs an edge out of depth 2; `max_depth` 3 returns `Violated` with the AC-1 loop, found by the second phase over the retained graph although depth 3 left a frontier; `max_states` 2 returns `Stopped{ResourceExhausted, {MaxStates, 2}}`; `max_transitions` 3 returns `Stopped{ResourceExhausted, {MaxTransitions, 3}}`; a `true` poll returns `Stopped{Cancelled, None}`. Over the `Counter` subject with an evaluation meter budget of zero, the `inc` precondition's evaluation stops the run with `Stopped{ResourceExhausted, {EvaluationMeter, 0}}`. | Test (TC-521) |
 | FR-126-AC-6 | `always (holds(not s.healthy) implies eventually[0,100] holds(s.healthy))` over the `Restless` subject, where `fail` can repeat forever, with `max_automaton_states` 50 returns `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an automaton-state count of 50 and no counterexample; with the default limit it returns `Violated`, a finite prefix with at least 101 consecutive unhealthy positions. A subject with an undecided contract conjunction returns `Undecided(UndecidedSuccessor)`, and one with an unbounded population root returns `RequiresBound` before exploring. | Test (TC-521) |
 | FR-126-AC-7 | Running AC-1's two requests twice each gives equal outcomes and byte-equal counterexamples. | Test (TC-521) |
+| FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000, `max_automaton_states` 1,048,576 and `max_depth` `usize::MAX`. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
 
 ## Dependencies
 

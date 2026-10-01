@@ -61,7 +61,14 @@ AC-14).
 - The package's `TypeEnvironment` (`qsl_semantics`) and the extent walk's
   `position_limit: u64`, both passed to `classify_extent`.
 - For exploration: `Limits{max_states, max_depth, max_transitions}` and a
-  cancellation poll `impl FnMut() -> bool`.
+  cancellation poll `impl FnMut() -> bool`. `max_states` and
+  `max_transitions` are caller-raisable resource budgets (ADR-014 B-5).
+  `max_depth` is the search horizon: states at depth `>= max_depth` are not
+  expanded, and a run that stops there reports the horizon it used.
+  `Limits::default()` publishes `max_states` 10,000,000, `max_transitions`
+  100,000,000 and `max_depth` `usize::MAX`, which sets no horizon. A run that
+  reaches a limit names it and its value in `Outcome::Bounded`, and the
+  caller raises it by setting that `Limits` member.
 - For sampling: a `u64` seed, a `u64` trace index, a `usize` step ceiling
   and the sampler's `DefinitionRef` (`qsl_foundation::selection`) from the
   ecosystem lock's `definitions`.
@@ -332,6 +339,7 @@ disposition of each existing test is in the table below.
 | FR-101-AC-12 | On a test system `0 → {1, 2}`, `1 → 3`, whose expansion of `1` returns `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge`, exploration returns `Outcome::Stopped` with that cause, frontier `[<1>, <2>]` (the stopped state, then the queue), category incomplete; with `runtime_invariant`/`established-invariant-broken` it returns `Stopped`, category internal failure. | Test (TC-474) |
 | FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its digest, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
 | FR-101-AC-14 | Sampling the chain `0 → 1`, whose expansion of `1` stops with `resource_exhausted`/`insufficient-next-charge`, ends with `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 1, and that trace replays successfully. The same trace replayed against a system whose expansion of `1` does not stop refuses `ReplayError::Stopped{step: 1, recorded: Some(<cause>), replayed: None}`; against one that stops with `runtime_invariant`, `recorded` and `replayed` name the two causes; a trace sampled with `max_steps` 1 from a chain whose `1` does not stop ends `StepLimit` at `1`, and replayed against the stopping chain it refuses with `recorded: None`. A trace whose recorded findings differ from the recomputed ones refuses `ReplayError::FindingMismatch` at that step. | Test (TC-474) |
+| FR-101-AC-15 | `Limits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000 and `max_depth` `usize::MAX`. A chain of 3 states explored with `Limits::default()` returns `Exhaustive`; with `max_states` set to 2 and the other members at their defaults it returns `Outcome::Bounded` at `Limit::States` with value 2. | Test (TC-536) |
 
 ## Existing test disposition
 
