@@ -38,8 +38,7 @@ relationships:
 
 When an explicitly selected native query definition admits a predicate or sequence query, the language pipeline SHALL preserve its exact checked meaning through compilation and evaluation over validated supplied inputs.
 
-This scopes roadmap L3 under compiler
-[#36](https://github.com/agent-ix/quire-spec-language/issues/36). It restates the
+It restates the
 accepted [query definition](../../resources/native-v1/proposals/quire-v1/definitions/state-queries.md)
 and [state contract](../../resources/native-v1/proposals/quire-v1/state-contract.md)
 as a compiler-owned delivery obligation. It does not change those meanings or
@@ -134,8 +133,8 @@ If the next charged operation exceeds the run's admitted budget, then the langua
 
 Checking accounting follows [FR-040](FR-040-check-composed-values.md); runtime
 accounting must expose its own caller-lowered limits and consumed work. A sequence's
-declared maximum is 1..10,000 per admitted wrapper; runtime sequences and filter
-results may be empty. Nested finite bounds do not waive total-work bounds.
+declared maximum is model meaning: the positive length bound its wrapper
+declares. Runtime sequences and filter results may be empty. Nested finite bounds do not waive total-work bounds.
 The stage does not select a new numerical hard limit by observing current code.
 
 Predicate reuse supplies neither temporal/protocol family admission nor
@@ -186,10 +185,8 @@ The admitted domain package declares populations; the observation contract
 supplies concrete members, membership and completeness. A missing declaration or
 observation fact is an explicit prerequisite, not permission to fabricate it
 locally.
+Ecosystem acceptance is owned by TC-135.
 
-This specification cycle is retrospective under
-[#66](https://github.com/agent-ix/quire-spec-language/issues/66). Existing
-compiler/query-emission work predates this scoped artifact. The subsequently
-implemented public evaluator, rational prefix proofs, explicit population
-completeness inputs and matrix bindings supply this scoped requirement's local
-acceptance; ecosystem acceptance remains separately owned by TC-135.
+## References
+
+- Linear QSL-77 (compiler), QSL-92 (specification).

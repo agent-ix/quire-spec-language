@@ -249,7 +249,7 @@ names different artifacts in each.
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ Passed locally |
 | TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ Covered |
 | TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ Passed locally; step 1 covered; steps 2 to 3 covered; step 4 covered |
-| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8 | 🚧 Planned |
+| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9 | 🚧 Planned |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned |
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally |
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned |
@@ -514,7 +514,7 @@ names different artifacts in each.
 | TC-818 | S3 refuses ill-formed union declarations and bounds them only by checking ceilings | Unit | P1 | FR-316-AC-2, FR-316-AC-3, FR-316-AC-4 | 🚧 Planned |
 | TC-819 | S3 checks union construction and refuses FR-143's four construction errors | Unit | P1 | FR-317-AC-1, FR-317-AC-2, FR-317-AC-4 | 🚧 Planned |
 | TC-820 | S3 resolves qualified member names by candidate and refuses ambiguity | Unit | P1 | FR-317-AC-3 | 🚧 Planned |
-| TC-821 | S3 checks a case, types its binders per arm and applies the if rule to its result | Unit | P1 | FR-318-AC-1, FR-318-AC-2 | 🚧 Planned |
+| TC-821 | S3 checks a case, types its binders per arm and decides its result type by QSpec FR-146 | Unit | P1 | FR-318-AC-1, FR-318-AC-2 | 🚧 Planned |
 | TC-822 | S3 refuses each exhaustiveness obligation with its payload and locus | Unit | P1 | FR-318-AC-3 | 🚧 Planned |
 | TC-823 | S3 reports exactly one refusal per case, in builder order | Unit | P1 | FR-318-AC-4 | 🚧 Planned |
 | TC-824 | A case checks under each clause kind and adds no requirement record | Unit | P1 | FR-318-AC-5 | 🚧 Planned |
@@ -523,7 +523,7 @@ names different artifacts in each.
 | TC-827 | Union nodes lower and emit in QSpec's spelling and survive the I2 read and recompile | Integration | P1 | FR-320-AC-1, FR-320-AC-2 | 🚧 Planned |
 | TC-828 | A value-validity item containing case settles unsupported downstream | Integration | P1 | FR-320-AC-3 | 🚧 Planned |
 | TC-829 | Argument admission refuses ill-formed supplied union values before any charge | Unit | P1 | FR-321-AC-1, FR-321-AC-2 | 🚧 Planned |
-| TC-830 | Union values round-trip through v2 literals and typed values at any depth | Unit | P1 | FR-321-AC-3, FR-321-AC-4 | 🚧 Planned |
+| TC-830 | Union values round-trip through v2 union_value nodes at any depth | Unit | P1 | FR-321-AC-3, FR-321-AC-4 | 🚧 Planned |
 | TC-831 | S6a evaluates case and construction, propagates stopped operands and faults on a broken invariant | Unit | P1 | FR-322-AC-1, FR-322-AC-2, FR-322-AC-4 | 🚧 Planned |
 | TC-832 | S6a charges union construction and case selection at QSpec's accounting points | Unit | P1 | FR-322-AC-3 | 🚧 Planned |
 | TC-833 | Union values as collection elements, in queries and in predicates | Unit | P1 | FR-323-AC-1, FR-323-AC-2, FR-323-AC-3, FR-046-AC-9 | 🚧 Planned |
@@ -991,6 +991,6 @@ covers all five QSpec AD-003 `requires` edges (QSpec FR-453).
 TC-815 to TC-834 back every AC of FR-315 to FR-324 and FR-046-AC-9. All are
 `🚧 Planned`. QSpec TC-262 to TC-265 run inside TC-817 to TC-819, TC-822,
 TC-826 and TC-831 under `QSpec-` tags. TC-827's wire assertions,
-TC-830's v2 and typed-value spellings, TC-832's charge points and TC-833's
-union-key order read QSpec's union spelling, accounting and key rules
-(STD-142, STD-115).
+TC-830's v2 `union_value` spelling, TC-832's charge points and TC-833's
+union-key order read QSpec's union spelling (FR-440, FR-441), accounting
+(FR-143, FR-146, `value-accounting.md`) and key rules (FR-144).

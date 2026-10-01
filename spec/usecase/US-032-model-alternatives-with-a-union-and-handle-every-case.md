@@ -100,8 +100,9 @@ checker cannot prove exhaustive.
 
 ## References
 
-- QSpec half, wire spelling and member identity preimage (SC-G1 to SC-G3):
-  STD-142.
-- QSpec half, accounting charge points, canonical key, `case` result type
-  and value profile (SC-G4 to SC-G7): STD-115.
+- QSpec half: wire spelling QSpec FR-440 (SC-G1, SC-G2); member key
+  FR-441 (SC-G3); accounting charge points FR-143, FR-146 and
+  `value-accounting.md` (SC-G4); canonical key FR-144 (SC-G5); `case`
+  result type FR-146 "Case result type" (SC-G6); value profile FR-143
+  "Value profile" (SC-G7). Specification tickets STD-142, STD-115.
 - Owning ticket: QSL-383.

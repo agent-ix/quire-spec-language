@@ -22,8 +22,7 @@ relationships:
 
 When S3 lowers and S4 emits a checked package that contains a union, a union
 construction or a `case`, the compiler SHALL spell each as QSpec's v2 union
-type node, union construction node, `case` node and union-member operation
-member (References), and SHALL produce a package whose identities survive
+type node, `union_value` node and `case` node (QSpec FR-440), and SHALL produce a package whose identities survive
 the I2 read and replay's recompile (ADR-012 §16.3 SC-R1, §16.4 S3 lowering
 and S4 rows).
 
@@ -40,8 +39,8 @@ and S4 rows).
 
 - S3 lowering SHALL map the union type node, a construction and a `case` to
   v2 nodes through the wire vocabulary (`NodeTag`, `SemanticTerm`,
-  `Operator`) and the union-member operation member, each with QSpec's
-  spelling.
+  `Operator`), each with QSpec FR-440's spelling. A `case` node's
+  `quire.op.control.case` application carries `member: null`.
 - The S4 emitter SHALL omit with `UnsupportedForm` every node whose tag and
   form the target IR cannot decode, together with every node that names it,
   leaving no partial body.
@@ -71,4 +70,5 @@ and S4 rows).
 ## References
 
 - Owning ticket: QSL-383. Design: ADR-012 §16.3, §16.4, §16.10.
-- v2 union node spelling and union-member kind (SC-G1, SC-G2): STD-142.
+- v2 union node spelling (SC-G1, SC-G2): QSpec FR-440 (specification
+  ticket STD-142).

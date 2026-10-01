@@ -28,7 +28,8 @@ When S3 types an `Expression::Case` (FR-315), the checker SHALL return one
 checked `Case` node or exactly one refusal, found by the `SumCase` family's
 staged builder (scrutinee, then arms, then `finish`): the first, in the
 order below, of a scrutinee refusal, an arm body refusal, or the first
-failed QSpec FR-146 exhaustiveness obligation (ADR-012 §16.5).
+failed QSpec FR-146 exhaustiveness obligation, QSpec FR-146's order
+(ADR-012 §16.5).
 
 ## Inputs
 
@@ -73,13 +74,12 @@ failed QSpec FR-146 exhaustiveness obligation (ADR-012 §16.5).
 
 ### Result type
 
-- The checker SHALL type a `case` by the rule it applies to `if`: the arm
-  bodies are the branches, checked in source order; the expected type is the
-  enclosing expectation when one exists, and is otherwise inferred from the
-  branches as for `if`. A body that does not have that type SHALL be refused
-  `ill_typed`/`type-mismatch` at that body. This is QSL's reading of QSpec
-  FR-146's "declared result type". QSpec's rule for that type (References)
-  governs wherever it differs from this one.
+- The checker SHALL decide a `case`'s result type by QSpec FR-146 "Case
+  result type": the expected type its position supplies when that is
+  unique, and otherwise the type inferred from the arm bodies. It SHALL
+  check the arm bodies against it in source arm order, and SHALL refuse the
+  first body that does not have it `ill_typed`/`type-mismatch` at that
+  body.
 
 ### Loci and causes
 
@@ -116,7 +116,7 @@ failed QSpec FR-146 exhaustiveness obligation (ADR-012 §16.5).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-318-AC-1 | Over `Shape`, `function area using v (s: Shape): Integer pure { case s { Circle(r): r * r * 3; Shape::Rect(w, h): w * h; Empty: 0; } }` checks: one `Case` node over `Shape` with arms for `Empty`, `Circle` and `Rect`, binders `r: Integer`, `w: Integer`, `h: Integer`, each binder visible only in its own arm body, and result type `Integer`. A `case` nested in an arm body checks. | Test (TC-821) |
-| FR-318-AC-2 | With no enclosing expectation, arms `Circle(r): r; Rect(w, h): true; Empty: 0;` refuse `ill_typed`/`type-mismatch` at the body `true`, exactly as the same three expressions as `if` branches refuse. | Test (TC-821) |
+| FR-318-AC-2 | With no enclosing expectation, arms `Circle(r): r; Rect(w, h): true; Empty: 0;` refuse `ill_typed`/`type-mismatch` at the body `true`, by QSpec FR-146 "Case result type" (the first body whose type is neither the first body's nor, with an `Integer` first body, an integer type). | Test (TC-821) |
 | FR-318-AC-3 | One `case` per obligation refuses `undefined_expression`/`unproved-exhaustiveness` with that obligation, `Shape`'s identity and the arm set: two `Empty` arms (`duplicate-arm`, at the second); an arm `Other::X` naming a member of a second union (`unknown-member`); `Circle(a, b)` (`arm-arity`); arms for `Empty` and `Circle` only (`missing-arm`, at the `case`). QSpec TC-264's cases each give TC-264's verdict. | Test (TC-822) |
 | FR-318-AC-4 | A `case` with two `Empty` arms and no `Rect` arm reports only `duplicate-arm`. An `unknown-member` arm whose body is ill-typed reports only `unknown-member`. A `case` with an ill-typed body in a resolved arm and a missing arm reports only `ill_typed` at that body. A scrutinee of type `Integer` followed by arms naming unknown members reports only the scrutinee's `ill_typed`/`type-mismatch`; a scrutinee of an enum type reports the same. | Test (TC-823) |
 | FR-318-AC-5 | The `case` of AC-1 checks inside a state clause body and inside a `decreases` measure, each under its clause kind. A state clause containing it yields exactly one `value-validity` requirement record, the clause's own, and a function containing it yields no record for the `case` or its exhaustiveness obligation. | Test (TC-824) |
@@ -124,7 +124,8 @@ failed QSpec FR-146 exhaustiveness obligation (ADR-012 §16.5).
 
 ## Dependencies
 
-- QSpec FR-146 ("Case exhaustiveness"), FR-146-AC-10, FR-146-AC-11; the
+- QSpec FR-146 ("Case exhaustiveness", "Case result type"), FR-146-AC-10,
+  FR-146-AC-11; the
   catalog cause `undefined_expression`/`unproved-exhaustiveness`.
 - FR-062 (family contract and staged builder), FR-057 (claim forms),
   FR-096 and NFR-011 (limits and loci), FR-315, FR-316.
@@ -132,4 +133,5 @@ failed QSpec FR-146 exhaustiveness obligation (ADR-012 §16.5).
 ## References
 
 - Owning ticket: QSL-383. Design: ADR-012 §16.4 S3 `case` row, §16.5.
-- `case` result-type rule (SC-G6): STD-115.
+- `case` result-type rule (SC-G6): QSpec FR-146 "Case result type"
+  (specification ticket STD-115).

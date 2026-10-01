@@ -59,4 +59,5 @@ wherever it differs (ADR-012 §16.9 "Profiles").
 ## References
 
 - Owning ticket: QSL-383. Design: ADR-012 §16.9, §16.10.
-- Value profile naming `union` (SC-G7): STD-115.
+- Value profile naming `union` (SC-G7): QSpec FR-143 "Value profile"
+  (specification ticket STD-115).

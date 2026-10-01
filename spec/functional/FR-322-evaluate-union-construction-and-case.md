@@ -94,4 +94,5 @@ charge points `quire.value.accounting/v1` defines for union construction and
 
 - Owning ticket: QSL-383. Design: ADR-012 §16.4 S6a row, §16.6 (S6a).
 - Accounting charge points for union construction and `case` selection
-  (SC-G4): STD-115.
+  (SC-G4): QSpec FR-143, FR-146 and `value-accounting.md` (specification
+  ticket STD-115).

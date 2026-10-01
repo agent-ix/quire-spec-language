@@ -13,7 +13,7 @@ relationships:
 Verify the positive read and admission of FR-106's documents, digest
 stability, and that admission reads nothing ambient.
 
-Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8.
+Scope: FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9.
 
 ## Test Procedure
 
@@ -49,6 +49,10 @@ their `sha256-jcs` digest.
    over the variant plus an operation `probeSub(target: Sub)` on
    `ConfigVersion` and a precondition `SubTargetHolds` on it, `PreCall`
    for `SubTargetHolds` with `target` naming `a`.
+6. Admit the forbidden-parent-change invocation (TC-465) selected for a
+   precondition on `attemptUpdate`, and evaluate it; then admit and evaluate
+   `PreCall` over that invocation's pre snapshot, `self` and parameters for
+   the same precondition.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
@@ -72,6 +76,9 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   `incomplete-scope` naming `archive`; `Incomplete` with `incomplete_population`/
   `incomplete-scope`; admitted with `target` naming `k`, typed `Sub`;
   `invalid_runtime_input`/`wrong-value-kind` at `target` twice.
+- Step 6: the invocation admits one pre observation with no post
+  observation, result or delta and no frame check run (no
+  `frame_violation`); its verdict equals the `PreCall` verdict.
 
 ## Status
 

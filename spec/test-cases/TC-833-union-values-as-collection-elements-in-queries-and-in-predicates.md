@@ -30,9 +30,11 @@ Tag each test `#[trace("TC-833", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: all admitted; set and ordered set hold three elements, the bag
-  four, each in QSpec's union-key order, the same for both input orders;
-  the sequence keeps all four in input order.
+- Step 1: all admitted; the set holds three elements and the bag four, each
+  in QSpec's union-key order, the same for both input orders; the ordered
+  set holds `Rect(2, 3)`, `Empty`, `Circle(1)` and, from the reversed input,
+  `Circle(1)`, `Rect(2, 3)`, `Empty` (first-occurrence order, not key
+  order); the sequence keeps all four in input order.
 - Step 2: `Set<F>` refuses `ill_typed`/`operator-ineligible` at its type
   reference; `Sequence<F>` is admitted.
 - Step 3: `true`, `false`; `contains` is `true`; `filter` keeps both `Rect`
