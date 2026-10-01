@@ -299,6 +299,10 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-143
   - target: ix://agent-ix/quire-spec-language/FR-144
   - target: ix://agent-ix/quire-spec-language/FR-145
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-146
+  - target: ix://agent-ix/quire-spec-language/FR-147
+  - target: ix://agent-ix/quire-spec-language/FR-148
   - target: ix://agent-ix/quire-spec-language/US-018
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-163
@@ -877,6 +881,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-143](functional/FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md) | FR | Specified: the second phase: `F_A` read through the mapping under the `F_C` filter, `Divergence` and `AbstractUnfair` lassos, concrete halts via the terminal stutter, `unsupported` with hidden fields (ADR-020 RS-7, RS-10, CO-2, AX-5); not yet implemented -- TC-548 planned |
 | [FR-144](functional/FR-144-request-and-settle-a-refinement-item.md) | FR | Specified: one `temporal-satisfaction` record with form TP-5 per refinement, the concrete deadlock-freedom item beside it, and settlement of both halves with `MappingUndetermined` (ADR-020 §5, RS-9); not yet implemented -- TC-549 planned |
 | [FR-145](functional/FR-145-replay-a-refinement-counterexample.md) | FR | Specified: replay through the `ModelTrace` arm: both packages recompiled, history, mapped states and candidate sets recomputed, `check_step` rerun, lasso closure and fairness checks, parity (ADR-020 RC-2, RC-3); not yet implemented -- TC-550 planned |
+| [FR-146](functional/FR-146-write-per-step-simulation-records-for-a-refinement.md) | FR | Specified: one `operation-contract` record for RS-2 and per non-`any` step row of a refinement with no hidden or history field, the concrete invariants as hypotheses, SMT unrolling candidacy of the refinement record, and settlement that never refutes (ADR-020 RE-2, RE-3); not yet implemented -- TC-551 planned |
+| [FR-147](functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md) | FR | Specified: S3 admits an abstract protocol side: node targets as observation labels, `internal` rows, the protocol state hidden, one `refinement` record, liveness `unsupported` (ADR-020 MC-1, ADR-027 PR-2); not yet implemented -- TC-552 planned |
+| [FR-148](functional/FR-148-decide-steps-against-an-abstract-protocol.md) | FR | Specified: abstract protocol state sets closed under internal steps, visible steps matched by label, QSpec FR-177's further checks on the same product, replay through `ProtocolSystem` (ADR-027 PR-2, PR-3); not yet implemented -- TC-553 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

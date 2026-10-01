@@ -424,6 +424,9 @@ names different artifacts in each.
 | TC-548 | The liveness half reads abstract fairness through the mapping under concrete fairness | Integration | P1 | FR-143-AC-1, FR-143-AC-2, FR-143-AC-3, FR-143-AC-4, FR-143-AC-5 | 🚧 Planned |
 | TC-549 | Refinement items request one temporal-satisfaction record and settle as one terminal record | Unit | P1 | FR-144-AC-1, FR-144-AC-2, FR-144-AC-3, FR-144-AC-4, FR-144-AC-5 | 🚧 Planned |
 | TC-550 | The replay facade replays a refinement counterexample and recomputes what the abstract model saw | Integration | P1 | FR-145-AC-1, FR-145-AC-2, FR-145-AC-3, FR-145-AC-4 | 🚧 Planned |
+| TC-551 | Per-step simulation records are written for functional refinements and never settle refuted | Unit | P1 | FR-146-AC-1, FR-146-AC-2, FR-146-AC-3, FR-146-AC-4 | 🚧 Planned |
+| TC-552 | S3 checks a refinement whose abstract side is a protocol and writes a refinement record | Unit | P1 | FR-147-AC-1, FR-147-AC-2, FR-147-AC-3 | 🚧 Planned |
+| TC-553 | Concrete steps are decided against an abstract protocol with internal closure and observation labels | Integration | P1 | FR-148-AC-1, FR-148-AC-2, FR-148-AC-3, FR-148-AC-4, FR-148-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

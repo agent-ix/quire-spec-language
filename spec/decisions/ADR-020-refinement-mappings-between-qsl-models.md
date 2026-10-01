@@ -57,7 +57,7 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. Draft for plan-lead review of the key decisions; the
-QSL compiler requirements that implement it are FR-135 to FR-145, exercised
+QSL compiler requirements that implement it are FR-135 to FR-148, exercised
 by US-018. It builds on ADR-018, itself a draft. ADR-027 (the protocol
 transition system) amends RM-5, RM-6, CO-4, MC-1, RC-1 and RC-2 for
 protocol subjects; each amended item says so. The plan lead's rulings on the draft's open questions
@@ -262,7 +262,13 @@ set holds both sides, and the concrete `reveal` prunes it to the one shown.
 EN-1's provider manifest already advertises that kind (ADR-018 §3). RE-2's
 per-step obligations are `operation-contract` records, which is QSpec
 FR-290's existing row. QSpec FR-290's `refinement` kind stays the
-`protocol`-family member of QSpec FR-177. No capability kind is added.
+`protocol`-family member of QSpec FR-177. No capability kind is added. QSL's
+S3 writes every one of these records, as it writes every requirement record
+(ADR-012): the refinement record (FR-144), the RE-2 per-step records
+(FR-146), and the `refinement` record of a refinement whose abstract side is
+a protocol subject (FR-147). RE-2 records are written for a refinement with
+no hidden field and no history field, since `map` is then a function of the
+concrete state alone.
 
 **Strength.** RE-1's `proved` holds for the concrete subject (its initial
 states and universes) against the abstract subject with the derived
@@ -581,28 +587,26 @@ decisions above carry each ruling.
 - QSpec FR-177's protocol refinement has a defined implementation path that
   reuses this record's check.
 
-## Amendments to make on acceptance
+## Amendments
 
-- **ADR-011** §1 S6c row (as ADR-018 adds it): S6c also reads the abstract
-  subject's checked package for a refinement record. §6.1: layer 5
-  `model_check` holds `check_step` and the refinement product; layer 3
-  `check` holds the refinement checker.
-- **ADR-017** RF-1: QSpec FR-290's "Refinement between two operation
-  contracts or state models" row is owned by ADR-020 RE-2; the spec-versioning
-  and profile-layering gates stay corpus tests. §3 AR-1: the refinement
-  declaration is a second `Relation` family declaration, distinct from the
-  abstraction relation, with its own checked type `CheckedRefinement`. §5
-  PF-7 change scenarios: protocol refinement lands on ADR-020's product once
-  protocol nodes reach S4 (MC-1).
+Made in place, each with an "Amended by ADR-020" note: **ADR-011** §1 (the
+S6c row and E10 read the abstract subject's checked package) and §6.1
+(layer 3 `Relation` checker, layer 5 `model_check` with `check_step` and
+the refinement product); **ADR-012** §3 `Relation` row (the refinement
+declaration with its `check` and `requirements` hooks); **ADR-017** RF-1
+(QSpec FR-290's state-model refinement row is owned by RE-2; the
+spec-versioning and profile-layering gates stay corpus tests), §3 AR-1 (a
+second `Relation` declaration with `CheckedRefinement`) and §5 PF-7
+(protocol refinement on this record's product over `ProtocolSystem`).
+
+To make on acceptance:
+
 - **ADR-018** §1: property form TP-5 Refinement, settled by EN-1 (both
   halves), the SMT backend per-step (RE-2) and SMT unrolling (RE-3). V-6:
   `MappingUndetermined`. §5 CX-2: the optional `RefinementFailure` member.
   IV-7: its transfer restriction is this record's CO-3 and CO-4, which
   also exclude previous operators; References: this record as the
   refinement-mapping record.
-- **ADR-012** §3 `Relation` row: the refinement declaration and its S3
-  checks.
-- `spec/spec.md`: index row.
 
 ## Alternatives Considered
 

@@ -25,6 +25,12 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-145
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-146
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-147
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: traces_to
 ---
@@ -87,7 +93,16 @@ protocol subject.
 - **When** the author requests the refinement.
 - **Then** it settles `proved`, and a broken `take` settles `refuted`.
 
-### US-018-EX-5: A missing step row is a compile error
+### US-018-EX-5: A concrete model refines an abstract protocol
+
+- **Given** an abstract protocol that increments twice and then finishes,
+  and the compare-and-set implementation with each commit mapped to the
+  increment.
+- **When** the author requests the refinement.
+- **Then** it settles `proved`, and an abstract protocol that increments
+  only once is refuted at the second commit.
+
+### US-018-EX-6: A missing step row is a compile error
 
 - **Given** a refinement declaration with no row for one concrete operation.
 - **When** the unit is checked.
@@ -112,3 +127,6 @@ stuttering.
 - [FR-143](../functional/FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md)
 - [FR-144](../functional/FR-144-request-and-settle-a-refinement-item.md)
 - [FR-145](../functional/FR-145-replay-a-refinement-counterexample.md)
+- [FR-146](../functional/FR-146-write-per-step-simulation-records-for-a-refinement.md)
+- [FR-147](../functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md)
+- [FR-148](../functional/FR-148-decide-steps-against-an-abstract-protocol.md)

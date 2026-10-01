@@ -394,7 +394,9 @@ witness item (RF-3).
 A spec-versioning case tests one clause implication of the QSpec FR-290 row
 "Refinement between two operation contracts or state models" on one input.
 That row names the claim a proof route would request, one
-`operation-contract` claim per implication; no V1 ticket owns that route.
+`operation-contract` claim per implication. Amended by ADR-020 §5: ADR-020
+RE-2 owns that route, one `operation-contract` record per step row; the
+spec-versioning and profile-layering gates stay corpus tests.
 This amends ADR-012 §3's `Relation` row and FR-057's claim-form row, and Q-3
 asks QSpec to amend its FR-290 row and to re-trace V1-TOOL-011 and V1-TOOL-012
 away from QSpec FR-177 and TC-208.
@@ -592,7 +594,10 @@ does not read (the real corpus is under `tests/fixtures/refinement/`).
 #### AR-1 Where it is authored
 
 The relation is a `Relation` family declaration in QSL source, parsed at S2,
-checked at S3 and carried in the checked package (ADR-012 §3). It is not a
+checked at S3 and carried in the checked package (ADR-012 §3). Amended by
+ADR-020 §1: the refinement declaration between two QSL models is a second
+`Relation` family declaration, distinct from the abstraction relation, with
+its own checked type `CheckedRefinement`. It is not a
 domain-package declaration: FCD's semantic IR describes the model, not its
 implementation. Its surface spelling is QSpec FR-450's `abstraction-decl`
 (Q-1, decided).

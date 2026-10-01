@@ -108,7 +108,10 @@ frame `modifies [value]` and postcondition `self.value = x`; initial `value`
 0. Refinement `RegisterHistory`: `prev = self.last`, `value = self.value`,
 `history Impl::Register.last: Int[0, 1] = 0 { on Impl::Register::write:
 pre(self.value); }`, `step Impl::Register::write ->
-Spec::Register::write(self, x)`.
+Spec::Register::write(self, x)`. S3 admits an update such as
+`pre(self.writes) + 1` against a field declared `Int[0, 1]`: static
+conformance compares the native type `Integer` and not its range, so the
+range is left only at run time.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
