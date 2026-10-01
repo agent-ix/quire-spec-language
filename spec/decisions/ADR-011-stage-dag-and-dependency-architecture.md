@@ -498,17 +498,20 @@ A caller-supplied lock file never enters `package_id`.
 |---|---|
 | `edition` | The edition QSpec's value lock selects as always-selected: role `edition` in `proposals/quire-v1/definitions/complete-value-lock.json` (agent-ix/quire-specification), `agent-ix` / `ix:native` / `quire-draft 1-draft.2`, with the digest that file records. The source header's `language "ix:native" edition "1-draft";` names it, and E3 matches it to that `edition` role. The edition in QSpec's v2 positive fixtures (`quire-edition`, an all-`1` digest) is a placeholder, not an edition. |
 | `profile_selections` | The clause profile rows FR-322 defines (`temporal_profile`, `protocol_profile`), one per header `profile` that selects a clause profile; the clause family owning that role resolves it in its catalog and writes the row (ADR-012 §2; `TemporalTrace`, `ProtocolClause`, #218). A header `profile` the `Value` family resolves selects the `DefinitionLock` catalog's `root` row (`quire.value.complete/v1`) by identity, revision value and digest, or refuses, and writes no row: `root` is an always-selected `definition_selections` entry (FR-110, amended 2026-09-26). |
-| `definition_selections` and each law `DefinitionRef` | QSpec's value lock, through QSL's `DefinitionLock` catalog |
+| `definition_selections` and each law `DefinitionRef` | QSpec's value lock, read by reference through `DefinitionLock` |
 | `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1, each by identity, version and `sha256-jcs` digest. Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25). |
 | `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
 | `dependency_selections` | One `{identity, version, package_id}` entry per library identity of the resolved closure: the identity and version each import names, and the dependency's own `package_id` |
 
 **Amended (2026-09-24).** The emitter takes the edition and
-definition selections (identity, revision and digest) from QSL's
-`DefinitionLock` catalog (`qsl-semantics/src/value/definition.rs`), whose
-digests are the ones `complete-value-lock.json` records. FR-110 reads the
-`root` row's digest to resolve a header profile (amended 2026-09-26).
+definition selections (identity, revision and digest) from the
+`DefinitionLock` catalog (`qsl-semantics/src/value/definition.rs`), which
+reads QSpec's `complete-value-lock.json` by reference from the
+`quire-specification` crate and holds no copy of it. The diagnostics
+catalog reference is QSpec's `native-diagnostics.md`, read the same way,
+with its digest computed from those bytes. FR-110 reads the `root` row's
+digest to resolve a header profile (amended 2026-09-26).
 
 A `dependency_selections` entry is a QSpec `DependencySelection`
 `{identity, version, package_id}`: the library identity and version an
@@ -532,7 +535,7 @@ resolves each `import` against it, and `replay` builds that input from its
 request (ADR-015, FR-099, FR-098).
 
 **Amended (2026-09-26).** The header selections resolve at E3
-against the `DefinitionLock` catalog and I1, with no QSpec accessor
+against the `DefinitionLock` catalog and I1
 ([FR-110](../functional/FR-110-resolve-header-profile-selections-at-e3.md)).
 A header profile the `Value` family resolves selects the catalog's `root`
 row exactly. Otherwise E3 refuses it `unknown_profile`
@@ -674,7 +677,7 @@ its own repository, agent-ix/quire-driver.
   a native-compile/1 request whose program source declares `1-draft`, with
   no clause bindings and only `semantic-ir/2.0.0` domain package models
   (FR-027), and writes the `quire.checked-package/v2` bytes to stdout. The
-  lock evidence comes from the source header and QSL's `DefinitionLock`
+  lock evidence comes from the source header and the `DefinitionLock`
   catalog (§2.4), and no lock file is read. E3 resolves the header
   profiles against that catalog after I1 and the S4 source resolution,
   before the FR-091 assembler (FR-110). It takes FR-056's package input
@@ -1358,9 +1361,11 @@ sections it names.
   (ADR-015). It is not a prerequisite of the lock-evidence work.
 - **OQ-6: edition and definition digests.** The edition is `ix:native` /
   `1-draft.2` per QSpec's `complete-value-lock.json`; the fixtures'
-  `quire-edition` edition is a placeholder. **Amended (2026-09-24):**
-  the digests come from QSL's `DefinitionLock` catalog, which records the
-  values that file holds; no reader verifies them yet (§2.4).
+  `quire-edition` edition is a placeholder. The digests come from QSpec's
+  lock by reference: `DefinitionLock` reads `complete-value-lock.json`
+  from the `quire-specification` crate's compiled-in bytes (§2.4), and
+  QSpec's own TC-233 checks each digest against the bytes of the file it
+  names.
 - **SG-1: where lock evidence enters.** At E3, not E4 (§2.2, §2.4). Reason:
   node identity is minted at E3, and the FR-322 application-node key includes
   law `DefinitionRef` digests.

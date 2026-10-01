@@ -398,7 +398,7 @@ during implementation.**
   the I2 import views (`VerifiedPackage`, `ImportView`) that the M-4 I2
   reader produces (ADR-011 §6.2, §8). Its header-selection half, the
   `profile`, definition and `model` selections, is resolved at E3 against
-  QSL's `DefinitionLock` catalog and the domain packages I1 admitted
+  the `DefinitionLock` catalog and the domain packages I1 admitted
   ([FR-110](FR-110-resolve-header-profile-selections-at-e3.md), ADR-011
   §2.4). The change that removes the type deletes it,
   `resolve_source_package` and `command::resolve_parsed_source`, and leaves
@@ -776,10 +776,9 @@ AC-7 (TC-246) is delivered, and AC-13 (TC-379) is partly delivered:
   dependency half exists: spine `compile`'s S4 source resolution binds each
   import against a library compiled from source and read into its
   `ImportView` (FR-099, ADR-015 D-1). The header-selection half is FR-110
-  (amended 2026-09-26): E3 resolves header profiles against QSL's
-  `DefinitionLock` catalog, which carries each row's digest from QSpec's
-  `complete-value-lock.json`, and model declarations through I1. It needs
-  no QSpec accessor (ADR-011 §2.4 amended
+  (amended 2026-09-26): E3 resolves header profiles against the
+  `DefinitionLock` catalog, which reads QSpec's `complete-value-lock.json`
+  by reference, and model declarations through I1 (ADR-011 §2.4 amended
   2026-09-24). FR-110 is implemented (TC-490).
   One change retired `ResolvedSourcePackage`, `resolve_source_package`,
   `SourceAuthority`, `ModelCatalog`, `ModelArtifact`, the complete-package `ModelConflict` and

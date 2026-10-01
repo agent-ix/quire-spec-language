@@ -27,8 +27,9 @@ unit, E3 SHALL resolve each of the unit's `profile … version … digest …`
 header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header
 profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
-This requirement specifies the `Value` family's catalog, QSL's
-`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), whose one
+This requirement specifies the `Value` family's catalog,
+`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which reads
+QSpec's `complete-value-lock.json` by reference and whose one
 header-selectable row is `root`. A clause profile (FR-322 roles
 `temporal_profile` and `protocol_profile`) resolves in its clause family's
 catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
@@ -47,7 +48,8 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
   identity/version/digest, declaration span, identity-literal span).
 - `DefinitionLock::pinned()`, the closed catalog of QSpec
-  `complete-value-lock.json` rows, which the resolution reads itself.
+  `complete-value-lock.json` rows, read from the `quire-specification`
+  crate's compiled-in bytes, which the resolution reads itself.
 
 ## Outputs
 

@@ -13,9 +13,10 @@
 //!
 //! # Lock
 //!
-//! - `edition` and `definition_selections` come from QSL's `DefinitionLock`
-//!   catalog: the `edition` role, every other always-selected role, and each
-//!   law `DefinitionRef` a node body names.
+//! - `edition` and `definition_selections` come from the `DefinitionLock`
+//!   catalog, which reads QSpec's lock by reference: the `edition` role,
+//!   every other always-selected role, and each law `DefinitionRef` a node
+//!   body names.
 //! - `sources` are the checked unit's `RawSourceRef` (`CheckedGraph::source`)
 //!   and any other raw source an occurrence region names.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
@@ -29,8 +30,8 @@
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
 //!   (FR-322, FR-307). The same entries are the identity preimage's, so each
 //!   dependency's `package_id` enters this package's.
-//! - `diagnostics.catalog` is QSpec's `quire.native.diagnostics/v1` at
-//!   `1-draft.8`.
+//! - `diagnostics.catalog` is QSpec's `quire.native.diagnostics/v1`
+//!   document, read by reference with its raw-byte digest.
 //!
 //! # Source regions
 //!
@@ -88,7 +89,8 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::IDENTITY_LIMITS;
 use qsl_semantics::value::{
-    CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference, Member, NodeOwner,
+    native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
+    Member, NodeOwner,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
 
@@ -101,22 +103,10 @@ const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
 const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
-/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.8`, written at
-/// `diagnostics.catalog`.
+/// by, written at `diagnostics.catalog`: QSpec's `quire.native.diagnostics/v1`
+/// document, its digest the raw-byte SHA-256 of that document's bytes.
 fn diagnostics_catalog() -> CheckedArtifactRef {
-    CheckedArtifactRef {
-        authority: "agent-ix".into(),
-        identity: "quire.native.diagnostics/v1".into(),
-        revision: CheckedRevision {
-            namespace: "quire-draft".into(),
-            value: "1-draft.8".into(),
-        },
-        digest_domain: "quire.definition.bytes/v1".into(),
-        // The raw-byte SHA-256 of the catalog's definition, a required
-        // `CheckedArtifactRef` member.
-        digest: "94580e10014aaf133de121126d8d795b3d86e693835d6bf1026fb45dd291d95d".into(),
-        export: None,
-    }
+    artifact(native_diagnostics_catalog())
 }
 
 /// Why the v2 emitter writes no bytes for `package` at all. A node that

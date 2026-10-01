@@ -19,7 +19,7 @@ use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
-use qsl_semantics::value::{CatalogRole, DefinitionLock};
+use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
 use quire_contract_ir::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
@@ -287,7 +287,8 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 
 /// The wire lock's edition and definition selections are the
 /// `DefinitionLock` catalog's rows, digests included, the diagnostics
-/// catalog is QSpec's native diagnostics at `1-draft.8`, and IR admits them.
+/// catalog is QSpec's native diagnostics document as
+/// `native_diagnostics_catalog` reads it, and IR admits them.
 #[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
@@ -326,13 +327,15 @@ fn the_lock_selects_the_catalog_definitions() {
         wire["lock"]["edition"]
     );
     let catalog = &wire["diagnostics"]["catalog"];
+    let diagnostics = native_diagnostics_catalog();
     assert_eq!(catalog["authority"], json!("agent-ix"));
     assert_eq!(catalog["identity"], json!("quire.native.diagnostics/v1"));
     assert_eq!(
         catalog["revision"],
-        json!({"namespace": "quire-draft", "value": "1-draft.8"})
+        json!({"namespace": "quire-draft", "value": diagnostics.revision.value})
     );
     assert_eq!(catalog["digest_domain"], json!("quire.definition.bytes/v1"));
+    assert_eq!(catalog["digest"], json!(diagnostics.digest));
 }
 
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's

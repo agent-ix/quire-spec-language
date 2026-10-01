@@ -1498,6 +1498,7 @@ dependencies = [
  "qsl-foundation",
  "quire-canonical",
  "quire-exact",
+ "quire-specification-qualification",
  "serde",
  "serde_json",
  "sha2",
@@ -1609,6 +1610,11 @@ dependencies = [
  "unicode-normalization",
  "xtask",
 ]
+
+[[package]]
+name = "quire-specification-qualification"
+version = "0.0.0"
+source = "git+https://github.com/agent-ix/quire-specification?branch=main#a18859de42eaef7b21101d05c8c9eb2bd62958cf"
 
 [[package]]
 name = "quire-verification-contracts"
