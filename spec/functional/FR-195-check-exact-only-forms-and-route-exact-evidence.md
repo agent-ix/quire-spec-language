@@ -120,5 +120,6 @@ impl CheckedProbabilisticClaim { pub fn exact_only(&self) -> bool; }
 ## References
 
 - QSpec half, which owns the exact-only forms, the fairness set on
-  every-scheduler claims and the evidence kind `exact`: Linear STD-137.
+  every-scheduler claims and the evidence kind `exact`: QSpec FR-407,
+  FR-411 and FR-290 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

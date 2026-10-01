@@ -77,11 +77,12 @@ never a proof. ADR-024 leaves three things to an exact backend:
   fractions carry `Asymptotic` coverage only (ST-7).
 
 ADR-026 adds timed subjects. Its RU-5 and SS-7 route `exact` evidence over a
-timed subject to EN-5 when the subject's constraints are all closed and its
-operations declare no delay distribution: EN-5 reads it through digital
-clocks as a probabilistic timed automaton (PTA) whose delays are
-nondeterministic. A strict constraint and an SD-1 delay distribution settle
-`unsupported` on that route and are measured by EN-4.
+timed subject to EN-5 when the subject's constraints are all closed: EN-5
+reads it through digital clocks as a probabilistic timed automaton (PTA).
+An operation with no `delay` member has a free, nondeterministic delay
+(ADR-026 SD-1), which the claim's scheduler resolves (§13). A strict
+constraint and an SD-1 delay distribution with no exact digital reading
+settle `unsupported` on that route and are measured by EN-4.
 
 What EN-5 builds on:
 
@@ -504,16 +505,16 @@ follows v1.
 
 | ID | Item | Where |
 | --- | --- | --- |
-| QS-1 | The evidence kind `exact` for `probabilistic-satisfaction`, its advertisement and the no-substitution rule (ADR-024 QS-6), and claims without confidence parameters as exact-only (SP-4, XF-7) | QSpec FR-290, FR-331, the new probabilistic FR |
-| QS-2 | `under every scheduler`: minimum and maximum over every history-dependent randomized scheduler, the scheduler's choice after a draw with several post-states, and the statement that memoryless deterministic schedulers on the product attain both (SCH-1 to SCH-3) | the new probabilistic FR |
-| QS-3 | The forms with exact evidence: the probabilistic product with a bounded monitor and accumulators (PR-4, PR-5), the quantile threshold transform (XF-2), the mean of a fraction (XF-3), unbounded reachability, until and always over state predicates (XF-4), expected reward to a target with `+∞` (XF-5), long-run fractions by bottom components with `ZeroWeightComponent` (§8) | the new probabilistic FR; QSpec FR-090 |
-| QS-4 | Result content: `ExactValue` and `ValueBounds` onto FR-331 `proved` with FR-243 `closed-scope`, one entry per initial state and binding with minimum or maximum, `PrecisionBudget`, `CertificateRejected` and the unsupported causes (XV-1 to XV-6) | QSpec FR-331, FR-243 |
-| QS-5 | The witness wire: `WitnessScheduler`, `ProbabilisticCounterexample` with path-set and subsystem evidence, and the replay rules of WS-5 | QSpec FR-331 and the counterexample contract |
-| QS-6 | The certificate wire: `ProbabilityCertificate`, its kinds and the checker's conditions (CE-1 to CE-4), including what the checker recomputes | QSpec FR-331 and the counterexample contract |
-| QS-7 | `ExactProbLimits` in the request (LM-1) | QSpec FR-331 |
-| QS-8 | The digital route over timed subjects: the closed condition, the digital MDP, delays resolved by the claim's scheduler with `discrete` delays under a workload as a DTMC (TA-1, TA-1a), the admitted forms and the zero-delay-cycle check (TA-2 to TA-5), in step with ADR-026's overlap items | QSpec FR-161, FR-181, the timed profile FR |
-| QS-9 | Conformance vectors, each with its exact value, verdict and evidence that must check (the exact witness is not compared, since engines may return different valid ones): (a) §15.1, the exact rational and a dyadic `ValueBounds` proof; (b) §15.2, `24233/25000` proved at 5 ms and `4491/5000` refuted at 2 ms with a one-path set; (c) §15.3, `1800/1801` proved with its gain–bias certificate, and the per-window claim refuted with a subsystem certificate; (d) §15.4, minimum `24/25`, maximum `99/100`, workload `391/400`, the refutation with its witness scheduler, and the proof with its `Exact` certificate; (e) §15.5, `99/100` proved at equality, `20/9 ms`, the refutation at 0.995, and the strict variant `unsupported`; (f) checker refusals: a certificate that violates one inequality (`CertificateRejected`), a missing rank on a lower certificate, a path set that is not prefix-free, a witness step that departs from its scheduler, a drawn value outside its support; (g) `NotMarkov` under a workload, a delay distribution and a zero-delay cycle on the timed route; (h) a `PrecisionBudget` stop | new TCs beside QSpec TC-200 and TC-210 |
-| QS-10 | Fair schedulers: the fairness set on every-scheduler claims, fair schedulers as probability-1 fairness, fair end components, the infimum and supremum per form, the randomized witness scheduler and its fairness check, and a vector for §15.6 (FS-1 to FS-9) | the new probabilistic FR; QSpec FR-331 and the counterexample contract |
+| QS-1 | The evidence kind `exact` for `probabilistic-satisfaction`, its advertisement and the no-substitution rule (ADR-024 QS-6), and claims without confidence parameters as exact-only (SP-4, XF-7) | QSpec FR-290, FR-331, FR-407, FR-408 |
+| QS-2 | `under every scheduler`: minimum and maximum over every history-dependent randomized scheduler, the scheduler's choice after a draw with several post-states, and the statement that memoryless deterministic schedulers on the product attain both (SCH-1 to SCH-3) | QSpec FR-406 |
+| QS-3 | The forms with exact evidence: the probabilistic product with a bounded monitor and accumulators (PR-4, PR-5), the quantile threshold transform (XF-2), the mean of a fraction (XF-3), unbounded reachability, until and always over state predicates (XF-4), expected reward to a target with `+∞` (XF-5), long-run fractions by bottom components with `ZeroWeightComponent` (§8) | QSpec FR-411, FR-407, FR-090 |
+| QS-4 | Result content: `ExactValue` and `ValueBounds` onto FR-331 `proved` with FR-243 `closed-scope`, one entry per initial state and binding with minimum or maximum, `PrecisionBudget`, `CertificateRejected` and the unsupported causes (XV-1 to XV-6) | QSpec FR-411, FR-331, FR-243 |
+| QS-5 | The witness wire: `WitnessScheduler`, `ProbabilisticCounterexample` with path-set and subsystem evidence, and the replay rules of WS-5 | QSpec FR-413 |
+| QS-6 | The certificate wire: `ProbabilityCertificate`, its kinds and the checker's conditions (CE-1 to CE-4), including what the checker recomputes | QSpec FR-412 |
+| QS-7 | `ExactProbLimits` in the request (LM-1) | QSpec FR-411 |
+| QS-8 | The digital route over timed subjects: the closed condition, the digital MDP, delays resolved by the claim's scheduler with `discrete` delays under a workload as a DTMC (TA-1, TA-1a), the admitted forms and the zero-delay-cycle check (TA-2 to TA-5), in step with ADR-026's overlap items | QSpec FR-421, FR-420, FR-161, FR-181 |
+| QS-9 | Conformance vectors, each with its exact value, verdict and evidence that must check (the exact witness is not compared, since engines may return different valid ones): (a) §15.1, the exact rational and a dyadic `ValueBounds` proof; (b) §15.2, `24233/25000` proved at 5 ms and `4491/5000` refuted at 2 ms with a one-path set; (c) §15.3, `1800/1801` proved with its gain–bias certificate, and the per-window claim refuted with a subsystem certificate; (d) §15.4, minimum `24/25`, maximum `99/100`, workload `391/400`, the refutation with its witness scheduler, and the proof with its `Exact` certificate; (e) §15.5, `99/100` proved at equality, `20/9 ms`, the refutation at 0.995, and the strict variant `unsupported`; (f) checker refusals: a certificate that violates one inequality (`CertificateRejected`), a missing rank on a lower certificate, a path set that is not prefix-free, a witness step that departs from its scheduler, a drawn value outside its support; (g) `NotMarkov` under a workload, a delay distribution and a zero-delay cycle on the timed route; (h) a `PrecisionBudget` stop | QSpec TC-360 to TC-365 and TC-374, beside TC-200 and TC-210 |
+| QS-10 | Fair schedulers: the fairness set on every-scheduler claims, fair schedulers as probability-1 fairness, fair end components, the infimum and supremum per form, the randomized witness scheduler and its fairness check, and a vector for §15.6 (FS-1 to FS-9) | QSpec FR-406, FR-411, FR-413 |
 
 ### 18. The twelve spec items of the research ruling
 
@@ -600,9 +601,10 @@ Each amended text carries an "Amended by ADR-028" note.
   `uniform`, `uniform[a, b]` or `exponential` delay stays EN-4's. The causes
   `DelayDistribution`, `StrictClockConstraint`, `ZeroDelayCycle` and
   `TimedFormShape`.
-- ADR-026 SD-1: the reading of an operation that declares no `delay` member
-  under a workload, so the leftover delay nondeterminism of TA-1 is defined
-  in one place (raised with the plan lead; see References).
+- ADR-026 SD-1: an operation that declares no `delay` member has a free,
+  nondeterministic delay, never an implied distribution, so the leftover
+  delay nondeterminism of TA-1 is defined in one place (team-leader
+  decision; see References).
 
 ## Alternatives Considered
 
@@ -653,9 +655,13 @@ Each amended text carries an "Amended by ADR-028" note.
 ## References
 
 - Owning ticket: Linear QSL-371, which records the rulings of §19. QSpec
-  half: Linear STD-137. Research and the owner's ruling that EN-5
+  half: Linear STD-137 (QSpec FR-405 to FR-414) and, for the digital
+  route, Linear STD-139 (QSpec FR-421). Research and the owner's ruling that EN-5
   is a native engine specified now, with the twelve spec items mapped in
   §18: Linear RES-53. Zone-based timed analysis: Linear RES-54.
+- Team-leader decision of 2026-10-01 on ADR-026 SD-1: an operation with no
+  `delay` member has a nondeterministic delay, resolved by its minimum or
+  maximum under a workload (RU-6), never an implied distribution.
 - Sibling records: ADR-018 (QSL-366), ADR-021 (QSL-368, state-space
   reduction), ADR-022 (QSL-369, possible properties), ADR-024 (QSL-371,
   statistical and probabilistic properties), ADR-026 (QSL-373, dense time;

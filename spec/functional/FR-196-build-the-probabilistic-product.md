@@ -119,6 +119,6 @@ pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIden
 
 ## References
 
-- QSpec half, which owns the probabilistic product's semantics: Linear
-  STD-137.
+- QSpec half, which owns the probabilistic product's semantics: QSpec
+  FR-406 and FR-411 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

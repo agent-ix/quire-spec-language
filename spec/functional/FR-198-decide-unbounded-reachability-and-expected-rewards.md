@@ -113,5 +113,5 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
 ## References
 
 - QSpec half, which owns the semantics of the unbounded forms and the
-  `+∞` rule: Linear STD-137.
+  `+∞` rule: QSpec FR-411 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

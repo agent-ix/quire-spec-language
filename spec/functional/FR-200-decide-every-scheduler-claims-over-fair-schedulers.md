@@ -127,5 +127,6 @@ FR-198 and FR-199 return them, with a policy of `SchedulerChoice`s.
 ## References
 
 - QSpec half, which owns fair schedulers, fair end components and the
-  randomized witness wire: Linear STD-137.
+  randomized witness wire: QSpec FR-406, FR-411 and FR-413 (Linear
+  STD-137).
 - Owning ticket: Linear QSL-371.

@@ -83,5 +83,5 @@ pub struct GainBias { pub gain: Rational, pub bias: Vec<(ProductStateId, Rationa
 ## References
 
 - QSpec half, which owns the long-run semantics and `ZeroWeightComponent`:
-  Linear STD-137.
+  QSpec FR-411 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

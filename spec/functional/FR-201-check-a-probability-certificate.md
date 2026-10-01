@@ -129,7 +129,7 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 ## References
 
 - QSpec half, which owns the certificate wire and the checker's conditions:
-  Linear STD-137.
+  QSpec FR-412 (Linear STD-137).
 - ADR-029 (owning record of the qualified core and RU-2) is on its own draft
   branch: Linear QSL-390.
 - Owning ticket: Linear QSL-371.

@@ -454,6 +454,7 @@ names different artifacts in each.
 | TC-639 | Closed probabilistic timed automata are decided exactly through digital clocks, with the workload resolving delays | Integration | P1 | FR-204-AC-1, FR-204-AC-2, FR-204-AC-3, FR-204-AC-4 | 🚧 Planned |
 | TC-640 | A sampled undefined evaluation is a rejection and replays | Integration | P1 | FR-189-AC-6, FR-192-AC-5, FR-193-AC-4 | 🚧 Planned |
 | TC-641 | An undefined state reached with positive probability refutes an exact claim | Integration | P1 | FR-196-AC-5, FR-202-AC-5, FR-203-AC-5 | 🚧 Planned |
+| TC-642 | A delay no distribution gives is decided by its minimum or maximum under a workload | Integration | P1 | FR-204-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

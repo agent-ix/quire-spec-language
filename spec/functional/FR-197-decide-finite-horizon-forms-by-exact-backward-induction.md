@@ -93,5 +93,5 @@ pub struct Dyadic { pub mantissa: BigInt, pub exponent: u32 }   // mantissa · 2
 ## References
 
 - QSpec half, which owns the quantile transform and the exact values of the
-  conformance vectors: Linear STD-137.
+  conformance vectors: QSpec FR-411 and TC-360 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

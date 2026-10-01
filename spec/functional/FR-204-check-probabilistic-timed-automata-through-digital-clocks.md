@@ -118,6 +118,7 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
 | FR-204-AC-2 | §15.5 `MeanTime` settles `proved`, `ExactValue{20/9 ms}` (maximum; the minimum is `10/9 ms`). With the guard `self.x > 1 ms` the items settle `unsupported`, `StrictClockConstraint`, naming the guard. | Test (TC-639) |
 | FR-204-AC-3 | `Retx` with `delay ~ discrete { 1 ms: 1, 2 ms: 1 }` on `send`, under a workload `One` with weight 1 on `send`, is a DTMC over digital timed states; `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` settles `proved`, `ExactValue{158509/160000}`. The same claim `under every scheduler` settles `unsupported`, `DelayDistribution`, naming `send`; with `delay ~ exponential(1 per ms)` under `One` it settles `unsupported`, `DelayDistribution`. | Test (TC-639) |
 | FR-204-AC-4 | A variant of `Retx` whose `send` has no `x >= 1 ms` guard and no reset settles `unsupported`, `ZeroDelayCycle`, naming the cycle's states. `probability >= 0.99 [always[0 ms, 4 ms] holds(not m.delivered)]` over `Retx` settles `unsupported`, `TimedFormShape`. | Test (TC-639) |
+| FR-204-AC-5 | §15.5 `Retx`, whose `send` has no `delay` member, under the workload `One` (weight 1 on `send`): the workload resolves the scheduled identity and `send`'s delay stays the scheduler's choice in `[1, 2]` ms after each reset, with no distribution assumed for it. `probability >= 0.99 [eventually[0 ms, 4 ms] holds(m.delivered)]` under `One` settles `proved`, `ExactValue{99/100}`, its entry marked a minimum. `probability <= 0.999` over the same event under `One` settles `refuted` on the maximum `9999/10000`, its entry marked a maximum and its witness scheduler sending at `x = 1`. | Test (TC-642) |
 
 ## Dependencies
 
@@ -130,7 +131,8 @@ FR-197 and FR-198 over it, and FR-203's unsupported causes
 
 ## References
 
-- QSpec half, which owns the digital route's semantics: Linear STD-137.
+- QSpec half, which owns the digital route's semantics: QSpec FR-421
+  (Linear STD-139), with FR-420's given and free delays.
 - ADR-026 (timed subjects, delay distributions and the race) is on its own
   draft branch: Linear QSL-373.
 - Owning ticket: Linear QSL-371.

@@ -136,6 +136,6 @@ pub fn replay_probabilistic_witness(
 
 ## References
 
-- QSpec half, which owns the witness wire and its replay rules: Linear
-  STD-137.
+- QSpec half, which owns the witness wire and its replay rules: QSpec
+  FR-413 (Linear STD-137).
 - Owning ticket: Linear QSL-371.

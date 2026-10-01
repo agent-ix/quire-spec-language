@@ -43,9 +43,9 @@ the least favourable initial state, or `refuted` after its witness replays.
 
 ```rust
 pub struct ExactProbLimits {
-    pub max_states: u64,              // default 16_777_216 (2^24)
-    pub max_transitions: u64,         // default 268_435_456 (2^28)
-    pub max_automaton_states: u64,    // default 1_048_576 (2^20)
+    pub max_states: u64,              // default 10_000_000, as ModelCheckLimits (FR-126)
+    pub max_transitions: u64,         // default 100_000_000, as ModelCheckLimits (FR-126)
+    pub max_automaton_states: u64,    // default 1_048_576 (2^20), as ModelCheckLimits (FR-126)
     pub max_iterations: u64,          // interval-iteration sweeps; default 1_000_000
     pub precision_bits: u32,          // starting dyadic precision; default 64
     pub max_precision_bits: u32,      // default 4_096
@@ -138,5 +138,5 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 ## References
 
 - QSpec half, which owns `ExactProbLimits` in the request and the result
-  content onto FR-331 and FR-243: Linear STD-137.
+  content onto FR-331 and FR-243: QSpec FR-411 (Linear STD-137).
 - Owning ticket: Linear QSL-371.
