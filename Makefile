@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -192,7 +192,13 @@ ci-docs:
 quire-exact-no-std:
 	cargo build --locked -p quire-exact --target thumbv7em-none-eabi
 
-ci: check-no-committed-binaries quire-exact-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
+# `quire-semantic-value` (ADR-011 layer SV) is the shared `#![no_std]` +
+# `alloc` leaf a no_std backend depends on beside `quire-exact`; this builds
+# it for the same bare-metal target, so a `std` dependency fails the gate.
+quire-semantic-value-no-std:
+	cargo build --locked -p quire-semantic-value --target thumbv7em-none-eabi
+
+ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
