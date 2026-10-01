@@ -443,6 +443,16 @@ names different artifacts in each.
 | TC-628 | Sampled witnesses are kept in trace order and replay through the model | Integration | P1 | FR-193-AC-1, FR-193-AC-2, FR-193-AC-3 | 🚧 Planned |
 | TC-629 | Window aggregates evaluate exactly over past windows and keep the temporal layer Boolean | Integration | P1 | FR-194-AC-1, FR-194-AC-2, FR-194-AC-3, FR-194-AC-4 | 🚧 Planned |
 | TC-640 | A sampled undefined evaluation is a rejection and replays | Integration | P1 | FR-189-AC-6, FR-192-AC-5, FR-193-AC-4 | 🚧 Planned |
+| TC-630 | S3 checks exact-only forms and fairness sets, and negotiation routes exact evidence | Unit | P1 | FR-195-AC-1, FR-195-AC-2, FR-195-AC-3, FR-195-AC-4 | 🚧 Planned |
+| TC-631 | EN-5 builds the DTMC or MDP product with monitors, accumulators and intermediate states | Integration | P1 | FR-196-AC-1, FR-196-AC-2, FR-196-AC-3, FR-196-AC-4 | 🚧 Planned |
+| TC-632 | Backward induction decides finite-horizon forms exactly, or over dyadic intervals with precision doubling | Integration | P1 | FR-197-AC-1, FR-197-AC-2, FR-197-AC-3, FR-197-AC-4 | 🚧 Planned |
+| TC-633 | Unbounded reachability and expected rewards are decided by graph precomputation, interval iteration and exact policy iteration | Integration | P1 | FR-198-AC-1, FR-198-AC-2, FR-198-AC-3, FR-198-AC-4 | 🚧 Planned |
+| TC-634 | Long-run fractions are decided exactly by bottom components and maximal end components | Integration | P1 | FR-199-AC-1, FR-199-AC-2, FR-199-AC-3 | 🚧 Planned |
+| TC-635 | Every-scheduler claims with a fairness set are decided over fair schedulers through fair end components | Integration | P1 | FR-200-AC-1, FR-200-AC-2, FR-200-AC-3, FR-200-AC-4 | 🚧 Planned |
+| TC-636 | check_probability_certificate accepts sound certificates and rejects flawed ones in exact rationals | Integration | P1 | FR-201-AC-1, FR-201-AC-2, FR-201-AC-3, FR-201-AC-4 | 🚧 Planned |
+| TC-637 | replay_probabilistic_witness reproduces path-set and subsystem refutations and refuses altered witnesses | Integration | P1 | FR-202-AC-1, FR-202-AC-2, FR-202-AC-3, FR-202-AC-4 | 🚧 Planned |
+| TC-638 | Exact runs stop on caller-set budgets and settle with ExactValue or ValueBounds | Integration | P1 | FR-203-AC-1, FR-203-AC-2, FR-203-AC-3, FR-203-AC-4 | 🚧 Planned |
+| TC-639 | Closed probabilistic timed automata are decided exactly through digital clocks, with the workload resolving delays | Integration | P1 | FR-204-AC-1, FR-204-AC-2, FR-204-AC-3, FR-204-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
