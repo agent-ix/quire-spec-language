@@ -25,16 +25,16 @@ use quire_exact::Identifier;
 /// The labels `source()` gives the unit, as the request's source reference
 /// spells them; the recompile displays the unit under its identity.
 const AUTHORITY: &str = "agent-ix";
-const IDENTITY: &str = "clause-run-fixture";
+pub(super) const IDENTITY: &str = "clause-run-fixture";
 
 /// A compiled ConfigVersion unit and what a request needs to recompile it.
-struct Unit {
-    bytes: Vec<u8>,
-    domain_document: Vec<u8>,
-    compiled: Compiled,
+pub(super) struct Unit {
+    pub(super) bytes: Vec<u8>,
+    pub(super) domain_document: Vec<u8>,
+    pub(super) compiled: Compiled,
 }
 
-fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
+pub(super) fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
     let packages = qsl_semantics::model::intake::package_input([domain_document.as_slice()]);
     let compiled = compile(
         source(),
@@ -52,7 +52,7 @@ fn unit_for(unit: String, domain_document: Vec<u8>) -> Unit {
     }
 }
 
-fn config_version_unit() -> Unit {
+pub(super) fn config_version_unit() -> Unit {
     let (unit, _) = config_version_unit_and_packages();
     unit_for(unit, config_version_domain_document())
 }
@@ -71,7 +71,7 @@ fn parent_modifying_unit() -> Unit {
     unit_for(unit, document)
 }
 
-fn wire(node: quire_exact::NodeKey) -> WireNodeId {
+pub(super) fn wire(node: quire_exact::NodeKey) -> WireNodeId {
     WireNodeId::from_digest(*node.as_bytes())
 }
 
@@ -194,28 +194,28 @@ fn changed_version() -> Invocation {
     )
 }
 
-fn unlimited() -> quire_exact::ScalarLimits {
+pub(super) fn unlimited() -> quire_exact::ScalarLimits {
     default_accounting(u64::MAX)
 }
 
-fn source_digest(bytes: &[u8]) -> DigestRecord {
+pub(super) fn source_digest(bytes: &[u8]) -> DigestRecord {
     DigestRecord::mint(
         DigestDomain::SourceBytesV1,
         qsl_foundation::ByteDigest::of(bytes).as_bytes(),
     )
 }
 
-fn package_digest(package_id: PackageId) -> DigestRecord {
+pub(super) fn package_digest(package_id: PackageId) -> DigestRecord {
     DigestRecord::mint(DigestDomain::PackageSemanticV2, *package_id.as_bytes())
 }
 
-fn witness_source() -> ReplaySource {
+pub(super) fn witness_source() -> ReplaySource {
     ReplaySource::Witness(Witness::parse("<<<assertion|frame_harness|frame|>>>").unwrap())
 }
 
 /// FR-098's request for `source_bytes` at `package_id`, with the domain
 /// package and `documents` in the byte provision.
-fn request(
+pub(super) fn request(
     source_bytes: &[u8],
     domain_document: &[u8],
     package_id: DigestRecord,
@@ -312,10 +312,33 @@ fn envelope_with(
     payload: FrameCounterexample,
     adjust: impl FnOnce(&mut WitnessPacket<FrameCounterexample>),
 ) -> WitnessEnvelope<FrameCounterexample> {
-    let mut packet = WitnessPacket {
+    let (clause_node, occurrence) = (payload.frame, payload.occurrence.clone());
+    let mut packet = packet(
+        source_bytes,
+        package_id,
+        source,
+        clause_node,
+        occurrence,
+        payload,
+    );
+    adjust(&mut packet);
+    WitnessEnvelope::reconstruct(packet).expect("a complete packet reconstructs")
+}
+
+/// A complete packet carrying `payload` at `package_id`, from
+/// `source_bytes`, with `clause_node` and `occurrence_key` as given.
+pub(super) fn packet<P: FamilyPayload>(
+    source_bytes: &[u8],
+    package_id: DigestRecord,
+    source: ReplaySource,
+    clause_node: WireNodeId,
+    occurrence_key: OccurrenceKey,
+    payload: P,
+) -> WitnessPacket<P> {
+    WitnessPacket {
         obligation_identity: Some([1; 32]),
-        occurrence_key: Some(payload.occurrence.clone()),
-        clause_node: Some(payload.frame),
+        occurrence_key: Some(occurrence_key),
+        clause_node: Some(clause_node),
         selected_function: Some(
             crate::QualifiedName::new(vec![Identifier::new("attemptUpdate").unwrap()]).unwrap(),
         ),
@@ -346,9 +369,7 @@ fn envelope_with(
         trace_position: Some(None),
         source: Some(source),
         family_payload: Some(payload),
-    };
-    adjust(&mut packet);
-    WitnessEnvelope::reconstruct(packet).expect("a complete packet reconstructs")
+    }
 }
 
 /// One replay case over the base unit: `input`'s documents in the

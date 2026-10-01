@@ -13,8 +13,8 @@ use super::helpers::{admission_record, object_reference};
 use super::ordered_json::{OrderedJson, OrderedObject};
 use super::{
     check_document_digest, fault, incomplete, population_universe, read_raw_value, refuse,
-    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, RawValue,
-    SelectedObject,
+    AdmissionFailure, AdmissionRecord, DocumentRef, ModelView, ObservationLimits, SelectedObject,
+    SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
@@ -63,7 +63,7 @@ pub(super) struct RawObject {
     /// The object's own `fields` member, in document order (FR-106 check
     /// 6.4's "unknown-member" detection needs "the first ... in walk
     /// order").
-    pub(super) fields: Vec<(String, RawValue)>,
+    pub(super) fields: Vec<(String, SnapshotValue)>,
 }
 
 #[derive(Clone, Debug)]
@@ -98,7 +98,7 @@ pub(super) struct SnapshotDocument {
 #[derive(Clone, Debug)]
 pub(super) enum ResultValue {
     Null,
-    Value(RawValue),
+    Value(SnapshotValue),
 }
 
 #[derive(Clone, Debug)]
@@ -110,7 +110,7 @@ pub(super) struct InvocationDocument {
     pub(super) pre: DocumentRef,
     pub(super) post: DocumentRef,
     /// The invocation's own `parameters` member, in document order.
-    pub(super) parameters: Vec<(String, RawValue)>,
+    pub(super) parameters: Vec<(String, SnapshotValue)>,
     pub(super) result: ResultValue,
     pub(super) created: Vec<SelectedObject>,
     pub(super) deleted: Vec<SelectedObject>,
@@ -749,27 +749,36 @@ pub(super) struct AdmittedEnvironment {
 /// or result is itself typed `ValueType::Option(_)`).
 /// The first value named `name` in `fields` (document order, first
 /// occurrence for a duplicate key), or `None`.
-pub(super) fn raw_field<'a>(fields: &'a [(String, RawValue)], name: &str) -> Option<&'a RawValue> {
+pub(super) fn raw_field<'a>(
+    fields: &'a [(String, SnapshotValue)],
+    name: &str,
+) -> Option<&'a SnapshotValue> {
     fields
         .iter()
         .find(|(field, _)| field == name)
         .map(|(_, value)| value)
 }
 
-fn field_kind_matches(raw: &RawValue, value_type: &quire_exact::ValueType) -> bool {
+fn field_kind_matches(raw: &SnapshotValue, value_type: &quire_exact::ValueType) -> bool {
     matches!(
         (raw, value_type),
-        (RawValue::Boolean(_), quire_exact::ValueType::Boolean)
+        (SnapshotValue::Boolean(_), quire_exact::ValueType::Boolean)
             | (
-                RawValue::Integer(_),
+                SnapshotValue::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
-            | (RawValue::Reference(_), quire_exact::ValueType::Reference(_))
             | (
-                RawValue::Absent | RawValue::Present(_),
+                SnapshotValue::Reference(_),
+                quire_exact::ValueType::Reference(_)
+            )
+            | (
+                SnapshotValue::Absent | SnapshotValue::Present(_),
                 quire_exact::ValueType::Option(_)
             )
-            | (RawValue::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (
+                SnapshotValue::Sequence(_),
+                quire_exact::ValueType::Collection(_)
+            )
     )
 }
 
@@ -784,22 +793,28 @@ fn field_kind_matches(raw: &RawValue, value_type: &quire_exact::ValueType) -> bo
 /// `absent`/`present` object-field forms key off `presence`, not off
 /// matching `value_type` against `ValueType::Option`.
 fn object_field_kind_matches(
-    raw: &RawValue,
+    raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> bool {
     if presence == quire_exact::Presence::Optional {
-        return matches!(raw, RawValue::Absent | RawValue::Present(_));
+        return matches!(raw, SnapshotValue::Absent | SnapshotValue::Present(_));
     }
     matches!(
         (raw, value_type),
-        (RawValue::Boolean(_), quire_exact::ValueType::Boolean)
+        (SnapshotValue::Boolean(_), quire_exact::ValueType::Boolean)
             | (
-                RawValue::Integer(_),
+                SnapshotValue::Integer(_),
                 quire_exact::ValueType::Integer | quire_exact::ValueType::Int(_)
             )
-            | (RawValue::Reference(_), quire_exact::ValueType::Reference(_))
-            | (RawValue::Sequence(_), quire_exact::ValueType::Collection(_))
+            | (
+                SnapshotValue::Reference(_),
+                quire_exact::ValueType::Reference(_)
+            )
+            | (
+                SnapshotValue::Sequence(_),
+                quire_exact::ValueType::Collection(_)
+            )
     )
 }
 
@@ -861,7 +876,7 @@ impl<'a> References<'a> {
     /// to object fields (SR-750 FND-019). Object fields get this check from
     /// [`check_population_closure`]; this is the same rule for the values
     /// check 10 admits (SR-771 FND-001).
-    fn check_closure(&self, raw: &RawValue) -> Result<(), AdmissionRecord> {
+    fn check_closure(&self, raw: &SnapshotValue) -> Result<(), AdmissionRecord> {
         let mut refs = Vec::new();
         collect_references(raw, &mut refs);
         for (population, key) in refs {
@@ -892,7 +907,7 @@ impl<'a> References<'a> {
     /// `declared` and recorded.
     fn resolve(
         &mut self,
-        reference: &super::RawRef,
+        reference: &super::SelectedObject,
         declared: quire_exact::EffectiveId,
     ) -> Result<ObjectReference, AdmissionRecord> {
         let wire = (reference.population.as_str(), reference.key.as_str());
@@ -917,16 +932,18 @@ impl<'a> References<'a> {
 
 fn admit_scalar(
     references: &mut References<'_>,
-    raw: &RawValue,
+    raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
 ) -> Result<Value, AdmissionRecord> {
     match (raw, value_type) {
-        (RawValue::Boolean(value), quire_exact::ValueType::Boolean) => Ok(Value::Boolean(*value)),
-        (RawValue::Integer(spelling), quire_exact::ValueType::Integer) => spelling
+        (SnapshotValue::Boolean(value), quire_exact::ValueType::Boolean) => {
+            Ok(Value::Boolean(*value))
+        }
+        (SnapshotValue::Integer(spelling), quire_exact::ValueType::Integer) => spelling
             .parse::<Integer>()
             .map(Value::Integer)
             .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value")),
-        (RawValue::Integer(spelling), quire_exact::ValueType::Int(interval)) => {
+        (SnapshotValue::Integer(spelling), quire_exact::ValueType::Int(interval)) => {
             let value = spelling
                 .parse::<Integer>()
                 .map_err(|_| admission_record(Code::InvalidRuntimeInput, "invalid-value"))?;
@@ -936,7 +953,7 @@ fn admit_scalar(
                 Err(admission_record(Code::InvalidRuntimeInput, "invalid-value"))
             }
         }
-        (RawValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
+        (SnapshotValue::Reference(reference), quire_exact::ValueType::Reference(type_identity)) => {
             references
                 .resolve(reference, *type_identity)
                 .map(Value::Reference)
@@ -956,29 +973,29 @@ fn admit_scalar(
 /// reading), so this is the one caller [`admit_populations`] needs.
 fn admit_object_field(
     references: &mut References<'_>,
-    raw: &RawValue,
+    raw: &SnapshotValue,
     value_type: &quire_exact::ValueType,
     presence: quire_exact::Presence,
 ) -> Result<FieldValue, AdmissionRecord> {
     if presence == quire_exact::Presence::Optional {
         return match raw {
-            RawValue::Absent => Ok(FieldValue::Absent),
-            RawValue::Present(inner) => {
+            SnapshotValue::Absent => Ok(FieldValue::Absent),
+            SnapshotValue::Present(inner) => {
                 admit_scalar(references, inner, value_type).map(FieldValue::Present)
             }
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
-            RawValue::Boolean(_)
-            | RawValue::Integer(_)
-            | RawValue::Reference(_)
-            | RawValue::Sequence(_) => Err(admission_record(
+            SnapshotValue::Boolean(_)
+            | SnapshotValue::Integer(_)
+            | SnapshotValue::Reference(_)
+            | SnapshotValue::Sequence(_) => Err(admission_record(
                 Code::InvalidRuntimeInput,
                 "wrong-value-kind",
             )),
         };
     }
     match (raw, value_type) {
-        (RawValue::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
+        (SnapshotValue::Sequence(items), quire_exact::ValueType::Collection(collection)) => {
             if collection.kind() != CollectionKind::Sequence {
                 return Err(admission_record(
                     Code::UnknownRequiredFeature,
@@ -1001,18 +1018,18 @@ fn admit_object_field(
 /// Every `(population, key)` a reference value inside `raw` names,
 /// recursively (a reference can sit under `present` or inside a
 /// `sequence`), appended to `into` in the value's own walk order.
-fn collect_references(raw: &RawValue, into: &mut Vec<(String, String)>) {
+fn collect_references(raw: &SnapshotValue, into: &mut Vec<(String, String)>) {
     match raw {
-        RawValue::Reference(reference) => {
+        SnapshotValue::Reference(reference) => {
             into.push((reference.population.clone(), reference.key.clone()))
         }
-        RawValue::Present(inner) => collect_references(inner, into),
-        RawValue::Sequence(items) => {
+        SnapshotValue::Present(inner) => collect_references(inner, into),
+        SnapshotValue::Sequence(items) => {
             for item in items {
                 collect_references(item, into);
             }
         }
-        RawValue::Boolean(_) | RawValue::Integer(_) | RawValue::Absent => {}
+        SnapshotValue::Boolean(_) | SnapshotValue::Integer(_) | SnapshotValue::Absent => {}
     }
 }
 
@@ -1216,6 +1233,59 @@ pub(super) fn admit_population_values<'t>(
     })
 }
 
+/// FR-106's required populations from parameters: every population of the
+/// package that a reference inside the raw value of one of `operation`'s
+/// declared reference-valued parameters names, in declared parameter order
+/// and then the value's walk order, once each. Read from the raw values
+/// because check 7 runs before check 10 admits them. An undeclared or
+/// non-reference parameter makes no population required: check 10 refuses
+/// it. A reference naming no declared population is left out: check 10
+/// refuses it `dangling_reference`.
+pub(super) fn parameter_populations(
+    views: &[ModelView],
+    operation: &OperationDeclaration,
+    parameters: &[(String, SnapshotValue)],
+) -> Vec<String> {
+    let mut named = Vec::new();
+    for (name, value_type) in operation.parameters() {
+        if !holds_references(value_type) {
+            continue;
+        }
+        let Some(raw) = raw_field(parameters, name) else {
+            continue;
+        };
+        let mut refs = Vec::new();
+        collect_references(raw, &mut refs);
+        for (population, _) in refs {
+            if !named.contains(&population) && find_population(views, &population).is_some() {
+                named.push(population);
+            }
+        }
+    }
+    named
+}
+
+/// Whether a value of `value_type` can hold an object reference: a
+/// reference, or an option or collection of one.
+fn holds_references(value_type: &quire_exact::ValueType) -> bool {
+    match value_type {
+        quire_exact::ValueType::Reference(_) => true,
+        quire_exact::ValueType::Option(inner) => holds_references(inner),
+        quire_exact::ValueType::Collection(collection) => holds_references(collection.element()),
+        quire_exact::ValueType::Boolean
+        | quire_exact::ValueType::Integer
+        | quire_exact::ValueType::Int(_)
+        | quire_exact::ValueType::Rational(_)
+        | quire_exact::ValueType::Decimal(_)
+        | quire_exact::ValueType::Float(_)
+        | quire_exact::ValueType::Quantity(_)
+        | quire_exact::ValueType::Text(_)
+        | quire_exact::ValueType::Enum(_)
+        | quire_exact::ValueType::Composite(_)
+        | quire_exact::ValueType::Population(_) => false,
+    }
+}
+
 /// FR-106 check 7: a required population -- the population holding `self`,
 /// and, repeatedly, every population a reference field of any object of a
 /// required population names -- must be complete (FR-106's own recursive
@@ -1224,11 +1294,15 @@ pub(super) fn admit_population_values<'t>(
 /// (FR-106 check 9: always for the current snapshot and an invocation's pre
 /// snapshot; only for a postcondition's post snapshot) -- `None` skips this
 /// check's unconditional self-population requirement, never skipping it
-/// entirely.
+/// entirely. `parameter_populations` are the declared populations a
+/// reference-valued parameter names ([`parameter_populations`]): required
+/// in the pre snapshot of an invocation or a `PreCall` selection, and
+/// empty everywhere else.
 pub(super) fn check_population_completeness(
     populations: &[RawPopulation],
     completeness: &BTreeMap<String, bool>,
     self_population: Option<&str>,
+    parameter_populations: &[String],
 ) -> Result<(), AdmissionFailure> {
     // Built from the wire-declared `reference.population` (SR-750 FND-001):
     // a dangling reference (whose target this call never admits into
@@ -1241,6 +1315,7 @@ pub(super) fn check_population_completeness(
     if let Some(name) = self_population {
         required.insert(name.to_owned());
     }
+    required.extend(parameter_populations.iter().cloned());
     loop {
         let mut grew = false;
         for name in required.clone() {
@@ -1264,14 +1339,18 @@ pub(super) fn check_population_completeness(
         }
     }
     // Report the first required-but-incomplete population, in the
-    // document's own population order; `self`'s population, when the
-    // document never lists it, is checked last (there is no document-order
-    // position for a population the document never names).
+    // document's own population order; `self`'s population and then each
+    // parameter-named population, when the document never lists it, are
+    // checked last (there is no document-order position for a population
+    // the document never names).
     let mut walk_order: Vec<&str> = populations
         .iter()
         .map(|entry| entry.population.as_str())
         .collect();
-    if let Some(name) = self_population {
+    for name in self_population
+        .into_iter()
+        .chain(parameter_populations.iter().map(String::as_str))
+    {
         if !walk_order.contains(&name) {
             walk_order.push(name);
         }
@@ -1376,7 +1455,7 @@ pub(super) fn admit_populations(
     limits: ObservationLimits,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(views, types, populations, limits)?;
-    check_population_completeness(populations, &values.completeness, self_population)?;
+    check_population_completeness(populations, &values.completeness, self_population, &[])?;
     check_population_closure(
         populations,
         &values.completeness,
@@ -1446,24 +1525,16 @@ pub(super) fn resolve_self(
     }
 }
 
-/// Check 10's admitted output: the operation's parameter bindings in
-/// declared order, and its admitted result value (`None` for an operation
-/// with no declared result).
-pub(super) type AdmittedParametersAndResult = (Vec<(String, Value)>, Option<Value>);
-
-/// FR-106 check 10, with check 8's closure rule applied to every reference
-/// value it admits ([`References::check_closure`]). A parameter resolves
-/// against the pre snapshot (`parameter_references`): the operation reads
-/// its arguments before it runs. The result resolves against the post
-/// snapshot (`result_references`): it is observed after the operation, so
-/// it can name an object the operation created.
-pub(super) fn admit_parameters_and_result(
-    parameter_references: &mut References<'_>,
-    result_references: &mut References<'_>,
+/// FR-106 check 10 over the parameters, with check 8's closure rule applied
+/// to every reference value it admits ([`References::check_closure`]): the
+/// operation's parameter bindings in declared order. A parameter resolves
+/// against the pre snapshot (`references`): the operation reads its
+/// arguments before it runs.
+pub(super) fn admit_parameters(
+    references: &mut References<'_>,
     operation: &OperationDeclaration,
-    parameters: &[(String, RawValue)],
-    result: &ResultValue,
-) -> Result<AdmittedParametersAndResult, AdmissionFailure> {
+    parameters: &[(String, SnapshotValue)],
+) -> Result<Vec<(String, Value)>, AdmissionFailure> {
     let mut admitted = Vec::with_capacity(operation.parameters().len());
     for (name, value_type) in operation.parameters() {
         let raw = raw_field(parameters, name).ok_or_else(|| {
@@ -1478,9 +1549,9 @@ pub(super) fn admit_parameters_and_result(
                     .with("field", name.clone()),
             ));
         }
-        let value = admit_scalar(parameter_references, raw, value_type)
+        let value = admit_scalar(references, raw, value_type)
             .map_err(|record| refuse(record.with("field", name.clone())))?;
-        parameter_references.check_closure(raw).map_err(refuse)?;
+        references.check_closure(raw).map_err(refuse)?;
         admitted.push((name.clone(), value));
     }
     for (name, _) in parameters {
@@ -1495,21 +1566,28 @@ pub(super) fn admit_parameters_and_result(
             ));
         }
     }
+    Ok(admitted)
+}
 
-    let result_value = match (operation.result(), result) {
-        (None, ResultValue::Null) => None,
-        (None, ResultValue::Value(_)) => {
-            return Err(refuse(admission_record(
-                Code::InvalidRuntimeInput,
-                "unknown-member",
-            )))
-        }
-        (Some(_), ResultValue::Null) => {
-            return Err(refuse(admission_record(
-                Code::InvalidRuntimeInput,
-                "missing-member",
-            )))
-        }
+/// FR-106 check 10 over an invocation's result: `None` for an operation
+/// with no declared result. The result resolves against the post snapshot
+/// (`references`): it is observed after the operation, so it can name an
+/// object the operation created.
+pub(super) fn admit_result(
+    references: &mut References<'_>,
+    operation: &OperationDeclaration,
+    result: &ResultValue,
+) -> Result<Option<Value>, AdmissionFailure> {
+    match (operation.result(), result) {
+        (None, ResultValue::Null) => Ok(None),
+        (None, ResultValue::Value(_)) => Err(refuse(admission_record(
+            Code::InvalidRuntimeInput,
+            "unknown-member",
+        ))),
+        (Some(_), ResultValue::Null) => Err(refuse(admission_record(
+            Code::InvalidRuntimeInput,
+            "missing-member",
+        ))),
         (Some(value_type), ResultValue::Value(raw)) => {
             if !field_kind_matches(raw, value_type) {
                 return Err(refuse(admission_record(
@@ -1517,17 +1595,15 @@ pub(super) fn admit_parameters_and_result(
                     "wrong-value-kind",
                 )));
             }
-            let value = admit_scalar(result_references, raw, value_type).map_err(refuse)?;
-            result_references.check_closure(raw).map_err(refuse)?;
-            Some(value)
+            let value = admit_scalar(references, raw, value_type).map_err(refuse)?;
+            references.check_closure(raw).map_err(refuse)?;
+            Ok(Some(value))
         }
-    };
-    Ok((admitted, result_value))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::RawRef;
     use super::*;
 
     /// SR-750 FND-002: a non-ASCII digest string must refuse, never panic
@@ -1571,12 +1647,12 @@ mod tests {
     /// inside a `sequence`, in walk order.
     #[test]
     fn collect_references_walks_present_and_sequence() {
-        let raw = RawValue::Sequence(vec![
-            RawValue::Present(Box::new(RawValue::Reference(RawRef {
+        let raw = SnapshotValue::Sequence(vec![
+            SnapshotValue::Present(Box::new(SnapshotValue::Reference(SelectedObject {
                 population: "p1".to_owned(),
                 key: "k1".to_owned(),
             }))),
-            RawValue::Reference(RawRef {
+            SnapshotValue::Reference(SelectedObject {
                 population: "p2".to_owned(),
                 key: "k2".to_owned(),
             }),
@@ -1596,14 +1672,14 @@ mod tests {
     #[test]
     fn collect_references_finds_nothing_in_a_scalar() {
         let mut found = Vec::new();
-        collect_references(&RawValue::Boolean(true), &mut found);
-        collect_references(&RawValue::Absent, &mut found);
-        collect_references(&RawValue::Integer("1".to_owned()), &mut found);
+        collect_references(&SnapshotValue::Boolean(true), &mut found);
+        collect_references(&SnapshotValue::Absent, &mut found);
+        collect_references(&SnapshotValue::Integer("1".to_owned()), &mut found);
         assert!(found.is_empty());
     }
 
-    fn reference(population: &str, key: &str) -> RawValue {
-        RawValue::Reference(RawRef {
+    fn reference(population: &str, key: &str) -> SnapshotValue {
+        SnapshotValue::Reference(SelectedObject {
             population: population.to_owned(),
             key: key.to_owned(),
         })
@@ -1633,7 +1709,9 @@ mod tests {
         let references = References::over(&[], &populations);
 
         let record = references
-            .check_closure(&RawValue::Present(Box::new(reference("complete", "k"))))
+            .check_closure(&SnapshotValue::Present(Box::new(reference(
+                "complete", "k",
+            ))))
             .expect_err("a key absent from a complete population refuses");
         assert_eq!(record.code, Code::DanglingReference);
         assert_eq!(record.cause, "absent-target-in-complete-population");
@@ -1649,9 +1727,12 @@ mod tests {
         assert_eq!(record.code, Code::DanglingReference);
 
         assert_eq!(
-            references.check_closure(&RawValue::Sequence(vec![reference("partial", "k")])),
+            references.check_closure(&SnapshotValue::Sequence(vec![reference("partial", "k")])),
             Ok(())
         );
-        assert_eq!(references.check_closure(&RawValue::Boolean(true)), Ok(()));
+        assert_eq!(
+            references.check_closure(&SnapshotValue::Boolean(true)),
+            Ok(())
+        );
     }
 }

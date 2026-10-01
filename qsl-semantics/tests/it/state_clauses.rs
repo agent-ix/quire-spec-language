@@ -1729,6 +1729,392 @@ fn tc464_step4_admission_reads_nothing_ambient() {
 }
 
 // ---------------------------------------------------------------------------
+// TC-464 step 5 (FR-106-AC-8): a `PreCall` selection over the chain
+// `a -> b -> c` pre snapshot, for `ReachesTarget` (`probe`'s precondition).
+// ---------------------------------------------------------------------------
+
+/// The chain `a -> b -> c` (`c.parent` absent) as a `config_history`
+/// snapshot observed `observation`, with `extra_populations` listed after
+/// `config_history`.
+fn tc464_chain_snapshot(
+    label: &qsl_semantics::model::observation::DocumentRef,
+    model_digest_hex: &str,
+    observation: &str,
+    complete: bool,
+    extra_populations: Vec<serde_json::Value>,
+) -> Vec<u8> {
+    let population = "ix://example/config-version/config_history";
+    let config_version = "ix://example/config-version/ConfigVersion";
+    let object = |key: &str, parent: Option<&str>| {
+        let parent = match parent {
+            Some(parent) => {
+                json!({"present": {"reference": {"population": population, "key": parent}}})
+            }
+            None => json!({"absent": {}}),
+        };
+        json!({"key": key, "type": config_version,
+               "fields": {"versionNumber": {"integer": "1"}, "parent": parent}})
+    };
+    let mut populations = vec![json!({
+        "population": population,
+        "complete": complete,
+        "objects": [object("a", Some("b")), object("b", Some("c")), object("c", None)],
+    })];
+    populations.extend(extra_populations);
+    json!({
+        "format": "quire.state.snapshot/v1",
+        "identity": frame_identity_json(label),
+        "observation": observation,
+        "model": frame_model_header(model_digest_hex),
+        "populations": populations,
+    })
+    .to_string()
+    .into_bytes()
+}
+
+/// `{population, key}` as a snapshot-form reference value.
+fn tc464_reference(
+    population: &str,
+    key: &str,
+) -> qsl_semantics::model::observation::SnapshotValue {
+    qsl_semantics::model::observation::SnapshotValue::Reference(
+        qsl_semantics::model::observation::SelectedObject {
+            population: population.to_owned(),
+            key: key.to_owned(),
+        },
+    )
+}
+
+/// Admits `clause_name` over `document` with `PreCall { snapshot, self: a,
+/// parameters }`, the snapshot being `snapshot_bytes`.
+fn run_tc464_pre_call(
+    document: &[u8],
+    clause_name: &str,
+    snapshot_bytes: Vec<u8>,
+    parameters: Vec<(&str, qsl_semantics::model::observation::SnapshotValue)>,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let snapshot = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&snapshot_bytes),
+        ..frame_label("pre-call-snap")
+    };
+    let mut snapshots = BTreeMap::new();
+    snapshots.insert(snapshot.digest, snapshot_bytes);
+    run_tc465(
+        document,
+        clause_name,
+        qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+            snapshot,
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: "ix://example/config-version/config_history".to_owned(),
+                key: "a".to_owned(),
+            },
+            parameters: parameters
+                .into_iter()
+                .map(|(name, value)| (quire_exact::Identifier::new(name).unwrap(), value))
+                .collect(),
+        },
+        snapshots,
+        BTreeMap::new(),
+    )
+}
+
+fn tc464_chain(document: &[u8], observation: &str, complete: bool) -> Vec<u8> {
+    tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(document),
+        observation,
+        complete,
+        Vec::new(),
+    )
+}
+
+const TC464_CONFIG_HISTORY: &str = "ix://example/config-version/config_history";
+
+/// Step 5 (FR-106-AC-8): `PreCall { snapshot, self: a, parameters: {target:
+/// a} }` for `ReachesTarget` admits one pre observation, `self` `a`, the
+/// parameter `target` naming `a`, and no post observation, result or delta
+/// (no frame check runs: there is no post state to compare).
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_admits_one_pre_observation() {
+    let document = tc465_document();
+    let observations = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        tc464_chain(&document, "pre", true),
+        vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
+    )
+    .expect("the pre-call observation admits");
+    let pre = observations.pre.expect("one pre observation");
+    assert_eq!(pre.identity.identity, "pre-call-snap");
+    assert_ne!(pre.identity.digest, [0; 32]);
+    assert!(observations.current.is_none());
+    assert!(observations.post.is_none(), "no post observation");
+    assert!(observations.result.is_none(), "no result");
+    assert!(observations.created.is_empty() && observations.deleted.is_empty());
+    assert_eq!(observations.self_object.object().as_str(), "a");
+    let [(name, quire_exact::Value::Reference(target))] = &observations.parameters[..] else {
+        panic!("one reference parameter: {:?}", observations.parameters);
+    };
+    assert_eq!(name, "target");
+    assert_eq!(target.object().as_str(), "a");
+    assert_eq!(target, &observations.self_object);
+}
+
+/// Step 5 (FR-106-AC-8): the same selection for `VersionUnchanged`, a
+/// postcondition, refuses `wrong_snapshot`/`wrong-observation`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_for_a_postcondition_refuses_wrong_observation() {
+    let document = tc465_document();
+    let result = run_tc464_pre_call(
+        &document,
+        "VersionUnchanged",
+        tc464_chain(&document, "pre", true),
+        vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
+    );
+    assert_tc465_refused(result, "wrong_snapshot", "wrong-observation");
+}
+
+/// Step 5 (FR-106-AC-8): a pre-call snapshot that says `post` refuses
+/// `wrong_snapshot`/`wrong-observation`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_snapshot_saying_post_refuses_wrong_observation() {
+    let document = tc465_document();
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        tc464_chain(&document, "post", true),
+        vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
+    );
+    assert_tc465_refused(result, "wrong_snapshot", "wrong-observation");
+}
+
+/// Step 5 (FR-106-AC-8): no `target` refuses `invalid_runtime_input`/
+/// `missing-member`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_without_target_refuses_missing_member() {
+    let document = tc465_document();
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        tc464_chain(&document, "pre", true),
+        Vec::new(),
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "missing-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("target")
+    );
+}
+
+/// Step 5 (FR-106-AC-8): `target` naming `ghost`, absent from the complete
+/// `config_history`, refuses `dangling_reference`/
+/// `absent-target-in-complete-population` naming `ghost` and
+/// `config_history`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_target_naming_ghost_refuses_dangling_reference() {
+    let document = tc465_document();
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        tc464_chain(&document, "pre", true),
+        vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "ghost"))],
+    );
+    let record = assert_tc465_refused(
+        result,
+        "dangling_reference",
+        "absent-target-in-complete-population",
+    );
+    assert_eq!(
+        record.fields.get("object").map(String::as_str),
+        Some("ghost")
+    );
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(TC464_CONFIG_HISTORY)
+    );
+}
+
+/// Step 5 (FR-106-AC-8): over the package variant where `Sub` specializes
+/// `ConfigVersion` and `archive` has member type `Sub`, `target` naming
+/// `a1` in an `archive` listed with no objects and marked `complete:
+/// false` -- which no field of `a`, `b` or `c` reaches -- is `Incomplete`
+/// with `incomplete_population`/`incomplete-scope` naming `archive`: a
+/// declared population a reference parameter names is required.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_pre_call_target_in_an_incomplete_archive_is_incomplete() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let snapshot = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({"population": archive, "complete": false, "objects": []})],
+    );
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        snapshot,
+        vec![("target", tc464_reference(archive, "a1"))],
+    );
+    let record = assert_tc465_incomplete(result, "incomplete_population", "incomplete-scope");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(archive)
+    );
+}
+
+/// Step 5 (FR-106-AC-8): an undeclared parameter `zextra` naming `a1` in
+/// the incomplete `archive` makes no population required: check 10 refuses
+/// it `invalid_runtime_input`/`unknown-member`, not check 7 `Incomplete`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_an_undeclared_parameter_requires_no_population() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let snapshot = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({"population": archive, "complete": false, "objects": []})],
+    );
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        snapshot,
+        vec![
+            ("target", tc464_reference(TC464_CONFIG_HISTORY, "a")),
+            ("zextra", tc464_reference(archive, "a1")),
+        ],
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
+    assert_eq!(
+        record.fields.get("field").map(String::as_str),
+        Some("zextra")
+    );
+}
+
+/// Step 5 (FR-106-AC-8): only a reference-valued parameter makes a
+/// population required. Over an operation `flag(b: Boolean)` with the
+/// precondition `FlagHolds { b }`, a `b` given a reference to `a1` in the
+/// incomplete `archive` refuses check 10 `invalid_runtime_input`/
+/// `wrong-value-kind`, not check 7 `Incomplete`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_a_non_reference_parameter_requires_no_population() {
+    let flag = operation(
+        "flag",
+        json!([operation_parameter(
+            "flag",
+            "b",
+            "ix://quire/native/Boolean"
+        )]),
+        None,
+        empty_frame(),
+    );
+    let document = with_archive_population(config_version_document_with_operations(vec![
+        attempt_update_modifies_version_and_parent(),
+        probe_operation(),
+        flag,
+    ]));
+    let clauses =
+        format!("{TC465_CLAUSES}pre FlagHolds using v on Config::ConfigVersion::flag {{ b }}\n");
+    let archive = "ix://example/config-version/archive";
+    let snapshot_bytes = tc464_chain_snapshot(
+        &frame_label("pre-call-snap"),
+        &tc465_model_digest_hex(&document),
+        "pre",
+        true,
+        vec![json!({"population": archive, "complete": false, "objects": []})],
+    );
+    let snapshot = qsl_semantics::model::observation::DocumentRef {
+        digest: frame_document_digest(&snapshot_bytes),
+        ..frame_label("pre-call-snap")
+    };
+    let result = run_tc465_with_clauses(
+        &document,
+        &clauses,
+        "FlagHolds",
+        qsl_semantics::model::observation::ClauseSelectionInput::PreCall {
+            snapshot: snapshot.clone(),
+            self_object: qsl_semantics::model::observation::SelectedObject {
+                population: TC464_CONFIG_HISTORY.to_owned(),
+                key: "a".to_owned(),
+            },
+            parameters: BTreeMap::from([(
+                quire_exact::Identifier::new("b").unwrap(),
+                tc464_reference(archive, "a1"),
+            )]),
+        },
+        BTreeMap::from([(snapshot.digest, snapshot_bytes)]),
+        BTreeMap::new(),
+        qsl_semantics::model::observation::ObservationLimits::default(),
+    );
+    let record = assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
+    assert_eq!(record.fields.get("field").map(String::as_str), Some("b"));
+}
+
+/// Step 5's archive case over an invocation (FR-106 required populations:
+/// "of an invocation or a `PreCall` selection, in the pre snapshot"): the
+/// `probe` invocation's `target` naming `a1` in an `archive` its pre
+/// snapshot lists with no objects and marks `complete: false` is
+/// `Incomplete` with `incomplete_population`/`incomplete-scope` naming
+/// `archive`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_an_invocation_target_in_an_incomplete_archive_is_incomplete() {
+    let document = tc465_document_with_archive_population();
+    let archive = "ix://example/config-version/archive";
+    let result = run_tc465_probe_with(
+        &document,
+        |pre| {
+            pre["populations"]
+                .as_array_mut()
+                .expect("the snapshot lists its populations")
+                .push(json!({"population": archive, "complete": false, "objects": []}));
+        },
+        |invocation| {
+            invocation["parameters"]["target"] =
+                json!({"reference": {"population": archive, "key": "a1"}});
+        },
+    );
+    let record = assert_tc465_incomplete(result, "incomplete_population", "incomplete-scope");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(archive)
+    );
+}
+
+/// Step 5 (FR-106-AC-8): the pre-call snapshot marked `complete: false` is
+/// `Incomplete` with `incomplete_population`/`incomplete-scope`.
+#[trace("TC-464", "FR-106-AC-8")]
+#[test]
+fn tc464_step5_an_incomplete_pre_call_snapshot_is_incomplete() {
+    let document = tc465_document();
+    let result = run_tc464_pre_call(
+        &document,
+        "ReachesTarget",
+        tc464_chain(&document, "pre", false),
+        vec![("target", tc464_reference(TC464_CONFIG_HISTORY, "a"))],
+    );
+    let record = assert_tc465_incomplete(result, "incomplete_population", "incomplete-scope");
+    assert_eq!(
+        record.fields.get("population").map(String::as_str),
+        Some(TC464_CONFIG_HISTORY)
+    );
+}
+
+// ---------------------------------------------------------------------------
 // TC-465 (FR-106-AC-3, AC-4, AC-5, AC-7; SR-751 FND-001): admission refuses
 // each input defect. Shared package: `ConfigVersion` (`versionNumber`,
 // `parent`), `attemptUpdate` (modifies `[versionNumber, parent]` unless a
@@ -2127,7 +2513,14 @@ fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
 /// `config_history` the sole population `ConfigVersion`'s own clauses
 /// resolve against -- no S3 `ambiguous_declaration`/`ambiguous-name`.
 fn tc465_document_with_archive_population() -> Vec<u8> {
-    let document = add_sub_type(tc465_document(), &[]);
+    with_archive_population(tc465_document())
+}
+
+/// `document` with `Sub` (see [`add_sub_type`]) and the unbounded
+/// population `archive` whose only declared member is `Sub`
+/// ([`tc465_document_with_archive_population`]).
+fn with_archive_population(document: Vec<u8>) -> Vec<u8> {
+    let document = add_sub_type(document, &[]);
     let mut envelope: serde_json::Value = serde_json::from_slice(&document).expect("valid JSON");
     let sub = "ix://example/config-version/Sub";
     let archive = "ix://example/config-version/archive";
@@ -2312,8 +2705,32 @@ fn run_tc465_with_limits(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_with_clauses(
+        document,
+        TC465_CLAUSES,
+        clause_name,
+        selection,
+        snapshots,
+        invocations,
+        limits,
+    )
+}
+
+/// [`run_tc465_with_limits`] over the unit declaring `clauses`.
+fn run_tc465_with_clauses(
+    document: &[u8],
+    clauses: &str,
+    clause_name: &str,
+    selection: qsl_semantics::model::observation::ClauseSelectionInput,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    invocations: BTreeMap<[u8; 32], Vec<u8>>,
+    limits: qsl_semantics::model::observation::ObservationLimits,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let packages = qsl_semantics::model::intake::package_input([document]);
-    let declarations = admit_and_assemble_with_body(document, TC465_CLAUSES)
+    let declarations = admit_and_assemble_with_body(document, clauses)
         .unwrap_or_else(|refusal| panic!("assembly refused: {refusal:?}"));
     let graph = declarations
         .check(CheckingLimits::default())
@@ -2563,9 +2980,23 @@ fn run_tc465_probe(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
+    run_tc465_probe_with(document, |_| {}, mutate_invocation)
+}
+
+/// [`run_tc465_probe`], with the pre snapshot's JSON mutated by
+/// `mutate_pre` before it is digested.
+fn run_tc465_probe_with(
+    document: &[u8],
+    mutate_pre: impl FnOnce(&mut serde_json::Value),
+    mutate_invocation: impl FnOnce(&mut serde_json::Value),
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
     let model_digest_hex = tc465_model_digest_hex(document);
     let pre_label = frame_label("pre-snap");
-    let pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
+    let mut pre_value = tc465_healthy_parent_observed(&pre_label, &model_digest_hex, "pre");
+    mutate_pre(&mut pre_value);
     let pre_bytes = pre_value.to_string().into_bytes();
     let pre = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&pre_bytes),

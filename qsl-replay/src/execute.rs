@@ -46,10 +46,15 @@ use crate::spine::{
 use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
-use qsl_semantics::model::observation::AdmissionFailure;
+use qsl_forms::StateClauseKind;
+use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
+use quire_exact::Identifier;
 
 mod frame;
 pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
+
+mod state_clause;
+pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 
 /// The S1 limit a request names that is above this executor's reader
 /// limit (ADR-013 O-26: "a limit above the reader limit").
@@ -188,7 +193,30 @@ pub enum ReplayRefusal {
     /// the payload's frame node or occurrence (refused before recompiling).
     #[error("stale_dependency/revision-mismatch: {0}")]
     FrameIdentity(Box<FrameIdentityMismatch>),
-    /// FR-116: FR-106 admission of the frame counterexample's invocation
+    /// FR-122: a state-clause counterexample's clause names no state clause
+    /// of the recompiled package.
+    #[error("missing_declaration/missing-name: package {} declares no state clause {}", .package.hex(), .clause.as_str())]
+    UnknownClause {
+        /// The payload's clause.
+        clause: Identifier,
+        /// The recompiled package it was looked up in.
+        package: PackageId,
+    },
+    /// FR-122: a state-clause counterexample's envelope names a clause node
+    /// or `claim` occurrence that is not the recompiled clause's (refused
+    /// before any admission).
+    #[error("stale_dependency/revision-mismatch: {0}")]
+    ClauseIdentity(Box<ClauseIdentityMismatch>),
+    /// FR-122: a state-clause counterexample's observation form is not the
+    /// one its clause's kind takes (refused before any admission).
+    #[error("wrong_snapshot/wrong-observation: a {kind:?} clause takes no {form} observation")]
+    WrongObservation {
+        /// The resolved clause's kind.
+        kind: StateClauseKind,
+        /// The payload's observation form.
+        form: ObservationForm,
+    },
+    /// FR-116, FR-122: FR-106 admission of the counterexample's documents
     /// failed, with its own record.
     #[error(transparent)]
     Admission(AdmissionFailure),
@@ -215,7 +243,9 @@ impl ReplayRefusal {
             Self::UnknownFunction { .. } | Self::UnknownOperation { .. } => {
                 Code::MissingDeclaration
             }
-            Self::FrameIdentity(_) => Code::StaleDependency,
+            Self::FrameIdentity(_) | Self::ClauseIdentity(_) => Code::StaleDependency,
+            Self::UnknownClause { .. } => Code::MissingDeclaration,
+            Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::Admission(
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => record.code,

@@ -41,6 +41,18 @@ use crate::family::{
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
 
+/// The observation a clause of `kind` reads (FR-104, FR-107): `current`
+/// for an invariant, `pre` for a precondition, `post` for a postcondition.
+/// The checker types the clause's reads by it and S6a selects the clause's
+/// own observation by it.
+fn observation_of(kind: StateClauseKind) -> Observation {
+    match kind {
+        StateClauseKind::Invariant => Observation::Current,
+        StateClauseKind::Precondition => Observation::Pre,
+        StateClauseKind::Postcondition => Observation::Post,
+    }
+}
+
 /// The operation a `pre` or `post` clause names, resolved in its context
 /// type's effective view (FR-103).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -190,11 +202,7 @@ impl StateClauseDeclaration {
 
     /// The observation the clause's own reads take (FR-104).
     fn observation(&self) -> Observation {
-        match self.kind {
-            StateClauseKind::Invariant => Observation::Current,
-            StateClauseKind::Precondition => Observation::Pre,
-            StateClauseKind::Postcondition => Observation::Post,
-        }
+        observation_of(self.kind)
     }
 
     /// `self`, then `result` in a postcondition of an operation that
@@ -502,6 +510,13 @@ impl CheckedStateClause {
     /// Invariant, precondition or postcondition.
     pub fn kind(&self) -> StateClauseKind {
         self.kind
+    }
+
+    /// The observation the clause's own reads take (FR-104, FR-107):
+    /// `current` for an invariant, `pre` for a precondition, `post` for a
+    /// postcondition.
+    pub fn observation(&self) -> Observation {
+        observation_of(self.kind)
     }
 
     /// The context object type `M::T`, by its effective identity.

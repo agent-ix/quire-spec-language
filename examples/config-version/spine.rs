@@ -353,6 +353,7 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
             "name": clause.name,
             "input": match &clause.input {
                 ClauseSelectionInput::Current { .. } => "current",
+                ClauseSelectionInput::PreCall { .. } => "pre-call",
                 ClauseSelectionInput::Invocation { .. } => "invocation",
             },
         }),
