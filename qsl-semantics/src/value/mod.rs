@@ -121,6 +121,7 @@
 mod containment;
 pub mod declaration;
 pub(crate) mod definition;
+mod diagnostics_catalog;
 pub mod enumeration;
 pub(crate) mod member;
 pub mod model_query;
@@ -163,11 +164,11 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
 // (ADR-011 §6.1).
 pub use definition::{
-    divide, modulo, native_diagnostics_catalog, AdmittedIeeeProfile, AdmittedIntegerDivision,
-    AdmittedSelection, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    DefinitionRevision, LockReadError, PackageCause, PackageRefusal, PackageRefusalCode,
-    SelectionRefusalCode,
+    divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
+    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError,
+    PackageCause, PackageRefusal, PackageRefusalCode, SelectionRefusalCode,
 };
+pub use diagnostics_catalog::native_diagnostics_catalog;
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and
