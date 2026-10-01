@@ -416,7 +416,10 @@ the verdicts of the temporal model-check engines (ADR-018 V-1 to V-8):
 Kani, `Exhaustive`, `BoundedComplete{depth}`, `Inductive{depth}`), and every
 basis maps to success except `Checks{0}`, which maps to inconclusive with
 `kani_vacuous_proof` as above. A model counterexample whose E9 replay settles
-`ReproducedWithEvaluatedWitness` maps to `refuted`. `InconclusiveCause` gains
+`ReproducedWithEvaluatedWitness` maps to `refuted`; one whose replay settles
+`Inconclusive` maps to `inconclusive` with `replay_parity`, one whose replay
+refuses maps to `inconclusive` with `replay_refused`, and one whose replay
+faults maps to `failed`, as for a Kani counterexample. `InconclusiveCause` gains
 `BoundReached{depth}`, `InductionNotClosed{depth}`, `UndecidedSuccessor` and
 `NoInitialState`, each in category inconclusive. A model-check run stopped by
 a run limit, including `max_automaton_states`, maps to incomplete with
@@ -823,7 +826,7 @@ Equality: not an identity. Each bound value compares under its owning type.
 | --- | --- |
 | Owner | QSL `qsl-replay` owns the FR-331 terminal record (`TerminalValue`, `TerminalRecord`), its O-16 category map (`TerminalValue::category`) and the proof-result envelope (`ProofResultEnvelope`, FR-069), OQ-H ruling. IR keeps `KaniOutcome`, the typed result of one Kani run before it becomes a terminal record. CG maps it, with the E9 replay result of a `Counterexample`, into QSL's `TerminalValue` (C-09) and settles the FR-331 `dispositions` at E7 as the backend provider. The orchestrating driver (ADR-011 T-13) is the one writer of each item's FR-331 terminal record in `results`. |
 | Implementing ticket | #231 for the terminal record, its category map, the proof-result envelope and the FR-331 reader (FR-069). CG for the map from `KaniOutcomeKind` and the E9 replay result to `TerminalValue` (C-09, TK-05). |
-| Public type | QSL: `TerminalValue` (eight FR-331 result values, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable; amended by ADR-018 §1: `Proved` carries a `ProofBasis`, whose `Checks{success_checks}` member is that count), `TerminalRecord` (request-scoped item identity and value) and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19) and the typed `inconclusive` cause (`kani_vacuous_proof`, `replay_parity` or `replay_refused`). IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
+| Public type | QSL: `TerminalValue` (eight FR-331 result values, `Proved` carrying its SUCCESS check count so a vacuous run is distinguishable; amended by ADR-018 §1: `Proved` carries a `ProofBasis`, whose `Checks{success_checks}` member is that count), `TerminalRecord` (request-scoped item identity and value) and `ProofResultEnvelope`, carrying the O-16 category, the terminal record, the `backend` member (O-19) and the typed `inconclusive` cause (`kani_vacuous_proof`, `replay_parity` or `replay_refused`; amended by ADR-018 §1: also `bound_reached`, `induction_not_closed`, `undecided_successor` and `no_initial_state`). IR: `KaniOutcome` with `KaniOutcomeKind` (10), which defines no terminal-record type of its own. |
 | Serialized authority | QSpec FR-331 `quire.backend-provider/v1` `results`, `dispositions`, `counterexamples`, `accounting`, manifest and tool lock. |
 | Conversions | Kani run → `KaniOutcome` (IR). `KaniOutcomeKind` with the E9 replay result of a `Counterexample` (settlement or `ReplayRefusal`) → QSL `TerminalValue` (CG, O-16 proof column, C-09). `TerminalValue` → O-16 category (QSL `TerminalValue::category`, one exhaustive map). FR-331 → QSL envelope (#231, C-23). |
 | Validation and diagnostics | Exactly one terminal record per `request_index` (AD-016); unknown version, duplicate keys and non-canonical encodings refuse before consumption (FR-331). |
