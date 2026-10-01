@@ -147,7 +147,7 @@ pub enum LinkCheckOutcome {
     Completed(DispatchLinkOutcome),
     /// A real defect (a dangling operation reference, or a family/dominance
     /// walk reaching the caller's own configured `family_steps`/
-    /// `ancestor_steps` ceiling, ADR-011 §7.3 QSL-199) refused the check
+    /// `ancestor_steps` ceiling, ADR-011 §7.3) refused the check
     /// outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-link.
@@ -225,7 +225,7 @@ fn dominates(
 /// this pass's exact scope (link-time only; no runtime selection, no
 /// call-graph cycle detection). Reads the operations and the conformance
 /// ancestry from `view`'s own [`EffectiveView::model_index`], so there is no
-/// second package to pair with the view (QSL-217).
+/// second package to pair with the view.
 pub fn link_dispatch(
     view: &EffectiveView,
     original: &DeclarationKey,

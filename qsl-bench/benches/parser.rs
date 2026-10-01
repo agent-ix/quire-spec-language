@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 parser benchmarks: wall time of one `qsl_cst::parse` call.
+//! Parser benchmarks: wall time of one `qsl_cst::parse` call.
 //!
 //! - `parser/depth/<outcome>/<d>`: one function whose body nests `d`
 //!   parenthesis pairs. At `89326999` depth 5 and above is refused with
@@ -10,7 +10,7 @@
 //!
 //! `<outcome>` (`admitted`, `recovered` or `refused`) is the input's parse
 //! outcome, decided once at setup: when a parser change turns a refusal
-//! into a parse (QSL-197), the benchmark gets a new id rather than being
+//! into a parse, the benchmark gets a new id rather than being
 //! compared against the time it took to refuse.
 //!
 //! Throughput is source bytes, so criterion also reports bytes per second.

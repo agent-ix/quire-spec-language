@@ -48,7 +48,7 @@
 //!
 //! `build` charges the meter inside each phase as it works, in
 //! `value-accounting.md`'s charge order, and stops at the first denied
-//! charge (QSL-216). The limits therefore bound the work normalization
+//! charge. The limits therefore bound the work normalization
 //! does, not only what it admits: a diamond generalization graph, whose
 //! ancestor-path count is exponential in depth, is walked only as far as
 //! `derivation_facts` and `work_units` admit (PR #140 F1), and no member
@@ -163,7 +163,7 @@
 //! matching `:455`'s "before its first `normalize.fact`" and `:456`'s "after
 //! its last `normalize.fact`". Only once every phase-4 charge is admitted
 //! does `resolve_redefinitions` run any dominance contest or build any
-//! redefine fact (QSL-216).
+//! redefine fact.
 //!
 //! No phase-4 refusal is reported as soon as it is found, whichever shape it
 //! takes: an owner ancestry with no unique dominant redefiner
@@ -434,13 +434,13 @@ pub struct ViewEntry {
 /// type's only constructors, so a view always carries the exact
 /// [`DomainPackage`] its declarations, type identities and object universes
 /// were computed from. A caller cannot pair a view with some other package:
-/// population admission reads the package from the view itself (QSL-204), so
+/// population admission reads the package from the view itself, so
 /// there is no second package whose correspondence to the view would need
 /// checking or re-normalizing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveView {
     /// The domain package this view was normalized from, together with the
-    /// [`ModelIndex`] this normalization built over it (QSL-202). Shared,
+    /// [`ModelIndex`] this normalization built over it. Shared,
     /// never copied, by every [`crate::model::population::PopulationBinding`]
     /// admitted against this view.
     index: Arc<ModelIndex>,
@@ -476,7 +476,7 @@ struct ViewBody {
     /// Every `Population` record of the package, keyed by its own
     /// declaration key.
     populations: BTreeMap<DeclarationKey, PopulationEntry>,
-    /// The limits this view was normalized under (QSL-222).
+    /// The limits this view was normalized under.
     limits: ModelNormalizationLimits,
 }
 
@@ -632,7 +632,7 @@ impl EffectiveView {
     }
 
     /// The limits this view was normalized under: the caller's, as given,
-    /// or [`ModelNormalizationLimits::default`]'s finite ceilings (QSL-222).
+    /// or [`ModelNormalizationLimits::default`]'s finite ceilings.
     pub fn effective_limits(&self) -> &ModelNormalizationLimits {
         &self.body.limits
     }
@@ -906,7 +906,7 @@ struct AncestorWalk {
 }
 
 /// Every ancestor path of `root_key`, in DFS pre-order over ascending-key
-/// direct generalizations, charged as the walk finds it (QSL-216).
+/// direct generalizations, charged as the walk finds it.
 ///
 /// DFS pre-order over ascending keys is ascending path order, which is
 /// phase 3's `normalize.cycle-check`/`normalize.fact` charge order for one
@@ -1389,13 +1389,13 @@ fn validate_references(domain_package: &DomainPackage, index: &RecordIndex) -> V
 thread_local! {
     /// How many times [`build`] has run on this thread. Observation only: it
     /// changes no result. Unit tests read it through [`build_calls`] to
-    /// count how often a caller normalizes a package (QSL-204).
+    /// count how often a caller normalizes a package.
     static BUILD_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     /// How many units of per-declaration work [`build`] has done on this
     /// thread: ancestor-walk steps, inherited-member facts and member
     /// identity hashes. Observation only; unit tests read it through
     /// [`work_steps`] to show a refused normalization's work is bounded by
-    /// the limit, not by the package (QSL-216).
+    /// the limit, not by the package.
     static WORK_STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
@@ -1421,7 +1421,7 @@ fn work_step() {
 }
 
 /// Normalize `domain_package`, charging `meter` inside each phase as the
-/// work happens (QSL-216; see the module docs). Every charge is made in
+/// work happens (see the module docs). Every charge is made in
 /// `value-accounting.md`'s charge order before the work it prices grows any
 /// further, and the first denied charge stops normalization.
 fn build(
@@ -1561,7 +1561,7 @@ fn build(
                 charges.fact()?;
                 // The fact shares the ancestor path rather than copying it,
                 // so memory grows with facts plus total path length, not
-                // facts times path length (QSL-216).
+                // facts times path length.
                 let inputs = FactInputs::new(ancestor.path.clone(), vec![member.key.clone()]);
                 let entry = member_preimages
                     .entry((type_key.clone(), member.key.clone()))
@@ -1695,8 +1695,8 @@ fn build(
     // `:455`) and every `normalize.conflict-check` ("after its last
     // `normalize.fact`", `:456`). Their charges differ only in the running
     // count, so each type's are charged as soon as that type's plan counts
-    // them. Nothing is resolved until every phase-4 charge is admitted
-    // (QSL-216): planning prices each type's groups, the charges run in
+    // them. Nothing is resolved until every phase-4 charge is admitted:
+    // planning prices each type's groups, the charges run in
     // charge order, and only then does any dominance contest run or any
     // redefine fact get built.
     let mut phase4_facts_charged: u64 = 0;
@@ -1755,8 +1755,8 @@ fn build(
     // ascending by effective member key" (`value-accounting.md:494`, QSL
     // #195): `(owner effective type identity, original declaration key)`
     // (`model-complete.md`:206). A member's `normalize.hash` is charged from
-    // its length counted from its parts, before it is encoded and hashed
-    // (QSL-216). `declarations_len` counts the view's `declarations`
+    // its length counted from its parts, before it is encoded and hashed.
+    // `declarations_len` counts the view's `declarations`
     // elements as they are admitted, so the view's own `normalize.hash` is
     // charged without encoding the view.
     let mut entries: Vec<ViewEntry> = Vec::new();
@@ -2086,7 +2086,7 @@ fn plan_redefinitions(
     // `value-accounting.md:456` price, exactly as a contested field target
     // does.
     //
-    // Read from the index's redefiners grouped by owner (QSL-202), for the
+    // Read from the index's redefiners grouped by owner, for the
     // owners that reach `type_key` only, in the records' own order: the
     // same edges, in the same order, as a scan of every record keeping those
     // whose owner reaches `type_key`.
@@ -2242,7 +2242,7 @@ struct TargetGroup {
 
 /// One type's phase-4 work, planned and priced by [`plan_redefinitions`]
 /// before any of it is charged, then resolved by [`resolve_redefinitions`]
-/// once every phase-4 charge is admitted (QSL-216).
+/// once every phase-4 charge is admitted.
 struct TypeRedefinitions {
     owner_effective_id: EffectiveId,
     /// Field target groups, ascending by target key.
@@ -2253,7 +2253,7 @@ struct TypeRedefinitions {
 }
 
 /// Resolves one type's planned phase-4 work, once every phase-4 charge is
-/// admitted (QSL-216): each field group's dominance contest, its redefine
+/// admitted: each field group's dominance contest, its redefine
 /// facts and hidden members, and each contested operation group's contest.
 /// Every refusal goes to `accounting.refusals`, ranked for charge order, and
 /// every remaining group is still resolved (see the module docs).
@@ -2798,7 +2798,7 @@ pub fn normalize_shared(
 /// [`normalize`], also returning the meter that ran `domain_package` under
 /// `limits`, for tests that assert the charges alongside the result.
 ///
-/// Normalization charges the meter inside each phase as it works (QSL-216):
+/// Normalization charges the meter inside each phase as it works:
 /// the first denied charge stops it, so the counted limits bound the work
 /// done, not only what normalization admits.
 pub fn normalize_with_meter(
@@ -2905,7 +2905,7 @@ mod tests {
         assert_eq!(refusal.code, Code::InvalidModelBinding);
     }
 
-    /// QSL-204 review (PR #387, LOW-1): `normalize_shared` puts the caller's
+    /// `normalize_shared` puts the caller's
     /// own `Arc` into the completed view instead of copying the package, and
     /// yields the same view as the borrowing `normalize`.
     #[test]
@@ -3012,7 +3012,7 @@ mod tests {
         }
     }
 
-    /// QSL-216 AC 1: a package past a normalization limit is refused after
+    /// A package past a normalization limit is refused after
     /// work bounded by that limit, not by the package. Hashing member
     /// identities stops at `effective_declarations`, inheriting members stops
     /// at `derivation_facts`, and walking a diamond lattice's exponentially
@@ -3077,7 +3077,7 @@ mod tests {
         package(records)
     }
 
-    /// QSL-216 review (HIGH 2): a type's inherited facts share its ancestor
+    /// A type's inherited facts share its ancestor
     /// paths rather than copying them, so memory grows with facts plus total
     /// path length, not facts times path length. At the default limits, a
     /// 120-deep chain whose root declares 20 fields normalizes, and every
@@ -3128,7 +3128,7 @@ mod tests {
         assert_eq!(shared, depth * fields);
     }
 
-    /// QSL-216 review (LOW 5): `ancestor_steps` is read, not charged, so its
+    /// `ancestor_steps` is read, not charged, so its
     /// refusal and a counted limit are ordered by charge order. Every
     /// `normalize.record` charge precedes the ancestor walk: one record short
     /// of a 10-deep chain's 11 records is incomplete on
@@ -3168,7 +3168,7 @@ mod tests {
         }
     }
 
-    /// QSL-222: the default limits are NFR-012's finite ceilings, and a
+    /// The default limits are NFR-012's finite ceilings, and a
     /// completed view records the limits it was normalized under: the
     /// defaults, or a caller's limits as given.
     #[trace("TC-434", "NFR-012")]

@@ -28,7 +28,7 @@
 //! neither a role nor that direction vocabulary -- fixed upstream by FCD
 //! #199/#200's `sourceEnd`/`targetEnd`/`role`/`direction` shape, so this
 //! reader now reads it rather than refusing it. A non-empty operation
-//! `frame` was a fourth gap, fixed by this reader's own FR-103/QSL-273
+//! `frame` was a fourth gap, fixed by this reader's own FR-103
 //! `resolve_pending_frames`/`resolve_frame_array`, which classifies each
 //! `modifies`/`creates`/`deletes` entry into an [`OperationEffect`] rather
 //! than refusing the frame outright.
@@ -494,7 +494,7 @@ fn value_of(json: &agent_ix_semantic_ir::json::Json) -> Result<Value, &str> {
 /// The magnitude up to which every integer is an IEEE 754 double exactly.
 const EXACT_DOUBLE_INTEGER: u64 = 1 << 53;
 
-/// `tree` as the `sha256-jcs` digest reads it (QSL-194): every value as is,
+/// `tree` as the `sha256-jcs` digest reads it: every value as is,
 /// except that an integer outside ±2^53 serializes as the IEEE 754 double
 /// nearest it. RFC 8785 §3.2.2.3 serializes the double a number parses to, so
 /// every spelling of one double -- `18446744073709551615`,
@@ -701,13 +701,13 @@ pub fn admit(
 /// The parsed document's digest is the one [`PackageDocument::parse`] took
 /// through `quire-canonical` (ADR-013 §2, ADR-013:113).
 ///
-/// Generalized (QSL-278) to serve a second caller, `model::observation`'s
+/// Generalized to serve a second caller, `model::observation`'s
 /// own FR-106 admission: `parsed_digest` is the caller's own already-taken
 /// `sha256-jcs` digest (through `quire-canonical` directly) when its bytes
 /// parsed, or `None` when they did not -- this function never parses
 /// `bytes` itself and never names `serde_json`, so it stays the one place
 /// `raw_bytes_digest`'s non-parsing fallback is called for either caller
-/// (ADR-013 §2's one-encoder rule, QSL-194's own exemption for this
+/// (ADR-013 §2's one-encoder rule, which exempts this
 /// function): `Err`'s digest is the mismatch to report, `Ok(())` a match.
 /// A caller constructs its own refusal from `Err`'s digest, since intake's
 /// [`ModelRefusal`] and FR-106's `AdmissionFailure` are different types.
@@ -932,7 +932,7 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         .diagnostics
         .iter()
         .filter(|located| located.severity == agent_ix_semantic_ir::diag::Severity::Error)
-        // FR-103 (QSL-273): a `modifies`/`creates`/`deletes` frame entry's
+        // FR-103: a `modifies`/`creates`/`deletes` frame entry's
         // resolution is QSL's own, strictly finer classification
         // (`resolve_pending_frames`/`resolve_frame_array`), not this
         // validator's own coarser `UNRESOLVED_FRAME_PATH` rule (which
@@ -1742,7 +1742,7 @@ fn read_record_value_type(
 }
 
 /// Reads the plain-scalar shape of a `VALUE_TYPE` type (FR-056's
-/// `value-type/v1` scalar reader, QSL-289) into a [`ScalarTypeRecord`]:
+/// `value-type/v1` scalar reader) into a [`ScalarTypeRecord`]:
 /// [`ScalarTypeRecord`]'s own narrow bound-integer slice, not a general
 /// scalar type system. The pinned `agent-ix-semantic-ir` also binds
 /// `value-type/v1` to a record-shaped form (a non-empty `fields`); that
@@ -3340,7 +3340,7 @@ mod tests {
         .into_bytes()
     }
 
-    /// QSL-194 review: RFC 8785's rounding applies to the hashed bytes
+    /// RFC 8785's rounding applies to the hashed bytes
     /// only. A field whose multiplicity `upper` is 2^60 + 1 -- no double
     /// equals it -- is admitted, intake's parsed tree holds the bound
     /// exactly, and the
@@ -3589,7 +3589,7 @@ mod tests {
         .into_bytes()
     }
 
-    /// FR-103 (QSL-273): an operation `frame` that actually declares
+    /// FR-103: an operation `frame` that actually declares
     /// something -- here a `creates` naming a real object type of the
     /// document -- resolves to an `OperationEffect` naming that type's own
     /// key, instead of refusing as unsupported (superseding this test's own
@@ -4167,7 +4167,7 @@ mod tests {
         )
     }
 
-    /// FR-056's `value-type/v1` scalar reader (QSL-289) admits a bound
+    /// FR-056's `value-type/v1` scalar reader admits a bound
     /// integer value type, reading its `min`/`max` constraints structurally
     /// into a [`ScalarTypeRecord`] -- never by parsing a rendered
     /// `Int[lo,hi]` string.
@@ -4905,7 +4905,6 @@ mod tests {
         field
     }
 
-    /// QSL-252 review (PR #439): the presence check itself was untested.
     /// Every refusal here goes through [`NodeCtx::malformed`], so all three
     /// carry `invalid_model_binding`/`IntakeMalformedDeclaration`
     /// (FR-056-AC-10) -- the same shape as every other malformed field
@@ -5015,7 +5014,7 @@ mod tests {
         );
     }
 
-    // QSL-201: every shape the per-node reader once `expect`ed from the
+    // Every shape the per-node reader once `expect`ed from the
     // pinned `agent-ix-semantic-ir` validator now refuses instead. Each test
     // below breaks one of those shapes in an otherwise clean document and
     // checks two layers. Through `read_records`, the validator or the reader
@@ -5292,7 +5291,7 @@ mod tests {
         );
     }
 
-    /// AC-3 of QSL-201: the JCS digest check still runs over the one parse.
+    /// The JCS digest check still runs over the one parse.
     /// A document nested past serde_json's default recursion limit (128)
     /// admits under its JCS digest, which the old `serde_json::from_slice`
     /// in `admit` could not parse and so digested raw.

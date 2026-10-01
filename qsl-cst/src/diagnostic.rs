@@ -305,7 +305,7 @@ pub fn read_source(
                 CompleteCode::RuntimeInvariant,
                 CompleteCause::EstablishedInvariantBroken,
             ),
-            // QSL-236: the source's own byte ceiling is `SyntaxLimit::SourceBytes`,
+            // The source's own byte ceiling is `SyntaxLimit::SourceBytes`,
             // one of the four kinds the catalog admits.
             SourceReadCause::ByteBudget => (
                 CompleteCode::StageLimitExceeded,

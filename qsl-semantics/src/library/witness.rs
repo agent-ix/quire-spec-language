@@ -5,7 +5,7 @@
 //! [`SupportedV2Wire::attest_ir_admitted_v2`].
 //!
 //! That function has to be callable from `qsl-package`'s `checked_v2`, the
-//! layer-4 v2 reader, which is a separate crate (QSL-181 extracted
+//! layer-4 v2 reader, which is a separate crate (X-6 extracted
 //! `qsl-semantics`, X-7 `qsl-package`). Rust has no visibility that
 //! names one module of another crate, so the minter is `pub`, and two
 //! checks confine its callers within the QSL workspace instead of the
@@ -39,7 +39,7 @@ impl SupportedV2Wire {
     /// is derived from. Called only from `read_checked_package_v2`'s
     /// `AdmittedV2` arm.
     ///
-    /// `pub` only for the QSL-181 crate boundary: arch-lint rule T12-E fails
+    /// `pub` only for the `qsl-semantics` crate boundary: arch-lint rule T12-E fails
     /// on a shipped call from any module but `qsl-package`'s `checked_v2`
     /// (see this module's doc).
     pub fn attest_ir_admitted_v2() -> Self {

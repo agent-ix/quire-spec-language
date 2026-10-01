@@ -429,7 +429,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
 
-    // The ten kernel value refusals (QSL-245, TC-452 step 4): each is a
+    // The ten kernel value refusals (TC-452 step 4): each is a
     // record with the refusal's own code and cause, its exact catalog
     // fields (TC-452's payloads), a locus and the location.
     {
@@ -597,7 +597,7 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
         }
     }
 
-    // ForeignReference (QSL-281): a record, with `required`/`supplied` fields
+    // ForeignReference: a record, with `required`/`supplied` fields
     // and a locus -- no longer bare, now that the kernel variant carries both
     // universes.
     {

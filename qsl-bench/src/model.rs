@@ -390,7 +390,7 @@ pub fn query_all_instances_of_root(
 
 /// `resolve_redefinition_target` for the chain root's field: one model
 /// conformance check against the package's shared `ModelIndex`, which is
-/// built once per package, not once per check (QSL-202).
+/// built once per package, not once per check.
 pub fn resolve_root_field_redefinition(
     index: &ModelIndex,
 ) -> Result<RedefinitionTargetOutcome, Box<ModelRefusal>> {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-280 (FR-091-OQ-4, FR-148): a `Float64[mode]` type carries its rounding
+//! FR-091-OQ-4, FR-148: a `Float64[mode]` type carries its rounding
 //! mode and the evaluator rounds `+` by it.
 
 use ix_trace_rs::trace;

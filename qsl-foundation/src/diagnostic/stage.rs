@@ -207,7 +207,7 @@ mod tests {
 /// ADR-013 T-4: a stage's successful output.
 ///
 /// T-4 also gives `Staged<T>` the warnings the stage raised. No stage
-/// raises one yet, so the field waits for its first producer (QSL-162).
+/// raises one yet, so the field waits for its first producer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Staged<T> {
     value: T,
@@ -230,7 +230,7 @@ impl<T> Staged<T> {
 /// T-4's shape also has `Fault(InternalFault)` and gives `Refused` a list of
 /// causes plus diagnostics. Neither is here: no stage returning this type
 /// raises an internal fault, T-4 does not define the diagnostics' type, and
-/// a family `check` refuses one form with one cause (QSL-148).
+/// a family `check` refuses one form with one cause.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StageFailure<C> {
     /// A configured stage limit was reached first.

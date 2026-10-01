@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §6.1 layer 5, S6a (QSL-183, ADR-011 §7.3 X-8): the evaluator
+//! ADR-011 §6.1 layer 5, S6a (ADR-011 §7.3 X-8): the evaluator
 //! `value::expression` -- `CheckedPackage::call` and `evaluate` through
 //! [`value::CheckedPackageEvaluation`], the S6a seam and its
 //! `ReferenceEvaluation` hook, the family evaluators, and the layer-5

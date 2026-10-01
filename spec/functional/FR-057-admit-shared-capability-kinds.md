@@ -398,14 +398,14 @@ checker's definition permissions. Their ownership is decided in #211.
 Specified under
 [#229](https://github.com/agent-ix/quire-spec-language/issues/229). The
 canonical `Capability` value type and its total FR-290 wire conversion
-(ADR-013 C-24) are implemented (QSL-173, `qsl-semantics/src/check/capability.rs`).
+(ADR-013 C-24) are implemented (`qsl-semantics/src/check/capability.rs`).
 FR-057-AC-1, FR-057-AC-2 and FR-057-AC-4 are partial: each AC's value-type
 portion (label round-trip, refusal-with-bytes and label equality on this
 type) is passed under TC-153; each AC's admission portion (the composed
 linker actually receiving and admitting a requested clause/capability pair)
 is planned under #213.
 
-Since QSL-46 (PR #305), `linking::composed::requests::Request` carries the
+`linking::composed::requests::Request` carries the
 canonical `crate::check::Capability`, and no other capability-kind type exists
 in `requests`. `requests::report` reads no backend; the layer-R `route`
 registry computes candidate sets over the same type (FR-075). `admitted_bodies`
@@ -414,7 +414,7 @@ as "Family-body admission" states. `report` marks a request inapplicable by
 this requirement's applicability table (`requests::families`); FR-057-AC-11 is
 backed by TC-115 (`tests/it/composed_admission_stages.rs`).
 
-QSL-46 adds registration from advertised labels
+The layer-R `route` crate adds registration from advertised labels
 (`qsl_route::BackendDescriptor::admit`, refusing `absent-kind`,
 `unknown-kind` and `unknown-mode` keyed by backend identity) and the routing
 step (`qsl_route::routing`), which takes settled dispositions as data and

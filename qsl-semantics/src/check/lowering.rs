@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-092 and FR-093 (QSL-156 A4b): the checked semantic graph of a package's
+//! FR-092 and FR-093: the checked semantic graph of a package's
 //! `Value`-family functions, and every node's key.
 //!
 //! `check` mints node keys at E3 (ADR-011 §2.2, FB-13), and each key hashes
@@ -343,8 +343,7 @@ struct Binders<'s> {
 
 /// Every member of a node's preimage outside every recursion group: what
 /// [`node_key`] keys. [`node_key`] is a function of these members alone, so
-/// equal content has one key, which [`Lowering::insert_node`] computes once
-/// (QSL-221).
+/// equal content has one key, which [`Lowering::insert_node`] computes once.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct NodeContent {
     node_tag: NodeTag,
@@ -421,8 +420,8 @@ pub(crate) struct Lowering<'a> {
     /// Each declared composite's node key, by its declaration key.
     composites: BTreeMap<NodeKey, NodeKey>,
     /// The `functions` slots and `composites` entries written since the
-    /// last settle, the only keys that settle can still resolve (QSL-205:
-    /// a settle per function group resolves its own keys, not every key
+    /// last settle, the only keys that settle can still resolve
+    /// (a settle per function group resolves its own keys, not every key
     /// the package has so far).
     unsettled_functions: Vec<usize>,
     unsettled_composites: Vec<NodeKey>,
@@ -440,7 +439,7 @@ pub(crate) struct Lowering<'a> {
     /// The drafts, by the digest of their content.
     drafts: BTreeMap<NodeKey, Draft>,
     /// A key [`Self::insert_node`] computed, by a hash of the content it
-    /// keyed (QSL-221). Lowering builds the same node many times (each
+    /// keyed. Lowering builds the same node many times (each
     /// function's parameter and result types, each builtin scalar); a
     /// content whose hash names a key whose node or draft holds that same
     /// content ([`Self::holds`]) takes the key without its canonical
@@ -1260,7 +1259,7 @@ impl<'a> Lowering<'a> {
     }
 
     /// Charge `work` units of checking work (`declaration.check`), refusing
-    /// `stage_limit_exceeded` (QSL-236) on the work budget at `location`.
+    /// `stage_limit_exceeded` on the work budget at `location`.
     fn charge(&mut self, work: u64, location: &Location) -> Result<(), CheckRefusal> {
         charge_work(self.meter, work).map_err(|refusal| preimage_refusal(location, refusal))
     }
@@ -1558,7 +1557,7 @@ impl<'a> Lowering<'a> {
     }
 
     /// The FR-092 type node of `value_type`, built without native
-    /// recursion (QSL-224): each `option`, collection and declared
+    /// recursion: each `option`, collection and declared
     /// composite still being built is a [`TypeFrame`] on an explicit stack,
     /// so a long composite chain costs heap, not stack. Nodes are built,
     /// charged and refused in the order a depth-first recursive build would
@@ -2689,10 +2688,10 @@ impl<'a> Lowering<'a> {
     /// to its node, or to its binder's parameter node for a local read.
     ///
     /// The nodes still to lower and the nodes waiting on their operands are
-    /// kept on an explicit heap stack (QSL-228), so a body nested to the
+    /// kept on an explicit heap stack, so a body nested to the
     /// depth limit lowers in the same host stack as a flat one. Nodes are
-    /// built, charged and refused in the order the recursive lowering before
-    /// QSL-228 reached them -- each node's own type and member nodes before
+    /// built, charged and refused in the order the earlier recursive
+    /// lowering reached them -- each node's own type and member nodes before
     /// its operands, its operands in order, then its own node -- so every
     /// key is that lowering's. On a refusal the binders the refused
     /// expression bound are no longer in scope.
@@ -3414,7 +3413,7 @@ impl<'a> Lowering<'a> {
                 Keyed::Application(Operator::Pre, plain("quire.op.state.pre")),
                 Operands::One(operand),
             ),
-            // FR-063/S3 seam (QSL-143): no arm for `NodeKind::__SeamProbe`
+            // FR-063/S3 seam: no arm for `NodeKind::__SeamProbe`
             // under `--cfg seam_probe` alone -- this match (already
             // `#[deny(clippy::wildcard_enum_match_arm)]`, this function's own
             // attribute above) is deliberately non-exhaustive (`E0004`) in
@@ -3977,7 +3976,7 @@ fn enclosing_declarations(
     let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
     for (key, _, location) in occurrences.iter() {
         // Only a function body or measure, a state clause body (FR-104),
-        // or a protocol attempt's own declared name (FR-114, QSL-309: an
+        // or a protocol attempt's own declared name (FR-114: an
         // operation named only by an attempt has no clause to place its
         // anchor-named nodes under, SR-770 FND-002) resolves to a region
         // (FR-096).

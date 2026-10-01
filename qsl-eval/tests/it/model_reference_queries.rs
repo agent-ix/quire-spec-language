@@ -328,7 +328,7 @@ fn l07_scenario() -> Scenario {
 /// to check at all: `TypeEnvironment::type_refusal` refuses any
 /// `Reference<T>` whose `T` is not a declared object type. `M::B`'s
 /// supertype `M::A` mirrors `fixture_f1`'s own `model.B -> model.A`, so
-/// check time and the runtime binding agree on conformance (QSL-57).
+/// check time and the runtime binding agree on conformance.
 fn types(scenario: &Scenario) -> TypeEnvironment {
     TypeEnvironment::new(
         [],
@@ -1095,7 +1095,7 @@ fn equal(left: Expression, right: Expression) -> Expression {
     }
 }
 
-/// TC-198 L08 (QSL-57 item 1): `(lookup<M::A>(p, r) absent refused) = r`
+/// TC-198 L08: `(lookup<M::A>(p, r) absent refused) = r`
 /// with `r: Reference<M::B>` checks, although the operands' static types are
 /// `Reference<M::A>` and `Reference<M::B>`: `M::B` conforms to `M::A`. Both
 /// operands denote `b1`, so the comparison is `true`; the same query for a
@@ -1256,7 +1256,7 @@ fn integer_of(value: Value) -> Integer {
     }
 }
 
-/// TC-198 L11 (QSL-57 item 2): `deref(r).x` for a `Reference<M::A>` that
+/// TC-198 L11: `deref(r).x` for a `Reference<M::A>` that
 /// holds a `B` resolves `x`, a field `A` declares and `B` inherits, and
 /// reads `b1`'s inherited slot.
 #[test]
@@ -1339,7 +1339,7 @@ fn deref_field_read_charges_no_model_family_charge_outside_a_protocol_clause() {
     );
 }
 
-/// TC-198 L11 with FR-151 redefinition (QSL-57 item 2): `B.x` redefines
+/// TC-198 L11 with FR-151 redefinition: `B.x` redefines
 /// `A.x`, so `deref(r).x` for a `Reference<M::A>` holding `b1` reads `B.x`'s
 /// one slot. With the redefinition renamed, `B.z` redefining `A.x`, the same
 /// expression reads `B.z`'s slot.
@@ -1372,7 +1372,7 @@ fn l11_deref_through_a_supertype_reference_reads_the_redefiner() {
     );
 }
 
-/// TC-198 L11 with a reference field (QSL-57): `B.o: Reference<M::A>?`
+/// TC-198 L11 with a reference field: `B.o: Reference<M::A>?`
 /// redefines `A.o: Reference<M::A>?`, the one reference redefinition the
 /// checker admits, and `b1.o` holds the `A` object `a1`. `deref(r).o` for a
 /// `Reference<M::A>` holding `b1` completes with `a1`, never
@@ -1411,7 +1411,7 @@ fn l11_deref_through_a_supertype_reference_reads_a_redefined_reference_field() {
     }
 }
 
-/// TC-198 L08's adverse case (QSL-57 item 1): references to two object types
+/// TC-198 L08's adverse case: references to two object types
 /// with no generalization relation still refuse `=` at check time,
 /// `ill_typed`/`type-mismatch`.
 #[test]
@@ -1434,7 +1434,7 @@ fn l08_references_to_unrelated_object_types_refuse_equality_at_check_time() {
     );
 }
 
-/// TC-198 L03 (QSL-57 item 3): `lookup<M::A>(p, r)` with `r: Reference<M::B>`
+/// TC-198 L03: `lookup<M::A>(p, r)` with `r: Reference<M::B>`
 /// is admitted at check time because `M::B` conforms to `M::A` in the
 /// package's own environment, and its result is typed `Reference<M::A>`.
 #[test]
@@ -1455,11 +1455,10 @@ fn lookup_expression_admits_a_conforming_reference_type_at_check_time() {
     assert_eq!(*checked.value_type(), target);
 }
 
-/// TC-198 L03's last case (QSL-57 item 3): `lookup<M::A>(p, r)` with `r`
+/// TC-198 L03's last case: `lookup<M::A>(p, r)` with `r`
 /// statically typed to `M::C`, which does not conform to `M::A`, refuses at
 /// check time, `ill_typed`/`type-mismatch` at `r`'s own location, before any
-/// evaluation or charge. Before QSL-57 the checker admitted it and only
-/// evaluation refused. The reverse direction, `lookup<M::B>(p, r)` with
+/// evaluation or charge, not only at evaluation. The reverse direction, `lookup<M::B>(p, r)` with
 /// `r: Reference<M::A>`, refuses the same way: a supertype does not conform
 /// to its subtype.
 #[test]
@@ -2822,7 +2821,7 @@ fn tc_293_evaluator_resolves_population_id_through_recorded_correspondence() {
 
 /// PR #326 review finding F2: two admissions that collide on one
 /// `PopulationId` (same domain package, `population_key` and admission
-/// role -- FR-089's own preimage, Linear QSL-131's open question over
+/// role -- FR-089's own preimage, with the open question over
 /// whether declared maximum and document content should also distinguish
 /// two bindings) but carry different declared maxima refuse loudly when
 /// the second is recorded under the first's id, rather than the first
@@ -3682,7 +3681,7 @@ fn a_kernel_refusal_builds_a_record_only_where_the_catalog_has_a_code() {
     );
 }
 
-/// TC-428 (FR-096-AC-8, QSL-281): the kernel `ForeignReference` variant now
+/// TC-428 (FR-096-AC-8): the kernel `ForeignReference` variant now
 /// carries both universes, so `kernel_refusal_record` builds
 /// `foreign_reference`/`foreign-universe` with `required`/`supplied` exactly
 /// as the family `ForeignUniverse` row does -- a mutant that swaps which

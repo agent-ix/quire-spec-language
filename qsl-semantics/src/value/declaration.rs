@@ -21,10 +21,10 @@
 //! called directly by `CheckedEquality::run`: the kernel's own `plan_pairs` is `pub(crate)`
 //! there, and this layer never needs the lower-level pair count that
 //! `value::expression::evaluate`'s `Machine` gets straight from
-//! `quire_exact::member_equal` (QSL-131 V5b).
+//! `quire_exact::member_equal`.
 //!
 //! [`FieldDeclaration`], [`Component`], [`ConstructionCause`] and
-//! [`ConstructionRefusal`] (QSL-131 V5b, moved here from the now-deleted
+//! [`ConstructionRefusal`] (moved here from the now-deleted
 //! `value::composite`) are QSL's own, non-kernel types (ADR-011 §6.1; ADR-013
 //! O-15): a field is identified here by its declared *name* (a `str`-keyed
 //! lookup, `match_names`/`fill_slots`), not by the kernel's opaque
@@ -48,7 +48,7 @@
 //! identical bypass role, which `value::expression::evaluate` already calls
 //! directly.
 //!
-//! FR-089-AC-6 (QSL-131 V5): kernel `ValueType::admits` refuses every
+//! FR-089-AC-6: kernel `ValueType::admits` refuses every
 //! `(ValueType::Population, Value::Population)` pair outright -- the
 //! declared-maximum comparison (FR-089-AC-5) is the QSL layer's own check.
 //! `Population` is FR-153's own restriction: it is never nested inside a
@@ -765,7 +765,7 @@ pub struct TypeEnvironment {
     /// [`TypeEnvironment::new`], after the supertypes graph is known
     /// acyclic, so [`Self::conforms`] is a plain set lookup.
     ancestry: Ancestry,
-    /// Every object type's effective attribute set (QSL-57): its own fields
+    /// Every object type's effective attribute set: its own fields
     /// plus every ancestor's, less each field another field of the set
     /// redefines. Computed once in [`TypeEnvironment::bounded`]; an object's
     /// storage slots are exactly this set, so an attribute lookup never
@@ -1510,7 +1510,7 @@ impl TypeEnvironment {
         }
     }
 
-    /// Every object type's effective attribute set (QSL-57), flattened once.
+    /// Every object type's effective attribute set, flattened once.
     ///
     /// This applies FR-151's phase-4 redefinition result
     /// (`quire.model.normalize.redefine/v1`) to the `redefines` links a
@@ -2295,7 +2295,7 @@ impl TypeEnvironment {
     /// add the compound units its expressions formed. `enum_members` gives
     /// the member index of one compared enum shape: exactly its own
     /// members (SR-511 M2). `check`'s `Scope` answers it from a table built
-    /// once per shape (QSL-205), so an equality does not copy its enum.
+    /// once per shape, so an equality does not copy its enum.
     pub(crate) fn check_equality_in(
         &self,
         units: &UnitScope<'_>,
@@ -2361,7 +2361,7 @@ impl TypeEnvironment {
             (ValueType::Population(_), _) | (_, ValueType::Population(_)) => {
                 return ill_typed(IllTypedCause::OperatorIneligible)
             }
-            // FR-153-AC-6 / TC-198 L08 (QSL-57): a `Reference<A>` and a
+            // FR-153-AC-6 / TC-198 L08: a `Reference<A>` and a
             // `Reference<B>` denote the same real object when one type
             // conforms to the other, as `lookup<A>(p, rb) = rb` does. The
             // plan compares the two references' full identity whatever

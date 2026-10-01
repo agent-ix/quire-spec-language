@@ -55,7 +55,7 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
             matches!(refusal, FormatRefusal::OutputBudgetExhausted(_)),
             "limit {limit}"
         );
-        // QSL-236: the output byte ceiling is `SyntaxLimit::SourceBytes`,
+        // The output byte ceiling is `SyntaxLimit::SourceBytes`,
         // one of the four kinds that map onto `stage_limit_exceeded`.
         assert_eq!(refusal.code(), Code::StageLimitExceeded, "limit {limit}");
         let diagnostic = refusal.diagnostic();
@@ -314,9 +314,9 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
     // Counted directly against `Code::all()` on this branch (47 pre-existing
     // variants from `main` after #143/#144/#149's FR-153 codes
     // (`ForeignReference`, `CardinalityOutOfBound`), QSL#213 S-2's
-    // `DuplicateSelection`, ADR-013 O-01/QC-5), plus QSL-236's
-    // `StageLimitExceeded`; QSL-255 removed QSL-6's
-    // `UnsupportedDependencySelections`) rather than derived by arithmetic —
+    // `DuplicateSelection`, ADR-013 O-01/QC-5), plus
+    // `StageLimitExceeded`; `UnsupportedDependencySelections` is
+    // removed) rather than derived by arithmetic —
     // `Code::all()` lists exactly 47
     // entries, one per `pub enum Code` variant, none missing and none
     // duplicated. FR-322 I2's own envelope-shape refusals

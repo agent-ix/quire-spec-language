@@ -79,14 +79,14 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - Each package-reference source entry SHALL carry FR-001's four source labels
   (authority, identity, revision namespace, revision) and its digest, so
   the executor (FR-098) recompiles a source under exactly the labels the
-  proving run used (ADR-013 §7 S-4b). **Amended by QSL-5**: the entry used
+  proving run used (ADR-013 §7 S-4b). **Amended**: the entry used
   to carry one revision string and no namespace.
 - A byte-provision entry SHALL be verified under its declared domain: a
   raw-byte-addressed domain (source and definition documents) against the
   SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
   against the SHA-256 of the document's RFC 8785 bytes, the digest I1 keys
   its package input by. Any other FR-201 domain refuses as ineligible.
-  **Amended by QSL-5**: `sha256-jcs` used to refuse as ineligible, which
+  **Amended**: `sha256-jcs` used to refuse as ineligible, which
   left no way for a domain package to reach the executor.
 - The byte provision SHALL be complete at construction: every
   `RawSourceRef` digest the package reference names SHALL have a matching
@@ -121,7 +121,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   (`unknown_wire`/`unsupported-wire`, ADR-013 O-22) naming the actual version
   supplied, before the package reference or byte provision is read — the same
   ordering and no-negotiation rule the envelope's own `contract_version`
-  check already follows. **Added by QSL-235**: this member previously
+  check already follows. **Added**: this member previously
   decoded unchecked.
 
 ## Acceptance Criteria

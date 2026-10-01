@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-46 (FR-080-AC-3): `cargo xtask route-lint` -- scans the `#185`
-//! registry crate (every `.rs` file under `qsl-route/src`, QSL-184) for a
+//! FR-080-AC-3: `cargo xtask route-lint` -- scans the `#185`
+//! registry crate (every `.rs` file under `qsl-route/src`) for a
 //! `static`, `OnceLock`,
 //! `thread_local!` or `lazy_static!` item and fails when it finds one.
 //!
@@ -30,7 +30,7 @@ use crate::error::{Error, Result};
 
 /// The registry crate's source root this gate scans, relative to the
 /// workspace root. FR-080-AC-3's own scope is "the registry module (the
-/// module implementing FR-075)"; since QSL-184 that module is the crate
+/// module implementing FR-075)"; since X-9 that module is the crate
 /// `qsl-route`, so every file under its `src/` is scanned, and a module
 /// added beside `lib.rs` cannot hold ambient state unseen.
 pub const REGISTRY_SRC_ROOT: &str = "qsl-route/src";
@@ -205,7 +205,7 @@ mod tests {
         assert!(outcome.contains("no static, OnceLock, thread_local! or lazy_static!"));
     }
 
-    /// QSL-184: the gate scans the whole registry crate. A `static` in a
+    /// The gate scans the whole registry crate. A `static` in a
     /// module beside `lib.rs` is found and named by its file, and a
     /// missing `qsl-route/src` is an error, not a clean scan.
     #[test]

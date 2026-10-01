@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 §2 (ADR-013:113, QSL-194): one RFC 8785 implementation.
+//! ADR-013 §2 (ADR-013:113): one RFC 8785 implementation.
 //!
 //! "One RFC 8785 JCS implementation produces every RFC 8785 encoding: the
 //! `quire-canonical` crate." QSL once spelled "serialize with `serde_json`,
 //! then SHA-256" at eight identity sites, each its own canonical encoder,
 //! and a helper in one file (`key.rs`'s `jcs_bytes`) was hashed in others
-//! (`population.rs`, `intake.rs`). QSL-194 moved them all to
+//! (`population.rs`, `intake.rs`). They all moved to
 //! `quire-canonical`; this check refuses a new one.
 //!
 //! **Two function sets.** Over every shipped function of a crate -- free
@@ -1538,7 +1538,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         assert_eq!(sites[0].function, "fresh");
     }
 
-    /// QSL-220: intake's exemption is pinned to its `raw_bytes_digest`
+    /// Intake's exemption is pinned to its `raw_bytes_digest`
     /// call. The pre-#389 `check_package_digest` (55db8a4c), hashing a
     /// `jcs_bytes` JSON producer with `Sha256` directly, fails on both
     /// counts, and hashing JSON through the pinned call still fails.
@@ -1617,7 +1617,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
             .collect()
     }
 
-    /// QSL-220 review M1 (A): a serializer imported by name and hashed
+    /// Review M1 (A): a serializer imported by name and hashed
     /// through the pinned call fails.
     #[test]
     fn pinned_exemption_refuses_an_imported_serializer() {
@@ -1629,7 +1629,7 @@ pub(super) fn digest_of(value: &serde_json::Value) -> [u8; 32] {
         assert_eq!(found, vec![(4, "check_package_digest".to_owned())]);
     }
 
-    /// QSL-220 review M1 (B): a JSON producer defined in the same file and
+    /// Review M1 (B): a JSON producer defined in the same file and
     /// hashed through the pinned call fails.
     #[test]
     fn pinned_exemption_refuses_a_same_file_json_producer() {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-215 benchmark: wall time of one `PackageDeclarations::check` over a
+//! Benchmark: wall time of one `PackageDeclarations::check` over a
 //! Text-reachable recursive cluster at the default checking limits.
 //!
 //! - `checker/text_cluster/<outcome>/<n>`: `n` records, each with a text
@@ -12,7 +12,7 @@
 //! clusters up to 8 records check and those from 9 refuse on the node
 //! ceiling, so a refused size times how long the refusal takes.
 //!
-//! - `checker/deep_wide/<outcome>/<b>`: the QSL-214 review's long-path
+//! - `checker/deep_wide/<outcome>/<b>`: the long-path
 //!   shape ([`qsl_bench::text_cluster::deep_wide`]): a 46-record chain into
 //!   a 17-level binary tree, 65,536 text leaves, every field name `b` bytes
 //!   long. The leaf count fits the node ceiling; the leaves' key bytes,
@@ -26,7 +26,7 @@ use qsl_bench::check::check;
 use qsl_bench::text_cluster::{deep_wide, text_cluster, DEEP_WIDE_CHAIN, DEEP_WIDE_LEVELS};
 use std::time::Duration;
 
-/// Cluster sizes: QSL-215's 3 to 12.
+/// Cluster sizes: 3 to 12.
 const RECORDS: std::ops::RangeInclusive<usize> = 3..=12;
 
 fn cluster(c: &mut Criterion) {

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 step 10 (FR-093-AC-14, QSL-228): a function body nested to the
+//! TC-415 step 10 (FR-093-AC-14): a function body nested to the
 //! check stage's depth limit checks, and one nested past it refuses on the
 //! named depth limit; neither overflows the stack. Each check runs on a
 //! spawned thread with a 2 MiB stack, the default test-thread size, in
-//! whatever profile the suite runs in. Before QSL-228 a debug build aborted
+//! whatever profile the suite runs in. A debug build once aborted
 //! at 20 nested `a and (…)`: typing, the definedness walk and lowering each
 //! recursed once per level, and measuring the declaration recursed once per
 //! level before any limit was checked.

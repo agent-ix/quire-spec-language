@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §6.1 layer 4, `package` (QSL-182, ADR-011 §7.3 X-7): the S4
+//! ADR-011 §6.1 layer 4, `package` (ADR-011 §7.3 X-7): the S4
 //! in-process [`CheckedPackage`]/[`EmittedPackage`] typestate (ADR-013 T-1,
-//! FR-087, QSL-158 S-3a, the `checked` module), the
+//! FR-087, the `checked` module), the
 //! `quire.checked-package/v2` I2 byte reader (`checked_v2`, ADR-011 §4) and
 //! the v2 emitter (`emit`, ADR-011 T-8, M-4).
 //!
@@ -25,7 +25,7 @@ pub use emit::{
     diagnostics_catalog, emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode,
 };
 
-// QSL-313: the FR-105-AC-6 fault-injection seam. Public only under
+// The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's
 // `Cargo.toml`), so a dependent crate's own tests can reach it while it
 // compiles into no shipped build.
@@ -34,8 +34,7 @@ pub use emit::{checked_node_id_of, emit_checked_with_fault};
 
 // ADR-011 §4 I2: `read_checked_package_v2`, its outcome type
 // (`V2ReadOutcome`) and its refusal/incomplete types (`V2ReadRefusal`,
-// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself (QSL-6
-// review) and not re-exported here: `checked_v2` returns a real
-// `qsl_semantics::library::VerifiedPackage` (FR-087-AC-1, AC-3; QSL-6 slice
-// A1), but it still has no caller of its own (S3, ADR-011 §4's round trip,
-// QSL-6 slice A7, has not landed) beyond `checked_v2`'s own tests.
+// `V2ReadIncomplete`) are all `pub(crate)` on `checked_v2` itself and not re-exported here: `checked_v2` returns a real
+// `qsl_semantics::library::VerifiedPackage` (FR-087-AC-1, AC-3), but it
+// still has no caller of its own (S3, ADR-011 §4's round trip, has not
+// landed) beyond `checked_v2`'s own tests.

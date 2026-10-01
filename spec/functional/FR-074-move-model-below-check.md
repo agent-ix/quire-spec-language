@@ -19,7 +19,7 @@ order (`semantic_value < model < library < check core < family checker
 modules`). Two pieces of `model` code make `model` depend on `check` today:
 `model::checked_dispatch` (the whole file) and
 `model::conformance::check_field_refinement_obligation` (a contiguous block,
-with its own exclusive helpers). FR-068 (M-5, QSL-139) split
+with its own exclusive helpers). FR-068 (M-5) split
 `value::expression`'s checking half into the new `check` module but could
 not close this dependency itself — the ADR row's own order (M-5 before M-2)
 put moving `model` code out of M-5's scope — so FR-068 left it as a
@@ -43,11 +43,10 @@ the forbidden edge FR-068 declared and this requirement removes.
 
 **Scope is exactly ADR-011 §7.3's M-2 row.** This requirement does not touch
 `model::accounting` or the kernel `Meter`/`Incomplete`/`LimitKind`
-consolidation (QSL-166's and QSL-164's scope, both explicitly outside M-2 per
-ADR-011:657-660 and the §7.3 QSL-166 row), and it does not create
-`semantic_value` from `value`'s non-kernel submodules (QSL-165, split out of
-M-2's original scope on 2026-09-20 and blocked on QSL-131). After this
-requirement and QSL-165 both land, `model` depends on `semantic_value`, F and
+consolidation (explicitly outside M-2 per ADR-011:657-660 and its §7.3
+accounting row), and it does not create `semantic_value` from `value`'s
+non-kernel submodules (ADR-011 M-2c, split out of M-2's original scope on
+2026-09-20). After this requirement and M-2c both land, `model` depends on `semantic_value`, F and
 K only (§6.1); this requirement alone gets `model` only as far as removing
 its one `check` dependency, since `semantic_value` does not exist yet.
 
@@ -163,11 +162,11 @@ declared interim edge (four names for `checked_dispatch.rs`, nine for
 *where* those non-interim imports are written (from `crate::value::{...}`'s
 flat form, valid inside `model`, to the crate-absolute, submodule-qualified
 form `check`'s own files already use — `crate::forms::{...}`,
-`crate::value::composite::{...}` (QSL-131 V5b later deleted `value::composite`
-and repointed the import directly onto `quire_exact`), `quire_exact::NodeKey`,
+`crate::value::composite::{...}` (`value::composite` was later deleted
+and the import repointed directly onto `quire_exact`), `quire_exact::NodeKey`,
 `quire_exact::OrderingOperator` (named `crate::value::numeric::OrderingOperator`
-at the time of this move; QSL-131 O3 later deleted `value::numeric` and
-repointed the import directly onto `quire_exact`) — per the existing
+at the time of this move; `value::numeric` was later deleted and
+the import repointed directly onto `quire_exact`) — per the existing
 FR-068-AC-6 tier rule for `check`'s own shipped `value` imports, which now
 applies to these files for the first time because they are now under
 `qsl-semantics/src/check/`) but
@@ -178,7 +177,7 @@ definitions, before and after the move.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-074-CON-1 | This requirement's scope is exactly ADR-011 §7.3 M-2: relocating `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` (with its seven helpers and one const) to `check`, and the model-layer visibility this move requires (FR-074-CON-2). It does not implement QSL-165 (creating `semantic_value`), QSL-166 (the `model::accounting`/kernel accounting consolidation) or QSL-164. A change under this requirement that performs any of these adjacent moves exceeds its scope even where the ADR eventually requires them. | Design | Inspection |
+| FR-074-CON-1 | This requirement's scope is exactly ADR-011 §7.3 M-2: relocating `model::checked_dispatch` and `model::conformance::check_field_refinement_obligation` (with its seven helpers and one const) to `check`, and the model-layer visibility this move requires (FR-074-CON-2). It does not implement M-2c (creating `semantic_value`) or the `model::accounting`/kernel accounting consolidation. A change under this requirement that performs any of these adjacent moves exceeds its scope even where the ADR eventually requires them. | Design | Inspection |
 | FR-074-CON-2 | The relocated `check_field_refinement_obligation` reads `model::index` and `model::conformance` only through `model::index::ModelIndex` (`pub`) and its `pub(crate)` `field`, `operations` and `scalar_bounds` accessors, `model::conformance::missing_member` (`pub(crate)`), and `model::conformance::AxisFailure`/`ConformanceOutcome` (`pub`). The relocated items' imports use the forms FR-074's Behavior section describes (submodule-qualified `crate::value::...` paths, and intra-`check` `super::`-relative paths for the names the interim edge covered). | Design | Inspection |
 
 ## Acceptance Criteria
@@ -202,11 +201,11 @@ definitions, before and after the move.
   submodule-qualified import-path rule now applies to the two files this
   requirement relocates into `check` for the first time.
 - [US-009](../usecase/US-009-trust-a-single-check-authority-unreachable-from-evaluation.md).
-- Linear QSL-7 (ticket for this requirement); GitHub agent-ix/quire-spec-language#241.
+- GitHub agent-ix/quire-spec-language#241.
 
 ## Status
 
-Specified under QSL-7 (ADR-011 §7.3 M-2), the direct successor to FR-068
-(QSL-139, ADR-011 §7.3 M-5) in the corrected order (X-1 → M-3a → M-5 → M-2).
-This requirement did not exist before this ticket: M-2 was, until now, an ADR
+Specified (ADR-011 §7.3 M-2), the direct successor to FR-068
+(ADR-011 §7.3 M-5) in the corrected order (X-1 → M-3a → M-5 → M-2).
+M-2 was previously an ADR
 row with no owning FR — this requirement fills that gap.

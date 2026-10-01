@@ -63,8 +63,8 @@ requirement is required to keep in sync.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-078-AC-1 | **RETIRED by QSL-131 O3 (2026-09-23), which deletes `value::ieee` as a module.** `value::ieee` defined no `negotiate_*`-named function and no `IeeeBackendCapabilities` type, verified by a source scan of the module after removal. This criterion was satisfied when QSL-131 Slice A (PR #290) removed `negotiate_ieee` and `IeeeBackendCapabilities` from the file. `value::ieee` no longer exists at all: QSL-131 O3 deletes the module and repoints every caller onto `quire_exact::evaluate_ieee`/`compare_ieee` directly, so there is no module left for a source scan to read. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. TC-201's doctest continues to assert the stronger, still-live fact that `negotiate_ieee` and `IeeeBackendCapabilities` are unresolvable from the crate's `value` path at all. | Test (TC-201), retired |
-| FR-078-AC-2 | **RETIRED by QSL-131 K2 (#339), which deletes `value::division` as a module.** `value::division` defined no `negotiate_*`-named function, verified by a source scan of the module after removal. This criterion was satisfied when QSL-131 Slice A (PR #290) removed `negotiate_integer_division` from the file. `value::division` no longer exists at all: QSL-131 K2 deletes the module and repoints every caller onto `quire_exact::divide`/`modulo` directly, so there is no module left for a source scan to read. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Test (TC-201), retired |
+| FR-078-AC-1 | **RETIRED (2026-09-23): `value::ieee` is deleted as a module.** `value::ieee` defined no `negotiate_*`-named function and no `IeeeBackendCapabilities` type, verified by a source scan of the module after removal. This criterion was satisfied when Slice A (PR #290) removed `negotiate_ieee` and `IeeeBackendCapabilities` from the file. `value::ieee` no longer exists at all: the module is deleted and every caller repointed onto `quire_exact::evaluate_ieee`/`compare_ieee` directly, so there is no module left for a source scan to read. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. TC-201's doctest continues to assert the stronger, still-live fact that `negotiate_ieee` and `IeeeBackendCapabilities` are unresolvable from the crate's `value` path at all. | Test (TC-201), retired |
+| FR-078-AC-2 | **RETIRED (#339): `value::division` is deleted as a module.** `value::division` defined no `negotiate_*`-named function, verified by a source scan of the module after removal. This criterion was satisfied when Slice A (PR #290) removed `negotiate_integer_division` from the file. `value::division` no longer exists at all: the module is deleted and every caller repointed onto `quire_exact::divide`/`modulo` directly, so there is no module left for a source scan to read. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Test (TC-201), retired |
 | FR-078-AC-3 | Given a fixture set of IEEE and integer-division value expressions and their expected evaluated results, evaluating each fixture through `value::ieee` and `value::division` after the removal yields the same results as before the removal. | Test (TC-202) |
 
 ## Dependencies
@@ -80,11 +80,11 @@ requirement is required to keep in sync.
 - ADR-012 §14.1's ownership row assigns "Removal of the QSL `negotiate_*`
   copies from `value::ieee` and `value::division` (OBS-004); `quire-exact`'s
   own `division`/`ieee` (moved in by X-1, #213 S-1) never carried them" to
-  QSL-131, which implements this requirement.
+  this requirement.
 
 ## Status
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Implemented by QSL-131 (PR #290): `value::ieee` and `value::division` define
+Implemented: `value::ieee` and `value::division` define
 no `negotiate_*` function and no `IeeeBackendCapabilities` type.

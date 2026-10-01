@@ -46,7 +46,7 @@ effects of FR-181-AC-6 are
 [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)'s, through its
 `ModelSystem` implementation of this trait. The trait's findings and
 `ExpansionStop`, `Outcome::Stopped`, `StopReason::Stopped` and the replay
-errors `FindingMismatch` and `Stopped` were added under QSL-274 (AC-12 to
+errors `FindingMismatch` and `Stopped` were added (AC-12 to
 AC-14).
 
 ## Inputs
@@ -386,9 +386,9 @@ and the new signatures where this requirement changes them.
 
 ## Status
 
-AC-1 to AC-11 implemented under QSL-272. AC-12 to AC-14 (findings,
+AC-1 to AC-11 implemented. AC-12 to AC-14 (findings,
 `ExpansionStop`, `Outcome::Stopped`, `StopReason::Stopped` and the replay
-errors `FindingMismatch` and `Stopped`) are specified under QSL-274 and not
+errors `FindingMismatch` and `Stopped`) are specified and not
 yet implemented; TC-474 is planned. `qsl-eval::simulation` exposes `explore_request`
 and `sample_request` as its only public entries; `explore`, `sample` and
 `Sampler` are `pub(crate)`. Exploration orders successors by ascending JCS

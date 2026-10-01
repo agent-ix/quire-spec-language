@@ -29,7 +29,7 @@ from that registry's current contents, matching on capability kind alone
 The registry sits alongside the fixed `ProjectionTarget` catalog at
 `src/lowering/target.rs` (the `targets!` macro block), which remains the
 lowering-target selector. Resolving a backend by `BackendId` in `route` is
-this requirement's work (#185, QSL-46). The catalog is deleted with
+this requirement's work (#185). The catalog is deleted with
 `lowering` in ADR-011 §7.3 M-6a, once the skeleton spine is green (ADR-011
 §6.2, the `lowering` row).
 The registry SHALL define no local capability-kind type. The registry SHALL
@@ -156,7 +156,7 @@ record, so each record has at most one follow-up settlement, and joins it
 to the record by occurrence key. Writing several bounded items for one
 domain set with different bounds (FR-097-AC-3) stays a capability of the
 writer; the driver uses one and writes no second follow-up for a record.
-That driver rule is tested in agent-ix/quire-driver (QSL-1). It
+That driver rule is tested in agent-ix/quire-driver. It
 passes the `supported` items to `routing::route`, and hands CG generation
 each routed item's request index, occurrence key, node and result bound,
 with the package's requirement records keyed by occurrence key (ADR-011
@@ -290,8 +290,8 @@ were added.
 
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
-Implemented under QSL-46 (PR #305) over the canonical `Capability` type (QSL-173, `qsl-semantics/src/check/capability.rs`). Since QSL-184 (ADR-011
-§7.3 X-9) it is the crate `qsl-route` (`qsl-route/src/lib.rs`).
+Implemented over the canonical `Capability` type (`qsl-semantics/src/check/capability.rs`). Since ADR-011
+§7.3 X-9 it is the crate `qsl-route` (`qsl-route/src/lib.rs`).
 `src/lowering/target.rs` keeps its fixed three-variant `targets!` catalog as
 the lowering-target selector; it is deleted with `lowering` in ADR-011
 §7.3 M-6a (Description).
@@ -332,4 +332,4 @@ By Acceptance Criterion:
   (`qsl-route/tests/it/route_registry.rs` and `qsl-route/src/lib.rs`), and
   `tc_282_duplicate_backend_identity::db_01_identical_repeat_holds_once_with_no_refusal`/`db_02_identical_repeats_plus_another_identity_hold_both`
   (`qsl-route/tests/it/route_registry.rs`).
-- FR-075-AC-8: backed (`TC-449`, QSL-266): `tests/it/request_builder.rs`.
+- FR-075-AC-8: backed (`TC-449`): `tests/it/request_builder.rs`.

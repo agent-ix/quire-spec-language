@@ -11,12 +11,12 @@
 //! [`quire_exact::EffectiveId`], [`quire_exact::ObjectId`] and
 //! [`quire_exact::ObjectReference`] -- is the kernel's own (ADR-013 T-6, §8
 //! OQ-C and OQ-E rulings): this module no longer defines a QSL-local
-//! `UniverseIdentity`/`ObjectIdentity`/`ObjectReference` (Linear QSL-131).
+//! `UniverseIdentity`/`ObjectIdentity`/`ObjectReference`.
 //! `ObjectEnvironment` (a closed reference graph checked against a
 //! `TypeEnvironment`) stays a QSL type: it is a declaration-registry
 //! concern, layer 3 per ADR-013 O-15, not the kernel.
 //!
-//! This module is layer-3 `model`, not `semantic_value` (QSL-181 X-6a): an
+//! This module is layer-3 `model`, not `semantic_value`: an
 //! `ObjectEnvironment` also records FR-089's `PopulationId` ->
 //! [`PopulationBinding`] correspondence, and the `PopulationBinding` a
 //! `PopulationId` names is `model`'s (ADR-011 §6.1, "K is a leaf"). ADR-011
@@ -144,7 +144,7 @@ impl ObjectEnvironment {
     /// FR-089's own admission preimage (package, `population_key`, role --
     /// see `model::population::population_id_preimage`'s own doc) does not
     /// yet include the admitted document's content or its declared maximum,
-    /// an open spec question tracked by Linear QSL-131. Two distinct
+    /// an open spec question. Two distinct
     /// bindings can therefore collide on one id within a single evaluation
     /// (for example, two invocations of the same population role with
     /// different declared maxima). This is the interim guard: recording an
@@ -206,7 +206,7 @@ impl ObjectEnvironment {
     }
 
     /// The referenced object's slot for `field`, the field `deref(r).f`
-    /// resolved to in `r`'s static type (QSL-57). The object's own type
+    /// resolved to in `r`'s static type. The object's own type
     /// conforms to that static type, so its effective attribute set has
     /// exactly one attribute standing for `field`: `field` itself when
     /// inherited unchanged, or the field that redefines it.

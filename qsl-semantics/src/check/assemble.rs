@@ -246,7 +246,7 @@ pub enum AssemblyCause {
     /// An admitted domain package's record has no type environment form
     /// yet: a record value type, a systems part, port or allocation, or a
     /// field whose value type or multiplicity no kernel type represents.
-    /// (FR-103, QSL-273: an operation is no longer refused here -- see
+    /// (FR-103: an operation is no longer refused here -- see
     /// `model_operation`.)
     UnsupportedModelMember {
         /// The declaration's alias.
@@ -1747,7 +1747,7 @@ fn state_clauses(
 /// "Behavior"'s `missing_declaration`/`wrong_snapshot` refusals), so
 /// checking them here would fail the whole package at E3 over one
 /// protocol's own defect rather than refusing that protocol alone at S3,
-/// the same way FR-113's own anchor and binder refusals do (QSL-309).
+/// the same way FR-113's own anchor and binder refusals do.
 fn protocol_attempts(
     protocols: &[qsl_forms::ProtocolDeclarationForm],
     object_names: &BTreeMap<String, EffectiveId>,

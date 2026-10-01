@@ -338,7 +338,7 @@ fn envelope_in_graph_order(exports: &[(&str, &str)]) -> (Value, Value) {
     (preimage, envelope)
 }
 
-/// QSpec FR-322-AC-14 (QSL-232): the projection keeps the semantic graph's
+/// QSpec FR-322-AC-14: the projection keeps the semantic graph's
 /// node order, and that order is part of `package_id`. The same two exports
 /// in ascending and in descending node-id order are both admitted, under two
 /// different `package_id`s, and export the same declarations.
@@ -733,7 +733,7 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
     assert_eq!(refusal.code(), Code::AmbiguousDeclaration);
 }
 
-/// FR-322 `dependency_selections` (QSL-255): a lock and identity preimage
+/// FR-322 `dependency_selections`: a lock and identity preimage
 /// carrying two well-shaped `DependencySelection` entries is read as far as
 /// binding them. With no dependency package supplied for them, IR's reader
 /// refuses `missing_import` at the first entry (QSpec FR-322-AC-36, IR-289);
@@ -822,7 +822,7 @@ fn wire_of_at_least(min_bytes: usize) -> (Value, Vec<u8>) {
     (preimage, bytes)
 }
 
-/// QSL-199: a caller-raised `artifact_bytes` is enforced as given by this
+/// A caller-raised `artifact_bytes` is enforced as given by this
 /// reader *and* by IR, which receives it as its own `bytes` ceiling. A valid
 /// wire past the 16 MiB default is refused at the byte-length gate by
 /// default, and verified under a ceiling raised to its length -- not
@@ -861,7 +861,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
     }
 }
 
-/// QSL-199: IR's own ceilings are the caller's too. A wire with more
+/// IR's own ceilings are the caller's too. A wire with more
 /// semantic-graph nodes than IR's 10,000-node default is `Incomplete` at
 /// IR's `nodes` meter under the default `nodes`, naming that bound, and
 /// verified once the caller raises `nodes`.
@@ -953,7 +953,7 @@ fn maximum_depth() -> usize {
     usize::try_from(CheckedPackageReadLimits::MAXIMUM_DEPTH).unwrap()
 }
 
-/// QSL-199 AC-3: reaching a *caller-raised* ceiling (not just the default)
+/// Reaching a *caller-raised* ceiling (not just the default)
 /// still refuses, naming the limit kind ([`LimitKind::InputBytes`]) and
 /// the caller's own configured bound.
 #[test]
@@ -1173,7 +1173,7 @@ fn depth_past_the_charged_maximum_is_incomplete_naming_the_maximum() {
 
 #[test]
 fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
-    // QSL-6 M2 (decided fail-closed): `V2ReadLimits::depth` is passed to
+    // Decided fail-closed: `V2ReadLimits::depth` is passed to
     // IR unchanged, in entered-container units. IR's own depth count
     // counts a scalar leaf as one further unit beyond the containers
     // entered to reach it, but counts an empty container as exactly the
@@ -1534,7 +1534,7 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
     );
 }
 
-/// QSL-232: QSL's whole I2 read (`read_checked_package_v2`) admits every
+/// QSL's whole I2 read (`read_checked_package_v2`) admits every
 /// published positive `quire.checked-package/v2` fixture under the
 /// `package_id` its own identity preimage recomputes to. Three of the five
 /// fixtures carry an `identity_projection` in graph order that is not
@@ -1619,7 +1619,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
     );
 }
 
-/// QSL-255 over QSpec's `dependency-selection-vectors.json` (FR-322-AC-35,
+/// Over QSpec's `dependency-selection-vectors.json` (FR-322-AC-35,
 /// QSpec TC-233), read at run time from `$QSPEC_DIR`: the published
 /// `DependencySelection` entries, inserted into the all-families fixture's
 /// lock and identity preimage, recompute the recorded `package_id` and pass
@@ -2133,7 +2133,7 @@ fn refresh_frame_identity(envelope: &mut Value) {
         json!(PackageId::of_preimage(&jcs(&envelope["identity_preimage"])).hex());
 }
 
-/// QSL-302 (FR-340): QSL's whole I2 read admits or refuses a `state`/`frame`
+/// FR-340: QSL's whole I2 read admits or refuses a `state`/`frame`
 /// node's `modifies`/`creates`/`deletes` membership exactly as QSpec's
 /// `node-identity-vectors.json` `frame_mutations` record: the closed
 /// per-member node-kind eligibility table, the

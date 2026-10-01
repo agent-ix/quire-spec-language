@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `qsl-cst`: the ADR-011 §6.1 layer **1** crate (QSL-178, ADR-011 §7.3 X-3).
+//! `qsl-cst`: the ADR-011 §6.1 layer **1** crate (ADR-011 §7.3 X-3).
 //!
 //! This layer preserves an exact, recovering concrete syntax tree for the
 //! complete-V1 grammar. Recovery is authoring evidence only: a source with
@@ -15,7 +15,7 @@
 //!
 //! The root crate's `complete` module stays home to `editor`, `edit` (tooling
 //! built on this layer) and `package` (ADR-011 §6.2 layer 3, moving with
-//! QSL-181); it repoints its own uses of the layer-1 types here and
+//! X-6); it repoints its own uses of the layer-1 types here and
 //! re-exports none of them (ADR-011 §7.2).
 
 #![forbid(unsafe_code)]
@@ -59,7 +59,7 @@ impl ParsedSource {
 
     /// The [`Limits`] this parse was checked against, exactly as the caller
     /// supplied them: every field is enforced as given, with no hidden
-    /// ceiling beneath it (QSL-199), so a caller-raised ceiling is visible
+    /// ceiling beneath it, so a caller-raised ceiling is visible
     /// with the result it produced. A whitespace fast-path edit
     /// ([`Self::with_whitespace_insertion`]) records its predecessor's limits,
     /// which it applies only when they equal the edit's own.
@@ -100,8 +100,7 @@ impl ParsedSource {
     /// module reaches into [`ParsedSource`]'s private fields directly. Kept
     /// `pub(crate)`: a downstream crate that could pair arbitrary source,
     /// CST and diagnostics could forge a value [`Self::is_admissible`]
-    /// accepts without ever having gone through a real parse (QSL-178
-    /// review F2).
+    /// accepts without ever having gone through a real parse.
     pub(crate) fn from_parts(
         source: Source,
         cst: LosslessCst,
@@ -138,8 +137,7 @@ impl ParsedSource {
     /// `LosslessCst`'s own crate-private whitespace-insertion fast path and
     /// this crate's own `from_parts`, since it is the one place that checks
     /// the insertion is actually whitespace-only against an admissible
-    /// predecessor before pairing the resulting evidence (QSL-178 review
-    /// F2).
+    /// predecessor before pairing the resulting evidence.
     ///
     /// The fast path re-reads `bytes` under `limits.source_bytes` but does
     /// not re-count tokens, nodes or nesting: it only widens one existing

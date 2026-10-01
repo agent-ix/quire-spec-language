@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-108 (QSL-314, TC-469): the spine counterpart of this directory's
+//! FR-108 (TC-469): the spine counterpart of this directory's
 //! native fixtures -- the `1-draft` unit, the Semantic IR 2.0.0 domain
 //! package, FR-106 snapshot/invocation documents and a `ClauseRunRequest`,
 //! written from the *same* `cases::CaseSpec` catalog `fixtures.rs` already

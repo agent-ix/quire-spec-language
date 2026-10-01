@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 checker benchmarks: wall time of one `PackageDeclarations::check`
+//! Checker benchmarks: wall time of one `PackageDeclarations::check`
 //! over a whole package.
 //!
 //! - `checker/chain/<n>`: an `n`-function call chain, `f0 -> f1 -> ... ->
-//!   f{n-1}` (QSL-203's shape: the termination check's closure-and-filter
+//!   f{n-1}` (the termination check's closure-and-filter
 //!   is quadratic in it).
-//! - `checker/independent/<n>`: `n` functions with no calls (QSL-205's
-//!   F7 shape without QSL-203's: no call edge for termination to close
-//!   over).
+//! - `checker/independent/<n>`: `n` functions with no calls (no call
+//!   edge for termination to close over).
 //! - `checker/enum_members/<m>`: 1,000 functions over one enum of `m`
 //!   members, each resolving a member by name and checking an enum
-//!   equality (QSL-205: a per-function cost growing with `m` shows here).
+//!   equality (a per-function cost growing with `m` shows here).
 //!
 //! - `checker/object_chain/<n>`: admitting an `n`-type generalization
 //!   chain, one field per type, as the checker's `TypeEnvironment` under
-//!   the default limits (QSL-57: the flattened output is `n(n+1)/2` slots,
+//!   the default limits (the flattened output is `n(n+1)/2` slots,
 //!   and admission work grows with it, not faster). 5,000 types exceed the
 //!   default `work_units` budget, so that row times the refusal, and
 //!   `checker/object_chain_unbudgeted/5000` times the full admission.

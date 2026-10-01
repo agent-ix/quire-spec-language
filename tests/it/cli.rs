@@ -53,7 +53,7 @@ fn cli_usage_io_and_resource_outcomes_are_distinct() {
         .arg(&oversized)
         .output()
         .unwrap();
-    // QSL-236: the source's own byte ceiling is a stage limit
+    // The source's own byte ceiling is a stage limit
     // (`stage_limit_exceeded`), a refusal category (20), not incomplete
     // work (22).
     assert_eq!(output.status.code(), Some(20));

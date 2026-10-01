@@ -79,15 +79,15 @@ CG call sites to find). T12-B, T12-C and T12-D are QSL-role: each protects a
 constructor QSL itself calls.
 
 At the time of this requirement, the rule set SHALL contain exactly these
-five rules (T12-E added by QSL-181, 2026-09-23):
+five rules (T12-E added 2026-09-23):
 
 | Rule | Role | Protects | Allowed callers (today) | Requires |
 | --- | --- | --- | --- | --- |
-| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is any reference to `qsl_replay::spine`, the spine compile `command` shares with the executor, which is not part of the facade (QSL-5): found by parsing, as a `use` tree leaf or a path through the crate or an alias of it, a glob import of the crate, or a `qsl_replay::spine` token run inside a macro | `qsl-replay/src/lib.rs` |
+| T12-A | Cg | The layer-6 `qsl-replay` facade crate | CG's `replay` adapter module; a call spelled `quire_spec_language::replay::` is a violation from any module, because the root crate has no `replay` module, and so is any reference to `qsl_replay::spine`, the spine compile `command` shares with the executor, which is not part of the facade: found by parsing, as a `use` tree leaf or a path through the crate or an alias of it, a glob import of the crate, or a `qsl_replay::spine` token run inside a macro | `qsl-replay/src/lib.rs` |
 | T12-B | Qsl | The kernel `NodeKey` constructor (ADR-013 O-04) | `check` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
-| T12-E | Qsl | The ADR-011 §4 condition-1 witness minter `library::SupportedV2Wire::attest_ir_admitted_v2` (ADR-013 T-1, FR-087-AC-1), `pub` only for the QSL-181 crate boundary | `qsl-package`'s `checked_v2` (layer-4 v2 reader, allow-listed by crate and module, QSL-182); no debt list | `qsl-semantics/src/library/witness.rs` |
+| T12-E | Qsl | The ADR-011 §4 condition-1 witness minter `library::SupportedV2Wire::attest_ir_admitted_v2` (ADR-013 T-1, FR-087-AC-1), `pub` only for the `qsl-semantics` crate boundary | `qsl-package`'s `checked_v2` (layer-4 v2 reader, allow-listed by crate and module); no debt list | `qsl-semantics/src/library/witness.rs` |
 
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.
@@ -109,13 +109,13 @@ are `check` and every module under it, because ADR-013 O-04 says only
 `check::checked_dispatch`, are allowed under that prefix. `value::enumeration`
 and `value::unit` compute node-identity preimage digests in
 `value::semantic_node` and never construct a `NodeKey`; a preimage node id
-they read stays a `WireNodeId` until a lookup resolves it (QSL-131 K4).
+they read stays a `WireNodeId` until a lookup resolves it.
 
 T12-B's patterns SHALL match every reference to a `NodeKey` constructor in
 shipped code, whether it is called or passed as a function value:
 `NodeKey::from_digest` (the kernel constructor). T12-B also matches calls
 of `node_key_of`, the name of the crate-internal helper that wrapped the
-constructor until QSL-131 K4 deleted it (#249 review R1), so a reintroduced
+constructor until it was deleted (#249 review R1), so a reintroduced
 helper of that name is caught; a `fn node_key_of(` definition line is not a
 mint. A reference passed as a function value, such as
 `.map(NodeKey::from_digest)`, is a mint.
@@ -143,7 +143,7 @@ patterns become more accurate.
 
 T12-B's debt list is empty.
 
-T12-C's debt list is empty: QSL-131 typed a reference's type component as
+T12-C's debt list is empty: a reference's type component is typed as
 `EffectiveId` (ADR-013 O-05), which removed the OBS-018 transfers in
 `value::model_query`.
 
@@ -239,12 +239,12 @@ Run against the real tree (`make arch-lint-api-surface`, no `CG_CLONE`):
 - T12-A is CG-role and live: its target `qsl-replay/src/lib.rs` exists, and
   with no `--cg <checkout>` (the Makefile's `CG_CLONE` variable) it reports
   not evaluated and the run exits 2 while the other three rules run.
-- T12-B passes with an empty debt list. QSL-131 K4 removed the six
-  `value::enumeration`, `value::unit` and `value::node` entries, and
-  QSL-131 V1 the `value::model_query` entry, by deleting their mints; QSL-248
-  (G2) removed the list's last entry, `qsl-eval`'s `value/expression/
+- T12-B passes with an empty debt list. The six
+  `value::enumeration`, `value::unit` and `value::node` entries and
+  the `value::model_query` entry were removed by deleting their mints; G2
+  removed the list's last entry, `qsl-eval`'s `value/expression/
   family.rs` `decode_v2`, the same way, by deleting the second v2 producer
-  that mint belonged to. The node-key mints QSL-156 added are under `check`
+  that mint belonged to. The node-key mints are under `check`
   (`check::node_key`), so T12-B passes.
 - T12-C passes with an empty debt list and no call site outside `model`.
 - T12-D passes with zero call sites. Its only `PopulationId::from_digest`

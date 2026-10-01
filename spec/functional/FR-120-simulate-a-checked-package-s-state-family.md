@@ -54,7 +54,7 @@ The simulator runs over the S4 in-memory `CheckedPackage`
 (`CheckedPackage::link`) and the domain package bytes FR-106 admission
 reads. A unit whose S5 emission refuses today, such as one with `pre` or
 `post` clauses (`Emit(UnlocatedOccurrence { role: Generated })`, pending
-STD-111 and QSL-279), is simulated through its S4 package.
+STD-111), is simulated through its S4 package.
 
 Where FR-181 leaves a choice open, this requirement names QSL's choice and
 says so.
@@ -520,8 +520,7 @@ identity text of operation `op`.
   `StopReason::Stopped` and replay.
 - [FR-056](FR-056-admit-domain-package-model-declarations.md): the spine
   reads bound scalar field, parameter and result types such as `Int[0, 2]`
-  through FR-056's `value-type/v1` scalar reader, which is on main (QSL-289,
-  #498). Every AC's fixture uses bound scalars.
+  through FR-056's `value-type/v1` scalar reader, which is on main. Every AC's fixture uses bound scalars.
 - [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
   (operations and effects), [FR-104](FR-104-check-state-clauses.md) (checked
   clauses and their S3 refusals),
@@ -538,6 +537,6 @@ identity text of operation `op`.
 
 ## Status
 
-Specified under QSL-274 (A05-4); not yet implemented. TC-471 to TC-473
+Specified; not yet implemented. TC-471 to TC-473
 planned. FR-056's bound scalar reader, which every AC's fixture uses, is
-on main (QSL-289, #498).
+on main.

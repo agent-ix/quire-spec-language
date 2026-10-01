@@ -16,13 +16,13 @@ relationships:
 
 ## Description
 
-ADR-013 §7 slice **S-3** has no owning FR (QSL-158). QSL-158's comments
+ADR-013 §7 slice **S-3** has no owning FR. QSL-158's comments
 split S-3 into S-3a (FR-087: T-1, T-3, O-15) and **S-3b** (this
 requirement): O-08 (frame identity), O-09's clause half (obligation
 identity is CG's own conformance work, out of this requirement's scope),
 O-10 (clause kind), O-11 (qualified names), O-14 (type descriptors) and
-C-26 (checked type node → kernel `ValueType`). S-3b does not gate QSL-6
-(#242, ADR-011 M-4), so it can overlap that work; it depends on the S-3a
+C-26 (checked type node → kernel `ValueType`). S-3b does not gate ADR-011 M-4
+(#242), so it can overlap that work; it depends on the S-3a
 types this requirement's cited types are checked-graph members of
 (`CheckedGraph`, FR-087), but does not depend on `PackageNodeKey` or
 `library`.
@@ -85,13 +85,13 @@ ADR's summary sentence as if it were itself testable.
   `modifies`/`creates`/`deletes` node-id sets to their `DeclarationKey`s
   through the model correspondence (O-04). This requirement implements the
   identity and the resolution step only; FR-340's frame semantics
-  themselves are #210's. Amended by FR-105 (QSL-273): a `modifies` entry
+  themselves are #210's. Amended by FR-105: a `modifies` entry
   naming a field is the pair (declaring `object_type` node, field name),
   not a node of its own (ADR-013 O-06, FR-094); it resolves by the object
   type node's `DeclarationKey` and the member name.
 - Clause identity (O-09, clause half): the checked node id of the `claim`,
   `temporal`, `protocol` or `state`/`state_clause` node (the last added by
-  FR-105, QSL-273), with the O-07 occurrence key available to
+  FR-105), with the O-07 occurrence key available to
   disambiguate two structurally identical clauses at different source
   occurrences. This requirement does not build `KaniObligationIdentity` or
   any CG-side type.
@@ -125,7 +125,7 @@ variant of the checked clause-kind enum maps to exactly one v2 `node_tag`/
 `semantic_form` pair or clause operation identity, and no v2 string this
 enum's wire spelling admits maps to zero or more than one variant.
 
-Amended by FR-105 (QSL-273). The enum gains `Invariant`, `Precondition` and
+Amended by FR-105. The enum gains `Invariant`, `Precondition` and
 `Postcondition`. All three spell the pair (`state`, `state_clause`) and the
 clause operation `quire.op.state.clause` (STD-111); their application's kind
 member tells them apart, so for these three the injective spelling is the
@@ -263,29 +263,25 @@ only a unit node key as a declared-arm `UnitId`.
   requirement does not depend on FR-087's `PackageNodeKey` or `library`
   module.
 - [US-005](../usecase/US-005-trust-checked-identity-across-packaging.md).
-- Linear QSL-158 (this requirement's owning ticket, the S-3a/S-3b split).
-  FR-088-AC-11 and AC-12 are QSL-131's, amended into this requirement in
-  place.
 - ADR-013 §8 OQ-B, OQ-D and OQ-F; QSpec FR-141, FR-142 and FR-144
   (`ix://agent-ix/quire-specification/FR-141`, `FR-142`, `FR-144`).
 
 ## Status
 
-Specified under QSL-158 (ADR-013 §7 S-3, split into S-3a/S-3b by the
-2026-09-21 comment on that ticket). S-3b implemented by #300: AC-1, AC-2,
+Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
+2026-09-21 owner ruling on QSL-158). S-3b implemented by #300: AC-1, AC-2,
 AC-3, AC-4, AC-9 and AC-10 are backed by real `check()`-driven tests
 (TC-257, TC-248, TC-249, TC-250, TC-252). AC-7's within-package half
 is backed on main with a declared type's node id taken from the
 caller-supplied `CompositeDeclaration` key (TC-259 step 4); FR-092-AC-12
-(QSL-211) makes that id the FR-092 key `check` mints, and TC-259 step 4
-asserts the caller key until QSL-156 A4b adopts it. Its owner-scoped and builtin or anonymous
+makes that id the FR-092 key `check` mints, and TC-259 step 4
+asserts the caller key until slice A4b adopts it. Its owner-scoped and builtin or anonymous
 cross-package cases (TC-259 steps 1 to 3) and recompilation (step 5) are
-not implemented. Remaining
-work: QSL-156. AC-5 is enforced for its
+not implemented. AC-5 is enforced for its
 `QualifiedName` half only (TC-251); the "or a bare string" half is
 investigated and documented as a gap, not enforced (see
-`tests/it/name_resolution_confinement.rs`'s own module doc). QSL-158 backs AC-6
-(TC-258) and AC-8 (TC-260) in part, with `xtask::typestate_scan`. For AC-6:
+`tests/it/name_resolution_confinement.rs`'s own module doc). AC-6
+(TC-258) and AC-8 (TC-260) are backed in part, with `xtask::typestate_scan`. For AC-6:
 in the layer crates, no struct or variant has a `QualifiedName` as its only
 field, and no map field or map-returning function outside `check` is keyed
 by one. A hand-written `PartialEq` or `Hash`, a name beside a filler field,
@@ -295,5 +291,4 @@ not covered. For AC-8: `ValueTypeRef` is defined once, as exactly
 whose name contains `type` is a `NodeKey` or a string, and the three
 value-type records carry a `ValueTypeRef`. A field type under another name
 is not covered, and TC-260 step 4 is not backed. AC-12 (TC-411)
-is implemented by QSL-131 V4. AC-11 (TC-409) is not implemented. Remaining
-work: QSL-131.
+is implemented. AC-11 (TC-409) is not implemented.

@@ -57,7 +57,7 @@ fn runtime(text: &str) -> TextPayload {
 /// Decode a complete quoted source literal, such as `"é"`, the JSON string
 /// grammar the source lexer already delegates to: lone surrogates and raw
 /// controls refuse, and a spelling that is not exactly one quoted string
-/// refuses too. QSL-131 O3: `quire_exact::text`'s own module doc states this
+/// refuses too. `quire_exact::text`'s own module doc states this
 /// decode step is a source-stage concern the kernel deliberately excludes
 /// (only this test still exercises it); the decoded text is tagged with the
 /// kernel's `TextPayload::from_source_literal(text, spelling)` constructor,

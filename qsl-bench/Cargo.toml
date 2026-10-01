@@ -9,8 +9,8 @@ description = "QSL-196: the committed performance benchmarks (parser, checker, C
 
 # A benchmark-only crate: no workspace crate depends on it. It reaches the
 # layer crates through their public API only, so an internal rewrite behind
-# that API needs no bench change; a change to the API itself does (QSL-201
-# changed `intake::admit`'s return type). Every model-intake call goes
+# that API needs no bench change; a change to the API itself does (for
+# example a change to `intake::admit`'s return type). Every model-intake call goes
 # through `src/model.rs` so such a change is one edit there.
 [dependencies]
 qsl-cst = { path = "../qsl-cst" }

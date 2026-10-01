@@ -46,7 +46,7 @@ impl ReaderAuthority {
 }
 
 // `DefinitionDigest` and `DefinitionRef` are layer-F values
-// (`qsl_foundation::selection`, QSL-181): this module maps their validation
+// (`qsl_foundation::selection`): this module maps their validation
 // errors onto `PackageError`.
 impl From<InvalidDefinitionComponent> for PackageError {
     fn from(component: InvalidDefinitionComponent) -> Self {
@@ -558,7 +558,7 @@ pub enum ResolutionCause {
     /// `unknown_required_feature`: a known capability the closure does not
     /// provide.
     UnsupportedFeature,
-    /// `stage_limit_exceeded` (QSL-236, revision `1-draft.6`): the package
+    /// `stage_limit_exceeded` (revision `1-draft.6`): the package
     /// graph's own dependency-chain depth ceiling
     /// ([`PackageLimitKind::Depth`]), the one [`PackageLimitKind`] that maps
     /// cleanly onto a T-4 [`qsl_foundation::diagnostic::LimitKind`]. The
@@ -729,7 +729,7 @@ pub fn link_bundle(
             }
             if active.len() >= limits.depth {
                 return Err(refusal(
-                    // QSL-236: the graph's dependency-chain depth ceiling
+                    // The graph's dependency-chain depth ceiling
                     // maps onto `stage_limit_exceeded`/`nesting-depth-exceeded`
                     // (`cause_tag` picks the tag from the `PackageError`).
                     Code::StageLimitExceeded,
@@ -892,7 +892,7 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
         PackageError::UnknownCapability(_) => Tag::UnknownFeature,
-        // QSL-236: the graph's own dependency-chain depth is the one
+        // The graph's own dependency-chain depth is the one
         // `PackageLimitKind` that maps cleanly onto a T-4 `LimitKind`
         // (`NestingDepth`); the byte and count ceilings do not and stay
         // `InsufficientNextCharge`.
@@ -1031,8 +1031,8 @@ pub enum PackageError {
         kind: PackageLimitKind,
         /// The configured bound in force when the ceiling was reached.
         limit: usize,
-        /// The counter value the refused step would have reached (QSL-236,
-        /// M2). Only [`PackageLimitKind::Depth`] fills this in: it is the
+        /// The counter value the refused step would have reached
+        /// (M2). Only [`PackageLimitKind::Depth`] fills this in: it is the
         /// one kind that maps onto a catalogued stage limit. The byte and
         /// count ceilings stay `resource_exhausted` (S1 `SyntaxLimit`
         /// itself stays bound-only, with no matching `actual` field), so
@@ -1066,7 +1066,7 @@ mod tests {
 
     use super::*;
 
-    /// QSL-194 golden vector for the bundle identity's named
+    /// Golden vector for the bundle identity's named
     /// `quire-canonical` domain: SHA-256 over the label's big-endian `u64`
     /// length, the label `quire.complete.resolved-graph/2`, and the
     /// preimage's RFC 8785 text, all written out by hand.

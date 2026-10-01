@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 T-1 (FR-087, QSL-158 S-3a): the S4 in-process checked-package
+//! ADR-013 T-1 (FR-087): the S4 in-process checked-package
 //! typestate ([`CheckedPackage`]) and its packaged wire counterpart
 //! ([`EmittedPackage`]). Both are distinct from
 //! `protocol_artifact::native::EmittedPackage` (SEAM-3, unrelated:
@@ -31,7 +31,7 @@
 //!
 //! `EmittedPackage`'s constructor ([`EmittedPackage::new`]) is the v2
 //! emitter (`CheckedPackage` -> these bytes, C-03), ADR-011 T-8 (M-4,
-//! QSL-6/#242): [`super::emit`], a sibling module of this one, so
+//! #242): [`super::emit`], a sibling module of this one, so
 //! it stays within this crate's `pub(super)` reach without being
 //! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
 //! computed from the package, never accepted from a caller).
@@ -260,7 +260,7 @@ impl CheckedPackage {
     /// wire-admitted value (R-10). The dependency closure is empty;
     /// [`Self::link_with`] is the dependency-bearing step.
     ///
-    /// TC-163 (FR-065-AC-1, QSL-154): the function packaging/lowering
+    /// TC-163 (FR-065-AC-1): the function packaging/lowering
     /// public API accepts only a checked node -- built solely through the
     /// `crate::family::FamilyContract::check` hook and carried this far as
     /// a `CheckedGraph` -- never a raw S1 CST node or a raw source string
@@ -481,7 +481,7 @@ pub struct EmittedPackage {
 }
 
 impl EmittedPackage {
-    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4, QSL-6).
+    /// The v2 emitter's sole constructor (ADR-011 T-8, M-4).
     /// `identity_preimage` is IR's own typed
     /// `CheckedPackageIdentityPreimageV2`, JCS-encoded inside this
     /// constructor before `package_id` is minted from those bytes
@@ -530,7 +530,7 @@ mod tests {
     /// it, read back through `CheckedPackage::graph().resolve_declaration`
     /// (FR-088-AC-2, ADR-013 O-04: "Consumers read the correspondence from
     /// the `CheckedPackage`"). It lives here, in layer-4 `qsl-package`: a
-    /// layer-3 test cannot name `CheckedPackage` (QSL-181 X-6a).
+    /// layer-3 test cannot name `CheckedPackage` (X-6a).
     #[trace("TC-248", "FR-088-AC-2", "TC-417", "FR-094-AC-2")]
     #[test]
     fn model_correspondence_is_recorded_by_a_real_check_run() {
@@ -593,7 +593,7 @@ mod tests {
         assert_eq!(package.graph().resolve_declaration(other), None);
     }
 
-    /// QSL-194 golden vector for `package_id`
+    /// Golden vector for `package_id`
     /// (`quire.package.semantic/v2`): the identity preimage's RFC 8785 text,
     /// written out by hand, and its SHA-256. `EmittedPackage::new` encodes
     /// IR's typed preimage through `quire-canonical`, and the `serde_json`

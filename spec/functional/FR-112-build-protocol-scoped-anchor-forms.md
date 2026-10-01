@@ -87,5 +87,4 @@ One `ScopedAnchorForm` per node reference, with:
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). Not yet implemented; QSL-297 (QSL-21b)
-implements it.
+Specified. Not yet implemented.

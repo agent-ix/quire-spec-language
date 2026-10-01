@@ -1,28 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 model-layer benchmarks over an N-type `DomainPackage` built
+//! Model-layer benchmarks over an N-type `DomainPackage` built
 //! through FR-154 model intake (`qsl_bench::model` documents the shape).
 //! Every stage is timed alone, on inputs prepared outside the timing, so
 //! each stage's figure is its own cost:
 //!
 //! - `model/intake/{parse,admit,read_records}/<n>`: `PackageDocument::parse`
-//!   (the one parse intake makes since QSL-201), `intake::admit` (which
+//!   (the one parse intake makes), `intake::admit` (which
 //!   includes that parse) and `intake::read_records` (FCD's validator and
 //!   the per-node reader, over the parsed document).
 //! - `model/normalize/<n>`: FR-150 normalization under the default limits (NFR-012).
 //! - `model/admit_binding/<n>` and `model/admit_invocation/<n>`: FR-153
 //!   admission of a fixed 100-member population, directly and as one
 //!   unchanged invocation (pre and post). Admission reads its object
-//!   universe from the effective view and never normalizes (QSL-204), so
+//!   universe from the effective view and never normalizes, so
 //!   neither figure scales with `model/normalize/<n>`.
 //! - `model/admit_binding_cold/4000`: `admit_binding/4000` against a view
 //!   normalized fresh for every iteration (normalization untimed), so each
 //!   admission fills the `ModelIndex` ancestry it reads. Every other
 //!   admission, conformance and `all_instances` row reuses one view or
-//!   binding across iterations and so reads a warm ancestry (QSL-202).
+//!   binding across iterations and so reads a warm ancestry.
 //! - `model/conformance/resolve_redefinition_target/<n>`: one model
 //!   conformance call against the package's shared `ModelIndex`, which the
-//!   normalization that produced the view built once (QSL-202). Before
-//!   QSL-202 each call built its own index over the whole package.
+//!   normalization that produced the view built once. Formerly
+//!   each call built its own index over the whole package.
 //! - `model/all_instances/{root,own}/<depth>`: `allInstances` over 1,000
 //!   members whose type has `depth` proper ancestors, querying the root
 //!   type (a full ancestor walk per member) or the members' own type (no
@@ -31,7 +31,7 @@
 //!   `model/query/evaluate_all_instances/<m>`: `allInstances<C0>` over `m`
 //!   members of an 8-ancestor type, called directly and through the
 //!   evaluator's bridge (`value::model_query`, which rebuilt its reverse
-//!   catalog per query before QSL-202) -- F6's N axis and QSL-202's
+//!   catalog per query) -- F6's N axis and the cached
 //!   `reverse_catalog`.
 
 use criterion::{

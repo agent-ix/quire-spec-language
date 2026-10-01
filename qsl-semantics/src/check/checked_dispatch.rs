@@ -346,7 +346,7 @@ pub struct DispatchRoot {
 
 /// Every declared object type's own `supertypes` (H1, #204 round 1),
 /// translated from the records of `view`'s own domain package
-/// ([`EffectiveView::domain_package`], QSL-217) from [`DeclarationKey`]s into
+/// ([`EffectiveView::domain_package`]) from [`DeclarationKey`]s into
 /// their [`EffectiveId`]s through `view`'s [`EffectiveView::type_identities`] --
 /// the exact shape [`crate::value::declaration::ObjectTypeDeclaration::with_supertypes`]
 /// needs (ADR-013 O-05). No production code builds a
@@ -1298,8 +1298,8 @@ fn copy_terms(terms: &Option<Vec<Expression>>) -> Option<Vec<Expression>> {
 /// authoring operation member for an authored precondition, the candidate
 /// for an effective precondition and a body. The returned package admits
 /// `view`'s own domain package with `view` ([`AdmittedModel::from_view`]),
-/// whose selection those owners name. The package is read from the view
-/// (QSL-217), so it always corresponds to the view.
+/// whose selection those owners name. The package is read from the view,
+/// so it always corresponds to the view.
 pub fn checked_dispatch_operation(
     view: &EffectiveView,
     root: &DispatchRoot,
@@ -1647,7 +1647,7 @@ mod tests {
         })
     }
 
-    /// QSL-57: two object-type records whose keys map to one effective
+    /// Two object-type records whose keys map to one effective
     /// identity refuse `DuplicateObjectKey`, naming both keys in record
     /// order, rather than the later record's edges replacing the earlier's.
     #[test]

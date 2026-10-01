@@ -215,7 +215,7 @@ fn option_type_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused()
 // Each value in `f(f(...f(x,)...,),)` fails as a tuple and is read again as
 // a call argument list. The parser reuses the argument it already matched,
 // so the work stays linear in depth: the typo is a recoverable syntax error
-// at the default ceilings, not a work-budget refusal (QSL-213).
+// at the default ceilings, not a work-budget refusal.
 #[trace("TC-012", "TC-222", "FR-302-AC-2")]
 #[test]
 fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
@@ -239,7 +239,7 @@ fn nested_trailing_comma_typo_exposes_a_recovery_within_the_work_budget() {
     });
 }
 
-// QSL-223: the memoized recovery (QSL-213) must point at the innermost
+// The memoized recovery must point at the innermost
 // offending token, not wherever the outermost `Choice` gave up. Every level
 // of `f(g(f(g(x,)),))` falls back from a failed call to a bare
 // `QualifiedName` (the identifier alone, no arguments), so the only failure

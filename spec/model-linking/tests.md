@@ -224,9 +224,9 @@ invented for that criterion.
 | TC-147 | Account for and reproduce domain-package intake | Integration | P0 | FR-056-AC-6, FR-056-AC-7 | 🚧 Planned; #131 |
 | TC-148 | Link native source against a domain-package bundle end to end | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Steps 2-4 and step 1 over the edited bundle passed locally (`tests/it/composed_domain_models.rs`); step 1 over the unedited bundle is blocked upstream (see FR-056-AC-8) |
 | IT-012 | Admit a spec artifact bundle through quire-rs and the FCD semantic IR crates | Integration | P0 | FR-056-AC-8, FR-036-AC-9 | 🚧 Planned; #131 |
-| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 AC-1, AC-2, AC-4 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`, QSL-173); admission portion, and AC-7/AC-10, stay 🚧 Planned; #213 |
+| TC-153 | Admit exactly the ten capability kinds and refuse every other label | Unit | P0 | FR-057-AC-1, FR-057-AC-2, FR-057-AC-4, FR-057-AC-7, FR-057-AC-10 | 🚧 AC-1, AC-2, AC-4 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`); admission portion, and AC-7/AC-10, stay 🚧 Planned; #213 |
 | TC-154 | Refuse a capability carrier with an unsupported vocabulary version | Unit | P0 | FR-057-AC-3 | 🚧 Planned; #211/#213 |
-| TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 | 🚧 Steps 3 to 6 (AC-6, AC-8) ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46); AC-5 planned, #213 |
+| TC-155 | Keep admission backend-independent and route only supported items | Integration | P0 | FR-057-AC-5, FR-057-AC-6, FR-057-AC-8 | 🚧 Steps 3 to 6 (AC-6, AC-8) ✅ Passed locally (`qsl-route/tests/it/routing.rs`); AC-5 planned, #213 |
 
 ## Composed language admission (L2)
 
@@ -247,7 +247,7 @@ components, requested clause/capability report and historical package/runner
 boundary. Every FR-036 criterion has a tagged test; AC-9's is `tests/it/composed_domain_models.rs` (TC-148). Names resolved at this
 stage grant no checked or executable package. Status records local runs, not
 ecosystem acceptance. TC-115's controls request the canonical FR-290
-`Capability` kinds (QSL-46), and FR-057-AC-11 is backed there. The FR-036-AC-6
+`Capability` kinds, and FR-057-AC-11 is backed there. The FR-036-AC-6
 row stays 🚧 because its aggregate joins settled dispositions from the FR-331
 accounting records, which #213 and #185 deliver.
 The FR-036-AC-3, FR-040-AC-4/5, FR-042-AC-3, FR-047-AC-1,
@@ -325,9 +325,9 @@ acceptance; neither test set establishes complete compiler #35/#40.
 | FR-057 | FR-057-AC-3 | TC-154 | 🚧 Planned; #211/#213 |
 | FR-057 | FR-057-AC-4 | TC-153 | 🚧 value-type portion ✅ Passed locally (`qsl-semantics/src/check/capability.rs`); admission portion planned; #213 |
 | FR-057 | FR-057-AC-5 | TC-155 | 🚧 Planned; #213 |
-| FR-057 | FR-057-AC-6 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
+| FR-057 | FR-057-AC-6 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`) |
 | FR-057 | FR-057-AC-7 | TC-153 | 🚧 Planned; #213 |
-| FR-057 | FR-057-AC-8 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`, QSL-46) |
+| FR-057 | FR-057-AC-8 | TC-155 | ✅ Passed locally (`qsl-route/tests/it/routing.rs`) |
 | FR-057 | FR-057-AC-10 | TC-153 | 🚧 Planned; #213, #217 (the #191 and #192 gates request no kind, ADR-017 RF-1) |
 | FR-057 | FR-057-AC-11 | TC-115 | ✅ Passed locally (tests/composed_admission_stages.rs) |
 | FR-040 | FR-040-AC-1 | TC-119 | ✅ Passed locally (tests/composed_types.rs) |
@@ -432,7 +432,7 @@ One module carrying each criterion's tag:
 | FR-042-AC-14 | `tests/it/domain_protocol_emission.rs`, `tests/it/composed_domain_models.rs` |
 | FR-042-AC-15 | `tests/it/handoff_writer.rs` |
 
-FR-042-AC-15 is the public in-process producer QSL-251 asked for: behind the
+FR-042-AC-15 is the public in-process producer: behind the
 `handoff-writer` feature, `handoff::write_v1` compiles the same authored
 recipe, reads its own output back through the strict reader used above, then
 writes a complete handoff -- including `dependencies/` bytes -- to a

@@ -4,7 +4,7 @@
 //! closed [`S6aFamilyKind`] the S6a seam (`evaluate_declaration`, in this
 //! module's parent) dispatches over.
 //!
-//! Both are layer 5 (ADR-011 §6.2 `family` row, amended by QSL-181): the hook
+//! Both are layer 5 (ADR-011 §6.2 `family` row, amended): the hook
 //! is an S6a hook, and its implementation needs the evaluator's own
 //! environment. `ReferenceEvaluation: FamilyContract` still makes one marker
 //! type per family implement both halves (ADR-012 §2). With the trait here,
@@ -16,7 +16,7 @@ use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::family::{EvalOutcome, FamilyContract, FamilyKind};
 use quire_exact::Meter;
 
-/// FR-107 (QSL-278): `ProtocolClause`'s own `ReferenceEvaluation` half,
+/// FR-107: `ProtocolClause`'s own `ReferenceEvaluation` half,
 /// nested here since it implements this module's own trait (TC-170's own
 /// `value::expression::mod.rs` module-set invariant only allows
 /// `causes`/`evaluate`/`family`/`s6a` at that level, so a family's S6a
@@ -45,7 +45,7 @@ pub(crate) trait ReferenceEvaluation: FamilyContract {
     /// like `CheckedPackage::call`, which only ever stores the minted
     /// identity a checked declaration resolved to, not the full
     /// `Self::Checked` payload `check` produced it alongside. Distinct from
-    /// `Self::Checked` on purpose -- QSL-148 makes `Checked` a richer struct
+    /// `Self::Checked` on purpose -- `Checked` is a richer struct
     /// (the minted identity together with the real checked body, so `check`
     /// can return both through its ordinary `Ok` rather than a side
     /// channel); `evaluate` still only ever needs the identity half, so it
@@ -102,7 +102,7 @@ macro_rules! s6a_family_kinds {
 s6a_family_kinds! {
     /// `Value`, through `ValueFunctionFamily`'s `evaluate` hook.
     Value,
-    /// `ProtocolClause` (FR-107, QSL-278), through
+    /// `ProtocolClause` (FR-107), through
     /// `ProtocolClauseFamily`'s `evaluate` hook.
     ProtocolClause,
 }
@@ -127,7 +127,7 @@ impl S6aFamilyKind {
             // (`E0004`). Do not add a catch-all to make it compile.
             //
             // The arm below exists only in the probe's build of the crates
-            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`):
             // `qsl-replay` depends on this crate, so it must compile there
             // for the root crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]

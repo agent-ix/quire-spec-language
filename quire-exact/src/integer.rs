@@ -8,8 +8,8 @@
 //! Ported verbatim from QSL `value::integer` as part of QSL#213 S-1
 //! (ADR-011 X-1); no edge needed cutting.
 //!
-//! QSL-146 widens 17 `Integer`/`IntegerInterval` methods from `pub(crate)`
-//! to `pub`: [`abs`](Integer::abs), [`pow`](Integer::pow),
+//! 17 `Integer`/`IntegerInterval` methods are widened from
+//! `pub(crate)` to `pub`: [`abs`](Integer::abs), [`pow`](Integer::pow),
 //! [`split_factor_two`](Integer::split_factor_two),
 //! [`shifted_left`](Integer::shifted_left), [`add`](Integer::add),
 //! [`sub`](Integer::sub), [`mul`](Integer::mul), [`neg`](Integer::neg),
@@ -19,8 +19,8 @@
 //! [`power_of_ten`](Integer::power_of_ten),
 //! [`power_product_bits`](Integer::power_product_bits),
 //! [`spanning`](IntegerInterval::spanning), [`from_big`](Integer::from_big)
-//! and [`as_big`](Integer::as_big), since QSL-146 deletes QSL's own
-//! byte-identical `value::integer` and repoints its callers at this module,
+//! and [`as_big`](Integer::as_big), since QSL's own byte-identical
+//! `value::integer` is deleted and its callers repointed at this module,
 //! now a separate crate from theirs. Each was verified against a real call
 //! site by reverting it alone to `pub(crate)` and recompiling
 //! `quire-spec-language` `--workspace --all-targets --all-features`: 151

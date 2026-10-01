@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `qsl-replay`: the ADR-011 §6.1 layer **6** crate (QSL-185, ADR-011 §7.3
+//! `qsl-replay`: the ADR-011 §6.1 layer **6** crate (ADR-011 §7.3
 //! X-10) -- the CG-facing replay facade (ADR-011 §6.1, ADR-013 O-24 to
 //! O-27, C-13). It depends on layers 1 to 5, F and K, as §6.1 allows.
 //!
@@ -18,7 +18,7 @@
 //! # Identity and provenance types
 //!
 //! O-07's occurrence key and O-12's source region are
-//! `qsl_foundation::source::provenance`'s (#213 S-4, QSL-159), and this
+//! `qsl_foundation::source::provenance`'s (#213 S-4), and this
 //! crate re-exports them for CG. O-09's obligation identity is this crate's
 //! own, the canonical type ADR-013 OQ-H assigns here, which CG names
 //! directly; IR names no QSL type. O-11's `QualifiedName` is still `identity`'s own minimal

@@ -6,7 +6,7 @@
 //! `versionNumber` is the package-declared bound `VersionNumber` scalar
 //! (`Int[0, 1000]`, FR-104-AC-1), declared by the shared `ConfigVersion`
 //! fixture ([`crate::model_operations::version_number_value_type`]) and read
-//! by FR-056's `value-type/v1` scalar reader (QSL-289). An out-of-bound
+//! by FR-056's `value-type/v1` scalar reader. An out-of-bound
 //! `versionNumber` in a snapshot therefore refuses at admission (TC-465 rows
 //! 20 and 30).
 
@@ -1133,7 +1133,7 @@ fn operation_visibility_on_subtypes_inherits_or_refuses_ambiguous() {
 
 // ---------------------------------------------------------------------------
 // FR-106 check 11: the frame and delta check, end to end over a precondition
-// and a postcondition on `attemptUpdate` (QSL-278's own gap: check 11 was
+// and a postcondition on `attemptUpdate` (a gap: check 11 was
 // previously exercised only by `frame.rs`'s own unit tests, never through
 // `admit_observations`'s `Invocation` path). `attemptUpdate`'s frame is
 // `modifies: [versionNumber]` ([`attempt_update_modifies_version_number`]),
@@ -2692,7 +2692,7 @@ fn add_sub_type(document: Vec<u8>, populations: &[&str]) -> Vec<u8> {
 /// [`tc465_document`], with `Sub` (see [`add_sub_type`]) and a second,
 /// unbounded population `archive` whose only declared member is `Sub`
 /// (rows 40, 41). FR-104 (`FR-104-check-state-clauses.md:194-195,216-221`,
-/// as amended by QSL-277): a population declaration never has a maximum,
+/// as amended): a population declaration never has a maximum,
 /// so `archive`, like `config_history`, is simply an unbounded
 /// `Population(None)` -- no wire field expresses a maximum at all.
 /// `archive` never covers a clause on `ConfigVersion` itself: population

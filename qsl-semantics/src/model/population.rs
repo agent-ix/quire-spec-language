@@ -67,7 +67,7 @@
 //! A [`PopulationBinding`]'s fields are private; [`admit_binding`] is its
 //! only constructor, and it stores the admitted `DomainPackage` itself -- the
 //! effective view's own package, shared through the same `Arc` rather than
-//! copied (QSL-204) -- alongside the universe of the binding's own declared
+//! copied -- alongside the universe of the binding's own declared
 //! type's connected component (ADR-013 §8 OQ-E) -- never a single universe
 //! for the whole domain package.
 //! [`all_instances`] and [`lookup`] read that bound domain package — neither takes a
@@ -191,7 +191,7 @@ pub struct PopulationAdmissionLimits {
     pub ancestor_steps: u64,
 }
 
-/// NFR-012's finite default ceilings (QSL-222), which a caller may raise or
+/// NFR-012's finite default ceilings, which a caller may raise or
 /// lower field by field. `spec/non-functional/NFR-012-*.md` states each
 /// value and its derivation.
 impl Default for PopulationAdmissionLimits {
@@ -319,7 +319,7 @@ impl AdmissionCharge {
 
 /// A per-binding-admission scalar meter.
 ///
-/// **A count, not a log (QSL-218).** A production meter holds only
+/// **A count, not a log.** A production meter holds only
 /// fixed-size state: the limits, the two counters and the number of admitted
 /// charges, and owns no heap memory; the const assertion below this type
 /// holds that in every production build. The ordered charge log
@@ -334,7 +334,7 @@ pub struct AdmissionMeter {
     admitted: Vec<AdmissionChargePoint>,
 }
 
-// QSL-218: a production `AdmissionMeter` owns no heap memory (see
+// A production `AdmissionMeter` owns no heap memory (see
 // `crate::model::accounting::Meter`'s identical assertion).
 #[cfg(not(feature = "test-support"))]
 const _: () = assert!(!std::mem::needs_drop::<AdmissionMeter>());
@@ -559,7 +559,7 @@ pub struct PopulationBinding {
     declared_maximum: Option<u64>,
     /// The domain package this binding was admitted against, together with
     /// the shared [`ModelIndex`] the admitting view's normalization built
-    /// over it (QSL-202). `Arc`, so cloning a binding never re-clones the
+    /// over it. `Arc`, so cloning a binding never re-clones the
     /// package's own records. Every conformance decision
     /// ([`all_instances`], [`lookup`] and the invocation frame check) reads
     /// its ancestry, which is computed once per type and kept, never walked
@@ -578,7 +578,7 @@ pub struct PopulationBinding {
     /// translate a checked `Reference<T>`'s `T` (its `EffectiveId`, ADR-013
     /// O-05) back into the `DeclarationKey` [`all_instances`]/[`lookup`]
     /// take, for every declared type, not only ones a current member happens
-    /// to name, with no per-query rebuild (QSL-202).
+    /// to name, with no per-query rebuild.
     type_catalog: Arc<TypeCatalog>,
     /// FR-153's invocation pre population, attached only by
     /// [`admit_invocation`]: `pre(allInstances(p))`/`pre(lookup(p, r) absent
@@ -665,7 +665,7 @@ impl PopulationBinding {
 /// every [`PopulationId`]'s preimage: `Direct` for a binding [`admit_binding`]
 /// mints standalone, `Pre`/`Post` for the two bindings [`admit_invocation`]
 /// attaches to one invocation frame. Deliberately not a two-state
-/// `Option<AnchorSide>` (`None`/`Some(Pre)`/`Some(Post)`): QSL-172's review
+/// `Option<AnchorSide>` (`None`/`Some(Pre)`/`Some(Post)`): a review
 /// found that a standalone `Direct` admission and an invocation's `Post`
 /// binding sharing a domain package and `population_key` would carry an
 /// identical preimage under a two-state discriminator whenever `None` and
@@ -706,7 +706,7 @@ impl AdmissionRole {
 /// FR-089's own preimage names no way to distinguish two bindings that
 /// differ only in document content or declared maximum, admitted under the
 /// same package/key/role within one evaluation -- an open spec question
-/// (Linear QSL-131) recorded, not resolved, here.
+/// recorded, not resolved, here.
 /// [`ObjectEnvironment::with_population`](crate::model::object_environment::ObjectEnvironment::with_population)
 /// is the interim guard: it refuses a second, unequal binding recorded
 /// under an id already bound to a different one, rather than silently
@@ -788,7 +788,7 @@ pub enum AdmissionOutcome {
 /// computed by the caller under `ModelNormalizationLimitsV1` before this
 /// call. It carries the exact domain package it was normalized from
 /// ([`EffectiveView::domain_package`]), and admission reads that package,
-/// its declarations and its object universes from the view alone (QSL-204):
+/// its declarations and its object universes from the view alone:
 /// there is no second, caller-supplied package that could disagree with the
 /// view, and admission does no normalization work of its own. A package over
 /// the caller's normalization limits never yields a view to admit against.
@@ -1986,7 +1986,7 @@ mod tests {
     use crate::model::domain_package::{ObjectTypeRecord, PopulationRecord};
     use crate::model::normalize::{build_calls, normalize, NormalizeOutcome};
 
-    /// QSL-218 AC 1: a production `AdmissionMeter` and `AdmissionCharge`
+    /// A production `AdmissionMeter` and `AdmissionCharge`
     /// have no drop glue, so the meter holds no per-charge state however many
     /// charges it admits, and its admission count counts every one. Built only
     /// without `test-support`, as `accounting`'s identical test.
@@ -2012,7 +2012,7 @@ mod tests {
         }
     }
 
-    /// QSL-222: the default admission limits are NFR-012's finite ceilings.
+    /// The default admission limits are NFR-012's finite ceilings.
     #[trace("TC-434", "NFR-012")]
     #[test]
     fn the_default_admission_limits_are_finite() {
@@ -2075,14 +2075,14 @@ mod tests {
         }
     }
 
-    /// QSL-204: admission reads its object universe from the caller's
+    /// Admission reads its object universe from the caller's
     /// already-metered effective view and never normalizes the domain
     /// package itself -- neither a direct [`admit_binding`] nor an
     /// [`admit_invocation`], which admits a pre and a post document. The
     /// counter is `normalize::build`'s own per-thread call count, so any
     /// reintroduced normalization on the admission path turns this red.
     ///
-    /// Mutation used: restoring the pre-QSL-204 `build`-backed universe
+    /// Mutation used: restoring the earlier `build`-backed universe
     /// lookup in `admit_binding_as` made `admit_binding` count one build
     /// and `admit_invocation` two.
     #[test]
@@ -2151,9 +2151,9 @@ mod tests {
         );
     }
 
-    /// QSL-194 golden vector: the `quire.population/v1` preimage's RFC 8785
+    /// Golden vector: the `quire.population/v1` preimage's RFC 8785
     /// text, written out by hand, and its SHA-256. The `serde_json` encoder
-    /// this site used before QSL-194 emitted the same text, so the minted
+    /// this site used before `quire-canonical` emitted the same text, so the minted
     /// `PopulationId` is unchanged.
     #[trace("TC-291", "FR-089-AC-1")]
     #[test]

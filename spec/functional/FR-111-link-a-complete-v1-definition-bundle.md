@@ -143,7 +143,7 @@ applies them to the catalog and `link_bundle` to the closure.
 
 ## Status
 
-Specified under QSL-234 (ruling 2026-09-26). Implemented under QSL-269:
+Specified by the 2026-09-26 ruling on QSL-234. Implemented:
 `library::bundle` (`qsl-semantics/src/library/bundle.rs`) holds
 `link_bundle` and the closure, facet, capability, limit and identity code
 moved from the retired `complete::resolve_source_package`. Its tests

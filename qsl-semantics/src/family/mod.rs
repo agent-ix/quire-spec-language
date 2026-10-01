@@ -7,7 +7,7 @@
 //! exactly once. This module is the "check core" ADR-012 §13.1 places the
 //! contract in.
 //!
-//! **What this ticket (#214/QSL-25) migrates onto the contract**: `Value`'s
+//! **What #214 migrates onto the contract**: `Value`'s
 //! function-declaration form only (`value::expression::family`).
 //! `FamilyKind`'s other five variants exist here because ADR-012 §1 closes
 //! the catalogue over all six names now, so each sibling ticket's
@@ -43,11 +43,11 @@
 //! `Stage`.
 //!
 //! **Stage outcome types.** `Staged`/`StageFailure`/`LimitExceeded` live in
-//! the foundation `diagnostic` module, ADR-013 T-4's home for them
-//! (QSL-160); this module keeps only the `CheckOutcome` alias.
+//! the foundation `diagnostic` module, ADR-013 T-4's home for them;
+//! this module keeps only the `CheckOutcome` alias.
 //!
 //! **The sixth contract part, `requirements` (ADR-012 §2, FR-062-AC-4).**
-//! ADR-014 §11 moved it to QSL-140: [`Requirements`], [`ClaimExtent`] and
+//! ADR-014 §11 moved it: [`Requirements`], [`ClaimExtent`] and
 //! the `FamilyContract::requirements` method live in [`requirements`].
 //! A family returns one claim per claim site its checked item carries: a
 //! `Value` function declaration, one `value-validity` claim per scalar
@@ -62,7 +62,7 @@ pub mod requirements;
 pub use contract::{CheckContext, FamilyContract};
 // Public only under `test-support`: the layer-5 evaluator's tests build a
 // `CheckContext` through `check::check_context`; no shipped caller outside
-// layer 3 names them (QSL-181).
+// layer 3 names them.
 #[cfg(any(test, feature = "test-support"))]
 pub use contract::{Diagnostic, DiagnosticSink, ScopeStack, StageLimits};
 #[cfg(not(any(test, feature = "test-support")))]
@@ -141,7 +141,7 @@ impl FamilyKind {
             // seam_probe_downstream`): they match over this crate's probe
             // variants (`Capability`, `WrongSnapshotCause`, `FamilyOutcome`),
             // so this crate must compile there for their `E0004`s to be
-            // reported at all (QSL-181: one crate's failed build stops every
+            // reported at all (one crate's failed build stops every
             // crate above it).
             #[cfg(seam_probe_downstream)]
             Self::__SeamProbe => "__seam_probe__",

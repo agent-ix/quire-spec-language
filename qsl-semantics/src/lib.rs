@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-011 §6.1 layer 3: QSL's semantic core (QSL-181, ADR-011 §7.3 X-6).
+//! ADR-011 §6.1 layer 3: QSL's semantic core (ADR-011 §7.3 X-6).
 //!
 //! In §6.1's order, `semantic_value < model < library < check core`:
 //!

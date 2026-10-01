@@ -24,8 +24,8 @@ evaluator SHALL resolve a `Value::Population(PopulationId)` to its
 refuse a `PopulationId` absent from it, never by decoding the identity into
 a binding or by carrying the binding inside the kernel value.
 
-This requirement is ADR-013 O-13's Population row (QC-21), authored under
-QSL-172 to close an AD-016 kernel-row gap: `ValueType::Population(u64)`
+This requirement is ADR-013 O-13's Population row (QC-21), authored to
+close an AD-016 kernel-row gap: `ValueType::Population(u64)`
 admits no kernel `Value` variant today, even though `Value::Population` is a
 live runtime value with a real producer
 ([`model::population::admit_binding`](../../src/model/population.rs),
@@ -174,11 +174,11 @@ key of its own: it calls `quire_exact::member_equal` and
 
 ## Status
 
-Specified under QSL-172, which found the gap, and ADR-013 O-13's Population
-row, which decided it. QSL-131 Slice B (kernel half) implements
+Specified by ADR-013 O-13's Population row. The kernel half
+implements
 `PopulationId` and `Value::Population(PopulationId)` in `quire-exact`
 (FR-089-AC-2; TC-292), with kernel `admits`, `plan_pairs` and `compare_keys`
-refusing a population pair (FR-089-AC-6; TC-297). QSL-131 Slice B's other
+refusing a population pair (FR-089-AC-6; TC-297). The other
 half (`model` minting and the evaluator's resolution step) implements
 FR-089-AC-1, FR-089-AC-3, FR-089-AC-4 and FR-089-AC-5 (TC-291, TC-293,
 TC-294, TC-295, TC-296; all `✅ Passed locally`): `model::population::

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-013 O-20, ADR-014 §4 and §6 step 3 (QSL-140): QSL's typed request
+//! ADR-013 O-20, ADR-014 §4 and §6 step 3: QSL's typed request
 //! representation and its writer.
 //!
 //! The writer turns one checked item's [`Requirements`] into one requested

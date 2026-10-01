@@ -58,7 +58,7 @@
 //! dependency's own fixture `Cargo.toml`. Building the gate is tracked
 //! separately (QSL-130) and left to ADR-011 §2.3's own named enforcer, #219.
 //!
-//! **H-9 (QSL-163): the kernel's value-semantics requirements are QSpec's,
+//! **H-9: the kernel's value-semantics requirements are QSpec's,
 //! not this repo's `spec/`.** PR #254's review flagged that most of this
 //! crate's own tests trace to no requirement, and named the choice of
 //! home -- QSpec or this repo's `spec/` -- as undecided. It is decided now,
@@ -92,7 +92,7 @@
 //! other test in this crate was given a QSpec AC tag in this PR: a test
 //! only earns one where its own assertions, not merely its module doc's
 //! FR citation, actually distinguish the AC's claim from a wrong
-//! implementation (QSL-163 review, H1/H2) -- `division`'s Euclidean-`mod`
+//! implementation (H1/H2) -- `division`'s Euclidean-`mod`
 //! test and `text`'s two bound tests do not (a floor-law `mod` and a
 //! byte-counted length both pass them too), so they keep only their local
 //! `TC-3NN` id. Extending real, distinguishing bindings to this crate's
@@ -146,7 +146,7 @@ mod value;
 // the same discipline `Integer`'s own arithmetic carries -- so a caller
 // charges or bounds its inputs before calling any of them.
 //
-// QSL-146 moves the ledger the other direction: 17 `Integer`/
+// The ledger also moves the other direction: 17 `Integer`/
 // `IntegerInterval` inherent methods (`integer.rs`'s own module doc names
 // them) go from `pub(crate)` to `pub`, each verified against a real
 // cross-crate call site in `quire_spec_language` (revert each in isolation,

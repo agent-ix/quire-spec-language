@@ -11,7 +11,7 @@
 //! `versionNumber` is a package-declared bound integer scalar
 //! (`VersionNumber`, `Int[0, 1000]`), per TC-458's own fixture text, read
 //! through `quire.meaning.model.value-type/v1` (`meaning::VALUE_TYPE`,
-//! `read_value_type`, `qsl-semantics/src/model/intake.rs`, QSL-289) --
+//! `read_value_type`, `qsl-semantics/src/model/intake.rs`) --
 //! [`version_number_value_type`] builds the shared `VersionNumber`
 //! construct/type pair every `ConfigVersion` fixture in this file uses.
 //! [`bound_integer_value_type_admits_and_assembles`] below exercises the
@@ -186,10 +186,10 @@ pub(super) fn version_number_bound() -> ValueType {
 
 /// `ix://example/config-version/VersionNumber`: the package-declared bound
 /// integer scalar (`Int[0, 1000]`) `versionNumber` is really typed as, per
-/// TC-458's own fixture text and the shape QSL-279's
+/// TC-458's own fixture text and the shape the
 /// `examples/config-version/model.semantic-ir.json` corpus already declares.
 /// Returns the `value_type` construct/type pair (for `constructs`/`types`)
-/// and the type's own identity (`versionNumber`'s `typeRef`); QSL-289's
+/// and the type's own identity (`versionNumber`'s `typeRef`);
 /// `read_value_type` (`qsl-semantics/src/model/intake.rs`) is what admits
 /// this shape.
 pub(super) fn version_number_value_type() -> (Value, Value, String) {
@@ -964,7 +964,7 @@ fn an_operation_and_its_frame_admit_and_assemble() {
 /// independent of `ConfigVersion`: the same package-declared `VersionNumber`
 /// value type ([`version_number_value_type`]) and an object type `Widget`
 /// with one required field of that type -- proving FR-056's `value-type/v1`
-/// scalar reader (QSL-289) all the way through this file's own
+/// scalar reader all the way through this file's own
 /// `admit_unit`/`PackageDeclarations::assemble` pipeline with no other
 /// declaration beside it: `Widget.num` assembles to `Int[0, 1000]`.
 #[trace("TC-458", "FR-103-AC-1")]
@@ -1528,7 +1528,7 @@ fn admission_is_deterministic_regardless_of_document_order() {
 /// SR-766 FND-001: `PackageDeclarations::alias_names`'s model-alias half
 /// (assembled from `selections.models` -- the `.chain(selections.models
 /// ...)` line -- not just `selections.profiles`), which FR-113's binder
-/// no-shadowing rule (QSL-306) reads to refuse a binder naming a model
+/// no-shadowing rule reads to refuse a binder naming a model
 /// alias the same way it refuses one naming a profile alias. Every other
 /// shadowing test in `qsl-semantics::check::protocol_clause` only ever
 /// exercises the profile-alias half (a fixture's own `v`), since that

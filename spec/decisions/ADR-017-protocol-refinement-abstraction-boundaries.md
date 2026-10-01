@@ -86,7 +86,7 @@ relationships:
 
 ## Status
 
-Proposed, 2026-09-29. Owning ticket: Linear QSL-16 (GitHub #223, ARCH-43),
+Proposed, 2026-09-29. Owning ticket: GitHub #223 (ARCH-43),
 epic QSL-34 (#205), Layer 4 (coordination and conformance architecture). It
 is a prerequisite of gate QSL-15 (#224, ARCH-G4) for that gate's scenarios 5
 (scoped protocol/frame clause), 7 (spec/profile refinement regression) and 8
@@ -109,12 +109,12 @@ E1 to E9, forbidden bypasses, lanes M-6c to M-6e), ADR-012 (families, the
 clauses), ADR-013 (identity owners O-01 to O-27, conversions C-01 to C-30,
 the R-06 name rule), ADR-014 (extent, bounds, outcome table) and ADR-015
 (dependency compile and replay). The proof/replay contracts (ADR-013 O-24 to
-O-27, ADR-011 E9) are treated as accepted. QSL-326 and QSL-327 (gate
-QSL-20's claimed-module Kani discharge check) change none of them, and this
+O-27, ADR-011 E9) are treated as accepted. Gate QSL-20's claimed-module
+Kani discharge check changes none of them, and this
 record changes none of their wire members.
 
-**Protocol and frame, implemented.** QSL-21 (#218) landed through QSL-296 to
-QSL-314 (FR-105, FR-112 to FR-116):
+**Protocol and frame, implemented.** #218 landed (FR-105, FR-112 to
+FR-116):
 
 - I1 reads each operation's `frame` from the domain package into
   `OperationEffect { modifies, creates, deletes: Vec<DeclarationKey> }`
@@ -150,7 +150,7 @@ QSL-314 (FR-105, FR-112 to FR-116):
   `spec/tests.md` still lists TC-510
   to TC-513 as planned although traced tests for them exist; this record
   cites them only as specified.
-- SEAM-3 handoffs to IR are deleted (QSL-303, M-6d). `src/protocol_artifact`
+- SEAM-3 handoffs to IR are deleted (M-6d). `src/protocol_artifact`
   remains for the root crate's native, state and temporal paths only; no
   `qsl-*` crate imports it.
 
@@ -364,9 +364,9 @@ exit criteria map to the PRs that own each deletion:
 
 | Lane item | State | Owner |
 | --- | --- | --- |
-| M-6d SEAM-3 handoffs to IR | deleted | QSL-303 (PR #515) |
+| M-6d SEAM-3 handoffs to IR | deleted | Done |
 | M-6d composed emission B8, B9 and the composed `ProtocolClause` checker (`src/linking/composed/scopes/protocol*`) | present, not on the spine | QSL-316 (M-6e) |
-| SEAM-3 reads feeding `state` and `temporal`; `protocol_artifact` native and writer | present, root crate only | M-6c (QSL-5, #188, #189) |
+| SEAM-3 reads feeding `state` and `temporal`; `protocol_artifact` native and writer | present, root crate only | M-6c (#188, #189) |
 | M-6e `Relation` composed code | none exists | none: #191, #192 and #198 delete nothing |
 
 ### 2. Refinement comparison (#191, #192)

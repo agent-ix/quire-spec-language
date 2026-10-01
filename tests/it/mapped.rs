@@ -327,7 +327,7 @@ fn mapped_stage_limits_preserve_causes_and_allow_fresh_retries() {
     checking.checking.nodes = 0;
     let mut package = CompileLimits::default();
     package.package.artifact_bytes = 0;
-    // QSL-236: the syntax phase's `source_bytes` ceiling is a `SyntaxLimit`
+    // The syntax phase's `source_bytes` ceiling is a `SyntaxLimit`
     // kind the catalog admits, so it now reports `stage_limit_exceeded`.
     // `linking`'s own node budget, `src/checking.rs`'s native constraint
     // checker and the package graph's `artifact_bytes` are untouched

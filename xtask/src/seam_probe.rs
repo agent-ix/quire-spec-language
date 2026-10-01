@@ -7,8 +7,8 @@
 //! list, exactly as FR-063 requires.
 //!
 //! **Scope: S1, S2, S3 (partial), S4 (one S4-shaped location plus, now,
-//! S4 proper, QSL-152), and S7 (PR #262 review, finding F7; PR #305 review,
-//! finding 6; QSL-143; PR #434 review, LOW-4).** FR-063-AC-6 names five categories: S1's
+//! S4 proper), and S7 (PR #262 review, finding F7; PR #305 review,
+//! finding 6; PR #434 review, LOW-4).** FR-063-AC-6 names five categories: S1's
 //! stage-participation table and prefix arm, S2, S3, S4. S1 originally
 //! had two checked-in `match`es over `FamilyKind` in `src/family/mod.rs` --
 //! `catalog_code_prefix`'s prefix arm and `stage_hooks`'s
@@ -26,8 +26,8 @@
 //! requirement-derivation matches) are seams over `LeadingTokenKind`,
 //! `Expression` and `NodeKind` -- pre-existing, crate-wide enums every
 //! `Value` form uses (literals, operators, `let`, `if`, records,
-//! collections), not just the two forms QSL-25/#214 migrated (function
-//! declaration and application). QSL-143 adds `Expression` and `NodeKind`'s
+//! collections), not just the two forms #214 migrated (function
+//! declaration and application). `Expression` and `NodeKind` carry
 //! `#[cfg(seam_probe)]` probe variants and a protective arm at every other
 //! production `match` site the variant would otherwise break
 //! (`qsl-forms::syntax`, `qsl-semantics::check::assemble`,
@@ -35,13 +35,13 @@
 //! S2 (`Typer::infer_form`, the check seam) and two for S3 (`Machine::
 //! apply`, the evaluator; `Lowering::lower_node`, the identity-lowering
 //! pass feeding v2 emission) -- see [`checked_in_locations`]'s own doc for
-//! the parser's leading-token-kind table (`qsl-forms::dispatch::dispatch`,
-//! QSL-244), which has its own `qsl-forms` probe build. S4 (each family `Cause` enum's
+//! the parser's leading-token-kind table (`qsl-forms::dispatch::dispatch`),
+//! which has its own `qsl-forms` probe build. S4 (each family `Cause` enum's
 //! `catalog_code()`) now has one demonstration, `CheckCause::code`
-//! (FR-062-AC-8, TC-161, QSL-152) -- see that entry in
+//! (FR-062-AC-8, TC-161) -- see that entry in
 //! [`checked_in_locations`]'s own doc below.
 //!
-//! **S7 (QSL-46/#185, ADR-012 §5.1's row: "requirement derivation per
+//! **S7 (#185, ADR-012 §5.1's row: "requirement derivation per
 //! family; registry advertisement check; CG `negotiate_*` capability arm").**
 //! QSL owns the first two; `#[cfg(seam_probe)]` on
 //! `crate::check::Capability` (defined in `capability.rs` itself, which also
@@ -103,7 +103,7 @@ pub struct SeamLocation {
 /// adding a second real seam over `FamilyKind` means updating this list in
 /// the same change (FR-063-AC-1/AC-2), or `xtask seam-probe` fails.
 ///
-/// S7 (QSL-46/#185): the two `match`es over `crate::check::Capability`
+/// S7 (#185): the two `match`es over `crate::check::Capability`
 /// outside `capability.rs` itself (which owns the probe variant and its
 /// own arm, so is not a seam-probe location) -- `requests::families`
 /// (requirement derivation per family, `src/linking/composed/requests.rs`)
@@ -121,7 +121,7 @@ pub struct SeamLocation {
 /// has the same shape S4 does (a `Cause` enum's `catalog_code()` arm), but
 /// `WrongSnapshotCause` is FR-090's own ad hoc snapshot-refusal cause, not a
 /// family's `FamilyContract`-associated `Cause` (no family has one yet;
-/// `crate::family::outcome`'s own doc, QSL-152). It is checked in as one
+/// `crate::family::outcome`'s own doc). It is checked in as one
 /// more real seam location in its own right, but does not itself satisfy
 /// FR-063-AC-6's S4 category.
 ///
@@ -132,7 +132,7 @@ pub struct SeamLocation {
 /// evaluate`, which passes the evaluator's `FamilyOutcome` back as an
 /// `EvalOutcome`). Each enum carries a `#[cfg(seam_probe)]` variant.
 ///
-/// **S2 and S3 (QSL-143): the check seam over the parsed form enum, and the
+/// **S2 and S3: the check seam over the parsed form enum, and the
 /// checked node enum's evaluator and identity-lowering pass.** `Expression`
 /// (`qsl-forms::syntax::Expression`) and `NodeKind`
 /// (`qsl-semantics::check::ir::NodeKind`) each carry a `#[cfg(seam_probe)]`
@@ -150,7 +150,7 @@ pub struct SeamLocation {
 ///   identity-lowering pass whose `SemanticNode`/`SemanticTerm` output feeds
 ///   `qsl-package`'s v2 emission (ADR-012 §5.1 row S3's "v2 emitter").
 ///
-/// **The parser's leading-token-kind table (QSL-244).** ADR-012 §5.1 row
+/// **The parser's leading-token-kind table.** ADR-012 §5.1 row
 /// S2's `qsl-forms::dispatch::dispatch` `match` over `LeadingTokenKind`
 /// lives in `qsl-forms`, below `qsl-semantics`. It has its own cfg,
 /// `seam_probe_forms`, which adds `LeadingTokenKind::__SeamProbe` and is set
@@ -158,14 +158,14 @@ pub struct SeamLocation {
 /// that seam does not stop the crates above it compiling in the other
 /// builds. FR-063-AC-6 has an entry in every category.
 ///
-/// **The replay facade (QSL-5, ADR-013 TK-01):** `qsl-replay`'s `replay`,
+/// **The replay facade (ADR-013 TK-01):** `qsl-replay`'s `replay`,
 /// the executor's `match` over `FamilyOutcome` that settles a replayed
 /// outcome. Each family whose S6a result is new widens the facade there.
 ///
-/// **S4 proper (FR-062-AC-8, TC-161, QSL-152):**
+/// **S4 proper (FR-062-AC-8, TC-161):**
 /// `qsl-semantics/src/check/refusal.rs`'s `CheckCause::code`, the one family
 /// `Cause` enum's `catalog_code()`-shaped mapping S4 names, now that
-/// `Value`'s function family has a real cause (`CheckCause`, QSL-148) to
+/// `Value`'s function family has a real cause (`CheckCause`) to
 /// demonstrate the seam over. `CheckCause`'s `#[cfg(seam_probe)]` variant
 /// has an arm only in `CheckCause::cause` (this list's own sibling
 /// function, and a `seam_probe_downstream` arm in `code`), the same
@@ -210,7 +210,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             file: "qsl-eval/src/value/expression/family.rs".to_owned(),
             item: "ValueFunctionFamily::evaluate".to_owned(),
         },
-        // QSL-278 (FR-107, FR-090 lines 44-45): `ProtocolClause`'s own
+        // FR-107, FR-090 lines 44-45: `ProtocolClause`'s own
         // per-family S6a evaluator, the same seam shape as
         // `ValueFunctionFamily::evaluate` immediately above -- the S6a
         // family kind's "one variant per family that implements
@@ -240,7 +240,7 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             file: "qsl-replay/src/execute.rs".to_owned(),
             item: "replay".to_owned(),
         },
-        // FR-100 (QSL-271): `qsl_replay::spine::run`'s own seam over
+        // FR-100: `qsl_replay::spine::run`'s own seam over
         // `FamilyOutcome`, mirroring `execute::replay`'s above.
         SeamLocation {
             file: "qsl-replay/src/spine/call.rs".to_owned(),
@@ -425,25 +425,25 @@ fn offline_registry_unavailable(stderr: &str) -> bool {
 /// One probe build: a workspace package whose seams it reports, and the
 /// `RUSTFLAGS` it is built under.
 ///
-/// **One probe build per crate (QSL-181).** A seam `match` makes its own
+/// **One probe build per crate.** A seam `match` makes its own
 /// crate fail to compile under `--cfg seam_probe`, and a crate that fails
 /// stops every crate that depends on it: rustc never reaches them. Since X-6b
 /// moved `check` and `family` into `qsl-semantics`, the S1 seam
 /// (`FamilyKind::catalog_code_prefix`) is in that crate, while the root
 /// crate's seams match over `qsl-semantics`' probe variants. So the probe
-/// builds `qsl-forms` alone under `--cfg seam_probe_forms` (QSL-244, which
+/// builds `qsl-forms` alone under `--cfg seam_probe_forms` (which
 /// reports the leading-token table, and is separate from `seam_probe` so
 /// that seam hides nothing above it), then `qsl-semantics` alone under
 /// `--cfg seam_probe`, which reports its
 /// own seam, and then the root crate under `--cfg seam_probe --cfg
 /// seam_probe_downstream`, where the downstream cfg gives each lower crate's
 /// own seam its probe arm so that crate compiles and the root crate's seams
-/// are reached. `qsl-route` (QSL-184) gets a downstream build of its own:
+/// are reached. `qsl-route` gets a downstream build of its own:
 /// the root crate names it only as a dev dependency, so building the root
-/// crate's `--lib` never compiles it. `qsl-eval` (QSL-183) gets one for
+/// crate's `--lib` never compiles it. `qsl-eval` gets one for
 /// the same reason: the root crate does not depend on it at all, so its
 /// S6a seams (`value::expression`) are reached only by a build of its own.
-/// **Layered downstream cfgs (QSL-5).** `qsl-replay` depends on `qsl-eval`,
+/// **Layered downstream cfgs.** `qsl-replay` depends on `qsl-eval`,
 /// and the root crate on `qsl-replay`, so each of those crates' seams needs a
 /// probe arm in the builds of the crates above it: `seam_probe_eval_downstream`
 /// gives `qsl-eval`'s seams theirs, and `seam_probe_replay_downstream` gives
@@ -648,7 +648,7 @@ mod tests {
         }
     }
 
-    /// FR-062-AC-8 (QSL-152): the checked-in list actually names
+    /// FR-062-AC-8: the checked-in list actually names
     /// `CheckCause::code` as the S4 seam location -- not just a doc claim
     /// above.
     #[ix_trace_rs::trace("TC-161", "FR-062-AC-8")]
@@ -660,7 +660,7 @@ mod tests {
         }));
     }
 
-    /// FR-063-AC-6 (QSL-244): the checked-in list has an entry for each of
+    /// FR-063-AC-6: the checked-in list has an entry for each of
     /// the five named categories, including the parser's leading-token-kind
     /// table, and `qsl-forms` has its own probe build so that entry is
     /// reachable (a list entry no build reports would fail `seam-probe`).
@@ -1108,7 +1108,7 @@ mod tests {
 
     /// FR-063-AC-7 (second test): none of `FamilyKind`, the parsed form
     /// enum (`Expression`), the checked node enum (`NodeKind`), `Value`'s
-    /// function family's own `Cause` (`CheckCause`, QSL-152) or
+    /// function family's own `Cause` (`CheckCause`) or
     /// `WrongSnapshotCause` (`ProtocolClauseSnapshot`'s own S4-shaped, not
     /// family-`Cause`, cause) carries `#[non_exhaustive]`.
     #[ix_trace_rs::trace("TC-161", "FR-063-AC-7")]
@@ -1288,13 +1288,13 @@ mod tests {
         );
     }
 
-    /// FR-063-AC-5 (QSL-155 correction), part one: the real gate invokes
+    /// FR-063-AC-5 (as corrected), part one: the real gate invokes
     /// `xtask seam-probe`. A grep-shaped check over the real `Makefile` --
     /// `ci:`'s own prerequisite list names `seam-probe`, and the
     /// `seam-probe:` target's own recipe runs the `xtask` binary's
     /// `seam-probe` subcommand -- not a stub of a Rust-level
     /// gate-target-list abstraction the merged spec presumed and that does
-    /// not exist (QSL-155's own correction). One-copy-deps (`make
+    /// not exist (the criterion's own correction). One-copy-deps (`make
     /// use-local`) moved the `cargo xtask` alias out of the tracked
     /// `.cargo/config.toml` (it now holds `make use-local`'s own
     /// `[patch]` tables instead), so the recipe now spells this out as

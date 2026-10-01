@@ -18,7 +18,7 @@
 pub const MAX_ENCODED_BYTES: usize = 1 << 20;
 
 /// A #231 reader refused an encoding exceeding [`MAX_ENCODED_BYTES`]:
-/// `stage_limit_exceeded/input-bytes-exceeded` (QSL-236, catalog revision
+/// `stage_limit_exceeded/input-bytes-exceeded` (catalog revision
 /// `1-draft.8`), through [`qsl_foundation::diagnostic::CatalogCoded`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error(
@@ -80,7 +80,7 @@ mod tests {
         assert_eq!(err.actual, MAX_ENCODED_BYTES + 1);
     }
 
-    /// QSL-236: `BoundExceeded` reports `stage_limit_exceeded/
+    /// `BoundExceeded` reports `stage_limit_exceeded/
     /// input-bytes-exceeded`, carrying the bound (`MAX_ENCODED_BYTES`) and
     /// the actual encoded size.
     #[trace("TC-428", "FR-096-AC-7")]

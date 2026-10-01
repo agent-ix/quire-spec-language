@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `Value`'s function-declaration family (FR-062, FR-065): identity minting,
 //! split out of `value::expression::family` by ADR-011 §7.3 M-5, **and**
-//! (QSL-148) the real typing, coercion and static-definedness checking for
+//! the real typing, coercion and static-definedness checking for
 //! both a function declaration and a function application.
 //!
-//! **QSL-148 widens this module's role.** Before this ticket,
+//! **This module's role is wider than it was.** Before,
 //! `ValueFunctionFamily::check` (below) only minted a declaration's identity
 //! and charged the contract's own nesting-depth limit once; the real typing
 //! and definedness verdict was made separately, by a `Typer` `check::mod`'s
@@ -57,7 +57,7 @@ use qsl_forms::{
 };
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, Staged};
-// QSL-148: the relocated function-application/-declaration checking code
+// The relocated function-application/-declaration checking code
 // below needs `check.rs`'s own `Typer`/`Signature`/`bind_parameters` (the
 // general typer this family delegates to for a body or a call's
 // arguments -- FR-065-CON-1 forbids reimplementing that engine here, not
@@ -106,15 +106,15 @@ pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exac
     result_units: u64::MAX,
 };
 
-/// QSL-153's size meter over one parsed declaration: the `StageLimits`
+/// The size meter over one parsed declaration: the `StageLimits`
 /// figures [`ValueFunctionFamily::check`] compares before it types the
 /// declaration (`input_bytes`, `node_count`) and the work it charges
 /// (`work_budget`). It hashes nothing and mints no identity: a checked
-/// node's identity is its FR-092/FR-093 key (`check::lowering`, QSL-156
-/// A4b), minted after typing.
+/// node's identity is its FR-092/FR-093 key (`check::lowering`),
+/// minted after typing.
 ///
 /// Each figure is the length-prefixed encoding this walk describes, so the
-/// limits keep the meaning QSL-153 gave them: `input_bytes` is the encoding's
+/// limits keep their meaning: `input_bytes` is the encoding's
 /// logical byte length (a `u64` length prefix plus the bytes of each written
 /// string, eight bytes per number, one per flag), accumulated via
 /// [`quire_exact::length_amount`], never a bare `as` cast; `nodes` counts
@@ -364,7 +364,7 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
 // `Integer::Display` canonical-wire-spelling contract, same reasoning --
 // see `encode_value_type`'s own doc comment above.
 //
-// QSL-228: the walk keeps its pending sub-expressions on a heap stack, not
+// The walk keeps its pending sub-expressions on a heap stack, not
 // the host stack, so an expression nested past every checking limit is
 // measured (and then refused by the typer's depth limit) rather than
 // overflowing here first. Sub-expressions are visited in source pre-order,
@@ -607,7 +607,7 @@ fn encode_expression(
     Ok(())
 }
 
-/// Measure one function declaration's parsed size (QSL-153): its name,
+/// Measure one function declaration's parsed size: its name,
 /// parameters, result, measure and body, as authored, with every declared
 /// type written as its resolved `ValueType` (so two spellings of one type
 /// measure alike) and each `Convert`/`AllInstances`/`Lookup` target resolved
@@ -644,8 +644,8 @@ pub(crate) fn measure_declaration(
     })
 }
 
-/// [`StageLimits`](crate::family::StageLimits)'s real producer values
-/// (QSL-153), read back from one `measure_declaration` pass.
+/// [`StageLimits`](crate::family::StageLimits)'s real producer values,
+/// read back from one `measure_declaration` pass.
 /// `input_bytes` and `node_count` are `StageLimits` fields, compared by
 /// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
 /// `work_budget` is charged against the shared kernel meter instead (PR
@@ -677,7 +677,7 @@ impl<'a> TargetTypes<'a> {
         super::type_form::resolve_type_form(self.scope, target, self.location)
     }
 }
-/// QSL-148: `Value`'s family check code for function application
+/// `Value`'s family check code for function application
 /// (FR-065-AC-4; the typer's `Call` arm calls it once, FR-065-CON-3), relocated
 /// here from `check.rs`'s deleted `Typer::call`. The algorithm is unchanged
 /// -- name resolution against `typer.signatures()`, an arity check, a check
@@ -686,7 +686,7 @@ impl<'a> TargetTypes<'a> {
 /// this family module, so the typer's `Expression::Call` arm dispatches to
 /// family-owned code instead of deciding admission itself.
 ///
-/// QSL-228 splits the one function in two around the arguments' typing:
+/// The one function is split in two around the arguments' typing:
 /// [`Self::resolve`] resolves the callee and checks the arity, the typer's
 /// explicit-stack loop checks each argument against [`Self::parameter`], and
 /// [`Self::finish`] builds the call. The typer's loop, not this module,
@@ -703,7 +703,7 @@ impl<'a> TargetTypes<'a> {
 /// `Binary`, ... ), so this is itself already reached, transitively,
 /// through the one
 /// [`FamilyContract::check`](crate::family::FamilyContract::check) call that starts a declaration's real
-/// typing (QSL-148: `check` now calls [`check_declaration_body`], which
+/// typing (`check` now calls [`check_declaration_body`], which
 /// drives the same `Typer`) -- an application inside a declaration's own
 /// body is checked "through the contract" in that sense already.
 ///
@@ -731,7 +731,7 @@ impl<'a> TargetTypes<'a> {
 /// nest too) -- reworking the general engine for every form it checks,
 /// which is the reimplementation-scale change FR-065-CON-1 rules out here,
 /// not a small addition to this one check. That is real, reported `Typer`
-/// entanglement (QSL-148's own open question), not a gap this check papers
+/// entanglement, not a gap this check papers
 /// over: `Typer`'s pre-existing, separate [`super::CheckingLimits`] depth
 /// bound (unchanged, checked at every real nesting step already) is what
 /// bounds a call's own nesting.
@@ -960,8 +960,8 @@ impl<'a> Application<'a> {
     }
 }
 
-/// One function declaration's real typing and static-definedness verdict
-/// (QSL-148), returned by [`Application`]'s sibling entry point for
+/// One function declaration's real typing and static-definedness verdict,
+/// returned by [`Application`]'s sibling entry point for
 /// declarations. Termination is not included -- see this function's own
 /// doc below for why it cannot be.
 #[derive(Debug)]
@@ -996,7 +996,7 @@ pub(crate) struct CheckedDeclarationBody {
     pub(crate) nodes_used: u64,
 }
 
-/// QSL-148: `Value`'s family check code for a function declaration's
+/// `Value`'s family check code for a function declaration's
 /// typing, coercion and static definedness (FR-065's "the typing,
 /// definedness... checking decision"), relocated here from the closure
 /// `PackageDeclarations::check` (`check::mod`) used to build inline. The
@@ -1038,7 +1038,7 @@ pub(crate) struct CheckedDeclarationBody {
 ///
 /// **`Typer`'s own node-budget counter is package-wide again (PR #303 review
 /// round 3, finding F1).** An earlier round of this fix gave `Typer` a fresh
-/// `let mut nodes = 0_u64` here, on the reasoning that QSL-153's
+/// `let mut nodes = 0_u64` here, on the reasoning that
 /// `CheckContext::check_node_count` already bounded the same underlying
 /// concern one step earlier in [`FamilyContract::check`](crate::family::FamilyContract::check). That reasoning
 /// was wrong: `check_node_count` compares one declaration's own preimage node
@@ -1051,7 +1051,7 @@ pub(crate) struct CheckedDeclarationBody {
 /// individually-tiny declarations could exceed the caller's configured
 /// `nodes` budget by an unbounded factor.
 ///
-/// The fix restores the pre-QSL-148 shape -- one node counter shared across
+/// The fix restores the earlier shape -- one node counter shared across
 /// every declaration in the package -- without a `Cell`, a second call into
 /// the caller, or any mutation through this function's read-only
 /// `&ValueDeclarations<'_>` parameter: `Typer` is seeded from
@@ -1151,7 +1151,7 @@ pub(crate) fn check_declaration_body(
 /// the real mechanism: ordinal assignment and lookup by (identity, role,
 /// ordinal) do not depend on what a span actually is.
 ///
-/// Keyed by (identity, role) (QSL-205): the key's value holds that role's
+/// Keyed by (identity, role): the key's value holds that role's
 /// spans in ordinal order, so the next ordinal is its length and an
 /// ordinal's span is an index. Neither `record` nor `resolve` scans another
 /// entry.
@@ -1286,7 +1286,7 @@ impl<S> OccurrenceMap<S> {
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Declarations`]:
 /// the package-wide, read-only state one declaration's `check` call needs to
-/// run `check_declaration_body` for real (QSL-148) -- `Scope`, every
+/// run `check_declaration_body` for real -- `Scope`, every
 /// declared `Signature` and the checked package's dispatch tables, none of
 /// which the shared `CheckContext`/`StageLimits` carry, since those are
 /// generic across every family -- plus the two per-declaration locations
@@ -1304,7 +1304,7 @@ impl<S> OccurrenceMap<S> {
 /// review round 3, finding F1).** `nodes_used` is the running total
 /// of `Expression` nodes every earlier declaration in this same package has
 /// already admitted -- owned and advanced by `check::mod`'s own loop, not by
-/// this struct, exactly the way that loop's pre-QSL-148 version shared one
+/// this struct, exactly the way that loop's earlier version shared one
 /// `&mut u64` across every `Typer` it built in turn.
 /// `check_declaration_body` seeds `Typer`'s own counter from it instead of
 /// starting at zero each time, so `Typer` still compares against the one,
@@ -1314,7 +1314,7 @@ impl<S> OccurrenceMap<S> {
 /// contract ("at most `nodes` expression nodes per checked package") without
 /// a `Cell`, a second call into the caller, or a mutation through this
 /// struct's own read-only `&D` reference. `CheckContext::check_node_count`
-/// (QSL-153) is a separate, deliberately *per-declaration-only* bound over
+/// is a separate, deliberately *per-declaration-only* bound over
 /// the preimage's own node count (`StageLimits::node_count`'s own doc); it
 /// does not substitute for this one and does not accumulate across
 /// declarations.
@@ -1356,12 +1356,12 @@ impl ValueDeclarations<'_> {
 }
 
 /// [`ValueFunctionFamily`]'s [`crate::family::FamilyContract::Checked`]
-/// (QSL-148; PR #303 review, finding N3): the real checked body
+/// (PR #303 review, finding N3): the real checked body
 /// `check_declaration_body` produces, returned through `check`'s own `Ok`
 /// rather than a side channel. The declaration's identity is not here: it is
 /// the FR-092 function node key, which hashes the keys of the functions its
 /// body calls, so `PackageDeclarations::check` mints it once every
-/// declaration is checked (`check::lowering`, QSL-156 A4b).
+/// declaration is checked (`check::lowering`).
 #[derive(Debug)]
 pub struct CheckedDeclaration {
     pub(crate) body: CheckedDeclarationBody,
@@ -1387,7 +1387,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
     /// the real checked body, returned through `check`'s ordinary `Ok`, not
     /// a side channel.
     type Checked = CheckedDeclaration;
-    /// The crate's own located refusal vocabulary (QSL-148): `check` can now
+    /// The crate's own located refusal vocabulary: `check` can now
     /// genuinely refuse (an ill-typed or undefined body), and `CheckRefusal`
     /// already carries a closed cause and `catalog_code()` mapping
     /// (`check::CheckCause::code`/`cause`) -- ADR-012 §5.1 S4's "family
@@ -1449,7 +1449,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 return Err(StageFailure::Refused(refusal));
             }
         };
-        // QSL-153: the measured byte length and node count
+        // The measured byte length and node count
         // are checked against `cx`'s restored `StageLimits` fields before
         // this declaration is admitted -- the first one exceeded refuses
         // with a `Limit` outcome naming it, matching `enter_nesting`'s own
@@ -1514,7 +1514,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 u128::from(incomplete.consumed) + u128::from(denied.unwrap_or(metrics.work_budget)),
             )));
         }
-        // QSL-148: the real typing and static-definedness verdict, made
+        // The real typing and static-definedness verdict, made
         // here -- inside the contract's own `check` -- rather than by a
         // second, parallel call `check::mod`'s loop used to make on the
         // side after calling this function. `PackageDeclarations::check`
@@ -1565,7 +1565,7 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // paired `enter`/`leave` calls, with the `?` moved after both, so
         // every return path -- success or refusal -- balances the scope
         // stack and the nesting depth identically.
-        // QSL-236 (M1), FR-062-AC-7: the Typer's own nesting-depth limit is
+        // FR-062-AC-7: the Typer's own nesting-depth limit is
         // the one `CheckCause::ResourceExhausted` cause AC-7 requires a
         // `StageFailure::Limit` for, not a typed `Refused` -- the contract's
         // other checking limits (nodes, work budget, input bytes) reach
@@ -1734,7 +1734,7 @@ mod tests {
 
 /// Test fixtures shared by `check`'s own tests and by the layer-5
 /// evaluator's tests (`value::expression::family`), which reach them across
-/// the QSL-181 crate boundary through `test-support`. Never compiled into a
+/// the `qsl-semantics` crate boundary through `test-support`. Never compiled into a
 /// production build.
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
@@ -1834,7 +1834,7 @@ pub mod fixtures {
         )
     }
     /// A scope declaring only `types` and `aliases`, its by-name lookups
-    /// built over them (QSL-205: a `Scope` is built once, never mutated).
+    /// built over them (a `Scope` is built once, never mutated).
     pub fn scope_with(
         types: crate::value::declaration::TypeEnvironment,
         aliases: Vec<(String, quire_exact::ValueType)>,
@@ -1892,7 +1892,7 @@ pub mod fixtures {
 
 #[cfg(test)]
 pub(crate) mod checking_tests {
-    //! QSL-148: behavioral coverage of what `Value`'s relocated family check
+    //! Behavioral coverage of what `Value`'s relocated family check
     //! code (`Application`, `check_declaration_body`) accepts and
     //! refuses, per the testing-policy ruling at
     //! <https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837>
@@ -2185,7 +2185,7 @@ pub(crate) mod checking_tests {
         ));
     }
 
-    // QSL-181 X-6a: the tests below exercise only `ValueFunctionFamily`'s
+    // The tests below exercise only `ValueFunctionFamily`'s
     // `check` hook and the identity minting under it, so they live here, in
     // layer-3 `check`, rather than beside the layer-5 evaluator in
     // `value::expression::family`, whose tests keep only what needs the
@@ -2193,7 +2193,7 @@ pub(crate) mod checking_tests {
     // those tests through `check::mod`'s `#[cfg(test)]` re-export (PR #303
     // N7b), not copied.
 
-    /// QSL-148's core requirement (PR #303 review, finding 1): calling
+    /// The core requirement: calling
     /// `ValueFunctionFamily::check` on an ill-typed declaration -- `g() ->
     /// Boolean = 1`, an `Integer` body against a declared `Boolean` result
     /// -- returns a refusal *through the contract itself*, not `Ok` after
@@ -2255,12 +2255,12 @@ pub(crate) mod checking_tests {
         assert_eq!(diagnostics.entries().len(), 0);
     }
 
-    /// FR-062-AC-3's central clause (QSL-161): two independently
+    /// FR-062-AC-3's central clause: two independently
     /// constructed typing contexts, checking the same form, produce
     /// *identical checked output* -- not merely "each observes one
     /// diagnostic" (this test's own isolation half, kept below).
     ///
-    /// **Rebuilt (QSL-161).** PR #262 review F6 deleted this test's earlier
+    /// **Rebuilt.** PR #262 review F6 deleted this test's earlier
     /// `staged_a.value == staged_b.value` assertion as a self-comparison
     /// (both sides came from the same deterministic call, so nothing could
     /// make it fail) and left the tag on what remained -- two diagnostic
@@ -2779,7 +2779,7 @@ pub(crate) mod checking_tests {
         assert!(admitted.is_ok());
     }
 
-    /// QSL-153: `StageLimits`' restored `input_bytes`/`node_count` each have
+    /// `StageLimits`' restored `input_bytes`/`node_count` each have
     /// a real producer (`measure_declaration`'s own pass) and
     /// a real consumer (`CheckContext::check_input_bytes`/
     /// `check_node_count`, called from `ValueFunctionFamily::check`) that
@@ -3108,11 +3108,11 @@ pub(crate) mod checking_tests {
     /// own `StageLimits.nesting_depth`. A body nested to depth D
     /// (`Not(Not(Not(true)))`, four levels deep counting the `Boolean`
     /// leaf) checked through `ValueFunctionFamily::check` -- reachable now
-    /// that QSL-148 makes `check` call `check_declaration_body`, which
+    /// that `check` calls `check_declaration_body`, which
     /// drives the real `Typer` -- refuses at a configured depth of D-1 and
     /// admits at D, varying only the limit by exactly one.
     ///
-    /// **Tagged for FR-062-AC-7 (QSL-236, M1).** AC-7's own text requires
+    /// **Tagged for FR-062-AC-7 (M1).** AC-7's own text requires
     /// `check` to return a `Limit` outcome specifically; `check` now maps a
     /// Typer `CheckCause::ResourceExhausted` whose kind is `Depth` onto
     /// `StageFailure::Limit(LimitExceeded::new(LimitKind::NestingDepth,
@@ -3214,8 +3214,8 @@ pub(crate) mod checking_tests {
         assert_eq!(map.resolve(b, &other), Some(&(8, 11)));
     }
 
-    /// FR-062-AC-2 (QSL-205): the keyed map gives every occurrence the
-    /// ordinal the pre-QSL-205 scan gave it -- the number of earlier
+    /// FR-062-AC-2: the keyed map gives every occurrence the
+    /// ordinal the earlier scan gave it -- the number of earlier
     /// records with the same (identity, role) -- over an interleaved
     /// sequence of identities and roles, and resolves each one back to its
     /// own span.
@@ -3264,7 +3264,7 @@ pub(crate) mod checking_tests {
         assert_eq!(map.resolve(keys[0], &past_the_end), None);
     }
 
-    /// QSL-205: a name's first signature and its first callable one are
+    /// A name's first signature and its first callable one are
     /// kept apart: a named call resolves to the callable one, while
     /// `position` names the first declared.
     #[test]
@@ -3286,7 +3286,7 @@ pub(crate) mod checking_tests {
         assert!(hidden.declares("f"));
     }
 
-    /// QSL-205: grouping names in one pass refuses exactly the declarations
+    /// Grouping names in one pass refuses exactly the declarations
     /// whose name repeats, in declaration order, each with every locus of
     /// its name in declaration order -- the refusals the pairwise scan made.
     #[trace("TC-191", "FR-146-AC-8")]

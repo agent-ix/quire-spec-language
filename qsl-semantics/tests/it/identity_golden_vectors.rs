@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-194: golden vectors for the RFC 8785 identity domains this crate
+//! Golden vectors for the RFC 8785 identity domains this crate
 //! mints through `quire-canonical` (ADR-013 §2, ADR-013:113: one RFC 8785
 //! implementation produces every RFC 8785 encoding).
 //!
@@ -7,10 +7,10 @@
 //! SHA-256. A vector checks three things: the text hashes to the pinned
 //! digest (so the digest is the text's, not the code's); the identity the
 //! crate mints over the same preimage equals it; and the `serde_json`
-//! `Value` encoder these sites used before QSL-194 emitted exactly the same
+//! `Value` encoder these sites used before `quire-canonical` emitted exactly the same
 //! text, so moving to `quire-canonical` left the digest unchanged.
 //!
-//! The one digest QSL-194 does change is shown here too: a domain-package
+//! The one digest the move does change is shown here too: a domain-package
 //! document carrying a non-integral spelling of an integral number
 //! (`1.0`, `1e2`). `serde_json` printed those `1.0`/`100.0`, which RFC 8785
 //! spells `1`/`100` (ECMAScript `Number::toString`), so the old digest was
@@ -60,7 +60,7 @@ const ENUM_MEMBER_DIGEST: &str = "f831f2a77f4edab6b089d6ab53fcc34f365423de9adffa
 
 const DIMENSION: &str = r#"{"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Length"],"terms":[],"version":"quire.dimension-node/v1"}"#;
 /// Equal to `LENGTH` in `check::lowering::model::tests`, pinned there
-/// before QSL-194 from the same preimage.
+/// earlier from the same preimage.
 const DIMENSION_DIGEST: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
 
 const UNIT: &str = r#"{"dimension_node_id":{"digest":"b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b","domain":"quire.checked-semantic-node/v1"},"offset":{"denominator":"1","numerator":"0"},"owner":{"authority":"agent-ix","identity":"example-model","kind":"definition"},"qualified_declaration":["Example","Metre"],"scale":{"denominator":"1","numerator":"1"},"target_unit_node_id":null,"version":"quire.unit-node/v1"}"#;
@@ -78,7 +78,7 @@ const DOCUMENT: &str =
 const DOCUMENT_DIGEST: &str = "846d75a8d7df96aa9445d96b5b3be3fc9bd0ac96c7bf5ad4c9fd3f12ba55cc2f";
 
 /// A document with integral numbers spelled `1.0` and `1e2`: its RFC 8785
-/// text, and the text `serde_json` printed for it before QSL-194.
+/// text, and the text `serde_json` printed for it before `quire-canonical`.
 const FLOAT_DOCUMENT_RAW: &str =
     r#"{"package":{"identity":"test/golden","version":"1"},"n":[1.0,1e2,0.5]}"#;
 const FLOAT_DOCUMENT: &str =
@@ -100,7 +100,7 @@ fn hex(bytes: &[u8; 32]) -> String {
 }
 
 /// `text` hashes to `digest`, the crate minted `actual` over the same
-/// preimage, and the pre-QSL-194 `serde_json` encoder emitted `text` too.
+/// preimage, and the earlier `serde_json` encoder emitted `text` too.
 fn assert_golden(text: &str, digest: &str, actual: &str) {
     assert_eq!(sha256_hex(text.as_bytes()), digest, "the vector's own text");
     assert_eq!(actual, digest, "the identity minted over {text}");
@@ -321,7 +321,7 @@ fn big_integer_document(literal: &str) -> String {
     format!(r#"{{"package":{{"identity":"test/golden","version":"1"}},"n":{literal}}}"#)
 }
 
-/// QSL-194 M2: an integer outside ±2^53 has no exact double, and RFC 8785
+/// An integer outside ±2^53 has no exact double, and RFC 8785
 /// canonicalizes the double it parses to. Both spellings of 2^64's
 /// neighbourhood (`2^64 - 1`, a `u64`, and `2^64`, beyond it) admit under
 /// the digest of `18446744073709552000`; an integer beyond `u64` admits

@@ -193,15 +193,14 @@ their content digest are equal.
   is keyed against; quire-specification FR-153 owns the normative closed-
   environment query rule and AD-006 owns the decision to keep populations
   and closed dispatch sets in the model view. FR-153-AC-9 (the unbounded
-  `p` case of FR-084-AC-5) landed in quire-specification PR #75. Since
-  QSL-140, `qsl-semantics/src/model/population.rs`'s `all_instances` returns
+  `p` case of FR-084-AC-5) landed in quire-specification PR #75.
+  `qsl-semantics/src/model/population.rs`'s `all_instances` returns
   the unbounded `Set<Reference<T>>` (a result with no bound) when `p`
   declares no maximum, admitting every selected count (TC-240 step 3,
   `an_unbounded_binding_selects_every_member_with_no_bound`). The other
   FR-084-AC-5 clauses keep their own status under TC-240.
 - ADR-013 §8 OQ-C and OQ-E, and quire-specification `model-complete.md`
-  and FR-204, fix the universe and object identity (FR-084-AC-7). Remaining
-  work: QSL-131.
+  and FR-204, fix the universe and object identity (FR-084-AC-7).
 - **Downstream:** [FR-047](FR-047-evaluate-finite-object-reference-graphs.md)'s
   graph evaluator receives concrete object membership and closure as an
   independently supplied runtime input; this requirement is that input's own

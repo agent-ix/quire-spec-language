@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Complete-V1 incremental editing over the lossless CST (`complete::{apply_edit,
 //! apply_edits}`). The layer-1-only CST construction/recovery tests that used to
-//! live here moved to `qsl-cst/tests/it/complete_cst.rs` (QSL-178 review F3).
+//! live here moved to `qsl-cst/tests/it/complete_cst.rs`.
 use ix_trace_rs::trace;
 use qsl_cst::{CompleteCause, CompleteCode, HostCause, Limits, SourceChange};
 use qsl_foundation::{SourceIdentity, Span};
@@ -340,7 +340,7 @@ fn oversized_single_and_aggregate_replacements_refuse_before_reparse() {
         limits,
     )
     .unwrap_err();
-    // QSL-236: the source-byte ceiling is a `SyntaxLimit` kind the catalog
+    // The source-byte ceiling is a `SyntaxLimit` kind the catalog
     // admits, so it now reports `stage_limit_exceeded`.
     assert_eq!(single.code, CompleteCode::StageLimitExceeded);
 

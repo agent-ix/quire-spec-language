@@ -101,5 +101,4 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 
 - ADR-012 §15 (the mapping), §4.3 (thin seams), §5.1 S2.
 - FR-067 and FR-091: the S2 builder and the `Value` forms this extends.
-- The code change waits for the other lane's current work in `qsl-forms`
-  (QSL-273 ticket text).
+- The code change waits for the other lane's current work in `qsl-forms`.

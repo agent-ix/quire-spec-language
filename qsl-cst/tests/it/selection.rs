@@ -3,7 +3,7 @@
 //! identity, version or digest of a `profile`, `import` or `model`
 //! declaration is located at its own literal. Formerly in the root crate's
 //! `complete::package_tests`; it parses and never resolves, so it is
-//! layer 1's (QSL-181).
+//! layer 1's.
 use ix_trace_rs::trace;
 use qsl_cst::{parse, Limits};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, InvalidDefinitionComponent};

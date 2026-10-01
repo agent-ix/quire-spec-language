@@ -126,12 +126,12 @@ string-edge` are built, `string-edge` is a prerequisite of `make ci` (the
 lint gate), and `cargo xtask string-edge` reports no unmarked, unlisted
 occurrence over the whole workspace. The detector resolves both a string
 literal and a comparison, method call or `match` arm against a named
-same-crate `const NAME: &str` (the string-value clause, QSL-287): `const
+same-crate `const NAME: &str` (the string-value clause): `const
 NAME: &str` at module, `impl` and trait scope, matched by its last path
 segment. Every occurrence the scan finds is either a `#[string_edge]`-marked
 edge (an intake reader, a typed wire reader, CLI argument parsing, or a
 source scanner doing its one total conversion) or was converted onto a
-closed enum or typed identity (QSL-145, QSL-287). The allow-list is empty.
+closed enum or typed identity. The allow-list is empty.
 
 Residual: the Behavior clause asks for a report on any comparison between a
 `&str`/`String` value and *any other* such value, and any `match` whose
@@ -144,7 +144,7 @@ undetected today, not merely unmarked -- the scan cannot see them to report
 them. Extending the detector to those shapes is unticketed follow-up work,
 not scope this requirement claims to close.
 
-QSL-287's re-measurement against a clean scan found 53 named-constant
+A re-measurement against a clean scan found 53 named-constant
 occurrences across roughly 35 functions the literal-only scan could not see.
 Wire, contract-version and format checks (the large majority) are marked
 `#[string_edge]`, each a genuine one-shot admission edge. Two sites got a
@@ -159,7 +159,7 @@ member, by construction, not merely by name); and `qsl-package/src/emit.rs`'s
 the wire form string a second time.
 
 `qsl-semantics/src/check/claims.rs`'s `identity == NARROW`/`SCALAR_FAMILIES`
-compares (QSL-288 review, SR-758 FND-005) are marked `#[string_edge]`
+compares (SR-758 FND-005) are marked `#[string_edge]`
 through one `operation_role` classifier, corrected here from an earlier
 claim that this was a typed conversion: `operation_role` re-derives the
 classification from the identity string on every call; nothing resolves it
@@ -171,7 +171,7 @@ would make the distinction load-bearing, documented at each site rather
 than removed, since FR-322 states the underlying rule as a property of the
 node kind, not as a fact this tree's current inputs happen to make trivial.
 
-Detector scope (QSL-268): a comparison is branch-gating when it feeds an
+Detector scope: a comparison is branch-gating when it feeds an
 `if`/`while` condition or `match` scrutinee/guard, is a term of a `&&`/`||`
 chain, is a match arm's own value, or is a `strip_prefix` call.
 
@@ -195,7 +195,7 @@ chain, is a match arm's own value, or is a `strip_prefix` call.
   as allow-list entries: `CanonicalizationDomain::from_str`
   (`"filament-canonical-json-1"`), `AdapterArtifact::try_from`
   (`"quire.state.authority-adapter"`) and `clock_binding_name` (`"clock:"`);
-  the same test also covers a real named-constant site QSL-287's
+  the same test also covers a real named-constant site the
   re-measurement found (`operation_role`'s `identity == NARROW`,
   `qsl-semantics/src/check/claims.rs`), proving the const-resolving detector,
   not only the literal one, finds it. The `"quire.protocol.finite-global/v1"`

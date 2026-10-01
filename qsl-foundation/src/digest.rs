@@ -498,7 +498,7 @@ impl InvalidDigestRecord {
 }
 
 /// A backend's own FR-331 provider-manifest digest (ADR-013 O-19), always in
-/// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here (QSL-227) from
+/// FR-201 domain `quire.tool-manifest.jcs/v1`. Relocated here from
 /// `qsl_route`, whose own module doc named it as the O-19 `backend` member's
 /// digest half: `qsl_route::Candidate` (layer R) and `qsl_replay::Backend`
 /// (layer 6) cannot depend on each other (ADR-011 §6.1), but both depend on
@@ -552,7 +552,7 @@ impl ManifestDigest {
 
 /// A node id exactly as it travels on the wire (a v2 node key's 64
 /// lowercase-hex digest), before a checked-package lookup resolves it to a
-/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here (QSL-158 S-3a) from
+/// `quire_exact::NodeKey` (ADR-013 O-04). Relocated here from
 /// `replay::identity`, whose own module doc named this as a provisional,
 /// not-yet-canonical home: ADR-011 `:588` places the wire node id in the `F`
 /// foundation layer, alongside `digest` and before `wire_format`, not in the
@@ -578,7 +578,7 @@ impl WireNodeId {
 
     /// Parse 64 lowercase hexadecimal digits, exactly as a wire node id
     /// travels (a v2 node reference's `{domain, digest}` object's `digest`
-    /// member). Needed by `library::package_identity` (QSL-158 S-3a) to read
+    /// member). Needed by `library::package_identity` to read
     /// a wire node id out of an identity preimage without ever constructing
     /// a `NodeKey` from it (R-10).
     pub fn from_hex(digest: &str) -> Option<Self> {
@@ -778,7 +778,7 @@ mod digest_record_tests {
         );
     }
 
-    /// QSL-227 positive control: [`DigestRecord::from_wire_expecting`] reads
+    /// Positive control: [`DigestRecord::from_wire_expecting`] reads
     /// back a digest whose domain matches the one the reader requires.
     #[test]
     fn from_wire_expecting_admits_the_required_domain() {
@@ -792,7 +792,7 @@ mod digest_record_tests {
         assert_eq!(read, record);
     }
 
-    /// QSL-227 (ADR-013 C-27) adverse case: a recognized FR-201 domain other
+    /// ADR-013 C-27 adverse case: a recognized FR-201 domain other
     /// than the one a reader requires refuses as
     /// [`InvalidDigestRecord::WrongDomain`], distinct from
     /// [`InvalidDigestRecord::UnknownDomain`] -- and the domain is checked

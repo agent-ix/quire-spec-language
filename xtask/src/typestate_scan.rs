@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-158 (ADR-013 §7 S-3): the whole-tree scans behind the typestate,
+//! ADR-013 §7 S-3: the whole-tree scans behind the typestate,
 //! cross-package key and qualified-name criteria that are claims about where
 //! an item is defined, what its fields are, and who calls what.
 //!
@@ -974,7 +974,7 @@ mod tests {
     /// no minting item names a `WireNodeId`, `PackageNodeKey`, `ImportView`
     /// or `VerifiedPackage`. A value that reaches a mint through a call to
     /// another function is not traced. `arch-lint api-surface` (T12-B) is
-    /// not part of `make ci`; this test is. QSL-248 (G2) removed T12-B's one
+    /// not part of `make ci`; this test is. G2 removed T12-B's one
     /// debt-list entry (`qsl-eval`'s `decode_v2`) along with the mint it
     /// named, so this scan now requires every mint outside `check` to be
     /// gone, not merely on a named exception list.

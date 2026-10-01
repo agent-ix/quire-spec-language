@@ -166,7 +166,7 @@ declaration ([FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
 Neither preimage names a `package_id` or any unrelated declaration, so the
 identity does not depend on their order (AC-2). The declaration's identity
 equals FR-092's golden vector, and the call's equals the FR-322
-application-node key of the same node (AC-8). QSL-156 slice A4b switches the
+application-node key of the same node (AC-8). Slice A4b switches the
 checker's minter to these preimages.
 
 ### Each function form has one S3 checker
@@ -274,7 +274,7 @@ tickets (#120, #121, #164, #170, #175, #187, #188, #189, #191, #192, #198,
 `lowering`, and the `format` retarget) is
 [#240](https://github.com/agent-ix/quire-spec-language/issues/240)'s own
 requirement, owner-ruled against this ticket's contradiction between an
-earlier draft of this requirement, QSL-25's body and ADR-011 T-1: this
+earlier draft of this requirement, #214's body and ADR-011 T-1: this
 requirement supplies #240's precondition (the checked-package producer) and
 does not perform the cutover itself.
 
@@ -294,16 +294,15 @@ emitter, both exist.
 
 **What is delivered.** A declaration's and a call's identities are minted
 by `check::lowering` keying after `PackageDeclarations::check` has typed
-every declaration (FR-092, FR-093; QSL-156 A4b). A declaration's typing and
-definedness verdict is made inside `ValueFunctionFamily::check` (QSL-148,
-PR #303; AC-7). A call is checked by `check::family::Application`, which the
+every declaration (FR-092, FR-093; slice A4b). A declaration's typing and
+definedness verdict is made inside `ValueFunctionFamily::check` (AC-7). A call is checked by `check::family::Application`, which the
 typer's `Call` arm calls for every call it reaches (AC-4, AC-5). Termination
 is a separate whole-package pass (`check::termination::check`) after every
 declaration is checked.
 
 By Acceptance Criterion, with real trace tags as they exist in the
 delivered code today:
-- FR-065-AC-1: backed (`TC-163`, QSL-154). The function packaging/lowering
+- FR-065-AC-1: backed (`TC-163`). The function packaging/lowering
   public API's sole checked-node entry, `CheckedPackage::link`, accepts
   only a `CheckedGraph` -- built solely through the contract's `check`
   hook -- and four `compile_fail` doctests on `CheckedPackage::link`
@@ -319,7 +318,7 @@ delivered code today:
   `qsl_package::emit_checked`/I2 round trip, under two declaration
   orderings. `CheckedPackage::occurrence`'s own real test callers are
   `qsl-semantics/src/check/mod.rs` and `qsl-package/src/emit/tests.rs`.
-- FR-065-AC-3: backed (`TC-163`, QSL-154):
+- FR-065-AC-3: backed (`TC-163`):
   `emit_checked_places_the_calls_occurrence_at_its_own_source_span`
   (`qsl-package/src/emit/tests.rs`) checks hand-built forms over a real
   admitted source text whose `f` calls `g`, resolves the call's own region
@@ -330,7 +329,7 @@ delivered code today:
   carries a full (identity, role, ordinal) -> region map. A hand-built
   alternate package whose `DeclarationSpans` is genuinely one byte wider
   resolves to a different region.
-- FR-065-AC-4: backed (`TC-376`). Amended by QSL-148's spec lane to a
+- FR-065-AC-4: backed (`TC-376`). Amended to a
   behavioural criterion; the thin-arm rule it used to test by code shape is
   FR-065-CON-3, verified by inspection, per the
   [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
@@ -345,7 +344,7 @@ delivered code today:
 - FR-065-AC-5: backed (`TC-164`,
   `a_call_receives_the_same_verdict_from_a_declaration_body_a_clause_and_a_measure`,
   `qsl-eval/tests/it/call_verdicts.rs`). The criterion is
-  amended by QSL-148's spec lane: it requires the same call verdict from a
+  amended: it requires the same call verdict from a
   declaration body checked through `PackageDeclarations::check` and from a
   precondition clause checked through `CheckedGraph::check_clause_expression`,
   in place of the earlier symbol-absence and enum-variant conditions, which
@@ -355,17 +354,17 @@ delivered code today:
   though `CheckedPackage::call`'s typed-`QualifiedName` lookup
   (`qsl-eval/src/value/expression/mod.rs`) is implemented; `TC-166` has zero tests
   in the delivered code (see FR-065's own Test Matrix / TC-166). Owner:
-  QSL-5 / #243 -- a real owner that existed before this round but was not
+  #243 -- a real owner that existed before this round but was not
   written against this criterion; recorded here now.
-- FR-065-AC-7: backed (`TC-380`). Since QSL-148 (PR #303) the contract's
-  `check` hook type-checks the body, and on the QSL-156 A4b branch, pending
+- FR-065-AC-7: backed (`TC-380`). The contract's
+  `check` hook type-checks the body, and on the A4b branch, pending
   merge, `f`'s checked identity is FR-092 vector F1.
   `value_function_family_check_refuses_an_ill_typed_body` (refusal half,
   `qsl-semantics/src/check/family.rs` `checking_tests`) and
   `value_function_family_checks_through_the_contract` (admission half and
   F1, `qsl-eval/src/value/expression/family.rs`) are both tagged
   `#[trace("TC-380", "FR-065-AC-7")]`.
-- FR-065-AC-8: backed on the QSL-156 A4b branch, pending merge (`TC-163`):
+- FR-065-AC-8: backed on the A4b branch, pending merge (`TC-163`):
   `check` keys each function by FR-092 and each call by FR-093, `both` keys
   to F2 and `both(a, true)` to E2
   (`qsl-semantics/src/check/lowering/tests.rs`), and the application-node

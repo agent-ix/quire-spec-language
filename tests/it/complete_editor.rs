@@ -366,7 +366,7 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
         },
     )
     .unwrap_err();
-    // QSL-236: the output byte ceiling is a `SyntaxLimit` kind the catalog
+    // The output byte ceiling is a `SyntaxLimit` kind the catalog
     // admits, so it now reports `stage_limit_exceeded`.
     assert_eq!(
         (refusal.code, refusal.cause),

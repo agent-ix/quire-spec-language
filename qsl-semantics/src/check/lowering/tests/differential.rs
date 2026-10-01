@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-221: lowering keys each distinct node content once, and the keys and
+//! Lowering keys each distinct node content once, and the keys and
 //! preimage bytes of every node are the ones full keying gives.
 //!
 //! The generated corpus mixes the shapes whose nodes repeat (every function's
@@ -16,10 +16,8 @@ const PACKAGES: u64 = 192;
 
 /// SHA-256 over every generated package's nodes, in package order and, in
 /// each package, ascending by key: the key's 32 bytes, the preimage's length
-/// as a big-endian `u64`, then the preimage. Recorded from the lowering
-/// before QSL-221, which keyed every node in full on every build (at
-/// 0f7db2d6, and again at 4ba5c0ce after QSL-233's source owners; the
-/// revisions are informational). A change that means to change
+/// as a big-endian `u64`, then the preimage. Recorded from the earlier
+/// lowering, which keyed every node in full on every build. A change that means to change
 /// a key records the new digest with the vectors it changes.
 const CORPUS_DIGEST: &str = "3ea3f638522493bb559bb1194bffb03eface9d9b74c9de7795f3b78d42b4fa9a";
 
@@ -155,7 +153,7 @@ fn package(seed: u64) -> PackageDeclarations {
     }
 }
 
-/// QSL-221: over the generated corpus, every package checks; every node
+/// Over the generated corpus, every package checks; every node
 /// outside a recursion group has the key and preimage bytes full keying of
 /// its content gives; and the corpus's keys and preimages are byte for byte
 /// the ones the lowering gave before it keyed each content once.
@@ -237,7 +235,7 @@ fn built_types(
     (keys, nodes)
 }
 
-/// QSL-221: a content takes a key only when a node or draft holds that
+/// A content takes a key only when a node or draft holds that
 /// same content, never because its hash matches. With every content in
 /// one hash bucket, the keys and preimages are the ones the default hash
 /// gives, across scalars, bounded, option, collection and declared types,

@@ -107,7 +107,7 @@ Specified under
 Implemented as [docs/family-migration-recipe.md](../../docs/family-migration-recipe.md),
 citing FR-065's implementation for its worked-example section.
 
-**By Acceptance Criterion (QSL-151):** all four ACs are verified by
+**By Acceptance Criterion:** all four ACs are verified by
 inspection of the checked-in recipe document
 ([docs/family-migration-recipe.md](../../docs/family-migration-recipe.md))
 against each AC's own wording, not by an automated test: a programmatic
@@ -117,6 +117,6 @@ it fails on a rewording and passes over a recipe whose content has gone
 stale in a way no wording check catches -- exactly what happened to this
 document's own seam-probe paragraph (AC-1), which kept naming a seam that
 had since been deleted while every wording-level check of it still passed.
-That staleness is fixed as part of this same review round (QSL-151); the
+That staleness is fixed as part of this same review round; the
 verification method for all four ACs is Inspection, done at PR readiness
 against the document's actual, current content.

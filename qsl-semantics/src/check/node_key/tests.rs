@@ -271,7 +271,7 @@ fn preimage_bytes_are_pinned() {
     );
 }
 
-/// QSL-221: a `NodeRef` spells its digest as `NodeKey`'s wire spelling,
+/// A `NodeRef` spells its digest as `NodeKey`'s wire spelling,
 /// lowercase hex, for every byte value in every position.
 #[test]
 fn a_node_ref_spells_its_digest_as_the_node_key_does() {
@@ -609,7 +609,7 @@ fn a_body_deeper_than_the_checking_limit_is_refused() {
     );
 }
 
-/// QSL-194: a recursion group member whose body is at the checking limit,
+/// A recursion group member whose body is at the checking limit,
 /// application arguments nested `MAX_CHECKING_DEPTH` deep (about twice as
 /// many JSON levels), keys: reading its shape back from its RFC 8785 bytes
 /// is not bounded by `serde_json`'s default 128-level parse limit.

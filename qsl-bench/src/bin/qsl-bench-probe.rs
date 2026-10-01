@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 probe: the counts, outcomes and one-shot measurements the
+//! Probe: the counts, outcomes and one-shot measurements the
 //! criterion benchmarks do not produce -- which inputs a layer admits or
 //! refuses, input sizes in the unit each layer counts, CST identity bytes
 //! hashed, and wall time plus peak RSS for inputs too slow to sample

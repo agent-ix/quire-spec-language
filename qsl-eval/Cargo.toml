@@ -32,7 +32,7 @@ thiserror = "=2.0.20"
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
-# QSL-248 (G2): test-only since the layer-5 `quire.checked-function-package/
+# G2: test-only since the layer-5 `quire.checked-function-package/
 # v2` codec (`emit_function_package_v2`/`decode_function_package_v2`, its
 # one shipped caller) was deleted; several `tests/it/*.rs` fixtures still
 # build JSON directly.
@@ -51,7 +51,7 @@ qsl-cst = { path = "../qsl-cst" }
 # `no_shipped_dependency_enables_test_support` refuses a normal or build
 # dependency that does.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
-# QSL-206: the ordered charge log (`Meter::admitted_charges`) the
+# The ordered charge log (`Meter::admitted_charges`) the
 # charge-sequence tests assert. A production meter keeps a count only; only
 # this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }

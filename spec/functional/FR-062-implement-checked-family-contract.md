@@ -372,11 +372,11 @@ the final Rust spelling within this requirement's rules.
 contract narrowed to what its one migrated family (`Value`'s
 function-declaration form) can back with a real, non-fabricated
 construction site: `check`, the checked-input parameter, and the
-stage-limit outcome shape. `requirements` was deferred and later added by
-QSL-140. `package` was deleted as a hook nothing consumed (PR #262 review,
+stage-limit outcome shape. `requirements` was deferred and later added.
+`package` was deleted as a hook nothing consumed (PR #262 review,
 F1/F2).
 
-**Packaging decision (QSL-242).** `FamilyContract` has no `package` part;
+**Packaging decision.** `FamilyContract` has no `package` part;
 S4 has no family hook. ADR-012 §2 "Packaging" records the decision and its
 reasons: `check` lowers every family's checked nodes to the semantic graph
 at S3 (FR-093), the layer-4 emitter builds no term and mints no key
@@ -387,12 +387,12 @@ leaves no production-code change, only the tests named in their rows
 below. The `Relation`
 non-native-evaluability case (AC-6's first sentence) is a real, permanent
 design fact rather than a deferral -- `Relation` never gets an evaluation
-hook -- and QSL-152 found it already backed, just untagged for this
+hook -- and it was already backed, just untagged for this
 criterion (AC-6's own row below). By Acceptance Criterion, with real trace
 tags as they exist in the delivered code today:
-- FR-062-AC-1: backed (`TC-160` step 1, QSL-283). `FamilyContract`
+- FR-062-AC-1: backed (`TC-160` step 1). `FamilyContract`
   (`qsl-semantics/src/family/contract.rs`) requires `check`, taking
-  `&mut CheckContext`, and `requirements` (QSL-140). Step 1's compile-fail
+  `&mut CheckContext`, and `requirements`. Step 1's compile-fail
   cases are `compile_fail` doctests on `FamilyContract`, beside a complete
   implementation that compiles: omitting `requirements` (`E0046`) and
   omitting the checked-input parameter of `check` (`E0050`). Omitting
@@ -402,7 +402,7 @@ tags as they exist in the delivered code today:
   way to name or supply it and its omission cannot occur outside
   `qsl-eval`; the compiler requires it of the one in-workspace implementor.
 - FR-062-AC-2: backed (`TC-160`, `qsl-semantics/src/check/family.rs`, `checking_tests`).
-- FR-062-AC-3: backed (`TC-160`, QSL-161, QSL-246) for the declarations in
+- FR-062-AC-3: backed (`TC-160`) for the declarations in
   `qsl-semantics/src/check` and `qsl-semantics/src/family`, all three
   clauses, in `qsl-semantics/src/check/family.rs`, `checking_tests`:
   - Clause 1 (no path to global or thread-local state):
@@ -436,7 +436,7 @@ tags as they exist in the delivered code today:
     positional `function`/`callee` index normalized, so an extra
     declaration's position does not fail for a reason that is not a state
     leak.
-- FR-062-AC-4: backed (`TC-160`, QSL-140, QSL-266).
+- FR-062-AC-4: backed (`TC-160`).
   `FamilyContract::requirements` returns one claim per claim site
   (`Vec<Self::Claim>`; for `Value`, `check::ValueClaim`: the site and its
   extent keyed by binder until S3 names each root's parameter node).
@@ -444,9 +444,9 @@ tags as they exist in the delivered code today:
   (`qsl-semantics/src/check/claims/tests.rs`) and
   `a_function_declaration_has_no_requirements`
   (`qsl-eval/src/value/expression/family.rs`).
-- FR-062-AC-5: backed (`TC-160`, QSL-153, QSL-283; hook level: `qsl-eval/src/value/expression/
-  family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`
-  (QSL-166), which QSL-153 uses as `ValueFunctionFamily::check`'s and
+- FR-062-AC-5: backed (`TC-160`; hook level: `qsl-eval/src/value/expression/
+  family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`,
+  which `qsl-eval` uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
   `Incomplete` half, and restore `StageLimits`' `input_bytes`/`node_count`
   fields plus a denied `CheckContext::meter` charge for the work-budget
@@ -455,8 +455,8 @@ tags as they exist in the delivered code today:
   two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
   returning `Incomplete` on an exhausted meter -- for the one family
   (`ValueFunctionFamily`) with a `check` hook in #214. The third
-  clause, as amended by QSL-242 (the S4 v2 emitter in place of a `package`
-  hook), is backed by QSL-283: `check_never_returns_incomplete_across_the_fixture_set`
+  clause, as amended (the S4 v2 emitter in place of a `package`
+  hook), is backed by `check_never_returns_incomplete_across_the_fixture_set`
   (`qsl-semantics/src/check/family.rs`, `checking_tests`; an admitted, a
   refused and one limit-reaching declaration per stage-entry limit,
   including the work-budget denial that makes `evaluate` return
@@ -465,7 +465,7 @@ tags as they exist in the delivered code today:
   exhaustive `match` over `StageFailure` / `EmitRefusal` (no wildcard arm), so
   a new `Incomplete` variant stops the test compiling, and asserts the exact
   classification per fixture.
-- FR-062-AC-6: backed (QSL-152, QSL-246).
+- FR-062-AC-6: backed.
   - First sentence (a `Relation` never reaches evaluation) is FR-090-AC-4
     verbatim, so the tests that back FR-090-AC-4 back it:
     `s6a_family_kind_admits_no_relation_and_family_outcome_has_two_arms`
@@ -473,7 +473,7 @@ tags as they exist in the delivered code today:
     `both_family_outcome_arms_reach_a_caller_through_the_s6a_seam`
     (`qsl-eval/tests/it/model_reference_queries.rs`), plus `s6a.rs`'s own
     compile-time check that no `S6aFamilyKind` maps to `FamilyKind::Relation`.
-  - Second sentence. Ruling (QSL team lead, on QSL-246): declared names
+  - Second sentence. Ruling (QSL team lead): declared names
     carried on checked nodes are checked input. Copying a declared name into
     `PreconditionFailure.selected`, and using field names as record keys, are
     allowed. A "display string" is rendered text (`Display` or `Debug`
@@ -499,7 +499,7 @@ tags as they exist in the delivered code today:
     not scanned.
 - FR-062-AC-7: backed by TC-378
   (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
-  `qsl-semantics/src/check/family.rs`, QSL-160). History: it was unbacked
+  `qsl-semantics/src/check/family.rs`). History: it was unbacked
   (PR #303 review, findings 4/5; reverted from an earlier "backed" claim). That earlier claim rested on
   `check::family::charge_recursive_nesting`, a side-walk added purely to
   charge `CheckContext`'s nesting counter once per expression-tree node --
@@ -531,19 +531,19 @@ tags as they exist in the delivered code today:
   arm of `Typer::infer_form` (not just the `Call` arm this ticket touches),
   so real descent charges the *contract's* counter and reports through the
   contract's `Limit` outcome. That is real, load-bearing `Typer`
-  entanglement -- the same entanglement QSL-148's own ticket asked to be
+  entanglement -- the same entanglement the function-checking migration asked to be
   reported rather than worked around -- and it is out of scope for this PR.
-  Resolved by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
-  (QSL-160). AC-7's nesting-depth limit is `Typer`'s `CheckingLimits`
+  Resolved by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md).
+  AC-7's nesting-depth limit is `Typer`'s `CheckingLimits`
   depth, the bound real recursive descent charges. It is a stage limit
   (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.7`), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
   as `StageFailure::Limit` with kind nesting depth, carrying the
   `Locus::Region` of the node whose entry failed. No `CheckContext` is
   threaded through `Typer`. The `Locus` keeps the location PR #303
   required; it needs the unit's `RawSourceRef` (FR-001, ADR-013 §7 slice
-  S-4b) and the forms' expression spans (FR-091-AC-10, QSL-141). TC-378
-  backs AC-7. Owner: QSL-160.
-- FR-062-AC-8: backed (`TC-161`, QSL-152). `check::refusal::CheckCause` has
+  S-4b) and the forms' expression spans (FR-091-AC-10). TC-378
+  backs AC-7.
+- FR-062-AC-8: backed (`TC-161`). `check::refusal::CheckCause` has
   a `#[cfg(seam_probe)] __SeamProbe` variant; `CheckCause::code` (the one
   family `Cause` enum's `catalog_code()`-shaped mapping S4 names) has no
   arm for it, so `--cfg seam_probe` alone fails that match with `E0004` at
@@ -559,7 +559,7 @@ tags as they exist in the delivered code today:
   `#[deny(clippy::match_wildcard_for_single_variants)]`, so a future
   fallback arm is caught at normal compile time too, not only under the
   probe. Backed by the `make seam-probe` gate (part of `make ci`).
-- FR-062-AC-9: backed (`TC-160` step 8, QSL-283; amended by QSL-242 to the
+- FR-062-AC-9: backed (`TC-160` step 8; amended to the
   emitter's omission closure). `omissions` (`qsl-package/src/emit.rs`) omits
   every node that names an omitted node, with
   `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
@@ -577,22 +577,21 @@ tags as they exist in the delivered code today:
   `metre` unit node.
 - FR-062-AC-10: unbacked (untagged). `CheckedPackage::call`'s typed
   `QualifiedName` lookup is implemented (`qsl-eval/src/value/expression/mod.rs`),
-  but no test carries this criterion's own trace tag. Owner: QSL-5 / #243.
-- FR-062-AC-12: backed (`TC-432`, QSL-160 part 1):
+  but no test carries this criterion's own trace tag. Owner: #243.
+- FR-062-AC-12: backed (`TC-432`):
   `nesting_depth_limit_is_the_proximate_cause`,
   `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
   `work_budget_kind_refuses_from_a_denied_meter_charge`
   (`qsl-semantics/src/check/family.rs`, `checking_tests`). The counter is
   not yet reported past `check`: package checking still reports these
   limits as `resource_exhausted` under catalog revision `1-draft.3`.
-  Remaining work: QSL-236.
 - FR-062-AC-11: partly backed (`TC-381`): the whole-package count passes;
   the `Limit` outcome is pending S-5b.
   `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
   (`qsl-eval/tests/it/total_functions.rs`). The test observes the stop as
   `Refused{ResourceExhausted}`; its `StageFailure::Limit` outcome, amended
-  here, is ADR-013 §7 slice S-5b's (QSL-160, FR-096).
-- FR-062-AC-13: backed (`TC-160`, QSL-258, QSL-266):
+  here, is ADR-013 §7 slice S-5b's (FR-096).
+- FR-062-AC-13: backed (`TC-160`):
   `qsl-semantics/src/check/claims/tests.rs` checks RR-1 to RR-17 (RR-15
   in both operand orders, RR-5 twice), guards, binder scope and `fold`,
   `reduce` and `flatMap` roots, and the
@@ -604,4 +603,4 @@ Eleven of this requirement's thirteen Acceptance Criteria are backed (AC-1,
 AC-2, AC-3, AC-4, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12 and AC-13); one
 (AC-11) is partly backed, for the clause named in its own row above.
 AC-10 is unbacked (untagged): its implementation exists, but no test carries
-the criterion's own trace tag. Owner: QSL-5 / #243.
+the criterion's own trace tag. Owner: #243.

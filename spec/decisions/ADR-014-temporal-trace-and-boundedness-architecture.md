@@ -44,11 +44,11 @@ relationships:
 
 ## Status
 
-Accepted, 2026-09-24. Owning ticket: Linear QSL-17 (GitHub #222, ARCH-42),
+Accepted, 2026-09-24. Owning ticket: GitHub #222 (ARCH-42),
 epic QSL-34 (#205), Layer 2. It answers ADR-013 Q222-1, Q222-2 and Q222-3,
 the ADR-013 O-20 owner row, and the "available finite bound" predicate that
-ADR-012 §1.1 defers. It is the prerequisite of QSL-140 (ADR-013 §7 S-6),
-QSL-42 (#189, V1-A12), QSL-43 (#188, V1-A11) and gate QSL-23. Supersedes
+ADR-012 §1.1 defers. It is the prerequisite of ADR-013 §7 S-6,
+QSL-42 (#189, V1-A12), QSL-43 (#188, V1-A11) and their gate. Supersedes
 nothing. Its `/spec-review all` is SR-624 to SR-630 in
 [`spec/reviews/boundedness/`](../reviews/boundedness/integrity.md).
 
@@ -132,7 +132,7 @@ converts into another kind.
 | B-1 | Authored semantic bound | Part of the meaning of a declaration: which values the type admits | Kernel `CollectionType.bound: Option<CardinalityBound>` and `ValueType::Population(Option<u64>)`, where `None` is unbounded; the `BoundedInteger` range of a `bounded_domain`; the TemporalTrace `TemporalInterval` (§3). The S3 checker builds them from forms | the source author | A value outside the bound refuses `cardinality_out_of_bound` or `BoundViolation` (QSpec FR-144). Never a resource outcome |
 | B-2 | Execution resource bound | How much work one evaluation, normalization or admission may spend | A ceiling of an accounting-contract limits type: kernel `ScalarLimits`/`Meter` (`quire.value.accounting/v1`, QSpec FR-323 `limits`), `ModelNormalizationLimitsV1`, `PopulationAdmissionLimitsV1` | the caller, per run | A denied charge yields `Incomplete` with its charge point. A read-only ceiling (FR-082 and NFR-012 `ancestor_steps`, `family_steps`) refuses. Both carry `resource_exhausted` (or `cancelled`) |
 | B-3 | Stage limit | How much input and work a compiler stage or reader may take | A ceiling of a stage's own limits type (`CheckingLimits`, `TypeEnvironmentLimits`, the reader limits), reported as F `diagnostic::LimitExceeded` (ADR-013 T-4, FR-096) | the caller of the stage, or that type's published default | `StageFailure::Limit(LimitExceeded)`, `stage_limit_exceeded`. A stage failure, not an outcome category |
-| B-4 | Proof bound | A finite domain the caller substitutes for one unbounded domain of an item, to ask a bounded-mode backend | F `bound::ProofBound{domain: DomainKey, bound: FiniteBound}` (§4), built by QSL-140. On the wire: QSpec FR-331 request `domains`. In replay: `DeclaredDomain` holds a `ProofBound` | the caller of the request, explicitly | Not reached. It is part of the obligation identity (O-09), and a result qualifies only over it |
+| B-4 | Proof bound | A finite domain the caller substitutes for one unbounded domain of an item, to ask a bounded-mode backend | F `bound::ProofBound{domain: DomainKey, bound: FiniteBound}` (§4), built. On the wire: QSpec FR-331 request `domains`. In replay: `DeclaredDomain` holds a `ProofBound` | the caller of the request, explicitly | Not reached. It is part of the obligation identity (O-09), and a result qualifies only over it |
 | B-5 | Backend tool budget | How long and how deep a backend tool runs (Kani unwind, solver time) | IR `ResourceBounds` and the AD-016 Kani tool pin. Not a QSL type | the backend provider | QSpec FR-331 `incomplete` with `IncompleteCause::{TimedOut, ResourceExhausted}` |
 | B-6 | Profile ceiling | A maximum a selected profile fixes for every package | None on the spine. The native-v1 ceilings (`MAX_SEQUENCE_ITEMS`, `src/native_model/admission.rs:18`; `checked_handoff::MAX_POPULATION`; the `native_temporal` `MAX_*`; `NativeModelProfile`) are lane-private (ADR-013 §6) and retire with SEAM-1 and M-6c | none | Native-v1 admission keeps refusing until it retires. No spine stage reads a profile ceiling |
 
@@ -155,7 +155,7 @@ ever becomes a B-1 or B-4 value.
 
 The replay envelope's `proof_bounds: ScalarLimits`
 (`qsl-replay/src/witness.rs:346`) holds the proving run's accounting limits,
-a B-2 value. QSL-140 renames it `run_limits` and types
+a B-2 value. S-6 renames it `run_limits` and types
 `DeclaredDomain` as a `ProofBound`.
 
 ### 2. Absent bounds (Q222-2, first part)
@@ -180,7 +180,7 @@ invalid. No bound in QSL is "unspecified".
 
 | ID | Concept | Owner and type | Rule |
 | --- | --- | --- | --- |
-| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; FR-101 replaces `sampler_version: String` with it (QSL-272) |
+| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; FR-101 replaces `sampler_version: String` with it |
 | TR-2 | Trace position | Layer-5 TemporalTrace evaluator: `TemporalPosition(u64)`, the zero-based index into the represented trace, prefix first, then loop. It crosses replay in `qsl_replay::TracePosition` as decimal ASCII with no leading zero (`0` is position zero). Replay stores it and does not read it (O-25) | Only the TemporalTrace evaluate hook decodes it. A position outside the represented trace refuses at reconstruction, `invalid_runtime_input`/`invalid-value` |
 | TR-3 | Interval | Layer-3 TemporalTrace `check`: `TemporalInterval{lower: u64, upper: u64}`, one validated constructor. It exists only under a bounded profile. Its key is QSpec FR-255's (`lower`, `upper`, profile identity, clock binding), and it is identified by the checked node id of the operator that carries it (O-04). A checked operator holds `Option<TemporalInterval>`: `Some` under a bounded profile, `None` under infinite-trace | `lower > upper`, a missing interval under a bounded profile, any interval (including `[a,*]`) under infinite-trace, and `[a,*]` under a bounded profile each refuse as QSpec FR-091, FR-092 and FR-090 state. Bounded and infinite-trace operators never share a representation |
 | TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow past `u64` refuses as a TemporalTrace `check` stage limit, `LimitExceeded` with limit kind work budget (`stage_limit_exceeded`), at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
@@ -201,7 +201,7 @@ Three concepts, three types:
   because `model::Extent{Closed, Open}` is QSpec FR-153 population closure.
   Wire spelling: QSpec FR-290 `bounded`/`unbounded`. `UnboundedDomains`
   is a non-empty map from each `DomainKey` to its domain kind, so the
-  request writer can refuse a bound of the wrong kind (QSL-140).
+  request writer can refuse a bound of the wrong kind.
 - **Mode** is a property of a backend advertisement: `qsl_route::Mode{Bounded,
   Unbounded}`, which exists.
 
@@ -259,7 +259,7 @@ so it adds no domain. So `x + 1` over `x: Int[0, 9]`, checked into
 
 **Available finite bound.** For an item with extent `Unbounded`, a finite
 bound is available exactly when every domain in `domains` is boundable (the
-table's right column). QSL-140's O-20 request writer computes it and writes it
+table's right column). The O-20 request writer computes it and writes it
 into the QSpec FR-331 item's extent classification. CG reads it
 (`ExtentClassification.finite_bound_available`) and computes nothing. With it
 true, a bounded-only candidate settles `requires-bound`. With it false, the
@@ -286,7 +286,7 @@ bounds for one domain cannot be built: the writer takes a map keyed by
 
 **IR's predicate.** AD-016's IR `requires-bound` is the same classification
 over the lowered form: which IR forms carry an unbounded domain. IR reads the
-v2 wire QSL emits (ADR-011 FB-05), and a QSL-140 and IR conformance test over
+v2 wire QSL emits (ADR-011 FB-05), and an S-6 and IR conformance test over
 the §10 scenarios pins that the two agree. QSL's record is the authority
 for an operation-application claim's extent. IR's predicate agrees with it
 per application node for each record whose roots are all reachable from
@@ -312,7 +312,7 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 
 1. QSL S3 records `Requirements{kind, extent, bounds}` per item (§4).
 2. `qsl_route::Registry::candidates` matches on kind alone (FR-075).
-3. QSL-140's request writer writes the item's extent classification,
+3. The O-20 request writer writes the item's extent classification,
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the
    candidate's arm decides whether it discharges the IR obligation form
@@ -468,22 +468,22 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
 
 ### 11. Named interfaces for the dependent tickets
 
-**QSL-140 (ADR-013 §7 S-6)** builds:
+**ADR-013 §7 S-6** builds:
 
 - the kernel field shapes `CollectionType.bound: Option<CardinalityBound>` and
   `ValueType::Population(Option<u64>)` (N-3);
 - F `bound`: `DomainKey`, `FiniteBound{Cardinality, IntegerRange, Depth}`,
   `ProofBound` and `IntervalKey`;
 - in `qsl-semantics::family`: `ClaimExtent`, the `Requirements` type and the
-  `FamilyContract::requirements()` method (this moves FR-062-AC-4 from QSL-152
-  to QSL-140);
+  `FamilyContract::requirements()` method (this moves FR-062-AC-4
+  to S-6);
 - the O-20 request writer: extent classification with
   `finite_bound_available`, `ProofBound` substitution and its refusals (§4);
 - in `qsl-replay`: `DeclaredDomain` holding a `ProofBound` (keyed by the
   full `DomainKey`, so two bounds on one parameter at different paths stay
   distinct) and the rename of `proof_bounds` to `run_limits`;
 - `qsl_eval::simulation::explore::Outcome::category()` (§7);
-- the QSL-140 and IR agreement test for the extent classification (§4);
+- the S-6 and IR agreement test for the extent classification (§4);
 - O-19 `Capability` and the O-20 request representation, as ADR-013 lists.
 
 **QSL-42 (V1-A12)** builds against them:
@@ -512,12 +512,12 @@ It does not touch `NativeModelProfile` or the native-v1 ceilings (B-6).
   replay refusals and settlement.
 
 Temporal atoms over state and protocol operations need the checked types of
-QSL-68 (#120) and QSL-21 (#218); atoms over values alone do not.
+QSL-68 (#120) and #218; atoms over values alone do not.
 
-**QSL-266** builds `requirements()` for the `Value` function declaration:
+`requirements()` for the `Value` function declaration returns
 one `value-validity` record per scalar operation application occurrence,
 with §4's operation-application extent (FR-062-AC-13), and the `route`
-request builder that turns a package's records into requested items
+request builder turns a package's records into requested items
 (FR-075-AC-8).
 
 Both tickets settle their exit cases through `Registry::candidates`,
@@ -531,7 +531,7 @@ classification) and `routing::route`, which is unchanged.
   here.
 - ADR-012 §1.1: negotiation settles from QSL's extent classification, and the
   "available finite bound" predicate is §4 of this record. ADR-012 §2's
-  `requirements()` deferral and its §14 row move to QSL-140.
+  `requirements()` deferral and its §14 row move to S-6.
 - ADR-013 T-4 and FR-096: "every stage ceiling" means a ceiling of a stage's
   own limits type (§1); FR-096 gains a third no-region case for the
   type environment.
@@ -540,8 +540,8 @@ classification) and `routing::route`, which is unchanged.
   (B-3), reported `stage_limit_exceeded` with limit kinds node count
   (`ancestor_steps`, a count of expanded types) and work budget
   (`work_units`). The model's conformance walk and S6a population admission
-  keep `resource_exhausted` (B-2). The code change belongs to QSL-160 (S-5b,
-  `LimitExceeded`), and TC-220's type-environment rows are pending until it
+  keep `resource_exhausted` (B-2). The code change belongs to S-5b
+  (`LimitExceeded`), and TC-220's type-environment rows are pending until it
   lands.
 - `spec/spec.md` and `spec/tests.md`: index rows.
 
@@ -563,7 +563,7 @@ There is no open STD-12 dependency: QSpec#113 is fully on QSpec `main`.
 
 ## Consequences
 
-- QSL-140 can build its bound types, and QSL-42 and QSL-43 can build against
+- S-6 can build its bound types, and QSL-42 and QSL-43 can build against
   them, with no further ownership question.
 - A claim is never narrowed silently. QSL computes the extent from checked
   types, CG settles against Kani's bounded-only advertisement, and a bounded

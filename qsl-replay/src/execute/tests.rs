@@ -22,7 +22,7 @@ const PROFILE: &str = "profile v = \"quire.value.complete/v1\" version \"1-draft
 
 /// The proved unit: `small` is the predicate a counterexample refutes.
 ///
-/// `f`/`p` (QSL-257, the QSL-22 Layer 3 exemplar's shape): `p` is a Boolean
+/// `f`/`p` (the QSL-22 Layer 3 exemplar's shape): `p` is a Boolean
 /// predicate whose body calls another declared function, `f`, rather than
 /// applying an operator directly to its own parameters -- the one case
 /// `small`, `flag`, `id`, `lt` and `maybe` never exercise.
@@ -181,7 +181,7 @@ fn small(x: i64) -> ReplayRequestWire {
 }
 
 /// A request replaying `p(x)` against the proved unit: `p`'s own body calls
-/// `f`, a distinct declared function (QSL-257).
+/// `f`, a distinct declared function.
 fn p(x: i64) -> ReplayRequestWire {
     let source = proved();
     let compiled = spine(&source, &BTreeMap::new());
@@ -310,7 +310,7 @@ fn tc_444_a_disagreement_settles_inconclusive() {
     assert_eq!(incomplete.value(), None);
 }
 
-/// QSL-257 (QSL-22 Layer 3 exemplar): `p(x) { f(x) > 3 }` replays through a
+/// QSL-22 Layer 3 exemplar: `p(x) { f(x) > 3 }` replays through a
 /// nested call to `f(x) { x + 1 }`, a distinct declared function, and
 /// agrees: `p(1)` is `f(1) > 3` = `2 > 3` = `false`, which agrees with the
 /// counterexample's assumed violation. This is FR-098-AC-1's own agreement
@@ -335,7 +335,7 @@ fn tc_444_a_nested_function_call_replays_and_agrees() {
     assert_eq!(result.disagreement(), None);
 }
 
-/// QSL-257: `p(5)` is `f(5) > 3` = `6 > 3` = `true`, which disagrees with
+/// `p(5)` is `f(5) > 3` = `6 > 3` = `true`, which disagrees with
 /// the counterexample's assumed violation and settles `inconclusive` --
 /// the nested call's own agreement and disagreement cases both replay
 /// correctly through the same `qsl_replay::replay` entry `tc_444_a_

@@ -20,9 +20,9 @@
 //! which one, is a real kernel-observable fact; only the JSON-based decode
 //! convenience was QSL's job, not the kernel's.
 //!
-//! QSL-131 O3 deleted QSL's own `value::text` engine copy (`admit_text`,
+//! QSL's own `value::text` engine copy (`admit_text`,
 //! `compare_text`, `Text`, `TextPayload` all port verbatim, unchanged from
-//! S-1). Its test-only JSON decode helper still needs to tag a decoded
+//! S-1) is deleted. Its test-only JSON decode helper still needs to tag a decoded
 //! literal with `SourceLiteral` provenance, and `TextPayload`'s fields are
 //! private, so [`TextPayload::from_source_literal`] adds that one
 //! constructor back -- infallible, over an already-decoded `text`, with no
@@ -123,7 +123,7 @@ impl TextProfile {
     /// Profile length of a retained sequence: bytes for `binary-utf8`, scalars
     /// otherwise, counted on the retained (normalized) sequence.
     ///
-    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `fn`-private: `quire_spec_language::value::
     /// text`'s own `Text::length` calls it directly. It is a pure counted
     /// length over an already-retained sequence, so widening it charges or
     /// bounds nothing that was not already the caller's job.
@@ -137,7 +137,7 @@ impl TextProfile {
         length_amount(count)
     }
 
-    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `fn`-private: `quire_spec_language::value::
     /// text`'s own `compare` calls it directly, the same reasoning as
     /// [`Self::length`] above.
     pub fn order(self, left: &str, right: &str) -> Ordering {
@@ -166,7 +166,7 @@ pub enum NormalizationForm {
 impl NormalizationForm {
     /// Stream the normalized scalars of `text`.
     ///
-    /// `pub`, not `pub(crate)` (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `pub(crate)`: `quire_spec_language::value::
     /// text`'s own `prepare` engine, still local because it returns this
     /// crate's own `Outcome`, calls it directly rather than reimplementing
     /// Unicode normalization dispatch. This streams already-decoded scalars
@@ -246,7 +246,7 @@ impl TextType {
         self.profile
     }
 
-    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `fn`-private: `quire_spec_language::value::
     /// text`'s own `check_length` calls it directly, the same reasoning as
     /// [`TextProfile::length`].
     pub fn admits(&self, retained: &str) -> bool {
@@ -295,7 +295,7 @@ impl TextPayload {
     /// An already-decoded scalar sequence tagged with the exact source
     /// literal `spelling` it came from.
     ///
-    /// QSL-131 O3: decoding a source-lexer literal's escapes (JSON string
+    /// Decoding a source-lexer literal's escapes (JSON string
     /// grammar) stays a QSL source-stage concern, per this module's own
     /// doc -- this constructor takes the already-decoded `text`, so no
     /// decode step or fallible path exists here. `quire_spec_language`'s

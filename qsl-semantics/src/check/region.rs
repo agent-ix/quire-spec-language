@@ -91,8 +91,8 @@ impl PackageDeclarations {
         )
     }
 
-    /// The declared name span of protocol `protocol`'s attempt `attempt`
-    /// (QSL-309): the position `Origin::ProtocolAttempt` names, since an
+    /// The declared name span of protocol `protocol`'s attempt `attempt`:
+    /// the position `Origin::ProtocolAttempt` names, since an
     /// `operation_anchor`/`frame` node carries no position of its own.
     fn attempt_span(&self, protocol: usize, attempt: usize) -> Option<Span> {
         let declaration = self
@@ -129,7 +129,7 @@ pub struct DeclarationRegions {
     /// Each state clause's form spans, by its index in source order.
     clause_spans: Vec<DeclarationSpans>,
     type_spans: BTreeMap<String, Span>,
-    /// Each protocol's own attempts' declared name spans (QSL-309),
+    /// Each protocol's own attempts' declared name spans,
     /// index-aligned with the package's own `protocols`/`protocol_attempts`.
     /// `pub(super)`: `check::mod`'s own pipeline copies it onto the final
     /// `CheckedGraph`, which needs the same table `Self::region` reads.
@@ -725,7 +725,7 @@ mod tests {
         .is_some());
     }
 
-    /// FR-096, QSL-245 (SR-745 FND-003): each of nesting depth, node count,
+    /// FR-096 (SR-745 FND-003): each of nesting depth, node count,
     /// input bytes and work budget is a `CheckRefusal` with code
     /// `stage_limit_exceeded`, carrying its kind, bound and counter, located
     /// at a specific source text. Depth is located at the node whose entry
@@ -798,7 +798,7 @@ mod tests {
         }
     }
 
-    /// FR-096, QSL-245 (SR-745 FND-004): the second budget below is
+    /// FR-096 (SR-745 FND-004): the second budget below is
     /// discovered, not a hard-coded offset. It is the smallest work budget
     /// past `declared` whose lowering stop locates at the `c + d` node
     /// (path `[2]`), found by scanning upward from `declared + 1` -- so a
@@ -826,7 +826,7 @@ mod tests {
         panic!("no budget in range locates the lowering stop at c + d");
     }
 
-    /// FR-096, QSL-245: a lowering stop (`CheckingLimits` work budget spent
+    /// FR-096: a lowering stop (`CheckingLimits` work budget spent
     /// past the declaration's own charge) carries no region of its own
     /// (`StageLimitCause::region` is `None`) and is located by its
     /// `location`: the body root for the first lowering charge past the
@@ -860,10 +860,10 @@ mod tests {
         }
     }
 
-    /// FR-096, QSL-245 (SR-746 FND-001): `Typer`'s package-wide node count
+    /// FR-096 (SR-746 FND-001): `Typer`'s package-wide node count
     /// (`check.rs`'s `enter`), not the family's own per-declaration preimage
     /// `check_node_count` precheck (which the previous case above
-    /// exercises, and which the region.rs QSL-245 review found this file
+    /// exercises, and which review found this file
     /// had no test past). `g1` and `g2` each preimage-measure 3 nodes,
     /// individually under the bound, so each passes its own precheck; with
     /// the bound one past `g1`'s count, `Typer`'s package-wide counter,

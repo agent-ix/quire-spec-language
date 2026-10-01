@@ -252,7 +252,7 @@ relocated to `tests/`, `xtask` or anywhere else instead of being deleted.
 
 ## Status
 
-Specified under QSL-138 (ADR-011 §7.3 M-3), split out of
+Specified (ADR-011 §7.3 M-3), split out of
 [#214](https://github.com/agent-ix/quire-spec-language/issues/214) by owner
 ruling, 2026-09-20: #214 was already at the limit of its own bounded-effort
 criterion, and M-3 keeps its own same-change deletion obligation intact
@@ -279,7 +279,7 @@ top-level `syntax`/`parser`, distinct from `value::expression::syntax`) are
 unaffected by this requirement and retire per lane under ADR-011 §7.3
 M-6a to M-6e.
 
-**FR-067-AC-3 is a behavioural criterion (QSL-148, 2026-09-24).** It was
+**FR-067-AC-3 is a behavioural criterion (2026-09-24).** It was
 verified by a code-shape test, which the
 [testing-policy ruling](https://linear.app/agent-ix/issue/QSL-148#comment-2a4d2837)
 (Peter, 2026-09-22) does not admit. It now states the no-entry refusal;
@@ -290,5 +290,4 @@ fixture token `record` becomes a `Value` entry under FR-091, which moves the
 fixture to a spelling no family claims. The thin-entry rule is FR-067-CON-4,
 verified by inspection. The syn-based shape test
 `dispatch_entry_is_a_single_thin_call` in the same file carries no trace tag
-and backs no criterion; remaining work: delete it (QSL-148 implementation
-PR).
+and backs no criterion; remaining work: delete it.

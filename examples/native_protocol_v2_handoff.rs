@@ -122,7 +122,7 @@ mod tests {
         .unwrap();
         assert_eq!(manifest["format"], MUTATION_MANIFEST_FORMAT);
         let cases = manifest["cases"].as_array().unwrap();
-        // QSL-288 added the "clock-name" mutation case (a typed clock_name
+        // The cases include the "clock-name" mutation case (a typed clock_name
         // disagreeing with the inherited legacy `clock:` spelling).
         assert_eq!(cases.len(), 29);
         for case in cases {

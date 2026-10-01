@@ -4822,7 +4822,7 @@ fn r01_pins_the_full_cycle_check_charge_and_work_unit_accounting() {
     assert_eq!(meter.consumed(LimitKind::HashedBytes), 0);
 }
 
-/// QSL-222 AC 2: every normalization fixture in this file has the same
+/// Every normalization fixture in this file has the same
 /// outcome at NFR-012's default limits as with no limit at all -- the same
 /// view identity and declarations, or the same refusals -- and a completed
 /// view records the defaults it ran under.

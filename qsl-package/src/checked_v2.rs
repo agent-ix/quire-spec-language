@@ -12,7 +12,7 @@
 //! reader additionally mints its own typed `PackageId` (never trusting the
 //! wire's raw hex) from the same already-admitted preimage and asserts that
 //! mint agrees with IR's own already-verified `package_id.digest`, refusing
-//! if it does not (QSL-6 M-4 L2: defense against this reader's own
+//! if it does not (M-4 L2: defense against this reader's own
 //! canonicalization ever diverging from IR's -- e.g. if IR's `digest_json`
 //! were to switch to a real JCS encoder -- not a second, independent
 //! admission decision). What remains this layer's own job:
@@ -23,7 +23,7 @@
 //! - deriving the FR-307 export node keys from that preimage
 //!   (`qsl_semantics::library::declared_exports`/`verify_package`, layer-3);
 //! - the ADR-011 §4 verified binding itself (`qsl_semantics::library::verify_binding`,
-//!   layer-3, QSL-6 slice A1): once IR admits the wire, this reader mints
+//!   layer-3): once IR admits the wire, this reader mints
 //!   the condition-1 witness (`qsl_semantics::library::SupportedV2Wire`, which only
 //!   this module constructs) and hands it, its digest-checked candidate and
 //!   the caller's `pinned` request to `library`, which applies conditions 2
@@ -217,7 +217,7 @@ impl Default for V2ReadLimits {
 
 impl V2ReadLimits {
     /// The ceilings IR's reader receives: every field passed through
-    /// unchanged. `depth` is fail-closed (QSL-6 M2, see the module doc's
+    /// unchanged. `depth` is fail-closed (see the module doc's
     /// "Ceilings" section): never widened by one for IR's
     /// scalar-counts-as-depth-1 convention, so no wire deeper than `depth`
     /// containers is ever admitted.
@@ -318,7 +318,7 @@ pub enum V2ReadRefusal {
     /// fabricated `Envelope(CheckedPackageRefusal{MalformedWire, ..})`: IR
     /// never actually reported this, and blaming IR's own wire vocabulary
     /// for this crate's own serialization defect would misattribute the
-    /// fault to the wrong layer (QSL-6 L3).
+    /// fault to the wrong layer.
     #[error("identity preimage re-serialization failed: {0}")]
     Preimage(String),
     /// An admitted wire's `source_map` did not convert into the package

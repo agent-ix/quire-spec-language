@@ -63,7 +63,7 @@
 //! The checker decides the same relation over the package's own admitted
 //! object types: `crate::value::declaration::TypeEnvironment` carries their
 //! generalization graph (`conforms`), their flattened attribute sets
-//! (inherited and redefined fields, QSL-57), and admits them only within the
+//! (inherited and redefined fields), and admits them only within the
 //! `ancestor_steps` ceiling the model walks under, so `lookup<T>(p, r)`'s
 //! `S`-vs-`T` refusal, TC-198 L08 upcast equality and `deref(r).f` through
 //! an inherited field are all decided at check time and agree with
@@ -153,7 +153,7 @@ fn bridge_lookup_key(static_type: DeclarationKey, reference: &ObjectReference) -
 /// The queried type `t`'s original [`DeclarationKey`], resolved from a checked
 /// `Reference<T>`'s `T` (its [`EffectiveId`]) through `binding`'s own type
 /// catalog, read in reverse from the index built once with it
-/// ([`PopulationBinding::type_key_of`], QSL-202), never rebuilt per query.
+/// ([`PopulationBinding::type_key_of`]), never rebuilt per query.
 /// `Err` for a
 /// `T` the checked package declares but this particular runtime binding's
 /// model does not -- a real FR-153 `ill_typed`/`type-mismatch`, the same

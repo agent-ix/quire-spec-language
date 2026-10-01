@@ -22,7 +22,7 @@ use qsl_semantics::model::observation::AdmissionRecord;
 /// effective operation, the selected method's effective identity, the
 /// receiver reference and the call locus. The call locus is the evaluator's
 /// own [`crate::value::Evaluation::location`], not repeated here. Moved from
-/// the now-deleted `value::outcome` (QSL-131 O2): not a kernel type
+/// the now-deleted `value::outcome`: not a kernel type
 /// (ADR-013 T-6 -- FR-151 dispatch resolution is QSL `model`/`check`
 /// vocabulary), and narrowed to `pub(crate)` since its only consumers are
 /// [`StateModelUndefined::PreconditionFalse`] here and `Machine`'s
@@ -93,7 +93,7 @@ impl CatalogCoded for ProtocolClauseSnapshot {
             // alone (`E0004`, this seam's evidence).
             //
             // The arm below exists only in the probe's build of the crates
-            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`, QSL-5):
+            // above `qsl-eval` (`--cfg seam_probe_eval_downstream`):
             // `qsl-replay` depends on this crate, so it must compile there
             // for the root crate's own seams to be reached at all.
             #[cfg(seam_probe_eval_downstream)]

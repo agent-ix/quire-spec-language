@@ -9,12 +9,12 @@ description = "ADR-011 §6.1 layer 6: the CG-facing replay facade -- the TK-01 r
 
 # ADR-011 §6.1 layer 6 `replay` depends on "layers 1 to 5, F, K": the spine
 # recompile (S1 `qsl-cst`, S2 `qsl-forms`, I1 and S3 `qsl-semantics`, S4
-# `qsl-package`) and the S6a call (`qsl-eval`) of the TK-01 executor (QSL-5).
+# `qsl-package`) and the S6a call (`qsl-eval`) of the TK-01 executor.
 [features]
 default = []
 # ADR-011 §6.1 layer-6 row: "I3 under feature `quire-extraction`". FR-109's
 # `run_clause` accepts an I3 extracted source (`qsl_source::ExtractedSource`)
-# as its unit only with this feature (QSL-295).
+# as its unit only with this feature.
 quire-extraction = ["dep:qsl-source", "qsl-source/quire-extraction"]
 
 [dependencies]
@@ -42,17 +42,17 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # `no_shipped_dependency_enables_test_support`, in the root crate, covers
 # every workspace crate), so it never reaches the production lib.
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
-# QSL-278: the ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
+# The ordered charge log (`Meter::admitted_charges`) FR-107-AC-3's
 # `reaches` charge-sequence test asserts. A production meter keeps a count
 # only; only this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }
-# QSL-278: FR-106's snapshot/invocation `DocumentRef.digest` is the
+# FR-106's snapshot/invocation `DocumentRef.digest` is the
 # document's own `sha256-jcs` digest (FR-056's digest-first rule); the test
 # fixture computes it the same way `model::observation`'s own
 # `document_digest` does, over the one RFC 8785 implementation, rather than
 # guessing or duplicating that logic.
 quire-canonical = { workspace = true }
-# QSL-313 (FR-105-AC-6): the fault-injection seam
+# FR-105-AC-6: the fault-injection seam
 # (`emit_checked_with_fault`/`checked_node_id_of`) is public only under
 # `test-support` (qsl-package's own Cargo.toml); this dev-dependency edge is
 # how `spine::clause`'s own tests reach it to fault the `frame` node of a

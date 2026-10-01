@@ -2,7 +2,7 @@
 //! FR-002: apply token budgets and delimiter checks to the generated recognizer.
 // Kept crate-private: `token::Kind` is `qsl_cst::token::Kind`'s own public
 // path; the root crate's base-grammar `parser` imports it from there
-// directly, not through this re-export (QSL-178 review F6).
+// directly, not through this re-export.
 use crate::token::Kind;
 use crate::token::LexError;
 use logos::Logos;

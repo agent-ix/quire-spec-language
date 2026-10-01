@@ -73,8 +73,8 @@ relationships:
 ## Decision Use
 
 Inputs too slow for criterion to sample repeatedly, such as call chains of
-4,000 and 8,000 functions, and the memory a check needs. QSL-203 used this plan
-to show the termination fix's gain on long chains, and the memory growth
+4,000 and 8,000 functions, and the memory a check needs. This plan
+showed the termination fix's gain on long chains, and the memory growth
 before and after it. The plan grades no release and gates no merge.
 
 ## Population

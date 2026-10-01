@@ -527,7 +527,7 @@ mod tests {
     use super::fixtures::{hex, one_node_preimage};
     use super::*;
 
-    /// QSL-194 (ADR-013:113): the canonicity check is the `quire-canonical`
+    /// The canonicity check is the `quire-canonical`
     /// encoder's own output, so it admits a member name outside ASCII
     /// exactly when the name is in RFC 8785's UTF-16 code-unit order. `😀`
     /// (UTF-16 `D83D DE00`) sorts before U+E000 (`E000`) in RFC 8785, but

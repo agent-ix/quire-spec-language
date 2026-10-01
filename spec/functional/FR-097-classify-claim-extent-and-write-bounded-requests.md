@@ -26,7 +26,7 @@ relationships:
 
 ## Description
 
-ADR-013 §7 slice **S-6** (Linear QSL-140) builds the interfaces ADR-014 §11
+ADR-013 §7 slice **S-6** builds the interfaces ADR-014 §11
 names for it. This requirement states their observable behaviour. ADR-014 is
 the design authority; this requirement adds no rule of its own.
 
@@ -91,7 +91,7 @@ ceiling or backend budget converts into a proof bound (ADR-014 §1).
 
 ## Status
 
-Specified and implemented under QSL-140. TC-436 to TC-439 and TC-441 pass
+Specified and implemented. TC-436 to TC-439 and TC-441 pass
 locally. FR-097-AC-8's lowering clause is not implemented: until QSL-42 gives
 an unbounded population its own node, lowering one refuses with
 `UnrepresentableBound` rather than writing the bare set node an unbounded

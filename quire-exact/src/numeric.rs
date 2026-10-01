@@ -51,7 +51,7 @@ pub enum OrderingOperator {
 }
 
 impl OrderingOperator {
-    /// `pub`, not `fn`-private (QSL-131 K1): `quire_spec_language::value::
+    /// `pub`, not `fn`-private: `quire_spec_language::value::
     /// numeric`'s own `order`, still local because it returns this crate's
     /// own `Outcome`, calls it directly. It is a pure decision over an
     /// already-computed `Ordering`, so widening charges or exposes nothing.
@@ -414,12 +414,12 @@ pub fn evaluate_boolean(connective: BooleanConnective, meter: &mut Meter) -> Out
 
 /// Charge `boolean.result-retain` for a decided connective result.
 ///
-/// `pub`, not `pub(crate)` (QSL-131 O3): `qsl_eval::value::
+/// `pub`, not `pub(crate)`: `qsl_eval::value::
 /// expression::evaluate`'s own `and`/`or` short-circuit evaluation, which
 /// cannot call the full [`evaluate_boolean`] dispatch because it may not
 /// have evaluated its second operand, retains its already-decided `bool`
 /// through this function directly -- the same `OrderingOperator::holds`/
-/// `TextProfile::length` reasoning QSL-131 K1 already applied: a pure
+/// `TextProfile::length` reasoning already applied: a pure
 /// metering charge over an already-decided value, so widening it exposes no
 /// unmetered computation.
 pub fn retain_boolean(

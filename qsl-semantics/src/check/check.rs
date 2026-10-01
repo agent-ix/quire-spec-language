@@ -5,13 +5,13 @@
 //!
 //! Every refusal here is made before any charge. Typing nesting is bounded
 //! by the declared [`CheckingLimits`] depth; reaching a declared limit is
-//! `stage_limit_exceeded` (QSL-236), never an admission verdict. The typer itself
-//! (`typing`) walks an expression over an explicit heap stack (QSL-228), so
+//! `stage_limit_exceeded`, never an admission verdict. The typer itself
+//! (`typing`) walks an expression over an explicit heap stack, so
 //! its host stack use does not grow with nesting.
 //!
 //! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
 //! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
-//! form. **QSL-148 moves function-application checking out of this module.**
+//! form. **Function-application checking is moved out of this module.**
 //! `Self::call` -- the method `infer_form`'s `Expression::Call` arm used to
 //! dispatch to, doing the real name resolution, arity check and
 //! per-argument typing -- is deleted; its logic now lives in
@@ -111,11 +111,11 @@ pub struct CheckingLimits {
     nodes: u64,
     depth: u64,
     /// The checked-family contract's own preimage byte-length bound
-    /// (QSL-153; `crate::family::StageLimits::input_bytes`'s one
+    /// (`crate::family::StageLimits::input_bytes`'s one
     /// caller-configurable knob). Defaults to
     /// [`DEFAULT_CHECKING_INPUT_BYTES`]; [`Self::with_input_bytes`] sets it.
     input_bytes: u64,
-    /// The checking stage's shared-meter `work_units` bound (QSL-153; PR
+    /// The checking stage's shared-meter `work_units` bound (PR
     /// #302 review finding 3 -- `LimitKind::WorkBudget`'s one
     /// caller-configurable knob, since that kind is produced by a denied
     /// charge against the contract meter, not a `StageLimits` field).
@@ -157,14 +157,13 @@ impl CheckingLimits {
         self.depth
     }
 
-    /// The checked-family contract's own preimage byte-length bound
-    /// (QSL-153).
+    /// The checked-family contract's own preimage byte-length bound.
     pub fn input_bytes(self) -> u64 {
         self.input_bytes
     }
 
-    /// Bound the checked-family contract's own preimage byte length
-    /// (QSL-153): a declaration whose parsed structure encodes to more than
+    /// Bound the checked-family contract's own preimage byte length:
+    /// a declaration whose parsed structure encodes to more than
     /// `input_bytes` refuses with a `Limit` outcome naming
     /// `CheckingLimitKind::InputBytes`, before the identity it would have
     /// minted is ever used.
@@ -173,7 +172,7 @@ impl CheckingLimits {
         self
     }
 
-    /// The checking stage's shared-meter `work_units` bound (QSL-153).
+    /// The checking stage's shared-meter `work_units` bound.
     pub fn work_budget(self) -> u64 {
         self.work_budget
     }
@@ -269,7 +268,7 @@ pub struct PackageDeclarations {
     /// unit's owner (ADR-013 O-04, FR-091), carried by every declared
     /// record, tuple and function node key (FR-092); its revision and digest
     /// enter no key. The checked graph carries it on for the lock's
-    /// `sources` entry (QSL-6 S1b). `check` holds no constant owner.
+    /// `sources` entry. `check` holds no constant owner.
     pub source: qsl_foundation::source::provenance::RawSourceRef,
     /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
     /// a lowered operation may name (FR-093).
@@ -360,7 +359,7 @@ pub struct PackageDeclarations {
     /// FR-113's checker to resolve.
     pub protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
     /// FR-114: each protocol's own `attempt`s, resolved by the FR-091
-    /// assembler (QSL-309), index-aligned with [`Self::protocols`]; each
+    /// assembler, index-aligned with [`Self::protocols`]; each
     /// inner list is in the same order as its protocol's own
     /// `ProtocolDeclarationForm::attempts`.
     pub protocol_attempts: Vec<Vec<super::state_clause::AttemptDeclaration>>,
@@ -428,14 +427,14 @@ pub struct DispatchOperation {
 /// Everything names resolve against, apart from function bodies.
 #[derive(Clone, Debug)]
 pub struct Scope {
-    /// Fixed once built: [`Self::index`] is derived from it (QSL-205).
+    /// Fixed once built: [`Self::index`] is derived from it.
     types: TypeEnvironment,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
-    /// model operations, built once by [`Self::new`] (QSL-205). Aliases and
+    /// model operations, built once by [`Self::new`]. Aliases and
     /// model operations are only ever looked up by name, so only this index
     /// holds them.
     index: ScopeIndex,
@@ -443,7 +442,7 @@ pub struct Scope {
     imports: BTreeMap<String, super::AdmittedImport>,
 }
 
-/// `Scope`'s by-name lookups (QSL-205), keyed by the parsed parts of a name,
+/// `Scope`'s by-name lookups, keyed by the parsed parts of a name,
 /// so resolving a name is a map lookup, not a scan of every declaration.
 #[derive(Clone, Debug, Default)]
 struct ScopeIndex {
@@ -619,7 +618,7 @@ impl Scope {
     /// evaluate a comparison later, and `value::expression::evaluate::Machine`
     /// needs for `OrderedKind::Enums` -- `TypeEnvironment` itself holds no
     /// enum declarations (those are the scope's own enum bindings, ADR-011
-    /// §6.1's own module split). Built once with the scope (QSL-205).
+    /// §6.1's own module split). Built once with the scope.
     pub fn enum_member_index(&self) -> &EnumMemberIndex {
         &self.index.enum_member_index
     }
@@ -647,7 +646,7 @@ impl Scope {
 }
 
 /// Every declared function signature, index-aligned with the package's
-/// functions, with a by-name index built once (QSL-205) so resolving a call
+/// functions, with a by-name index built once so resolving a call
 /// is a map lookup, not a scan of every signature.
 #[derive(Clone, Debug, Default)]
 pub struct Signatures {
@@ -845,7 +844,7 @@ fn is_integer(value_type: &ValueType) -> bool {
 /// (a bare parameter) fail it for the same reason: a literal or a `Name`
 /// alone is never itself an eligible read.
 ///
-/// The walk keeps its pending sub-expressions on a heap stack (QSL-228): it
+/// The walk keeps its pending sub-expressions on a heap stack: it
 /// runs before the typer has entered `expression`'s own levels, so no
 /// checking limit has bounded its depth yet.
 fn contains_pre_eligible_read(expression: &Expression) -> bool {
@@ -878,7 +877,7 @@ fn reference_root(expression: &Expression) -> Option<&str> {
     }
 }
 
-/// One `let` a captured-alias walk has passed (QSL-228): its name, whether
+/// One `let` a captured-alias walk has passed: its name, whether
 /// its value resolves to a captured alias, and the binding it was made
 /// under, as an index into the walk's binding arena. A chain of `outer`
 /// links from one binding is the `let` scope, innermost first.
@@ -999,7 +998,7 @@ impl<'a> Typer<'a> {
     }
 
     /// The package-level declarations this typing pass resolves names
-    /// against. QSL-148: `check::family::Application` (the relocated
+    /// against. `check::family::Application` (the relocated
     /// function-application checker) reads this to resolve a call's callee
     /// against `model_operations` and tuple-constructor types, the same way
     /// this `Typer`'s own other methods already do.
@@ -1008,7 +1007,7 @@ impl<'a> Typer<'a> {
     }
 
     /// Every function signature this typing pass may resolve an ordinary
-    /// named [`Expression::Call`] against. QSL-148: `check::family::
+    /// named [`Expression::Call`] against. `check::family::
     /// Application` reads this for name resolution and arity
     /// checking, exactly as this `Typer`'s own (now deleted) `call` method
     /// did.
@@ -1099,7 +1098,7 @@ impl<'a> Typer<'a> {
     /// resolves the general case rather than special-casing one syntax.
     ///
     /// The walk and [`Self::resolves_to_captured_alias`] keep their pending
-    /// sub-expressions and `let` bindings on the heap (QSL-228): they run
+    /// sub-expressions and `let` bindings on the heap: they run
     /// before the typer has entered the operand's own levels, so no
     /// checking limit has bounded its depth yet.
     fn contains_captured_pre_alias(&self, expression: &Expression, boundary: usize) -> bool {
@@ -1215,7 +1214,7 @@ impl<'a> Typer<'a> {
 
     fn enter(&mut self, location: &Location) -> Result<(), CheckRefusal> {
         // The refused entry would have taken the counter one past the
-        // current one (QSL-236: the actual counter a rendered diagnostic
+        // current one (the actual counter a rendered diagnostic
         // names, not folded into the bound).
         let exhausted = |kind, limit: u64, actual: u64| {
             refuse(
@@ -1299,7 +1298,7 @@ impl<'a> Typer<'a> {
 
     /// Resolve a qualified type name: an alias, a record or tuple, or an enum.
     ///
-    /// `pub(crate)` (QSL-148): `check::family::Application` (the
+    /// `pub(crate)`: `check::family::Application` (the
     /// relocated function-application checker) calls this the same way this
     /// `Typer`'s own (now deleted) `call` method did, to resolve a call's
     /// callee against a tuple-constructor type when no function signature
@@ -1667,7 +1666,7 @@ impl<'a> Typer<'a> {
         let ValueType::Reference(key) = reference.value_type else {
             return Err(mismatch(operand_location));
         };
-        // QSL-57: `f` resolves in the static type's effective attribute set,
+        // `f` resolves in the static type's effective attribute set,
         // so a field `T` inherits (or redefines) resolves like its own.
         let attribute = self
             .scope

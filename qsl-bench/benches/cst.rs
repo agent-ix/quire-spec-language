@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSL-196 CST identity benchmarks: what building a CST, identities
+//! CST identity benchmarks: what building a CST, identities
 //! included, costs against the source bytes it covers.
 //!
-//! Since QSL-200 a parse computes one identity digest, over the
+//! A parse computes one identity digest, over the
 //! document-revision labels, whatever its node count; node identities are
 //! fixed-size values and reuse is decided on request. The former
-//! `cst/sha256/<input>` rows timed the per-node digests QSL-200 removed and
+//! `cst/sha256/<input>` rows timed the former per-node digests and
 //! are gone with them.
 //!
 //! - `cst/parse/<input>`: wall time of one `qsl_cst::parse` call.

@@ -44,14 +44,14 @@
 //! 5. the distinct evaluator [`Outcome`](quire_exact::Outcome) with typed
 //!    [`Undefined`](quire_exact::Undefined), [`Refusal`](quire_exact::Refusal)
 //!    and [`Incomplete`](quire_exact::Incomplete) reasons -- the kernel's own
-//!    types (QSL-131 O2 deleted this module's byte-identical copy);
+//!    types (this module's byte-identical copy is deleted);
 //! 6. `quire.value.accounting/v1` metering through
 //!    [`Meter`](quire_exact::Meter).
 //!
 //! FR-148 IEEE binary32/binary64 profiles
 //! ([`evaluate_ieee`](quire_exact::evaluate_ieee),
 //! [`compare_ieee`](quire_exact::compare_ieee)) operate on exact bit patterns
-//! with soft-float arithmetic over big integers. QSL-131 O3 deleted this
+//! with soft-float arithmetic over big integers. This
 //! module's byte-identical `decimal`/`ieee`/`numeric`/`text` engine copies;
 //! every one of the operation-table items above now names its `quire_exact`
 //! definition directly, not a re-export from here.
@@ -62,7 +62,7 @@
 //!
 //! ## FR-078: no `negotiate_*` copies (TC-201)
 //!
-//! QSL-131 removed the RT capability-negotiation copies `negotiate_ieee`,
+//! The RT capability-negotiation copies `negotiate_ieee`,
 //! `negotiate_integer_division` and their supporting types from `ieee` and
 //! `division` (FR-078-AC-1, FR-078-AC-2); only the evaluation functions
 //! listed above remain. Each removed name is gone from this crate, not
@@ -109,13 +109,13 @@
 // ADR-011 §6.1 layer 3: the §6.2 `semantic_value` submodules and
 // `value::model_query` (§6.2: `model`), with the flat re-exports of their own items. The layer-5 S6a
 // evaluator, `value::expression`, is in the `qsl-eval` crate's own `value`
-// module (QSL-183 X-8) and imports these by their
+// module and imports these by their
 // `qsl_semantics::value::<submodule>` path. The `pub` submodules are those
 // it imports by submodule path: `declaration`, `enumeration`, `quantity`,
 // `model_query` and `stop`. `definition` and `semantic_node` stay
 // `pub(crate)`: their consumers outside `value` are `check`, `model` and
-// `library`, all in this crate. QSL-131 O3 deleted `decimal`, `ieee`,
-// `numeric` and `text`; their former items are imported from `quire_exact`
+// `library`, all in this crate. `decimal`, `ieee`,
+// `numeric` and `text` are deleted; their former items are imported from `quire_exact`
 // directly.
 
 mod containment;
@@ -129,7 +129,7 @@ pub(crate) mod semantic_node;
 pub mod stop;
 pub(crate) mod unit;
 
-// QSL-166: `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
+// `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
 // `Meter`, `ScalarLimits`, `Charge` and `length_amount` were this module's
 // own `accounting` submodule, re-exported from here. That submodule
 // duplicated `quire-exact/src/accounting.rs` byte-for-byte and is deleted;
@@ -140,13 +140,13 @@ pub(crate) mod unit;
 // definition, one import path -- no re-export shim stands in for the
 // deleted module.
 // `CardinalityBound`/`EmptyCardinalityBound` are `quire_exact`'s own types; this
-// module does not re-export them (QSL-131 S-1b), so consumers import them from
+// module does not re-export them, so consumers import them from
 // `quire_exact` directly.
 // The kernel's `Value`, `ValueType`, collection, equality and rational items
 // (ADR-011 §6.1's K row) are not re-exported here: every consumer imports
 // them from `quire_exact`, the one definition (ADR-011 §7.2).
 pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlot, ValueGraph};
-// QSL-131 O3: `DecimalType`, `DecimalLoss`, `DecimalResult` and
+// `DecimalType`, `DecimalLoss`, `DecimalResult` and
 // `evaluate_decimal` were this module's own `decimal` submodule, a
 // byte-identical duplicate of `quire_exact`'s (V4 had already moved unit
 // placement onto the kernel's `DecimalType::placement`; only the type and
@@ -157,7 +157,7 @@ pub use containment::{GraphCause, GraphNode, GraphNodeId, GraphRefusal, GraphSlo
 // `declaration`, `enumeration` and `quantity` are `pub` modules, so their
 // items have one public path, the submodule one
 // (`value::declaration::TypeEnvironment`); this module does not re-export
-// them flat as well (QSL-181 X-6a, the same one-path rule as QSL-131 O3).
+// them flat as well (the same one-path rule as for the kernel's items).
 // `declaration` owns the FR-143 registry, the FR-149 check-level equality
 // layer and QSL's name-keyed `FieldDeclaration`/`Component`/
 // `ConstructionCause`/`ConstructionRefusal`; none is a kernel type
@@ -167,7 +167,7 @@ pub use definition::{
     CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, PackageCause,
     PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
 };
-// QSL-131 O3: `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
+// `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and
 // the private rounding/arithmetic engine beneath them were this module's
@@ -178,7 +178,7 @@ pub use definition::{
 // from `quire_exact`, not duplicated). That submodule is deleted; every
 // former consumer now imports the whole set from `quire_exact` directly.
 pub use member::Member;
-// QSL-131 O3: `evaluate_boolean`, `evaluate_integer_arithmetic`,
+// `evaluate_boolean`, `evaluate_integer_arithmetic`,
 // `evaluate_rational_arithmetic` and `order_numbers` were this module's own
 // `numeric` submodule, a byte-identical duplicate of `quire_exact`'s
 // (`ArithmeticOperator`, `OrderingOperator`, `OrderedOperands`,
@@ -187,7 +187,7 @@ pub use member::Member;
 // deleted; every former consumer now imports `quire_exact::{evaluate_boolean,
 // evaluate_integer_arithmetic, evaluate_rational_arithmetic, order_numbers}`
 // directly.
-// QSL-131 O2: `Outcome`, `Undefined` and `Refusal` were this module's own
+// `Outcome`, `Undefined` and `Refusal` were this module's own
 // `outcome` submodule, a byte-identical duplicate of `quire_exact`'s O-16
 // kernel types (ADR-011 §6.1's K row), re-exported from here. That
 // submodule is deleted; every former consumer now imports
@@ -203,7 +203,7 @@ pub use semantic_node::{
     InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
     OwnerSubject, SemanticGraphCause, IDENTITY_LIMITS,
 };
-// QSL-131 O3: `admit_text`, `compare_text`, `Text`, `TextPayload` and
+// `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a
 // byte-identical duplicate of `quire_exact`'s except for
 // `TextPayload::from_source_literal`'s JSON-decode convenience, which the

@@ -63,7 +63,7 @@ The command shall return exit 22 for exhausted budgets, exit 21 for an unsupport
 
 ## Status
 
-QSL-248 backs FR-029-AC-3's edition-refusal clause with
+FR-029-AC-3's edition-refusal clause is backed by
 `lower_refuses_a_complete_v1_program_as_unknown_edition`
 (`tests/it/compile_command.rs`, `#[trace("TC-107", "FR-029-AC-3")]`), which
 asserts `lower` refuses a `1-draft` program with `unknown_edition` the same

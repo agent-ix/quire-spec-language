@@ -102,7 +102,7 @@ per-charge record, so its memory does not grow with the work it bounds.
   the package's declaration count, which the record ceiling bounds. Every
   walk uses an explicit stack, so the ceiling is not a stack-depth bound.
 
-Every existing normalization and admission fixture, and every QSL-196 model
+Every existing normalization and admission fixture, and every model
 benchmark input, completes at these defaults with the same result as with no
 limit.
 

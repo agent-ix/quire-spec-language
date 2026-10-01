@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-515 (FR-116, QSL-301): `crate::replay_frame` over FR-108's
+//! TC-515 (FR-116): `crate::replay_frame` over FR-108's
 //! ConfigVersion unit. Each envelope is built by hand for
 //! `Config::ConfigVersion::attemptUpdate`, its anchor, frame and occurrence
 //! identities taken from the compiled package, with the unit's source, the

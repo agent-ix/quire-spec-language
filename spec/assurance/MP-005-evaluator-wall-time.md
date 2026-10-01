@@ -50,7 +50,7 @@ negative_controls:
       be below the baseline revision's same-session median by more than
       the larger of the benchmark's stated variance in
       qsl-bench/BASELINE.md and that session's own MAD/median. A smaller
-      change is recorded as no change (QSL-196 acceptance criterion 3). The
+      change is recorded as no change. The
       absolute baseline table is informational and is never the comparison
       point.
   - kind: apparatus-edit
@@ -76,7 +76,7 @@ relationships:
 
 ## Decision Use
 
-The benchmark set and noise floor that QSL-202 to QSL-206 are judged
+The benchmark set and noise floor that performance changes are judged
 against. A performance change claims an improvement on a benchmark only by
 beating the baseline revision in one interleaved same-session A/B run, by more
 than the larger of the benchmark's stated variance and that session's own

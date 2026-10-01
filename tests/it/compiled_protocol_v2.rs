@@ -2526,14 +2526,14 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // embedded document bytes, which legitimately shrinks the
             // charged input bytes. `byte_work` includes the bytes of
             // `docs/compiled-protocol-v1.md`, the contract document the
-            // fixture embeds, so an edit to that document moves it. QSL-233
-            // added the native source's `authority` and `revision_namespace`
-            // to each of the four sources, which moves every figure but
-            // `references`. QSL-64's domain-package `Model` paragraphs in that
+            // fixture embeds, so an edit to that document moves it. The
+            // native source's `authority` and `revision_namespace`
+            // on each of the four sources move every figure but
+            // `references`. The domain-package `Model` paragraphs in that
             // document (the `Model`, then its populations and operations, then
             // its operations' parameters and result) move `byte_work` by their
-            // length. QSL-288 added the typed `clock_name` field to each
-            // `temporal_bindings` entry, which moves `entries`, `byte_work`
+            // length. The typed `clock_name` field on each
+            // `temporal_bindings` entry moves `entries`, `byte_work`
             // and `output_bytes` but not `references`.
             (4_825, 2_581, 1_174_347, 85_462)
         );

@@ -191,7 +191,7 @@ fn lifts_the_architecture_bundle_and_admits_it() {
 /// `populations[]`, asserted below rather than assumed), **4 refuse and 8
 /// read clean**. `Count`, a `quire.meaning.model.record-value-type/v1`
 /// type, reads as a record value type (it refused as an unsupported
-/// declaration form until QSL-64 added its reader):
+/// declaration form until its reader was added):
 ///
 /// - `Flow2`: `IntakeMalformedDeclaration` on its own inline
 ///   relationship -- FCD's relationship identity form
@@ -924,7 +924,7 @@ fn charges_normalize_record_once_per_intake_declaration() {
 /// (asserted below, so this test is not vacuous); and end to end,
 /// `read_records` -- which no longer parses at all, reading the one tree
 /// `PackageDocument::parse` built under `agent-ix-semantic-ir`'s own
-/// 200-deep bound (QSL-201) -- reads this document clean rather than
+/// 200-deep bound -- reads this document clean rather than
 /// aborting the process.
 #[test]
 fn reads_a_document_nested_past_serde_jsons_default_recursion_limit() {

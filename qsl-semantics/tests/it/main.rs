@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `qsl-semantics`' integration tests: the ones that exercise only ADR-011
-//! §6.1 layer 3 (QSL-181), moved from the root crate's `tests/it/`. One
+//! §6.1 layer 3, moved from the root crate's `tests/it/`. One
 //! binary, one link step, the same shape as the root crate's `it` target.
 //!
 //! The modules gated on `feature = "test-support"` call this crate's

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Checked node keys (QSL-156): the FR-322 `quire.application-node/v1`
+//! Checked node keys: the FR-322 `quire.application-node/v1`
 //! preimage and QSL's FR-092 `quire.structural-node/v1` preimage, and the
 //! `quire.checked-semantic-node/v1` key each hashes to.
 //!
@@ -271,7 +271,7 @@ impl Serialize for NodeRef {
         }
         // `NodeKey`'s lowercase-hex spelling, written on the stack: a
         // preimage names many keys, and each is spelled without
-        // allocating or formatting (QSL-221).
+        // allocating or formatting.
         let digits = HexDigest::of(self.0.as_bytes());
         Wire {
             domain: NODE_KEY_DOMAIN,

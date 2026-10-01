@@ -9,7 +9,7 @@
 //! caller-constructed [`crate::model::domain_package::DomainPackage`], not
 //! [`crate::model::normalize`]'s [`crate::model::normalize::EffectiveView`]:
 //! the caller builds that index once per package and passes it to every
-//! check (QSL-202), so a package that normalization would refuse can still be
+//! check, so a package that normalization would refuse can still be
 //! checked. It builds its own
 //! [`crate::model::key::EffectiveDeclarationPreimage`]-shaped queries over
 //! the domain package's field/operation members' own inline `redefines`/
@@ -32,7 +32,7 @@
 //!   [`crate::model::domain_package::PostconditionClause`]. What a clause
 //!   actually establishes is not caller-trusted, though —
 //!   `crate::check::check_field_refinement_obligation` (ADR-011 §7.3 M-2,
-//!   QSL-7: moved to `check` from this module, the only `conformance` code
+//!   Moved to `check` from this module, the only `conformance` code
 //!   that read `value::expression`/`check` facts) rebuilds the small typed guard
 //!   tree each clause describes and runs it through `crate::check`'s own
 //!   FR-146 fact-derivation primitive (`established_field_fact`), the
@@ -124,7 +124,7 @@ pub enum ConformanceCheckOutcome {
     Completed(ConformanceOutcome),
     /// A real defect (a dangling member reference, or a conformance walk
     /// reaching the caller's own configured `ancestor_steps` ceiling,
-    /// ADR-011 §7.3 QSL-199) refused the check outright.
+    /// ADR-011 §7.3) refused the check outright.
     Refused(ModelRefusal),
     /// A `ModelNormalizationLimitsV1` counter was exhausted mid-check.
     Incomplete(Incomplete),

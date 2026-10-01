@@ -23,7 +23,7 @@ node or a node of the wrong kind, a name that names two, and a binder that
 shadows a visible name, each
 with a catalog code at its span (ADR-012 §3 "anchor scoping", §4.2, §12.2
 Check row). A resolved anchor is recorded by the identity of its target, so
-no later stage recovers a target from a name (QSL-21 scope).
+no later stage recovers a target from a name.
 
 A protocol with any refusal emits no checked node (ADR-012 §4.2): an
 unresolved or ambiguous scope fails before S4, with no partial substitute.
@@ -136,21 +136,20 @@ unresolved or ambiguous scope fails before S4, with no partial substitute.
 - The composed lane resolves the same references today in
   `src/linking/composed/scopes/protocol.rs` (`structural`, with
   `WrongTargetKind` and `IncompatibleReference`), with scope issues that
-  carry no catalog code; M-6d deletes that checker (QSL-303) once this
+  carry no catalog code; M-6d deletes that checker once this
   requirement's checker replaces it.
 
 ## Status
 
-Specified under QSL-296 (QSL-21a). QSL-298 (QSL-21c) implements anchor
-resolution: nested-scope resolution, missing and ambiguous refusals, and
-the wrong-kind and channel-mismatch refusals of every site. QSL-306
-implements binder no-shadowing (the shadowing clause of "Refusals", AC-5
+Specified. Anchor resolution is implemented: nested-scope resolution, missing and ambiguous refusals, and
+the wrong-kind and channel-mismatch refusals of every site. Binder no-shadowing is
+implemented (the shadowing clause of "Refusals", AC-5
 and the shadowing half of AC-6), enforced protocol-wide (QSpec
 `shared-grammar.md`: binders are "unique in their enclosing declaration"),
 over a further S2 extension (`qsl_forms::protocol_clause::BinderForm`) that
 walks every binder position FR-112 itself does not capture, including the
 protocol's own `over (p)` input and `activation on each (p)` parameters.
-QSL-309 implements FR-114's attempt binding. A protocol whose anchors,
+FR-114's attempt binding is implemented. A protocol whose anchors,
 binders and attempt bindings all resolve is then checked for the rest of
 its content. It checks and compiles only when it consists of a `using`
 profile alias, roles written `role R on M::T`, a `run` tree of `sequence`

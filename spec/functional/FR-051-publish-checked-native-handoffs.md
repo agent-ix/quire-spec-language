@@ -17,13 +17,13 @@ relationships:
 
 ## Description
 
-**RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** This description specified that when a consumer requested an immutable native definition handoff, the compiler derived either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and returned canonical bounded bytes plus a constructor-private validated view. That surface is deleted for the same reason as FR-051-AC-1 (see Acceptance Criteria): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. This description is retired, not amended, since there is no successor module for it to describe.
+**RETIRED (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** This description specified that when a consumer requested an immutable native definition handoff, the compiler derived either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and returned canonical bounded bytes plus a constructor-private validated view. That surface is deleted for the same reason as FR-051-AC-1 (see Acceptance Criteria): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. This description is retired, not amended, since there is no successor module for it to describe.
 
 **Live: the production dependency graph (FR-051-AC-6).** QSL's resolved dependency graph is cycle-free and holds one copy of each first-party crate: no QSL crate is resolved a second time through a dependency. `arch-lint duplicate-revisions` (FR-061) over `Cargo.lock` verifies this in `make ci`, and `tc_arch_lint_duplicate_revisions_006` (TC-139) runs the same check over the real root `Cargo.lock` under `cargo test`; a dependency that depended back on QSL would resolve a second QSL copy and fail it. `arch-lint direction` (FR-059, FB-05/FB-11) checks the same graph across the four repositories when given their checkouts.
 
-## Contract set and public API (RETIRED by QSL-303 M-6d)
+## Contract set and public API (RETIRED M-6d)
 
-**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the owner-published immutable schema bytes and lowercase SHA-256 digests for both contracts, and the Rust API surface below; both modules are deleted, and there is no successor for this section to describe. The block below is retained only as a historical record of the deleted API's shape.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the owner-published immutable schema bytes and lowercase SHA-256 digests for both contracts, and the Rust API surface below; both modules are deleted, and there is no successor for this section to describe. The block below is retained only as a historical record of the deleted API's shape.
 
 The owner SHALL publish immutable schema bytes and lowercase SHA-256 digests for
 both contracts. The Rust API SHALL expose:
@@ -43,9 +43,9 @@ protocol_artifact::temporal_subject::{SCHEMA_BYTES, SCHEMA_SHA256, Limits,
 content identity. Validated views expose borrowed/owned immutable fields with no
 public constructor and no evaluation callback.
 
-## Common closed envelope (RETIRED by QSL-303 M-6d)
+## Common closed envelope (RETIRED M-6d)
 
-**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the closed field set, field order and content-identity derivation both deleted documents shared; there is no successor for it to describe. Retained below as a historical record.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the closed field set, field order and content-identity derivation both deleted documents shared; there is no successor for it to describe. Retained below as a historical record.
 
 Both documents contain exactly, in canonical field order: `contract`,
 `identity`, `package`, `subject`, `source`, `clause`, `expression`, `bindings`,
@@ -68,9 +68,9 @@ identity. Canonical bytes are unique: object fields use the specified order,
 sets are sorted and distinct, numbers use the existing exact-number encoding,
 and no insignificant alternative encoding is accepted by `read`.
 
-## Predicate document (RETIRED by QSL-303 M-6d)
+## Predicate document (RETIRED M-6d)
 
-**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the predicate document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the predicate document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
 
 The predicate document is admitted only for a constructor-private checked
 Boolean `holds(expr)` leaf, the exact optional activation guard of a temporal
@@ -81,9 +81,9 @@ argument/binder identities, required valuation bindings and the complete static
 definedness obligations discharged or left as explicit runtime requirements.
 It asserts no runtime truth and carries no result vocabulary.
 
-## Temporal-subject document (RETIRED by QSL-303 M-6d)
+## Temporal-subject document (RETIRED M-6d)
 
-**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified the temporal-subject document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the temporal-subject document's own admitted shape and semantics; there is no successor for it to describe. Retained below as a historical record.
 
 The temporal document is admitted only for a checked temporal declaration from
 the v2 package. It additionally retains activation subject and trigger/capture
@@ -94,9 +94,9 @@ root. Its history boundary kind is exactly `execution-origin` or
 `history-cutoff` under `quire-specification/FR-293`. It asserts no observation,
 progress, closure, completeness or temporal result.
 
-## Admission, reading, and limits (RETIRED by QSL-303 M-6d)
+## Admission, reading, and limits (RETIRED M-6d)
 
-**RETIRED by QSL-303 (M-6d), for the same reason as Description above.** This section specified derivation/reading revalidation, refusal conditions and resource limits for both deleted documents; there is no successor for it to describe. Retained below as a historical record.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified derivation/reading revalidation, refusal conditions and resource limits for both deleted documents; there is no successor for it to describe. Retained below as a historical record.
 
 Derivation and reading SHALL revalidate every field against the independently
 admitted package and exact selection. The reader SHALL reject unknown,
@@ -119,12 +119,12 @@ Contract-IR vocabulary, TL proposition value or Boolean coercion participates.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-051-AC-1 | **RETIRED by QSL-303 (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** Real admitted v2 predicate and temporal declarations derived deterministic canonical documents whose public readers returned constructor-private views bound to the same package and selection. This criterion was satisfied while `checked_predicate`/`temporal_subject` existed and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` traced it. QSL-303 deletes both modules and those tests (the file itself remains, now scoped to TC-138): the spine `ProtocolClause` path (QSL-21d/e/f) no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
-| FR-051-AC-2 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-051-AC-1: every common and kind-specific semantic field was independently omitted, duplicated, reordered, cross-wired and mutated, with each mutation refusing with no partial view; the modules and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` that carried this behavior are deleted. | Retired |
-| FR-051-AC-3 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-051-AC-1: unknown fields/contracts, trailing bytes, noncanonical encodings, invalid spans, duplicate/unbounded populations and exact-limit-plus-one inputs refused before excess state was retained. | Retired |
-| FR-051-AC-4 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-051-AC-1: independent schema and identity digest vectors matched the producer, and same identity on unequal canonical bytes refused. | Retired |
-| FR-051-AC-5 | **RETIRED by QSL-303 (M-6d)**, for the same reason as FR-051-AC-1: a textual or externally built expression, self-asserted trust/total flag, non-Boolean leaf, evaluator callback, and copied consumer vocabulary could not construct either validated view. | Retired |
-| FR-051-AC-6 | **Amended by QSL-303 (M-6d) and QSL-334.** This criterion previously read: "The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth"; that text is retired for the same reason as FR-051-AC-1. The criterion now states: QSL's resolved dependency graph is cycle-free and `Cargo.lock` holds exactly one copy of each first-party crate; `arch-lint duplicate-revisions` in `make ci` verifies it. | Test (TC-139) |
+| FR-051-AC-1 | **RETIRED (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** Real admitted v2 predicate and temporal declarations derived deterministic canonical documents whose public readers returned constructor-private views bound to the same package and selection. This criterion was satisfied while `checked_predicate`/`temporal_subject` existed and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` traced it. Both modules and those tests are deleted (the file itself remains, now scoped to TC-138): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. The criterion's claim was true when made and is now permanently unfalsifiable rather than false; it is retired, not amended, since there is no successor module for it to describe. | Retired |
+| FR-051-AC-2 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: every common and kind-specific semantic field was independently omitted, duplicated, reordered, cross-wired and mutated, with each mutation refusing with no partial view; the modules and the FR-051 tests formerly in `tests/it/compiled_protocol_v2.rs` that carried this behavior are deleted. | Retired |
+| FR-051-AC-3 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: unknown fields/contracts, trailing bytes, noncanonical encodings, invalid spans, duplicate/unbounded populations and exact-limit-plus-one inputs refused before excess state was retained. | Retired |
+| FR-051-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: independent schema and identity digest vectors matched the producer, and same identity on unequal canonical bytes refused. | Retired |
+| FR-051-AC-5 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: a textual or externally built expression, self-asserted trust/total flag, non-Boolean leaf, evaluator callback, and copied consumer vocabulary could not construct either validated view. | Retired |
+| FR-051-AC-6 | **Amended (M-6d).** This criterion previously read: "The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth"; that text is retired for the same reason as FR-051-AC-1. The criterion now states: QSL's resolved dependency graph is cycle-free and `Cargo.lock` holds exactly one copy of each first-party crate; `arch-lint duplicate-revisions` in `make ci` verifies it. | Test (TC-139) |
 
 ## Ownership
 
@@ -147,10 +147,10 @@ handoffs.
 
 Implemented for `quire-spec-language#90` under the reviewed `tl-syntax#52`
 ecosystem architecture; temporal activation-guard selection is extended by
-`quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired by QSL-303
+`quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired
 (M-6d), which deletes `protocol_artifact::checked_predicate` and
 `protocol_artifact::temporal_subject` along with their only tests (formerly in
 `tests/it/compiled_protocol_v2.rs`, which remains for its unrelated TC-138
 coverage); the spine `ProtocolClause` path no longer needs this handoff.
 FR-051-AC-6 states the still-live production-dependency-graph fact, which
-`arch-lint duplicate-revisions` verifies in `make ci` (QSL-334).
+`arch-lint duplicate-revisions` verifies in `make ci`.

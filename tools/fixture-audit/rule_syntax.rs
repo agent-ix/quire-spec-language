@@ -127,7 +127,7 @@ fn check_syntax_outcome(
         ("unsupported", Err(error)) if error.code == NativeCode::UnsupportedConstruct => {
             Ok(SyntaxOutcome::Unsupported)
         }
-        // QSL-236 (L2): a `stage_limit_exceeded` refusal reports the same
+        // L2: a `stage_limit_exceeded` refusal reports the same
         // reached-a-configured-ceiling outcome `is_incomplete()`'s own
         // codes do (`ResourceExhausted` included) -- it is deliberately
         // excluded from `is_incomplete()` itself (its exit code is 20, the

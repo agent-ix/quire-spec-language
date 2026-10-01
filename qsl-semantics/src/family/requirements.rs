@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-012 §2's sixth contract part, `requirements` (FR-062-AC-4), and
-//! ADR-014 §4's extent of a requested item (QSL-140).
+//! ADR-014 §4's extent of a requested item.
 //!
 //! A family whose claim form carries an FR-057 capability kind records one
 //! [`Requirements`] value per checked item: the kind and the item's

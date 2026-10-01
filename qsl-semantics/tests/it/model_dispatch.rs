@@ -555,7 +555,7 @@ fn two_operation_members_sharing_one_declaration_key_refuse_conflicting_binding(
     }
 }
 
-/// QSL-199: a linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
+/// A linear redefinition chain `model.A.op0 <- model.A.op1 <- ... <-
 /// model.A.op{edges}` (`op{i}` redefines `op{i-1}`): exactly `edges`
 /// `redefines` edges. Every operation is owned by `model.A`, so every
 /// dispatch/dominance conformance check is the trivial `s == t` case and
@@ -632,7 +632,7 @@ fn assert_links_model_a_to(outcome: LinkCheckOutcome, winner: &str) {
     );
 }
 
-/// QSL-199 AC-5: a dispatch family of more than 128 redefinition steps
+/// A dispatch family of more than 128 redefinition steps
 /// links at default (unlimited) limits. The removed fixed ceiling of 128
 /// refused this whatever the caller configured (ADR-011 §7.3; NFR-001 "an
 /// implementation ceiling is not a domain bound").
@@ -646,7 +646,7 @@ fn a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limi
     );
 }
 
-/// QSL-199 AC-5, end to end: the same family of more than 128 redefinition
+/// End to end: the same family of more than 128 redefinition
 /// steps also passes the checked-dispatch bridge, whose
 /// effective-precondition walk follows the winner's whole `redefines`
 /// chain (every operation declares its own precondition, so no link of the

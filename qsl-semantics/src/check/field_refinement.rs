@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The FR-151 field-refinement obligation
 //! (`quire.model.conformance.refinement/v1`): moved here from
-//! `crate::model::conformance` by ADR-011 §7.3 M-2 (QSL-7), the other of
+//! `crate::model::conformance` by ADR-011 §7.3 M-2, the other of
 //! M-2's two moves (alongside [`crate::check::checked_dispatch`]) that make
 //! `model` sit below `check` (ADR-011 §6.1). It was the only `conformance`
 //! code that read `value::expression`/`check` facts, through an interim
-//! `model` -> `check` edge M-5 (QSL-139/FR-068) declared and bounded to
+//! `model` -> `check` edge M-5 (FR-068) declared and bounded to
 //! exactly two files; M-2 closes that edge (see `crate::check`'s own module
 //! doc).
 //!

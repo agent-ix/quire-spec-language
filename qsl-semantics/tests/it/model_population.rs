@@ -3065,7 +3065,7 @@ fn tc_296_standalone_direct_admission_distinct_from_invocation_post() {
     assert_ne!(id_pre, id_post);
 }
 
-/// QSL-199: binding admission's member-type conformance walk uses the
+/// Binding admission's member-type conformance walk uses the
 /// caller's own `PopulationAdmissionLimits::ancestor_steps`, not a fixed
 /// ceiling. A population declaring only `model.A` admits P1's `b1` (a
 /// `model.B`, one generalization step below `model.A`) at
@@ -3119,7 +3119,7 @@ fn binding_admission_walks_member_types_under_the_callers_ancestor_steps() {
 /// Normalizes `domain_package` under `limits` and, only when normalization
 /// completes, admits [`p1`] into [`P1_POPULATION`] against the resulting
 /// view: the whole admission pipeline, whose one normalization is metered
-/// by the caller's own `limits` (QSL-204).
+/// by the caller's own `limits`.
 fn admit_p1_under(
     domain_package: &DomainPackage,
     limits: ModelNormalizationLimits,
@@ -3138,11 +3138,11 @@ fn admit_p1_under(
     ))
 }
 
-/// QSL-204: admission is bounded by the caller's own normalization limits.
+/// Admission is bounded by the caller's own normalization limits.
 /// F1 has four declaration records; `declaration_records = 4` admits, and
 /// `declaration_records = 3` stops the pipeline before admission with an
 /// incomplete result naming `declaration_records` and its limit, where the
-/// pre-QSL-204 admission path re-normalized under unlimited limits of its
+/// earlier admission path re-normalized under unlimited limits of its
 /// own.
 ///
 /// Mutation used: raising the tight limit to 4 turns the refusal
@@ -3199,7 +3199,7 @@ fn fixture_diamond() -> DomainPackage {
     )
 }
 
-/// QSL-204: the same bound on the build phases themselves. Ancestor-path
+/// The same bound on the build phases themselves. Ancestor-path
 /// enumeration is the one part of normalization bounded while it runs
 /// (`ancestor_steps`). On the diamond, `ancestor_steps = 2` admits and
 /// `ancestor_steps = 1` refuses `ancestor-steps` naming `model.D` and the
@@ -3244,7 +3244,7 @@ fn qsl204_a_diamond_over_ancestor_steps_refuses_admission_naming_the_limit() {
     }
 }
 
-/// QSL-204 review (PR #387, MED-1): an effective view owns the domain
+/// An effective view owns the domain
 /// package it was normalized from, and admission takes no other package.
 /// So a view can no longer be paired with a package whose content differs
 /// under the same `model_selection` header:

@@ -252,7 +252,7 @@ assembler SHALL refuse it with
 `unknown_required_feature`/`unsupported-feature` at the `model` declaration.
 The assembler SHALL declare each operation of an object type, with its
 parameters, result and frame effect, as [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md)
-states (amended by QSL-273; before it, operations refused here).
+states (as amended; operations were previously refused here).
 A `Float32` or `Float64` field SHALL refuse with `unknown_required_feature`/`unsupported-feature`; a floating type in a function signature or body is admitted (FR-091-OQ-4), and admitting the field is QSL-285.
 
 If a unit's `model` declaration spells a `sha256:` digest, then spine intake

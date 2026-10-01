@@ -287,7 +287,7 @@ impl DispatchTable {
 /// What a checked [`Node`] computes.
 ///
 /// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
-/// S3, FR-063, QSL-143): under `--cfg seam_probe`, every closed `match` over
+/// S3, FR-063): under `--cfg seam_probe`, every closed `match` over
 /// this type below this module's own [`Node::children`] becomes
 /// non-exhaustive (`E0004`) unless it has its own probe arm. Never
 /// constructed outside the probe build.
@@ -386,7 +386,7 @@ pub enum NodeKind {
         /// The object reference.
         reference: Box<Node>,
         /// The field `f` resolves to in the reference's static type's
-        /// effective attribute set: its declaring type and name (QSL-57).
+        /// effective attribute set: its declaring type and name.
         field: FieldRef,
         /// Whether the attribute is optional.
         optional: bool,
@@ -539,7 +539,7 @@ pub enum NodeKind {
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
-    /// FR-063/S3 (QSL-143): exists only so `--cfg seam_probe` makes every
+    /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
     #[cfg(seam_probe)]

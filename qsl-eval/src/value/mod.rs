@@ -3,11 +3,11 @@
 //!
 //! The layer-3 value semantics this evaluator runs over -- the §6.2
 //! `semantic_value` submodules and `value::model_query` -- live in the `qsl-semantics` crate's own
-//! `value` module (QSL-181 X-6b). This module re-exports none of them
+//! `value` module (X-6b). This module re-exports none of them
 //! (ADR-011 §7.2): callers name them at `qsl_semantics::value::...`. It holds
 //! `value::expression`, which `qsl-eval` takes at X-8, and re-exports only
 //! its own items. The layer-4 `CheckedPackage` it evaluates is
-//! `qsl_package::CheckedPackage` (QSL-182 X-7), re-exported by none of this
+//! `qsl_package::CheckedPackage` (X-7), re-exported by none of this
 //! crate.
 
 mod expression;

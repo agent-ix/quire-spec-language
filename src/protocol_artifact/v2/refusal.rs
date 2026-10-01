@@ -161,7 +161,7 @@ pub enum Refusal {
     /// An independently selected clock configuration differs.
     Clock(ClockField),
     /// An offered binding's typed `clock_name` disagrees with the inherited
-    /// `v1` binding's legacy `clock:`-prefixed spelling (QSL-288). This is
+    /// `v1` binding's legacy `clock:`-prefixed spelling. This is
     /// always an offer-side defect: the comparison is entirely within the
     /// offer's own bytes, so there is no `Expected`/`Producer` side for it.
     ClockName,
