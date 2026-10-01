@@ -1,0 +1,93 @@
+---
+id: FR-325
+title: "Parse temporal operators with an optional interval into S2 TemporalTrace forms"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-033
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-014
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-018
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-067
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-090
+    type: depends_on
+---
+# FR-325: Parse temporal operators with an optional interval into S2 TemporalTrace forms
+
+## Description
+
+S1 (`qsl-cst`) SHALL parse every unary temporal operator (`eventually`,
+`always`, `once`, `historically`) and every binary temporal operator
+(`until`, `release`, `since`, `triggered`) with an interval `[a,b]`, an
+interval `[a,*]`, or no interval, under every profile (ADR-014 A-1). S2
+(`qsl-forms`) SHALL build one TemporalTrace form per temporal clause, holding
+each operator with an optional interval form, as the M-3b TemporalTrace forms
+of ADR-011. Parsing selects no meaning: whether an interval is required,
+admitted or refused is the S3 check's decision (FR-326, FR-123).
+
+## Use case
+
+An author writes `eventually holds(c.value = 3)` in a unit that selects the
+infinite-trace profile and `eventually[0,5] holds(c.value = 3)` in one that
+selects a bounded profile. Both parse to the same form shape, with and
+without an interval, so the checker gives every author one diagnostic about
+meaning, at the operator, instead of a parse error that depends on the
+profile.
+
+## Inputs
+
+- A unit's source bytes (FR-001), with a `temporal` clause.
+
+## Outputs
+
+- A CST in which each temporal operator node has an optional interval child.
+- An S2 `TemporalClauseForm` holding the clause name, its profile and model
+  references, its `over` parameter, its activation, its fairness constraint
+  forms (FR-123) and a `TemporalFormulaForm` tree. Each operator node is
+  `TemporalOperatorForm{operator, interval: Option<IntervalForm>, operands}`
+  with `IntervalForm{lower: u64, upper: IntervalUpper::{Finite(u64), Open}}`
+  and the source span of the operator and of its interval.
+
+## Behavior
+
+- When an operator is written with no interval, S2 SHALL build its form
+  with `interval: None`.
+- When an operator is written with `[a,b]`, S2 SHALL build `Some` with
+  `upper: Finite(b)`; with `[a,*]`, `Some` with `upper: Open`. S2 SHALL NOT
+  compare `a` with `b`; the S3 check refuses an inverted interval.
+- A bound that is not a decimal `u64` SHALL fail at S1 with a parse
+  diagnostic located at the bound's span.
+- Nesting SHALL be free: an operator with an interval and an operator
+  without one may appear in any operand position of each other.
+- S2 SHALL produce the same form for the same source under every profile
+  selection, and SHALL read no profile selection.
+- The TemporalTrace forms SHALL be the only S2 producer for temporal clauses
+  (ADR-011 M-3b, FR-067).
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-325-AC-1 | `always (holds(not s.healthy) implies eventually always[0,10] holds(s.healthy))` parses, and its form holds `interval: None` on the outer `always` and on `eventually`, and `Some{lower: 0, upper: Finite(10)}` on the inner `always`, each with its own span. | Test (TC-835) |
+| FR-325-AC-2 | `holds(p) until holds(q)`, `holds(p) since[2,4] holds(q)` and `eventually[3,*] holds(p)` parse; their operator forms hold `None`, `Some{2, Finite(4)}` and `Some{3, Open}`. `eventually[5,3] holds(p)` parses to `Some{5, Finite(3)}` with no S1 or S2 diagnostic. | Test (TC-835) |
+| FR-325-AC-3 | `eventually[0,x] holds(p)` fails at S1 with a parse diagnostic located at `x`'s span, and no S2 form is built. | Test (TC-835) |
+| FR-325-AC-4 | The same unit text compiled with the infinite-trace profile selected and with the event-position false-extension profile selected yields byte-equal S2 forms for the clause. | Test (TC-835) |
+
+## Dependencies
+
+- ADR-014 §5 A-1 and §11 (QSL-43 interfaces); ADR-018 §11 IV-1 (operators
+  that carry an interval); ADR-011 M-3b.
+- [FR-067](FR-067-add-s2-forms-and-retire-seam-5.md) (the S2 forms stage).
+- QSpec FR-090-AC-7 and FR-250-AC-6 (which profile admits the unbounded
+  operator edition). QSpec owns the surface grammar, including the
+  infinite-trace interval rule (ADR-018 QS-13).
+
+## References
+
+- Linear QSL-384 (this requirement's spec ticket); QSL-43 (implementation).
+- QSpec half: Linear STD-131 (ADR-018 QS-13) and STD-99 (the `[a,*]`
+  grammar note and the v2 temporal operation identities).

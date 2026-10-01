@@ -313,6 +313,18 @@ names different artifacts in each.
 | TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 Planned |
 | TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 Planned |
 | TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5, FR-128-AC-6 | 🚧 Planned |
+| TC-835 | S2 parses temporal operators with an optional interval, independent of profile | Unit | P1 | FR-325-AC-1, FR-325-AC-2, FR-325-AC-3, FR-325-AC-4 | 🚧 Planned |
+| TC-836 | S3 admits temporal operators by the unit's temporal profile and records the requirement | Unit | P1 | FR-326-AC-1, FR-326-AC-2, FR-326-AC-3, FR-326-AC-4, FR-326-AC-5 | 🚧 Planned |
+| TC-837 | S6a evaluates a temporal clause over a finite trace with typed positions and metered work | Unit | P1 | FR-327-AC-1, FR-327-AC-2, FR-327-AC-3, FR-327-AC-4 | 🚧 Planned |
+| TC-838 | S6a evaluates an infinite-trace clause three-valued over a finite prefix | Unit | P1 | FR-328-AC-1, FR-328-AC-2, FR-328-AC-3, FR-328-AC-4 | 🚧 Planned |
+| TC-839 | S6a evaluates an infinite-trace clause exactly over a fair lasso | Unit | P1 | FR-329-AC-1, FR-329-AC-2, FR-329-AC-3, FR-329-AC-4, FR-329-AC-5 | 🚧 Planned |
+| TC-840 | run_clause runs a selected temporal clause over a supplied trace | Integration | P1 | FR-330-AC-1, FR-330-AC-2, FR-330-AC-3, FR-330-AC-4 | 🚧 Planned |
+| TC-841 | The replay facade replays a temporal counterexample over an observed trace | Integration | P1 | FR-331-AC-1, FR-331-AC-2, FR-331-AC-3 | 🚧 Planned |
+| TC-842 | An infinite-trace item settles only through negotiation | Integration | P1 | FR-332-AC-1, FR-332-AC-2, FR-332-AC-3, FR-332-AC-4 | 🚧 Planned |
+| TC-843 | Collection and population types resolve with an optional bound | Unit | P1 | FR-333-AC-1, FR-333-AC-2, FR-333-AC-3 | 🚧 Planned |
+| TC-844 | Collection and population nodes are keyed by the root definitions' identity preimage | Integration | P1 | FR-334-AC-1, FR-334-AC-2, FR-334-AC-3 | 🚧 Planned |
+| TC-845 | A claim over an unbounded declaration settles end to end | Integration | P1 | FR-335-AC-1, FR-335-AC-2, FR-335-AC-3, FR-335-AC-4, FR-335-AC-5 | 🚧 Planned |
+| TC-846 | A model subject is finite by its universes, apart from proof bounds | Integration | P1 | FR-336-AC-1, FR-336-AC-2, FR-336-AC-3, FR-336-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -732,3 +744,16 @@ relation node (TC-804, TC-805) and the per-item export (TC-806, TC-807).
 TC-797 to TC-803 and TC-806 to TC-807 build the relation input in the test
 from checked packages; TC-804 and TC-811 use the spelling and node
 QSpec FR-450 and FR-451 give. Every row is `🚧 Planned`.
+## Infinite-trace profile and unbounded declarations (FR-325 to FR-336) coverage
+FR-325 to FR-332 carry ADR-014 §3 and §5 as amended by ADR-018: S2
+temporal forms with an optional interval (FR-325), S3 admission by the
+unit's temporal profile (FR-326), the layer-5 evaluator over a finite trace
+(FR-327), over an infinite-trace prefix (FR-328) and over a lasso by
+ADR-018 SM-8 (FR-329), the spine run entry (FR-330), observed-trace
+counterexample replay (FR-331) and negotiated settlement (FR-332). FR-333
+to FR-336 carry ADR-014 §2, §4 and §9 and ADR-018 §1: the optional
+collection bound and population maximum (FR-333), the root definitions'
+identity preimage (FR-334), end-to-end settlement over an unbounded
+declaration (FR-335) and a model subject's universes (FR-336). TC-835 to
+TC-846 back every AC, all `🚧 Planned`. TC-842 and TC-845 run downstream
+of CG `negotiate_*` with test descriptors.
