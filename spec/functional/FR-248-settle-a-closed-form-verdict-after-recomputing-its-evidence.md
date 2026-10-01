@@ -1,0 +1,99 @@
+---
+id: FR-248
+title: "Settle a closed-form verdict after recomputing its evidence"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-026
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-026
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-013
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-127
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-235
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-246
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-247
+    type: depends_on
+---
+# FR-248: Settle a closed-form verdict after recomputing its evidence
+
+## Description
+
+`qsl_replay::check_closed_form`, a layer-6 facade entry, SHALL recompute
+EN-7's evidence in exact rationals before a schedulability verdict settles,
+as the zone certificate checker checks a certificate (ADR-026 RT-7). A
+schedulable result settles `proved` with basis `ClosedForm{analysis}`; a
+miss settles `refuted` with its evidence; a disagreement settles
+`inconclusive`. Every verdict is conditional on the task set's stated
+premises, which the subject carries.
+
+## Use case
+
+An assessor accepts a schedulability proof because the core recomputes
+each fixpoint, or each demand point, from the task set itself, without
+trusting the analysis that produced them.
+
+## Inputs
+
+```rust
+pub fn check_closed_form(
+    task_set: &TaskSet, claim: &ScheduleClaim,
+    outcome: &ClosedFormOutcome,          // FR-247
+    poll: impl FnMut() -> bool,
+) -> ClosedFormCheck;                      // Agrees | Disagrees(reason) | Stopped(..)
+```
+
+## Outputs
+
+The FR-331 terminal record of the claim.
+
+## Behavior
+
+- For `Schedulable` with fixpoints, the checker SHALL check that each
+  stated `R` satisfies the recurrence exactly, that no smaller value does,
+  and that `R + J_i <= D_i`.
+- For `Schedulable` under EDF, the checker SHALL recompute the utilization,
+  the busy-period length and `dbf` at every point of the QPA sequence.
+- For `Miss`, the checker SHALL recompute the demand at every stated point
+  and check it exceeds the point, or recompute the utilization, or
+  `dbf(t) > t`.
+- For `SufficientTestFailed`, the checker SHALL recompute the low-mode
+  fixpoints and the failing high-mode criterion.
+- The map SHALL be:
+
+| Input | QSpec FR-341 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
+| --- | --- | --- | --- | --- |
+| `Schedulable` that the checker agrees with | `proved` | `closed-scope` | `Proved{basis: ClosedForm{analysis}}` | success |
+| `Miss` that the checker agrees with | `refuted` | `decisive-counterexample` | `Refuted` | violation |
+| `SufficientTestFailed` that the checker agrees with | `inconclusive` | `unsettled` | `Inconclusive(SufficientTestFailed)` | inconclusive |
+| any outcome the checker disagrees with | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
+| `Stopped`, or a check a budget stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
+
+- `analysis` SHALL be `FixedPriorityRta`, `EdfQpa` or `AmcRtb`.
+- The record SHALL carry the evidence, and its obligation identity binds
+  the task set with every premise.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-248-AC-1 | `schedulable Ctl under fixed-priority` settles `proved`, `Proved{ClosedForm{FixedPriorityRta}}`, with fixpoints `(1, 3, 12)` in the record; `under edf` settles `Proved{ClosedForm{EdfQpa}}`. With the third WCET 6 both settle `refuted` with their evidence. | Test (TC-703) |
+| FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose stated demand at point 8 is 7 settles `inconclusive`, `ReplayParity`. | Test (TC-703) |
+| FR-248-AC-3 | FR-247-AC-3's `C(HI) = 6` result settles `inconclusive`, `SufficientTestFailed`; its base result settles `Proved{ClosedForm{AmcRtb}}`. | Test (TC-703) |
+
+## Dependencies
+
+- ADR-026 §12 RT-7; ADR-013 O-09 and O-16.
+- [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),
+  [FR-235](FR-235-settle-a-timed-verdict-as-a-terminal-record.md),
+  [FR-246](FR-246-check-task-sets-and-schedulability-claims.md),
+  [FR-247](FR-247-analyse-a-task-set-in-closed-form.md).
+
+## References
+
+- The checker as an in-core entry beside `replay`: ADR-029 CB-2 (draft).
+- QSpec half: Linear STD-139 owns the closed-form evidence wire (ADR-026
+  OV-10); this requirement cites it until those QSpec FRs merge.

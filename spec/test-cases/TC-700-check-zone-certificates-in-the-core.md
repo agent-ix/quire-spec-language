@@ -1,0 +1,33 @@
+---
+id: TC-700
+title: "The in-core checker accepts valid zone certificates and rejects every tampering"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-245
+    type: verifies
+---
+# TC-700: The in-core checker accepts valid zone certificates and rejects every tampering
+
+## Description
+
+Verify `check_zone_certificate` on valid certificates, each tampering, identity and package refusals, budgets, and the Kani harnesses of its DBM code.
+
+Scope: FR-245-AC-1 to FR-245-AC-4.
+
+## Test Procedure
+
+Fixtures: the certificates of TC-699; the tamperings of FR-245-AC-2; the Kani harnesses of the checker's DBM operations.
+
+1. Check each valid certificate.
+2. Check each tampered certificate.
+3. Check AC-1's certificate against another item's identity, after a source edit, and with `max_certificate_edges` 1.
+4. Run the Kani harnesses for dimension at most 3 with bounds in `[-8, 8]`.
+
+Tag the tests `#[trace("TC-700", "FR-245-AC-n")]`.
+
+## Expected Results
+
+- Step 1: `Accepted`.
+- Step 2: `Rejected`, naming the failing node, edge or component.
+- Step 3: `stale_dependency`/`revision-mismatch` naming both identities; FR-098's refusal; `Stopped` naming the limit and 1.
+- Step 4: every harness passes.
