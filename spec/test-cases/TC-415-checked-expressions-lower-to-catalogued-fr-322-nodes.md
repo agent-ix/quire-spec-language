@@ -144,16 +144,16 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
 ## Status
 
-Implemented on the QSL-156 slice A4b branch, pending merge. The tests back
+Implemented on the slice A4b branch, pending merge. The tests back
 steps 1 to 7 except step 4's `fm`: the A4b `flatMap` test flat-maps a flat
 `s` over itself. Step 6's first half needs the QSpec
 `complete-value-lock.json` accessor (ADR-011 §2.4). Steps 8 and 9 are
-specified under QSL-212 and unbacked: on the A4b branch the leaf walk runs
+specified and unbacked: on the A4b branch the leaf walk runs
 `Node` to the depth limit and walks an optional field without `inner`.
-The tests back steps 10 and 11 (QSL-228): before it, a debug build
+The tests back steps 10 and 11: a debug build once
 aborted at 20 nested `a and (…)`.
-Remaining work: QSL-156 A4b.
+Remaining work: slice A4b.
 
 The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+(FR-096). Until S-5b lands, the tests observe the same limit as
 `ResourceExhausted`, and the code and outcome assertions move with S-5b.

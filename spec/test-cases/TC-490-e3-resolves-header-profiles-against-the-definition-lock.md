@@ -60,5 +60,5 @@ criteria each step backs.
 
 ## Status
 
-Implemented under QSL-284: `a_header_profile_resolves_only_against_the_root_row`
+Implemented: `a_header_profile_resolves_only_against_the_root_row`
 (`qsl-replay/src/spine.rs`) backs steps 1-6.

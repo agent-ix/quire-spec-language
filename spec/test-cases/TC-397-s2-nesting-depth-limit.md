@@ -44,4 +44,4 @@ Tag the test `#[trace("FR-091-AC-9", "TC-397")]`.
 
 ## Status
 
-Backed by `qsl-forms/tests/it/value_forms.rs`: `the_nesting_depth_bound_refuses_past_its_limit` (QSL-141).
+Backed by `qsl-forms/tests/it/value_forms.rs`: `the_nesting_depth_bound_refuses_past_its_limit`.

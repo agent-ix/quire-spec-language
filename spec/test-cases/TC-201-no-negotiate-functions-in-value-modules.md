@@ -22,7 +22,7 @@ negotiation-shaped logic and call sites intact, which would not appear in a
 scan restricted to the literal string `negotiate_`.
 
 Verified by nine `compile_fail,E0432` doctests in `src/value/mod.rs` (module
-doc comment, QSL-131), one per removed public name — `negotiate_ieee`,
+doc comment), one per removed public name — `negotiate_ieee`,
 `negotiate_integer_division`, `IeeeBackendCapabilities`,
 `IeeeItemRequirement`, `IeeeUnsupportedCause`, `IeeeDisposition`,
 `IntegerDivisionBounds`, `IntegerDivisionConsumer` and
@@ -33,8 +33,8 @@ from the same path. `cargo test --doc -p quire-spec-language` runs them.
 
 **Steps 1-3 are retired.** They described a source scan over `value::ieee`
 and `value::division` as modules; neither module exists any more.
-`value::division` was deleted by QSL-131 K2 (#339); `value::ieee` was
-deleted by QSL-131 O3. There is no module left for a source scan of it to
+`value::division` and `value::ieee` were
+deleted. There is no module left for a source scan of it to
 read, so the two-module-scoped scans these steps described have no
 successor and are not replaced. Step 4 is unaffected — it was already
 crate-wide, not module-scoped — and remains exactly what the nine

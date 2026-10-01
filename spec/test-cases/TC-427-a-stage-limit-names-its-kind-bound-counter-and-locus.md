@@ -44,7 +44,7 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Backed (QSL-160). Step 1:
+Backed. Step 1:
 `limit_exceeded_reports_stage_limit_exceeded_per_kind`
 (`qsl-foundation/src/diagnostic/stage.rs`). Step 2:
 `the_s2_depth_limit_is_located_at_the_first_node_past_the_bound`

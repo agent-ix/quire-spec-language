@@ -96,15 +96,15 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
 ## Status
 
-Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs` (QSL-6 S1b).
-Step 8 implemented under QSL-255 (`emit/tests.rs` and
+Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs`.
+Step 8 implemented (`emit/tests.rs` and
 `checked_v2::tests::conformance_dependency_selection_vectors`).
-Step 9 implemented under QSL-260
+Step 9 implemented
 (`diagnostics_catalog_matches_the_emitted_reference`).
-Step 7 is implemented under QSL-6 in `qsl-package/src/emit/tests/golden.rs`
+Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
 (`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
 `FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are
 compared, and IR's v2 reader admits each emitted package. It compares every
-member including `mode` (`float64.add` under `toward-zero` and `nearest-even`,
-QSL-280) and skips, by name, the fixture identities no row lowers in a
+member including `mode` (`float64.add` under `toward-zero` and `nearest-even`)
+and skips, by name, the fixture identities no row lowers in a
 function body.

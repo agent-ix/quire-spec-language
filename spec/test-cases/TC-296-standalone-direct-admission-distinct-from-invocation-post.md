@@ -16,7 +16,7 @@ FR-089-AC-1: a `Direct` admission (standalone `admit_binding`) and an
 and `population_key`, mint distinct `PopulationId`s, even when admitting
 the same `PopulationDocument`. Scope: FR-089-AC-1.
 
-This is the collision QSL-172's review found under a literal reading of the
+This is the collision a review found under a literal reading of the
 preimage: a two-state (`pre`/`post`-only) discriminator names an anchor
 side only for the binding an invocation attaches, so a `Direct` admission
 and a `Post` binding would carry an identical preimage whenever they share
@@ -29,8 +29,8 @@ by naming a role for every admission, not only the two an invocation
 attaches.
 
 Implemented: the closed three-state `AdmissionRole` (`Direct`/`Pre`/`Post`)
-discriminator is part of every `PopulationId`'s admission preimage
-(QSL-131 Slice B). Backed by
+discriminator is part of every `PopulationId`'s admission preimage.
+Backed by
 `tc_296_standalone_direct_admission_distinct_from_invocation_post`
 (`qsl-semantics/tests/it/model_population.rs`).
 

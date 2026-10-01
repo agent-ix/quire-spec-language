@@ -75,5 +75,5 @@ These are in `qsl-semantics/src/check/lowering/tests/leaves.rs`.
   (`qsl-semantics/src/check/lowering/tests/rows.rs`).
 
 The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+(FR-096). Until S-5b lands, the tests observe the same limit as
 `ResourceExhausted`, and the code and outcome assertions move with S-5b.

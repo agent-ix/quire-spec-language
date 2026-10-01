@@ -13,7 +13,7 @@ relationships:
 ## Description
 
 Verify FR-062-AC-7 against a body that genuinely nests, now that real
-recursive checking runs inside `ValueFunctionFamily::check` (QSL-148):
+recursive checking runs inside `ValueFunctionFamily::check`:
 holding a fixture nested to depth D fixed and varying only the configured
 nesting-depth limit by exactly one shows the limit, not the fixture's
 absolute size, to be the proximate cause of the refusal. The `Limit`
@@ -43,7 +43,7 @@ Tag the tests `#[trace("TC-378", "FR-062-AC-7")]` and
 
 ## Status
 
-Backed (QSL-160) by
+Backed by
 `the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`
 (`qsl-semantics/src/check/family.rs`, `locus_tests`), over `not not not
 true` read through S1, S2 and the assembler. The history below is kept.
@@ -65,7 +65,7 @@ the test that exercised it are deleted.
 bound is the proximate cause today, but through `StageFailure::Refused`
 (`CheckCause::ResourceExhausted`) with no locus.
 [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)
-(QSL-160) resolves it: the `CheckingLimits` depth is a stage limit, so the
+resolves it: the `CheckingLimits` depth is a stage limit, so the
 family returns `Typer`'s depth stop as `StageFailure::Limit` with a
 `Locus::Region`, with no `CheckContext` threaded through `Typer`. The steps
 and expected results above state that target; ADR-013 §7 slice S-5b builds

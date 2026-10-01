@@ -34,7 +34,7 @@ accessors, never constructing or mutating one; and the root crate, where
 `value::expression` lives, re-exports no layer-crate item, `CheckedPackage`
 included. Scope: FR-087-AC-9.
 
-Layer-4 `package` is the crate `qsl-package` (X-7, QSL-182): the canonical
+Layer-4 `package` is the crate `qsl-package` (X-7): the canonical
 `CheckedPackage`, `EmittedPackage`, the v2 emitter and the I2 byte reader
 are in `qsl-package/src/`, and the root crate's module named `package` holds
 only SEAM-1 (ADR-011 §6.2, `package` row). In this test, "`package`" means
@@ -47,7 +47,7 @@ depending on `check` is layer 4's permitted direction.
 
 ## Test Procedure
 
-1. Confirm `check` cannot import `package`. **Amended by QSL-182.** Layer-4
+1. Confirm `check` cannot import `package`. **Amended.** Layer-4
    `package` is the crate `qsl-package`, which depends on `qsl-semantics`,
    where `check` is. Cargo refuses the reverse edge as a dependency cycle, so
    no `use` line or inline path under `qsl-semantics/src/check/` can resolve
@@ -56,11 +56,11 @@ depending on `check` is layer 4's permitted direction.
    kind.
 2. Search `qsl-semantics/src/check/` for any type, method, or field named
    `CheckedPackage`; confirm none exists.
-3. **Amended by QSL-182.** Scan every `pub use` under the root crate's
+3. **Amended.** Scan every `pub use` under the root crate's
    `src/` and confirm none is rooted at a layer crate: `value::expression`
    imports `CheckedPackage` with a private `use qsl_package::CheckedPackage;`
    and re-exports it nowhere (ADR-011 §7.2, §4 as amended). The scan is
-   `tests/it/layer_crate_reexports.rs`. (Before QSL-182 this step required
+   `tests/it/layer_crate_reexports.rs`. (This step previously required
    exactly `pub use crate::checked_package::CheckedPackage;`.)
 4. Confirm no code under `qsl-semantics/src/check/` constructs a `LibraryLock`, mutates
    one, or calls any method on it other than its read-only accessors.
@@ -73,7 +73,7 @@ depending on `check` is layer 4's permitted direction.
    check-owned type (`Node`, `Signature`, and the rest).
 6. Adverse checks: a `qsl-semantics` dependency on `qsl-package` (normal or
    dev) fails TC-390's crate-edge check, and a planted `pub use` of a layer
-   crate fails step 3's scan fixture. **Amended by QSL-182.** A `check`
+   crate fails step 3's scan fixture. **Amended.** A `check`
    module importing `qsl_package::CheckedPackage` does not compile, so it
    needs no fixture of its own.
 

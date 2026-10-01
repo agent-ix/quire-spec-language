@@ -67,4 +67,4 @@ Tag the tests `#[trace("TC-459", "FR-104-AC-n")]`.
 
 ## Status
 
-Implemented (QSL-277, PR #491).
+Implemented.

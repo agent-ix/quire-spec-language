@@ -52,4 +52,4 @@ Tag the test `#[trace("FR-084-AC-7", "TC-410")]`.
 
 ## Status
 
-Planned; no test backs this case. Remaining work: QSL-131.
+Planned; no test backs this case.

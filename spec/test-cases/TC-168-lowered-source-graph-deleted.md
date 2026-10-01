@@ -34,7 +34,7 @@ FR-067-AC-6.
 3. Search every Rust source and build-input file — `src/`, `tests/`,
    `benches/`, `examples/` and `tools/fixture-audit/`, and every other
    workspace member's directory as `cargo metadata` lists them (`xtask/`,
-   the layer crates, `tools/arch-lint/`; QSL-183), not `src/` alone, and not
+   the layer crates, `tools/arch-lint/`), not `src/` alone, and not
    `spec/` or `docs/` — for a source reference to any of the three names.
 4. Inspect the pre-migration test that exercised `lower_source_graph`
    directly (`complete::package_tests`) for its presence anywhere in those

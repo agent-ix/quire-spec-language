@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-**RETIRED by QSL-335.** QSL-335 deletes `integration/current-head/` and its Makefile targets. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration. FR-058's acceptance criteria this test case verified are retired for the same reason. There is no successor test case.
+**RETIRED.** `integration/current-head/` and its Makefile targets are deleted. The lane ran QSL against the backend repositories' current heads because QSL's own build pinned them to exact revisions. QSL's own build now resolves its one backend dependency, quire-contract-ir, from `branch = "main"`, so `make ci` already builds against IR's current head, and composition with quire-contract-runtime and quire-contract-codegen is tested in agent-ix/quire-integration. FR-058's acceptance criteria this test case verified are retired for the same reason. There is no successor test case.
 
 Verify that the current-head lane's manifest(s) sit outside the root
 `[workspace]` and never change the root `Cargo.lock`, that a real run against
@@ -22,15 +22,15 @@ update procedure. Scope: FR-058-AC-1 through FR-058-AC-4.
 
 ## Test Procedure
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Expected Results
 
-**RETIRED by QSL-335.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
+**RETIRED.** The current-head lane and its Makefile targets are deleted; this section no longer describes a runnable procedure.
 
 ## Status
 
-Retired by QSL-335: `integration/current-head/` is deleted, and FR-058 (the
+Retired: `integration/current-head/` is deleted, and FR-058 (the
 requirement this test case verified) is retired in full.
 
 ## Metadata

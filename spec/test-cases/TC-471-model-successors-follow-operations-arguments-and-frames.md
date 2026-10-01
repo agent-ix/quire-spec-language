@@ -24,7 +24,7 @@ domain package (package identity `test/counters`, nodes
 `test/counters/counters` and `test/counters/Counter/<operation>`) as a
 hand-authored domain package in TC-458's fixture shape, with the operations
 each step names, selected as model alias `Counters`. The bound scalar types
-are read by FR-056's `value-type/v1` scalar reader (QSL-289, on main). Compile each unit through S1 to S4 in memory
+are read by FR-056's `value-type/v1` scalar reader, on main. Compile each unit through S1 to S4 in memory
 (`PackageDeclarations::check`, then `CheckedPackage::link`), with no S5
 emission. Initial snapshots are in-memory provisions, anchor
 `{initialization, start}`. Read successors through
@@ -74,4 +74,4 @@ Tag the tests `#[trace("TC-471", "FR-120-AC-n")]`.
 
 ## Status
 
-Planned (QSL-274).
+Planned.

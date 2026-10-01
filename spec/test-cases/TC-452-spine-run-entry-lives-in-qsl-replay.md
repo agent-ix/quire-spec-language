@@ -49,8 +49,7 @@ Scope: FR-100-AC-7 to FR-100-AC-10.
    - `Outcome::Refused(CardinalityOutOfBound)` with kind `Set`, bound
      `[1, 3]` and count 4 (`above-maximum`), then count 0 (`below-minimum`);
    - `Outcome::Refused(ForeignReference)` with `required` the universe of 32
-     bytes of `0x01` and `supplied` the universe of 32 bytes of `0x02`
-     (QSL-281);
+     bytes of `0x01` and `supplied` the universe of 32 bytes of `0x02`;
    - `Outcome::Refused` of each of the other eleven kernel refusals, with
      these payloads:
      - `InexactDecimal` with target domain `Decimal[0, 100; 0, 2]`;
@@ -116,7 +115,7 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   - `ForeignReference`: `code` `foreign_reference`, `cause`
     `foreign-universe`, `fields` exactly `{"required": R, "supplied": S}`,
     where `R` is `"01"` repeated 32 times and `S` is `"02"` repeated 32 times
-    (`"0101…01"` and `"0202…02"`, 64 characters each, QSL-281); exit 20.
+    (`"0101…01"` and `"0202…02"`, 64 characters each); exit 20.
   - Each of the other ten kernel refusals renders its `code` and `cause`
     and exactly this `fields` object, with `locus`; exit 20:
     - `InexactDecimal`: `inexact_decimal`, `nonzero-discarded-digit`,
@@ -169,8 +168,8 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 
 ## Status
 
-Passed locally under QSL-271. Step 4's `ForeignReference` row updated under
-QSL-281, now that the kernel variant carries both universes. Step 4's ten
+Passed locally. Step 4's `ForeignReference` row updated, now
+that the kernel variant carries both universes. Step 4's ten
 revision-`1-draft.8` kernel records, asserted by code, cause, exact fields and
 locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a
-non-empty out-of-domain running total, passed under QSL-245 and QSL-292.
+non-empty out-of-domain running total, passed.

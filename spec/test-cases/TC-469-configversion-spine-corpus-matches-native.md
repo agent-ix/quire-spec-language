@@ -74,7 +74,7 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
 
 ## Status
 
-Implemented (QSL-314). All six steps pass, including step 6's I04 `read`
+Implemented. All six steps pass, including step 6's I04 `read`
 half (FR-108-AC-6). Step 2 and the
 native test's four new cases run until M-6c retires the `0-draft` native
 path; that PR deletes step 2 with it (ADR-012 §15.8).

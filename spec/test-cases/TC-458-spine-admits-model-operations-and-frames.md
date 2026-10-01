@@ -60,7 +60,7 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
 ## Expected Results
 
 - Step 1: `Config::ConfigVersion` has `versionNumber: Int[0, 1000]` (the
-  `value-type/v1` scalar reader, QSL-289, exists and is verified against
+  `value-type/v1` scalar reader exists and is verified against
   this exact bound end to end, both by a dedicated fixture,
   `model_operations.rs::bound_integer_value_type_admits_and_assembles`, and
   by the shared `ConfigVersion` fixture itself, which declares
@@ -83,4 +83,4 @@ Tag the tests `#[trace("TC-458", "FR-103-AC-n")]`.
 
 ## Status
 
-Planned (QSL-273).
+Planned.

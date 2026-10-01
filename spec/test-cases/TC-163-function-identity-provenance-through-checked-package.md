@@ -56,7 +56,7 @@ FR-065-AC-1 through FR-065-AC-3 and FR-065-AC-8.
 
 ## Status
 
-Step 6 (FR-065-AC-8) is unbacked until QSL-156 slice A4b switches the
+Step 6 (FR-065-AC-8) is unbacked until slice A4b switches the
 checker's minter to the FR-092 and FR-093 keys.
 
 Steps 1-5 (FR-065-AC-1 through AC-3) are covered by four `compile_fail`
@@ -66,5 +66,5 @@ doctests on `CheckedPackage::link` (`qsl-package/src/checked.rs`, AC-1),
 steps 4-5), both in `qsl-package/src/emit/tests.rs`. See FR-065's own Status
 section for the current per-AC accounting.
 
-FR-065-AC-4 moved to TC-376 when QSL-148's spec lane made it a
+FR-065-AC-4 moved to TC-376 when it was made a
 behavioural criterion; this test case no longer carries a code-shape step.

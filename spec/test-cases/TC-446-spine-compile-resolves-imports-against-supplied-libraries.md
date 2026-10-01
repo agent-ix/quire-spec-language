@@ -102,10 +102,10 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
 ## Status
 
-Steps 1 to 6 pass locally (QSL-255 part b): `qsl-replay`
+Steps 1 to 6 pass locally: `qsl-replay`
 `spine::dependency_tests`, and `qsl-cst` `an_import_digest_is_bare_lowercase_hex`
 for step 2's digest spellings. Step 5's `g::f(3)` result was amended to
-expect the `Int[0, 9]` conversion node (QSL-262). Step 7
+expect the `Int[0, 9]` conversion node. Step 7
 (the CLI `libraries` member, FR-027-AC-10) passes locally:
 `tests/it/compile_command.rs`
 `a_complete_v1_request_supplies_its_libraries_to_the_spine`,

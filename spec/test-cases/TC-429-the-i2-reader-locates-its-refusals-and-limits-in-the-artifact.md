@@ -42,7 +42,7 @@ Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Backed (QSL-160), in `qsl-package/src/checked_v2/tests.rs`: steps 1 and 4
+Backed, in `qsl-package/src/checked_v2/tests.rs`: steps 1 and 4
 by `an_unknown_contract_version_is_unsupported_wire_at_contract_version`,
 steps 2 and 3 by `each_reader_limit_names_its_kind_bound_actual_and_locus`,
 which also covers IR's depth, edge, occurrence, diagnostic and work limits.

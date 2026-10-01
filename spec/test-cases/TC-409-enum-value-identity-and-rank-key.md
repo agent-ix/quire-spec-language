@@ -60,7 +60,7 @@ Tag the test `#[trace("FR-088-AC-11", "TC-409")]`.
 
 ## Status
 
-Passed locally; QSL-131 V3 (PR #365, follow-up fixing SR-511's review). Steps
+Passed locally. Steps
 2, 3, 4, 5 and 6 are covered by retagged existing tests rather than one
 end-to-end test built from the literal `E{b, a, c}` source in this
 procedure: `check::identity::tests::mint_variant_id_matches_a_checked_in_digest`

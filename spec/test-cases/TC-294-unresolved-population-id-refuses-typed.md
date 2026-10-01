@@ -15,7 +15,7 @@ names no binding recorded in the current evaluation's correspondence produces
 a typed evaluator refusal naming the unresolved identity, never a panic and
 never `Undefined`. Scope: FR-089-AC-4.
 
-Implemented (QSL-131 Slice B): `CheckedPackage::call`/`evaluate`'s own
+Implemented: `CheckedPackage::call`/`evaluate`'s own
 argument-admission `validate` (`qsl-eval/src/value/expression/mod.rs`) resolves
 every `Population<T>[N]` argument through `ObjectEnvironment::
 resolve_population` before any charge, and refuses with
@@ -27,7 +27,7 @@ holds whether or not the checked body actually reads the parameter (PR #326
 review finding F1). The evaluator's own `Machine::resolve_population`
 (`qsl-eval/src/value/expression/evaluate.rs`'s `AllInstances`/`Lookup` sites) performs
 the identical resolution, but no longer as a kernel refusal: since FR-090-
-AC-10 (QSL-174), an unresolved identity reaching it is an S6a invariant
+AC-10, an unresolved identity reaching it is an S6a invariant
 break, `Err(InternalFault)` naming stage `"S6a"` (never `Refusal::
 UnresolvedPopulation`, which is deleted along with its one production call
 site). It is unreachable through either public entry point for a checked

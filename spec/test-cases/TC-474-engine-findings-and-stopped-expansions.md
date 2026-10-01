@@ -77,4 +77,4 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
 
 ## Status
 
-Planned (QSL-274).
+Planned.

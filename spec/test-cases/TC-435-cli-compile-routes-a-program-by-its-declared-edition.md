@@ -72,6 +72,6 @@ carry `#[trace("TC-435", "FR-027-AC-5")]`.
 
 ## Status
 
-Passed locally (QSL-8).
+Passed locally.
 
-Step 6's forms case uses the `temporal` clause (QSL-275).
+Step 6's forms case uses the `temporal` clause.

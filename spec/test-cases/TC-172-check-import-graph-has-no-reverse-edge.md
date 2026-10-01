@@ -28,11 +28,11 @@ catches a reverse edge that would make the "split" a repackaging rather than
 a real dependency cut — for example, `check` calling back into
 `evaluate::Machine` for a shortcut, or a careless implementation writing the
 new checking content into the existing `checking` module by name confusion,
-or merging the two. It also verified FR-068-AC-10's other direction, `value::expression`'s re-export of `check`'s `CheckedExpression`; QSL-181 retires FR-068-AC-10 and deletes that re-export (ADR-011 §7.2: the root crate re-exports no item that moves to `qsl-semantics`), so step 6 now confirms the re-export is absent. Scope: FR-068-AC-3; FR-068-AC-10 (retired).
+or merging the two. It also verified FR-068-AC-10's other direction, `value::expression`'s re-export of `check`'s `CheckedExpression`; FR-068-AC-10 is retired and that re-export deleted (ADR-011 §7.2: the root crate re-exports no item that moves to `qsl-semantics`), so step 6 now confirms the re-export is absent. Scope: FR-068-AC-3; FR-068-AC-10 (retired).
 
 ## Test Procedure
 
-**Steps 1-5 RETIRED by QSL-182 (X-7).** `value::expression` and `checking`
+**Steps 1-5 RETIRED (X-7).** `value::expression` and `checking`
 are modules of the root crate `quire-spec-language`, and the root crate
 depends on `qsl-semantics`, where `check` is. Cargo refuses a dependency
 from `qsl-semantics` back to the root crate as a cycle, and TC-390 refuses
@@ -63,29 +63,29 @@ a one-time check on the M-5 diff. Step 6 stays live.
 5. Compile the crate and confirm the flagged-absent conditions hold at the
    resolved (post-macro-expansion) level, not only at the textual `use`-line
    level, in case a macro or re-export obscures a textual scan.
-6. Read `value::expression`'s `use` lines naming `check`. **Amended by
-   QSL-181 (FR-068-AC-10 retired):** `value::expression` imports
+6. Read `value::expression`'s `use` lines naming `check`. **Amended
+   (FR-068-AC-10 retired):** `value::expression` imports
    `CheckedExpression` with a plain `use qsl_semantics::check::CheckedExpression;`
-   and re-exports no `check` item. **Amended by QSL-182:** the scan in
+   and re-exports no `check` item. **Amended:** the scan in
    `tests/it/layer_crate_reexports.rs` refuses any root-crate `pub use` rooted
    at a layer crate, which covers this step; `CheckedPackage`'s re-export is
-   gone too (FR-087-AC-9, TC-256). (Before QSL-181 this step read
+   gone too (FR-087-AC-9, TC-256). (This step previously read
    `pub use crate::check::{CheckedExpression};`; before FR-087 it read the
    two-name line `pub use crate::check::{CheckedPackage,
    CheckedExpression};`.)
 
 ## Expected Results
 
-- Step 3 (retired by QSL-182; Cargo refuses the edge): zero flagged imports; any import resolving into `value::expression`
+- Step 3 (retired; Cargo refuses the edge): zero flagged imports; any import resolving into `value::expression`
   — whether or not it names one of the illustrative examples — fails this
   step, naming the file and the import.
-- Step 4 (retired by QSL-182): zero flagged imports into `checking`, and `src/checking/`'s file
+- Step 4 (retired): zero flagged imports into `checking`, and `src/checking/`'s file
   list and contents are unchanged from the pre-move baseline; any diff
   fails this step.
-- Step 5 (retired by QSL-182): the resolved import graph confirms the same absence a textual scan
+- Step 5 (retired): the resolved import graph confirms the same absence a textual scan
   found; a discrepancy (a hidden edge a textual scan misses) fails this
   step and names the actual resolved path.
-- Step 6 (amended by QSL-181 and QSL-182): no `pub use` in the root crate
+- Step 6 (amended): no `pub use` in the root crate
   is rooted at `qsl_semantics`, and `qsl_semantics::check::CheckedExpression`
   is the type's only public path; a `pub use qsl_semantics::...` line of any
   shape fails this step.

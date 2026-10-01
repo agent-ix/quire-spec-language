@@ -13,11 +13,11 @@ Owner-boundary checks for the implemented FR-051 public APIs.
 
 ## Test Procedure
 
-**Steps for FR-051-AC-1 through FR-051-AC-5 RETIRED by QSL-303 (M-6d).**
+**Steps for FR-051-AC-1 through FR-051-AC-5 RETIRED (M-6d).**
 `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`
 are deleted, along with their only tests, formerly in
 `tests/it/compiled_protocol_v2.rs` (that file remains, now scoped to TC-138's
-unrelated coverage): with QSL-21d/e/f (QSL-309/300/301) landed, the spine
+unrelated coverage): with the spine `ProtocolClause` frame slices landed, the spine
 `ProtocolClause` path no longer needs this producer/consumer round trip. The
 procedure below described that deleted surface and no longer runs.
 
@@ -54,6 +54,6 @@ exits 0 in `make ci`.
 ## Status
 
 Passing for `quire-spec-language#90`; activation-guard coverage extended by
-`quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired by QSL-303
+`quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired
 (M-6d); FR-051-AC-6 amended to the still-live cycle-free production-graph
-check, which `make ci` runs as `arch-lint duplicate-revisions` (QSL-334).
+check, which `make ci` runs as `arch-lint duplicate-revisions`.

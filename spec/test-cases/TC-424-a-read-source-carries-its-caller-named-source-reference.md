@@ -70,7 +70,7 @@ Tag the tests `#[trace("TC-424", "FR-001-AC-n")]` with the AC each backs.
 
 ## Status
 
-Passed locally (QSL-233 steps 1 to 5; QSL-245 steps 2, 6 and 7): step 2's
+Passed locally (steps 1 to 7): step 2's
 U+3000 and U+200B cases and its `blank-label` cause and `label`
 (`qsl-foundation/src/source.rs`, `a_blank_label_refuses_naming_it_and_admits_nothing`),
 step 6 (`label_order_precedes_the_path`, and the complete reader's

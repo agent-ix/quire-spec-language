@@ -37,5 +37,5 @@ Backed: `nodes_limit_is_enforced_across_the_whole_package_not_per_declaration`
 (`qsl-eval/tests/it/total_functions.rs`), tagged `#[trace("TC-381", "FR-062-AC-11")]`.
 
 The expected `stage_limit_exceeded` outcome is ADR-013 §7 slice S-5b's
-(QSL-160, FR-096). Until S-5b lands, the tests observe the same limit as
+(FR-096). Until S-5b lands, the tests observe the same limit as
 `ResourceExhausted`, and the code and outcome assertions move with S-5b.

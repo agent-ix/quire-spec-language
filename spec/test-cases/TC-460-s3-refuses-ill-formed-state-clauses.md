@@ -52,4 +52,4 @@ No row yields a checked clause or function.
 
 ## Status
 
-Implemented (QSL-277, PR #491).
+Implemented.
