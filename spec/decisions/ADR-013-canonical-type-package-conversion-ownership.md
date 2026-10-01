@@ -413,7 +413,7 @@ Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
 proof column fixes the category part of AD-016's `OPEN — decided in WP9` cell
-(QC-16); IR implements the map. Runtime `ExecutionOutcome`/`EvaluationOutcome`,
+(QC-16); CG implements the map over the Kani outcome and the E9 replay result (C-09). Runtime `ExecutionOutcome`/`EvaluationOutcome`,
 state `EvaluationOutcome` and the lane-D simulation outcome before convergence are lane-private (§6); the converged `qsl_eval::simulation::Outcome` is canonical, mapped by `Outcome::category()` (ADR-014 §7, ADR-017 FP-4); a
 family result wraps kernel outcomes and maps to these categories under its
 family contract (Q210-3). S6a returns `Result<Evaluation<T>, InternalFault>`,

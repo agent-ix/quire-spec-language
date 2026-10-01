@@ -31,3 +31,22 @@ IDs and rows are intact: no renumbering; Q209-7 and the O-23 heads paragraph
 are deleted with no spec reference left; the #215 row, OBS-031, OBS-036 and
 OBS-040 read consistently with §7.1; ADR-012 §5.3 has no remaining heads
 drift-check mention; FR-069 now names CG. FND-001 must be fixed before merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | ADR-012 §8 still says 'Proof results come from IR's KaniOutcomeKind map', a one-input description of the proof-result map. C-09 is CG's and takes the Kani outcome and the E9 replay result. Same class as FND-005, missed in the review pass. Fix: 'Proof results come from CG's C-09 map over IR's KaniOutcomeKind and the E9 replay result (ADR-013 C-09).' | ADR-012:827-828 |
+
+## Dispositions
+
+Round 1, reviewed at a00ace78 (fix commit a00ace78 on top of 6d60826c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a00ace78 |
+| FND-002 | fixed | a00ace78 |
+| FND-003 | fixed | a00ace78 |
+| FND-004 | fixed | a00ace78 |
+| FND-005 | fixed | a00ace78 |
+| FND-006 | fixed | a00ace78 |

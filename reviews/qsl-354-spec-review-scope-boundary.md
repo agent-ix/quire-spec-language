@@ -29,3 +29,13 @@ and writes the terminal record; CG keeps C-09 and O-25; qsl-replay keeps the
 replay and terminal types; `spine` is public for `command` and the driver
 only (quire-integration is not named); the crossing test lives in
 quire-integration with no QSL → CG edge; FR-069 names CG for C-09.
+
+## Dispositions
+
+Round 1, reviewed at a00ace78 (fix commit a00ace78 on top of 6d60826c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a00ace78 |
+| FND-002 | fixed | a00ace78 |
+| FND-003 | fixed | a00ace78 |

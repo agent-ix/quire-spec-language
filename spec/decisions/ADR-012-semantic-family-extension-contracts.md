@@ -825,7 +825,8 @@ Each family result maps to the eight ADR-013 O-16 categories through the three
 outcome families of O-16. `check` refusals are the refusal category. A `check`
 limit failure and an S6a `Incomplete` are the incomplete category. `evaluate`
 returns the kernel `Outcome<T>`. Dispositions come from CG. Proof results come
-from IR's `KaniOutcomeKind` map. No family adds a category.
+from CG's C-09 map over IR's `KaniOutcomeKind` and the E9 replay result
+(ADR-013 C-09). No family adds a category.
 
 The witness envelope follows ADR-013 O-25, the replay request O-26 and the
 replay result O-27. #231 implements them. The replay executor's key is a typed

@@ -42,3 +42,12 @@ the heads/ lane, pin-equality tests and #215 pin duty are gone while
 one-revision-per-lock, release pins and `RevisionPin` stay; the crossing
 test sits in quire-integration; FR-069 names CG for C-09. The two findings
 above are completeness gaps in the new C-09 shape.
+
+## Dispositions
+
+Round 1, reviewed at a00ace78 (fix commit a00ace78 on top of 6d60826c).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | a00ace78 |
+| FND-002 | fixed | a00ace78 |
