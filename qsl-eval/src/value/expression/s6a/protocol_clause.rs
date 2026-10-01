@@ -8,11 +8,12 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::InternalFault;
-use qsl_semantics::check::{CheckedGraph, Location, Observation, ProtocolClauseFamily};
+use qsl_semantics::check::{CheckedGraph, Observation, ProtocolClauseFamily};
 use qsl_semantics::family::{EvalOutcome, FamilyOutcome, FamilyResult};
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{AdmittedInvocation, FrameVerdict, FrameWitness};
 use quire_exact::{Meter, NodeKey, Outcome, Value};
+use quire_semantic_value::location::Location;
 
 use super::super::causes::ProtocolClauseFrameRefusal;
 
@@ -50,7 +51,7 @@ pub(crate) struct ProtocolClauseEnv<'a> {
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling, as
     /// `family::EvaluationEnv` records it).
     pub(crate) location: Option<Location>,
-    pub(crate) losses: Vec<super::super::evaluate::LocatedLoss>,
+    pub(crate) losses: Vec<quire_semantic_value::loss::LocatedLoss>,
     /// FR-115: the evaluated frame witness of the last frame call that
     /// found a change outside the frame. Set exactly when that call's
     /// outcome is `Completed(false)`.

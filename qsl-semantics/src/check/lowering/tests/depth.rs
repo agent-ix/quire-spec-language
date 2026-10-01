@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::check::MAX_CHECKING_DEPTH;
+use quire_semantic_value::checking::MAX_CHECKING_DEPTH;
 
 /// The stack each check runs on.
 const STACK: usize = 2 * 1024 * 1024;

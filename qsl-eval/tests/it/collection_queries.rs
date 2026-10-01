@@ -6,10 +6,9 @@ use ix_trace_rs::trace;
 use qsl_eval::value::CheckedPackageEvaluation;
 use qsl_forms::{Accumulation, BinaryOperator, BinderQuery, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::Location;
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckingLimits, CollectionLoss, CollectionProperty,
-    Obligation, PackageDeclarations, ProvedInterval,
+    CheckCause, CheckRefusal, CollectionLoss, CollectionProperty, Obligation, PackageDeclarations,
+    ProvedInterval,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -22,9 +21,11 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, FieldValue, Value, ValueType};
 use quire_exact::{IllTypedCause, Presence};
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::location::Location;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {

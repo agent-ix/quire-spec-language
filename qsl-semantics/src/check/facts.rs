@@ -18,12 +18,13 @@ use super::ir::{
 };
 use super::observation::Observations;
 use super::refusal::{
-    CheckCause, CheckRefusal, InvalidDispatchDeclaration, Location, Obligation, ProvedInterval,
+    CheckCause, CheckRefusal, InvalidDispatchDeclaration, Obligation, ProvedInterval,
 };
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
 use quire_semantic_value::declaration::{EqualityOperator, FieldRef};
+use quire_semantic_value::location::Location;
 
 /// One step of a stable path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

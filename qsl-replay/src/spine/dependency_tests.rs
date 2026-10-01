@@ -1066,10 +1066,10 @@ fn e3_resolves_an_imported_name_only_through_its_qualifier() {
 #[test]
 fn a_halt_inside_an_imported_body_is_located_at_the_callers_call() {
     use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
-    use qsl_semantics::check::{Location, Origin};
     use qsl_semantics::family::FamilyOutcome;
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
+    use quire_semantic_value::location::{Location, Origin};
 
     let geometry = library(
         "test/geometry",

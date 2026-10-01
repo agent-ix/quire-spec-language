@@ -21,7 +21,7 @@ use super::*;
 use crate::check::checked_dispatch::{checked_dispatch_operation, DispatchRoot, OperationClauses};
 use crate::check::family::fixtures::{empty_scope, fixture_source};
 use crate::check::family::OccurrenceMap;
-use crate::check::{CheckedGraph, CheckingLimits, PackageDeclarations};
+use crate::check::{CheckedGraph, PackageDeclarations};
 use crate::model::accounting::{Meter, ModelNormalizationLimits};
 use crate::model::dispatch::GeneralizationClosure;
 use crate::model::domain_package::{
@@ -30,6 +30,7 @@ use crate::model::domain_package::{
     RelationshipEnd, RelationshipRecord, ValueTypeRef,
 };
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment};
 
 mod expression_depth;
@@ -453,7 +454,7 @@ fn lower<T>(
         models,
         units,
         &lock,
-        crate::check::MAX_CHECKING_DEPTH,
+        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,

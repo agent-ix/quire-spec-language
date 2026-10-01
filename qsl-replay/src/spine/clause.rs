@@ -822,7 +822,8 @@ pub(crate) fn check_clause(
     clause: &CheckedStateClause,
     selection: &ClauseSelection,
 ) -> ClauseRunReport {
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal, QualifiedName};
+    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
+    use quire_semantic_value::call::InputRefusal;
 
     let graph = run.package.graph();
     let observations = match admit_clause_observations(

@@ -1646,7 +1646,7 @@ obligation. The scrutinee refusal and the construction refusals reuse
 `CheckCause::IllTyped` (`:561`), so each (code, cause) pair has one cause
 path. No `Code` variant is added to `qsl-foundation/src/diagnostic.rs`.
 
-**Provenance.** Every refusal's locus is a `check::Location` resolved through
+**Provenance.** Every refusal's locus is a `quire_semantic_value::location::Location` resolved through
 the unit's S2 form spans to `Locus::Region` (O-12, T-5, FR-096). `ArmForm`
 and `CaseForm` therefore carry their spans. Each `case` and construction node
 records its occurrences (O-07). A replayed evaluation of a function body that

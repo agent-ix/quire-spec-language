@@ -22,11 +22,12 @@ use std::collections::BTreeMap;
 use qsl_foundation::diagnostic::{CatalogCode, Code, InternalFault, Locus, RefusalRecord};
 use qsl_foundation::source::Source;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedGraph, Location};
+use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType};
+use quire_semantic_value::location::Location;
 
 use super::{compile, CompileRefusal, DependencyInput, SpineLimits};
 use qsl_foundation::SourceIdentity;
@@ -425,7 +426,8 @@ pub(crate) fn argument_value(
 /// `CheckedPackage::call`'s admission failure, converted with no `qsl_eval`
 /// path in the conversion's own signature (only in this function body).
 pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box<RunRefusal> {
-    use qsl_eval::value::{CallFailure, InputRefusal};
+    use qsl_eval::value::CallFailure;
+    use quire_semantic_value::call::InputRefusal;
     match failure {
         CallFailure::Input(InputRefusal::WrongValueKind { parameter }) => {
             Box::new(RunRefusal::WrongValueKind {

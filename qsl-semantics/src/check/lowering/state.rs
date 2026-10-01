@@ -25,7 +25,7 @@ use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
 use crate::check::ir::Node;
 use crate::check::node_key::{FrameField, NodeRef, NodeTag, Operation, Operator, SemanticTerm};
-use crate::check::refusal::{CheckRefusal, KeyFault, Location};
+use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
 use crate::model::intake::member_identity_name;
@@ -33,6 +33,7 @@ use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use crate::value::member::Member;
 use qsl_forms::StateClauseKind;
+use quire_semantic_value::location::Location;
 
 /// The operation a `pre` or `post` clause names, as lowering reads it.
 pub(crate) struct AnchorInput<'a> {

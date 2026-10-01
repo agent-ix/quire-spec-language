@@ -14,7 +14,7 @@ use qsl_forms::{
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{OccurrenceKey, RawSourceRef, SourceRegion};
-use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::library::{LibraryName, PinnedRequest, Selection};
 use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
 use quire_contract_model::CheckedPackageEvidence;
@@ -22,6 +22,7 @@ use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
     NODE_KEY_DOMAIN,
 };
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
@@ -754,7 +755,7 @@ fn a_record_and_a_tuple_are_written_with_their_declarations() {
     let package = declared_types(Vec::new(), Vec::new());
     for name in ["Point", "Pair"] {
         let site = Location {
-            origin: qsl_semantics::check::Origin::TypeDeclaration {
+            origin: quire_semantic_value::location::Origin::TypeDeclaration {
                 name: name.to_owned(),
             },
             path: Vec::new(),

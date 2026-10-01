@@ -11,7 +11,8 @@
 use qsl_forms::{Accumulation, FieldInitializer};
 
 use super::*;
-use crate::check::{CheckMode, Obligation, WrongSnapshotCause, MAX_CHECKING_DEPTH};
+use crate::check::{Obligation, WrongSnapshotCause};
+use quire_semantic_value::checking::{CheckMode, MAX_CHECKING_DEPTH};
 
 /// The stack each check runs on.
 const STACK: usize = 2 * 1024 * 1024;

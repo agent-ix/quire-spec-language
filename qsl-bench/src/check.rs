@@ -8,9 +8,7 @@ use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, BuiltinType, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::source::provenance::RawSourceRef;
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{
-    CheckRefusal, CheckedGraph, CheckingLimits, EnumBinding, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckRefusal, CheckedGraph, EnumBinding, PackageDeclarations};
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
@@ -20,6 +18,7 @@ use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, Owne
 use quire_exact::{EffectiveId, Presence, ValueType};
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value};
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     Admission, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment, TypeEnvironmentLimits,
 };

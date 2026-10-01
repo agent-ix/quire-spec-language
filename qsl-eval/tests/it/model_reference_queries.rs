@@ -18,16 +18,14 @@
 //! does (ADR-013 §8 OQ-C ruling).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, Evaluation, InputRefusal, QualifiedName,
-};
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    AdmittedModel, CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits,
-    Location, Origin, PackageDeclarations, WrongSnapshotCause,
+    AdmittedModel, CheckCause, CheckRefusal, CheckedExpression, PackageDeclarations,
+    WrongSnapshotCause,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -50,10 +48,13 @@ use quire_exact::{
 };
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{IllTypedCause, ObjectId, ObjectReference, Presence, UniverseId};
+use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
     FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::location::{Location, Origin};
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,

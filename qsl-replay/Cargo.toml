@@ -27,11 +27,12 @@ qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 qsl-source = { path = "../qsl-source", optional = true }
 quire-exact = { path = "../quire-exact" }
+# ADR-011 §6.1 layer SV: the call-admission `InputRefusal` and expression
+# `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
+quire-semantic-value = { path = "../quire-semantic-value" }
 thiserror = "2.0.20"
 
 [dev-dependencies]
-# ADR-011 layer SV: the FR-143 `TypeEnvironment` the clause tests admit.
-quire-semantic-value = { path = "../quire-semantic-value" }
 serde_json = "1.0.151"
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # `qsl-semantics`' test-only fixtures (`check::fixture_source`,

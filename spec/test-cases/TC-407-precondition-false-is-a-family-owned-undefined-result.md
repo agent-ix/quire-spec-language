@@ -51,7 +51,7 @@ Tag the test `#[trace("FR-090-AC-11", "TC-407")]`.
 - Step 3's `record.reason` is `UndefinedReason` `precondition-false`.
 - Step 4's `record.fields` name operation `size`, selected method `model.A.size`
   and receiver `a1`.
-- Step 3's `e.location` is the `check::Location` of the dispatched call
+- Step 3's `e.location` is the `quire_semantic_value::location::Location` of the dispatched call
   node `a1.size()`, which differs from the location of the evaluated clause
   expression's root.
 - Step 2 does not panic, and its result matches step 3's pattern;

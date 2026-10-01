@@ -43,13 +43,14 @@ use qsl_forms::{AnchorSite, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::Span;
 
 use super::refusal::{
-    AliasKind, CheckCause, CheckRefusal, Origin, ProtocolAnchorCause, ShadowedDeclaration,
+    AliasKind, CheckCause, CheckRefusal, ProtocolAnchorCause, ShadowedDeclaration,
 };
 use super::state_clause::{
     AttemptDeclaration, ClauseOperation, PopulationDomain, StateClauseDeclaration,
 };
 use super::{Scope, Signatures};
 use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
+use quire_semantic_value::location::Origin;
 
 /// The identity of one static protocol node: its index into the
 /// declaration's own [`ProtocolDeclarationForm::declarations`] (FR-113
@@ -133,7 +134,7 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
         // `region::DeclarationRegions::refusal_region` reads a
         // `ProtocolAnchor` cause's own span directly instead, so this
         // `Location` is never resolved.
-        location: super::refusal::Location {
+        location: quire_semantic_value::location::Location {
             origin: Origin::Expression,
             path: Vec::new(),
         },
@@ -748,8 +749,7 @@ mod tests {
     use qsl_foundation::SourceIdentity;
 
     use super::super::{
-        CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, PackageDeclarations, Scope,
-        Signatures,
+        CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, Scope, Signatures,
     };
     use super::{CheckedProtocol, ProtocolAnchorCause, ProtocolNodeId, ShadowedDeclaration};
     use crate::model::accounting::ModelNormalizationLimits;
@@ -760,6 +760,7 @@ mod tests {
     use crate::model::intake::SelectedModel;
     use crate::model::key::DeclarationKey;
     use crate::model::normalize::{normalize, NormalizeOutcome};
+    use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\

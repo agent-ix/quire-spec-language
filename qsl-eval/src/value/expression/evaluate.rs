@@ -17,8 +17,8 @@ use super::causes::{
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, Connective, DispatchTable, Location, Node, NodeKind, OrderedKind,
-    RecordSlot, Scope, Slot, Visit,
+    Arithmetic, CheckedGraph, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot,
+    Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -36,10 +36,8 @@ use quire_exact::{
     retain_boolean, ArithmeticOperator, BooleanConnective, IntegerArithmetic, OrderedOperands,
     OrderingOperator, RationalArithmetic,
 };
-use quire_exact::{evaluate_decimal, Decimal, DecimalLoss, DecimalOperation, DecimalType};
-use quire_exact::{
-    evaluate_ieee, ieee_to_exact, IeeeExactLoss, IeeeExactTarget, IeeeFlags, IeeeOperation,
-};
+use quire_exact::{evaluate_decimal, Decimal, DecimalOperation, DecimalType};
+use quire_exact::{evaluate_ieee, ieee_to_exact, IeeeExactTarget, IeeeFlags, IeeeOperation};
 use quire_exact::{
     Charge, ChargePoint, CollectionKind, Incomplete, Integer, IntegerInterval, LimitKind, Meter,
     PopulationId,
@@ -47,6 +45,8 @@ use quire_exact::{
 use quire_exact::{Outcome, Refusal, Undefined};
 use quire_semantic_value::declaration::{operand_value, CompositeShape, FieldRef};
 use quire_semantic_value::enumeration::{compare_enum, EnumMemberIndex};
+use quire_semantic_value::location::Location;
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 use quire_semantic_value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
@@ -98,26 +98,6 @@ impl Evaluation {
             _ => None,
         }
     }
-}
-
-/// Information one completed operation discarded.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValueLoss {
-    /// A rounded decimal operation or conversion (FR-140).
-    Decimal(DecimalLoss),
-    /// An IEEE-to-exact conversion (FR-148).
-    IeeeExact(IeeeExactLoss),
-    /// The non-empty flag set an IEEE operation raised (FR-148).
-    IeeeFlags(IeeeFlags),
-}
-
-/// A loss record and the expression that produced it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LocatedLoss {
-    /// The producing expression.
-    pub location: Location,
-    /// What was discarded.
-    pub loss: ValueLoss,
 }
 
 fn comparison(operator: OrderingOperator) -> ComparisonOperator {
@@ -1950,7 +1930,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
-    use qsl_semantics::check::{CheckMode, CheckingLimits, PackageDeclarations};
+    use qsl_semantics::check::PackageDeclarations;
     use qsl_semantics::model::accounting::ModelNormalizationLimits;
     use qsl_semantics::model::dispatch::GeneralizationClosure;
     use qsl_semantics::model::domain_package::{
@@ -1963,6 +1943,7 @@ mod tests {
         admit_binding, AdmissionMeter, AdmissionOutcome, PopulationAdmissionLimits,
         PopulationDocument, PopulationMember,
     };
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };

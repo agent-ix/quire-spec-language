@@ -20,7 +20,7 @@
 //! settles `inconclusive` with its typed cause and is never repaired
 //! ([`crate::ReplayResult`]).
 
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
+use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::{Code, SourceIdentity};
@@ -30,6 +30,7 @@ use qsl_semantics::library::{LibraryName, PackageId};
 use qsl_semantics::model::intake::package_input;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, LimitKind, Meter, NodeKey, Outcome, ScalarLimits, Value, ValueType};
+use quire_semantic_value::call::InputRefusal;
 
 use crate::bounds::MAX_ENCODED_BYTES;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
@@ -166,7 +167,7 @@ pub enum ReplayRefusal {
     /// `CheckedPackage::call` (a value outside the declared domain, such as
     /// `12` for `Int[0, 9]`) -- carried as ADR-011 §2.3's
     /// `StageFailure::Refused` cause.
-    #[error("{code} ({cause}): {refusal}", code = .0.code().as_str(), cause = .0.cause(), refusal = .0)]
+    #[error("{code} ({cause}): {refusal}", code = input_refusal_code(&.0).as_str(), cause = .0.cause(), refusal = .0)]
     Input(InputRefusal),
     /// The selected function's declared result is not `Boolean`, so it
     /// states no property a counterexample refutes. Refused before the
@@ -255,7 +256,7 @@ impl ReplayRefusal {
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
             | Self::NotAPredicate { .. } => Code::InvalidRuntimeInput,
-            Self::Input(refusal) => refusal.code(),
+            Self::Input(refusal) => input_refusal_code(refusal),
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }

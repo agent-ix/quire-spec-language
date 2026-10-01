@@ -63,8 +63,7 @@ use super::node_key::{
     SemanticTerm, SourceOwner, WireNodeRef,
 };
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, Location, Origin,
-    StageLimitCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::value::definition::DefinitionReference;
@@ -73,6 +72,7 @@ use crate::value::member::Member;
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
 mod model;

@@ -36,7 +36,8 @@
 //! # Source regions
 //!
 //! FR-322 maps every occurrence to at least one byte region. `check` records
-//! each occurrence at a `check::Location` (a declaration and a child path).
+//! each occurrence at a `quire_semantic_value::location::Location` (a
+//! declaration and a child path).
 //! [`emit_checked`] places it through the checked unit's own form spans
 //! (`CheckedGraph::region`, FR-096, ADR-013 O-12); [`emit_package`] takes
 //! the conversion as a parameter. An occurrence that cannot be placed, or is
@@ -82,9 +83,7 @@ use serde::Serialize;
 
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
-use qsl_semantics::check::{
-    CheckedGraph, Location, NodeTag, NominalNode, SemanticNode, SemanticTerm,
-};
+use qsl_semantics::check::{CheckedGraph, NodeTag, NominalNode, SemanticNode, SemanticTerm};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
@@ -92,6 +91,7 @@ use qsl_semantics::value::{
     Member, NodeOwner,
 };
 use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
+use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 use super::{CheckedPackage, EmittedPackage};

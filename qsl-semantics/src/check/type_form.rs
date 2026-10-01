@@ -19,7 +19,7 @@
 //! building the package.
 
 use super::check::Scope;
-use super::refusal::{CheckCause, CheckRefusal, Location};
+use super::refusal::{CheckCause, CheckRefusal};
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 use quire_exact::{
@@ -27,6 +27,7 @@ use quire_exact::{
     IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType,
     ValueType,
 };
+use quire_semantic_value::location::Location;
 
 /// What a qualified type name resolves against.
 pub(crate) trait TypeNames {

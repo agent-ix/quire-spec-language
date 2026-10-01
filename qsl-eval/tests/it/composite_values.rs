@@ -752,14 +752,15 @@ mod checked {
     // `BoundViolation` the outer module's glob import brings in -- these
     // three explicit imports shadow that glob for every real evaluation
     // result this submodule compares.
-    use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, InputRefusal};
+    use qsl_eval::value::{input_refusal_code, CallFailure, CheckedPackageEvaluation};
     use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration, TypeForm};
     use qsl_package::CheckedPackage;
     use qsl_semantics::check::{
-        CheckCause, CheckMode, CheckRefusal, CheckedExpression, CheckingLimits, Obligation,
-        PackageDeclarations,
+        CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
     };
     use quire_exact::{BoundViolation, Outcome, Refusal};
+    use quire_semantic_value::call::InputRefusal;
+    use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 
     fn name(spelling: &str) -> Expression {
         Expression::Name(spelling.to_owned())
@@ -993,7 +994,10 @@ mod checked {
         match refused {
             CallFailure::Input(refused) => {
                 assert_eq!(refused, InputRefusal::WrongValueKind { parameter: 0 });
-                assert_eq!(refused.code().as_str(), "invalid_runtime_input");
+                assert_eq!(
+                    input_refusal_code(&refused).as_str(),
+                    "invalid_runtime_input"
+                );
                 assert_eq!(refused.cause(), "wrong-value-kind");
             }
             other => panic!("expected CallFailure::Input(_), got {other:?}"),

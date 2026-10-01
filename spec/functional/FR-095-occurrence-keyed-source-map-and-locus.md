@@ -121,5 +121,5 @@ that replaces `LocatedSpan` in the canonical S0 and S1 diagnostics
 span), and C-21's embedded-body span to document region
 (`SourceMap::map_regions`). The remaining part, check-stage
 regions, is [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)'s
-`check::Location` resolution in slice S-5b. It also needs the parsed forms'
+`quire_semantic_value::location::Location` resolution in slice S-5b. It also needs the parsed forms'
 expression spans (FR-091-AC-10).

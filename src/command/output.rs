@@ -345,27 +345,31 @@ pub(super) fn error(error: &RunError) -> Result<Value, serde_json::Error> {
 }
 
 /// FR-096/FR-100: `Evaluation.location`'s `origin`, rendered by kind.
-fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
+fn spine_origin(origin: &quire_semantic_value::location::Origin) -> types::SpineOrigin {
     match origin {
-        qsl_semantics::check::Origin::Body { function, index } => types::SpineOrigin::Body {
-            function: function.clone(),
-            index: *index,
-        },
-        qsl_semantics::check::Origin::Measure { function, index } => types::SpineOrigin::Measure {
-            function: function.clone(),
-            index: *index,
-        },
-        qsl_semantics::check::Origin::Expression => types::SpineOrigin::Expression,
-        qsl_semantics::check::Origin::TypeDeclaration { name } => {
+        quire_semantic_value::location::Origin::Body { function, index } => {
+            types::SpineOrigin::Body {
+                function: function.clone(),
+                index: *index,
+            }
+        }
+        quire_semantic_value::location::Origin::Measure { function, index } => {
+            types::SpineOrigin::Measure {
+                function: function.clone(),
+                index: *index,
+            }
+        }
+        quire_semantic_value::location::Origin::Expression => types::SpineOrigin::Expression,
+        quire_semantic_value::location::Origin::TypeDeclaration { name } => {
             types::SpineOrigin::TypeDeclaration { name: name.clone() }
         }
-        qsl_semantics::check::Origin::StateClause { clause, index } => {
+        quire_semantic_value::location::Origin::StateClause { clause, index } => {
             types::SpineOrigin::StateClause {
                 clause: clause.clone(),
                 index: *index,
             }
         }
-        qsl_semantics::check::Origin::ProtocolAttempt { protocol, attempt } => {
+        quire_semantic_value::location::Origin::ProtocolAttempt { protocol, attempt } => {
             types::SpineOrigin::ProtocolAttempt {
                 protocol: *protocol,
                 attempt: *attempt,
@@ -375,7 +379,7 @@ fn spine_origin(origin: &qsl_semantics::check::Origin) -> types::SpineOrigin {
 }
 
 /// FR-096/FR-100: `Evaluation.location`, rendered as `{origin, path}`.
-fn spine_location(location: &qsl_semantics::check::Location) -> types::SpineLocation {
+fn spine_location(location: &quire_semantic_value::location::Location) -> types::SpineLocation {
     types::SpineLocation {
         origin: spine_origin(&location.origin),
         path: location.path.clone(),
@@ -813,7 +817,7 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn location_origin_kinds_render_kebab_case() {
         use qsl_replay::spine::CallRefusal;
-        use qsl_semantics::check::{Location, Origin};
+        use quire_semantic_value::location::{Location, Origin};
         let cases = [
             (
                 Origin::Body {
@@ -871,7 +875,7 @@ mod tests {
     #[trace("TC-452", "FR-100-AC-9")]
     fn refused_locus_and_location_render() {
         use qsl_replay::spine::{CallLocus, CallRefusal};
-        use qsl_semantics::check::{Location, Origin};
+        use quire_semantic_value::location::{Location, Origin};
         let span = qsl_foundation::LocatedSpan {
             start: qsl_foundation::Position {
                 byte: 225,

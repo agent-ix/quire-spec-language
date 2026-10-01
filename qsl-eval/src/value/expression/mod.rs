@@ -32,9 +32,10 @@ use evaluate::Machine;
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{FieldValue, Meter, NodeKey, Value, ValueType};
+use quire_semantic_value::call::InputRefusal;
 use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
-pub use evaluate::{Evaluation, LocatedLoss, ValueLoss};
+pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
@@ -48,71 +49,23 @@ pub use family::{InvalidQualifiedName, QualifiedName};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedExpression;
 
-/// A runtime input a call or evaluation refuses before any charge. Stays at
-/// layer 5 (FR-068's refusal split): every *check-cause* type moved to
-/// `qsl_semantics::check` (FR-068-AC-4), but this one names an evaluation-time
-/// input refusal, relocated here beside [`CheckedPackage::call`]'s and
-/// [`CheckedPackage::evaluate`]'s admission code.
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum InputRefusal {
-    /// No function of this name: `missing_declaration` / `missing-name`.
-    #[error("no function named {0}")]
-    UnknownFunction(String),
-    /// The argument count differs from the parameter count:
-    /// `invalid_runtime_input` / `wrong-value-kind`.
-    #[error("{supplied} arguments for {declared} parameters")]
-    Arity {
-        /// Declared parameters.
-        declared: usize,
-        /// Supplied arguments.
-        supplied: usize,
-    },
-    /// An argument is not a value of its parameter type:
-    /// `invalid_runtime_input` / `wrong-value-kind`.
-    #[error("argument {parameter} is not a value of its declared type")]
-    WrongValueKind {
-        /// The parameter index.
-        parameter: usize,
-    },
-    /// An argument holds a reference with no object in the complete
-    /// population: `dangling_reference` / `absent-target-in-complete-population`.
-    #[error("argument {parameter} holds a reference with no target object")]
-    DanglingReference {
-        /// The parameter index.
-        parameter: usize,
-    },
-    /// FR-107: `evaluate_clause`'s name resolves to no state clause of this
-    /// package: `missing_declaration` / `missing-name`.
-    #[error("no state clause named {0}")]
-    UnknownClause(String),
-    /// FR-107: `evaluate_clause`'s observations were admitted for a
-    /// different clause than the one named, or (FR-115) `evaluate_frame`'s
-    /// invocation for a different frame: `invalid_runtime_input` /
-    /// `wrong-role-mapping`.
-    #[error("the observations were admitted for another clause or frame")]
-    ObservationsMismatch,
-}
-
-impl InputRefusal {
-    /// The refusal code.
-    pub fn code(&self) -> qsl_foundation::diagnostic::Code {
-        use qsl_foundation::diagnostic::Code;
-        match self {
-            Self::UnknownFunction(_) | Self::UnknownClause(_) => Code::MissingDeclaration,
-            Self::Arity { .. } | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
-            Self::DanglingReference { .. } => Code::DanglingReference,
-            Self::ObservationsMismatch => Code::InvalidRuntimeInput,
+/// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
+/// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
+/// names the same code as a string ([`InputRefusal::code`]) but cannot name
+/// `qsl-foundation`'s enum, so the enum mapping is made here, beside
+/// [`CheckedPackage::call`]'s and [`CheckedPackage::evaluate`]'s admission
+/// code.
+pub fn input_refusal_code(refusal: &InputRefusal) -> qsl_foundation::diagnostic::Code {
+    use qsl_foundation::diagnostic::Code;
+    match refusal {
+        InputRefusal::UnknownFunction(_) | InputRefusal::UnknownClause(_) => {
+            Code::MissingDeclaration
         }
-    }
-
-    /// The closed cause tag.
-    pub fn cause(&self) -> &'static str {
-        match self {
-            Self::UnknownFunction(_) | Self::UnknownClause(_) => "missing-name",
-            Self::Arity { .. } | Self::WrongValueKind { .. } => "wrong-value-kind",
-            Self::DanglingReference { .. } => "absent-target-in-complete-population",
-            Self::ObservationsMismatch => "wrong-role-mapping",
+        InputRefusal::Arity { .. } | InputRefusal::WrongValueKind { .. } => {
+            Code::InvalidRuntimeInput
         }
+        InputRefusal::DanglingReference { .. } => Code::DanglingReference,
+        InputRefusal::ObservationsMismatch => Code::InvalidRuntimeInput,
     }
 }
 
@@ -579,9 +532,53 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_foundation::diagnostic::Category;
-    use qsl_semantics::check::{CheckingLimits, PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
+    use qsl_semantics::check::{PackageDeclarations, SCALAR_LIMITS_UNLIMITED};
     use qsl_semantics::family::{EvalOutcome, FamilyOutcome};
     use quire_exact::{Integer, NodeKey};
+    use quire_semantic_value::checking::CheckingLimits;
+
+    /// Each admission refusal maps to its catalog code: a missing name to
+    /// `missing_declaration`, a wrong argument or role mapping to
+    /// `invalid_runtime_input`, a dangling reference to `dangling_reference`.
+    /// The enum's spelling equals the leaf's own `InputRefusal::code` string
+    /// for every variant, so a backend reading the string agrees with QSL.
+    #[test]
+    fn input_refusal_code_maps_each_refusal_to_its_catalog_code() {
+        use qsl_foundation::diagnostic::Code;
+        let cases = [
+            (
+                InputRefusal::UnknownFunction("f".to_owned()),
+                Code::MissingDeclaration,
+            ),
+            (
+                InputRefusal::UnknownClause("c".to_owned()),
+                Code::MissingDeclaration,
+            ),
+            (
+                InputRefusal::Arity {
+                    declared: 1,
+                    supplied: 2,
+                },
+                Code::InvalidRuntimeInput,
+            ),
+            (
+                InputRefusal::WrongValueKind { parameter: 0 },
+                Code::InvalidRuntimeInput,
+            ),
+            (
+                InputRefusal::DanglingReference { parameter: 0 },
+                Code::DanglingReference,
+            ),
+            (
+                InputRefusal::ObservationsMismatch,
+                Code::InvalidRuntimeInput,
+            ),
+        ];
+        for (refusal, code) in cases {
+            assert_eq!(input_refusal_code(&refusal), code, "{refusal:?}");
+            assert_eq!(code.as_str(), refusal.code(), "{refusal:?}");
+        }
+    }
 
     /// TC-384's own fixture: `id(x: Integer[0,10]): Integer[0,10] = x`.
     fn identity_function() -> FunctionDeclaration {

@@ -105,8 +105,9 @@ pub fn check_terms<K: Ord>(terms: &[(K, Integer)]) -> Result<(), SemanticGraphCa
 ///
 /// Depth is [`Limits::MAX_DEPTH`], the encoder's own ceiling. It is above the
 /// deepest preimage QSL builds: a typed preimage nests a fixed schema depth,
-/// a checked node body is already bounded by `check::MAX_CHECKING_DEPTH`,
-/// and an intake document by the intake reader's `MAX_DEPTH` (200).
+/// a checked node body is already bounded by
+/// [`crate::checking::MAX_CHECKING_DEPTH`], and an intake document by the
+/// intake reader's `MAX_DEPTH` (200).
 ///
 /// The byte ceiling is `u64::MAX`, i.e. none of its own: every preimage is
 /// built from values an earlier stage already bounded (intake's

@@ -17,11 +17,13 @@ use qsl_forms::StateClauseKind;
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, CheckingLimits, Location,
-    NodeKind, Observation, Origin, WrongSnapshotCause,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind, Observation,
+    WrongSnapshotCause,
 };
 use qsl_semantics::family::{ClaimExtent, DomainKind};
 use quire_exact::ValueType;
+use quire_semantic_value::checking::CheckingLimits;
+use quire_semantic_value::location::{Location, Origin};
 
 use crate::model_operations::{
     admit_and_assemble_with_body, ambiguous_operation_document, archive_population,

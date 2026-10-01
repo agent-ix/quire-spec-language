@@ -24,7 +24,7 @@ use super::{
 };
 use crate::check::family::Application;
 use crate::check::ir::{Connective, Node, NodeKind, RecordSlot, Slot, Visit};
-use crate::check::refusal::{CheckCause, CheckRefusal, Location, WrongSnapshotCause};
+use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
 use crate::check::DispatchOperation;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
@@ -34,6 +34,7 @@ use quire_exact::{
     ArithmeticOperator, CollectionType, NodeKey, OrderingOperator, Value, ValueType,
 };
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
+use quire_semantic_value::location::Location;
 
 /// An operand's expected type or hint: borrowed from the declarations or
 /// the caller, or owned when an operand typed before it formed it.

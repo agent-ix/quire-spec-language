@@ -69,11 +69,9 @@ use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::imports::ImportedNames;
 use super::ir::Node;
-use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, KeyFault, Location as CheckLocation,
-};
+use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, KeyFault};
 use super::AdmittedImport;
-use super::{CheckingLimits, DeclarationRegions, DispatchTable, Origin as CheckOrigin, Scope};
+use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
 use crate::library::PackageNodeKey;
 use quire_exact::IeeeWidth;
@@ -82,7 +80,10 @@ use quire_exact::RoundingMode;
 use quire_exact::TextProfile;
 use quire_exact::ValueType;
 use quire_exact::{UnitDomain, UnitId};
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::CompositeShape;
+use quire_semantic_value::location::Location as CheckLocation;
+use quire_semantic_value::location::Origin as CheckOrigin;
 
 /// The contract-level `quire_exact::Meter`'s limits, for every call site in
 /// this module and [`super`] that builds one just to satisfy
@@ -1144,7 +1145,8 @@ pub(crate) fn check_declaration_body(
 ///
 /// `S` is the span type. Complete-V1's own function forms have no lexed
 /// byte offsets to report (there is no text parser for this API-constructed
-/// family -- `check`'s own [`crate::check::Location`] is its existing span
+/// family -- `check`'s [`quire_semantic_value::location::Location`] is its
+/// existing span
 /// analogue: a declaration plus a child-index path). A test exercising this
 /// generically with a `(u32, u32)` byte-offset stand-in is still exercising
 /// the real mechanism: ordinal assignment and lookup by (identity, role,
@@ -1740,9 +1742,9 @@ mod tests {
 #[cfg(any(test, feature = "test-support"))]
 pub mod fixtures {
     use super::*;
-    use crate::check::refusal::Origin as CheckOrigin;
     use crate::family::{CheckContext, DiagnosticSink, ScopeStack, StageLimits};
     use quire_exact::Meter;
+    use quire_semantic_value::location::Origin as CheckOrigin;
 
     /// The source reference of the empty unit admitted as (`a`, `u`,
     /// `git`, `1`): its owner `(a, u)` is the one FR-092's golden vectors
@@ -3113,8 +3115,8 @@ pub(crate) mod checking_tests {
 
     /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
     /// `Typer`'s own pre-existing, already-correct
-    /// [`crate::check::CheckingLimits`] depth bound -- not the contract's
-    /// own `StageLimits.nesting_depth`. A body nested to depth D
+    /// [`quire_semantic_value::checking::CheckingLimits`] depth bound --
+    /// not the contract's own `StageLimits.nesting_depth`. A body nested to depth D
     /// (`Not(Not(Not(true)))`, four levels deep counting the `Boolean`
     /// leaf) checked through `ValueFunctionFamily::check` -- reachable now
     /// that `check` calls `check_declaration_body`, which
@@ -3301,7 +3303,7 @@ pub(crate) mod checking_tests {
     #[trace("QSpec-TC-191", "QSpec-FR-146-AC-8")]
     #[test]
     fn duplicate_names_are_refused_with_every_locus_in_order() {
-        use crate::check::refusal::{Location as BodyLocation, Origin as BodyOrigin};
+        use quire_semantic_value::location::{Location as BodyLocation, Origin as BodyOrigin};
         let names = ["a", "b", "a", "c", "b", "a"];
         let refusals = crate::check::PackageDeclarations {
             functions: names
@@ -3349,7 +3351,6 @@ mod locus_tests {
         measure_resolved, root_location,
     };
     use super::*;
-    use crate::check::refusal::Origin as CheckOrigin;
     use crate::check::refusal::StageLimitCause;
     use crate::check::PackageDeclarations;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
@@ -3359,6 +3360,7 @@ mod locus_tests {
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::SourceIdentity;
     use quire_exact::{Meter, ScalarLimits};
+    use quire_semantic_value::location::Origin as CheckOrigin;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
         profile v = \"quire.value.complete/v1\" version \"1\" digest \

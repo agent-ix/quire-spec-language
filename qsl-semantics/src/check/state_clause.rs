@@ -32,15 +32,17 @@ use super::facts::Definedness;
 use super::ir::{DispatchTable, Node, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
-use super::refusal::{CheckCause, CheckRefusal, KeyFault, Location};
-use super::{Capability, CheckingLimits, Scope};
+use super::refusal::{CheckCause, CheckRefusal, KeyFault};
+use super::{Capability, Scope};
 use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     DomainKind, FamilyContract, Requirements,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::location::Location;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
 /// for an invariant, `pre` for a precondition, `post` for a postcondition.

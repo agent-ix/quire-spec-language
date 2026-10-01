@@ -39,6 +39,9 @@ handoff-writer = []
 # not by this dependency edge itself -- every crate that depends on
 # `quire-exact` is in that check's scope, this one included as of this edit.
 quire-exact = { path = "quire-exact" }
+# ADR-011 §6.1 layer SV: the expression `Origin` the run output renders; the
+# tests also assert its refusal vocabulary and runtime enum values.
+quire-semantic-value = { path = "quire-semantic-value" }
 # ADR-013 §2 (ADR-013:113): the FR-051/FR-052 checked-handoff and
 # native-temporal document identities encode through the one RFC 8785
 # implementation.
@@ -95,11 +98,6 @@ qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # beside the SEAM-1 lowering pipeline. This crate re-exports none of its
 # items (ADR-011 §7.2).
 qsl-route = { path = "qsl-route" }
-# ADR-011 §6.1 layer SV: the refusal vocabulary (`InvalidSemanticGraph`,
-# `SemanticGraphCause`) the enum identity tests assert, and the runtime enum
-# values (`quire_semantic_value::enumeration`) they compare. Dev-only: no shipped
-# module of this crate names it.
-quire-semantic-value = { path = "quire-semantic-value" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }

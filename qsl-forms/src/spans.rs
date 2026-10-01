@@ -3,8 +3,8 @@
 //!
 //! A form's spans are held beside its [`Expression`] tree, one span per
 //! node, in an arena shaped exactly as [`Expression::children`] numbers the
-//! tree. That shape is what lets a `check::Location` (a declaration origin
-//! plus a child-index path) reach the span of the node it names (FR-096):
+//! tree. That shape is what lets a `quire_semantic_value::location::Location`
+//! (a declaration origin plus a child-index path) reach the span of the node it names (FR-096):
 //! each path step `i` moves to child `i`.
 //!
 //! The arena is flat, so building, walking and dropping it never recurse,

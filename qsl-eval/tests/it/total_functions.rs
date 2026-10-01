@@ -3,15 +3,12 @@
 //! evaluator boundary (FR-146).
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{
-    CheckedPackageEvaluation, Evaluation, LocatedLoss, QualifiedName, ValueLoss,
-};
+use qsl_eval::value::{CheckedPackageEvaluation, Evaluation, QualifiedName};
 use qsl_forms::{Accumulation, BinaryOperator, Expression, FunctionDeclaration, TypeForm};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
-    CheckCause, CheckMode, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingLimits,
-    CheckingStage, Location, MeasureObligation, Obligation, Origin, PackageDeclarations,
-    ProvedInterval, StageLimitCause,
+    CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, CheckingStage, MeasureObligation,
+    Obligation, PackageDeclarations, ProvedInterval, StageLimitCause,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -28,9 +25,12 @@ use quire_exact::{
     Decimal, DecimalType, IeeeValue, IeeeWidth, IllTypedCause, ObjectId, ObjectReference, Presence,
     Rational, RoundingMode, UniverseId,
 };
+use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
 
 use sha2::{Digest, Sha256};
 

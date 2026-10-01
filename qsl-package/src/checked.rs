@@ -299,7 +299,8 @@ impl CheckedPackage {
     /// through `check` and linked, does compile and succeed.
     /// ```no_run
     /// use qsl_package::CheckedPackage;
-    /// use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    /// use qsl_semantics::check::PackageDeclarations;
+    /// use quire_semantic_value::checking::CheckingLimits;
     /// fn build(
     ///     source: qsl_foundation::source::provenance::RawSourceRef,
     /// ) -> CheckedPackage {
@@ -522,7 +523,8 @@ impl EmittedPackage {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-    use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+    use qsl_semantics::check::PackageDeclarations;
+    use quire_semantic_value::checking::CheckingLimits;
 
     /// FR-094 (TC-417), through the layer-4 `CheckedPackage`: `check` is
     /// the model correspondence's only writer. A function over a

@@ -2,7 +2,6 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
-use super::refusal::Location;
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
 use quire_exact::EffectiveId;
@@ -14,6 +13,7 @@ use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::{
     CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
 };
+use quire_semantic_value::location::Location;
 use std::collections::BTreeSet;
 
 /// A local slot of one function frame or checked expression.
@@ -42,7 +42,8 @@ pub enum Observation {
 /// therefore always went through checking. Building one from outside `check`
 /// does not compile:
 /// ```compile_fail,E0451
-/// use qsl_semantics::check::{Location, Node, NodeKind};
+/// use qsl_semantics::check::{Node, NodeKind};
+/// use quire_semantic_value::location::Location;
 /// fn forge(kind: NodeKind, location: Location) -> Node {
 ///     Node { kind, value_type: quire_exact::ValueType::Boolean, location }
 /// }

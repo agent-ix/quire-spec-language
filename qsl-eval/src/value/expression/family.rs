@@ -111,9 +111,9 @@ pub(crate) struct EvaluationEnv<'a> {
     /// The last hook call's `Evaluation.location` (FR-090-OQ-3 ruling): the
     /// hook's `EvalOutcome` holds no location, so the hook records it here
     /// on every `Ok` return and [`super::CheckedPackage::call`] reads it.
-    pub(crate) location: Option<qsl_semantics::check::Location>,
+    pub(crate) location: Option<quire_semantic_value::location::Location>,
     /// The last hook call's `Evaluation.losses`, recorded like `location`.
-    pub(crate) losses: Vec<super::evaluate::LocatedLoss>,
+    pub(crate) losses: Vec<quire_semantic_value::loss::LocatedLoss>,
 }
 
 impl<'a> EvaluationEnv<'a> {
@@ -288,11 +288,12 @@ mod family_contract_tests {
     use qsl_forms::{Expression, FunctionDeclaration, TypeForm};
     use qsl_semantics::check::{
         declaration, declaration_signature, declarations_for, empty_scope, fixture_source, limits,
-        root_location, CheckingLimits, PackageDeclarations, Signatures, SCALAR_LIMITS_UNLIMITED,
+        root_location, PackageDeclarations, Signatures, SCALAR_LIMITS_UNLIMITED,
     };
     use qsl_semantics::family::{DiagnosticSink, EvalOutcome, FamilyContract, ScopeStack};
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::Meter;
+    use quire_semantic_value::checking::CheckingLimits;
     use quire_semantic_value::declaration::TypeEnvironment;
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
@@ -671,9 +672,8 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::Expression;
     use qsl_foundation::source::provenance::RawSourceRef;
-    use qsl_semantics::check::{
-        admitted_source, declaration, fixture_source, CheckingLimits, PackageDeclarations,
-    };
+    use qsl_semantics::check::{admitted_source, declaration, fixture_source, PackageDeclarations};
+    use quire_semantic_value::checking::CheckingLimits;
 
     /// `f`'s checked identity: its FR-092 function node key, declared by
     /// `owner`'s unit.

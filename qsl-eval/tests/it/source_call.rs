@@ -5,10 +5,11 @@
 use ix_trace_rs::trace;
 use qsl_eval::value::{CheckedPackageEvaluation, QualifiedName};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value, ValueType};
+use quire_semantic_value::checking::CheckingLimits;
 
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\" version \"1\" digest \

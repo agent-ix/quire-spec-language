@@ -138,7 +138,7 @@ The refused outcome's members:
   region's reference: the program's source or one supplied library's,
   whichever the refusal arose in. A locus naming no supplied source is an
   internal failure (below).
-- `location` renders `Evaluation.location`, the `check::Location` the
+- `location` renders `Evaluation.location`, the `quire_semantic_value::location::Location` the
   outcome arose at: `{"origin": O, "path": [<child index>, ...]}`, where `O`
   is `{"kind": "body", "function": "<name>", "index": <declaration index>}`,
   `{"kind": "measure", "function": "<name>", "index": <declaration

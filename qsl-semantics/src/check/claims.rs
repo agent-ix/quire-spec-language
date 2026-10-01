@@ -47,13 +47,14 @@ use quire_exact::{IntegerInterval, NodeKey, Origin, ValueType};
 use super::ir::{coerce_builds_narrow, scalar_conversion_target, Node, NodeKind, Slot, Visit};
 use super::lowering::SemanticGraph;
 use super::node_key::SemanticTerm;
-use super::refusal::{KeyFault, Location, Origin as CheckOrigin};
+use super::refusal::KeyFault;
 use super::{
     family::{OccurrenceMap, OccurrenceRole},
     Capability,
 };
 use crate::family::{classify_domains, ClaimExtent, ClassifyFailure, DomainKind, Requirements};
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::location::{Location, Origin as CheckOrigin};
 
 /// The fault stage name this module reports.
 const STAGE: &str = "check.requirements";

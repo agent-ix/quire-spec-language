@@ -40,12 +40,13 @@ use serde_json::{json, Value};
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::WireNodeId;
-use qsl_semantics::check::{CheckingLimits, PackageDeclarations};
+use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::{classify_extent, ClaimExtent, DomainKind};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, Integer, IntegerInterval, NodeKey, Presence,
     ValueType,
 };
+use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
