@@ -89,7 +89,7 @@ fn bits(outcome: Outcome<Value>) -> u64 {
     }
 }
 
-#[trace("FR-091-AC-19", "FR-148-AC-8", "TC-405")]
+#[trace("FR-091-AC-19", "QSpec-FR-148-AC-8", "TC-405")]
 #[test]
 fn the_evaluator_applies_the_rounding_mode_the_float_type_carries() {
     let sum = |mode: &str, left, right| bits(add(&format!("Float64[{mode}]"), left, right));

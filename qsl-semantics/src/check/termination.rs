@@ -844,8 +844,8 @@ mod tests {
     /// dispatch edges, and with measures that fail each obligation or none --
     /// Tarjan's components and every termination refusal, in order, equal
     /// the earlier closure-and-filter algorithm's.
-    #[trace("TC-191", "FR-146-AC-4")]
-    #[trace("TC-191", "FR-146-AC-7")]
+    #[trace("QSpec-TC-191", "QSpec-FR-146-AC-4")]
+    #[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
     #[test]
     fn tarjan_components_and_refusals_match_the_closure_oracle() {
         let mut recursive_components_seen = 0;
@@ -896,7 +896,7 @@ mod tests {
     /// A self-call is a recursive singleton; a member on no cycle is not a
     /// component; components come back ascending by first member although
     /// Tarjan closes the later one first.
-    #[trace("TC-191", "FR-146-AC-7")]
+    #[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
     #[test]
     fn components_are_recursive_only_and_in_first_member_order() {
         // f0 -> f3, f1 -> f1, f2 -> f4 -> f2, f3 -> f2
@@ -917,7 +917,7 @@ mod tests {
     /// FR-146: "a host stack overflow is not a Complete-V1 outcome". A
     /// 200,000-member chain and a 200,000-member ring are traversed on a
     /// 512 KiB thread stack, which a recursive Tarjan would overflow.
-    #[trace("TC-191", "FR-146-AC-7")]
+    #[trace("QSpec-TC-191", "QSpec-FR-146-AC-7")]
     #[test]
     fn a_long_chain_and_ring_do_not_grow_the_stack() {
         const LENGTH: usize = 200_000;

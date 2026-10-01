@@ -1070,7 +1070,7 @@ mod tests {
     /// `quire-canonical` domain: SHA-256 over the label's big-endian `u64`
     /// length, the label `quire.complete.resolved-graph/2`, and the
     /// preimage's RFC 8785 text, all written out by hand.
-    #[trace("TC-491", "FR-111-AC-5", "FR-131-AC-2")]
+    #[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
     #[test]
     fn resolved_graph_identity_matches_its_golden_vector() {
         const TEXT: &str =

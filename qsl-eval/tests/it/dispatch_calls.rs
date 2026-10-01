@@ -280,7 +280,7 @@ fn one_candidate_package(
 /// `ill_typed`/`operator-ineligible` while checking a function or operation
 /// body — the same `ClauseKind` context every ordinary named-function body
 /// checks under.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -330,7 +330,7 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
 /// `ill_typed`/`operator-ineligible` at `r.size()` — an ordinary named
 /// function admitted alongside the dispatch table, not a standalone
 /// clause expression.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -364,7 +364,7 @@ fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
 /// FR-151 (`quire.model.dispatch.single/v1`): a dispatch call argument is
 /// type-checked "with reference upcasts only" — never the `Integer`/`Int[..]`
 /// widening an ordinary call's argument admits.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn dispatch_argument_never_admits_integer_to_int_coercion() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -406,7 +406,7 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
 /// call argument admits a reference upcast -- an argument statically typed
 /// as a proper subtype of the declared parameter type is admitted, and the
 /// checked node's own static type narrows to the declared parameter type.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn dispatch_argument_admits_a_reference_upcast() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -454,7 +454,7 @@ fn dispatch_argument_admits_a_reference_upcast() {
 /// passing an argument statically typed as a proper *supertype* of the
 /// declared parameter (the "downcast" direction) is refused
 /// `ill_typed`/`type-mismatch`, exactly as an unrelated type would be.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn dispatch_argument_refuses_a_reference_downcast() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -504,7 +504,7 @@ fn dispatch_argument_refuses_a_reference_downcast() {
 /// H1 (#204 round 1), FR-151: an argument statically typed as a reference to
 /// an object type unrelated to the declared parameter (neither an ancestor
 /// nor a descendant) is refused `ill_typed`/`type-mismatch`.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn dispatch_argument_refuses_an_unrelated_reference_type() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -558,7 +558,7 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
 /// let an ordinary function body reach a dispatch candidate's own body or
 /// precondition clause without ever going through `dispatch_call`'s
 /// clause-kind restriction.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn synthesized_dispatch_candidate_is_not_callable_by_name() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -610,7 +610,7 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
 /// does), so `as_unqualified()` succeeds, `self.function` finds a real
 /// declaration by that identifier, and refusal can only come from the
 /// `callable_by_name` filter itself.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup() {
     let graph = PackageDeclarations {
@@ -723,7 +723,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
 /// remains fully reachable and unaffected by that narrowing — it is a
 /// standalone expression check outside `PackageDeclarations::functions`
 /// entirely, never routed through `FunctionDeclaration::clause` at all.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn check_postcondition_expression_still_admits_a_real_postcondition() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -748,7 +748,7 @@ fn check_postcondition_expression_still_admits_a_real_postcondition() {
 /// never an `unwrap_or_default`/panic on the malformed table — and the
 /// refusal names the out-of-range role and index rather than a free-form
 /// string.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatch() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -788,7 +788,7 @@ fn dispatch_candidate_with_an_out_of_range_body_index_is_refused_invalid_dispatc
 /// `invalid_package`/`invalid-value`, not admitted with a silently
 /// mismatched call frame — and the refusal is located at the candidate
 /// function's own declaration, not the expression root.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -843,7 +843,7 @@ fn dispatch_candidate_with_a_mismatched_arity_is_refused_invalid_dispatch() {
 /// match the dispatch operation's own declared argument type is refused
 /// `invalid_package`/`invalid-value`, distinct from an arity mismatch, and
 /// still located at the candidate function's own declaration.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispatch() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -902,7 +902,7 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
 /// dispatch operation's own declared result type is refused
 /// `invalid_package`/`invalid-value`, distinct from an arity or parameter
 /// mismatch, and still located at the candidate function's own declaration.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn dispatch_candidate_with_a_mismatched_result_type_is_refused_invalid_dispatch() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -1052,7 +1052,7 @@ fn ab_bridge_package(
 /// unconditionally (its own clause is absent, so no ancestor's precondition
 /// is even consulted), the call still completes with `B`'s own body value,
 /// proving both properties at once.
-#[trace("TC-196", "FR-151-AC-7", "FR-151-AC-8")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-7", "QSpec-FR-151-AC-8")]
 #[test]
 fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific() {
     let b_type = ab_type("model.B");
@@ -1101,7 +1101,13 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
 /// refused `Undefined::PreconditionFalse`, and the candidate body's own
 /// `function.call` never charges: only `dispatch.select`'s own charge is
 /// consumed.
-#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-151-AC-8", "FR-090-AC-11")]
+#[trace(
+    "QSpec-TC-196",
+    "TC-407",
+    "QSpec-FR-151-AC-7",
+    "QSpec-FR-151-AC-8",
+    "FR-090-AC-11"
+)]
 #[test]
 fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
     let a_type = ab_type("model.A");
@@ -1169,7 +1175,7 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 /// `DispatchGuard` carries the dispatch node's own location, set at push
 /// time from the `NodeKind::Dispatch` node the D06 tests above dispatch
 /// through (`qsl-eval/src/value/expression/evaluate.rs`).
-#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
+#[trace("QSpec-TC-196", "TC-407", "QSpec-FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
     let a_type = ab_type("model.A");
@@ -1225,7 +1231,7 @@ fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_
 /// (set once, at `check.rs`'s `dispatch_call`) rather than being re-derived
 /// at evaluation time by searching `dispatch_operations` for whichever
 /// operation happens to name the same `table` first.
-#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
+#[trace("QSpec-TC-196", "TC-407", "QSpec-FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -1337,7 +1343,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
 /// — before the measure-decrease obligation (which this pseudo-function,
 /// having no `decreases` clause, would otherwise fail on `missing-measure`)
 /// is even attempted.
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
@@ -1379,7 +1385,7 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
 /// (ancestor) precondition also `false`, is refused
 /// `Undefined::PreconditionFalse` naming `model.B.size` — never falling back
 /// to the less-specific `model.A.size` the ancestor term belongs to.
-#[trace("TC-196", "TC-407", "FR-151-AC-7", "FR-090-AC-11")]
+#[trace("QSpec-TC-196", "TC-407", "QSpec-FR-151-AC-7", "FR-090-AC-11")]
 #[test]
 fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
     let b_type = ab_type("model.B");
@@ -1434,7 +1440,7 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
 /// so this charges one work unit more than that case: `dispatch.select`,
 /// the combinator's own `function.call`, and the candidate body's
 /// `function.call`.
-#[trace("TC-196", "FR-151-AC-7")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-7")]
 #[test]
 fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
     let b_type = ab_type("model.B");
@@ -1491,7 +1497,7 @@ fn self_recursive_precondition() -> Expression {
 /// (`self.size() >= 0`); `B` declares no own precondition. The static
 /// FR-146 ancestry the bridge builds gives exactly one cycle edge,
 /// `model.A.size.precondition -> model.A.size.precondition`.
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
     let a_type = ab_type("model.A");
@@ -1526,7 +1532,7 @@ fn d08_bridge_self_recursive_precondition_is_refused_definition_cycle() {
 /// runtime-absorbed precondition is the combinator's own index, not the
 /// authored clauses it disjoins, so the case-1 test above (a single-term
 /// candidate with no ancestor) cannot tell the two apart on its own.
-#[trace("TC-196", "FR-151-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-3")]
 #[test]
 fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
     let a_type = ab_type("model.A");
@@ -1562,7 +1568,7 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
 /// (which would either wrongly refuse `AmbiguousName { name: "b" }` or
 /// silently change what the precondition means, by comparing the `let`'s
 /// own `5` to itself instead of `B`'s own receiver parameter to itself).
-#[trace("TC-196", "FR-151-AC-7")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-7")]
 #[test]
 fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_capture() {
     let a_type = ab_type("model.A");
@@ -1751,7 +1757,7 @@ fn bridge_view(domain_package: &DomainPackage) -> EffectiveView {
 /// value's type component carries -- never a caller-supplied key. `B`'s
 /// declared supertype `A` resolves through the same view, so the result
 /// admits into a `TypeEnvironment` in which `B` conforms to `A`.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn bridge_keys_object_types_by_their_effective_identity() {
     let domain_package = bridge_bundle();
@@ -1775,7 +1781,7 @@ fn bridge_keys_object_types_by_their_effective_identity() {
 /// `EffectiveView::type_identities` holds exactly the view's type-level
 /// declarations, each with its own entry's effective identity: the two
 /// object types, never a member declaration.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn type_identities_hold_only_type_level_declarations() {
     // `bridge_bundle` plus one field member `model.A.next: model.A`, which
@@ -1857,7 +1863,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// (`DispatchTable::linked_for`) works once a receiver's most-specific type
 /// is in hand; this test proves the *bridge* assembles a real multi-candidate
 /// table and functions array correctly (`value_occurrences == 2`, below).
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let domain_package = bridge_bundle();
@@ -1982,7 +1988,7 @@ fn inherited_only_clauses(receiver_type: EffectiveId) -> OperationClauses {
 /// "member-name resolves statically to exactly one exposed effective
 /// operation... of the receiver's static type `T`" -- `T` is not required to
 /// be the operation's own declared owner.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn bridge_exposes_dispatch_through_an_inherited_static_type_that_never_redefines() {
     let domain_package = inherited_only_bridge_bundle();
@@ -2106,7 +2112,7 @@ fn not_a_query_refusal(domain_package: &DomainPackage) -> DispatchBridgeRefusal 
 /// whose result is present and whose effect set is empty, may be called."
 /// `model.A.size` declares no result at all -- refused `NotAQuery`, not
 /// silently admitted as a dispatch target.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn checked_dispatch_operation_refuses_a_dispatch_target_with_no_result() {
     let domain_package = not_a_query_bundle(None, OperationEffect::default());
@@ -2127,7 +2133,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_no_result() {
 /// #174: `model.A.size` declares a result but a non-empty effect (it
 /// `creates` `model.A`) -- refused `NotAQuery` for the identical reason: FR-151
 /// admits only an operation whose effect set is empty as a dispatch target.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect() {
     let domain_package = not_a_query_bundle(
@@ -2170,7 +2176,7 @@ fn checked_dispatch_operation_refuses_a_dispatch_target_with_a_non_empty_effect(
 /// round-1 shape), it would report `model.B.size` first. It must report
 /// `model.A.size` -- `root.key`, the statically resolved operation this
 /// whole call is about -- regardless.
-#[trace("TC-196", "FR-151")]
+#[trace("QSpec-TC-196", "QSpec-FR-151")]
 #[test]
 fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
     let domain_package = DomainPackage::new(

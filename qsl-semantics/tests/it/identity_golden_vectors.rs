@@ -142,7 +142,7 @@ fn qualified(node: &str, owner: Option<EffectiveId>) -> EffectiveDeclarationPrei
 /// `quire.model.effective-declaration/v1`, for an effective type (`null`
 /// owner) and an effective member (an `{domain, digest}` owner), with the
 /// encoder's byte count equal to the text's length.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn effective_declaration_identities_match_their_golden_vectors() {
     let effective_type = qualified("ix://test/orders/A", None);
@@ -166,7 +166,7 @@ fn effective_declaration_identities_match_their_golden_vectors() {
 }
 
 /// `quire.model.object-universe/v1`.
-#[trace("TC-195", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn object_universe_identity_matches_its_golden_vector() {
     let universe = ObjectUniverse {
@@ -182,7 +182,7 @@ fn object_universe_identity_matches_its_golden_vector() {
 
 /// `quire.model.effective-view/v1`, over the view `normalize` builds for a
 /// one-type domain package.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn effective_view_identity_matches_its_golden_vector() {
     let package = DomainPackage::new(
@@ -226,7 +226,7 @@ fn enum_node_digests_match_their_golden_vectors() {
 
 /// The dimension and unit node preimages, and the compound-unit
 /// `quire.value.compound-unit/v1` identity over that unit.
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
     let dimension = DimensionPreimage::from_json(serde_json::from_str(DIMENSION).unwrap()).unwrap();

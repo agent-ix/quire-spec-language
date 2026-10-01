@@ -219,7 +219,7 @@ fn find_member<'a>(
 /// FR-150-AC-1's own test (`tests/model_normalization.rs`'s n06 case),
 /// which exercises a *conflict* resolved by dominance, not a single
 /// uncontested redefiner.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete_provenance() {
     let domain_package = DomainPackage::new(
@@ -327,7 +327,7 @@ fn r01_a_compatible_field_redefinition_yields_one_effective_member_with_complete
 /// `FieldMember` records that once differed only in `revision` now share the
 /// exact same `DeclarationKey` and `normalize` must refuse before this
 /// module's own conformance check ever runs.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
@@ -366,7 +366,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
 // effective member — `normalize.rs`'s own module doc says operation
 // redefinition builds no phase there). AC-4 is this test's real subject:
 // every variance axis admitting independently.
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
 #[test]
 fn r02_a_compatible_operation_redefinition_admits_every_axis() {
     let domain_package = bundle_h(vec![operation_redefining(
@@ -487,7 +487,7 @@ fn r04_an_arity_mismatch_refuses_without_checking_parameter_axes() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     let records = |a_mult: Multiplicity, b_mult: Multiplicity| {
@@ -548,7 +548,7 @@ fn r05_field_multiplicity_narrowing_refuses_and_the_boundary_admits() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r06_subsetting_type_and_multiplicity_axes() {
     let bundle_of = |some_type: &str, some_mult: Multiplicity| {
@@ -786,7 +786,7 @@ fn r08b_a_redefined_operation_with_the_presence_fact_discharges_the_obligation()
     }
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08c_an_object_typed_narrowing_has_no_proof_form() {
     let mut records = r08_base();
@@ -814,7 +814,7 @@ fn r08c_an_object_typed_narrowing_has_no_proof_form() {
     }
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain() {
     let mut records = r08_base();
@@ -842,7 +842,7 @@ fn r08d_a_narrowed_scalar_domain_without_an_interval_fact_refuses_field_domain()
     }
 }
 
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
     let redefining_key = DeclarationKey::fixture("model.B.cs");
@@ -902,7 +902,7 @@ fn r08e_and_r08f_an_established_interval_admits_only_when_contained() {
 /// already satisfies) must still refuse: the obligation is discharged by
 /// real fact derivation over the declared clause, not by trusting that any
 /// clause naming the field is sufficient.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligation() {
     let mut records = r08_base();
@@ -959,7 +959,7 @@ fn r08g_an_unrelated_clause_over_the_same_field_does_not_discharge_the_obligatio
 /// bug refused in both orders under this domain (a domain of `[0,9]` let
 /// `cs <= 5` alone slip through as already-sufficient when declared first,
 /// which is why this test does not reuse `r08_base`).
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
     let ge_zero = PostconditionClause::Comparison {
@@ -1036,7 +1036,7 @@ fn r08h_two_conjoined_clauses_together_establish_the_narrowed_interval() {
 /// lower greater than its upper) must refuse when a narrowing
 /// redefinition's obligation check seeds a synthetic guard from it, never
 /// panic on this caller-supplied domain package data.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
     let records = vec![
@@ -1110,7 +1110,7 @@ fn r08i_a_malformed_scalar_domain_refuses_rather_than_panicking() {
 /// `model.C.op` redefines it with `modifies: [model.C.x]`. `model.C.x`
 /// reaches the `model.A.x` grant only through both hops, so this must admit
 /// `Compatible`, not refuse `EffectEscape`.
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
 #[test]
 fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefinition_chain() {
     let domain_package = DomainPackage::new(
@@ -1193,7 +1193,7 @@ fn r09_operation_redefinition_effect_axis_reaches_through_a_two_hop_field_redefi
 /// candidate.node)` instead of `.contains(candidate)`. Every other test in
 /// this file stayed green; this one went from `Refused` to `Compatible`;
 /// reverted.
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
 #[test]
 fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant_does_not_name() {
     let write_in_another_package = DeclarationKey {
@@ -1264,7 +1264,7 @@ fn r10_operation_redefinition_effect_axis_refuses_a_write_at_a_package_the_grant
 /// redefinition record and no match against `modifies: [model.A.x]`, and
 /// refuses -- it must not, e.g., stop after zero hops and admit by mistake,
 /// or walk past the chain's actual end.
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
 #[test]
 fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the_grant() {
     let domain_package = DomainPackage::new(
@@ -1341,7 +1341,7 @@ fn r11_operation_redefinition_effect_axis_refuses_a_chain_that_never_reaches_the
 /// test hung under that mutation (killed by a 15s external `timeout`,
 /// having produced no result) instead of failing fast; the source was
 /// restored to the bounded loop before this file was committed.
-#[trace("TC-196", "FR-151-AC-4")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-4")]
 #[test]
 fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefinition_cycle() {
     let domain_package = DomainPackage::new(
@@ -1420,7 +1420,7 @@ fn r12_operation_redefinition_effect_axis_refuses_and_terminates_on_a_redefiniti
 /// that `model.A.x` declares, even though both share the node `model.Count`
 /// -- the obligation falls through to the field-domain check instead of
 /// being waved through as "no narrowing at all".
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_the_same_node() {
     let redefining_value_type = DeclarationKey {
@@ -1496,7 +1496,7 @@ fn r13_field_refinement_same_type_check_does_not_confuse_two_packages_scalar_of_
 /// excludes it -- only the writer search itself can). `test/orders`'s
 /// actual writer, `model.A.set`, states no postcondition at all, so the
 /// real answer stays `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefined_field_node()
 {
@@ -1583,7 +1583,7 @@ fn r14a_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// redefined field's node. The writer search must still exclude it by full
 /// key, and `test/orders`'s real writer, `model.A.set`, still states no
 /// postcondition, so the real answer stays `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_redefining_field_node()
 {
@@ -1675,7 +1675,7 @@ fn r14b_field_refinement_writer_search_does_not_confuse_a_decoy_matching_the_red
 /// so only the target comparison, not `names_field`, can exclude it.
 /// `test/orders`'s real writer, `model.A.set`, has no genuine redefiner in
 /// this fixture, so the obligation must stay `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_writers_node() {
     let domain_package = DomainPackage::new(
@@ -1754,7 +1754,7 @@ fn r15a_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_w
 /// `other/pkg`'s `model.B` -- the redefining field's owner's own node,
 /// wrong package. The owner comparison must still exclude it by full key,
 /// so the obligation stays `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_owners_node() {
     let domain_package = DomainPackage::new(
@@ -1837,7 +1837,7 @@ fn r15b_field_refinement_chain_extension_does_not_confuse_a_decoy_matching_the_o
 /// That clause must not be read as establishing anything about
 /// `test/orders`'s `model.B.xb`, so the obligation stays undischarged and
 /// the real answer is `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefining_field_node(
 ) {
@@ -1911,7 +1911,7 @@ fn r16a_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_t
 /// node, rather than the redefining field's. That clause must still be
 /// excluded by full key, so the obligation stays undischarged and the real
 /// answer is `Refused(field-presence)`.
-#[trace("TC-196", "FR-151-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-6")]
 #[test]
 fn r16b_field_refinement_names_field_filter_does_not_confuse_a_clause_matching_the_redefined_field_node(
 ) {

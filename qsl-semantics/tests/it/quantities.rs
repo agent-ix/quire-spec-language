@@ -317,7 +317,7 @@ fn compound_unit(fixture: &Fixture, terms: &[(NodeKey, &str)]) -> QuantityUnit {
 
 // ---- node identity fixtures ---------------------------------------------------
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
     let mut nodes = Nodes::default();
@@ -408,7 +408,7 @@ fn dimension_and_unit_node_preimages_are_content_addressed_and_admit() {
     assert_eq!(celsius_node.canonical().offset(), &ratio(5463, 20));
 }
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn dimension_and_unit_semantic_mutations_refuse_by_their_named_cause() {
     let mut base = Nodes::default();
@@ -478,7 +478,7 @@ fn dimension_and_unit_semantic_mutations_refuse_by_their_named_cause() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn stale_keys_and_foreign_owners_refuse_admission() {
     let base = fixture();
@@ -566,7 +566,7 @@ fn compound_preimage(terms: &[(NodeKey, &str)]) -> Value {
     json!({"version": "quire.value.compound-unit/v1", "terms": terms})
 }
 
-#[trace("TC-187", "FR-142-AC-6")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-6")]
 #[test]
 fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     let mut nodes = Nodes::default();
@@ -755,7 +755,7 @@ fn tc_411_compound_unit_ids_match_qspec_vectors() {
 
 // ---- U01–U13 -----------------------------------------------------------------
 
-#[trace("TC-187", "FR-142-AC-1", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-1", "QSpec-FR-142-AC-5")]
 #[test]
 fn u01_exact_conversion_then_arithmetic() {
     let f = fixture();
@@ -801,7 +801,7 @@ fn u01_exact_conversion_then_arithmetic() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-4")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-4")]
 #[test]
 fn u02_dimension_maps_normalize() {
     let f = fixture();
@@ -816,7 +816,7 @@ fn u02_dimension_maps_normalize() {
     assert_eq!(length.multiply(time).exponents().count(), 2);
 }
 
-#[trace("TC-187", "FR-142-AC-2")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2")]
 #[test]
 fn u03_incompatible_dimensions_refuse_before_arithmetic() {
     let f = fixture();
@@ -843,7 +843,7 @@ fn u03_incompatible_dimensions_refuse_before_arithmetic() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn u04_affine_conversions_compose_through_the_root() {
     let f = fixture();
@@ -872,7 +872,7 @@ fn u04_affine_conversions_compose_through_the_root() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2", "QSpec-FR-142-AC-5")]
 #[test]
 fn u05_affine_arithmetic_refuses() {
     let f = fixture();
@@ -901,7 +901,7 @@ fn u05_affine_arithmetic_refuses() {
     }
 }
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn u06_zero_scale_refuses_admission() {
     let f = fixture();
@@ -925,7 +925,7 @@ fn decimal_type(lower: i64, upper: i64, scale: u64, mode: RoundingMode) -> Quant
     QuantityTarget::Decimal(DecimalType::new(int(lower), int(upper), scale, scale, mode).unwrap())
 }
 
-#[trace("TC-187", "FR-142-AC-3")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3")]
 #[test]
 fn u07_lossy_decimal_conversion_reports_or_refuses() {
     let f = fixture();
@@ -971,7 +971,7 @@ fn u07_lossy_decimal_conversion_reports_or_refuses() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-3")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3")]
 #[test]
 fn u08_target_domain_endpoints_admit_and_one_over_refuses() {
     let f = fixture();
@@ -1018,7 +1018,7 @@ fn value_of_decimal(f: &Fixture, value: i64, target: &QuantityTarget) -> i64 {
     }
 }
 
-#[trace("TC-187", "FR-142-AC-2")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2")]
 #[test]
 fn u09_u09b_identity_is_the_node_key_not_the_shape() {
     let f = fixture();
@@ -1089,7 +1089,7 @@ const U10: ScalarLimits = ScalarLimits {
     result_units: 1,
 };
 
-#[trace("TC-187", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-7")]
 #[test]
 fn u10_exact_bound_accounting_and_named_denials() {
     let f = fixture();
@@ -1189,7 +1189,7 @@ fn u10_exact_bound_accounting_and_named_denials() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
 #[test]
 fn u11_invalid_topologies_refuse_admission() {
     let f = fixture();
@@ -1234,7 +1234,7 @@ fn u11_invalid_topologies_refuse_admission() {
     refuses(&cross, SemanticGraphCause::CrossDimensionTarget);
 }
 
-#[trace("TC-187", "FR-142-AC-6", "FR-142-AC-4")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-6", "QSpec-FR-142-AC-4")]
 #[test]
 fn u12_multiplication_division_and_power_use_compound_units() {
     let f = fixture();
@@ -1343,7 +1343,7 @@ fn u12_multiplication_division_and_power_use_compound_units() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-7")]
 #[test]
 fn u13_huge_power_is_incomplete_before_computing() {
     let f = fixture();
@@ -1385,7 +1385,7 @@ fn wide_decimal(scale: u64, mode: RoundingMode) -> QuantityTarget {
     QuantityTarget::Decimal(DecimalType::new(lower, bound, scale, scale, mode).unwrap())
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
     let f = fixture();
@@ -1432,7 +1432,7 @@ fn huge_target_scale_is_decided_before_materializing_the_coefficient() {
         .contains(&ChargePoint::UnitTargetDomain));
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn rounded_target_sizes_bound_the_materialized_coefficient() {
     let f = fixture();
@@ -1656,7 +1656,7 @@ fn extended() -> Extended {
     }
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2", "QSpec-FR-142-AC-7")]
 #[test]
 fn u14_static_refusals_precede_every_charge() {
     let f = fixture();
@@ -1719,7 +1719,7 @@ fn u14_static_refusals_precede_every_charge() {
     assert!(meter.admitted_charges().is_empty());
 }
 
-#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5", "QSpec-FR-142-AC-7")]
 #[test]
 fn u15_every_edge_is_charged_before_the_first_rational_event() {
     let f = fixture();
@@ -1770,7 +1770,7 @@ fn u15_every_edge_is_charged_before_the_first_rational_event() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn u16_strict_rounding_refuses_before_the_target_domain() {
     let f = fixture();
@@ -1820,7 +1820,7 @@ fn u16_strict_rounding_refuses_before_the_target_domain() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn u17_membership_refuses_after_the_target_domain() {
     let f = fixture();
@@ -1846,7 +1846,7 @@ fn u17_membership_refuses_after_the_target_domain() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn u18_huge_target_scale_is_sized_analytically() {
     let f = fixture();
@@ -1870,7 +1870,7 @@ fn u18_huge_target_scale_is_sized_analytically() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-1", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-1", "QSpec-FR-142-AC-7")]
 #[test]
 fn u19_rational_target_charges_one_work_unit_and_no_size() {
     let f = fixture();
@@ -1897,7 +1897,7 @@ fn u19_rational_target_charges_one_work_unit_and_no_size() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-5")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-2", "QSpec-FR-142-AC-5")]
 #[test]
 fn u20_affinity_is_the_composed_offset() {
     let x = extended();
@@ -1929,7 +1929,7 @@ fn u20_affinity_is_the_composed_offset() {
     assert!(!meter.admitted_charges().contains(&ChargePoint::UnitEdge));
 }
 
-#[trace("TC-187", "FR-142-AC-6", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-6", "QSpec-FR-142-AC-7")]
 #[test]
 fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     let f = fixture();
@@ -1966,7 +1966,12 @@ fn u21_zero_base_power_is_one_at_zero_and_undefined_below() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4", "FR-142-AC-10")]
+#[trace(
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-2",
+    "QSpec-FR-142-AC-4",
+    "QSpec-FR-142-AC-10"
+)]
 #[test]
 fn u22_declared_conversion_requires_one_dimension_node() {
     let x = extended();
@@ -2083,7 +2088,12 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7", "FR-142-AC-9")]
+#[trace(
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-5",
+    "QSpec-FR-142-AC-7",
+    "QSpec-FR-142-AC-9"
+)]
 #[test]
 fn u23_comparison_uses_root_values_of_the_identical_unit() {
     let x = extended();
@@ -2160,7 +2170,7 @@ fn u23_comparison_uses_root_values_of_the_identical_unit() {
     assert!(meter.admitted_charges().is_empty());
 }
 
-#[trace("TC-187", "FR-142-AC-1", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-1", "QSpec-FR-142-AC-7")]
 #[test]
 fn u24_identical_unit_addition_traverses_no_edge() {
     let f = fixture();
@@ -2187,7 +2197,12 @@ fn u24_identical_unit_addition_traverses_no_edge() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-2", "FR-142-AC-4", "FR-142-AC-10")]
+#[trace(
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-2",
+    "QSpec-FR-142-AC-4",
+    "QSpec-FR-142-AC-10"
+)]
 #[test]
 fn u25_compound_pivot_between_nominal_dimensions() {
     let x = extended();
@@ -2225,7 +2240,7 @@ fn u25_compound_pivot_between_nominal_dimensions() {
     assert_eq!(meter.admitted_charges(), no_edge);
 }
 
-#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5", "QSpec-FR-142-AC-7")]
 #[test]
 fn u26_conversion_has_no_common_ancestor_shortcut() {
     let x = extended();
@@ -2254,7 +2269,7 @@ fn u26_conversion_has_no_common_ancestor_shortcut() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-6", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-6", "QSpec-FR-142-AC-7")]
 #[test]
 fn u27_zero_divisor_is_undefined_after_the_reads() {
     let f = fixture();
@@ -2275,7 +2290,7 @@ fn u27_zero_divisor_is_undefined_after_the_reads() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-5", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5", "QSpec-FR-142-AC-7")]
 #[test]
 fn u28_multiplication_charges_left_then_right_then_the_product() {
     let f = fixture();
@@ -2309,7 +2324,7 @@ fn u28_multiplication_charges_left_then_right_then_the_product() {
     );
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn u29_integer_target_charges_integer_bits_only() {
     let f = fixture();
@@ -2376,7 +2391,7 @@ fn integer_target(lower: i64, upper: i64, rounding: RoundingMode) -> QuantityTar
     }
 }
 
-#[trace("TC-187", "FR-142-AC-3", "FR-142-AC-7")]
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-3", "QSpec-FR-142-AC-7")]
 #[test]
 fn integer_target_places_at_scale_zero_then_admits_the_integer_domain() {
     let f = fixture();
@@ -2508,7 +2523,12 @@ fn as_rational((numerator, denominator): Fraction) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
 }
 
-#[trace("TC-187", "FR-142-AC-1", "FR-142-AC-5", "FR-142-AC-7")]
+#[trace(
+    "QSpec-TC-187",
+    "QSpec-FR-142-AC-1",
+    "QSpec-FR-142-AC-5",
+    "QSpec-FR-142-AC-7"
+)]
 #[test]
 fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
     let mut stream = Stream(187);

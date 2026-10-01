@@ -93,7 +93,7 @@ fn formatting_is_idempotent_and_preserves_semantic_tokens() {
     assert!(second.edits.is_empty());
 }
 
-#[trace("TC-184", "FR-134-AC-1")]
+#[trace("QSpec-TC-184", "QSpec-FR-134-AC-1")]
 #[test]
 fn lf_crlf_and_absent_final_newline_retain_format_correspondence() {
     let (catalog, profile) = catalog();

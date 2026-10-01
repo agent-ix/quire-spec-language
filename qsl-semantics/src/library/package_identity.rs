@@ -535,7 +535,7 @@ mod tests {
     /// admitted, and the UTF-8 order the old re-serialize-and-compare check
     /// required is refused as non-canonical. A trailing space, a repeated
     /// member and a non-canonical number spelling stay refused.
-    #[trace("TC-227", "FR-307-AC-1")]
+    #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[test]
     fn canonicity_admits_a_non_ascii_member_name_in_rfc_8785_order() {
         let mut preimage: Value =
@@ -569,7 +569,7 @@ mod tests {
     /// FR-307: the wire node id `library::package_identity` derives for a
     /// nominal declaration is the projection node's own `node_id` digest,
     /// carried as a `(WireNodeId, name)` entry.
-    #[trace("TC-227", "FR-307-AC-1")]
+    #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[test]
     fn project_declarations_derives_the_declaring_nodes_own_wire_id() {
         let bytes = one_node_preimage(b"Example::Length", &["Example", "Length"]);
@@ -585,7 +585,7 @@ mod tests {
     /// predecessor's evidence (FR-307-AC-3): two preimages that both
     /// declare the same qualified name, from different node content, carry
     /// that name at two different wire node ids.
-    #[trace("TC-227", "FR-307-AC-3")]
+    #[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
     #[test]
     fn migrated_identity_derives_a_different_node_id_for_the_same_name() {
         let entries = |seed: &[u8]| {
@@ -605,7 +605,7 @@ mod tests {
     /// `undeclared` answers membership only: the first export, in list
     /// order (not sorted order), that no declaration spells. It returns a
     /// name, never a node id.
-    #[trace("TC-227", "FR-307-AC-1")]
+    #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[trace("TC-254", "FR-087-AC-4")]
     #[test]
     fn undeclared_names_the_first_export_no_declaration_spells() {

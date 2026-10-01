@@ -147,7 +147,7 @@ fn refused_at_check(package: &CheckedPackage, static_type: &str, field: &str) ->
 /// `A.x` is inherited by `B`: `deref(r).x` resolves for `r: Reference<B>`
 /// and reads the `B` object's inherited slot, beside its own `y`. `A`'s
 /// view does not see `B`'s own `y`.
-#[trace("TC-198", "FR-153-AC-6")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
 #[test]
 fn deref_reads_an_inherited_field_through_the_subtype() {
     let (package, types) = package(vec![
@@ -177,8 +177,8 @@ fn deref_reads_an_inherited_field_through_the_subtype() {
 
 /// FR-151 hide: `B.x` redefines `A.x`. An `A` object's `x` is `A.x`; a `B`
 /// object's `x` is `B.x`'s one slot.
-#[trace("TC-198", "FR-153-AC-6")]
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn deref_through_a_redefined_field_reads_the_redefiner() {
     let (package, types) = package(vec![
@@ -207,8 +207,8 @@ fn deref_through_a_redefined_field_reads_the_redefiner() {
 
 /// FR-151 most derived wins: `B.x` and `C.x` both redefine `A.x`, `C -> B`.
 /// `C`'s one `x` is `C.x`, read through `Reference<C>`.
-#[trace("TC-198", "FR-153-AC-6")]
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn deref_reads_the_most_derived_redefinition() {
     let (package, types) = package(vec![
@@ -226,8 +226,8 @@ fn deref_reads_the_most_derived_redefinition() {
 
 /// A renamed redefinition: `B.y` redefines `A.x`. Through `Reference<B>`
 /// the name is `y`, and `x` no longer resolves: refused at check time.
-#[trace("TC-198", "FR-153-AC-6")]
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-198", "QSpec-FR-153-AC-6")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn deref_through_a_renamed_redefinition_reads_the_new_name() {
     let (package, types) = package(vec![

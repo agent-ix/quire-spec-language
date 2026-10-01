@@ -67,7 +67,7 @@ fn wide(scale: u64, mode: RoundingMode) -> DecimalType {
     target(-1000, 1000, scale, mode)
 }
 
-#[trace("TC-185", "FR-140-AC-1")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-1")]
 #[test]
 fn d01_equal_values_retain_distinct_representations() {
     let (a, b) = (dec(10, 1), dec(100, 2));
@@ -86,7 +86,7 @@ fn d01_equal_values_retain_distinct_representations() {
     }
 }
 
-#[trace("TC-185", "FR-140-AC-2")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-2")]
 #[test]
 fn d02_d04_exact_arithmetic_has_no_loss_in_every_mode() {
     for mode in RoundingMode::ALL {
@@ -106,7 +106,7 @@ fn d02_d04_exact_arithmetic_has_no_loss_in_every_mode() {
     }
 }
 
-#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-4")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3", "QSpec-FR-140-AC-4")]
 #[test]
 fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
     let table = [
@@ -147,7 +147,7 @@ fn d03_every_mode_rounds_both_signed_halves_with_a_typed_loss() {
     }
 }
 
-#[trace("TC-185", "FR-140-AC-3")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3")]
 #[test]
 fn d05_recurring_quotient_refuses_exact_and_records_nearest_even_loss() {
     let (one, three) = (dec(1, 0), dec(3, 0));
@@ -176,7 +176,7 @@ fn d05_recurring_quotient_refuses_exact_and_records_nearest_even_loss() {
     );
 }
 
-#[trace("TC-185", "FR-140-AC-5")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5")]
 #[test]
 fn d06_d08_zero_divisors_are_undefined_and_domains_refuse() {
     for zero in [dec(0, 0), dec(0, 3)] {
@@ -235,7 +235,7 @@ fn d05(meter: &mut Meter) -> Outcome<DecimalResult> {
     )
 }
 
-#[trace("TC-185", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-6")]
 #[test]
 fn d09_exact_bound_succeeds_and_each_named_denial_is_incomplete() {
     let mut meter = Meter::new(D09);
@@ -347,7 +347,7 @@ fn declared(lower: i64, upper: i64, min: u64, max: u64) -> Result<DecimalType, I
     )
 }
 
-#[trace("TC-185", "FR-140-AC-5")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5")]
 #[test]
 fn d10_malformed_decimal_types_are_ill_typed() {
     let malformed = Err(IllTyped {
@@ -360,7 +360,7 @@ fn d10_malformed_decimal_types_are_ill_typed() {
     assert!(declared(0, 9, 0, 4_294_967_295).is_ok());
 }
 
-#[trace("TC-185", "FR-140-AC-5")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5")]
 #[test]
 fn d11_membership_lifts_to_the_minimum_scale() {
     let wide_type = declared(0, 10_000, 2, 2).unwrap();
@@ -383,7 +383,7 @@ fn d11_membership_lifts_to_the_minimum_scale() {
     }
 }
 
-#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-5")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3", "QSpec-FR-140-AC-5")]
 #[test]
 fn d12_a_rounded_coefficient_outside_the_domain_is_never_re_rounded() {
     let (one, three) = (dec(1, 0), dec(3, 0));
@@ -419,7 +419,7 @@ const D13: ScalarLimits = ScalarLimits {
     result_units: 1,
 };
 
-#[trace("TC-185", "FR-140-AC-2", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-2", "QSpec-FR-140-AC-6")]
 #[test]
 fn d13_discarded_zero_digits_are_not_a_rounding_step() {
     let (a, b) = (dec(150, 2), dec(2, 0));
@@ -473,7 +473,7 @@ fn d13_discarded_zero_digits_are_not_a_rounding_step() {
     }
 }
 
-#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3", "QSpec-FR-140-AC-6")]
 #[test]
 fn d14_strict_exact_refuses_before_rounding() {
     let run = |work_units| {
@@ -501,7 +501,7 @@ fn d14_strict_exact_refuses_before_rounding() {
     assert_eq!(run(2).0, work_denied(2, ChargePoint::DecimalArithmetic));
 }
 
-#[trace("TC-185", "FR-140-AC-5", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5", "QSpec-FR-140-AC-6")]
 #[test]
 fn d15_zero_divisor_is_undefined_after_the_operands_charge() {
     let run = |work_units| {
@@ -523,7 +523,7 @@ fn d15_zero_divisor_is_undefined_after_the_operands_charge() {
     assert_eq!(run(0).0, work_denied(0, ChargePoint::DecimalOperands));
 }
 
-#[trace("TC-185", "FR-140-AC-5", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5", "QSpec-FR-140-AC-6")]
 #[test]
 fn d16_membership_refusal_follows_rounding_and_precedes_retention() {
     let limits = ScalarLimits {
@@ -571,7 +571,7 @@ fn d16_membership_refusal_follows_rounding_and_precedes_retention() {
     );
 }
 
-#[trace("TC-185", "FR-140-AC-2", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-2", "QSpec-FR-140-AC-6")]
 #[test]
 fn d17_scale_expansion_uses_the_retained_representation() {
     let limits = ScalarLimits {
@@ -595,7 +595,7 @@ fn d17_scale_expansion_uses_the_retained_representation() {
     assert!(result.loss().is_none());
 }
 
-#[trace("TC-185", "FR-140-AC-3", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3", "QSpec-FR-140-AC-6")]
 #[test]
 fn d18_division_expands_the_divisor_side() {
     let limits = ScalarLimits {
@@ -645,7 +645,7 @@ fn d18_division_expands_the_divisor_side() {
     );
 }
 
-#[trace("TC-185", "FR-140-AC-5")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-5")]
 #[test]
 fn d19_membership_at_the_largest_scale_never_materializes_the_lift() {
     let decimal_type = declared(0, 10, 4_294_967_295, 4_294_967_295).unwrap();
@@ -711,7 +711,7 @@ fn bits_denied(limit: u64, consumed: u64, next: u64) -> Outcome<bool> {
     })
 }
 
-#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-1", "QSpec-FR-140-AC-6")]
 #[test]
 fn d20_decimal_ordering_charges_the_aligned_coefficients() {
     let (left, right) = (dec(15, 1), dec(2, 0));
@@ -729,7 +729,7 @@ fn d20_decimal_ordering_charges_the_aligned_coefficients() {
     assert_eq!(consumed, [4, 2, 0, 2, 1, 0]);
 }
 
-#[trace("TC-185", "FR-140-AC-1", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-1", "QSpec-FR-140-AC-6")]
 #[test]
 fn d21_decimal_ordering_measures_the_retained_representation() {
     let (left, right) = (dec(100, 2), dec(2, 0));
@@ -747,7 +747,7 @@ fn d21_decimal_ordering_measures_the_retained_representation() {
     assert_eq!(consumed, [7, 3, 0, 2, 1, 0]);
 }
 
-#[trace("TC-185", "FR-140-AC-1")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-1")]
 #[test]
 fn comparison_decides_extreme_scales_by_sign_and_aligned_magnitude() {
     use std::cmp::Ordering::{Equal, Greater, Less};
@@ -790,7 +790,7 @@ const TIGHT: ScalarLimits = ScalarLimits {
     result_units: 0,
 };
 
-#[trace("TC-185", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-6")]
 #[test]
 fn working_scales_above_the_target_never_materialize_the_excess_power() {
     let arithmetic = [
@@ -890,7 +890,7 @@ fn unit_product(
     (outcome, meter.admitted_charges().to_vec(), consumed)
 }
 
-#[trace("TC-185", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-6")]
 #[test]
 fn d22_result_retention_charges_the_target_scale_upscale_analytically() {
     let (outcome, admitted, consumed) = unit_product(1000, retain_limits(3323, 1001, 1000));
@@ -932,7 +932,7 @@ fn d22_result_retention_charges_the_target_scale_upscale_analytically() {
     );
 }
 
-#[trace("TC-185", "FR-140-AC-6")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-6")]
 #[test]
 fn d23_the_largest_target_scale_is_sized_without_materializing_its_power() {
     let (outcome, admitted, consumed) = unit_product(
@@ -967,7 +967,7 @@ fn big(value: &BigInt) -> Integer {
     value.to_string().parse().unwrap()
 }
 
-#[trace("TC-185", "FR-140-AC-3")]
+#[trace("QSpec-TC-185", "QSpec-FR-140-AC-3")]
 #[test]
 fn loss_records_strip_large_powers_of_five_exactly() {
     // `Round(v × 10^-s)` toward zero into `Decimal[-v,v;0,0]` records the
@@ -1109,12 +1109,12 @@ fn rational(decimal: &Decimal) -> (i128, i128) {
 }
 
 #[trace(
-    "TC-185",
-    "FR-140-AC-2",
-    "FR-140-AC-3",
-    "FR-140-AC-4",
-    "FR-140-AC-5",
-    "FR-140-AC-6"
+    "QSpec-TC-185",
+    "QSpec-FR-140-AC-2",
+    "QSpec-FR-140-AC-3",
+    "QSpec-FR-140-AC-4",
+    "QSpec-FR-140-AC-5",
+    "QSpec-FR-140-AC-6"
 )]
 #[test]
 fn generated_operations_match_the_exact_rational_oracle_and_every_denial() {

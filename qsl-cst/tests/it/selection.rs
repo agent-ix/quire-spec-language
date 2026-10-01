@@ -9,7 +9,7 @@ use qsl_cst::{parse, Limits};
 use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, InvalidDefinitionComponent};
 use qsl_foundation::{Code, SourceIdentity};
 
-#[trace("TC-180", "FR-131-AC-2")]
+#[trace("QSpec-TC-180", "QSpec-FR-131-AC-2")]
 #[test]
 fn selection_validation_locates_each_invalid_component_for_every_declaration_kind() {
     let valid_digest = format!("sha256:{}", "a".repeat(64));

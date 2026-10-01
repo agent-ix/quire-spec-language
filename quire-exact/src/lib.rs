@@ -78,7 +78,7 @@
 //!
 //! What was actually missing is narrower than "no requirement": it is that
 //! most of *this crate's own* tests do not yet carry the two-argument
-//! `#[trace("TC-NNN", "FR-NNN-AC-n")]` form naming the QSpec id they verify,
+//! `#[trace("QSpec-TC-NNN", "QSpec-FR-NNN-AC-n")]` form naming the QSpec id they verify,
 //! even where the module doc above them already names the owning FR. This is
 //! not the first binding against these QSpec FRs in this repo:
 //! `qsl-semantics/tests/it/integer_division.rs` (`DIV-01` to `DIV-13`)
@@ -87,7 +87,7 @@
 //! text-profile and enumeration ACs in depth, both against central
 //! `TC-192`/`TC-186`. What is new here is only this crate's own kernel-level
 //! slice: `division`'s `tc_323_division_by_zero_is_undefined` now also
-//! carries `#[trace("TC-192", "FR-147-AC-2")]`, verified to fail (panic on
+//! carries `#[trace("QSpec-TC-192", "QSpec-FR-147-AC-2")]`, verified to fail (panic on
 //! an unguarded zero divisor) when the zero-divisor check is removed. No
 //! other test in this crate was given a QSpec AC tag in this PR: a test
 //! only earns one where its own assertions, not merely its module doc's

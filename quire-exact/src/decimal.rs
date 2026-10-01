@@ -1220,7 +1220,7 @@ mod tests {
     /// outside the declared `[0, 1.00]`), and the placement cannot be
     /// retained unless admitted, so the out-of-domain value is refused
     /// rather than retained. An admitted value retains at its own scale.
-    #[trace("TC-187", "FR-142-AC-3")]
+    #[trace("QSpec-TC-187", "QSpec-FR-142-AC-3")]
     #[test]
     fn placement_retains_only_what_its_own_target_admits() {
         let target =
@@ -1256,7 +1256,7 @@ mod tests {
 
     /// FR-142-AC-3 (review M1): the integer view exists only for a
     /// scale-zero target; an admitted placement at a nonzero scale has none.
-    #[trace("TC-187", "FR-142-AC-3")]
+    #[trace("QSpec-TC-187", "QSpec-FR-142-AC-3")]
     #[test]
     fn into_integer_requires_a_scale_zero_target() {
         let one = Rational::from_integer(Integer::one());

@@ -1651,7 +1651,7 @@ mod tests {
     /// identity refuse `DuplicateObjectKey`, naming both keys in record
     /// order, rather than the later record's edges replacing the earlier's.
     #[test]
-    #[trace("TC-196")]
+    #[trace("QSpec-TC-196")]
     fn a_non_injective_object_type_rekey_refuses_duplicate_object_key() {
         let package = DomainPackage::new(
             DomainPackageRef::fixture("bundle.qsl57-rekey"),
@@ -1888,7 +1888,7 @@ mod tests {
     /// renamed `x` would otherwise fall under, is alpha-renamed in its body.
     /// A fold binds its accumulator before its element binder; its source
     /// and identity read outside both, each in its own place.
-    #[trace("FR-151-AC-7")]
+    #[trace("QSpec-FR-151-AC-7")]
     #[test]
     fn rename_parameters_reads_each_operand_in_its_binders_scope() {
         let name = |name: &str| Expression::Name(name.to_owned());
@@ -2210,7 +2210,7 @@ mod tests {
     /// `Clone` gives: each operand, binder and attribute in its own place.
     /// The forms [`one_of_each_form`] builds are exactly [`FORM_NAMES`], so
     /// a name added there without an expression here fails the test.
-    #[trace("FR-151-AC-7")]
+    #[trace("QSpec-FR-151-AC-7")]
     #[test]
     fn copy_expression_matches_clone_on_every_form() {
         let forms = one_of_each_form();

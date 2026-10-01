@@ -209,7 +209,7 @@ fn assert_library_refusal_classified(
     assert_eq!(refusal.class(), class);
 }
 
-#[trace("TC-227", "FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn l01_an_import_binds_the_library_package_id() {
     let lock = resolve_libraries(&over_l("P", "1", id("L@1")), &[library_l()]).unwrap();
@@ -249,7 +249,7 @@ fn l01_an_import_binds_the_library_package_id() {
     );
 }
 
-#[trace("TC-227", "FR-307-AC-2")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[test]
 fn l02_an_import_without_a_qualifier_selects_its_library() {
     let root = package("P", "1", "P@1", vec![import("L", "1", id("L@1"), None)]);
@@ -278,8 +278,8 @@ fn diamond_root() -> LibraryPackage {
     )
 }
 
-#[trace("TC-227", "FR-307-AC-1")]
-#[trace("TC-227", "FR-307-AC-2")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l04_a_diamond_unifies_only_one_version_and_package_id() {
@@ -319,7 +319,7 @@ fn l04_a_diamond_unifies_only_one_version_and_package_id() {
     }
 }
 
-#[trace("TC-227", "FR-307-AC-2")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
 #[trace("TC-282", "FR-087-AC-12")]
 #[test]
 fn l05_an_import_cycle_lists_its_dependency_edges() {
@@ -348,7 +348,7 @@ fn l05_an_import_cycle_lists_its_dependency_edges() {
     );
 }
 
-#[trace("TC-227", "FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn l06_the_lock_lists_selections_in_ascending_identity_order() {
     let root = package(
@@ -378,7 +378,7 @@ fn l06_the_lock_lists_selections_in_ascending_identity_order() {
     assert_eq!(resolve_libraries(&root, &reversed).unwrap(), lock);
 }
 
-#[trace("TC-227", "FR-307-AC-3")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
 #[test]
 fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     let old_library = library_l();
@@ -438,8 +438,8 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
     );
 }
 
-#[trace("TC-227", "FR-307-AC-3")]
-#[trace("TC-227", "FR-307-AC-5")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-3")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn l08_a_migrated_package_reusing_its_package_id_is_invalid_at_package_id() {
     let old_library = library_l();
@@ -485,7 +485,7 @@ fn with_preimage(bytes: Box<[u8]>, exports: &[&str]) -> LibraryPackage {
     }
 }
 
-#[trace("TC-227", "FR-307-AC-5")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[trace("TC-253", "FR-087-AC-3")]
 #[test]
 fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution() {
@@ -787,7 +787,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
     );
 }
 
-#[trace("TC-227", "FR-307-AC-5")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn l08_b_schema_refusals_rank_before_a_mismatch_at_an_earlier_node() {
     // Four nodes; the lower-indexed node (1) has a declaration-nominal
@@ -823,7 +823,7 @@ fn l08_b_schema_refusals_rank_before_a_mismatch_at_an_earlier_node() {
     );
 }
 
-#[trace("TC-227", "FR-307-AC-5")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
     // Three nodes; the two lower-indexed nodes (0, 1) both declare "R" (an
@@ -865,7 +865,7 @@ fn l08_c_a_mismatch_ranks_before_an_ambiguity_at_an_earlier_node() {
 /// still visit nodes in ascending node-id digest order (FR-322-AC-21), so an
 /// ambiguity reports both nodes in ascending order whatever the projection
 /// order.
-#[trace("TC-227", "FR-307-AC-5")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-5")]
 #[test]
 fn l08_d_projection_order_is_graph_order_and_checks_visit_ascending_node_ids() {
     let mut descending = projection("L'@1");
@@ -933,7 +933,7 @@ fn l08_d_projection_order_is_graph_order_and_checks_visit_ascending_node_ids() {
     );
 }
 
-#[trace("TC-227", "FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn l01_every_declared_export_must_derive_from_a_checked_package_v2_identity_projection() {
     // A self-built two-export identity projection (this test's own fixture,
@@ -1046,7 +1046,7 @@ fn ascending(mut nodes: Vec<Value>) -> Vec<Value> {
     nodes
 }
 
-#[trace("TC-227", "FR-307-AC-1")]
+#[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
 #[test]
 fn l09_only_a_nominal_qualified_declaration_names_an_export() {
     let nodes = ascending(vec![

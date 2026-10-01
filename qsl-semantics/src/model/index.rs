@@ -825,7 +825,7 @@ mod tests {
     /// Mutation used: interning in record order (dropping the sort in
     /// `build`) fails the first assertion.
     #[test]
-    #[trace("TC-195", "FR-150-AC-4")]
+    #[trace("QSpec-TC-195", "QSpec-FR-150-AC-4")]
     fn decl_idx_order_is_declaration_key_order() {
         let domain_package = package(&[
             ("model.Z", &["model.M"]),
@@ -869,7 +869,7 @@ mod tests {
     /// Mutation used: comparing the found ordinal with `<` instead of `<=`
     /// fails the chain's exact-ceiling cases.
     #[test]
-    #[trace("TC-196", "FR-151-AC-2", "FR-151-AC-5")]
+    #[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-151-AC-5")]
     fn conforms_matches_the_bounded_walk_everywhere() {
         let packages = [
             package(&[

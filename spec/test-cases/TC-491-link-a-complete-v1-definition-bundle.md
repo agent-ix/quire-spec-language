@@ -14,8 +14,8 @@ Verify `library::bundle::link_bundle` over a caller-supplied
 `DefinitionCatalog`. Scope: FR-111-AC-1 to FR-111-AC-7. These are the
 scenarios the former `tests/it/complete_package.rs` and
 `complete::package_tests` covered against the retired resolver, moved to
-the relocated module with their QSpec tags (FR-131-AC-1 to AC-3,
-FR-339-AC-3).
+the relocated module with their QSpec tags (`QSpec-FR-131-AC-1` to
+`QSpec-FR-131-AC-3`, `QSpec-FR-339-AC-3`).
 
 ## Test Procedure
 
@@ -68,4 +68,4 @@ dependency edges between them.
 Implemented: `library::bundle_tests` and
 `library::bundle::tests::resolved_graph_identity_matches_its_golden_vector`
 (`qsl-semantics/src/library/`) back steps 1-7, each tagged `TC-491`, its
-`FR-111-AC-n` and the QSpec FR-131/FR-339 tags it carried.
+`FR-111-AC-n` and the `QSpec-FR-131`/`QSpec-FR-339` tags it carried.

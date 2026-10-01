@@ -475,7 +475,7 @@ fn slot_integer(slot: Option<&FieldValue>) -> Integer {
 /// A subtype's effective attribute set holds its own fields and every
 /// ancestor's, so an object of the subtype has a slot for the inherited
 /// field, and the slot is found through the ancestor's field identity.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn an_inherited_field_is_flattened_into_the_subtype() {
     let environment = TypeEnvironment::new(
@@ -526,7 +526,7 @@ fn an_inherited_field_is_flattened_into_the_subtype() {
 
 /// FR-151 hide: `B.x` redefines `A.x`, so `B`'s set holds one `x`, owned by
 /// `B`, and that one slot answers for `A.x` too. `A`'s own set is unchanged.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn a_redefined_field_is_hidden_and_its_redefiner_takes_its_slot() {
     let environment = TypeEnvironment::new(
@@ -565,7 +565,7 @@ fn a_redefined_field_is_hidden_and_its_redefiner_takes_its_slot() {
 /// FR-151 "only the redefining member of the most derived owner is
 /// exposed": `B.x` and `C.x` both redefine `A.x`, and `C -> B`. `C`'s set
 /// exposes `C.x` alone, standing for `A.x` and `B.x`.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn the_most_derived_redefinition_wins() {
     let environment = TypeEnvironment::new(
@@ -600,7 +600,7 @@ fn the_most_derived_redefinition_wins() {
 /// path (`x` in `B`'s set, `x` in `C`'s) finds that one slot. `D`'s slots
 /// are its own fields first, then `B`'s, then `C`'s (its supertypes in
 /// declaration order), each attribute once.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn a_diamond_shares_one_slot_and_orders_supertypes_by_declaration() {
     let environment = TypeEnvironment::new(
@@ -669,7 +669,7 @@ fn a_diamond_shares_one_slot_and_orders_supertypes_by_declaration() {
 /// both with neither owner more derived than the other. Refused
 /// `RedefinitionConflict` naming `A.x`; a `D.x` redefining `A.x` itself
 /// resolves it.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn conflicting_redefinitions_refuse_until_a_more_derived_one_resolves_them() {
     let diamond = |d_fields: Vec<FieldDeclaration>| {
@@ -719,7 +719,7 @@ fn conflicting_redefinitions_refuse_until_a_more_derived_one_resolves_them() {
 
 /// A subtype field that shares an inherited field's name without
 /// redefining it is a second field of that name: refused `DuplicateMember`.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn a_same_name_field_that_does_not_redefine_is_refused() {
     let refusal = TypeEnvironment::new(
@@ -809,7 +809,7 @@ fn a_redefinition_of_a_field_not_inherited_is_refused() {
 /// A renamed redefinition: `B.y` redefines `A.x`. `B`'s set holds `y` and
 /// no `x`, so `x` does not resolve by name on `B`, while `A.x`'s identity
 /// still finds `B.y`'s slot on a `B` object.
-#[trace("TC-196", "FR-151-AC-1")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-1")]
 #[test]
 fn a_renamed_redefinition_replaces_the_inherited_name() {
     let environment = TypeEnvironment::new(
@@ -860,7 +860,7 @@ fn int_field(name: &str, lower: i64, upper: i64) -> FieldDeclaration {
 
 /// A redefinition may narrow its target: `Int[0, 9]` redefining `Integer`,
 /// and a required field redefining an optional one, are admitted.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn a_narrowing_redefinition_is_admitted() {
     let environment = TypeEnvironment::new(
@@ -891,7 +891,7 @@ fn a_narrowing_redefinition_is_admitted() {
 /// (`ill_typed`): a value type the target does not admit, and an optional
 /// redefiner of a required field. Admitting either would let `deref(r).x`
 /// through `A` read a value its checked type does not describe.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn a_widening_redefinition_is_refused() {
     let widening = |b_field: FieldDeclaration| {
@@ -936,7 +936,7 @@ fn a_widening_redefinition_is_refused() {
 /// Int[0, 100]` redefines `A.x: Integer` but would stand in for `B.x:
 /// Int[0, 9]`, so a `C` read through `Reference<B>` could yield 50. Refused
 /// `RedefinitionWidens` naming `B.x`.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn the_most_derived_redefinition_must_narrow_every_field_it_hides() {
     let refusal = TypeEnvironment::new(
@@ -979,7 +979,7 @@ fn reference_field(name: &str, target: &str) -> FieldDeclaration {
 /// pass the check and then refuse `CheckedInvariant` when `o` is read
 /// through `A`. Refused `RedefinitionWidens` naming `A.o`; the same
 /// redefinition typed `Reference<A>?` is admitted.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn a_reference_field_is_redefined_only_with_its_own_reference_type() {
     let redefined = |b_field: FieldDeclaration| {
@@ -1200,7 +1200,7 @@ fn wide_multiple_inheritance_costs_admission_work_bounded_in_its_slots() {
 /// refuses them `conflicting-binding` first. The bridge's own
 /// `DuplicateObjectKey` refusal for a non-injective map is a unit test in
 /// `check::checked_dispatch`, which can build such a map directly.
-#[trace("TC-196")]
+#[trace("QSpec-TC-196")]
 #[test]
 fn object_type_supertypes_rekeys_a_view_and_normalization_refuses_a_shared_key() {
     let domain_package = package(

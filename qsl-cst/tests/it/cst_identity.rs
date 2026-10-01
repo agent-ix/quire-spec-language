@@ -38,7 +38,7 @@ fn functions(count: usize) -> String {
 
 // Identities are fixed-size values: nothing per node holds a copied path or
 // ancestor list. A type that owned a `Vec` could not be `Copy`.
-#[trace("TC-222", "FR-302-AC-1")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-1")]
 #[test]
 fn node_identity_is_a_fixed_size_value() {
     fn copy<T: Copy>() {}
@@ -70,7 +70,7 @@ fn paths_from_the_root(cst: &LosslessCst) -> Vec<Option<Vec<u32>>> {
     paths
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn structural_paths_are_derived_from_parent_links_on_request() {
     let parsed = parse("r1", &functions(3));
@@ -102,7 +102,7 @@ fn primaries(cst: &LosslessCst) -> Vec<&CstNode> {
 // In `x + x` the two operands have equal bytes, productions and ancestor
 // paths. Reuse keeps each on its own counterpart, never both on one, for an
 // edit before, between and after them.
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn reuse_is_one_to_one_between_equal_operands() {
     let text =

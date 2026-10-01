@@ -45,7 +45,7 @@ both successors exist"; ruling on QSL-229):
    against it (TC-446 for imports, TC-490 for profiles, TC-412 for aliases,
    TC-145/TC-147 for models, the spine's S1 refusal for an inadmissible
    parse, TC-491 for the closure, bundle, limits and identity, carrying the
-   scenario's QSpec FR-131/FR-339 tags).
+   scenario's `QSpec-FR-131`/`QSpec-FR-339` tags).
 
 ## Expected Results
 

@@ -1586,7 +1586,7 @@ mod tests {
     use crate::{parse, Limits};
     use qsl_foundation::SourceIdentity;
 
-    #[trace("TC-180", "FR-339-AC-1", "FR-302-AC-1")]
+    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-302-AC-1")]
     #[test]
     fn every_declarative_compound_is_one_budgeted_cst_leaf() {
         let compounds = complete_compound_spellings(&complete_v1());
@@ -1631,7 +1631,7 @@ mod tests {
         }
     }
 
-    #[trace("TC-180", "FR-339-AC-1")]
+    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1")]
     #[test]
     fn every_declarative_reserved_word_is_refused_as_an_identifier() {
         let prefix = concat!(

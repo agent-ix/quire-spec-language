@@ -151,7 +151,7 @@ fn assert_outcome(actual: &Outcome<Value>, expected: &Outcome<Value>) {
     assert_eq!(format!("{actual:?}"), format!("{expected:?}"));
 }
 
-#[trace("TC-189", "FR-144-AC-1")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-1")]
 #[test]
 fn c01_permutation_changes_only_sequence_and_ordered_set_equality() {
     let env = TypeEnvironment::default();
@@ -173,7 +173,7 @@ fn c01_permutation_changes_only_sequence_and_ordered_set_equality() {
     }
 }
 
-#[trace("TC-189", "FR-144-AC-2")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-2")]
 #[test]
 fn c02_duplicates_are_kept_by_sequence_and_bag_and_coalesced_by_sets() {
     let represented = |kind, occurrences: &[i64]| {
@@ -200,8 +200,8 @@ fn c02_duplicates_are_kept_by_sequence_and_bag_and_coalesced_by_sets() {
     );
 }
 
-#[trace("TC-189", "FR-144-AC-3")]
-#[trace("TC-189", "FR-144-AC-5")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-3")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-5")]
 #[test]
 fn c03_bound_violations_refuse_after_the_bound_charge() {
     let set = integers(CollectionKind::Set, 2);
@@ -242,7 +242,7 @@ fn c03_bound_violations_refuse_after_the_bound_charge() {
 /// bag and as two for a set and an ordered set, so one `[3, 3]` bound admits
 /// only the occurrence-counting kinds and one `[2, 2]` bound only the
 /// member-counting kinds.
-#[trace("TC-189", "FR-144-AC-5")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-5")]
 #[test]
 fn c03b_bound_counting_is_occurrences_or_unique_members_per_kind() {
     let occurrences = values(&[1, 1, 2]);
@@ -270,7 +270,7 @@ fn c03b_bound_counting_is_occurrences_or_unique_members_per_kind() {
     }
 }
 
-#[trace("TC-189", "FR-144-AC-4")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-4")]
 #[test]
 fn c04_canonical_order_is_key_order() {
     let set = integers(CollectionKind::Set, 3);
@@ -364,8 +364,8 @@ fn holder(env: &TypeEnvironment, universe: &str, identity: &str) -> Value {
     .unwrap()
 }
 
-#[trace("TC-189", "FR-144-AC-4")]
-#[trace("TC-189", "FR-144-AC-6")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-4")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
 #[test]
 fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     let env = holder_environment();
@@ -397,8 +397,8 @@ fn c06_reference_holders_are_keyed_and_ieee_elements_are_ineligible() {
     }
 }
 
-#[trace("TC-189", "FR-144-AC-7")]
-#[trace("TC-189", "FR-144-AC-8")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-8")]
 #[test]
 fn c07_set_construction_charges_membership_comparisons_in_retention_order() {
     let set = integers(CollectionKind::Set, 3);
@@ -430,8 +430,8 @@ fn c07_set_construction_charges_membership_comparisons_in_retention_order() {
     assert_eq!(meter.consumed(LimitKind::ValueOccurrences), 3);
 }
 
-#[trace("TC-189", "FR-144-AC-7")]
-#[trace("TC-189", "FR-144-AC-8")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-8")]
 #[test]
 fn c08_denied_construction_charges_expose_no_collection() {
     let set = integers(CollectionKind::Set, 3);
@@ -483,8 +483,8 @@ fn c08_denied_construction_charges_expose_no_collection() {
     }
 }
 
-#[trace("TC-189", "FR-144-AC-7")]
-#[trace("TC-189", "FR-144-AC-8")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-8")]
 #[test]
 fn c09_sequence_and_rejected_set_charge_exact_work() {
     let sequence = integers(CollectionKind::Sequence, 3);
@@ -506,8 +506,8 @@ fn c09_sequence_and_rejected_set_charge_exact_work() {
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
 }
 
-#[trace("TC-189", "FR-144-AC-6")]
-#[trace("TC-189", "FR-144-AC-7")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
 #[test]
 fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
     let env = holder_environment();
@@ -554,7 +554,7 @@ fn c10_reference_holder_sets_charge_pairs_and_refuse_foreign_universes() {
         .contains(&ChargePoint::CollectionMemberTest));
 }
 
-#[trace("TC-189", "FR-144-AC-3")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-3")]
 #[test]
 fn c11_the_bound_is_part_of_the_collection_type() {
     let env = TypeEnvironment::default();
@@ -573,7 +573,7 @@ fn c11_the_bound_is_part_of_the_collection_type() {
     );
 }
 
-#[trace("TC-189", "FR-144-AC-2")]
+#[trace("QSpec-TC-189", "QSpec-FR-144-AC-2")]
 #[test]
 fn formed_occurrences_outside_the_element_type_refuse_at_their_index() {
     let set = integers(CollectionKind::Set, 3);
@@ -802,8 +802,8 @@ mod checked {
             .unwrap()
     }
 
-    #[trace("TC-189", "FR-144-AC-7")]
-    #[trace("TC-189", "FR-144-AC-9")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-9")]
     // Also TC-409 steps 3-4 (FR-088-AC-11): a real kernel Set formed from
     // admitted enum values visits an unordered enum's members in
     // case-identifier byte order and an ordered enum's in declaration order.
@@ -876,7 +876,7 @@ mod checked {
         );
     }
 
-    #[trace("TC-189", "FR-144-AC-6")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
     #[test]
     fn c06_reference_keyed_holder_sets_answer_every_query_form() {
         let types = holder_environment();
@@ -963,8 +963,8 @@ mod checked {
     /// collection's member universe (`u1`) and `supplied` the probed item's
     /// (`u2`), the same `member_equal_stop(candidate, member, ..)` ->
     /// `plan_pairs(member, candidate)` convention `c10` exercises.
-    #[trace("TC-189", "FR-144-AC-6")]
-    #[trace("TC-189", "FR-144-AC-7")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-6")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-7")]
     #[test]
     fn c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member() {
         let types = holder_environment();
@@ -1026,7 +1026,7 @@ mod checked {
         }
     }
 
-    #[trace("TC-189", "FR-144-AC-9")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-9")]
     #[test]
     fn c11_converting_to_the_other_bound_admits_equality_without_loss() {
         let package = package(PackageDeclarations::new(
@@ -1069,7 +1069,7 @@ mod checked {
         assert_eq!(format!("{value:?}"), format!("{:?}", Value::Boolean(true)));
     }
 
-    #[trace("TC-189", "FR-144-AC-10")]
+    #[trace("QSpec-TC-189", "QSpec-FR-144-AC-10")]
     #[test]
     fn c12_collection_literals_take_their_unique_expected_type() {
         let package = package(PackageDeclarations::new(

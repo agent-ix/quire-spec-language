@@ -228,7 +228,7 @@ mod tests {
     /// (`agent-ix/quire-specification`): this is the kernel-level instance
     /// of that requirement.
     #[trace("TC-323")]
-    #[trace("TC-192", "FR-147-AC-2")]
+    #[trace("QSpec-TC-192", "QSpec-FR-147-AC-2")]
     #[test]
     fn tc_323_division_by_zero_is_undefined() {
         let domain = IntegerDomain::Mathematical;

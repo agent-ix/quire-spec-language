@@ -37,7 +37,7 @@ fn identity(revision: &str) -> SourceIdentity {
     }
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     let parsed = qsl_cst::parse(
@@ -93,7 +93,7 @@ fn incremental_edit_reuses_only_unchanged_byte_correspondent_nodes() {
     assert_eq!(map[replaced.identity().node.get()], None);
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
     let parsed = qsl_cst::parse(
@@ -157,7 +157,7 @@ fn stable_identity_survives_unrelated_preceding_sibling_insertion() {
         .eq(inserted.cst().ancestor_productions(unchanged)));
 }
 
-#[trace("TC-222", "FR-302-AC-3")]
+#[trace("QSpec-TC-222", "QSpec-FR-302-AC-3")]
 #[test]
 fn stable_identity_survives_unrelated_whitespace_inside_one_ancestor() {
     let parsed = qsl_cst::parse(

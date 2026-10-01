@@ -128,8 +128,8 @@ fn p_environment() -> TypeEnvironment {
     .unwrap()
 }
 
-#[trace("TC-188", "FR-143-AC-1")]
-#[trace("TC-188", "FR-143-AC-5")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-1")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-5")]
 #[test]
 fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
     let env = p_environment();
@@ -170,9 +170,9 @@ fn r01_equal_records_compare_structurally_whatever_the_source_field_order() {
     );
 }
 
-#[trace("TC-188", "FR-143-AC-2")]
-#[trace("TC-188", "FR-143-AC-5")]
-#[trace("TC-188", "FR-143-AC-6")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-2")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-5")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
 #[test]
 fn r02_equal_shapes_of_distinct_declarations_do_not_compare() {
     let x = || vec![field("x", ValueType::Integer, Presence::Required)];
@@ -196,9 +196,9 @@ fn r02_equal_shapes_of_distinct_declarations_do_not_compare() {
     assert!(!composite("B").admits(&a));
 }
 
-#[trace("TC-188", "FR-143-AC-3")]
-#[trace("TC-188", "FR-143-AC-7")]
-#[trace("TC-188", "FR-143-AC-9")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-3")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-7")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
 #[test]
 fn r05_recursion_rule_admits_escaping_and_named_recursion() {
     let admitted = TypeEnvironment::new(
@@ -267,8 +267,8 @@ fn r05_recursion_rule_admits_escaping_and_named_recursion() {
     assert_eq!(bad.code(), "ill_typed");
 }
 
-#[trace("TC-188", "FR-143-AC-3")]
-#[trace("TC-188", "FR-143-AC-7")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-3")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-7")]
 #[test]
 fn r06_recursion_rule_names_each_refused_cycle() {
     let cycle = |edges, name: &str| InvalidDeclaration {
@@ -319,8 +319,8 @@ fn r06_recursion_rule_names_each_refused_cycle() {
     }
 }
 
-#[trace("TC-188", "FR-143-AC-4")]
-#[trace("TC-188", "FR-143-AC-6")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
 #[test]
 fn r07_absence_null_and_malformed_constructions_refuse_at_their_origin() {
     let env = p_environment();
@@ -440,8 +440,8 @@ fn node_reference(name: &str) -> ObjectReference {
     )
 }
 
-#[trace("TC-188", "FR-143-AC-3")]
-#[trace("TC-188", "FR-143-AC-9")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-3")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
 #[test]
 fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
     let env = node_environment();
@@ -487,7 +487,7 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
     assert_eq!(ObjectId::new("").map(|_| ()), Err(EmptyObjectIdentity));
 }
 
-#[trace("TC-188", "FR-143-AC-8")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-8")]
 #[test]
 fn r10_record_construction_charges_one_result_retain() {
     let env = p_environment();
@@ -537,7 +537,7 @@ fn r10_record_construction_charges_one_result_retain() {
     assert_eq!(meter.consumed(LimitKind::ResultUnits), 2);
 }
 
-#[trace("TC-188", "FR-143-AC-8")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-8")]
 #[test]
 fn record_fields_run_in_declaration_order_and_the_first_stop_propagates() {
     let env = p_environment();
@@ -603,7 +603,7 @@ fn cons(head: i64, tail: GraphSlot) -> GraphNode {
     }
 }
 
-#[trace("TC-188", "FR-143-AC-3")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-3")]
 #[test]
 fn containment_cycles_refuse_while_shared_finite_values_construct() {
     let env = list_environment();
@@ -676,7 +676,7 @@ fn containment_cycles_refuse_while_shared_finite_values_construct() {
     );
 }
 
-#[trace("TC-188", "FR-143-AC-4")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
 #[test]
 fn malformed_declarations_refuse_at_admission() {
     let x = || field("x", ValueType::Integer, Presence::Required);
@@ -719,7 +719,7 @@ fn malformed_declarations_refuse_at_admission() {
 /// An object type whose declared supertype names no admitted object type
 /// refuses at admission as `UnknownObjectType` (`invalid_semantic_graph`),
 /// rather than being admitted with a dangling ancestor.
-#[trace("TC-188", "FR-143-AC-4")]
+#[trace("QSpec-TC-188", "QSpec-FR-143-AC-4")]
 #[test]
 fn unknown_supertype_refuses_at_admission() {
     let unknown = EffectiveId::from_digest([9; 32]);
@@ -903,8 +903,8 @@ mod checked {
         );
     }
 
-    #[trace("TC-188", "FR-143-AC-2")]
-    #[trace("TC-188", "FR-143-AC-6")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-2")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
     #[test]
     fn r02_an_alias_creates_no_declaration_identity() {
         let x = || vec![field("x", ValueType::Integer, Presence::Required)];
@@ -947,8 +947,8 @@ mod checked {
         assert_completed(&outcome, Value::Boolean(true));
     }
 
-    #[trace("TC-188", "FR-143-AC-6")]
-    #[trace("TC-188", "FR-143-AC-9")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-6")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
     #[test]
     fn r03_declaration_keys_of_another_package_refuse_at_checking_and_input() {
         let r = |label| {
@@ -1001,7 +1001,7 @@ mod checked {
         assert!(meter.admitted_charges().is_empty());
     }
 
-    #[trace("TC-188", "FR-143-AC-8")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-8")]
     #[test]
     fn r08_field_a_stops_construction_before_field_b_is_evaluated() {
         let set = ValueType::collection(CollectionType::new(
@@ -1099,7 +1099,7 @@ mod checked {
         assert_eq!(meter.consumed(LimitKind::ResultUnits), 0);
     }
 
-    #[trace("TC-188", "FR-143-AC-9")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-9")]
     #[test]
     fn r09_no_source_form_converts_into_a_reference() {
         let package = package(node_environment(), Vec::new(), Vec::new()).unwrap();
@@ -1118,7 +1118,7 @@ mod checked {
         );
     }
 
-    #[trace("TC-188", "FR-143-AC-10")]
+    #[trace("QSpec-TC-188", "QSpec-FR-143-AC-10")]
     #[test]
     fn r11_optional_field_projections_need_present_or_value() {
         let x = [("x", composite("P"))];
@@ -1255,7 +1255,7 @@ mod library_import {
     // itself and could not have failed for any resolution defect. Left
     // untraced (FR-143-AC-6 unbacked by this vector) until E3 exists to
     // derive two real, independently-resolved node ids to compare.
-    #[trace("TC-227", "FR-307-AC-2")]
+    #[trace("QSpec-TC-227", "QSpec-FR-307-AC-2")]
     #[test]
     fn r03_one_library_export_reached_by_two_paths_is_one_declaration() {
         let root = package("P", &["A", "B"], false);

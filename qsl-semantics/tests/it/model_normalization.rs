@@ -438,7 +438,7 @@ fn fixture_derivation_conflict_across_packages_sharing_an_owner_node() -> Domain
 /// and `other/pkg:model.A` are two unrelated owners that happen to share a
 /// display node, so their two redefiners of `model.Root.x` are a genuine
 /// derivation conflict, never a same-owner ambiguity.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r07_two_owners_sharing_a_node_across_packages_refuse_derivation_conflict_not_redefinition_target(
 ) {
@@ -579,7 +579,7 @@ fn fixture_redefinition_target_excludes_an_owner_dominated_by_a_same_node_descen
 /// whole key: `other/pkg:model.Shared` genuinely dominates
 /// `test/orders:model.Shared` and must exclude its redefiner from the
 /// same-owner test, even though the two owners share a display node.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r07_a_same_node_owner_genuinely_dominated_across_packages_is_excluded_from_the_same_owner_test()
 {
@@ -668,7 +668,7 @@ fn is_sha256_hex(identity: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-#[trace("TC-195", "FR-150-AC-1", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1", "QSpec-FR-150-AC-3")]
 #[test]
 fn n01_normalizes_f1_to_stable_deterministic_identities() {
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -714,7 +714,7 @@ fn n01_normalizes_f1_to_stable_deterministic_identities() {
 /// TC-195 N02: `A`/`B`/`C`/`D` in F2's diamond (`B`, `C` <- `A`; `D` <- `B`,
 /// `D` <- `C`), every declaration's identity checked for shape, uniqueness
 /// and rerun-stability rather than against a pinned upstream digest.
-#[trace("TC-195", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
     let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -769,7 +769,7 @@ fn n02_normalizes_f2_diamond_inheritance_to_stable_deterministic_identities() {
 /// declarations (an effective declaration identity binds no
 /// `ModelSelection`), but a different view and universe, because only the
 /// model selection differs.
-#[trace("TC-195", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe() {
     let v1 = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -810,7 +810,7 @@ fn n01v2_a_version_only_change_reuses_declarations_but_changes_view_and_universe
     assert_ne!(universe.identity(), universe_v1.identity());
 }
 
-#[trace("TC-195", "FR-150-AC-4")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-4")]
 #[test]
 fn n07_record_order_does_not_affect_identity_or_view() {
     let ordered = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -820,7 +820,7 @@ fn n07_record_order_does_not_affect_identity_or_view() {
     assert_eq!(view.identity(), ordered.identity());
 }
 
-#[trace("TC-195", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
 #[test]
 fn n01_exact_limits_complete_and_the_charge_totals_match_ground_truth() {
     let exact = ModelNormalizationLimits {
@@ -846,7 +846,7 @@ fn n01_exact_limits_complete_and_the_charge_totals_match_ground_truth() {
     );
 }
 
-#[trace("TC-195", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
 #[test]
 fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
     let mut limits = ModelNormalizationLimits {
@@ -903,7 +903,7 @@ fn n01_one_less_work_unit_is_incomplete_at_the_view_hash() {
 /// wire bytes, so this rung cannot reconstruct it. Remaining work: #131
 /// wires a real Semantic IR 2.0.0 intake in front of `normalize`, where
 /// N05's schema-level and package-digest checks belong.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_digest() {
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -936,7 +936,7 @@ fn n09_effective_and_universe_identities_never_collide_with_the_model_selection_
 /// connected component has exactly one root-type set either way (every
 /// declared type belongs to the one component), so this is not a
 /// coincidence: it is the one case OQ-E's fix is required not to change.
-#[trace("TC-195", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
     let f1_universe = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED)
@@ -970,7 +970,7 @@ fn oqe_a_single_connected_component_hashes_to_the_pre_partition_digest() {
 /// behavior) turns this test red -- `object_universes` then returns a
 /// `Vec` of length 1, and `object_universe_of` returns the same identity for
 /// `A` and `E`.
-#[trace("TC-195", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-6")]
 #[test]
 fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
     let mut domain_package = fixture_f1();
@@ -1019,7 +1019,7 @@ fn oqe_a_disconnected_model_produces_two_universes_each_type_maps_to_its_own() {
     assert!(identities.contains(&e_universe.identity()));
 }
 
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
     let mut domain_package = fixture_f1();
@@ -1056,7 +1056,7 @@ fn a_field_member_naming_an_undeclared_owner_refuses_instead_of_dropping() {
 
 /// A field member owned by a record value type (FR-208-AC-4) is not a
 /// dangling owner: the package normalizes.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn a_field_member_owned_by_a_record_value_type_normalizes() {
     let mut domain_package = fixture_f1();
@@ -1085,7 +1085,7 @@ fn a_field_member_owned_by_a_record_value_type_normalizes() {
 // an "unknown specific" is structurally unreachable from
 // `validate_references` (see its `ObjectType` arm's own comment).
 
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() {
     let mut domain_package = fixture_f1();
@@ -1120,7 +1120,7 @@ fn a_generalization_naming_an_undeclared_general_refuses_instead_of_panicking() 
 /// member type names an object type or a process... `missing_declaration`/
 /// `missing-name`"). A `Population` record naming a member type that is not
 /// a declared object type refuses instead of being silently accepted.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignored() {
     let mut domain_package = fixture_f1();
@@ -1163,7 +1163,7 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
 /// FR-208-AC-9: a population member type naming a record value type refuses
 /// `invalid_model_binding`/`malformed-declaration`, not `missing-name`: the
 /// type is declared, with a meaning a population cannot hold.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn a_population_naming_a_record_value_type_refuses_malformed() {
     let mut domain_package = fixture_f1();
@@ -1208,7 +1208,7 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
 /// (`model-complete.md`:161) naming a member that is not a declared field
 /// or operation member refuses `dangling_reference`/`unknown-member`
 /// instead of being silently accepted.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_dropping() {
     let domain_package = DomainPackage::new(
@@ -1247,7 +1247,7 @@ fn a_field_members_subsets_naming_an_undeclared_member_refuses_instead_of_droppi
 /// instead of being silently accepted -- the operation-member analog of
 /// `n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping`,
 /// which only covers a field member's own `redefines`.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of_dropping() {
     let domain_package = DomainPackage::new(
@@ -1280,7 +1280,7 @@ fn an_operation_members_redefines_naming_an_undeclared_member_refuses_instead_of
 // member") — asserting the refusal names both contending redefiners' rule
 // paths is exactly that. Not AC-1: nothing here links a normalized
 // identity to its contributing declarations.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-5")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-5")]
 #[test]
 fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
     match normalize(&fixture_n06_conflict(), ModelNormalizationLimits::UNLIMITED) {
@@ -1333,7 +1333,7 @@ fn n06_two_undominated_redefiners_of_the_same_target_refuse_as_a_conflict() {
 /// the per-type phase-4 loop in `build()` (running `apply_redefinitions`
 /// unconditionally again) turns both cases below back into their pre-fix
 /// refusals — confirmed locally, then restored.
-#[trace("TC-195", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_under_a_tight_fact_budget_is_incomplete_not_a_phase4_refusal() {
     let mut limits = ModelNormalizationLimits::UNLIMITED;
@@ -1371,7 +1371,7 @@ fn n06_conflict_under_a_tight_fact_budget_is_incomplete_not_a_phase4_refusal() {
 /// identical type both redefine the same inherited target: refuses
 /// `redefinition-target`, not `derivation-conflict` (N06's diamond shape
 /// above uses two different owners, neither dominating the other).
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_normalize() {
     match normalize(
@@ -1413,7 +1413,7 @@ fn r07_two_redefiners_owned_by_the_same_type_refuse_redefinition_target_through_
 /// them), so it takes no part in the ambiguity test, leaving only `B`'s
 /// two edges — one owner, refuses `redefinition-target`, not
 /// `derivation-conflict`.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
     match normalize(
@@ -1455,7 +1455,7 @@ fn r07_a_less_derived_owners_redefiner_is_excluded_from_the_same_owner_test() {
 // the winner's/hidden target's derivation facts link to every contributing
 // original declaration and rule — AC-1's own language. It never checks
 // replay/record-order independence, which is what AC-4 actually requires.
-#[trace("TC-195", "FR-150-AC-1")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
 #[test]
 fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender() {
     let view = completed(&fixture_n06_resolved(), ModelNormalizationLimits::UNLIMITED);
@@ -1572,7 +1572,7 @@ fn n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_c
 // (`model-complete.md`:162), the redefining side is always a real declared
 // member (it IS the record), so only the redefined *target* can dangle;
 // `record` in the refusal below names the redefining member's own key.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() {
     let mut domain_package = fixture_f2();
@@ -1615,7 +1615,7 @@ fn n06_redefinition_target_absent_from_the_bundle_refuses_instead_of_dropping() 
 /// `ObjectType` records that once differed only in `revision` now share the
 /// exact same `DeclarationKey` and must refuse, never silently collapse to
 /// one declaration.
-#[trace("TC-195", "FR-150-AC-2")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-2")]
 #[test]
 fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
@@ -1655,7 +1655,7 @@ fn two_object_types_sharing_one_declaration_key_refuse_conflicting_binding() {
 /// pre-#131 `f2_field_members_sharing_an_identity_but_differing_in_revision_both_survive`
 /// regression test: two `FieldMember` records under the same owner that once
 /// differed only in `revision` now share the exact same `DeclarationKey`.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
     let domain_package = DomainPackage::new(
@@ -1700,7 +1700,7 @@ fn two_field_members_sharing_one_declaration_key_refuse_conflicting_binding() {
 /// check (row 6, `conflicting-binding`) are reported -- FR-154 reports every
 /// refusal intake exposes, in node order, never only the earliest -- with
 /// the earlier node's own refusal first.
-#[trace("TC-195", "FR-154")]
+#[trace("QSpec-TC-195", "QSpec-FR-154")]
 #[test]
 fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_conflicting_binding() {
     let domain_package = DomainPackage::new(
@@ -1741,7 +1741,7 @@ fn ordering_a_dangling_owner_at_an_earlier_node_reports_before_a_later_nodes_con
 /// "Nodes are read ascending by declaration key"), so `validate_references`
 /// still reaches node `A.y`'s own dangling owner before either `B` record's
 /// duplicate-key check, regardless of the records' own input order.
-#[trace("TC-195", "FR-154")]
+#[trace("QSpec-TC-195", "QSpec-FR-154")]
 #[test]
 fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
     let domain_package = DomainPackage::new(
@@ -1783,7 +1783,7 @@ fn ordering_input_record_order_does_not_change_which_sorted_node_wins() {
 /// reports first in every input order, unlike the two tests above where the
 /// dangling node happens to sort first; `Z.y`'s own dangling-owner refusal
 /// is still reported after it (FR-154: every refusal, in node order).
-#[trace("TC-195", "FR-154")]
+#[trace("QSpec-TC-195", "QSpec-FR-154")]
 #[test]
 fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_nodes_dangling_owner() {
     let expected = NormalizeOutcome::Refused(Refusals::from_vec(vec![
@@ -1842,7 +1842,7 @@ fn ordering_a_conflicting_binding_at_an_earlier_node_reports_before_a_later_node
 /// own empty-`revision` check no longer applies to the flat `DeclarationKey`)
 /// onto the phase-1 empty-component check this restores in
 /// `validate_references`.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
     let domain_package = DomainPackage::new(
@@ -1870,7 +1870,7 @@ fn n04_empty_declaration_key_component_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over an empty domain package `identity`.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-identity");
@@ -1897,7 +1897,7 @@ fn n04_empty_model_selection_identity_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over an empty domain package `version`.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn n04_empty_model_selection_version_refuses_malformed_declaration() {
     let mut model_selection = DomainPackageRef::fixture("bundle.n04-empty-version");
@@ -1920,7 +1920,7 @@ fn n04_empty_model_selection_version_refuses_malformed_declaration() {
 }
 
 /// The same phase-1 check, over a `DeclarationKey` with an empty `package`.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
     let key = DeclarationKey {
@@ -1957,7 +1957,7 @@ fn n04_empty_declaration_key_package_refuses_malformed_declaration() {
 /// `model-complete.md`:73); the later node's own malformed-declaration
 /// refusal is still reported after it (FR-154: every refusal, in node
 /// order).
-#[trace("TC-195", "FR-150-AC-3", "FR-154")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-154")]
 #[test]
 fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
     let malformed_key = DeclarationKey {
@@ -2014,7 +2014,7 @@ fn n04_an_earlier_nodes_dangling_owner_outranks_a_later_nodes_malformed_key() {
 /// `normalize.record` charges (`value-accounting.md`:489) admits, so intake
 /// is never consulted and neither refusal is ever reported; `work_units =
 /// 2` admits both charges and reports both refusals.
-#[trace("TC-195", "FR-150-AC-3", "FR-154")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-154")]
 #[test]
 fn n08_every_normalize_record_charge_admits_before_intake_reports_both_refusals_in_node_order() {
     let domain_package = DomainPackage::new(
@@ -2116,7 +2116,7 @@ fn fixture_deep_parallel_generalization_chain() -> DomainPackage {
     )
 }
 
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
     let domain_package = fixture_deep_parallel_generalization_chain();
@@ -2157,7 +2157,7 @@ fn f1_deep_parallel_generalization_bounds_enumeration_instead_of_exploding() {
 /// schema" against the wire `model-effective-declaration.schema.json` this
 /// rung does not decode from wire bytes (`DomainPackage`'s fields are already typed
 /// Rust, not JSON); they are honestly uncovered here for that reason.
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn n10_unsorted_derivation_refuses_by_the_semantic_check() {
     let view = completed(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -2181,7 +2181,7 @@ fn n10_unsorted_derivation_refuses_by_the_semantic_check() {
     );
 }
 
-#[trace("TC-195")]
+#[trace("QSpec-TC-195")]
 #[test]
 fn n10_duplicate_path_refuses_by_the_semantic_check() {
     let view = completed(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -2225,7 +2225,7 @@ fn n10_duplicate_path_refuses_by_the_semantic_check() {
 /// (349) and of the view (2941) — 5311 hashed bytes and 19 work units total,
 /// verified against the running preimage's own `canonical_len()`, not just
 /// against the meter's own bookkeeping.
-#[trace("TC-195", "FR-150-AC-1", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1", "QSpec-FR-150-AC-8")]
 #[test]
 fn n01_charges_the_exact_ground_truth_sequence_in_order() {
     let (outcome, meter) = normalize_with_meter(&fixture_f1(), ModelNormalizationLimits::UNLIMITED);
@@ -2285,7 +2285,7 @@ fn n01_charges_the_exact_ground_truth_sequence_in_order() {
 /// own four declared records (`A`, `A.x`, `B`, `B.y`; `records.len()`).
 /// `model.B.y`'s `subsets: ["model.A.x"]` names the relationship inline on
 /// `B.y`'s own record, admitting no separate record of its own.
-#[trace("TC-195", "FR-150-AC-1")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-1")]
 #[test]
 fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
     let domain_package = DomainPackage::new(
@@ -2351,7 +2351,7 @@ fn f1_a_members_own_subsets_property_charges_no_extra_normalize_record() {
 /// `(normalize.declaration, normalize.hash)` pairs (5482 bytes), the
 /// universe (349) and the view (7022) — forty-six work units and 12853
 /// hashed bytes.
-#[trace("TC-195", "FR-150-AC-4", "FR-150-AC-6")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-4", "QSpec-FR-150-AC-6")]
 #[test]
 fn n02_charges_fifteen_facts_and_six_cycle_checks() {
     let (outcome, meter) = normalize_with_meter(&fixture_f2(), ModelNormalizationLimits::UNLIMITED);
@@ -2388,7 +2388,7 @@ fn n02_charges_fifteen_facts_and_six_cycle_checks() {
 /// recorded scope decision (the refusal's shape is reproduced exactly; the
 /// exact six-`normalize.cycle-check`-charge accounting across both types'
 /// walks is not).
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
     let domain_package = DomainPackage::new(
@@ -2437,7 +2437,7 @@ fn r01_a_closing_generalization_cycle_names_the_full_rotated_chain() {
 /// only how the walk *reaches* it — so the listing must name just the cycle
 /// itself, `[model.B, model.C]`, never the whole path from the walk's root
 /// (`[model.A, model.C, model.B]`).
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn r01b_the_cycle_listing_excludes_a_type_that_only_leads_into_it() {
     let domain_package = DomainPackage::new(
@@ -2596,7 +2596,12 @@ fn fixture_wide_ancestry_single_redefiner(n_parents: usize) -> DomainPackage {
 /// because `103` no longer matches. Confirmed by hand: reintroducing that
 /// exact one-line regression locally reproduces both failures, then
 /// removing it again restores this test to green.
-#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
     let domain_package = fixture_n06_resolved();
@@ -2682,7 +2687,7 @@ fn n06_conflict_check_charges_exactly_sigma_c_minus_1_times_f_o() {
 /// `work_units = 47` boundary's denial to `normalize.conflict-check` --
 /// confirmed by hand: reverting the change locally reproduces both,
 /// restoring it returns this test to green.
-#[trace("TC-195", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_checks() {
     let domain_package = fixture_n06_resolved();
@@ -2769,7 +2774,12 @@ fn n06_redefine_facts_are_charged_as_normalize_fact_between_the_two_phase4_check
 /// units under the new formula, or a flat 1 under the older pre-#167
 /// shape) -- confirmed by hand: removing the guard locally reproduces the
 /// failure, restoring it returns this test to green.
-#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
     let domain_package = fixture_single_redefiner_no_conflict();
@@ -2829,7 +2839,7 @@ fn n06_a_single_redefiner_admits_no_conflict_check_charge() {
 /// original refusal at both widths -- confirmed by hand: removing the
 /// guard locally makes this test fail with a `conformance-depth` refusal
 /// at both 128 and 200, restoring it returns this test to green.
-#[trace("TC-195", "TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-195", "QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn n06_wide_ancestry_with_a_single_uncontested_redefiner_completes() {
     for n_parents in [128usize, 200usize] {
@@ -2923,7 +2933,7 @@ fn fixture_wide_ancestry_contested_redefiners(n_parents: usize) -> DomainPackage
 /// the original `conformance-depth` refusal at both widths — confirmed by
 /// hand: reintroducing that walk locally makes this test fail at both 128
 /// and 200, restoring the fix returns it to green.
-#[trace("TC-195", "TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-195", "QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn n06_wide_ancestry_with_two_contesting_redefiners_completes() {
     for n_parents in [128usize, 200usize] {
@@ -3014,7 +3024,7 @@ fn fixture_operation_redefinition() -> DomainPackage {
 /// `normalize.redefinition-check` (`next_charge` drops to `0`) — confirmed
 /// by hand: removing the operation-member contribution locally reproduces
 /// both failures, restoring it returns this test to green.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_redefinition_is_charged_like_a_field_redefinition() {
     let domain_package = fixture_operation_redefinition();
@@ -3115,7 +3125,7 @@ fn fixture_operation_redefinition_conflict() -> DomainPackage {
 /// operation loop back to charge-only (dropping the `Err` branch's
 /// `record_phase4_refusal` call) turns this test's outcome back into
 /// `Completed`, confirmed locally, then restored.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_redefinition_group_with_two_or_more_redefiners_is_charged_a_conflict_check() {
     let domain_package = fixture_operation_redefinition_conflict();
@@ -3229,7 +3239,7 @@ fn fixture_operation_diamond_conflict(reversed: bool) -> DomainPackage {
 /// `DerivationConflict`'s `redefiners` list, and this test's own second
 /// half (the reversed-order run) would see `[C.op3, B.op2]` instead of the
 /// sorted `[B.op2, C.op3]` both runs assert here.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
     for reversed in [false, true] {
@@ -3278,7 +3288,7 @@ fn operation_diamond_derivation_conflict_reports_the_full_typed_payload() {
 /// Resolving an operation contest builds no `EffectiveView` member entry
 /// (see the module docs): there is nothing to assert about the view here,
 /// only that the ambiguity check itself does not refuse.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
     let domain_package = DomainPackage::new(
@@ -3385,7 +3395,12 @@ fn operation_redefinition_group_resolved_by_a_dominating_owner_completes() {
 /// reverting the two loops to push directly, locally, reproduces the
 /// failure; restoring the collect-sort-push shape returns this test to
 /// green.
-#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn conflict_check_charges_interleave_field_and_operation_groups_by_target_key() {
     let domain_package = DomainPackage::new(
@@ -3553,7 +3568,7 @@ fn fixture_two_diamonds_where_effective_identity_disagrees_with_producer_key() -
 /// first, ahead of `aaa`'s, even though `"ix://aaa/O9" <
 /// "ix://zzz/O9"` as producer keys -- the pre-fix code would have reported
 /// `aaa` first.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_check_charges_order_by_effective_identity_not_producer_key() {
     let domain_package =
@@ -3645,7 +3660,7 @@ fn fixture_two_owners_where_effective_identity_disagrees_with_producer_key() -> 
 /// would have hashed `aaa`'s smaller member first, reporting `next_charge:
 /// 530` (still `zzz`'s, now the *last* one) at `hashed_bytes = 1264`
 /// instead.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n08_declaration_charges_order_by_effective_identity_not_producer_key() {
     let domain_package = fixture_two_owners_where_effective_identity_disagrees_with_producer_key();
@@ -3677,7 +3692,13 @@ fn n08_declaration_charges_order_by_effective_identity_not_producer_key() {
     );
 }
 
-#[trace("TC-195", "TC-196", "FR-150-AC-3", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-3",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
     let domain_package = fixture_n06_conflict_with_unrelated_cycle();
@@ -3745,7 +3766,12 @@ fn n06_specialization_cycle_refusal_waits_for_every_phase3_charge_to_admit() {
     }
 }
 
-#[trace("TC-195", "TC-196", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
     match normalize(
@@ -3812,7 +3838,7 @@ fn phase3_specialization_cycle_refusal_wins_over_phase4_derivation_conflict() {
 /// `16..=50` reports `Refused` instead of `Incomplete` -- confirmed by
 /// hand: reverting `build`/`charge_all` locally reproduces every failure,
 /// restoring them returns this test to green.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
     let domain_package = fixture_n06_conflict();
@@ -3965,7 +3991,7 @@ fn n06_conflict_refusal_waits_for_every_phase4_charge_to_admit() {
 /// its own redefinition-check charge, long before `D`'s ambiguity is even
 /// checked at its own later conflict-check charge, regardless of `D`
 /// sorting before `E` in `type_keys`' ascending identity order.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_unreachable_redefinition_target_also_waits_for_every_phase4_charge() {
     let domain_package = fixture_n06_conflict_with_unreachable_redefiner();
@@ -4091,7 +4117,7 @@ fn unreachable_redefiner_refusals() -> Vec<ModelRefusal> {
 /// `normalize.conflict-check`-stage refusal (`:456`) -- are reported, with
 /// `K`'s own refusal first: every redefinition-check charge precedes every
 /// conflict-check charge, exactly as `record_phase4_refusal` ranks them.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refusal() {
     let domain_package = fixture_conflict_check_owner_sorts_before_redefinition_check_owner();
@@ -4144,7 +4170,7 @@ fn n06_redefinition_check_refusal_outranks_earlier_processed_conflict_check_refu
 /// every phase-4 refusal in charge order, not only the earliest-charged
 /// one, so `record_phase4_refusal` reports both, `B9`'s own refusal ahead
 /// of `D`'s.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_conflict_check_refusal_ranks_by_type_before_target() {
     let domain_package = fixture_n06_conflict_with_a_second_diamond_sorting_first();
@@ -4196,7 +4222,7 @@ fn n06_conflict_check_refusal_ranks_by_type_before_target() {
 /// refusal still names `E`, the record's own owning type, since the check
 /// always ranks and names the record's own owner, never the resolving
 /// `type_key`.
-#[trace("TC-195", "FR-150-AC-3", "FR-150-AC-8")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3", "QSpec-FR-150-AC-8")]
 #[test]
 fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_descendant() {
     let domain_package =
@@ -4241,7 +4267,7 @@ fn n06_unreachable_target_refusal_names_the_records_owning_type_not_a_tied_desce
 /// dropping `unknown-member`. `check_node` now accumulates every failing
 /// check in table order (`model-complete.md`:81: owner ahead of
 /// `redefines`), so both are reported together.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() {
     let domain_package = DomainPackage::new(
@@ -4281,7 +4307,7 @@ fn a_field_member_with_a_dangling_owner_and_a_dangling_redefines_reports_both() 
 /// an object type naming two undeclared supertypes -- before the fix, only
 /// the first `supertypes[]` entry's `unknown-general` refusal was ever
 /// reported.
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn an_object_type_with_two_undeclared_supertypes_reports_both() {
     let domain_package = DomainPackage::new(
@@ -4327,7 +4353,7 @@ fn an_object_type_with_two_undeclared_supertypes_reports_both() {
 /// processed adjacently regardless of which one appears first in
 /// `domain_package.records`; only their relative order between themselves,
 /// preserved by `sort_by`'s stability, differs).
-#[trace("TC-195", "FR-150-AC-3")]
+#[trace("QSpec-TC-195", "QSpec-FR-150-AC-3")]
 #[test]
 fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_binding_in_both_input_orders(
 ) {
@@ -4396,7 +4422,7 @@ fn a_duplicate_key_with_one_dangling_owner_copy_still_reports_conflicting_bindin
 /// `normalize.cycle-check` charge early, at the combined budget's own
 /// `derivation_facts = 9` cap) instead of the `Incomplete` this test
 /// asserts -- confirmed locally, then restored.
-#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-8")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-8")]
 #[test]
 fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_facts() {
     let domain_package = DomainPackage::new(
@@ -4466,7 +4492,7 @@ fn h2_a_closing_cycle_extension_is_capped_by_work_units_room_not_derivation_fact
 /// pre-fix ranking, `J`'s `ConflictCheck` candidate would plausibly have
 /// sorted first; the fix reports `O`'s `redefinition-target` refusal first
 /// regardless.
-#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-3")]
 #[test]
 fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_with_an_earlier_sorting_key(
 ) {
@@ -4556,7 +4582,7 @@ fn m1_a_same_owner_redefinition_target_refusal_outranks_a_derivation_conflict_wi
 /// the *only* check that runs for it -- `resolve_redefinition_contest`'s
 /// same-owner ambiguity check never runs for an unreachable group at all,
 /// so there is no second, independent refusal left to also fire).
-#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-3")]
 #[test]
 fn m2_two_redefiners_of_an_unreachable_target_are_named_in_one_refusal() {
     let domain_package = DomainPackage::new(
@@ -4613,7 +4639,7 @@ fn m2_two_redefiners_of_an_unreachable_target_are_named_in_one_refusal() {
 /// there being exactly two refusals, only their relative order (ascending
 /// by each refusal's own least redefining member): grouping is by
 /// declaration key identity, not by name.
-#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-3")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-3")]
 #[test]
 fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_each_their_own_refusal(
 ) {
@@ -4688,7 +4714,13 @@ fn h1_two_owners_on_one_inheritance_line_redefining_an_unreachable_target_are_ea
 /// `A.x`, `B.x2`, `C.x3`, `Y`, `Z`), and every stop from `9` through `17` is
 /// `normalize.fact`, before phase 3's own facts and cycle-checks interleave
 /// from `18` on (already covered by the existing sweep below).
-#[trace("TC-195", "TC-196", "FR-150-AC-3", "FR-150-AC-8", "FR-151-AC-2")]
+#[trace(
+    "QSpec-TC-195",
+    "QSpec-TC-196",
+    "QSpec-FR-150-AC-3",
+    "QSpec-FR-150-AC-8",
+    "QSpec-FR-151-AC-2"
+)]
 #[test]
 fn n06_budget_sweep_from_zero_stops_in_spec_charge_order() {
     let domain_package = fixture_n06_conflict_with_unrelated_cycle();
@@ -4736,7 +4768,7 @@ fn n06_budget_sweep_from_zero_stops_in_spec_charge_order() {
 /// and `Y`<->`Z`, unrelated to one another) in the same domain package are
 /// both reported, in charge order -- `A`/`B`'s own cycle, whose least key
 /// (`model.A`) sorts before `Y`/`Z`'s own (`model.Y`), is reported first.
-#[trace("TC-196", "FR-151-AC-2")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2")]
 #[test]
 fn two_distinct_cycles_are_both_reported_in_charge_order() {
     let domain_package = DomainPackage::new(
@@ -4780,7 +4812,7 @@ fn two_distinct_cycles_are_both_reported_in_charge_order() {
 /// `B`'s own walk closes once via `A`, needing two cycle-checks of its own
 /// -- the exact interleaving below, captured from the real charge log, not
 /// derived by hand), and twelve work units total.
-#[trace("TC-196", "FR-151-AC-2", "FR-150-AC-8")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-2", "QSpec-FR-150-AC-8")]
 #[test]
 fn r01_pins_the_full_cycle_check_charge_and_work_unit_accounting() {
     let domain_package = DomainPackage::new(

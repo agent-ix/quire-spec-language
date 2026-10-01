@@ -2086,7 +2086,7 @@ mod tests {
     /// lookup in `admit_binding_as` made `admit_binding` count one build
     /// and `admit_invocation` two.
     #[test]
-    #[trace("TC-198", "FR-153-AC-1")]
+    #[trace("QSpec-TC-198", "QSpec-FR-153-AC-1")]
     fn admission_never_normalizes_the_domain_package() {
         let domain_package = domain_package();
         let before_normalize = build_calls();
