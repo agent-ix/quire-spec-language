@@ -31,6 +31,7 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod admission_corpus;
 mod golden;
 
 /// The unit the fixture packages are read from; every occurrence's region is
@@ -2073,6 +2074,20 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
 #[trace("TC-435", "FR-027-AC-5")]
 #[test]
 fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
+    let emission = emit_checked(&spine_compile_package()).expect("the package emits");
+    assert_eq!(emission.omitted, []);
+    let exports = verified_exports(&emission);
+    for name in ["Point", "seven", "px"] {
+        assert!(
+            exports.contains_key(name),
+            "{name} is not exported: {exports:?}"
+        );
+    }
+}
+
+/// `tests/fixtures/spine-compile.native` through S1, S2, the assembler,
+/// check and link, as spine `compile` runs it.
+fn spine_compile_package() -> CheckedPackage {
     const FIXTURE: &[u8] = include_bytes!("../../../tests/fixtures/spine-compile.native");
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("agent-ix", "test:spine", "fixture", "fixture:1"),
@@ -2089,15 +2104,7 @@ fn the_spine_compile_fixture_reads_back_verified_with_nothing_omitted() {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
-    assert_eq!(emission.omitted, []);
-    let exports = verified_exports(&emission);
-    for name in ["Point", "seven", "px"] {
-        assert!(
-            exports.contains_key(name),
-            "{name} is not exported: {exports:?}"
-        );
-    }
+    CheckedPackage::link(graph)
 }
 
 /// The domain package document `spine-model.native`'s `model M` selects.
@@ -3258,6 +3265,15 @@ fn anchor_occurrence_ordinals_follow_source_order() {
 /// `declarations` after the complete-V1 profile header, run S1, S2, the
 /// assembler, check and link as spine `compile` runs them, and emitted.
 fn emit_from_text(declarations: &str) -> (String, Emission) {
+    let (text, package) = package_from_text(declarations);
+    let emission = emit_checked(&package).expect("the package emits");
+    (text, emission)
+}
+
+/// `declarations` after the complete-V1 profile header, run S1, S2, the
+/// assembler, check and link as spine `compile` runs them: the unit's text
+/// and the linked package.
+fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
@@ -3279,8 +3295,7 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
         .expect("the unit assembles")
         .check(CheckingLimits::default())
         .expect("the package checks");
-    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
-    (text, emission)
+    (text, CheckedPackage::link(graph))
 }
 
 /// The source text each `generated` source-map entry of `node` covers.
