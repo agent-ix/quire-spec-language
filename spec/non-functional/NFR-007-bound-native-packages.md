@@ -28,10 +28,10 @@ implementation ceiling is not a domain bound (NFR-001). Parse/link/check retain
 their existing independent limits and meanings. No budget becomes a domain,
 population or backend-fuel bound.
 
-Two current exceptions. The checked-package v2 reader's nesting ceiling is
-charged by IR at most at IR's fixed maximum,
-`CheckedPackageReadLimits::MAXIMUM_DEPTH`, which bounds the stack IR's reader
-reserves; a larger requested ceiling is recorded as that maximum. A wire nested
+Two current exceptions. IR charges the checked-package v2 reader's nesting
+ceiling up to its fixed maximum, `CheckedPackageReadLimits::MAXIMUM_DEPTH`,
+which bounds the stack IR's reader reserves; a larger requested ceiling is
+recorded as that maximum. A wire nested
 past the charged ceiling is reported as a depth incompleteness naming the
 charged ceiling and the measured depth. The native v1 package path (the root
 crate's `package`, SEAM-1) still clamps elevated options to the defaults until

@@ -1111,6 +1111,7 @@ fn depth_incompleteness(bytes: &[u8], limits: V2ReadLimits) -> (u64, u128) {
     }
 }
 
+#[trace("TC-088", "NFR-007-M-5")]
 #[test]
 fn depth_far_past_the_default_limit_is_incomplete_not_malformed_wire() {
     // A wire nested well past the default limit is a depth incompleteness
@@ -1124,6 +1125,36 @@ fn depth_far_past_the_default_limit_is_incomplete_not_malformed_wire() {
     );
 }
 
+#[trace("TC-088", "NFR-007-M-5")]
+#[test]
+fn depth_raised_past_the_default_admits_a_wire_deeper_than_the_default() {
+    // A raised depth is charged as given: the same 201-deep wire that is
+    // incomplete at the default passes the depth check at 300 and reaches
+    // envelope decode, which refuses the root array as no envelope. That
+    // refusal is at a value (the root pointer); a syntax refusal before the
+    // depth check carries no pointer.
+    let outcome = read_v2(
+        &nested_array_bytes(200),
+        identity("pkg"),
+        "1".to_owned(),
+        V2ReadLimits {
+            depth: 300,
+            ..V2ReadLimits::default()
+        },
+        &evidence(),
+        &no_pins(),
+    );
+    assert!(
+        matches!(
+            &outcome,
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
+                if refusal.path.as_ref().is_some_and(|path| path.as_str().is_empty())
+        ),
+        "expected the depth check to pass and the root value to be refused, got {outcome:?}"
+    );
+}
+
+#[trace("TC-088", "NFR-007-M-5")]
 #[test]
 fn depth_past_the_charged_maximum_is_incomplete_naming_the_maximum() {
     // A caller depth above IR's fixed maximum is charged at the maximum: a

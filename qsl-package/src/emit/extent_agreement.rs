@@ -217,47 +217,86 @@ fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweri
         .remove(0)
 }
 
+/// Where IR's first unbounded node must lie for it to agree with the domain
+/// QSL names.
+#[derive(Clone, Copy)]
+enum FirstUnbounded {
+    /// A node of this `semantic_form`, the form QSL names as the domain.
+    Form(&'static str),
+    /// Any member of the recursion group of the node QSL names
+    /// `Recursive`. IR reports the reachable group member with the lowest
+    /// node id, which depends on digest order, so only membership is
+    /// asserted.
+    InRecursionGroup,
+}
+
 /// TC-440 (ADR-014 §4; §10 scenarios 2 and 3): over the comparable
 /// fixtures, IR's `requires-bound` fires exactly when QSL's extent is
-/// unbounded, and IR's first unbounded node is a form QSL named as a domain.
-/// For `RangedTree` that node is the `kids` sequence, the member of the
-/// recursion group IR reaches first.
+/// unbounded, and IR's first unbounded node is a form QSL named as a domain
+/// or, for a recursive type, a member of the recursion group QSL named.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
 fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
+    use FirstUnbounded::{Form, InRecursionGroup};
     let expectations = [
-        ("Bag", Some(("sequence", DomainKind::Collection))),
-        ("Counter", Some(("integer", DomainKind::Integer))),
+        ("Bag", Some((Form("sequence"), DomainKind::Collection))),
+        ("Counter", Some((Form("integer"), DomainKind::Integer))),
         ("Box", None),
-        ("Outer", Some(("sequence", DomainKind::Collection))),
+        ("Outer", Some((Form("sequence"), DomainKind::Collection))),
         ("Holder", None),
-        ("Ints", Some(("integer", DomainKind::Integer))),
+        ("Ints", Some((Form("integer"), DomainKind::Integer))),
         ("Flags", None),
-        ("RangedTree", Some(("sequence", DomainKind::Recursive))),
-        ("Mixed", Some(("integer", DomainKind::Integer))),
+        (
+            "RangedTree",
+            Some((InRecursionGroup, DomainKind::Recursive)),
+        ),
+        ("Mixed", Some((Form("integer"), DomainKind::Integer))),
     ];
     for (name, expected) in expectations {
         let (extent, lowering, wire) = both_sides(name);
         match (expected, &extent, &lowering) {
             (None, ClaimExtent::Bounded, CompleteLoweringRecordV2::Lowered { .. }) => {}
             (
-                Some((form, kind)),
+                Some((first, kind)),
                 ClaimExtent::Unbounded(domains),
                 CompleteLoweringRecordV2::RequiresBound { unbounded_type, .. },
             ) => {
-                assert!(
-                    domains.iter().any(|(_, domain)| domain == kind),
-                    "{name}: QSL names a {kind:?} domain: {domains:?}"
-                );
-                assert_eq!(
-                    node_by_id(&wire, unbounded_type)["semantic_form"],
-                    form,
-                    "{name}: IR's first unbounded node is the {form} QSL named"
-                );
+                let named = domains
+                    .iter()
+                    .find(|(_, domain)| *domain == kind)
+                    .map(|(key, _)| key.node())
+                    .unwrap_or_else(|| panic!("{name}: QSL names a {kind:?} domain: {domains:?}"));
+                let ir_node = node_by_id(&wire, unbounded_type);
+                match first {
+                    Form(form) => assert_eq!(
+                        ir_node["semantic_form"], form,
+                        "{name}: IR's first unbounded node is the {form} QSL named"
+                    ),
+                    InRecursionGroup => {
+                        let group = &wire_node(&wire, named)["recursion_group"];
+                        assert!(
+                            group.is_string(),
+                            "{name}: QSL's Recursive root is in a recursion group"
+                        );
+                        assert_eq!(
+                            &ir_node["recursion_group"], group,
+                            "{name}: IR's first unbounded node is in the recursion group QSL named"
+                        );
+                    }
+                }
             }
             _ => panic!("{name}: QSL {extent:?} disagrees with IR {lowering:?}"),
         }
     }
+}
+
+/// The written node whose wire id is `node`.
+fn wire_node(wire: &Value, node: WireNodeId) -> &Value {
+    let digest = node.to_string();
+    nodes(wire)
+        .iter()
+        .find(|written| written["node_id"]["digest"] == json!(digest))
+        .unwrap_or_else(|| panic!("{digest} is written"))
 }
 
 /// QSL's extent of the record declared `name`, and IR's lowering of it.
@@ -361,14 +400,10 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
 
 /// The written node whose id is `node`, as IR's node id.
 fn written(wire: &Value, node: WireNodeId) -> CheckedNodeId {
-    let digest = node.to_string();
-    let written = nodes(wire)
-        .iter()
-        .find(|written| written["node_id"]["digest"] == json!(digest))
-        .unwrap_or_else(|| panic!("{digest} is written"));
+    let written = wire_node(wire, node);
     CheckedNodeId {
         domain: written["node_id"]["domain"].as_str().unwrap().into(),
-        digest: digest.into(),
+        digest: node.to_string().into(),
     }
 }
 

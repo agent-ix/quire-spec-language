@@ -183,6 +183,10 @@ pub(crate) struct V2ReadLimits {
     pub(crate) artifact_bytes: usize,
     /// Entered JSON containers, handed to IR as its `depth`. Defaults to
     /// 128; IR charges at most [`CheckedPackageReadLimits::MAXIMUM_DEPTH`].
+    /// A package admitted deeper than the default is recursed over, one
+    /// frame per level, by every clone, comparison, `Debug` rendering and
+    /// drop of the [`V2Read`] holding it, on the caller's stack: a caller
+    /// that raises `depth` must run on a stack sized for it.
     pub(crate) depth: usize,
     /// IR's semantic-graph node ceiling.
     pub(crate) nodes: u64,

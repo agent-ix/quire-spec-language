@@ -34,7 +34,8 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 ## Expected Results
 
 - IR returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and
-  IR's first unbounded node is the form QSL names.
+  IR's first unbounded node is the form QSL names; for a recursive type it
+  is a member of the recursion group of the root QSL names `Recursive`.
 - Step 4: IR answers `requires-bound` for the outer `+` node, whose record
   is `Unbounded` at `n`, and not for the inner `+` node, whose record is
   `Bounded`. For RR-7's `*` record (rooted through `t`'s bound value) and
@@ -46,7 +47,9 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 
 Partly passed. `Bag` to `Mixed` pass
 (`qsl-package/src/emit/extent_agreement.rs`,
-`tc_440_qsl_extent_agrees_with_ir_requires_bound`). The quantity fixture,
+`tc_440_qsl_extent_agrees_with_ir_requires_bound`); for `RangedTree` the test
+asserts IR's first unbounded node is in the recursion group of the root QSL
+names `Recursive`. The quantity fixture,
 `Measure`, is in the ignored
 `tc_440_quantity_extent_agrees_with_ir_requires_bound`: it cannot be
 compared, because the emitter omits the record, which names the unit node
