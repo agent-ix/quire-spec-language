@@ -80,3 +80,14 @@ the reader is strict, the six stale rows are now current, the diagnostics digest
 computed from real bytes, and the gate is green with the admission corpus passing.
 FND-001 is a real ADR-012 §9 regression introduced by the PR and should be fixed in
 this PR. FND-002 is a test gap on the new reader. FND-003 and FND-004 are low.
+
+## Dispositions
+
+Round 1, reviewed at 89e9e08743c16fa50c66dac2c0801e842b9b30dd (fix commit 89e9e087 on top of 13f0b2a6). The coder's `make ci` log on 89e9e087 ends `exit=0`; I did not re-run it.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 89e9e087: `Trigger` restored; `read` refuses a `trigger_vocabulary` other than `Trigger::ALL` (set and length) with `TriggerVocabulary`; selection rules, `trigger_set` and `AdmittedSelection::triggers()` use `Trigger`; the only trigger string comparison left is the conversion in `Trigger::from_code` |
+| FND-002 | fixed | 89e9e087: new tests cover an unknown selection trigger, a vocabulary missing or adding an entry, a dropped and a duplicated refusal code, and a deleted row (`RoleRowCount { Accounting, 0 }`) |
+| FND-003 | fixed | 89e9e087: `the_compiled_in_lock_reads` compares every row member (role, path, authority, identity, revision namespace and value, domain, digest) and the always, conditional and exactly-one rules against a separate `serde_json` parse |
+| FND-004 | fixed | 89e9e087: `CatalogRole` docs describe each role without its identity or artifact path |

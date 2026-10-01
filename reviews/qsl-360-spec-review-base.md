@@ -35,3 +35,11 @@ Ticket: QSL-360. Base review of the spec diff.
 ## Verdict
 
 The spec edits are accurate and match the code. One low citation fix.
+
+## Dispositions
+
+Round 1, reviewed at 89e9e08743c16fa50c66dac2c0801e842b9b30dd.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 89e9e087: OQ-6 cites §2.4 for the by-reference read and QSpec's own TC-233 for the digest check |

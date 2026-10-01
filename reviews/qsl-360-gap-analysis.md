@@ -51,3 +51,13 @@ done and traced. Three copies of QSpec data remain. FND-001 and FND-002 are in t
 same files and subsystem as this PR and are cheap to fix here; FND-002 needs one
 constant added to the still-open STD-130 crate. FND-003 predates the PR and needs a
 follow-up ticket, but this PR makes the divergence possible.
+
+## Dispositions
+
+Round 1, reviewed at 89e9e08743c16fa50c66dac2c0801e842b9b30dd. The dependency now points at quire-specification#167 head 21e5a7bd, which exposes `COMPLETE_VALUE_SELECTION_VECTORS` (7 accepted, 12 refused vectors).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 89e9e087: `vector_text_definition()` returns `DefinitionLock::pinned().entry(CatalogRole::TextProfile)...reference()` |
+| FND-002 | fixed | 89e9e087: both QSpec-TC-192 tests iterate `COMPLETE_VALUE_SELECTION_VECTORS` (accepted and refused, the two ordering vectors included, each refused vector asserted at its `expected_code`, all codes reached); the hand-typed vectors are gone |
+| FND-003 | deferred | Fixed in part in 89e9e087: `RegisteredDefinition::Diagnostics` takes identity and revision from `native_diagnostics_catalog()`, so it and the emitter name one revision. The other 13 registry revisions, the requirement and rule lists, the TC-114 expected table and `selection()`'s placeholder-byte hash move to QSL-362 |
