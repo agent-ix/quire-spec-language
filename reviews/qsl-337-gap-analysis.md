@@ -57,6 +57,12 @@ Round 1, reviewed at 5bac0589a6fa5754e5eaf0033385b5c308d94651 (rebased onto bad4
 | FND-001 | fixed | 5bac0589: FR-121-AC-7 and `call_site_refuses_an_operation_no_clause_names`; `probe` is proved present in the same domain document by AC-6's successful `probe` selection, so the refusal comes from the frame arm, not the type lookup |
 | FND-002 | fixed | 5bac0589: third sealed selection `ClauseName(pub Identifier)` -> `ClauseSite`, `UnknownClause{selection,package}`; FR-121-AC-8 test locates both invariants, the precondition and the postcondition against graph nodes scanned by kind, and refuses `Absent` and the declared function `sameIdentity` |
 
+Round 2, reviewed at 0a9ecb033f13ef0b67abd335d52e4cd6aabec7bb (rebased onto 628d3785).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 0a9ecb03: FR-121-AC-10/AC-11, TC-516 steps 10/11, `call_site_refuses_a_library_sharing_the_units_owner_as_dependency_input` and `call_site_refuses_a_library_that_does_not_compile_as_dependency`; mapping both arms to `Compile` now fails both tests (reviewer's mutant-m2.log, exit 101) |
+
 ## New findings (disposition pass 1)
 
 | ID | Severity | Summary | Refs |
