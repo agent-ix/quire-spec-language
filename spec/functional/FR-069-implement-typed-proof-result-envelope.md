@@ -32,7 +32,7 @@ second proof-result type exists anywhere in QSL.
 
 This requirement builds the reader and the envelope type only. It reads an
 already-produced FR-331 record; it does not invoke a backend, run Kani, or
-implement `KaniOutcomeKind` → FR-331 mapping (IR's C-09).
+implement `KaniOutcomeKind` → FR-331 mapping (CG's C-09).
 
 ## Inputs
 

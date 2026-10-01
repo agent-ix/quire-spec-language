@@ -952,19 +952,18 @@ Differences from today (ADR-010 §3.2), each removed in its owning change:
 Rules:
 
 - No cycle exists over normal, dev or test-time edges between QSL, IR, RT and
-  CG. QSL owns the replay crossing test (AD-016 as amended by
-  agent-ix/quire-specification#140). It reads IR's agreement vectors as raw
-  bytes through one data accessor in `quire-contract-model`, which QSL already
-  pins; the accessor returns no IR type. It adds no crate edge, and the QSL test
-  never reads a path inside a cargo checkout. The parity comparator stays in
+  CG. The replay crossing test lives in agent-ix/quire-integration, which
+  depends on QSL, CG and IR, so the test adds no QSL → CG edge. QSL's own tests
+  read IR's agreement vectors as raw bytes through one data accessor in
+  `quire-contract-model`, which QSL already pins; the accessor returns no IR
+  type. It adds no crate edge, and no QSL test reads a path inside a cargo
+  checkout. The parity comparator stays in
   agent-ix/quire-contract-codegen#50. The end-to-end run of proof and replay is
-  agent-ix/quire-contract-codegen#87, and head drift is the QI `heads/`
-  workspace. Remaining work: agent-ix/quire-contract-ir#146.
+  agent-ix/quire-contract-codegen#87. Remaining work:
+  agent-ix/quire-contract-ir#146.
 - QSL's own `Cargo.lock` resolves exactly one revision per quire-ecosystem
   crate. A duplicate-revision check on QSL's own lock enforces it; its owner is
   proposed as a #215 scope amendment (T-12).
-  AD-016 heads drift check 6 covers head drift only, because `[patch]` in
-  `heads/` maps every pin to one head.
 - A dependency needed only by tests is a dev dependency.
 
 ### 7.2 Extraction criteria
@@ -1126,7 +1125,7 @@ The approved crate extractions are X-1 to X-10.
 | OBS-037 | Forbidden bypass FB-03. The handoffs to IR are deleted in the PRs that land S4 emission over the checked graph (#218, #223; M-6d). |
 | OBS-038 | Closed against #205 as amended (2026-09-19): "Runtime owns executable operations, exact numeric predicates and the host ABI. QSL owns reference semantics and the native replay executor (`CheckedPackage::call`, AD-016 arrow 7); Codegen reconstructs the replay request and Contract IR holds the counterexample packet." ADR-013 OQ-H and QC-29 amend its last clause: QSL `qsl-replay` owns the counterexample packet (`WitnessEnvelope`) and CG builds it. No native replay surface belongs in IR (agent-ix/quire-contract-ir#140). |
 | OBS-039 | Closed against the same #205 text. #205 and AD-016 agree. |
-| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in the already-pinned `quire-contract-model` (Remaining work: agent-ix/quire-contract-ir#146). QSL owns the replay crossing test; the parity comparator is agent-ix/quire-contract-codegen#50, the end-to-end run is agent-ix/quire-contract-codegen#87, and head drift is QI `heads/` (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
+| OBS-040 | FB-11. QSL tests depend on QSpec vectors, QSL crates and the raw-byte IR agreement-vector accessor in the already-pinned `quire-contract-model` (Remaining work: agent-ix/quire-contract-ir#146). The replay crossing test lives in agent-ix/quire-integration, which depends on QSL, CG and IR, so the test adds no QSL → CG edge; the parity comparator is agent-ix/quire-contract-codegen#50 and the end-to-end run is agent-ix/quire-contract-codegen#87 (§7.1). The direction check is a proposed #215 scope amendment (Tickets to open at #212). |
 | OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. QSL's lock holds one revision per quire crate, checked by the duplicate-revision check (Tickets to open at #212). A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |
