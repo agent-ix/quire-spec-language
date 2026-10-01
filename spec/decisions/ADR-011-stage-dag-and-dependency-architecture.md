@@ -1132,7 +1132,7 @@ The approved crate extractions are X-1 to X-10.
 | OBS-041 | The QSL → FCD edge is admitted, confined to `model::intake`. QSL's lock holds one revision per quire crate, checked by the duplicate-revision check (Tickets to open at #212). A test-only crate stays a dev dependency. PR #200 meets these before merge. |
 | OBS-005 (secondary) | `quire-exact` exists as a leaf crate in the QSL repo (X-1, #213 S-1). The primary decision is #211's. |
 | OBS-017 (secondary) | One QSL type per QSL stage output, met by deleting the native-v1 type with no rename (§4). Stage type names are ADR-013 T-1's. |
-| OBS-034 (secondary) | Direction per §7.1. Pin representation: ADR-013 T-9 `RevisionPin` (full 40-character sha and lock source). |
+| OBS-034 (secondary) | Direction per §7.1. |
 | agent-ix/quire-contract-runtime#53 | Proof-stage acceptance (§2.3): a gate discharges at least one proposition over the code it claims, counting SUCCESS checks only; its expectation is derived independently of the function under proof, and a run mutation of each shared helper fails the proof (#245). agent-ix/quire-contract-runtime#53 owns the RT `src/exact/` gate until X-1. |
 
 ## 10. Change scenarios
@@ -1217,7 +1217,7 @@ Answered by ADR-012 (#210, QSL PR #234) §13.5 and applied above:
 Answered by ADR-013 (#211, QSL PR #236) §3.1 and applied above: stage type
 names (T-1), digest form and I2 re-checking (T-2), `PackageNodeKey` (T-3),
 stage outcome, limit and fault types (T-4), `Locus` (T-5), kernel edge cuts
-(T-6), capability types crossing as data (T-7) and `RevisionPin` (T-9). The
+(T-6) and capability types crossing as data (T-7). The
 executor key (T-8) is settled by owner ruling: a typed `QualifiedName`.
 
 To #225:
