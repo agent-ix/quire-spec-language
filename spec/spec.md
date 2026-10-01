@@ -203,6 +203,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-023
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-022
+  - target: ix://agent-ix/quire-spec-language/ADR-026
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
@@ -990,3 +991,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
 | [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |
 | [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
+| [ADR-026](decisions/ADR-026-dense-time.md) | ADR | Proposed; dense time: real-valued clocks with strict and non-strict constraints, time invariants and urgency, timed-automata semantics over ADR-018's positions with time stamps, time divergence and the time-lock-freedom item, the `model-time` clock binding, timed MITL forms and their decidability boundary, timed counterexamples with exact rational delays; engine, hybrid dynamics and the embedded real-time property set open pending research |
