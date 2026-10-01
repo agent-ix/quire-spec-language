@@ -12,10 +12,11 @@
 //! synthesized for FR-151 dispatch), a type declared by hand, and
 //! `Origin::Expression` have no region: no region of the unit names a
 //! position in a tree not read from it. A `generated` occurrence (a node no source position names) is
-//! recorded at the body or measure root of the least function declaration
-//! that reaches its node, or, for a node no function reaches, at the least
-//! declared type name that does (`lowering::enclosing_declarations`), so it
-//! resolves here like any other body or declared-name location.
+//! recorded at the root of the least function body, measure, state clause
+//! or protocol attempt that reaches its node, or, for a node none of those
+//! reaches, at the least declared type name that does
+//! (`lowering::enclosing_declarations`), so it resolves here like any other
+//! body, clause, attempt or declared-name location.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

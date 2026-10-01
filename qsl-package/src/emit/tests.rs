@@ -3345,7 +3345,6 @@ fn enum_members_no_literal_names_are_placed_under_an_ordered_comparison() {
 /// reads back Verified.
 #[trace("FR-093-AC-18", "TC-416")]
 #[test]
-#[ignore = "IR-482: IR's reader refuses `a < b` over an ordered enum ill_typed/operator-ineligible, since it does not resolve the enum to the ordered_enum family"]
 fn an_ordered_comparison_of_enum_parameters_reads_back_verified() {
     let emission = members_are_placed_at(ORDERED_COMPARISON, "a < b");
     let read = read_back(&emission);
@@ -3392,4 +3391,49 @@ fn types_no_function_names_are_placed_at_their_declared_names() {
         .find(|node| node["semantic_form"] == "integer_range")
         .expect("x's Int[0, 9] node");
     assert_eq!(generated_texts(&wire, &text, &field_type["node_id"]), ["P"]);
+}
+
+/// QSL-349: two records no function names, `Q` declared before `P`, share
+/// the `Int[0, 9]` node; it is placed at the least declared name, `P`, by
+/// byte order and not by source order.
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+fn a_node_two_unnamed_types_share_is_placed_at_the_least_name() {
+    let (text, emission) = emit_from_text(
+        "record Q { y: Int[0, 9]; }\n\
+         record P { x: Int[0, 9]; }\n\
+         function t using v(): Boolean pure { true }\n",
+    );
+    assert_eq!(emission.omitted, []);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let wire = wire(&emission);
+    let shared = only_node(&wire, "integer_range");
+    assert_eq!(generated_texts(&wire, &text, &shared["node_id"]), ["P"]);
+}
+
+/// QSL-349: a node a state clause reaches keeps its clause placement when
+/// a declared type no function names also reaches it, though a type name
+/// sorts before a state clause. `VersionUnchanged`'s body `1 < 2` and
+/// `record R { x: Int[0, 9]; }` both reach the `Integer` scalar node.
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
+    const CLAUSE: &str =
+        "post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { 1 < 2 }";
+    let unit = attempt_frame_unit(
+        &format!("record R {{ x: Int[0, 9]; }}\n{CLAUSE}"),
+        "Config::ConfigVersion::attemptUpdate",
+        "VersionUnchanged",
+    );
+    let emitted = emit_attempt_unit(&unit, false);
+    let integer = only_node(&emitted.wire, "integer");
+    assert_eq!(
+        integer["occurrences"],
+        json!([{"role": "generated", "ordinal": 0}])
+    );
+    assert_eq!(
+        generated_texts(&emitted.wire, &unit, &integer["node_id"]),
+        ["1 < 2"]
+    );
 }
