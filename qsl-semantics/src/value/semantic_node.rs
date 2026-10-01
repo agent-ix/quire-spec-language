@@ -23,6 +23,7 @@ use quire_canonical::Limits;
 
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, NODE_KEY_DOMAIN};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
 /// The stable subject projection of the exact admitted owner of a nominal
 /// declaration.
@@ -112,64 +113,6 @@ impl OwnerSelection {
     pub fn contains(&self, owner: &NodeOwner) -> bool {
         self.0.contains(owner)
     }
-}
-
-/// The strict reader's `refused { code: invalid_semantic_graph }`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("invalid_semantic_graph: {cause:?}")]
-pub struct InvalidSemanticGraph {
-    /// The typed reason.
-    pub cause: SemanticGraphCause,
-}
-
-impl InvalidSemanticGraph {
-    /// Stable refusal code.
-    pub const CODE: &'static str = "invalid_semantic_graph";
-}
-
-/// Why a nominal semantic node or node graph was refused.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum SemanticGraphCause {
-    /// The preimage does not satisfy `node-identity-preimage.schema.json`.
-    NonCanonicalPreimage,
-    /// An unordered declaration's members are not sorted by case name.
-    UnsortedUnorderedMembers,
-    /// The owner does not join the lock selection.
-    OwnerNotSelected,
-    /// The retained key is not the digest of the admitted content.
-    StaleKey,
-    /// A member node references a different declaration node.
-    ForeignDeclaration,
-    /// A member node's case is not a member of its declaration.
-    UndeclaredCase,
-    /// A dimension term has exponent zero.
-    ZeroExponent,
-    /// A dimension term names the same base dimension twice.
-    DuplicateTerm,
-    /// Dimension terms are not strictly ascending by node key.
-    UnsortedTerms,
-    /// A unit scale or offset is not a reduced rational.
-    UnreducedRational,
-    /// A unit scale is zero.
-    ZeroScale,
-    /// A targetless unit does not have scale one and offset zero.
-    NonIdentityRoot,
-    /// Two admitted nodes have the same key.
-    DuplicateNode,
-    /// A dimension term or unit names a dimension node that is not admitted.
-    UnknownDimension,
-    /// A dimension term names a derived (non-base) dimension.
-    NonBaseDimensionTerm,
-    /// A unit target is not an admitted unit.
-    UnknownTarget,
-    /// A unit target belongs to a different dimension node.
-    CrossDimensionTarget,
-    /// A dimension's unit graph has no targetless canonical root.
-    MissingRoot,
-    /// A dimension's unit graph has more than one targetless root.
-    DuplicateRoot,
-    /// Unit targets form a cycle.
-    TargetCycle,
 }
 
 pub(crate) fn refuse(cause: SemanticGraphCause) -> InvalidSemanticGraph {
@@ -340,20 +283,4 @@ pub(crate) fn retains(
     preimage: &impl NodeIdentityPreimage,
 ) -> Result<bool, InvalidSemanticGraph> {
     Ok(preimage.digest()? == *retained.as_bytes())
-}
-
-/// Refuse terms that are zero, repeated or not strictly ascending, in that
-/// order.
-pub(crate) fn check_terms<K: Ord>(terms: &[(K, Integer)]) -> Result<(), SemanticGraphCause> {
-    if terms.iter().any(|(_, exponent)| exponent.is_zero()) {
-        return Err(SemanticGraphCause::ZeroExponent);
-    }
-    let distinct: BTreeSet<_> = terms.iter().map(|(key, _)| key).collect();
-    if distinct.len() != terms.len() {
-        return Err(SemanticGraphCause::DuplicateTerm);
-    }
-    if !terms.is_sorted_by(|(left, _), (right, _)| left < right) {
-        return Err(SemanticGraphCause::UnsortedTerms);
-    }
-    Ok(())
 }

@@ -602,8 +602,9 @@ mod checked {
     use qsl_semantics::value::enumeration::{
         EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
-    use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject, SemanticGraphCause};
+    use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
     use quire_exact::NODE_KEY_DOMAIN;
+    use quire_semantic_value::semantic_node::SemanticGraphCause;
     use serde_json::json;
 
     fn name(spelling: &str) -> Expression {

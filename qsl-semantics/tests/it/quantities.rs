@@ -18,8 +18,7 @@ use qsl_semantics::value::quantity::{
 use qsl_semantics::value::NodeIdentityPreimage;
 use qsl_semantics::value::{
     CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    InvalidSemanticGraph, NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, SemanticGraphCause,
-    UnitGraph, UnitPreimage,
+    NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
 };
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -30,6 +29,7 @@ use quire_exact::{
     ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
     RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
 };
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 

@@ -1307,8 +1307,8 @@ fn the_enum_causes_have_their_catalog_codes() {
         .to_string(),
         "ambiguous_declaration/ambiguous-name"
     );
-    let fault = crate::value::semantic_node::InvalidSemanticGraph {
-        cause: crate::value::semantic_node::SemanticGraphCause::StaleKey,
+    let fault = quire_semantic_value::semantic_node::InvalidSemanticGraph {
+        cause: quire_semantic_value::semantic_node::SemanticGraphCause::StaleKey,
     };
     assert_eq!(
         AssemblyCause::NominalAdmission(fault)

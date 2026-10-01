@@ -200,9 +200,11 @@ pub use member::Member;
 // narrowed to `pub(crate)` since its only consumers are inside
 // `value::expression` (rust-review "narrow API" bar: `pub` only for what
 // consumers outside the crate use).
+// `InvalidSemanticGraph` and `SemanticGraphCause` are
+// `quire_semantic_value::semantic_node`'s (ADR-011 §6.1 layer SV); consumers
+// import them from there, not through a re-export here.
 pub use semantic_node::{
-    InvalidSemanticGraph, ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection,
-    OwnerSubject, SemanticGraphCause, IDENTITY_LIMITS,
+    ModelSubject, NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject, IDENTITY_LIMITS,
 };
 // `admit_text`, `compare_text`, `Text`, `TextPayload` and
 // `InvalidTextLiteral` were this module's own `text` submodule, a

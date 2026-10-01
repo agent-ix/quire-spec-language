@@ -67,9 +67,8 @@ use qsl_foundation::ByteDigest;
 use serde::Serialize;
 
 use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
-use crate::value::semantic_node::{
-    InvalidSemanticGraph, NodeIdentityPreimage, NodeOwner, OwnerSubject,
-};
+use crate::value::semantic_node::{NodeIdentityPreimage, NodeOwner, OwnerSubject};
+use quire_semantic_value::semantic_node::InvalidSemanticGraph;
 
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};

@@ -29,13 +29,14 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
-    check_terms, is_qualified_name, preimage_digest, refuse, resolve, retains, wire_index,
-    CanonicalNodeId, CanonicalOwner, CanonicalRational, InvalidSemanticGraph, NodeIdDocument,
-    NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument, SemanticGraphCause,
+    is_qualified_name, preimage_digest, refuse, resolve, retains, wire_index, CanonicalNodeId,
+    CanonicalOwner, CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner,
+    OwnerSelection, RationalDocument,
 };
 use crate::value::semantic_node::IDENTITY_LIMITS as LIMITS;
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
+use quire_semantic_value::semantic_node::{check_terms, InvalidSemanticGraph, SemanticGraphCause};
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
 const UNIT_VERSION: &str = "quire.unit-node/v1";

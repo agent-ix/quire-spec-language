@@ -70,7 +70,8 @@ use crate::value::declaration::{
     TypeEnvironment,
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
-use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
+use crate::value::semantic_node::OwnerSelection;
+use quire_semantic_value::semantic_node::InvalidSemanticGraph;
 
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

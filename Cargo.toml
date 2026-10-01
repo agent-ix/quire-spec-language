@@ -92,6 +92,10 @@ qsl-semantics = { path = "qsl-semantics", features = ["test-support"] }
 # beside the SEAM-1 lowering pipeline. This crate re-exports none of its
 # items (ADR-011 §7.2).
 qsl-route = { path = "qsl-route" }
+# ADR-011 §6.1 layer SV: the refusal vocabulary (`InvalidSemanticGraph`,
+# `SemanticGraphCause`) the enum identity tests assert. Dev-only: no shipped
+# module of this crate names it.
+quire-semantic-value = { path = "quire-semantic-value" }
 tempfile = "3.27.0"
 jsonschema = { version = "0.17.1", default-features = false, features = ["draft202012"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }

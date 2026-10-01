@@ -316,7 +316,13 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-semantics",
-            &["qsl-attrs", "qsl-forms", "qsl-foundation", "quire-exact"][..],
+            &[
+                "qsl-attrs",
+                "qsl-forms",
+                "qsl-foundation",
+                "quire-exact",
+                "quire-semantic-value",
+            ][..],
             &["qsl-cst"][..],
         ),
         (
@@ -343,7 +349,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-semantics",
                 "quire-exact",
             ][..],
-            &["qsl-cst", "qsl-forms"][..],
+            &["qsl-cst", "qsl-forms", "quire-semantic-value"][..],
         ),
     ] {
         let package = packages
@@ -363,7 +369,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         }
         if crate_name == "qsl-semantics" {
             // Layer 3: its workspace-crate `[dependencies]` are
-            // exactly layers 2, F and K -- no `qsl-cst` (layer 1) and no
+            // exactly layers 2, F, K and SV -- no `qsl-cst` (layer 1) and no
             // root crate. Its other entries are third-party crates and the
             // FCD crates, which `fcd_is_named_by_model_intake_only` below
             // confines to `model::intake`.

@@ -16,8 +16,9 @@ use quire_exact::{Integer, NodeKey, Rational};
 use super::{AssemblyCause, AssemblyError, AssemblyLimits, TopologyFault};
 use crate::check::lowering::strongly_connected;
 use crate::check::node_key::{nominal_key, SourceOwner};
-use crate::value::semantic_node::{InvalidSemanticGraph, OwnerSelection};
+use crate::value::semantic_node::OwnerSelection;
 use crate::value::unit::{DimensionPreimage, UnitGraph, UnitPreimage};
+use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 
 /// The admitted graph and the span of each declared name by its key.
 pub(super) struct Assembled {
@@ -364,7 +365,7 @@ pub(super) fn assemble(
                 .and_then(|dimension| dimension_keys[dimension])
                 .ok_or_else(|| {
                     fault(InvalidSemanticGraph {
-                        cause: crate::value::semantic_node::SemanticGraphCause::UnknownDimension,
+                        cause: SemanticGraphCause::UnknownDimension,
                     })
                 })?;
             let target = unit_edges[index]
