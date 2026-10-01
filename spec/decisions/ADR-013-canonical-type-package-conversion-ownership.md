@@ -803,7 +803,7 @@ Equality: not an identity. Each bound value compares under its owning type.
 
 | Pin | Authority | Rule |
 | --- | --- | --- |
-| Cargo dependency revision | Each repository's `Cargo.toml` and `Cargo.lock` exact `rev` | One lock holds one revision of each git dependency (OBS-041). |
+| Cargo dependency revision | Each repository's `Cargo.toml` (first-party dependencies mostly on `branch = "main"`), resolved to one revision per git dependency in its `Cargo.lock` | One lock holds one revision of each git dependency (OBS-041). |
 
 #### O-24 Proof results
 
@@ -1265,7 +1265,7 @@ Secondary-owner items (the #211 part only):
 | Item | Decision |
 | --- | --- |
 | OBS-001 | O-02, C-03: the v2 emitter mints `package_id` and is the only QSL → IR package producer; emitter ticket ADR-011 T-8. |
-| OBS-031 | O-23: each repository's `Cargo.toml` and `Cargo.lock` select its dependency revisions. |
+| OBS-031 | O-23: first-party dependencies on `branch = "main"` resolve to their current heads in each repository's `Cargo.lock`, so each lock update integrates current heads and no separate heads workspace is needed. |
 | OBS-037 | R-10, O-15: wire-admitted `v2::AdmittedPackage` values never become checked typestate; the handoffs are lane-private, and removal of the bypass is decided in #209. |
 | OBS-039 | O-26: the executor request type follows AD-016 arrow 7, with its key a typed `QualifiedName` (OQ-5 ruling). ADR-011 closes OBS-039 against the amended #205 text. |
 | OBS-041 | O-23: one lock holds one revision of each git dependency. |

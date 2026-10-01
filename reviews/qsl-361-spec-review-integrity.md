@@ -43,3 +43,18 @@ Clean. No dangling `RevisionPin` or ADR-013 T-9 citation remains outside
 review history, the eight-question count is consistent in both ADRs, and the
 ADR-011 T-9 hits left in place refer to ADR-011's own qsl-agreement retarget
 row.
+
+## New findings (disposition pass 1)
+
+Delta re-review of `git diff cdbc1fdb..74bb8f8e` at 74bb8f8e (round 0 at
+cdbc1fdb was clean). The delta deletes the O-23 release-pins paragraph
+(ADR-013:808-810) and the §5 bullet "Exact release pins are authoritative
+(O-23)" (ADR-013:1017), and rewords the OBS-031 secondary row (ADR-013:1268).
+No dangling citation of the removed text remains: `git grep -i 'release pin|qualified dependency|ecosystem lock'` at 74bb8f8e hits only review history,
+FR-101:67 and Plan-013 plan.md:115 (both outside this delta). The new OBS-031
+sentence is true: each lock resolves its own dependency revisions.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | medium | O-23's kept row gives the authority as "Each repository's `Cargo.toml` and `Cargo.lock` exact `rev`", but first-party dependencies are `branch = "main"` with no `rev` (Cargo.toml:72-75 says "no rev" outright), which is the premise of this delta's ruling. With the release-pins paragraph gone this row is O-23's only statement, and the reworded OBS-031 row cites it. Round 0 examined this row and missed it. Fix: authority is each repository's `Cargo.toml` (`branch = "main"`) as resolved to one revision in its `Cargo.lock`. | ADR-013:806, ADR-013:1268, Cargo.toml:72-75 |
+| FND-003 | low | ADR-010 OBS-031 observes that QI has no `heads/` workspace and no current-head integration lane. The reworded row ("each repository's `Cargo.toml` and `Cargo.lock` select its dependency revisions") is accurate but does not say how that answers the observation; the old row did, by naming release pins as the only qualified selection. Fix: say that first-party dependencies track `main`, so each lock already resolves current heads and no separate heads lane exists. | ADR-013:1268, ADR-010:988, ADR-011:1126 |
