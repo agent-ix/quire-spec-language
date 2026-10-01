@@ -341,6 +341,11 @@ violation found within this request" (EX-9). Three rules hold it there:
 - a simulation finding is reproduced only by FR-101 `replay` of its trace. It
   never becomes a `WitnessEnvelope` and never enters E9.
 
+Amended by ADR-024 SV-1: statistical model checking (ADR-024 EN-4) samples
+through FR-101 and is a negotiated backend, not an exploration. Its result is
+the FR-331 value `measured`, which proof accounting never counts; its sampled
+witnesses replay as model traces (ADR-024 SV-8).
+
 Proof of a state clause goes only through negotiation. Each clause and frame
 records one `operation-contract` requirement (ADR-012 §15.7). While IR admits
 no `state` node, no backend proves one, and no state-clause proof evidence is

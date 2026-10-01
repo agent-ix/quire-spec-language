@@ -163,7 +163,8 @@ is the vacuous proof), `Exhaustive`, `BoundedComplete{depth}` and
 witness paths with how each was found, and ADR-022 adds the verdict kinds V-9 (witnessed) and V-10
 (refuted by trap) for state-graph claims. `TerminalValue::category` maps `Checks{0}` to
 inconclusive with `KaniVacuousProof`, as today, and every other basis to
-success. `InconclusiveCause` gains `BoundReached{depth}`,
+success. Amended by ADR-024 SV-1: a statistical result is not a `ProofBasis`
+member; it settles as `TerminalValue::Measured`, which is never `Proved`. `InconclusiveCause` gains `BoundReached{depth}`,
 `InductionNotClosed{depth}`, `UndecidedSuccessor`, `NoInitialState` and
 `CertificateRejected{rule, state}`; amended by ADR-022 RU-5, it also gains
 `WellDefinednessUnchecked{sources}`, witnesses found on a run that did not
