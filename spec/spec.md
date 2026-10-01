@@ -279,6 +279,14 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+  - target: ix://agent-ix/quire-spec-language/FR-129
+  - target: ix://agent-ix/quire-spec-language/FR-130
+  - target: ix://agent-ix/quire-spec-language/FR-131
+  - target: ix://agent-ix/quire-spec-language/FR-132
+  - target: ix://agent-ix/quire-spec-language/FR-133
+  - target: ix://agent-ix/quire-spec-language/FR-134
+  - target: ix://agent-ix/quire-spec-language/US-016
+  - target: ix://agent-ix/quire-spec-language/US-017
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-340
     type: contains
@@ -490,6 +498,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-033](usecase/US-033-write-unbounded-temporal-claims-and-unbounded-declarations.md) | US | Draft |
 | [US-034](usecase/US-034-catch-a-refinement-regression-across-revisions-and-profiles.md) | US | Draft |
 | [US-035](usecase/US-035-qualify-qsl-against-the-complete-v1-conformance-corpus.md) | US | Draft |
+| [US-016](usecase/US-016-prove-liveness-of-a-contended-model-under-strong-fairness.md) | US | Draft |
+| [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -664,6 +674,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-352](functional/FR-352-report-capability-coverage.md) | FR | Specified: the run report gives outcome counts, capability coverage and each failing vector in a stable order; not yet implemented -- TC-879 planned |
 | [FR-353](functional/FR-353-settle-the-complete-v1-qualification-verdict.md) | FR | Specified: the `qualify` xtask repository gate: complete-V1 qualified when every capability of the default scope passes; gate exit 0, 1 or 2; not yet implemented -- TC-880, TC-881 planned |
 | [FR-354](functional/FR-354-admit-extensions-from-declarative-grammar-and-typed-node-schemas.md) | FR | Specified: an extension's declaration forms are admitted from its grammar and typed-node schemas and packaged as typed nodes; malformed, colliding, cyclic and unselected extensions refuse; not yet implemented -- TC-882 to TC-884 planned |
+| [FR-129](functional/FR-129-check-strong-fairness-constraints.md) | FR | Specified: S3 checks the `strong` fairness kind beside `weak`, an unmarked kind as `weak`, and puts each constraint's resolved kind into the clause identity (ADR-019 SY-1 to SY-5, SV-5); not yet implemented -- TC-530 planned |
+| [FR-130](functional/FR-130-decide-strong-fairness-on-the-explicit-state-product.md) | FR | Specified: EN-1 decides strong fairness by recursive SCC refinement of the retained product, with enabledness read from each model state's enabled set and the CX-5 loop (ADR-019 SR-1 to SR-7); not yet implemented -- TC-531 planned |
+| [FR-131](functional/FR-131-replay-checks-strong-fairness-on-a-model-counterexample.md) | FR | Specified: model-trace replay checks every weak and strong constraint against the loop with enabledness from the model, and an unfair EN-1 lasso settles `ReplayParity` (ADR-019 SR-8, SV-4); not yet implemented -- TC-532 planned |
+| [FR-132](functional/FR-132-settle-fairness-over-a-supplied-trace-as-a-missing-premise.md) | FR | Specified: a clause with any fairness constraint over a supplied trace settles `unsupported`, `MissingFairnessPremise` (ADR-019 SV-2); not yet implemented -- TC-533 planned |
+| [FR-133](functional/FR-133-name-the-strong-constraint-that-would-exclude-a-refutation.md) | FR | Specified: the `fairness.strong-would-exclude` warning on a refuted liveness record, computed at replay, outside every identity (ADR-019 SV-6); not yet implemented -- TC-534 planned |
+| [FR-134](functional/FR-134-advertise-the-fairness-kinds-en-1-decides.md) | FR | Specified: EN-1 advertises the `weak` and `strong` fairness kinds and the registry carries each backend's kinds to its candidates (ADR-019 SV-1, BE-1); not yet implemented -- TC-535 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
