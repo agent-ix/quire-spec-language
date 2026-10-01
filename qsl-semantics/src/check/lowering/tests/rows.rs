@@ -566,7 +566,9 @@ fn status() -> EnumBinding {
 /// `enum <name> { <cases> }`, unordered, admitted under QSpec's own
 /// preimages. `cases` must be sorted.
 fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
-    use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
+    use crate::value::enumeration::{
+        AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    };
     use crate::value::semantic_node::{
         NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
     };
@@ -583,7 +585,7 @@ fn enum_binding(name: &str, cases: &[&str]) -> EnumBinding {
     }))
     .unwrap();
     let key = NodeKey::from_digest(preimage.digest().unwrap());
-    let declaration = EnumDeclaration::admit(preimage, key, &owners).unwrap();
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners).unwrap();
     let members = cases
         .iter()
         .map(|case| {

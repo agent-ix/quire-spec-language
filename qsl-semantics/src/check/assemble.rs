@@ -24,7 +24,7 @@
 //! An enum declaration is admitted here as an [`EnumBinding`]: `check` mints
 //! its declaration key and each member's key over the unit's `SourceOwner`
 //! (`node_key::nominal_key`, FB-13) and admits them with
-//! `EnumDeclaration::admit` and `admit_member` (FR-091 "Enum declarations").
+//! `AdmittedEnumDeclaration::admit` and `admit_member` (FR-091 "Enum declarations").
 //! A predicate is a function of kind `Predicate` and assembles as a function.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -65,7 +65,9 @@ use crate::model::domain_package::{
 use crate::model::intake::{member_identity_name, type_identity_segment, SelectedModel};
 use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
-use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
+use crate::value::enumeration::{
+    AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+};
 use crate::value::environment_stage::stage_failure;
 use crate::value::semantic_node::OwnerSelection;
 use quire_semantic_value::declaration::{
@@ -212,7 +214,7 @@ pub enum AssemblyCause {
         /// The span of each member declaring the case.
         spans: Vec<Span>,
     },
-    /// A preimage constructor, `EnumDeclaration::admit` or `admit_member`
+    /// A preimage constructor, `AdmittedEnumDeclaration::admit` or `admit_member`
     /// refused a form the checks above admitted: a broken invariant of
     /// `check`, never a property of the source.
     NominalAdmission(InvalidSemanticGraph),
@@ -1046,7 +1048,7 @@ fn admit_enum(
         cases.clone(),
     )?;
     let key = nominal_key(&preimage)?;
-    let declaration = EnumDeclaration::admit(preimage, key, owners)?;
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key, owners)?;
     let mut members = Vec::with_capacity(cases.len());
     for case in cases {
         let member = EnumMemberPreimage::new(declaration.key(), case)?;

@@ -600,7 +600,7 @@ mod checked {
     };
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use qsl_semantics::value::enumeration::{
-        EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+        AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
     use quire_exact::NODE_KEY_DOMAIN;
@@ -752,7 +752,7 @@ mod checked {
 
     fn admit(label: &str, ordered: bool, members: &[&str]) -> EnumBinding {
         let preimage = declaration_preimage(label, ordered, members);
-        let declaration = EnumDeclaration::admit(
+        let declaration = AdmittedEnumDeclaration::admit(
             EnumDeclarationPreimage::from_json(preimage.clone()).unwrap(),
             preimage_key(&preimage),
             &owners(),
@@ -853,7 +853,7 @@ mod checked {
         // declaration position never reaches the key.
         let reordered = declaration_preimage("Color", false, &["green", "red", "blue"]);
         assert_eq!(
-            EnumDeclaration::admit(
+            AdmittedEnumDeclaration::admit(
                 EnumDeclarationPreimage::from_json(reordered.clone()).unwrap(),
                 preimage_key(&reordered),
                 &owners(),

@@ -56,7 +56,7 @@ use super::refusal::{
 };
 use crate::model::operation::OperationTable;
 use crate::value::definition::AdmittedIeeeProfile;
-use crate::value::enumeration::{mint_variant_id, EnumDeclaration};
+use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -212,10 +212,10 @@ pub struct EnumBinding {
     /// The declared source name.
     pub name: String,
     /// The admitted declaration.
-    pub declaration: EnumDeclaration,
+    pub declaration: AdmittedEnumDeclaration,
     /// Its admitted members, in FR-141 canonical order (declaration order
     /// for an ordered enum, case-identifier byte order otherwise --
-    /// `EnumDeclaration::admit` already refuses any other order).
+    /// `AdmittedEnumDeclaration::admit` already refuses any other order).
     pub members: Vec<EnumValue>,
 }
 
@@ -225,7 +225,7 @@ impl EnumBinding {
     /// that order, so each member's rank is exactly its index here.
     pub fn shape(&self) -> EnumShape {
         EnumShape::new(
-            self.declaration.preimage().is_ordered(),
+            self.declaration.declaration().is_ordered(),
             self.members.iter().map(EnumValue::variant),
         )
     }
@@ -1395,7 +1395,7 @@ impl<'a> Typer<'a> {
                 // ADR-013 O-14/OQ-D: the literal's rank is its case's own
                 // canonical position, never a value this site invents --
                 // `member.position()` is exactly that, verified at
-                // `EnumDeclaration::admit_member` (`value/enumeration.rs`).
+                // `AdmittedEnumDeclaration::admit_member` (`value/enumeration.rs`).
                 let rank = u32::try_from(member.position())
                     .expect("an admitted enum has far fewer than u32::MAX members");
                 Ok(node(

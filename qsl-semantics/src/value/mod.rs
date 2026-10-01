@@ -158,10 +158,12 @@ pub(crate) mod unit;
 // items have one public path, the submodule one
 // (`value::environment_stage::stage_failure`); this module does not re-export
 // them flat as well (the same one-path rule as for the kernel's items).
+// `SelectionRefusalCode` and the `PackageRefusal` vocabulary are
+// `quire_semantic_value::definition`'s (ADR-011 §6.1 layer SV); consumers
+// import them from there, not through a re-export here.
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError,
-    PackageCause, PackageRefusal, PackageRefusalCode, SelectionRefusalCode, Trigger,
+    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError, Trigger,
 };
 pub use diagnostics_catalog::native_diagnostics_catalog;
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
