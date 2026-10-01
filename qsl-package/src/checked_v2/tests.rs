@@ -647,10 +647,10 @@ fn refuses_package_id_that_does_not_recompute() {
     // IR's own v2 reader recomputes and compares `package_id` before this
     // reader ever sees an admitted package (finding #6): a mismatch never
     // reaches `library::verify_package`'s own `PackageIdMismatch`, so this
-    // asserts IR's refusal rather than a `Structural` one. IR classifies
-    // this mismatch as `StaleDependency`, which is the wrong code for a
-    // condition-2 recompute failure (filed with IR as a ticket); this test
-    // asserts IR's actual current behavior, not the code IR should emit.
+    // asserts IR's refusal rather than a `Structural` one. IR's
+    // `StaleDependency` covers a package that does not match the content
+    // identity it names, which includes a `package_id` that does not
+    // recompute.
     let outcome = read(&bytes, &pinned_for(&preimage));
     assert!(
         matches!(
@@ -1373,8 +1373,8 @@ fn read_fixture(path: &std::path::Path) -> Value {
 
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
 /// `package_id` its own identity preimage recomputes to. Evidence treats
-/// the fixture's required features as supported. The published fixture is pretty-printed; the wire is its
-/// canonical form.
+/// the fixture's required features as supported. The published fixture is
+/// pretty-printed; the wire is its canonical form.
 fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {

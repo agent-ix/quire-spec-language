@@ -941,9 +941,8 @@ fn emit_package_inner(
     })
 }
 
-/// The evidence IR's reader needs to read this emission back: the lock's
-/// required features. It attests this emission only: [`Emission`] is built
-/// by [`emit_checked`] alone, so no caller can pair it with other bytes.
+/// The evidence IR's reader needs to read this emission back: each of the
+/// lock's required features, declared as supported.
 fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
     let mut evidence = CheckedPackageEvidence::new();
     for feature in &lock.required_features {

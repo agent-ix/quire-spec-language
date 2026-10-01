@@ -478,10 +478,9 @@ impl V2ReadRefusal {
 /// whole in [`V2ReadRefusal::Envelope`] for callers that want more than
 /// this coarse `Code`.
 ///
-/// One known-wrong mapping is kept as-is rather than routed around: a
-/// `package_id` mismatch is reported by IR as `StaleDependency`, not a
-/// digest-mismatch code of its own. That is IR's own classification to
-/// fix (raised as an IR ticket), not this reader's to reinterpret.
+/// IR's `StaleDependency` covers content that does not match the identity
+/// it names, so a `package_id` that does not recompute maps to
+/// [`Code::StaleDependency`].
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
@@ -610,9 +609,9 @@ fn canonical_preimage(
 /// version of its own -- those are FR-307 source-level facts the caller
 /// already knows (the import declaration, or the compiled unit's own
 /// manifest) -- so they are supplied here rather than read from the bytes.
-/// `evidence` proves the wire's locked sources, definitions and domain
-/// packages are current; the caller owns it (this reader does not itself
-/// know which bytes are current). `pinned` is condition 3's own input: the
+/// `evidence` supplies the selected domain package documents, the admitted
+/// dependency packages and the supported features; the caller owns it, as
+/// this reader holds none of them itself. `pinned` is condition 3's own input: the
 /// consumer's library lock (`PinnedRequest::from(&LibraryLock)`) or pinned
 /// request, one selection per library identity.
 pub(crate) fn read_checked_package_v2(

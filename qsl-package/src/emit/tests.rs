@@ -285,8 +285,9 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 }
 
 /// The wire lock's edition and definition selections are the
-/// `DefinitionLock` catalog's rows, digests included, and IR admits them.
-#[trace("FR-093-AC-7", "TC-416")]
+/// `DefinitionLock` catalog's rows, digests included, the diagnostics
+/// catalog is QSpec's native diagnostics at `1-draft.8`, and IR admits them.
+#[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
@@ -322,6 +323,16 @@ fn the_lock_selects_the_catalog_definitions() {
     assert_eq!(
         wire["identity_preimage"]["edition"],
         wire["lock"]["edition"]
+    );
+    assert_eq!(
+        wire["diagnostics"]["catalog"],
+        json!({
+            "authority": "agent-ix",
+            "identity": "quire.native.diagnostics/v1",
+            "revision": {"namespace": "quire-draft", "value": "1-draft.8"},
+            "digest_domain": "quire.definition.bytes/v1",
+            "digest": "94580e10014aaf133de121126d8d795b3d86e693835d6bf1026fb45dd291d95d",
+        })
     );
 }
 
