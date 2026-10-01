@@ -74,7 +74,8 @@ pub enum StatisticalOutcome {
 }
 pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Binding>,
     pub decision: Decision, pub estimate: Rational, pub interval: Option<(Rational, Rational)>,
-    pub samples: u64, pub draws: u64 }
+    pub samples: u64, pub draws: u64,
+    pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
 pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
@@ -113,6 +114,13 @@ without confidence parameters, which negotiation never routes here (FR-192).
   decided as the probability bound of ADR-024 PF-4: `quantile q of M <= c`
   as `Pr(M <= c | activated) >= q`, and `quantile q of M >= c` as
   `Pr(M < c | activated) <= q`.
+
+- If the event, the measure or its comparison evaluates `Undefined` on a
+  sample, then EN-4 SHALL decide that test Rejected at once, draw no
+  further sample for it, and set the test's `undefined` to
+  `UndefinedEvaluation{where, cause}`, `where` naming the test index, the
+  trace index and the position at which the claim evaluated undefined
+  (ADR-024 SV-11, ADR-018 UE-1).
 
 ### Okamoto
 
@@ -161,6 +169,7 @@ without confidence parameters, which negotiation never routes here (FR-192).
 | FR-189-AC-3 | A two-initial-state variant of `Service` runs `m = 2` tests, each with `α' = β' = 1/200`, sample `i` of test `j` at trace index `2i + j`. A variant with two symmetric servers under an admitted symmetry declaration and an invariant workload runs `m = 1`; with a workload that weights one server's operations differently it runs `m = 2`. | Test (TC-624) |
 | FR-189-AC-4 | A quantile claim over a variant of `Service` whose `request` sets `phase = Busy` with probability `1/2` (a random parameter) and otherwise stays `Idle` counts only activated samples: with Okamoto the result has `samples = 23,026` and `draws > samples`. A censored sample (no `Done` within the window) counts as exceeding the threshold. | Test (TC-624) |
 | FR-189-AC-5 | The ADR-024 §7.1 `NoFault` claim with Okamoto at `indifference 0.0005` computes `N = 9,210,341`. A `Health` variant with a non-unique post-state returns `Unsupported(NotMarkov)`; a variant with an undecided contract conjunction settles that test Undecided, `UndecidedSuccessor`; a `mean of` claim with SPRT is refused `NotStatistical`. | Test (TC-624) |
+| FR-189-AC-6 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(random b: Int[0, 1] ~ {0: 1, 1: 1})` with postcondition `self.v = b`; workload weight `flip` 1) and the claim `probability >= 1/2 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` with `α = β = 1/100`, `ι = 1/10`, Okamoto and seed 7, the test decides Rejected at the first sample in trace-index order that reaches `v = 1`, draws no further sample, and carries `UndefinedEvaluation` naming that sample's test index 0, its trace index and the first position with `v = 1`, cause `division-by-zero`; the claim settles `Completed` Rejected. | Test (TC-640) |
 
 ## Dependencies
 

@@ -441,6 +441,7 @@ names different artifacts in each.
 | TC-627 | Statistical results settle on the measured axis, fail the pipeline when rejected, and never count as proof | Integration | P1 | FR-192-AC-1, FR-192-AC-2, FR-192-AC-3, FR-192-AC-4 | 🚧 Planned |
 | TC-628 | Sampled witnesses are kept in trace order and replay through the model | Integration | P1 | FR-193-AC-1, FR-193-AC-2, FR-193-AC-3 | 🚧 Planned |
 | TC-629 | Window aggregates evaluate exactly over past windows and keep the temporal layer Boolean | Integration | P1 | FR-194-AC-1, FR-194-AC-2, FR-194-AC-3, FR-194-AC-4 | 🚧 Planned |
+| TC-640 | A sampled undefined evaluation is a rejection and replays | Integration | P1 | FR-189-AC-6, FR-192-AC-5, FR-193-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

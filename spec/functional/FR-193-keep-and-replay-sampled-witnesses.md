@@ -49,7 +49,7 @@ pub struct SampledWitness {
     pub binding: Option<Binding>,
     pub steps: Vec<SampledStep>,       // FR-188: transition, post digest, choices, drawn values, probability
     pub path_probability: Rational,    // product of step probabilities
-    pub value: WitnessValue,           // event false, or the measure's value
+    pub value: WitnessValue,           // event false, the measure's value, or Undefined(UndefinedEvaluation)
 }
 
 pub fn replay_sampled_witness(
@@ -72,7 +72,10 @@ pub fn replay_sampled_witness(
   (a `>= θ` bound) or true (a `<= θ` bound), or when a quantile claim's
   activated sample has its measure on the violating side of `c`, a censored
   sample included.
-- It SHALL keep at most `max_witnesses` witnesses, the first in trace-index
+- EN-4 SHALL record a sample on which the claim evaluates undefined as a
+  witness with value `Undefined(UndefinedEvaluation)`, and SHALL keep it
+  whatever `max_witnesses` is (ADR-024 SV-11).
+- It SHALL keep at most `max_witnesses` other witnesses, the first in trace-index
   order across tests, each with its exact path probability.
 
 ### Replay
@@ -90,6 +93,10 @@ pub fn replay_sampled_witness(
   selects the recorded operation, scheduled identity and values.
 - It SHALL recompute the path probability exactly and compare it with the
   recorded one.
+- For an `Undefined` witness, the replayed value SHALL be the first
+  undefined evaluation along the replayed positions (ADR-018 UE-5), and it
+  equals the recorded value when its position and cause are the recorded
+  ones.
 - When every check agrees and the replayed value equals the recorded value,
   it SHALL return `Reproduced`; when a recomputed draw or the path
   probability or the value disagrees, `Inconclusive(ReplayParity)`.
@@ -110,6 +117,7 @@ pub fn replay_sampled_witness(
 | FR-193-AC-1 | The `2 ms` claim of ADR-024 §7.2 with seed 7 and `max_witnesses` 3 keeps three witnesses in increasing trace-index order, each with latency above `2 ms` and a path probability equal to the product of its steps' FR-187 probabilities. In a witness whose first attempt drew `d = 3 ms`, `outcome = Ok`, the `request` step has probability 1 and that `attempt` step `343/5000`. | Test (TC-628) |
 | FR-193-AC-2 | Each kept witness replays `Reproduced`. The same witness with `d` changed to `2 ms` (outside the support) refuses `invalid_runtime_input`/`invalid-value`; with the seed changed so a recomputed draw selects `1 ms` it settles `Inconclusive(ReplayParity)`; with its path probability changed it settles `Inconclusive(ReplayParity)`. The item's record stays `measured`, `rejected` in each case. | Test (TC-628) |
 | FR-193-AC-3 | A witness converted to a `TemporalCounterexample` for the TP-2 claim "`M <= 2 ms` on every activated behaviour" replays through FR-128 and settles that claim `refuted`. | Test (TC-628) |
+| FR-193-AC-4 | FR-189-AC-6's undefined sample is kept as a witness with value `Undefined(UndefinedEvaluation)` and replays `Reproduced`; the same witness with its cause changed to `precondition-false` settles `Inconclusive(ReplayParity)`. | Test (TC-640) |
 
 ## Dependencies
 

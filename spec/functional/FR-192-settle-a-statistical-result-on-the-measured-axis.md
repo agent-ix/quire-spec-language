@@ -96,6 +96,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | --- | --- | --- | --- | --- | --- |
 | `Completed`, Accepted | `measured` | `completed` | `accepted` | `Measured{decision: Accepted, …}` | success, never proof evidence |
 | `Completed`, Rejected | `measured` | `completed` | `rejected` | `Measured{decision: Rejected, …}` | violation |
+| `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` | `failed` | `resource-incomplete` | none | `Incomplete(cause)` naming the limit | incomplete |
 | `Unsupported`; negotiation refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
@@ -125,6 +126,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
 | FR-192-AC-4 | At negotiation, with EN-4 registered and no exact candidate: `P95` naming `statistical` routes to EN-4; `P95` naming `exact` settles `unsupported-requested-capability`; a claim `under every scheduler` naming `statistical` settles `unsupported`, `EveryScheduler`; `NoFault` with no confidence parameters naming `statistical` settles `unsupported`, `MissingConfidence`. No engine runs for the last three. | Test (TC-627) |
+| FR-192-AC-5 | FR-189-AC-6's result settles `measured`, `rejected`, category violation, with the test's `UndefinedEvaluation` in the record, and fails the pipeline gate as a violation does. | Test (TC-640) |
 
 ## Dependencies
 
