@@ -58,3 +58,21 @@ sentence is true: each lock resolves its own dependency revisions.
 | --- | --- | --- | --- |
 | FND-002 | medium | O-23's kept row gives the authority as "Each repository's `Cargo.toml` and `Cargo.lock` exact `rev`", but first-party dependencies are `branch = "main"` with no `rev` (Cargo.toml:72-75 says "no rev" outright), which is the premise of this delta's ruling. With the release-pins paragraph gone this row is O-23's only statement, and the reworded OBS-031 row cites it. Round 0 examined this row and missed it. Fix: authority is each repository's `Cargo.toml` (`branch = "main"`) as resolved to one revision in its `Cargo.lock`. | ADR-013:806, ADR-013:1268, Cargo.toml:72-75 |
 | FND-003 | low | ADR-010 OBS-031 observes that QI has no `heads/` workspace and no current-head integration lane. The reworded row ("each repository's `Cargo.toml` and `Cargo.lock` select its dependency revisions") is accurate but does not say how that answers the observation; the old row did, by naming release pins as the only qualified selection. Fix: say that first-party dependencies track `main`, so each lock already resolves current heads and no separate heads lane exists. | ADR-013:1268, ADR-010:988, ADR-011:1126 |
+
+## Dispositions
+
+Round 2, reviewed at 0ebdf9d1 (fix commit 0ebdf9d1 on top of 74bb8f8e). FND-001
+is the round-0 placeholder and needs no outcome. Checked against every
+`Cargo.toml` at 0ebdf9d1: first-party git dependencies on `branch = "main"`
+are quire-contract-ir (Cargo.toml:75, qsl-package/Cargo.toml:36) and
+ix-trace-rs; pinned are quire-canonical by tag (Cargo.toml:8), filament-core-data
+by rev (qsl-semantics/Cargo.toml:38-39) and quire-rs by rev
+(qsl-source/Cargo.toml:27). IR and CG `origin/main` take every first-party git
+dependency on `branch = "main"`, so "mostly" holds across the ecosystem. Every
+git dependency, tag- and rev-pinned ones included, resolves to one revision in
+`Cargo.lock`, so the Authority cell is true for all of them.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 0ebdf9d1 |
+| FND-003 | fixed | 0ebdf9d1 |
