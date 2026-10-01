@@ -25,7 +25,7 @@ use super::semantic_node::{
     CanonicalOwner, InvalidSemanticGraph, NodeIdDocument, NodeIdentityPreimage, NodeOwner,
     OwnerSelection, SemanticGraphCause,
 };
-use super::stop::{outcome_from_stop, Stop};
+use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::NodeKey;
 use quire_exact::Outcome;

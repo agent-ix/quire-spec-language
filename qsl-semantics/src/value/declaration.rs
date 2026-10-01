@@ -78,7 +78,7 @@ use super::enumeration::{compare_enum, EnumMemberIndex};
 use super::quantity::{
     compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
 };
-use super::stop::{outcome_from_stop, outcome_into_stop, Stop};
+use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
 use quire_exact::EnumShape;

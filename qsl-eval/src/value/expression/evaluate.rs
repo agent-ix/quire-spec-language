@@ -30,7 +30,7 @@ use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup,
 use qsl_semantics::value::quantity::{
     compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
 };
-use qsl_semantics::value::stop::{outcome_from_stop, outcome_into_stop, Stop};
+use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,

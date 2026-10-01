@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use super::stop::{outcome_from_stop, Stop};
+use quire_semantic_value::stop::{outcome_from_stop, Stop};
 use super::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
 use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
 use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};

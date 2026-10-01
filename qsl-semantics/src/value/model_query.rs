@@ -80,7 +80,7 @@ use crate::model::population::{
 use qsl_foundation::absence::AbsenceMode;
 use qsl_foundation::diagnostic::Code;
 
-use super::stop::Stop;
+use quire_semantic_value::stop::Stop;
 use quire_exact::{
     from_admitted, CollectionType, Incomplete, Meter, ObjectId, ObjectReference, OptionValue,
     PopulationId, Refusal, Value, ValueType,

@@ -20,6 +20,8 @@ qsl-foundation = { path = "../qsl-foundation" }
 qsl-package = { path = "../qsl-package" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-exact = { path = "../quire-exact" }
+# ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
+quire-semantic-value = { path = "../quire-semantic-value" }
 # ADR-011 X-8: the simulation state key and the pinned sampler's draw
 # preimage encode through the one RFC 8785 implementation (FR-101).
 quire-canonical = { workspace = true }

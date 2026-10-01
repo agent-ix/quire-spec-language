@@ -127,7 +127,6 @@ pub(crate) mod member;
 pub mod model_query;
 pub mod quantity;
 pub(crate) mod semantic_node;
-pub mod stop;
 pub(crate) mod unit;
 
 // `ChargePoint`, `Incomplete`, `InjectedDenial`, `LimitKind`,
