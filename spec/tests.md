@@ -407,6 +407,8 @@ names different artifacts in each.
 | TC-607 | Hyper and step-relation outcomes settle as terminal records with their causes | Unit | P1 | FR-182-AC-1, FR-182-AC-2, FR-182-AC-3, FR-182-AC-4 | 🚧 Planned |
 | TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4 | 🚧 Planned |
 | TC-609 | max_witness_set and max_relation_tuples are caller budgets with published defaults | Unit | P1 | FR-184-AC-1, FR-184-AC-2, FR-184-AC-3 | 🚧 Planned |
+| TC-610 | An HP-1 relation with undefined tuples and no refuting tuple settles undefined | Integration | P1 | FR-179-AC-4, FR-182-AC-5 | 🚧 Planned |
+| TC-611 | An HP-1 relation with a refuting tuple settles refuted although other tuples are undefined | Integration | P1 | FR-179-AC-5, FR-182-AC-6 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

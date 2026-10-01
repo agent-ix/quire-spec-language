@@ -30,9 +30,11 @@ relationships:
 
 QSL SHALL settle every HP-1, HP-2, HP-3 and HP-6 item, and every HP-4 item,
 as exactly one FR-331 terminal record through FR-127's map, with ADR-018's
-verdict kinds V-1 to V-8 and no new label, basis, category or `ProofBasis`
-member (ADR-023 HV-1 to HV-6). `InconclusiveCause` gains `MatchUndetermined`
-and `VacuousMatch`. HP-5 items settle by the possible family's map (FR-181).
+verdict kinds V-1 to V-8 and no new basis or `ProofBasis` member (ADR-023
+HV-1 to HV-6). `InconclusiveCause` gains `MatchUndetermined` and
+`VacuousMatch`. An HP-1 item whose tuples include ones on which the body has
+no value, and none that refutes, settles `undefined` under ADR-013 O-16's
+undefined category. HP-5 items settle by the possible family's map (FR-181).
 
 ## Use case
 
@@ -71,12 +73,19 @@ FR-243 basis, O-16 category and method.
 | V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174) | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
 | V-3 | SMT `k`-inductive for HP-2 with a safety body | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
+| undefined | `Undefined{tuple, cause}` (HP-1, FR-179) | `undefined` | `unsettled` | `Undefined{tuple, cause}` | undefined |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
 | V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving`; SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(cause, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
 - A `Violated` outcome SHALL settle `refuted` only through its replay.
+- An HP-1 item with no refuting tuple and at least one tuple on which the
+  body has no value SHALL settle `undefined`, never `proved` and never
+  `refuted`. Its record SHALL name the first undefined tuple in canonical
+  order, its executions and the cause the evaluator gave.
+- An HP-1 item with a refuting tuple SHALL settle `refuted` whether or not
+  other tuples are undefined.
 - An HP-3 refutation SHALL carry basis `decisive-counterexample`: its
   evidence is the universal tuple, and replay recomputes the existential
   half over it (ADR-023 HX-4).
@@ -99,6 +108,8 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-2 | ADR-023 §8.1's leaky refutation settles `refuted`, `decisive-counterexample`, only after FR-183 replay reproduces it; the secure proof settles `proved`, `closed-scope`, `Exhaustive`, and under copy-swap `Reduced` naming `CopySwap`. §8.2's leaky `Opaque` refutation settles `refuted`, `decisive-counterexample`. | Test (TC-607) |
 | FR-182-AC-3 | FR-176-AC-2's vacuous match settles `inconclusive`, `VacuousMatch`; FR-177-AC-4's run settles `failed`, `resource-incomplete`, naming `max_witness_set` and its value; FR-179-AC-3's tuple-limited run names `max_relation_tuples`; FR-173-AC-2's HP-4 clauses settle `unsupported`, `unsupported-requested-capability`. | Test (TC-607) |
 | FR-182-AC-4 | FR-179-AC-3's `max_depth` run settles `inconclusive`, `BoundReached{depth: 1}`, execution `completed`, truth `pending`, with a record stating the HP-1 reading of the bound. | Test (TC-607) |
+| FR-182-AC-5 | FR-179-AC-4's `Undefined` outcome settles `undefined`, O-16 category undefined, with a record naming the first undefined tuple, its two executions and the division-by-zero cause; it never settles `proved`. | Test (TC-610) |
+| FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, although other tuples of the item are undefined. | Test (TC-611) |
 
 ## Dependencies
 
