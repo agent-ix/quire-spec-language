@@ -9,7 +9,7 @@ use super::{
 };
 use crate::syntax::ClauseKind;
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
 impl<F: FnMut() -> bool> Validator<'_, '_, F> {

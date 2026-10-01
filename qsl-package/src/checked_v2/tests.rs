@@ -9,7 +9,7 @@
 //! "envelope and `package_id` only" admission path (this module's own doc).
 
 use ix_trace_rs::trace;
-use quire_contract_ir::{
+use quire_contract_model::{
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageRefusalCause,
     CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
@@ -82,7 +82,7 @@ fn dependency_selection(identity: &str, version: &str, label: &str) -> Value {
 }
 
 /// Fields shared by a `semantic_graph` node and its identity-projection
-/// counterpart: `quire_contract_ir::CheckedNodeProjectionV2::from`'s own
+/// counterpart: `quire_contract_model::CheckedNodeProjectionV2::from`'s own
 /// definition of the projection is exactly a `CheckedSemanticNodeV2` with
 /// `occurrences` dropped, so IR's own reader requires the two to describe
 /// literally the same node (`identity_preimage.identity_projection` must
@@ -1292,7 +1292,7 @@ fn a_source_map_entry_naming_an_unknown_node_refuses() {
 #[test]
 fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
     let entry = |digest: &str, start: u64, end: u64| {
-        serde_json::from_value::<quire_contract_ir::CheckedSourceMapEntry>(json!({
+        serde_json::from_value::<quire_contract_model::CheckedSourceMapEntry>(json!({
             "node_id": {"digest": digest, "domain": NODE_DOMAIN},
             "role": "expression",
             "ordinal": 0,
@@ -1324,7 +1324,7 @@ fn a_source_map_the_provenance_types_refuse_is_invalid_source_map() {
 #[trace("TC-421", "FR-095-AC-3")]
 #[test]
 fn every_occurrence_role_is_spelled_as_ir_serializes_it() {
-    use quire_contract_ir::CheckedOccurrenceRole as R;
+    use quire_contract_model::CheckedOccurrenceRole as R;
     for (role, spelling) in [
         (R::Declaration, "declaration"),
         (R::Type, "type"),
@@ -1677,10 +1677,10 @@ fn conformance_dependency_selection_vectors() {
         }
         let cause = match expected {
             "refused:invalid_package/conflicting-definition" => {
-                quire_contract_ir::CheckedPackageRefusalCause::ConflictingDefinition
+                quire_contract_model::CheckedPackageRefusalCause::ConflictingDefinition
             }
             "refused:invalid_package/invalid-value" => {
-                quire_contract_ir::CheckedPackageRefusalCause::InvalidValue
+                quire_contract_model::CheckedPackageRefusalCause::InvalidValue
             }
             other => panic!("{id}: unmapped order outcome {other}"),
         };

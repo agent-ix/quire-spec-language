@@ -11,7 +11,7 @@ use super::{ObjectIdentity, QualifiedName, Snapshot};
 use crate::checking::{Catalog, CheckedPackage};
 use budget::{Budget, Result, Stage};
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use api::{

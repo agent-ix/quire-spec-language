@@ -4,7 +4,7 @@
 mod admission;
 mod artifact;
 
-use quire_contract_ir::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolName};
+use quire_contract_model::{AnchorName, DeclarationEnvironment, SourceSpan, SymbolName};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -332,7 +332,7 @@ pub struct NativeModelError {
     /// Related formal declarations, sorted by identity and source location.
     pub related: Vec<DeclarationLocation>,
     /// Structured upstream `FormalSource` coordinate refusal, when locus checking failed.
-    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+    pub upstream: Option<Box<quire_contract_model::Diagnostic>>,
 }
 
 impl std::fmt::Display for NativeModelError {

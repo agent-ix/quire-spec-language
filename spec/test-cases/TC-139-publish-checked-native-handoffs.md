@@ -40,8 +40,8 @@ trigger and anchor handles remain invalid predicate selections.~~
 `arch-lint duplicate-revisions --lockfile Cargo.lock` (FR-061), run by
 `make ci`, confirms that `Cargo.lock` holds one copy of each first-party
 crate, so no dependency of QSL resolves a second QSL copy and the graph is
-cycle-free; the production dependency key `quire-contract-ir` resolves to the
-`quire-contract-model` package.
+cycle-free; the production dependency key is `quire-contract-model`, the
+package's own name.
 
 ## Expected Results
 

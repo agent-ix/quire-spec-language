@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use qsl_foundation::{ByteDigest, Source};
 use qsl_semantics::model::admitted::AdmittedPackage;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{self, proofs, TypeLimits};
 use quire_spec_language::checking::{CheckBindings, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;

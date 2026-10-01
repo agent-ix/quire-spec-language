@@ -7,7 +7,7 @@ mod comparison;
 mod value;
 mod walk;
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::BTreeMap;
 
 use super::{ObservationSelection, QualifiedName, ValidatedContext};

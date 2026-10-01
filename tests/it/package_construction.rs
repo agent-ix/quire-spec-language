@@ -24,7 +24,7 @@ mod vectors;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Code, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
 };

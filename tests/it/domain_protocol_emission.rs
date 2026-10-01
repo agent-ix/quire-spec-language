@@ -20,7 +20,7 @@ use crate::support::native_protocol::{Inputs, Unit};
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
 use qsl_semantics::model::domain_package::DomainPackageRef;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::protocol_artifact::{
     self as artifact, native, wire as w, Error, Invalid, Limits, Unsupported,

@@ -303,7 +303,7 @@ mod tests {
     use ix_trace_rs::trace;
     use qsl_foundation::{SourceIdentity, Span};
     use qsl_source::{AvailabilityState, ExtractedSource};
-    use quire_contract_ir as ir;
+    use quire_contract_model as ir;
 
     fn identity() -> SourceIdentity {
         SourceIdentity {

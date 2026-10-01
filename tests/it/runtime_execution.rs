@@ -6,7 +6,7 @@ use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::package::{NativePackage, PackageLimits};
 use quire_spec_language::runtime::{
     evaluate, execute, validate, EvaluationLimits, EvaluationOutcome, ExecutionLimits,

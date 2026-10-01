@@ -5,7 +5,7 @@
 use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, TypeDisposition, TypeLimits};
 use quire_spec_language::linking::composed::scopes::{BinderKind, BinderType};
 use quire_spec_language::protocol_artifact::{

@@ -20,7 +20,7 @@ use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use qsl_semantics::value::{native_diagnostics_catalog, CatalogRole, DefinitionLock};
-use quire_contract_ir::CheckedPackageEvidence;
+use quire_contract_model::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
     NODE_KEY_DOMAIN,

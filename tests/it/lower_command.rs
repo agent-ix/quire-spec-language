@@ -5,7 +5,7 @@ use crate::support::standalone_setup as fixtures;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::{
     lowering::{lower, LoweringLimits},
     package::{NativePackage, PackageLimits},

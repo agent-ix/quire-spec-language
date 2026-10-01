@@ -10,7 +10,7 @@
 pub(crate) mod native_rule_model;
 
 use qsl_foundation::SourceIdentity;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::{
     check, CheckBindings, CheckLimits, CheckedPackage, ClauseBinding,
 };

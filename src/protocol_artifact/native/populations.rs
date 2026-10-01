@@ -5,7 +5,7 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use crate::checking::{composed::ObservationOrigin, Catalog, DomainType, NativeType};
 use crate::linking::composed::scopes::{Anchor, BinderKind};

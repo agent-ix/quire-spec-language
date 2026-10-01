@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeSet, fmt};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{
     ser::{Error, SerializeSeq},
     Serialize, Serializer,

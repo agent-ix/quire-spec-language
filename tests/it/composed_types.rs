@@ -5,7 +5,7 @@
 use crate::support::composed_types as setup;
 
 use ix_trace_rs::trace;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::work::{Dimension, Work};
 use quire_spec_language::checking::composed::{
     self, CauseKind, ObligationKind, Prerequisite, TypeDisposition, TypeLimits, TypeReport,

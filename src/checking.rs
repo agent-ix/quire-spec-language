@@ -9,7 +9,7 @@ mod proof;
 mod types;
 mod variables;
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use crate::formal_source::FormalSource;
 use crate::linking::{DeclarationLocation, LinkedPackage};

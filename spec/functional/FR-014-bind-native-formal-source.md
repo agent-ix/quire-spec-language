@@ -30,7 +30,7 @@ in [the bridge contract](../../docs/formal-source-binding.md).
 
 A formal SourceSpan or a native Span respectively. A rejected request returns
 Box<FormalSourceError> (ADR-011 §6.1: `diagnostic` does not import
-`quire_contract_ir`, so `FormalSourceError` pairs the shared `Box<Diagnostic>`
+`quire_contract_model`, so `FormalSourceError` pairs the shared `Box<Diagnostic>`
 with its own `upstream` sibling field) with invalid_source_map and
 source_map phase, located at byte zero of the bound native source. The
 binding exposes both identities and the original immutable Source, including

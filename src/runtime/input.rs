@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-018/024: flat native input drafts, closed decoding and structural error context.
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::{Deserialize, Serialize, Serializer};
 
 use qsl_foundation::serde_object::Object;

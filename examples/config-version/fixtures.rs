@@ -2,7 +2,7 @@
 //! FR-032: newly authored ConfigVersion fixtures through public native APIs.
 
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::{
     formal_source::FormalSource,
     model_source::{read, ModelSourceLimits},

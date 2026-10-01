@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use super::inputs::Populations;
 use super::types::Catalog;

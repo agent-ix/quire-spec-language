@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 use super::binding_work::{Dimension, Exhaustion, Work};
 use super::{DeclarationId, SyntaxNamespace, UnitId};

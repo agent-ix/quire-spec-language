@@ -611,12 +611,12 @@ fn decimal(value: u64, work: &mut Work) -> Result<String, Error> {
     Ok(value.to_string())
 }
 fn execution(
-    point: &quire_contract_ir::ExecutionPoint,
+    point: &quire_contract_model::ExecutionPoint,
     context: &super::context::Declaration<'_, '_>,
     builder: &ValueBuilder<'_>,
     work: &mut Work,
 ) -> Result<w::Execution, Error> {
-    use quire_contract_ir::ExecutionPoint as E;
+    use quire_contract_model::ExecutionPoint as E;
     match point {
         E::Initialization { name } => Ok(w::Execution::Initialization {
             name: text(name.as_str(), work)?,
@@ -633,7 +633,7 @@ fn execution(
     }
 }
 fn execution_operation(
-    operation: &quire_contract_ir::AnchorName,
+    operation: &quire_contract_model::AnchorName,
     context: &super::context::Declaration<'_, '_>,
     builder: &ValueBuilder<'_>,
     work: &mut Work,

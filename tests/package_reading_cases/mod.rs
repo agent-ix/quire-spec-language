@@ -3,7 +3,7 @@
 
 use super::*;
 use qsl_foundation::SourceIdentity;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::{check, CheckBindings, CheckLimits, ClauseBinding};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::package::PackageCause;

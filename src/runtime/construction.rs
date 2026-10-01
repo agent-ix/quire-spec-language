@@ -3,7 +3,7 @@
 
 use std::io::{self, Write};
 
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde::Serialize;
 
 use super::input::{

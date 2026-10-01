@@ -9,7 +9,7 @@ pub mod work;
 use super::{Site, TypeReport};
 use crate::checking::{CheckBindings, ClauseBinding, ProofGoal, ProofValue};
 use crate::linking::composed::{DeclarationId, UnitId};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 pub use work::{Exhaustion, Limits as ProofLimits, Usage as ProofUsage};
 

@@ -868,7 +868,7 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     // read straight from the emitted wire (`Emission::evidence` is
     // `pub(crate)` to `qsl_package`).
     let wire: Value = serde_json::from_slice(bytes).expect("emitted package is JSON");
-    let mut evidence = quire_contract_ir::CheckedPackageEvidence::new();
+    let mut evidence = quire_contract_model::CheckedPackageEvidence::new();
     if let Some(features) = wire["lock"]["required_features"].as_array() {
         for feature in features {
             evidence.support_feature(feature.as_str().expect("feature name is a string"));
@@ -881,13 +881,13 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
         spine::model_digest_hex(),
         spine::DOMAIN_PACKAGE.as_bytes().to_vec(),
     );
-    let result = quire_contract_ir::read_checked_package(
+    let result = quire_contract_model::read_checked_package(
         bytes,
-        quire_contract_ir::CheckedPackageReadLimits::bounded(),
+        quire_contract_model::CheckedPackageReadLimits::bounded(),
         &evidence,
     );
     match result {
-        quire_contract_ir::CheckedPackageDispatchResult::AdmittedV2(package) => {
+        quire_contract_model::CheckedPackageDispatchResult::AdmittedV2(package) => {
             assert_eq!(
                 package.package_id().digest.as_ref(),
                 pinned.hex(),

@@ -68,7 +68,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use quire_contract_ir::{
+use quire_contract_model::{
     CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
     CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
     CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
@@ -445,8 +445,8 @@ impl<'g> Candidate<'g> {
 /// The node's QSpec nominal preimage as the v2 wire writes it.
 fn nominal_preimage(nominal: &NominalNode) -> NominalIdentityPreimage {
     match nominal {
-        NominalNode::EnumDeclaration(preimage) => {
-            NominalIdentityPreimage::EnumDeclaration(quire_contract_ir::EnumDeclarationPreimage {
+        NominalNode::EnumDeclaration(preimage) => NominalIdentityPreimage::EnumDeclaration(
+            quire_contract_model::EnumDeclarationPreimage {
                 owner: nominal_owner(preimage.owner()),
                 qualified_declaration: preimage
                     .qualified_declaration()
@@ -459,10 +459,10 @@ fn nominal_preimage(nominal: &NominalNode) -> NominalIdentityPreimage {
                     .iter()
                     .map(|case| case.as_str().into())
                     .collect(),
-            })
-        }
+            },
+        ),
         NominalNode::EnumMember { declaration, case } => {
-            NominalIdentityPreimage::EnumMember(quire_contract_ir::EnumMemberPreimage {
+            NominalIdentityPreimage::EnumMember(quire_contract_model::EnumMemberPreimage {
                 declaration_node_id: node_id(*declaration),
                 case: case.as_str().into(),
             })

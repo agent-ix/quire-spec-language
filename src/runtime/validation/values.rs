@@ -12,7 +12,7 @@ use crate::linking::{DeclarationIdentity, DeclarationKey, DeclarationLocation, R
 use crate::native_model::{NativeModel, ObjectRole, ScalarKind, ScalarSite};
 use crate::syntax::ClauseKind;
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::BTreeSet;
 
 pub(super) fn locus(

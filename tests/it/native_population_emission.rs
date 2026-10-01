@@ -6,7 +6,7 @@ use crate::support::native_protocol as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::{ByteDigest, Source, SourceIdentity};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::composed::{proofs, CauseKind, TypeDisposition, TypeLimits};
 use quire_spec_language::formal_source::FormalSource;
 use quire_spec_language::model_source::{self, ModelSourceLimits};

@@ -5,12 +5,12 @@ IR source types at dependency revision 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f.
 The public module is `formal_source`:
 
 ```rust
-FormalSource::new(source: Source, identity: quire_contract_ir::SourceIdentity) -> FormalSource
+FormalSource::new(source: Source, identity: quire_contract_model::SourceIdentity) -> FormalSource
 FormalSource::source(&self) -> &Source
-FormalSource::identity(&self) -> &quire_contract_ir::SourceIdentity
+FormalSource::identity(&self) -> &quire_contract_model::SourceIdentity
 FormalSource::to_ir(&self, source: &Source, span: Span)
-    -> Result<quire_contract_ir::SourceSpan, Box<FormalSourceError>>
-FormalSource::to_native(&self, span: &quire_contract_ir::SourceSpan)
+    -> Result<quire_contract_model::SourceSpan, Box<FormalSourceError>>
+FormalSource::to_native(&self, span: &quire_contract_model::SourceSpan)
     -> Result<Span, Box<FormalSourceError>>
 ```
 
@@ -39,7 +39,7 @@ that check. Invalid spans never become a guessed or clamped source position.
 Both directions return `invalid_source_map` in phase `source_map` on a mapping
 failure, with native diagnostic coordinates at bound byte zero and no Boolean
 result, wrapped in `FormalSourceError` (ADR-011 §6.1: `diagnostic` does not
-import `quire_contract_ir`, so `FormalSourceError` pairs the shared
+import `quire_contract_model`, so `FormalSourceError` pairs the shared
 `Box<Diagnostic>` with its own `upstream` sibling field; there is no
 `related` field here). If an IR constructor returns a diagnostic, that
 structured diagnostic remains available in `FormalSourceError::upstream`. The existing source

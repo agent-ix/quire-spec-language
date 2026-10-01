@@ -7,7 +7,7 @@ use crate::support::runtime_setup as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::SourceIdentity;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::{
     checking::{check, CheckBindings, CheckLimits, ClauseBinding},
     formal_source::FormalSource,

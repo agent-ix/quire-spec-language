@@ -493,7 +493,7 @@ impl EmittedPackage {
     /// `E`, never a panic. `pub(super)`: reachable from anywhere in
     /// `qsl-package` (in particular, `emit`), never from outside it.
     pub(super) fn new<E: From<quire_canonical::Error>>(
-        identity_preimage: &quire_contract_ir::CheckedPackageIdentityPreimageV2,
+        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
         encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
     ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
@@ -606,7 +606,7 @@ mod tests {
         const TEXT: &str = r#"{"definition_selections":[],"dependency_selections":[],"edition":{"definition":{"authority":"pkg","digest":"1c3a0ee911df60393f84d48f2779a0d9c39df4bef16ac5dd6bb5c1620be1eda9","digest_domain":"quire.definition.bytes/v1","identity":"edition-def","revision":{"namespace":"semver","value":"1"}},"role":"edition"},"identity_projection":[{"body":{"term":"literal","type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"value":true,"value_kind":"boolean"},"declaration":{"qualified_name":["R"]},"dependencies":[],"node_id":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"},"node_tag":"scalar_type","schema_version":"quire.checked-semantic-graph/v2","semantic_form":"boolean","semantic_type":{"digest":"afbb1f4913f26cb385723382e760adb9d35629d8b46d83ff73bb33b0caf50768","domain":"quire.checked-semantic-node/v1"}}],"model_selections":[],"profile_selections":[],"required_features":[],"version":"quire.checked-package-id/v2"}"#;
         const DIGEST: &str = "5023edc801f355fbf8299ff374a5e9e3b3fc50ca51961947eecc5b403367f6b4";
         assert_eq!(format!("{:x}", Sha256::digest(TEXT.as_bytes())), DIGEST);
-        let preimage: quire_contract_ir::CheckedPackageIdentityPreimageV2 =
+        let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
             serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
         assert_eq!(
             EmittedPackage::new(&preimage, |_| Ok::<_, quire_canonical::Error>(Vec::new()))

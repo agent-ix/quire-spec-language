@@ -14,7 +14,7 @@ use crate::runtime::{
 };
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Diagnostic};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use serde_json::Value;
 
 /// Immutable JSON produced from the typed native result schema.

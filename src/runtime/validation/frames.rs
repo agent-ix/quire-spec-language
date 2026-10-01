@@ -8,7 +8,7 @@ use super::{PopulationIndexes, PopulationKey, RuntimePathSegment, Validator};
 use crate::checking::FrameIndex;
 use crate::linking::{DeclarationKey, DeclarationLocation};
 use qsl_foundation::Code;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use std::collections::{BTreeMap, BTreeSet};
 
 type FieldValues<'a> = BTreeMap<&'a ir::SymbolName, Option<ValueId>>;

@@ -7,7 +7,7 @@ use crate::runtime::{
     Invocation, ObjectIdentity, ObservationSelection, QualifiedName, RuntimeReference, Snapshot,
     ValidatedContext, ValueId, ValueNode,
 };
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 /// Caller-lowered work budget for a fresh input materialization.
 #[derive(Clone, Copy, Debug)]

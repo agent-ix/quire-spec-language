@@ -2,7 +2,7 @@
 //! FR-014/030/031: explicit native/formal identities and exact source correspondence.
 //! This binding checks coordinates; assigning authored identities is the caller's role.
 
-use quire_contract_ir::{SourceIdentity as IrIdentity, SourceLocation, SourceSpan};
+use quire_contract_model::{SourceIdentity as IrIdentity, SourceLocation, SourceSpan};
 
 use qsl_foundation::{Code, Diagnostic, Phase, Position, Source, Span};
 
@@ -102,7 +102,10 @@ impl FormalSource {
         })
     }
 
-    fn upstream_failure(&self, upstream: quire_contract_ir::Diagnostic) -> Box<FormalSourceError> {
+    fn upstream_failure(
+        &self,
+        upstream: quire_contract_model::Diagnostic,
+    ) -> Box<FormalSourceError> {
         let mut error = self.failure("formal source constructor rejected mapped coordinates");
         error.upstream = Some(Box::new(upstream));
         error
@@ -110,14 +113,14 @@ impl FormalSource {
 }
 
 /// A [`FormalSource`] coordinate-mapping refusal. `diagnostic` (ADR-011 §6.1) does not
-/// import `quire_contract_ir`, so the exact IR constructor refusal that caused this
+/// import `quire_contract_model`, so the exact IR constructor refusal that caused this
 /// failure, when there was one, is carried here rather than inside [`Diagnostic`].
 #[derive(Clone, Debug)]
 pub struct FormalSourceError {
     /// Stable code, native source locus and human-readable explanation.
     pub diagnostic: Box<Diagnostic>,
     /// The IR coordinate constructor's own refusal, when that specific step failed.
-    pub upstream: Option<Box<quire_contract_ir::Diagnostic>>,
+    pub upstream: Option<Box<quire_contract_model::Diagnostic>>,
 }
 
 impl std::fmt::Display for FormalSourceError {

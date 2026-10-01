@@ -5,7 +5,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::{
     source::MAX_SOURCE_BYTES, ByteDigest, Code, Phase, Source, SourceIdentity, Span,
 };
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::formal_source::{FormalSource, FormalSourceError};
 
 fn source(text: &str) -> Source {

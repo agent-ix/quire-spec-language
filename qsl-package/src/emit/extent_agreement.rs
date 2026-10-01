@@ -31,7 +31,7 @@
 //! record rooted through a `let`'s bound value, or read only by a guard, is
 //! outside that agreement: only its own extent is asserted.
 
-use quire_contract_ir::{
+use quire_contract_model::{
     read_checked_package, CheckedNodeId, CheckedNodeTag, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageV2, CompleteLoweringProfileV2,
     CompleteLoweringRecordV2,

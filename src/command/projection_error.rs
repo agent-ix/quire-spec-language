@@ -3,7 +3,7 @@
 
 use crate::formal_source::FormalSource;
 use qsl_foundation::{ByteDigest, LocatedSpan, Source, SourceIdentity, Span};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 
 /// Exact program identity retained by a command failure, without the program text.
 #[derive(Debug)]

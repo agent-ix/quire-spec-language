@@ -7,7 +7,7 @@ use crate::support::protocol_artifact as setup;
 
 use ix_trace_rs::trace;
 use qsl_foundation::ByteDigest;
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::linking::composed::definition_source::RegisteredDefinition as R;
 use quire_spec_language::protocol_artifact::{
     self as artifact, wire as w, Dimension, Error, Invalid, Limits, NumberComponent, NumberError,

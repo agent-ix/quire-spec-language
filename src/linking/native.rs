@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use quire_contract_ir::{
+use quire_contract_model::{
     DeclarationEnvironment, ValueDeclaration, ValueDeclarationKind, ValueType,
 };
 

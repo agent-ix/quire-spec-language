@@ -7,7 +7,7 @@ use crate::support::runtime_setup as setup;
 use ix_trace_rs::trace;
 use qsl_foundation::source_map::{Layout, Segment, SourceMap};
 use qsl_foundation::{Code, Phase, Source, SourceIdentity, Span};
-use quire_contract_ir as ir;
+use quire_contract_model as ir;
 use quire_spec_language::checking::ClauseBinding;
 use quire_spec_language::mapped::{compile, CompileCause, CompileLimits};
 use quire_spec_language::native_model::NativeModel;
