@@ -24,7 +24,7 @@ the members those fixtures pin. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
-Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -70,6 +70,14 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
     node's occurrences and the source text of each `generated` source-map
     region, and read each package back through QSL's I2 read
     (FR-093-AC-18).
+11. Emit each emit test fixture: the packages of steps 1, 5, 6, 7 and 10,
+    the declared record and tuple, TC-435's and TC-442's spine fixtures,
+    TC-469's ConfigVersion unit, TC-440's records, TC-160's `q` and `t`,
+    a unit of quantifiers over a set, a bag and an ordered set with a
+    predicate, and an equality over the recursive `Tree` of step 6. Read
+    each through QSL's I2 read. Decode each checked node's (`node_tag`,
+    `semantic_form`) through IR's node kinds, and compare the families the
+    fixtures emit with the corpus table's rows (FR-093-AC-19).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -111,6 +119,12 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   with `R` and `VersionUnchanged`, the `Integer` node's only occurrence is
   `generated`, region text `1 < 2`. Each function-only package reads back
   Verified (FR-093-AC-18).
+- Step 11: the families the fixtures emit equal the table's families, one
+  row each. IR admits every fixture at its emitted `package_id` with a node
+  of each of its rows' families, except the `Tree` equality, which IR
+  refuses at the `quire.op.structural.eq` node (STD-129), and `q`'s
+  compound unit, which is omitted for its absent unit with every node that
+  names it (QSL-247, IR-450). No other node is omitted (FR-093-AC-19).
 
 ## Status
 
@@ -125,6 +139,8 @@ Step 10 implemented in `qsl-package/src/emit/tests.rs`
 `types_no_function_names_are_placed_at_their_declared_names`,
 `a_node_two_unnamed_types_share_is_placed_at_the_least_name`,
 `a_node_a_state_clause_places_does_not_move_to_a_type_name`).
+Step 11 implemented in `qsl-package/src/emit/tests/admission_corpus.rs`
+(`every_emitted_node_family_is_admitted_at_its_package_id`).
 Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
 (`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
 `FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are

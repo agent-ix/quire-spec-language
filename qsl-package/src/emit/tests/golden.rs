@@ -74,10 +74,10 @@ fn compared(node: &Value) -> Value {
 
 /// One function body QSL lowers to an application node with `identity`
 /// (and, where the fixtures carry several nodes of one identity, `mode`).
-struct Case {
+pub(super) struct Case {
     identity: &'static str,
     mode: Option<&'static str>,
-    package: CheckedPackage,
+    pub(super) package: CheckedPackage,
 }
 
 fn form(builtin: BuiltinType, bounds: &[&str]) -> TypeForm {
@@ -208,7 +208,7 @@ fn float_add(mode: &str) -> CheckedPackage {
     )])
 }
 
-fn cases() -> Vec<Case> {
+pub(super) fn cases() -> Vec<Case> {
     let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
     let small = || form(BuiltinType::Int, &["1", "9"]);
     let case = |identity, mode, package| Case {

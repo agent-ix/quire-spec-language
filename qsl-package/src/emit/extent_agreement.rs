@@ -88,7 +88,7 @@ fn record(fill: u8, name: &str, fields: Vec<(&str, ValueType)>) -> CompositeDecl
 }
 
 /// The fixture records, each with its environment key.
-fn records() -> Vec<CompositeDeclaration> {
+pub(super) fn records() -> Vec<CompositeDeclaration> {
     vec![
         // §10 scenario 2: a collection with no bound.
         record(1, "Bag", vec![("xs", sequence(int_0_9(), None))]),
@@ -148,17 +148,22 @@ fn emitted() -> (TypeEnvironment, Value, Box<CheckedPackageV2>) {
 /// Check and emit a package declaring `types`, and read it with IR's v2
 /// reader: the wire, IR's package and the emitter's omissions.
 fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<OmittedNode>) {
-    let package = CheckedPackage::link(
+    let package = package_declaring(types);
+    let emission = emit_package(&package, whole_unit).expect("the package emits");
+    let (wire, admitted) = read_emission(&emission);
+    (wire, admitted, emission.omitted)
+}
+
+/// The checked, linked package declaring `types`.
+pub(super) fn package_declaring(types: TypeEnvironment) -> CheckedPackage {
+    CheckedPackage::link(
         PackageDeclarations {
             types,
             ..PackageDeclarations::new(source())
         }
         .check(CheckingLimits::default())
         .expect("the fixture records check"),
-    );
-    let emission = emit_package(&package, whole_unit).expect("the package emits");
-    let (wire, admitted) = read_emission(&emission);
-    (wire, admitted, emission.omitted)
+    )
 }
 
 /// IR's v2 reading of `emission`, with its wire.
