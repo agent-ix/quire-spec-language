@@ -762,3 +762,132 @@ fn a_field_key_and_a_population_key_with_one_ordinal_are_distinct() {
     );
     assert_ne!(parent, population);
 }
+
+/// [`sub_with_fields_document`] with a second population, `aaa_subs` of
+/// `Sub`, declared after `config_history` in source but ahead of it in
+/// ascending `DeclarationKey` order: `aaa_subs` is ordinal 0 and
+/// `config_history` ordinal 1.
+fn two_population_document() -> Vec<u8> {
+    let population = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/aaa_subs");
+    let sub = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub");
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&sub_with_fields_document()).expect("the document is JSON");
+    envelope["populations"]
+        .as_array_mut()
+        .expect("populations is an array")
+        .push(json!({
+            "identity": population,
+            "displayName": population,
+            "kind": {"module": CONFIG_VERSION_PACKAGE_IDENTITY, "name": "population"},
+            "members": [sub],
+            "extent": "closed",
+            "origin": {
+                "generated": {
+                    "generatorIdentity": population,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [population],
+                }
+            },
+        }));
+    envelope.to_string().into_bytes()
+}
+
+fn population(model: &str, population: &str) -> crate::PopulationName {
+    crate::PopulationName {
+        model: identifier(model),
+        population: identifier(population),
+    }
+}
+
+/// FR-121-AC-21 (ADR-012 §15.7): over two populations whose declaration-key
+/// order is not their source order, a population selection returns
+/// `config_history`'s key at ordinal 1 on `ConfigVersion`'s node -- exactly
+/// the key every requirement record of the unit's `ConfigVersion` clauses
+/// carries -- and `aaa_subs`'s at ordinal 0 on `Sub`'s node, the node a
+/// `Sub` field is keyed under.
+#[trace("TC-516", "FR-121-AC-21")]
+#[test]
+fn call_site_keys_a_population_as_its_requirement_records_do() {
+    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let compiled = compile_config_version_unit(&unit, &packages);
+    let graph = compiled.package.graph();
+    let recorded: BTreeSet<&crate::DomainKey> = graph
+        .requirements()
+        .values()
+        .filter_map(|record| match record.requirements().extent() {
+            qsl_semantics::family::ClaimExtent::Unbounded(domains) => Some(domains),
+            qsl_semantics::family::ClaimExtent::Bounded => None,
+        })
+        .flat_map(|domains| domains.iter().map(|(key, _)| key))
+        .collect();
+    let history = locate(&unit, document, &population("Config", "config_history"))
+        .expect("config_history resolves")
+        .site
+        .domain;
+    assert_eq!(recorded, BTreeSet::from([&history]));
+    let config_version = wire(config_version_node_key(graph));
+    assert_eq!(
+        history,
+        crate::DomainKey::Population {
+            member_type: config_version,
+            ordinal: 1
+        }
+    );
+
+    let subs = locate(&unit, document, &population("Config", "aaa_subs"))
+        .expect("aaa_subs resolves")
+        .site
+        .domain;
+    let crate::DomainKey::Node { node: sub, .. } =
+        locate(&unit, document, &field("Config", "Sub", "alpha"))
+            .expect("Sub.alpha resolves")
+            .site
+            .domain
+    else {
+        panic!("a field key is a node key");
+    };
+    assert_eq!(
+        subs,
+        crate::DomainKey::Population {
+            member_type: sub,
+            ordinal: 0
+        }
+    );
+}
+
+/// FR-121-AC-22: a population selection whose alias or population does not
+/// resolve refuses `UnknownPopulation`, paired with the compiled package's
+/// own `package_id`.
+#[trace("TC-516", "FR-121-AC-22")]
+#[test]
+fn call_site_refuses_an_unknown_population_paired_with_its_package() {
+    let (unit, packages) = config_version_unit_and_packages_for(two_population_document());
+    let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let package = compile_config_version_unit(&unit, &packages)
+        .emitted
+        .package_id()
+        .record();
+    for selection in [
+        population("Config", "nope"),
+        population("Nope", "config_history"),
+        population("Config", "ConfigVersion"),
+    ] {
+        let refusal = locate(&unit, document, &selection)
+            .expect_err("the selection names no population of the package");
+        match *refusal {
+            CallSiteRefusal::UnknownPopulation {
+                selection: refused,
+                package: refused_in,
+            } => {
+                assert_eq!(refused, selection);
+                assert_eq!(refused_in, package);
+            }
+            other => panic!("expected UnknownPopulation for {selection}, got {other:?}"),
+        }
+    }
+}

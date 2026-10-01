@@ -29,9 +29,9 @@ library as `DependencyInput` or `Dependency`.
 It returns the compiled package's bytes its `package_id` names, builds a
 `DeclaredDomain` through the facade's re-exports, and keys a named state
 field under its declaring type's node by its name ordinal, apart from any
-population key.
+population key, and keys a named population as the requirement records do.
 
-Scope: FR-121-AC-1 to FR-121-AC-20.
+Scope: FR-121-AC-1 to FR-121-AC-22.
 
 ## Test Procedure
 
@@ -107,11 +107,17 @@ Scope: FR-121-AC-1 to FR-121-AC-20.
     compare each node with the graph's own `object_type` node for its
     declaring type. Select `Config::Sub.nope`, `Config::ConfigVersion.alpha`,
     `Config::Nope.parent` and `Nope::Sub.alpha`.
-19. Over the step 14 domain package without the `Sub` invariant, select
+19. Over the step 18 domain package without the `Sub` invariant, select
     `Config::Sub.alpha`.
 20. Over the step 3 unit, select `Config::ConfigVersion.parent`, and read the
     `config_history` population key from the compiled package's requirement
     records.
+21. Add a second population `aaa_subs` of `Sub`, after `config_history`, to
+    the step 18 domain package. Over the step 3 unit's clauses, select
+    `Config::config_history` and `Config::aaa_subs`, and read the
+    population keys the requirement records carry.
+22. Over the step 21 unit, select `Config::nope`, `Nope::config_history`
+    and `Config::ConfigVersion`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -175,7 +181,12 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   `ConfigVersion`'s node, through either type; `alpha` is `[0]` and `zeta`
   `[1]` under `Sub`'s node; the four unresolved selections refuse
   `CallSiteRefusal::UnknownField` paired with the package.
-- Step 19: the graph holds no `Sub` node, and the key equals step 14's.
+- Step 19: the graph holds no `Sub` node, and the key equals step 18's.
 - Step 20: the population key is `DomainKey::Population` with member type
   `ConfigVersion`'s node and ordinal 0, and differs from `parent`'s
   `DomainKey::Node` on that node with path `[0]`.
+- Step 21: `config_history` is `DomainKey::Population` on `ConfigVersion`'s
+  node at ordinal 1, the records' only population key; `aaa_subs` is on
+  `Sub`'s node at ordinal 0.
+- Step 22: each refuses `CallSiteRefusal::UnknownPopulation` paired with
+  the package.
