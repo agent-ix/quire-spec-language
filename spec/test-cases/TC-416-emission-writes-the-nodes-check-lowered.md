@@ -24,7 +24,7 @@ the members those fixtures pin. This catches a type annotation listed as a
 dependency, a missing `bounded_domain` base or group member, and an operator
 or operation spelling that differs from QSpec's.
 
-Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-CON-2.
+Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-093-AC-18, FR-093-CON-2.
 
 ## Test Procedure
 
@@ -60,6 +60,14 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
    (FR-093-AC-16).
 9. Check and emit a package holding `t` (step 1) and read the wire's
    `diagnostics.catalog` member.
+10. From source text, check and emit `ordered enum Status { READY, DONE }`
+    with `before using v(a: Status, b: Status): Boolean pure { a < b }`,
+    then with the same function over `a = b`, then with only
+    `function t using v(): Boolean pure { true }`; and
+    `record P { x: Int[0, 9]; }` with only `t`. List each enum member
+    node's occurrences and the source text of each `generated` source-map
+    region, and read each package back through QSL's I2 read
+    (FR-093-AC-18).
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
 
@@ -94,6 +102,11 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   `quire.native.diagnostics/v1`, revision `quire-draft` `1-draft.8`, digest
   domain `quire.definition.bytes/v1`, and IR admits the package
   (FR-093-AC-17).
+- Step 10: every package emits with nothing omitted. Each member node's
+  occurrences are exactly one `generated` occurrence, ordinal 0, whose
+  region text is `a < b`, `a = b`, or `Status` when no function names the
+  enum; the `Int[0, 9]` node's region text is `P`. Each package reads back
+  Verified (FR-093-AC-18).
 
 ## Status
 
@@ -101,6 +114,11 @@ Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs`.
 Step 8 implemented (`emit/tests.rs` and
 `checked_v2::tests::conformance_dependency_selection_vectors`).
 Step 9 implemented (`the_lock_selects_the_catalog_definitions`).
+Step 10 implemented in `qsl-package/src/emit/tests.rs`
+(`enum_members_no_literal_names_are_placed_under_an_ordered_comparison`,
+`an_ordered_comparison_of_enum_parameters_reads_back_verified`,
+`enum_members_no_literal_names_are_placed_under_an_equality`,
+`types_no_function_names_are_placed_at_their_declared_names`).
 Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
 (`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
 `FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are

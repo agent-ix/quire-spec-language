@@ -3254,3 +3254,142 @@ fn anchor_occurrence_ordinals_follow_source_order() {
         );
     }
 }
+
+/// `declarations` after the complete-V1 profile header, run S1, S2, the
+/// assembler, check and link as spine `compile` runs them, and emitted.
+fn emit_from_text(declarations: &str) -> (String, Emission) {
+    let text = format!(
+        "language \"ix:native\" edition \"1-draft\";\n\
+         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+         \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+         {declarations}"
+    );
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    assert_eq!(parsed.diagnostics(), []);
+    let raw = parsed.source().reference().clone();
+    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
+        .expect("S2 builds the unit");
+    let graph = PackageDeclarations::assemble(raw, unit, Vec::new(), Vec::new())
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect("the package checks");
+    let emission = emit_checked(&CheckedPackage::link(graph)).expect("the package emits");
+    (text, emission)
+}
+
+/// The source text each `generated` source-map entry of `node` covers.
+fn generated_texts<'t>(wire: &Value, text: &'t str, node: &Value) -> Vec<&'t str> {
+    wire["source_map"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["node_id"] == *node && entry["role"] == "generated")
+        .flat_map(|entry| entry["regions"].as_array().unwrap())
+        .map(|region| {
+            let start = usize::try_from(region["start"].as_u64().unwrap()).unwrap();
+            let end = usize::try_from(region["end"].as_u64().unwrap()).unwrap();
+            &text[start..end]
+        })
+        .collect()
+}
+
+/// QSL-349: `declarations` emits with nothing omitted, and each enum
+/// member node, which no literal names, carries one `generated` occurrence
+/// whose region is `placed`.
+fn members_are_placed_at(declarations: &str, placed: &str) -> Emission {
+    let (text, emission) = emit_from_text(declarations);
+    assert_eq!(emission.omitted, []);
+    let wire = wire(&emission);
+    let members: Vec<&Value> = nodes(&wire)
+        .iter()
+        .filter(|node| node["semantic_form"] == "enum_value")
+        .collect();
+    assert_eq!(members.len(), 2, "{members:?}");
+    for member in members {
+        assert_eq!(
+            member["occurrences"],
+            json!([{"role": "generated", "ordinal": 0}])
+        );
+        assert_eq!(
+            generated_texts(&wire, &text, &member["node_id"]),
+            [placed],
+            "{member}"
+        );
+    }
+    emission
+}
+
+/// An ordered enum named only by two parameter types, compared with `<`.
+const ORDERED_COMPARISON: &str = "ordered enum Status { READY, DONE }\n\
+    function before using v(a: Status, b: Status): Boolean pure { a < b }\n";
+
+/// QSL-349: an ordered enum named only by two parameter types, compared
+/// with `<`, places each member's `generated` occurrence at the body of the
+/// function that reaches the enum, though no member literal is written.
+/// The read back is
+/// [`an_ordered_comparison_of_enum_parameters_reads_back_verified`].
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+fn enum_members_no_literal_names_are_placed_under_an_ordered_comparison() {
+    members_are_placed_at(ORDERED_COMPARISON, "a < b");
+}
+
+/// FR-093-AC-18: the package of
+/// [`enum_members_no_literal_names_are_placed_under_an_ordered_comparison`]
+/// reads back Verified.
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+#[ignore = "IR-482: IR's reader refuses `a < b` over an ordered enum ill_typed/operator-ineligible, since it does not resolve the enum to the ordered_enum family"]
+fn an_ordered_comparison_of_enum_parameters_reads_back_verified() {
+    let emission = members_are_placed_at(ORDERED_COMPARISON, "a < b");
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// QSL-349: the same enum compared with `=` places each member the same
+/// way, and the package reads back Verified.
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+fn enum_members_no_literal_names_are_placed_under_an_equality() {
+    let emission = members_are_placed_at(
+        "ordered enum Status { READY, DONE }\n\
+         function same using v(a: Status, b: Status): Boolean pure { a = b }\n",
+        "a = b",
+    );
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+}
+
+/// QSL-349: an enum and a record no function names place each member, and
+/// the record's field type node, at the declared name, and each package
+/// reads back Verified.
+#[trace("FR-093-AC-18", "TC-416")]
+#[test]
+fn types_no_function_names_are_placed_at_their_declared_names() {
+    let emission = members_are_placed_at(
+        "ordered enum Status { READY, DONE }\n\
+         function t using v(): Boolean pure { true }\n",
+        "Status",
+    );
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let (text, emission) = emit_from_text(
+        "record P { x: Int[0, 9]; }\n\
+         function t using v(): Boolean pure { true }\n",
+    );
+    assert_eq!(emission.omitted, []);
+    let read = read_back(&emission);
+    assert!(matches!(read, Read::Verified { .. }), "{read:?}");
+    let wire = wire(&emission);
+    let field_type = nodes(&wire)
+        .iter()
+        .find(|node| node["semantic_form"] == "integer_range")
+        .expect("x's Int[0, 9] node");
+    assert_eq!(generated_texts(&wire, &text, &field_type["node_id"]), ["P"]);
+}

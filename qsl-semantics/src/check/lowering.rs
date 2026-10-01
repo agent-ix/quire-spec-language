@@ -3964,36 +3964,93 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
     named
 }
 
-/// FR-096: for each node a declaration names, directly or through other
-/// nodes, the root of the least such declaration (a function body or
-/// measure). A `generated` occurrence of the node is placed there: the node
-/// has no source position of its own, and IR requires a region for every
-/// occurrence. A node no declaration reaches has no entry.
+/// The nodes an anchor reaches from `node` (FR-096): the nodes it names,
+/// and for an enum declaration its member nodes. A member names its
+/// declaration and nothing names a member but an enum literal, yet a
+/// declaration a function reaches (an enum-typed parameter) reaches each
+/// member it declares: the members are part of the declaration (FR-092
+/// rule 1), so each is placed with it whether or not a literal names it.
+fn reached_nodes<'g>(
+    node: &'g SemanticNode,
+    members: &'g BTreeMap<NodeKey, Vec<NodeKey>>,
+) -> impl Iterator<Item = NodeKey> + 'g {
+    named_nodes(node)
+        .into_iter()
+        .chain(members.get(&node.key).into_iter().flatten().copied())
+}
+
+/// Each enum declaration node's member nodes in `graph`.
+fn enum_members(graph: &SemanticGraph) -> BTreeMap<NodeKey, Vec<NodeKey>> {
+    let mut members: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+    for node in graph.nodes.values() {
+        if let Some(NominalNode::EnumMember { declaration, .. }) = &node.nominal {
+            members.entry(*declaration).or_default().push(node.key);
+        }
+    }
+    members
+}
+
+/// FR-096: for each node a declaration reaches ([`reached_nodes`]),
+/// directly or through other nodes, the root of the least such declaration.
+/// A `generated` occurrence of the node is placed there: the node has no
+/// source position of its own, and IR requires a region for every
+/// occurrence. A function body or measure, a state clause body or a
+/// protocol attempt places first; a node none of those reaches is placed
+/// at the least declared type name that reaches it (a declared record,
+/// tuple or enum no function names, and the nodes only it names). A node
+/// no declaration reaches has no entry.
 fn enclosing_declarations(
     graph: &SemanticGraph,
     occurrences: &OccurrenceMap<Location>,
 ) -> BTreeMap<NodeKey, Location> {
-    let mut anchors: BTreeMap<NodeKey, Location> = BTreeMap::new();
+    let members = enum_members(graph);
+    // Only a function body or measure, a state clause body (FR-104), or a
+    // protocol attempt's own declared name (FR-114: an operation named only
+    // by an attempt has no clause to place its anchor-named nodes under,
+    // SR-770 FND-002) resolves to a region (FR-096).
+    let mut anchors = relax(
+        graph,
+        &members,
+        roots(occurrences, |location| {
+            matches!(
+                location.origin,
+                Origin::Body { .. }
+                    | Origin::Measure { .. }
+                    | Origin::StateClause { .. }
+                    | Origin::ProtocolAttempt { .. }
+            )
+        }),
+        &BTreeMap::new(),
+    );
+    // A declared type's `declaration` occurrence names its declared name
+    // (FR-322), which the assembler located.
+    let declared = roots(occurrences, |location| {
+        matches!(location.origin, Origin::TypeDeclaration { .. }) && location.path.is_empty()
+    })
+    .into_iter()
+    .filter(|(key, _)| !anchors.contains_key(key))
+    .collect();
+    let declared = relax(graph, &members, declared, &anchors);
+    anchors.extend(declared);
+    anchors
+}
+
+/// For each node with an occurrence `admits`, the least root of those
+/// occurrences' declarations.
+fn roots(
+    occurrences: &OccurrenceMap<Location>,
+    admits: impl Fn(&Location) -> bool,
+) -> BTreeMap<NodeKey, Location> {
+    let mut roots: BTreeMap<NodeKey, Location> = BTreeMap::new();
     for (key, _, location) in occurrences.iter() {
-        // Only a function body or measure, a state clause body (FR-104),
-        // or a protocol attempt's own declared name (FR-114: an
-        // operation named only by an attempt has no clause to place its
-        // anchor-named nodes under, SR-770 FND-002) resolves to a region
-        // (FR-096).
-        if !matches!(
-            location.origin,
-            Origin::Body { .. }
-                | Origin::Measure { .. }
-                | Origin::StateClause { .. }
-                | Origin::ProtocolAttempt { .. }
-        ) {
+        if !admits(location) {
             continue;
         }
         let root = Location {
             origin: location.origin.clone(),
             path: Vec::new(),
         };
-        match anchors.entry(key) {
+        match roots.entry(key) {
             btree_map::Entry::Vacant(entry) => {
                 entry.insert(root);
             }
@@ -4004,14 +4061,27 @@ fn enclosing_declarations(
             }
         }
     }
-    // Relax along the naming edges until no anchor lowers. Each anchor only
-    // decreases, over the finitely many declaration roots, so this ends.
+    roots
+}
+
+/// `anchors` relaxed along [`reached_nodes`] until no anchor lowers, never
+/// into a node `placed` already anchors. Each anchor only decreases, over
+/// the finitely many declaration roots, so this ends.
+fn relax(
+    graph: &SemanticGraph,
+    members: &BTreeMap<NodeKey, Vec<NodeKey>>,
+    mut anchors: BTreeMap<NodeKey, Location>,
+    placed: &BTreeMap<NodeKey, Location>,
+) -> BTreeMap<NodeKey, Location> {
     let mut work: Vec<NodeKey> = anchors.keys().copied().collect();
     while let Some(key) = work.pop() {
         let (Some(node), Some(anchor)) = (graph.nodes.get(&key), anchors.get(&key).cloned()) else {
             continue;
         };
-        for named in named_nodes(node) {
+        for named in reached_nodes(node, members) {
+            if placed.contains_key(&named) {
+                continue;
+            }
             let lowers = anchors.get(&named).is_none_or(|current| anchor < *current);
             if lowers {
                 anchors.insert(named, anchor.clone());
