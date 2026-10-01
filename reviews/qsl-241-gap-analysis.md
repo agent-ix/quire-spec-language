@@ -78,3 +78,16 @@ Fixes:
 
 FND-001 to FND-004 predate this PR, but this PR is the trace-namespace sweep
 and they are the same class of defect, so they belong in it.
+
+## Dispositions
+
+Round 1, reviewed at be9bf5dc24d1c248b414146397a7f64ac1549185 (rebased onto
+c0d35b69; fix commits 54ae9a4c and be9bf5dc on top of the retag commit
+ca4c927e).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 54ae9a4c (no `TC-3NN` tag or id-range note left in quire-exact. The five retags match QSpec's AC text: tc_315 is FR-144-AC-3 (exceeded bound refuses `cardinality_out_of_bound`), tc_320 is FR-142-AC-9 (distinct-unit comparison is ill-typed), tc_345 is FR-142-AC-7 (a denied charge returns incomplete), and tc_309 and tc_311 are FR-143-AC-4 (missing field, wrong tuple arity)) |
+| FND-002 | fixed | 54ae9a4c (`#[trace("FR-113")]`; SR-766 dropped. TC-512 and FR-113-AC-5 were not added, because the test asserts alias recording, not the refusal) |
+| FND-003 | fixed | 54ae9a4c (no Task-047/048 tag left. Eight tests now carry QSpec-TC-223 with FR-303-AC-1, AC-2 or AC-3, and each matches its AC: idempotent format, incremental/full parity, stale/overlap refusal. The other 7 Task tags were dropped where no AC applies. The finding counted 14 tags; the true count was 15: 14 Task-047 and 1 Task-048) |
+| FND-004 | fixed | be9bf5dc (54ae9a4c adds 14 tags, each on the test tests.md names: TC-215, 219, 226 x2, 228 x3, 229 x2, 235 x2, 237, 238, 242. be9bf5dc marks TC-213 ❌ Not passed. This is the right outcome: FR-081-AC-1 says "no key in the correspondence is absent from the admitted set", but normalize.rs's module doc states the view holds field members only and builds no operation entry, so admitted operation keys are absent. The code gap is tracked as QSL-350) |

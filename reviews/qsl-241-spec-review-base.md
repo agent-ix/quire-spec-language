@@ -54,3 +54,14 @@ The amendments are correct and consistent with the code. Two low nits:
 
 The convention paragraph's gap (61 tags that name nothing) is recorded as
 SR-927 FND-001 and FND-002, not repeated here.
+
+## Dispositions
+
+Round 1, reviewed at be9bf5dc24d1c248b414146397a7f64ac1549185 (rebased onto
+c0d35b69; fix commits 54ae9a4c and be9bf5dc on top of the retag commit
+ca4c927e).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 54ae9a4c (FR-087 Behavior now states only the `QSpec-FR-131-AC-n` / `QSpec-FR-339-AC-3` spelling and links tests.md#requirements-traceability for the repo-wide rule) |
+| FND-002 | fixed | be9bf5dc (the Behavior paragraph is rewrapped; its lines are 80 columns or less) |

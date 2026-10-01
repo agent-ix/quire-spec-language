@@ -78,3 +78,13 @@ capabilities and per-ticket counts. FR-055-AC-1 pins a `sha256:` digest over
 `resources/complete-value`. Each of these passes on any plan that keeps those strings,
 whatever the code does. Fix: delete `tests/it/complete_v1_plan.rs`, TC-144 and the
 FR-055 ACs that require it. That needs its own ticket, because it amends FR-055.
+
+## Dispositions
+
+Round 1, reviewed at be9bf5dc24d1c248b414146397a7f64ac1549185 (rebased onto
+c0d35b69; fix commits 54ae9a4c and be9bf5dc on top of the retag commit
+ca4c927e).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | be9bf5dc (54ae9a4c deletes tests/it/complete_v1_plan.rs, tests/fixtures/complete-v1-agent-a.txt, FR-055, TC-144 and TM-010 (spec/complete-v1/tests.md); be9bf5dc deletes IT-011 and its citations in spec.md, FR-111, FR-087, quire-exact/src/lib.rs, Plan-013 plan.md and Task-046. `git grep -w` finds no live reference; only the dated log.md line and the historical spec/reviews/complete-v1-adoption records still name them) |
