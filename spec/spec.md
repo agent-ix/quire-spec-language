@@ -284,6 +284,13 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+  - target: ix://agent-ix/quire-spec-language/FR-165
+  - target: ix://agent-ix/quire-spec-language/FR-166
+  - target: ix://agent-ix/quire-spec-language/FR-167
+  - target: ix://agent-ix/quire-spec-language/FR-168
+  - target: ix://agent-ix/quire-spec-language/FR-169
+  - target: ix://agent-ix/quire-spec-language/FR-170
+  - target: ix://agent-ix/quire-spec-language/US-020
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-129
     type: contains
@@ -573,6 +580,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
 | [US-025](usecase/US-025-check-a-protocol-under-a-weak-memory-model.md) | US | Draft |
+| [US-020](usecase/US-020-state-that-something-is-possible-in-a-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -780,6 +788,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-228](functional/FR-228-derive-memory-fairness-constraints.md) | FR | Specified: derived `fair weak each flush(b)` under `tso` and visibility fairness under `ra`, with a `memory` origin beside the scheduler constraints (ADR-025 MF-1 to MF-5); not yet implemented -- TC-673 planned |
 | [FR-229](functional/FR-229-carry-the-memory-component-through-the-protocol-system.md) | FR | Specified: `Tso` and `Ra` through ADR-027's `MemoryModel` seam: the state key's memory member, the thread observation, atoms over memory values, `memory` anchors, terminal states, and memory footprints and visibility (ADR-025 MA-5, MS-1 to MS-4, MR-1, MR-2); not yet implemented -- TC-674 planned |
 | [FR-309](functional/FR-309-build-the-memory-forms-at-s2.md) | FR | Specified: S2 forms for the `memory` clause of `parallel`, the `ordering` of an `attempt` and the `fence` control, citing QSpec's shared grammar (QSpec FR-434, FR-435); not yet implemented -- TC-888 planned |
+| [FR-165](functional/FR-165-check-state-graph-claims-at-s3.md) | FR | Specified: S2 and S3 check the state-graph claim forms `possible`, `always possible` with optional `from`, and `unique path`, refuse non-state predicates, temporal operators and fairness, record the form beside a (`temporal-satisfaction`, `Unbounded`) record, and the request writer adds the deadlock-freedom item for their subjects (ADR-022 SG-1 to SG-4, GM-3, GM-7, GM-8); not yet implemented -- TC-590 planned |
+| [FR-166](functional/FR-166-sample-witnesses-for-possible-claims.md) | FR | Specified: EN-1 phase 0: `witness_samples` seeded FR-101 walks per initial state for each `possible` item, published default 64, 0 turns it off, trace index `i × witness_samples + r`, the run's seed recorded (ADR-022 GE-2); not yet implemented -- TC-591 planned |
+| [FR-167](functional/FR-167-explore-a-state-graph-subject-and-track-open-nodes.md) | FR | Specified: EN-1 phase 1 exploration: one edge-retaining exploration per subject for every state-graph item and its deadlock-freedom item, predicate labels, open nodes with their causes, the reduction pre-check and the manifest forms (ADR-022 GE-1, GM-6, GR-1); not yet implemented -- TC-592 planned |
+| [FR-168](functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md) | FR | Specified: Backward reachability for `possible` and `always possible`, saturating path counting for `unique path`, witnesses, traps and path pairs decisive on partial runs, canonical evidence (ADR-022 §3); not yet implemented -- TC-593 planned |
+| [FR-169](functional/FR-169-settle-a-state-graph-verdict-with-its-settlement-method.md) | FR | Specified: State-graph verdicts V-9 and V-10 beside V-1 and V-4 to V-8, `ProofBasis::Witness{sources}`, and the settlement method and seed in the terminal record (ADR-022 GV-1 to GV-6); not yet implemented -- TC-594 planned |
+| [FR-170](functional/FR-170-replay-state-graph-evidence.md) | FR | Specified: `replay_model_graph` replays `GraphEvidence` (witness, trap, path pair) through `ModelSystem`, re-exploring a trap's closure (ADR-022 GX-1 to GX-5); not yet implemented -- TC-595 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

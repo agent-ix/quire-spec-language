@@ -380,6 +380,12 @@ names different artifacts in each.
 | TC-673 | Flush and visibility fairness join every infinite-trace fairness set | Integration | P1 | FR-228-AC-1, FR-228-AC-2, FR-228-AC-3, FR-228-AC-4 | 🚧 Planned |
 | TC-674 | The memory component, observations, atoms and footprints flow through the seam | Integration | P1 | FR-229-AC-1, FR-229-AC-2, FR-229-AC-3, FR-229-AC-4, FR-229-AC-5 | 🚧 Planned |
 | TC-888 | S2 builds the memory clause, access ordering and fence forms | Unit | P1 | FR-309-AC-1, FR-309-AC-2, FR-309-AC-3 | 🚧 Planned |
+| TC-590 | S3 checks state-graph claims, refuses non-state predicates and fairness, and the request carries deadlock-freedom items | Unit | P1 | FR-165-AC-1, FR-165-AC-2, FR-165-AC-3 | 🚧 Planned |
+| TC-591 | Phase 0 samples seeded witnesses for possible claims, on by default | Integration | P1 | FR-166-AC-1, FR-166-AC-2, FR-166-AC-3, FR-166-AC-4 | 🚧 Planned |
+| TC-592 | EN-1 explores a state-graph subject once, labels it and tracks open nodes | Integration | P1 | FR-167-AC-1, FR-167-AC-2, FR-167-AC-3, FR-167-AC-4, FR-167-AC-5 | 🚧 Planned |
+| TC-593 | Backward reachability and path counting decide state-graph claims with canonical evidence | Integration | P1 | FR-168-AC-1, FR-168-AC-2, FR-168-AC-3, FR-168-AC-4, FR-168-AC-5 | 🚧 Planned |
+| TC-594 | State-graph outcomes settle as terminal records that state their settlement method | Unit | P1 | FR-169-AC-1, FR-169-AC-2, FR-169-AC-3, FR-169-AC-4, FR-169-AC-5 | 🚧 Planned |
+| TC-595 | The replay facade replays witnesses, traps and path pairs through ModelSystem | Integration | P1 | FR-170-AC-1, FR-170-AC-2, FR-170-AC-3, FR-170-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
