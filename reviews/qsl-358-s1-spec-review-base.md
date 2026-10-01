@@ -80,3 +80,9 @@ Round 1, reviewed at 9b75cc5e0fa39a7eacd5959fb884ad1d9a9df311 (fix commit 9b75cc
 | FND-005 | fixed | 9b75cc5e: X-11 reads "**Extracted**" and lists the contents; the edge row reads "a permitted normal edge from QSL, RT and CG"; the T-12 "Follow-up" sentence is gone |
 | FND-006 | fixed | 9b75cc5e: mermaid edge is `QSE & QPK & QEV --> SV`; the bullet says layers 3, 4, 5, R and 6 "may" import SV and that today `qsl-semantics`, `qsl-package`, `qsl-eval` and `qsl-bench` do |
 | FND-007 | fixed | 9b75cc5e: TC-390 step 2 lists exactly the test's `BELOW_CORE` roots, under `qsl-semantics/src/value/` |
+
+Round 2, reviewed at 682b1b12c5b9d5f9627d1e48bc86857d2aa706e3 (fix commit 682b1b12 on top of 9b75cc5e; doc-only: ADR-011 X-6 and the reviews/ copies, which match this file's round-1 state byte for byte).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 682b1b12: X-6 lists `unit`'s compile-side half and "the rest of `semantic_node`" as in `qsl-semantics`, drops `quantity` and `stop`, and says `stop`, `quantity`, `unit`'s runtime half and `semantic_node`'s refusal vocabulary are in `quire-semantic-value` (X-11) |
