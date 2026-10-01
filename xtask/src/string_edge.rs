@@ -605,7 +605,8 @@ fn scan_workspace(workspace_root: &Path, honor_marks: bool) -> Result<Vec<Occurr
 }
 
 /// Every crate root this scan covers: the QSL root crate, `xtask`,
-/// `quire-exact`, `qsl-foundation` (ADR-011 §7.3 X-2), `qsl-cst`
+/// `quire-exact`, `quire-semantic-value` (ADR-011 §7.3 X-11),
+/// `qsl-foundation` (ADR-011 §7.3 X-2), `qsl-cst`
 /// (ADR-011 §7.3 X-3), `qsl-source` (ADR-011 §7.3 X-4),
 /// `qsl-forms` (ADR-011 §7.3 X-5), `qsl-semantics` (ADR-011 §7.3
 /// X-6), `qsl-package` (ADR-011 §7.3 X-7), `qsl-eval`
@@ -619,6 +620,7 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
         "src",
         "xtask/src",
         "quire-exact/src",
+        "quire-semantic-value/src",
         "qsl-foundation/src",
         "qsl-cst/src",
         "qsl-source/src",
@@ -1375,6 +1377,7 @@ mod tests {
             "src",
             "xtask/src",
             "quire-exact/src",
+            "quire-semantic-value/src",
             "qsl-foundation/src",
             "qsl-cst/src",
             "qsl-source/src",
