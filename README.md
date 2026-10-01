@@ -338,14 +338,13 @@ The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
 catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
 skills, validation results and outstanding review work. These requirements are
 drafts; the completed native readiness reviews and local results are recorded
-in the authoring status. The owner adopted specification PR8 at
-`e897f810a7356d4ce8fd19026221ebda7b65596f` for internal LC02 implementation.
+in the authoring status. The owner adopted specification PR8 for internal
+LC02 implementation.
 [LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
 planned type checking. The new
 [formal linker API](docs/formal-environment-linking.md) owns the exact parsed
 source and borrows immutable models; CLI parse/format still perform syntax work
-only. Accepted Contract IR ADR-0054 at
-`690bde7f2dc58662cf9ff0595c2c0e3b17107c6f` closes #54 and removes the former
+only. Accepted Contract IR ADR-0054 closes #54 and removes the former
 Filament-reader prerequisite: generic compilation uses the existing public
 DeclarationEnvironment/check_expression and executable binder APIs. A concrete
 archetype projection is specified only for a clause that needs its semantics.

@@ -22,7 +22,7 @@ is not executed evidence or complete LC02/FS05/backend/Quire acceptance.
 | FR-019 | FR-019-AC-2 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-3 | TC-078 | ✅ Qualified |
 | FR-019 | FR-019-AC-4 | TC-079 | ✅ Qualified |
-| FR-019 | FR-019-AC-5 (retired) | — | ❌ Retired; the definition revision/digest members are deleted from the wire |
+| FR-019 | FR-019-AC-5 (retired) | — | ⛔ Retired; the definition revision/digest members are deleted from the wire |
 | FR-019 | FR-019-AC-6 | TC-080 | ✅ Qualified |
 | FR-019 | FR-019-AC-7 | TC-081, TC-089 | ✅ Qualified |
 | FR-019 | FR-019-AC-8 | TC-082 | ✅ Qualified |
