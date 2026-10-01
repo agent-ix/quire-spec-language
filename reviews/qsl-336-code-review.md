@@ -90,3 +90,10 @@ Round 1, reviewed at 4aa30e7bf719768fffc2c1ad3eeb1bd26ef83b93.
 | FND-002 | fixed | 4aa30e7b: `evaluate_clause` matches `declaration.observation()`: Current reads `current`, Post reads `post`, Pre reads `post.or(pre)`. Anything else faults `clause-observations-missing-the-clause-observation`. `a_postcondition_with_only_a_pre_observation_faults` pins it, and mutant M7 (Post falling back to `pre`) fails it (exit 101). The duplication this fix introduces is FND-005. |
 | FND-003 | fixed | 4aa30e7b: `tc464_step5_an_invocation_target_in_an_incomplete_archive_is_incomplete`. Mutant M6 (no seeding on the invocation path) now fails it (exit 101). Mutant M5 (no seeding on the PreCall path) still fails (exit 101). |
 | FND-004 | fixed | 4aa30e7b: the comment now says FR-106 admits the observation each clause kind reads, and that a pre-call precondition leaves `current` and `post` `None` and is read through `pre`. |
+
+Round 2, reviewed at b249f946210ffcd911fe6f947b69f0510d44b455.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | b249f946: one private `fn observation_of(kind: StateClauseKind) -> Observation` in `check/state_clause.rs`. Both `StateClauseDeclaration::observation()` (checker) and `CheckedStateClause::observation()` (S6a) now call it, so the rule has one source. |
+| FND-006 | fixed | b249f946: `tc464_step5_a_non_reference_parameter_requires_no_population`: `flag(b: Boolean)` with `pre FlagHolds { b }`, where `b` holds a reference into the incomplete `archive`, refuses `invalid_runtime_input`/`wrong-value-kind` at field `b`. The reviewer's mutant M8 (`holds_references` filter disabled) now fails it (exit 101; it passed at 4aa30e7b). |
