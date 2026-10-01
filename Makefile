@@ -190,7 +190,7 @@ ci-docs:
 # it directly. Building it for a bare-metal target, which ships no `std`,
 # fails the moment any `std` use or std-requiring dependency feature returns.
 quire-exact-no-std:
-	cargo build --locked -p quire-exact --no-default-features --target thumbv7em-none-eabi
+	cargo build --locked -p quire-exact --target thumbv7em-none-eabi
 
 ci: check-no-committed-binaries quire-exact-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 
