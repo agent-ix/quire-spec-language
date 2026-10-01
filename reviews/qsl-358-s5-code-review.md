@@ -90,8 +90,8 @@ that this slice exists to close. FND-003 to FND-005 are cleanups.
 
 | ID | Outcome |
 | --- | --- |
-| FND-001 | fixed 9ca7dbe6: `assert_defined_exactly_once_in_semantic_value` counts every definition across all `scan_crate` trees and requires the one to be under `quire-semantic-value/src/`; the only uncounted name is the unrelated `src/package/view.rs` `Location<'a>`, listed by file. A copy of `InputRefusal` in `qsl-eval/src/value/mod.rs` and of `ValueLoss` in `qsl-semantics/src/value/mod.rs` now fail the scan (measured). |
-| FND-002 | fixed 9ca7dbe6: `InputRefusal::code() -> &'static str` in SV names the catalog code; qsl-eval's test asserts `input_refusal_code(r).as_str() == r.code()` for all six variants, and the SV test pins all six strings. |
-| FND-003 | fixed 9ca7dbe6: ticket ids and amendment history removed from the definition_scan comments. |
-| FND-004 | fixed 9ca7dbe6: `semantic_node.rs` links `crate::checking::MAX_CHECKING_DEPTH`; `emit.rs` and `qsl-forms/src/spans.rs` name `quire_semantic_value::location::Location`. |
-| FND-005 | fixed 9ca7dbe6: the redundant SV dev-dependency in qsl-eval is deleted (and the same redundancy in qsl-replay and the root crate after the rebase onto slice 2). |
+| FND-001 | fixed 49ae8c6c: `assert_defined_exactly_once_in_semantic_value` counts every definition across all `scan_crate` trees and requires the one to be under `quire-semantic-value/src/`; the only uncounted name is the unrelated `src/package/view.rs` `Location<'a>`, listed by file. A copy of `InputRefusal` in `qsl-eval/src/value/mod.rs` and of `ValueLoss` in `qsl-semantics/src/value/mod.rs` now fail the scan (measured). |
+| FND-002 | fixed 49ae8c6c: `InputRefusal::code() -> &'static str` in SV names the catalog code; qsl-eval's test asserts `input_refusal_code(r).as_str() == r.code()` for all six variants, and the SV test pins all six strings. |
+| FND-003 | fixed 49ae8c6c: ticket ids and amendment history removed from the definition_scan comments. |
+| FND-004 | fixed 49ae8c6c: `semantic_node.rs` links `crate::checking::MAX_CHECKING_DEPTH`; `emit.rs` and `qsl-forms/src/spans.rs` name `quire_semantic_value::location::Location`. |
+| FND-005 | fixed 49ae8c6c: the redundant SV dev-dependency in qsl-eval is deleted (and the same redundancy in qsl-replay and the root crate after the rebase onto slice 2). |

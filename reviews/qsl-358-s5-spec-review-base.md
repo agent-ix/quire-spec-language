@@ -39,7 +39,7 @@ no longer resolves.
 
 | ID | Outcome |
 | --- | --- |
-| FND-001 | fixed 9ca7dbe6: FR-068 AC-4, CON-3, CON-4, the Behavior refusal-split paragraph, the Outputs bullet and the summary now state the current layout; no appended notes, and "unchanged in shape" is gone. |
-| FND-002 | fixed 9ca7dbe6: the "Amended (QSL-358)" markers are removed with the rewrite. |
-| FND-003 | fixed 9ca7dbe6: ADR-011's SV row, the SV prose, the §6.2 move row, the `value::expression::refusal` row, X-7's qsl-package reason and X-11 list `checking`, `location`, `call` and `loss`. |
-| FND-004 | fixed 9ca7dbe6: every `check::Location` in spec/ (FR-062, FR-090, FR-095, FR-096, FR-100, ADR-011, ADR-012, ADR-013, TC-407, TC-426) now reads `quire_semantic_value::location::Location`. |
+| FND-001 | fixed 49ae8c6c: FR-068 AC-4, CON-3, CON-4, the Behavior refusal-split paragraph, the Outputs bullet and the summary now state the current layout; no appended notes, and "unchanged in shape" is gone. |
+| FND-002 | fixed 49ae8c6c: the "Amended (QSL-358)" markers are removed with the rewrite. |
+| FND-003 | fixed 49ae8c6c: ADR-011's SV row, the SV prose, the §6.2 move row, the `value::expression::refusal` row, X-7's qsl-package reason and X-11 list `checking`, `location`, `call` and `loss`. |
+| FND-004 | fixed 49ae8c6c: every `check::Location` in spec/ (FR-062, FR-090, FR-095, FR-096, FR-100, ADR-011, ADR-012, ADR-013, TC-407, TC-426) now reads `quire_semantic_value::location::Location`. |

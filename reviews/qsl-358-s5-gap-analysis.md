@@ -46,4 +46,4 @@ text. The AC's own self-contradiction is in SR-967.
 
 | ID | Outcome |
 | --- | --- |
-| FND-001 | fixed 9ca7dbe6: `ValueLoss`, `LocatedLoss` and the three `DEFAULT_CHECKING_*` constants are in the SV once-only assertions, counted across every scanned tree. |
+| FND-001 | fixed 49ae8c6c: `ValueLoss`, `LocatedLoss` and the three `DEFAULT_CHECKING_*` constants are in the SV once-only assertions, counted across every scanned tree. |
