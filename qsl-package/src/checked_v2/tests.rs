@@ -10,8 +10,8 @@
 
 use ix_trace_rs::trace;
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedPackageEvidence, CheckedPackageReadLimits,
-    CheckedPackageRefusalCause, CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
+    CheckedPackageEvidence, CheckedPackageReadLimits, CheckedPackageRefusalCause,
+    CheckedPackageRefusalCode, CHECKED_PACKAGE_V2, PACKAGE_DOMAIN_V2,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -195,31 +195,6 @@ fn valid_envelope(preimage: &Value) -> Value {
     })
 }
 
-fn locator(domain: &str, label: &str) -> CheckedArtifactLocator {
-    CheckedArtifactLocator {
-        authority: "pkg".into(),
-        identity: label.into(),
-        revision_namespace: "semver".into(),
-        revision_value: "1".into(),
-        domain: domain.into(),
-    }
-}
-
-/// Evidence proving `src`, `edition-def` and `diag-catalog` are current.
-fn evidence() -> CheckedPackageEvidence {
-    let mut evidence = CheckedPackageEvidence::new();
-    evidence.insert_artifact_digest(locator(SOURCE_DOMAIN, "src"), hex("src"));
-    evidence.insert_artifact_digest(
-        locator(DEFINITION_DOMAIN, "edition-def"),
-        hex("edition-def"),
-    );
-    evidence.insert_artifact_digest(
-        locator(DEFINITION_DOMAIN, "diag-catalog"),
-        hex("diag-catalog"),
-    );
-    evidence
-}
-
 fn identity(label: &str) -> LibraryName {
     LibraryName::new(label).unwrap()
 }
@@ -267,7 +242,7 @@ fn read(bytes: &[u8], pinned: &PinnedRequest) -> Read {
         identity("pkg"),
         "1".to_owned(),
         V2ReadLimits::default(),
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         pinned,
     )
 }
@@ -802,7 +777,7 @@ fn incomplete_when_bytes_exceed_the_ceiling() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     );
     assert_eq!(
@@ -838,7 +813,7 @@ fn a_caller_raised_artifact_bytes_ceiling_admits_a_valid_wire_past_the_default()
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(),
+            &CheckedPackageEvidence::new(),
             &pinned_for(&preimage),
         )
     };
@@ -885,7 +860,7 @@ fn a_caller_raised_ir_node_ceiling_admits_past_the_ir_default() {
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(),
+            &CheckedPackageEvidence::new(),
             &pinned_for(&preimage),
         )
     };
@@ -932,7 +907,7 @@ fn a_verified_read_records_depth_as_the_charged_maximum() {
         identity("pkg"),
         "1".to_owned(),
         requested,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     ) {
         Read::Verified {
@@ -968,7 +943,7 @@ fn reaching_a_caller_raised_artifact_bytes_ceiling_refuses_naming_the_kind_and_b
         identity("pkg"),
         "1".to_owned(),
         raised,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &no_pins(),
     );
     assert_eq!(
@@ -991,7 +966,7 @@ fn incomplete_when_a_depth_ceiling_is_reached() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
@@ -1012,7 +987,7 @@ fn exact_selected_limits_admit_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     );
     assert!(matches!(outcome, Read::Verified { .. }));
@@ -1035,7 +1010,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
             depth: 0,
             ..V2ReadLimits::default()
         },
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => exceeded.actual(),
@@ -1051,7 +1026,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         admits,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     );
     assert!(
@@ -1068,7 +1043,7 @@ fn exact_depth_ceiling_admits_the_boundary() {
         identity("pkg"),
         "1".to_owned(),
         refuses,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {}
@@ -1101,7 +1076,7 @@ fn depth_incompleteness(bytes: &[u8], limits: V2ReadLimits) -> (u64, u128) {
         identity("pkg"),
         "1".to_owned(),
         limits,
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &no_pins(),
     ) {
         Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth => {
@@ -1141,7 +1116,7 @@ fn depth_raised_past_the_default_admits_a_wire_deeper_than_the_default() {
             depth: 300,
             ..V2ReadLimits::default()
         },
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &no_pins(),
     );
     assert!(
@@ -1192,7 +1167,7 @@ fn depth_boundary_is_fail_closed_for_both_kinds_of_deepest_path() {
                 identity("pkg"),
                 "1".to_owned(),
                 limits,
-                &evidence(),
+                &CheckedPackageEvidence::new(),
                 &no_pins()
             ),
             Read::Limit(exceeded) if exceeded.kind() == LimitKind::NestingDepth
@@ -1365,46 +1340,6 @@ fn every_occurrence_role_is_spelled_as_ir_serializes_it() {
     assert_eq!(super::occurrence_role("reference"), None);
 }
 
-/// Every JSON object in `value` that has a `RawSourceRef`/artifact-ref
-/// shape, as the evidence locator IR checks currency against.
-fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
-    match value {
-        Value::Object(members) => {
-            if let (
-                Some(Value::String(authority)),
-                Some(Value::String(identity)),
-                Some(revision),
-                Some(Value::String(domain)),
-                Some(Value::String(digest)),
-            ) = (
-                members.get("authority"),
-                members.get("identity"),
-                members.get("revision"),
-                members.get("digest_domain"),
-                members.get("digest"),
-            ) {
-                evidence.insert_artifact_digest(
-                    CheckedArtifactLocator {
-                        authority: authority.as_str().into(),
-                        identity: identity.as_str().into(),
-                        revision_namespace: revision["namespace"].as_str().unwrap().into(),
-                        revision_value: revision["value"].as_str().unwrap().into(),
-                        domain: domain.as_str().into(),
-                    },
-                    digest.clone(),
-                );
-            }
-            members
-                .values()
-                .for_each(|member| locked_artifacts(member, evidence));
-        }
-        Value::Array(items) => items
-            .iter()
-            .for_each(|item| locked_artifacts(item, evidence)),
-        _ => {}
-    }
-}
-
 /// The published QSpec checked-package-v2 fixture directory under
 /// `$QSPEC_DIR`, and its `positive-*.json` fixtures in name order; `None`
 /// when `QSPEC_DIR` is unset.
@@ -1438,13 +1373,10 @@ fn read_fixture(path: &std::path::Path) -> Value {
 
 /// QSL's whole I2 read of the fixture `envelope`, pinned at the
 /// `package_id` its own identity preimage recomputes to. Evidence treats
-/// the fixture's own locked artifacts as current and its required features
-/// as supported. The published fixture is pretty-printed; the wire is its
+/// the fixture's required features as supported. The published fixture is pretty-printed; the wire is its
 /// canonical form.
 fn read_fixture_wire(envelope: &Value) -> (PackageId, Read) {
     let mut evidence = CheckedPackageEvidence::new();
-    locked_artifacts(&envelope["lock"], &mut evidence);
-    locked_artifacts(&envelope["diagnostics"], &mut evidence);
     for feature in envelope["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
@@ -1993,7 +1925,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             identity("pkg"),
             "1".to_owned(),
             limits,
-            &evidence(),
+            &CheckedPackageEvidence::new(),
             &pinned_for(preimage),
         );
         let expected =
@@ -2014,7 +1946,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             artifact_bytes: bytes.len() - 1,
             ..defaults
         },
-        &evidence(),
+        &CheckedPackageEvidence::new(),
         &pinned_for(&preimage),
     );
     let Read::Limit(exceeded) = outcome else {

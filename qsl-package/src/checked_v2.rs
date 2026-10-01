@@ -30,13 +30,12 @@
 //!   and 3 and constructs the `VerifiedPackage` (FR-087-AC-1, AC-3) this
 //!   reader returns.
 //!
-//! IR's v2 reader validates the whole I04 contract unconditionally (lock
-//! staleness against caller-supplied evidence, the complete semantic graph,
-//! source-map and diagnostics) -- there is no narrower "envelope and
-//! `package_id` only" entry point. A caller therefore supplies
-//! [`quire_contract_ir::CheckedPackageEvidence`] alongside the bytes: this
-//! reader does not itself know which locked source, definition or domain
-//! package bytes are current.
+//! IR's v2 reader validates the whole I04 contract unconditionally (the
+//! lock, the complete semantic graph, source-map and diagnostics) -- there
+//! is no narrower "envelope and `package_id` only" entry point. A caller
+//! therefore supplies [`quire_contract_ir::CheckedPackageEvidence`]
+//! alongside the bytes: the domain package documents, admitted dependency
+//! packages and supported features this reader does not itself hold.
 //!
 //! # Ceilings
 //!
@@ -961,11 +960,7 @@ impl ClosureReader<'_> {
     ) -> Result<(), ImportViewRefusal> {
         for (dependency, resolved) in package.dependency_selections() {
             let admitted = self.admitted(dependency, resolved)?;
-            evidence.insert_dependency_package(
-                dependency.as_str(),
-                resolved.selection.version.as_str(),
-                admitted,
-            );
+            evidence.insert_dependency_package(dependency.as_str(), admitted);
         }
         Ok(())
     }

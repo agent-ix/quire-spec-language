@@ -20,7 +20,7 @@ use qsl_semantics::value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 use qsl_semantics::value::{CatalogRole, DefinitionLock};
-use quire_contract_ir::{CheckedArtifactLocator, CheckedPackageEvidence};
+use quire_contract_ir::CheckedPackageEvidence;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, NodeKey, Presence, Role, ValueType,
     NODE_KEY_DOMAIN,
@@ -194,51 +194,16 @@ fn library() -> LibraryName {
     LibraryName::new("pkg").unwrap()
 }
 
-/// Every artifact reference in `value`, recorded as current evidence.
-pub(super) fn locked_artifacts(value: &Value, evidence: &mut CheckedPackageEvidence) {
-    match value {
-        Value::Object(members) => {
-            if let (Some(authority), Some(identity), Some(revision), Some(domain), Some(digest)) = (
-                members.get("authority").and_then(Value::as_str),
-                members.get("identity").and_then(Value::as_str),
-                members.get("revision"),
-                members.get("digest_domain").and_then(Value::as_str),
-                members.get("digest").and_then(Value::as_str),
-            ) {
-                evidence.insert_artifact_digest(
-                    CheckedArtifactLocator {
-                        authority: authority.into(),
-                        identity: identity.into(),
-                        revision_namespace: revision["namespace"].as_str().unwrap().into(),
-                        revision_value: revision["value"].as_str().unwrap().into(),
-                        domain: domain.into(),
-                    },
-                    digest,
-                );
-            }
-            members
-                .values()
-                .for_each(|member| locked_artifacts(member, evidence));
-        }
-        Value::Array(items) => items
-            .iter()
-            .for_each(|item| locked_artifacts(item, evidence)),
-        _ => {}
-    }
-}
-
 /// QSL's full I2 read of `emission`, pinned at its own `package_id`, with
-/// the emitted lock's artifacts as current evidence.
+/// the emitted lock's required features as evidence.
 fn read_back(emission: &Emission) -> Read {
     read_with(emission, &read_evidence(emission))
 }
 
-/// The emitted lock's artifacts and features as current evidence.
+/// The emitted lock's required features as evidence.
 fn read_evidence(emission: &Emission) -> CheckedPackageEvidence {
     let wire = wire(emission);
     let mut evidence = CheckedPackageEvidence::new();
-    locked_artifacts(&wire["lock"], &mut evidence);
-    locked_artifacts(&wire["diagnostics"], &mut evidence);
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
@@ -357,22 +322,6 @@ fn the_lock_selects_the_catalog_definitions() {
     assert_eq!(
         wire["identity_preimage"]["edition"],
         wire["lock"]["edition"]
-    );
-}
-
-/// The public `diagnostics_catalog` accessor equals the `diagnostics.catalog`
-/// reference the v2 emitter writes: a caller builds evidence for it from
-/// QSL's own API instead of reading it back out of the emitted bytes.
-#[trace("FR-093-AC-17", "TC-416")]
-#[test]
-fn diagnostics_catalog_matches_the_emitted_reference() {
-    let emission = emit(&package(vec![t()]));
-    assert!(matches!(read_back(&emission), Read::Verified { .. }));
-    let wire = wire(&emission);
-    assert_eq!(
-        serde_json::from_value::<CheckedArtifactRef>(wire["diagnostics"]["catalog"].clone())
-            .unwrap(),
-        crate::diagnostics_catalog()
     );
 }
 
@@ -2070,8 +2019,6 @@ fn a_nominal_node_without_its_declaration_is_refused_by_the_i2_read() {
     let package_id = PackageId::of_preimage(&jcs(&wire["identity_preimage"]));
     wire["package_id"]["digest"] = json!(package_id.hex());
     let mut evidence = CheckedPackageEvidence::new();
-    locked_artifacts(&wire["lock"], &mut evidence);
-    locked_artifacts(&wire["diagnostics"], &mut evidence);
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
@@ -2215,8 +2162,6 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
     assert_eq!(emission.omitted, []);
     let wire = wire(&emission);
     let mut evidence = CheckedPackageEvidence::new();
-    locked_artifacts(&wire["lock"], &mut evidence);
-    locked_artifacts(&wire["diagnostics"], &mut evidence);
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }

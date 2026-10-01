@@ -21,9 +21,7 @@ pub use checked_v2::{
     read_import_view, AdmittedPackages, ImportViewRefusal, SourceMapDefect, UnsupportedWire,
     V2ReadRefusal,
 };
-pub use emit::{
-    diagnostics_catalog, emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode,
-};
+pub use emit::{emit_checked, Emission, EmitRefusal, OmissionCause, OmittedNode};
 
 // The FR-105-AC-6 fault-injection seam. Public only under
 // `test-support` (see `emit.rs`'s doc comments and this crate's

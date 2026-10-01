@@ -29,9 +29,8 @@
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
 //!   (FR-322, FR-307). The same entries are the identity preimage's, so each
 //!   dependency's `package_id` enters this package's.
-//! - `diagnostics.catalog` is [`diagnostics_catalog`] (FR-093-AC-17), public
-//!   so a caller builds evidence for it from QSL's own API instead of
-//!   reading it back out of the emitted bytes.
+//! - `diagnostics.catalog` is QSpec's `quire.native.diagnostics/v1` at
+//!   `1-draft.8`.
 //!
 //! # Source regions
 //!
@@ -69,9 +68,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use quire_contract_ir::{
-    CheckedArtifactLocator, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
-    CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
-    CheckedNodeId, CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
+    CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition, CheckedDeclaration,
+    CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
+    CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
     CheckedRevision, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
     CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
@@ -102,12 +101,9 @@ const GRAPH_V2: &str = "quire.checked-semantic-graph/v2";
 const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
-/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.8`. This is the
-/// same reference the v2 emitter writes at `diagnostics.catalog`
-/// (FR-093-AC-17); a caller that needs it as evidence (IR's checked-package
-/// v2 reader refuses it as a stale dependency without one) reads it here
-/// instead of parsing it back out of the emitted bytes.
-pub fn diagnostics_catalog() -> CheckedArtifactRef {
+/// by: QSpec's `quire.native.diagnostics/v1` at `1-draft.8`, written at
+/// `diagnostics.catalog`.
+fn diagnostics_catalog() -> CheckedArtifactRef {
     CheckedArtifactRef {
         authority: "agent-ix".into(),
         identity: "quire.native.diagnostics/v1".into(),
@@ -216,11 +212,9 @@ pub struct Emission {
     pub(crate) package: EmittedPackage,
     /// Every node of the checked graph the wire omits, ascending by node id.
     pub(crate) omitted: Vec<OmittedNode>,
-    /// The artifacts the emitted lock and diagnostics name, each at the
-    /// digest this emission computed from the bytes it compiled against, and
-    /// the lock's required features: the current-artifact evidence IR's
-    /// reader checks the lock against when these bytes are read back as a
-    /// dependency's import view (ADR-015 D-1 step 6).
+    /// The lock's required features: the evidence IR's reader needs when
+    /// these bytes are read back as a dependency's import view (ADR-015 D-1
+    /// step 6).
     pub(crate) evidence: CheckedPackageEvidence,
 }
 
@@ -939,7 +933,7 @@ fn emit_package_inner(
         };
         quire_canonical::to_vec(&wire, IDENTITY_LIMITS).map_err(EmitRefusal::from)
     })?;
-    let evidence = own_evidence(&lock, &diagnostics);
+    let evidence = own_evidence(&lock);
     Ok(Emission {
         package,
         omitted,
@@ -947,34 +941,11 @@ fn emit_package_inner(
     })
 }
 
-/// The evidence that the artifacts `lock` and `diagnostics` name are
-/// current: each at the digest the emitter wrote for it, which it computed
-/// from the bytes the package was compiled against, and each of the lock's
+/// The evidence IR's reader needs to read this emission back: the lock's
 /// required features. It attests this emission only: [`Emission`] is built
 /// by [`emit_checked`] alone, so no caller can pair it with other bytes.
-fn own_evidence(
-    lock: &CheckedPackageLockV2,
-    diagnostics: &CheckedDiagnosticsV2,
-) -> CheckedPackageEvidence {
+fn own_evidence(lock: &CheckedPackageLockV2) -> CheckedPackageEvidence {
     let mut evidence = CheckedPackageEvidence::new();
-    for artifact in lock
-        .sources
-        .iter()
-        .chain([&lock.edition.definition])
-        .chain(&lock.definition_selections)
-        .chain([&diagnostics.catalog])
-    {
-        evidence.insert_artifact_digest(
-            CheckedArtifactLocator {
-                authority: artifact.authority.clone(),
-                identity: artifact.identity.clone(),
-                revision_namespace: artifact.revision.namespace.clone(),
-                revision_value: artifact.revision.value.clone(),
-                domain: artifact.digest_domain.clone(),
-            },
-            artifact.digest.clone(),
-        );
-    }
     for feature in &lock.required_features {
         evidence.support_feature(feature.clone());
     }

@@ -797,50 +797,6 @@ mod extraction {
     }
 }
 
-/// Records every artifact reference found anywhere in `value` (an object
-/// carrying `authority`/`identity`/`revision`/`digest_domain`/`digest`) into
-/// `evidence` under its own claimed digest, recursing through arrays and
-/// nested objects. Mirrors `qsl_package::emit::tests::locked_artifacts`'s
-/// walk (private to that crate) so this I04 round-trip test can supply
-/// evidence from the emitted wire alone, without reaching into
-/// `qsl_package`'s internals.
-fn record_locked_artifacts(
-    value: &Value,
-    evidence: &mut quire_contract_ir::CheckedPackageEvidence,
-) {
-    match value {
-        Value::Object(members) => {
-            if let (Some(authority), Some(identity), Some(revision), Some(domain), Some(digest)) = (
-                members.get("authority").and_then(Value::as_str),
-                members.get("identity").and_then(Value::as_str),
-                members.get("revision"),
-                members.get("digest_domain").and_then(Value::as_str),
-                members.get("digest").and_then(Value::as_str),
-            ) {
-                evidence.insert_artifact_digest(
-                    quire_contract_ir::CheckedArtifactLocator {
-                        authority: authority.into(),
-                        identity: identity.into(),
-                        revision_namespace: revision["namespace"].as_str().unwrap().into(),
-                        revision_value: revision["value"].as_str().unwrap().into(),
-                        domain: domain.into(),
-                    },
-                    digest,
-                );
-            }
-            for member in members.values() {
-                record_locked_artifacts(member, evidence);
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                record_locked_artifacts(item, evidence);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// FR-108-AC-6 (TC-469 step 6), its package_id half: the expected table
 /// pins the FR-108 unit's `package_id` (the one spine `compile` emits for
 /// it), and every case's report carries exactly that value. The I04 `read`
@@ -908,19 +864,11 @@ fn tc_469_step_6_the_emitted_package_admits_via_i04() {
     let pinned = compiled.emitted.package_id();
 
     let bytes = compiled.emitted.bytes();
-    // I04 `read` checks every locked artifact (`lock.sources`, `lock.edition.
-    // definition`, `lock.definition_selections`, `diagnostics.catalog`)
-    // against caller-supplied evidence that its digest is still current
-    // (`quire-contract-model`'s `validate_locked_artifact`); an empty
-    // evidence store refuses every one of them `StaleDependency`. This
-    // mirrors `qsl_package::emit::tests::locked_artifacts`/`read_evidence`
-    // (not reusable here: `Emission::evidence` is `pub(crate)` to that
-    // crate), recording each artifact reference's own claimed digest as
-    // current evidence directly from the emitted wire bytes.
+    // I04 `read` needs the lock's required features as supported; they are
+    // read straight from the emitted wire (`Emission::evidence` is
+    // `pub(crate)` to `qsl_package`).
     let wire: Value = serde_json::from_slice(bytes).expect("emitted package is JSON");
     let mut evidence = quire_contract_ir::CheckedPackageEvidence::new();
-    record_locked_artifacts(&wire["lock"], &mut evidence);
-    record_locked_artifacts(&wire["diagnostics"], &mut evidence);
     if let Some(features) = wire["lock"]["required_features"].as_array() {
         for feature in features {
             evidence.support_feature(feature.as_str().expect("feature name is a string"));
