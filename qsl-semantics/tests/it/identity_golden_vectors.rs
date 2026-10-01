@@ -34,8 +34,11 @@ use qsl_semantics::model::key::{
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome, ObjectUniverse};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
-    CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, UnitPreimage,
+    admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, NodeOwner,
+    OwnerSelection, OwnerSubject, UnitPreimage,
 };
+use quire_exact::NodeKey;
+use quire_semantic_value::quantity::{result_unit, QuantityUnit, UnitOperation};
 
 const EFFECTIVE_TYPE: &str = r#"{"derivation":[{"inputs":[{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"}],"ordinal":"0","rule":{"identity":"quire.model.normalize.qualify/v1","revision":"1-draft.1"}}],"original":{"digest_domain":"sha256-jcs","node":"ix://test/orders/A","package":"test/orders"},"owner_effective_type":null,"version":"quire.model.effective-declaration/v1"}"#;
 const EFFECTIVE_TYPE_DIGEST: &str =
@@ -242,6 +245,43 @@ fn dimension_unit_and_compound_unit_digests_match_their_golden_vectors() {
     let id = compound.id();
     assert_eq!(id.domain(), quire_exact::UnitDomain::Compound);
     assert_golden(COMPOUND_UNIT, COMPOUND_UNIT_DIGEST, &hex(id.as_bytes()));
+}
+
+/// The compound unit `metre^2` formed at runtime over the admitted golden
+/// dimension and unit carries the golden `quire.value.compound-unit/v1` id
+/// byte for byte, whether built from its preimage's terms or by multiplying
+/// `metre` by itself: the `quire-semantic-value` unit graph takes the id
+/// from QSL's `COMPOUND_UNIT_MINT`, the encoder `CompoundUnitPreimage::id`
+/// uses.
+#[trace("QSpec-TC-187", "QSpec-FR-142-AC-5")]
+#[test]
+fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
+    let dimension = DimensionPreimage::from_json(serde_json::from_str(DIMENSION).unwrap()).unwrap();
+    let unit = UnitPreimage::from_json(serde_json::from_str(UNIT).unwrap()).unwrap();
+    let metre = NodeKey::from_digest(digest_bytes(UNIT_DIGEST));
+    let graph = admit_unit_graph(
+        [(
+            dimension,
+            NodeKey::from_digest(digest_bytes(DIMENSION_DIGEST)),
+        )],
+        [(unit, metre)],
+        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".into(),
+            identity: "example-model".into(),
+        })]),
+    )
+    .expect("the golden dimension and unit admit");
+    let compound =
+        CompoundUnitPreimage::from_json(serde_json::from_str(COMPOUND_UNIT).unwrap()).unwrap();
+    let built = graph
+        .compound_unit(compound.terms())
+        .expect("metre is a root unit");
+    assert_eq!(hex(built.id().as_bytes()), COMPOUND_UNIT_DIGEST);
+    let metre = QuantityUnit::Declared(Box::new(graph.unit(metre).unwrap().clone()));
+    let squared = result_unit(UnitOperation::Multiply, &metre, &metre).unwrap();
+    assert_eq!(squared, QuantityUnit::Compound(built));
+    assert_eq!(hex(squared.id().as_bytes()), COMPOUND_UNIT_DIGEST);
+    assert_eq!(squared.id().domain(), quire_exact::UnitDomain::Compound);
 }
 
 /// Admit `raw` under the `sha256-jcs` digest `digest`: intake's check 3

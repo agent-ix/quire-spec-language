@@ -13,9 +13,10 @@
 //!
 //! A node id read from a preimage document is a [`WireNodeId`]. It resolves
 //! to a `NodeKey` only by lookup among the admitted nodes' retained keys
-//! (ADR-013 O-04, R-10), never by wrapping the parsed digest.
+//! (ADR-013 O-04, R-10), never by wrapping the parsed digest; for units that
+//! lookup is `quire_semantic_value::unit::UnitGraph`'s.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -129,22 +130,10 @@ pub(crate) struct NodeIdDocument {
 impl NodeIdDocument {
     /// The referenced wire node id when the domain and digest spelling are
     /// canonical. It stays a [`WireNodeId`]: the caller resolves it against
-    /// admitted keys with [`resolve`] (ADR-013 O-04).
+    /// admitted keys by lookup (ADR-013 O-04).
     pub(crate) fn wire_id(&self) -> Option<WireNodeId> {
         WireNodeId::from_hex(&self.digest).filter(|_| self.domain == NODE_KEY_DOMAIN)
     }
-}
-
-/// The index that resolves a wire node id to one of `keys` by lookup.
-pub(crate) fn wire_index(keys: impl IntoIterator<Item = NodeKey>) -> BTreeMap<WireNodeId, NodeKey> {
-    keys.into_iter()
-        .map(|key| (WireNodeId::from_digest(*key.as_bytes()), key))
-        .collect()
-}
-
-/// The admitted key `id` names, or `None` when no admitted node has it.
-pub(crate) fn resolve(index: &BTreeMap<WireNodeId, NodeKey>, id: WireNodeId) -> Option<NodeKey> {
-    index.get(&id).copied()
 }
 
 /// A schema `Rational`: canonical integer numerator and positive denominator

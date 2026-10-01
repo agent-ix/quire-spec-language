@@ -1730,9 +1730,9 @@ const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca0922663
 
 /// The `metre` unit of dimension `Length`, owned by a definition, as the
 /// quantity table `check` types a `Length` quantity against.
-pub(super) fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
+pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
     use qsl_semantics::value::{
-        DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
     };
     let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
     let length = DimensionPreimage::from_json(json!({
@@ -1755,7 +1755,7 @@ pub(super) fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
     let length_key: [u8; 32] = std::array::from_fn(|index| {
         u8::from_str_radix(&LENGTH[2 * index..2 * index + 2], 16).unwrap()
     });
-    let graph = UnitGraph::admit(
+    let graph = admit_unit_graph(
         [(length, NodeKey::from_digest(length_key))],
         [(metre, NodeKey::from_digest(METRE))],
         &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
@@ -1764,7 +1764,7 @@ pub(super) fn metre_units() -> qsl_semantics::value::quantity::UnitTable {
         })]),
     )
     .expect("the QSpec unit vectors admit");
-    qsl_semantics::value::quantity::UnitTable::declared(&graph)
+    quire_semantic_value::quantity::UnitTable::declared(&graph)
 }
 
 /// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`,

@@ -3,8 +3,8 @@
 //! `FamilyResult` and `EvalOutcome` are defined once, in the layer-3 `check`
 //! core (`qsl-semantics/src/family/`); no module below the core names them;
 //! the core names no family cause type; no crate below layer 3 depends on
-//! this crate; and `qsl-semantics`, layer 3 itself, depends on layers 2, F
-//! and K only. Uses the resolved-import and definition scans of TC-256, TC-170 and
+//! this crate; and `qsl-semantics`, layer 3 itself, depends on layers 2, F,
+//! SV and K only. Uses the resolved-import and definition scans of TC-256, TC-170 and
 //! TC-176 (`xtask::import_graph`, `xtask::definition_scan`), so a
 //! fully-qualified inline path is caught as well as a `use` line.
 
@@ -31,16 +31,18 @@ const CAUSE_TYPES: [&str; 4] = [
 /// `quire_exact` copy). `value::reference` left it under X-6a, which
 /// moved its `ObjectEnvironment` into `model` (`qsl-semantics/src/model`
 /// covers it). X-6b moved every layer-3 module into
-/// `qsl-semantics`.
+/// `qsl-semantics`. X-11 moved `value::stop`, `value::quantity` and the
+/// runtime half of `value::unit` into the layer-SV crate
+/// `quire-semantic-value`, which is below the core as a whole.
 const BELOW_CORE: [&str; 10] = [
     "qsl-cst/src",
     "qsl-forms/src",
+    "quire-semantic-value/src",
     "qsl-semantics/src/model",
     "qsl-semantics/src/library",
     "qsl-semantics/src/value/definition.rs",
     "qsl-semantics/src/value/enumeration.rs",
     "qsl-semantics/src/value/unit.rs",
-    "qsl-semantics/src/value/quantity.rs",
     "qsl-semantics/src/value/declaration.rs",
     "qsl-semantics/src/value/model_query.rs",
 ];
@@ -59,6 +61,7 @@ fn family_outcome_types_are_defined_once_in_the_check_core() {
         &[
             "src",
             "quire-exact/src",
+            "quire-semantic-value/src",
             "qsl-foundation/src",
             "qsl-cst/src",
             "qsl-forms/src",
@@ -244,24 +247,25 @@ fn workspace_dependencies() -> Vec<PackageDependencies> {
 /// `[dependencies]`, `[dev-dependencies]` and `[build-dependencies]` alike
 /// (a build dependency on a higher layer or on this crate fails as a normal
 /// one does). `qsl-semantics`
-/// (layer 3) names exactly `qsl-forms`, `qsl-foundation` and
-/// `quire-exact` among the workspace crates in `[dependencies]`, never
+/// (layer 3) names exactly `qsl-forms`, `qsl-foundation`, `quire-exact` and
+/// `quire-semantic-value` among the workspace crates in `[dependencies]`, never
 /// `qsl-cst`; its `[dev-dependencies]` may name `qsl-cst` so the FR-091
 /// assembler's tests can run S1 (FR-091-AC-20), and only
 /// `model::intake` names its FCD dependencies. `quire-exact` names
-/// none, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
+/// none, `quire-semantic-value` (layer SV) names exactly `quire-exact` and
+/// `thiserror`, `qsl-foundation` may name `quire-exact`, `qsl-cst` may name
 /// `qsl-foundation` and `quire-exact`, and `qsl-forms` names exactly
 /// `qsl-cst`, `qsl-foundation` and `quire-exact` in `[dependencies]` (ADR-011
 /// §6.1; layer 2's cell names no external crate). `qsl-package` (layer 4)
 /// names exactly `qsl-foundation`, `qsl-semantics` and
 /// `quire-exact` among the workspace crates in `[dependencies]`; its
 /// `[dev-dependencies]` may also name the lower layers `qsl-forms` and
-/// `qsl-cst` (the FR-091 S1-to-S4 round trip). `qsl-route` (layer R)
+/// `qsl-cst` (the FR-091 S1-to-S4 round trip) and `quire-semantic-value`. `qsl-route` (layer R)
 /// names exactly `qsl-foundation`, `qsl-semantics` and `thiserror`
 /// in `[dependencies]`, has no `[build-dependencies]`, and its
 /// `[dev-dependencies]` may also name layer K's `quire-exact`. `qsl-eval` (layer
 /// 5) names exactly `qsl-foundation`, `qsl-package`,
-/// `qsl-semantics`, `quire-exact` and `thiserror` in
+/// `qsl-semantics`, `quire-exact`, `quire-semantic-value` and `thiserror` in
 /// `[dependencies]`, has no `[build-dependencies]`, and its `[dev-dependencies]` may also name the lower layers
 /// `qsl-forms` and `qsl-cst` (FR-091-AC-13's call of a function compiled
 /// from source; `serde_json` moved here too, once its one shipped
@@ -288,6 +292,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         .collect();
     for required in [
         "quire-spec-language",
+        "quire-semantic-value",
         "qsl-source",
         "qsl-cst",
         "qsl-forms",
@@ -303,6 +308,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
     }
     for (crate_name, allowed, dev_only) in [
         ("quire-exact", &[][..], &[][..]),
+        ("quire-semantic-value", &["quire-exact"][..], &[][..]),
         ("qsl-foundation", &["qsl-attrs", "quire-exact"][..], &[][..]),
         (
             "qsl-cst",
@@ -333,7 +339,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-semantics",
                 "quire-exact",
             ][..],
-            &["qsl-cst", "qsl-forms"][..],
+            &["qsl-cst", "qsl-forms", "quire-semantic-value"][..],
         ),
         (
             "qsl-route",
@@ -348,8 +354,9 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-package",
                 "qsl-semantics",
                 "quire-exact",
+                "quire-semantic-value",
             ][..],
-            &["qsl-cst", "qsl-forms", "quire-semantic-value"][..],
+            &["qsl-cst", "qsl-forms"][..],
         ),
     ] {
         let package = packages
@@ -366,6 +373,24 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");
+        }
+        if crate_name == "quire-semantic-value" {
+            // Layer SV: the shared `no_std` leaf (ADR-011 §6.1, X-11)
+            // depends on K and `thiserror` only -- no wire format, no
+            // RFC 8785 encoder and no hashing crate -- and has no build
+            // dependencies.
+            let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
+            normal.sort_unstable();
+            assert_eq!(
+                normal,
+                ["quire-exact", "thiserror"],
+                "{crate_name}'s [dependencies]"
+            );
+            assert!(
+                package.build.is_empty(),
+                "{crate_name}'s [build-dependencies]: {:?}",
+                package.build
+            );
         }
         if crate_name == "qsl-semantics" {
             // Layer 3: its workspace-crate `[dependencies]` are
@@ -454,6 +479,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                     "qsl-semantics",
                     "quire-canonical",
                     "quire-exact",
+                    "quire-semantic-value",
                     "serde",
                     "thiserror"
                 ],

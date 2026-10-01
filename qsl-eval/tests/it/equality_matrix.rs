@@ -29,10 +29,9 @@ use qsl_semantics::value::declaration::{
 use qsl_semantics::value::enumeration::{
     EnumDeclaration, EnumDeclarationPreimage, EnumMemberIndex, EnumMemberPreimage,
 };
-use qsl_semantics::value::quantity::UnitTable;
 use qsl_semantics::value::{
-    AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision,
-    DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+    admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
+    DefinitionRevision, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
 };
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
@@ -52,6 +51,7 @@ use quire_exact::{
     CardinalityBound, ChargePoint, CollectionKind, Incomplete, InjectedDenial, Integer,
     IntegerInterval, LimitKind, Meter, ScalarLimits,
 };
+use quire_semantic_value::quantity::UnitTable;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -173,7 +173,7 @@ fn units() -> Units {
     let s = unit("second", time_key, None, "1");
     let cm = unit("centimetre", length_key, Some(m_key), "100");
     let keys = [fixture_key(&m), fixture_key(&cm), fixture_key(&s)];
-    let graph = UnitGraph::admit(
+    let graph = admit_unit_graph(
         [length, time].into_iter().map(|preimage| {
             let key = fixture_key(&preimage);
             (DimensionPreimage::from_json(preimage).unwrap(), key)

@@ -73,7 +73,7 @@ use crate::value::declaration::{
 use crate::value::definition::DefinitionReference;
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
-use crate::value::quantity::UnitTable;
+use quire_semantic_value::quantity::UnitTable;
 
 mod model;
 mod state;

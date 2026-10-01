@@ -443,7 +443,11 @@ mod tests {
         };
         assert_eq!(edges, vec![rt_to("qsl-eval"), rt_to("qsl-semantics")]);
         let report = crate::graph::check(&edges);
-        let flagged: Vec<_> = report.fb05.iter().map(|v| v.edge.via_crate.as_str()).collect();
+        let flagged: Vec<_> = report
+            .fb05
+            .iter()
+            .map(|v| v.edge.via_crate.as_str())
+            .collect();
         assert_eq!(flagged, ["qsl-eval", "qsl-semantics"], "{report:?}");
         assert!(report.fb11.is_empty(), "{report:?}");
     }

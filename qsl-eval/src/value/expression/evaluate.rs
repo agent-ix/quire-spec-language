@@ -27,10 +27,6 @@ use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::declaration::{operand_value, CompositeShape, FieldRef};
 use qsl_semantics::value::enumeration::{compare_enum, EnumMemberIndex};
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
-use qsl_semantics::value::quantity::{
-    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
-};
-use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::Rational;
 use quire_exact::{
     compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
@@ -51,6 +47,10 @@ use quire_exact::{
     PopulationId,
 };
 use quire_exact::{Outcome, Refusal, Undefined};
+use quire_semantic_value::quantity::{
+    compare_quantity, evaluate_quantity_unit, QuantityOperation, UnitScope,
+};
+use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 
 /// A completed, undefined, refused, incomplete or family-owned evaluation
 /// result, located at the expression where a non-completed outcome

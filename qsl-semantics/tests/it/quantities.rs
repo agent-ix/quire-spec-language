@@ -11,14 +11,10 @@ use ix_trace_rs::trace;
 use num_bigint::{BigInt, BigUint};
 use num_traits::Pow;
 use qsl_semantics::check::{to_kernel_value_type, CheckedTypeNode, ScalarShape};
-use qsl_semantics::value::quantity::{
-    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
-    QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
-};
 use qsl_semantics::value::NodeIdentityPreimage;
 use qsl_semantics::value::{
-    CompoundUnitCause, CompoundUnitPreimage, Dimension, DimensionPreimage, InvalidCompoundUnit,
-    NodeOwner, NotAUnitKey, OwnerSelection, OwnerSubject, UnitGraph, UnitPreimage,
+    admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeOwner, OwnerSelection,
+    OwnerSubject, UnitPreimage,
 };
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -29,7 +25,14 @@ use quire_exact::{
     ComparisonOperator, Decimal, DecimalType, IllTyped, IllTypedCause, Quantity, Rational,
     RoundingMode, UnitDomain, UnitId, COMPOUND_UNIT_DOMAIN, NODE_KEY_DOMAIN,
 };
+use quire_semantic_value::quantity::{
+    compare_quantity, convert_quantity, evaluate_quantity, ConvertedValue, QuantityOperation,
+    QuantityTarget, QuantityUnit, UnitQuantity, UnitTable,
+};
 use quire_semantic_value::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
+use quire_semantic_value::unit::{
+    CompoundUnitCause, Dimension, InvalidCompoundUnit, NotAUnitKey, UnitGraph,
+};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -166,7 +169,7 @@ impl Nodes {
             .iter()
             .map(|(preimage, key)| Ok((UnitPreimage::from_json(preimage.clone())?, *key)))
             .collect();
-        UnitGraph::admit(dimensions?, units?, &owners())
+        admit_unit_graph(dimensions?, units?, &owners())
     }
 }
 
@@ -312,7 +315,12 @@ fn compound(terms: &[(NodeKey, &str)]) -> CompoundUnitPreimage {
 }
 
 fn compound_unit(fixture: &Fixture, terms: &[(NodeKey, &str)]) -> QuantityUnit {
-    QuantityUnit::Compound(fixture.graph.compound_unit(&compound(terms)).unwrap())
+    QuantityUnit::Compound(
+        fixture
+            .graph
+            .compound_unit(compound(terms).terms())
+            .unwrap(),
+    )
 }
 
 // ---- node identity fixtures ---------------------------------------------------
@@ -592,7 +600,7 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
         let expected_digest = digest_hex(&preimage);
         let parsed = CompoundUnitPreimage::from_json(preimage).unwrap();
         assert_eq!(parsed.id().to_string(), expected_digest);
-        let unit = graph.compound_unit(&parsed).unwrap();
+        let unit = graph.compound_unit(parsed.terms()).unwrap();
         assert_eq!(unit.id().to_string(), expected_digest);
         assert_eq!(unit.id().domain(), UnitDomain::Compound);
         assert_eq!(unit.dimension().is_dimensionless(), is_dimensionless);
@@ -604,13 +612,13 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     );
 
     assert_eq!(
-        graph.compound_unit(&compound(&[(metre, "0")])),
+        graph.compound_unit(compound(&[(metre, "0")]).terms()),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::ZeroExponent
         })
     );
     assert_eq!(
-        graph.compound_unit(&compound(&[(metre, "1"), (metre, "1")])),
+        graph.compound_unit(compound(&[(metre, "1"), (metre, "1")]).terms()),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::DuplicateTerm
         })
@@ -622,7 +630,7 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
         (metre, second)
     };
     assert_eq!(
-        graph.compound_unit(&compound(&[(first, "1"), (second_term, "1")])),
+        graph.compound_unit(compound(&[(first, "1"), (second_term, "1")]).terms()),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::UnsortedTerms
         })
@@ -630,7 +638,7 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
 
     // A term must name an admitted canonical root unit.
     assert_eq!(
-        graph.compound_unit(&compound(&[(cm, "1")])),
+        graph.compound_unit(compound(&[(cm, "1")]).terms()),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::NotRootUnit
         })
@@ -638,7 +646,7 @@ fn compound_unit_preimages_are_content_addressed_and_mutations_refuse() {
     // A term whose unit id resolves to no admitted unit.
     let not_in_graph = NodeKey::from_digest([0xab; 32]);
     assert_eq!(
-        graph.compound_unit(&compound(&[(not_in_graph, "1")])),
+        graph.compound_unit(compound(&[(not_in_graph, "1")]).terms()),
         Err(InvalidCompoundUnit {
             cause: CompoundUnitCause::NotRootUnit
         })
@@ -671,7 +679,10 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
 
     let metre = graph.declared_unit_id(m).unwrap();
     let kilometre = graph.declared_unit_id(km).unwrap();
-    let compound_metre = graph.compound_unit(&compound(&[(m, "1")])).unwrap().id();
+    let compound_metre = graph
+        .compound_unit(compound(&[(m, "1")]).terms())
+        .unwrap()
+        .id();
     for (a, b) in [
         (metre, kilometre),
         (metre, compound_metre),
@@ -693,7 +704,7 @@ fn tc_411_unit_ids_are_declared_node_keys_or_compound_digests() {
     assert_eq!(
         table.get(metre).unwrap().dimension(),
         graph
-            .compound_unit(&compound(&[(m, "1")]))
+            .compound_unit(compound(&[(m, "1")]).terms())
             .unwrap()
             .dimension()
     );
@@ -2004,7 +2015,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     let mut units = x.units.clone();
     units.insert(QuantityUnit::Compound(
         x.graph
-            .compound_unit(&compound(&[(x.base.m, "2")]))
+            .compound_unit(compound(&[(x.base.m, "2")]).terms())
             .unwrap(),
     ));
     let mut meter = limits(3, 0, 0, 1, 3, 1);
@@ -2065,7 +2076,7 @@ fn u22_declared_conversion_requires_one_dimension_node() {
     // pivot through the coherent compound unit is admitted.
     let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
     terms.sort_by_key(|(key, _)| *key);
-    let compound = QuantityUnit::Compound(x.graph.compound_unit(&compound(&terms)).unwrap());
+    let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let Outcome::Completed(ConvertedValue::Exact(pivot)) = converted(
         x.at(&x.quantity(whole(5), x.n_m)),
         &compound,
@@ -2208,7 +2219,7 @@ fn u25_compound_pivot_between_nominal_dimensions() {
     let x = extended();
     let mut terms = [(x.base.m, "2"), (x.kg, "1"), (x.base.s, "-2")];
     terms.sort_by_key(|(key, _)| *key);
-    let compound = QuantityUnit::Compound(x.graph.compound_unit(&compound(&terms)).unwrap());
+    let compound = QuantityUnit::Compound(x.graph.compound_unit(compound(&terms).terms()).unwrap());
     let no_edge = [
         ChargePoint::UnitIdentityRead,
         ChargePoint::UnitTargetDomain,
@@ -2683,7 +2694,10 @@ fn generated_unit_graphs_match_the_affine_oracle_and_every_denial() {
                 );
                 assert_eq!(
                     product.unit(),
-                    graph.compound_unit(&compound(&[(root, "2")])).unwrap().id()
+                    graph
+                        .compound_unit(compound(&[(root, "2")]).terms())
+                        .unwrap()
+                        .id()
                 );
             }
         }

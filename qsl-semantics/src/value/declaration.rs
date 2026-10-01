@@ -75,15 +75,15 @@ use quire_exact::{from_admitted_slots, retain_composite, Deferred, FieldValue, V
 use crate::model::domain_package::OperationEffect;
 
 use super::enumeration::{compare_enum, EnumMemberIndex};
-use super::quantity::{
-    compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
-};
-use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
 use quire_exact::EnumShape;
 use quire_exact::NodeKey;
 use quire_exact::{compare_text, evaluate_decimal};
+use quire_semantic_value::quantity::{
+    compare_quantity, convert_quantity, ConvertedValue, QuantityTarget, UnitScope, UnitTable,
+};
+use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 use std::fmt;
 
 /// One object-type field's identity: the object type that declares it and
