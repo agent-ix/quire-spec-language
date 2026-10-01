@@ -23,10 +23,10 @@ weighted choices (ADR-024 ST-2): one for the operation by workload weight,
 one for the scheduled identity uniformly within the operation, then one per
 random parameter by its weights in declared order. Each choice SHALL select
 by exact integer weights with rejection, from the
-`quire.simulation.sampler/v1` generator whose preimage gains a choice index
-within the step, so every draw is exact, independent of the others and
-reproducible from the seed. QSpec's revision of the generator definition
-owns the preimage and the vectors.
+`quire.simulation.sampler/v1` generator, selected by its identity, whose
+preimage carries a choice index within the step, so every draw is exact,
+independent of the others and reproducible from the seed. QSpec's generator
+definition owns the preimage and the vectors.
 
 ## Use case
 
@@ -65,10 +65,15 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
   generator at the choice point and rejecting draws outside the largest
   multiple of `N` below the generator's range, as the generator definition
   states.
-- The generator's preimage SHALL be the canonical JSON object `{choice,
-  draw, seed, step, trace}` of QSpec FR-181's sampler definition, with
-  `choice` the 0-based choice index within the step, so two choices of one
-  step use distinct preimages and QSpec TC-210's vectors reproduce.
+- The sampler SHALL be selected by identity only: a supplied `DefinitionRef`
+  whose identity is `quire.simulation.sampler/v1` runs, and any other is
+  refused with FR-101's `NotSimulated::GeneratorMismatch` before any draw.
+- Draw `d` of choice `c` at trace `t`, step `s` under seed `k` SHALL be
+  SHA-256 of the JCS object
+  `{"choice":"c","draw":"d","seed":"k","step":"s","trace":"t"}`,
+  each member a decimal string, as FR-101 and QSpec FR-181 state, so two
+  choices of one step use distinct preimages and QSpec TC-210's vectors
+  reproduce.
 - With unit weights and one choice per step, `weighted_choice` at choice
   index 0 SHALL select the index FR-101's uniform selection selects.
 - `sample_probabilistic` SHALL start at the given state, with no draw
@@ -92,7 +97,7 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-188-AC-1 | Every weighted-sampler conformance vector of the revised generator definition reproduces exactly: for each (seed, trace, step, choice, weights) the selected index equals the vector's. Every QSpec TC-210 uniform vector, run as unit weights at choice index 0, selects the same index as FR-101. | Test (TC-623) |
+| FR-188-AC-1 | Every weighted-sampler conformance vector of the generator definition reproduces exactly: for each (seed, trace, step, choice, weights) the selected index equals the vector's. Every QSpec TC-210 uniform vector, run as unit weights at choice index 0, selects the same index as FR-101. A sampler `DefinitionRef` whose identity is `quire.simulation.sampler/v1` runs whatever its version or digest field holds; one with another identity is refused `GeneratorMismatch` before any draw. | Test (TC-623) |
 | FR-188-AC-2 | Over the weights `(1/3, 1/6, 1/2)` the scaled integers are `(2, 1, 3)` with `N = 6`. For one seed and 60,000 consecutive trace indices at step 0, choice 0, every index is selected and the selection at each point equals the reference computation of the generator definition. Choices 0 and 1 of the same step use different preimages, so their draws differ for at least one point among the first 100. | Test (TC-623) |
 | FR-188-AC-3 | Sampling `Service` under `Steady` from its initial state with seed 7, trace 12 and 11 positions twice gives equal behaviours. Every step records its choice indices, its drawn values inside their supports, a step probability equal to FR-187's for that transition, and its `duration`. A sample that reaches `Done` and then `Idle` continues; the `Health` variant with a non-unique post-state stops with `SampleStop::NotMarkov`. | Test (TC-623) |
 
@@ -105,7 +110,7 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
 
 ## References
 
-- QSpec half, which owns the generator revision (weighted selection, the
+- QSpec half, which owns the generator definition (weighted selection, the
   choice index in the preimage, the vectors): QSpec FR-181 and TC-210, with
   FR-408's step order (Linear STD-137).
 - Owning ticket: Linear QSL-371.

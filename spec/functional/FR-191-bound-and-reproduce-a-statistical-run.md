@@ -75,7 +75,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, Time, ClauseMeter, Cancelled }
 
 ### Provenance and reproduction
 
-- The provenance SHALL record the seed, the sampler's `DefinitionRef`, and
+- The provenance SHALL record the seed, the sampler identity, and
   per test its index, initial state index, `over` binding and the
   trace-index range it used (`i · m + j` for sample `i` of test `j`).
 - Re-running EN-4 with the same subject, claim, method, `min_cycles`, seed,

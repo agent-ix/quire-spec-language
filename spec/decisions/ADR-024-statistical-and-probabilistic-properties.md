@@ -192,7 +192,7 @@ minutes" needs no probability: it needs aggregate atoms.
 
 | ID | Rule |
 | --- | --- |
-| RP-1 | **Provenance.** `provenance` is the seed, the sampler's `DefinitionRef`, and for each test its index, initial state, binding and trace-index range. Sample `i` of test `j` uses trace index `i · m + j` and starts from test `j`'s initial state, with no draw selecting the start. |
+| RP-1 | **Provenance.** `provenance` is the seed, the sampler identity, and for each test its index, initial state, binding and trace-index range. Sample `i` of test `j` uses trace index `i · m + j` and starts from test `j`'s initial state, with no draw selecting the start. |
 | RP-2 | **Deterministic replay of the run.** Re-running EN-4 with the same subject, claim (its workload and confidence parameters included), method, `min_cycles`, seed and sampler reproduces every sample, every count and the decision, by FR-101's determinism (FR-101-AC-4) and ST-9's exact arithmetic. That re-run is the replay of a statistical result; each sampled witness also replays alone (SV-8). |
 | RP-3 | **Independence of samples.** Distinct trace indices give independent draws under the sampler's hash, which is the independence ST-4 and ST-5 assume. The seed is a request member; a request that reruns with a new seed gets a new, independent measurement of the same obligation. |
 
