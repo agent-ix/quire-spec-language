@@ -1145,7 +1145,8 @@ pub(crate) fn check_declaration_body(
 ///
 /// `S` is the span type. Complete-V1's own function forms have no lexed
 /// byte offsets to report (there is no text parser for this API-constructed
-/// family -- `check`'s own [`quire_semantic_value::location::Location`] is its existing span
+/// family -- `check`'s [`quire_semantic_value::location::Location`] is its
+/// existing span
 /// analogue: a declaration plus a child-index path). A test exercising this
 /// generically with a `(u32, u32)` byte-offset stand-in is still exercising
 /// the real mechanism: ordinal assignment and lookup by (identity, role,
@@ -3114,8 +3115,8 @@ pub(crate) mod checking_tests {
 
     /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
     /// `Typer`'s own pre-existing, already-correct
-    /// [`quire_semantic_value::checking::CheckingLimits`] depth bound -- not the contract's
-    /// own `StageLimits.nesting_depth`. A body nested to depth D
+    /// [`quire_semantic_value::checking::CheckingLimits`] depth bound --
+    /// not the contract's own `StageLimits.nesting_depth`. A body nested to depth D
     /// (`Not(Not(Not(true)))`, four levels deep counting the `Boolean`
     /// leaf) checked through `ValueFunctionFamily::check` -- reachable now
     /// that `check` calls `check_declaration_body`, which
