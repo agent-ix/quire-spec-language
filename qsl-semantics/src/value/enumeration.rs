@@ -15,6 +15,12 @@
 //! O-04). A member preimage's `declaration_node_id` stays a
 //! [`WireNodeId`] until `admit_member` resolves it against the admitted
 //! declaration's key.
+//!
+//! The runtime half -- the structural [`EnumDeclaration`], [`EnumValue`],
+//! the member index and the FR-141 comparison -- is
+//! `quire_semantic_value::enumeration` (ADR-011 §6.1 layer SV).
+//! [`AdmittedEnumDeclaration`] pairs that declaration with the preimage its
+//! key was verified against.
 
 use std::collections::BTreeSet;
 
@@ -28,7 +34,7 @@ use qsl_foundation::digest::WireNodeId;
 use quire_exact::is_identifier;
 use quire_exact::NodeKey;
 use quire_exact::VariantId;
-use quire_semantic_value::enumeration::EnumValue;
+use quire_semantic_value::enumeration::{EnumDeclaration, EnumValue};
 use quire_semantic_value::semantic_node::{
     CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
 };
@@ -241,14 +247,16 @@ impl NodeIdentityPreimage for EnumMemberPreimage {
     }
 }
 
-/// An admitted enum declaration node.
+/// An admitted enum declaration node: the runtime
+/// [`EnumDeclaration`] together with the preimage whose digest its retained
+/// key was verified against.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EnumDeclaration {
-    key: NodeKey,
+pub struct AdmittedEnumDeclaration {
+    declaration: EnumDeclaration,
     preimage: EnumDeclarationPreimage,
 }
 
-impl EnumDeclaration {
+impl AdmittedEnumDeclaration {
     /// Admit a declaration node whose graph retains `key`.
     ///
     /// Order: semantic well-formedness, owner join, then key recomputation.
@@ -257,21 +265,27 @@ impl EnumDeclaration {
         key: NodeKey,
         owners: &OwnerSelection,
     ) -> Result<Self, InvalidSemanticGraph> {
-        if !preimage.ordered && !preimage.members.is_sorted() {
-            return Err(refuse(SemanticGraphCause::UnsortedUnorderedMembers));
-        }
+        let declaration = EnumDeclaration::new(key, preimage.ordered, preimage.members.clone())?;
         if !owners.contains(&preimage.owner) {
             return Err(refuse(SemanticGraphCause::OwnerNotSelected));
         }
         if !retains(key, &preimage)? {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
-        Ok(Self { key, preimage })
+        Ok(Self {
+            declaration,
+            preimage,
+        })
     }
 
     /// The declaration node key.
     pub fn key(&self) -> NodeKey {
-        self.key
+        self.declaration.key()
+    }
+
+    /// The admitted runtime declaration.
+    pub fn declaration(&self) -> &EnumDeclaration {
+        &self.declaration
     }
 
     /// The admitted content.
@@ -287,25 +301,14 @@ impl EnumDeclaration {
     ) -> Result<EnumValue, InvalidSemanticGraph> {
         // Resolve the member's wire declaration id by lookup against this
         // declaration's own key (ADR-013 O-04).
-        if preimage.declaration.as_bytes() != self.key.as_bytes() {
+        if preimage.declaration.as_bytes() != self.key().as_bytes() {
             return Err(refuse(SemanticGraphCause::ForeignDeclaration));
         }
-        let position = self
-            .preimage
-            .members
-            .iter()
-            .position(|case| *case == preimage.case)
-            .ok_or(refuse(SemanticGraphCause::UndeclaredCase))?;
+        let member = self.declaration.member(&preimage.case, key)?;
         if !retains(key, preimage)? {
             return Err(refuse(SemanticGraphCause::StaleKey));
         }
-        Ok(EnumValue::admitted(
-            self.key,
-            key,
-            self.preimage.ordered,
-            position,
-            preimage.case.as_str().into(),
-        ))
+        Ok(member)
     }
 }
 

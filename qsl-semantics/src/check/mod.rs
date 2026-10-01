@@ -867,7 +867,7 @@ impl PackageDeclarations {
         // own `calls` this loop collects: see `check_declaration_body`'s
         // own doc for why that one part cannot move the same way.
         // ADR-013 O-14/C-26: every admitted enum declaration becomes a
-        // `CheckedTypeNode::Sum` identified by its `EnumDeclaration::key()`,
+        // `CheckedTypeNode::Sum` identified by its `AdmittedEnumDeclaration::key()`,
         // and every admitted composite (below, once lowering has keyed it)
         // a `CheckedTypeNode::Composite` identified by its FR-092 key.
         // FR-092-AC-12: a declared composite's checked type node takes its
@@ -877,9 +877,9 @@ impl PackageDeclarations {
             let node = enum_binding.declaration.key();
             // Every case name here was already validated as
             // `^[A-Za-z_][A-Za-z0-9_]*$` and checked distinct from its
-            // siblings when this `EnumBinding`'s own `EnumDeclaration`/
+            // siblings when this `EnumBinding`'s own `AdmittedEnumDeclaration`/
             // `EnumMemberPreimage` were admitted (`value/enumeration.rs`'s
-            // `EnumDeclarationPreimage::from_json`/`EnumDeclaration::
+            // `EnumDeclarationPreimage::from_json`/`AdmittedEnumDeclaration::
             // admit_member`) -- an `EnumBinding` reaching `check` at all
             // already carries that guarantee, so re-deriving an
             // `Identifier`/`SumVariants` here cannot fail in production.
@@ -895,7 +895,7 @@ impl PackageDeclarations {
                     Identifier::new(member.case().to_owned())
                         .map(identity::SumVariant::new)
                         .expect(
-                            "an EnumBinding's own EnumDeclaration/EnumMemberPreimage \
+                            "an EnumBinding's own AdmittedEnumDeclaration/EnumMemberPreimage \
                              admission already validated every case name as an \
                              identifier before this declaration ever reached `check`",
                         )
@@ -906,7 +906,7 @@ impl PackageDeclarations {
                 enum_binding.declaration.preimage().is_ordered(),
             )
             .expect(
-                "an EnumBinding's own EnumDeclaration admission already refuses two \
+                "an EnumBinding's own AdmittedEnumDeclaration admission already refuses two \
                  members sharing one declared case name, and already refuses an \
                  unordered declaration whose members are not sorted by case, before \
                  this declaration ever reaches `check`",
@@ -2167,10 +2167,10 @@ mod tests {
     /// PR #300 review round 2 (HIGH-1, L10): the enum/Sum companion to
     /// `composite_declaration_becomes_a_real_checked_type_node` above --
     /// round 1's own review named this as a real gap ("no real-`check()`
-    /// test for the enum/Sum path"). A real `EnumDeclaration`, admitted the
+    /// test for the enum/Sum path"). A real `AdmittedEnumDeclaration`, admitted the
     /// same way `qsl-eval/tests/it/collection_algebra.rs`'s own fixtures build one,
     /// becomes a real `CheckedTypeNode::Sum` whose own node id is exactly
-    /// `EnumDeclaration::key()` -- the same identity `Typer::type_named`
+    /// `AdmittedEnumDeclaration::key()` -- the same identity `Typer::type_named`
     /// and every `EnumValue::declaration()` already resolve a reference
     /// against (FR-088-AC-7 step 4) -- and whose `VariantId`s are minted
     /// from that same key, never a second, parallel one (FR-088-AC-10).
@@ -2178,7 +2178,7 @@ mod tests {
     #[test]
     fn enum_declaration_becomes_a_real_checked_type_node() {
         use crate::value::enumeration::{
-            EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+            AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
         };
         use crate::value::semantic_node::{
             NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject,
@@ -2200,7 +2200,7 @@ mod tests {
         let declaration_preimage = EnumDeclarationPreimage::from_json(declaration_json).unwrap();
         let declaration_key = NodeKey::from_digest(declaration_preimage.digest().unwrap());
         let declaration =
-            EnumDeclaration::admit(declaration_preimage, declaration_key, &owners).unwrap();
+            AdmittedEnumDeclaration::admit(declaration_preimage, declaration_key, &owners).unwrap();
 
         let members = ["Active", "Closed"]
             .into_iter()

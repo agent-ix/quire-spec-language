@@ -14,7 +14,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection, OwnerSubject};
 use quire_exact::{EffectiveId, Presence, ValueType};
@@ -149,7 +149,7 @@ pub fn enum_binding(members: usize) -> EnumBinding {
     .expect("a well-formed enum declaration preimage");
     let key = NodeKey::from_digest(preimage.digest().expect("the preimage encodes"));
     let declaration =
-        EnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
+        AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("the declaration admits");
     let members = cases
         .iter()
         .map(|case| {

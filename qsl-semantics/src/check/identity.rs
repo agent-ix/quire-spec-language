@@ -50,7 +50,7 @@
 //! `quire.structural-node/v1` node (FR-092-AC-12,
 //! `CheckedTypeNode::Composite { node }`); the handle a caller passes to
 //! `CompositeDeclaration::new` selects the declaration inside one check and
-//! enters no id. An enum's id is its `EnumDeclaration::key()`, verified
+//! enters no id. An enum's id is its `AdmittedEnumDeclaration::key()`, verified
 //! against its own content-addressed QSpec preimage at `admit`
 //! (`value/enumeration.rs`): `Sum { node: binding.declaration.key(), .. }`.
 //! [`mint_variant_id`] computes AC-10's `VariantId` from that key and the
@@ -371,7 +371,7 @@ impl SumVariant {
 /// `(declaring node id, name)`, so a name collision within one declaring sum
 /// is exactly the case that identity rule cannot resolve), and, when
 /// `ordered` is `false`, refuses a declared order that is not already sorted
-/// by name -- the same invariant `value::enumeration::EnumDeclaration::admit`
+/// by name -- the same invariant `value::enumeration::AdmittedEnumDeclaration::admit`
 /// enforces over the same FR-141 canonical-member-list rule (declaration
 /// order for an ordered enum, case-identifier byte order otherwise).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -742,7 +742,7 @@ mod tests {
     // identity nothing else in the checker read -- deleted along with the
     // minter itself (see this module's own doc). AC-7's package-scoping
     // claim and AC-6's "not an identity in its own right" claim are now
-    // properties of `composite.key()`/`EnumDeclaration::key()`, the
+    // properties of `composite.key()`/`AdmittedEnumDeclaration::key()`, the
     // pre-existing identities `check` reuses unchanged (see
     // `crate::check::mod::tests` for the real-`check()` coverage of AC-7),
     // not of anything this module mints; TC-258's own coverage lives at
@@ -915,7 +915,7 @@ mod tests {
 
     /// ADR-013 O-14/OQ-D: an unordered sum's declared variants must already
     /// be sorted by name -- the same invariant
-    /// `value::enumeration::EnumDeclaration::admit` enforces -- so a caller
+    /// `value::enumeration::AdmittedEnumDeclaration::admit` enforces -- so a caller
     /// cannot silently mis-rank an unordered enum by declaring it out of
     /// order.
     ///

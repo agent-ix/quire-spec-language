@@ -935,7 +935,7 @@ fn a_recursive_record_is_written_with_its_declaration() {
 /// declaration and members, bound as `name`.
 fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     use qsl_semantics::value::enumeration::{
-        EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+        AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
     };
     use qsl_semantics::value::{NodeIdentityPreimage, NodeOwner, OwnerSelection};
 
@@ -949,7 +949,7 @@ fn status_enum(owner: Value, name: &str) -> qsl_semantics::check::EnumBinding {
     .expect("a schema-valid preimage");
     let owners = OwnerSelection::new([NodeOwner::clone(preimage.owner())]);
     let key = NodeKey::from_digest(preimage.digest().unwrap());
-    let declaration = EnumDeclaration::admit(preimage, key, &owners).expect("admitted");
+    let declaration = AdmittedEnumDeclaration::admit(preimage, key, &owners).expect("admitted");
     let members = ["Ready", "Done"]
         .into_iter()
         .map(|case| {

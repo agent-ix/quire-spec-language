@@ -22,7 +22,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::value::enumeration::{
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::{
     admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
@@ -195,7 +195,7 @@ fn units() -> Units {
     }
 }
 
-fn enum_declaration(name: &str) -> EnumDeclaration {
+fn enum_declaration(name: &str) -> AdmittedEnumDeclaration {
     let preimage = json!({
         "version": "quire.enum-declaration-node/v1",
         "owner": owner_json(),
@@ -204,7 +204,7 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
         "members": ["DONE", "READY"],
     });
     let key = fixture_key(&preimage);
-    EnumDeclaration::admit(
+    AdmittedEnumDeclaration::admit(
         EnumDeclarationPreimage::from_json(preimage).unwrap(),
         key,
         &owners(),
@@ -213,7 +213,7 @@ fn enum_declaration(name: &str) -> EnumDeclaration {
 }
 
 fn enum_value(
-    declaration: &EnumDeclaration,
+    declaration: &AdmittedEnumDeclaration,
     case: &str,
 ) -> quire_semantic_value::enumeration::EnumValue {
     let preimage = json!({
@@ -231,7 +231,7 @@ fn enum_value(
 /// which `equal`'s `check`-then-`evaluate` path resolves back to its full
 /// [`enum_value`] through the `Enum` schedule's own captured index
 /// (`check_with_enums`).
-fn member(declaration: &EnumDeclaration, case: &str) -> Value {
+fn member(declaration: &AdmittedEnumDeclaration, case: &str) -> Value {
     let member = enum_value(declaration, case);
     Value::Enum(EnumMember::new(
         member.variant(),
@@ -603,7 +603,7 @@ fn e06_text_under_one_pinned_profile() {
 /// `check::check::enum_member_index` builds one from `scope.enums` in
 /// production.
 fn enum_shape(
-    declaration: &EnumDeclaration,
+    declaration: &AdmittedEnumDeclaration,
     cases: &[&str],
     index: &mut EnumMemberIndex,
 ) -> ValueType {

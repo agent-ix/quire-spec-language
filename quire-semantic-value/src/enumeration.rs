@@ -1,19 +1,102 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-141 enumeration values at run time (ADR-011 §6.1 layer SV): an
-//! admitted member as an [`EnumValue`], the checked `VariantId` ->
-//! [`EnumValue`] index ([`EnumMemberIndex`]), and the FR-141 comparison
-//! schedule ([`compare_enum`]). Declaration admission and node identity
-//! (preimages, digests) stay in `qsl-semantics`' `value::enumeration`.
+//! FR-141 enumerations at run time (ADR-011 §6.1 layer SV): an admitted
+//! declaration's structure ([`EnumDeclaration`]), an admitted member as an
+//! [`EnumValue`], the checked `VariantId` -> [`EnumValue`] index
+//! ([`EnumMemberIndex`]), and the FR-141 comparison schedule
+//! ([`compare_enum`]). Node identity (preimages, digests, owner join and
+//! stale-key refusal) stays in `qsl-semantics`' `value::enumeration`.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 
+use crate::semantic_node::{InvalidSemanticGraph, SemanticGraphCause};
 use crate::stop::{outcome_from_stop, Stop};
 use quire_exact::{
-    Charge, ChargePoint, ComparisonOperator, IllTyped, IllTypedCause, LimitKind, Meter, NodeKey,
-    Outcome, VariantId,
+    is_identifier, Charge, ChargePoint, ComparisonOperator, IllTyped, IllTypedCause, LimitKind,
+    Meter, NodeKey, Outcome, VariantId,
 };
+
+/// An admitted enum declaration node: its key, its ordering and its member
+/// cases. The key itself is computed and verified by the compiler; this
+/// type checks the structural rules a declaration is compared under.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumDeclaration {
+    key: NodeKey,
+    ordered: bool,
+    members: Vec<String>,
+}
+
+impl EnumDeclaration {
+    /// The declaration node `key` with its member cases, in declaration
+    /// order for an `ordered enum` and sorted by case name otherwise
+    /// (FR-141).
+    ///
+    /// An empty, repeated or non-identifier member list is
+    /// `NonCanonicalPreimage`; an unordered declaration whose cases are not
+    /// sorted is `UnsortedUnorderedMembers`.
+    pub fn new(
+        key: NodeKey,
+        ordered: bool,
+        members: Vec<String>,
+    ) -> Result<Self, InvalidSemanticGraph> {
+        let distinct: BTreeSet<_> = members.iter().collect();
+        let well_formed = !members.is_empty()
+            && distinct.len() == members.len()
+            && members.iter().all(|case| is_identifier(case));
+        if !well_formed {
+            return Err(InvalidSemanticGraph {
+                cause: SemanticGraphCause::NonCanonicalPreimage,
+            });
+        }
+        if !ordered && !members.is_sorted() {
+            return Err(InvalidSemanticGraph {
+                cause: SemanticGraphCause::UnsortedUnorderedMembers,
+            });
+        }
+        Ok(Self {
+            key,
+            ordered,
+            members,
+        })
+    }
+
+    /// The declaration node key.
+    pub fn key(&self) -> NodeKey {
+        self.key
+    }
+
+    /// Whether the declaration selects ordered semantics.
+    pub fn is_ordered(&self) -> bool {
+        self.ordered
+    }
+
+    /// Declaration-ordered (or case-sorted, if unordered) member cases.
+    pub fn members(&self) -> &[String] {
+        &self.members
+    }
+
+    /// The value of member `case`, whose admitted member node key is
+    /// `member`. A case outside the declaration is `UndeclaredCase`.
+    pub fn member(&self, case: &str, member: NodeKey) -> Result<EnumValue, InvalidSemanticGraph> {
+        let position = self
+            .members
+            .iter()
+            .position(|declared| declared == case)
+            .ok_or(InvalidSemanticGraph {
+                cause: SemanticGraphCause::UndeclaredCase,
+            })?;
+        Ok(EnumValue {
+            declaration: self.key,
+            member,
+            ordered: self.ordered,
+            position,
+            case: case.into(),
+        })
+    }
+}
 
 /// An enumeration value: (declaration identity, member identity).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,27 +109,6 @@ pub struct EnumValue {
 }
 
 impl EnumValue {
-    /// The member `member` of the enum declaration `declaration`, at
-    /// zero-based canonical-list `position`, named `case`, of an `ordered`
-    /// declaration or not. Trusted: the caller has admitted the member
-    /// against its declaration (`qsl-semantics`' `EnumDeclaration::
-    /// admit_member` is the checked path); nothing is re-verified here.
-    pub fn admitted(
-        declaration: NodeKey,
-        member: NodeKey,
-        ordered: bool,
-        position: usize,
-        case: Box<str>,
-    ) -> Self {
-        Self {
-            declaration,
-            member,
-            ordered,
-            position,
-            case,
-        }
-    }
-
     /// Declaration node key.
     pub fn declaration(&self) -> NodeKey {
         self.declaration
@@ -82,7 +144,8 @@ impl EnumValue {
     /// `quire.checked-semantic-node/v1` bytes as [`Self::member`], retyped.
     /// [`Self::member`]'s bytes are already the OQ-F-ruled `quire.enum-
     /// member-node/v1` preimage digest -- verified against that exact
-    /// preimage at `qsl-semantics`' `EnumDeclaration::admit_member` -- so this needs no
+    /// preimage at `qsl-semantics`' `AdmittedEnumDeclaration::admit_member`
+    /// -- so this needs no
     /// fresh computation, only the kernel's own opaque wrapper.
     pub fn variant(&self) -> VariantId {
         VariantId::from_digest(*self.member.as_bytes())
@@ -177,4 +240,60 @@ fn compare(
     };
     meter.charge(Charge::new(ChargePoint::EnumResultRetain).results(1))?;
     Ok(operator.holds(ordering))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::vec;
+
+    fn key(byte: u8) -> NodeKey {
+        NodeKey::from_digest([byte; 32])
+    }
+
+    fn cases(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| String::from(*name)).collect()
+    }
+
+    fn refused(cause: SemanticGraphCause) -> Result<EnumDeclaration, InvalidSemanticGraph> {
+        Err(InvalidSemanticGraph { cause })
+    }
+
+    #[test]
+    fn a_declaration_refuses_a_malformed_member_list_before_an_unsorted_one() {
+        for members in [
+            vec![],
+            cases(&["Ready", "Ready"]),
+            cases(&["Ready", "9done"]),
+            cases(&["b", "a", "a"]),
+        ] {
+            assert_eq!(
+                EnumDeclaration::new(key(1), false, members),
+                refused(SemanticGraphCause::NonCanonicalPreimage)
+            );
+        }
+        assert_eq!(
+            EnumDeclaration::new(key(1), false, cases(&["Ready", "Done"])),
+            refused(SemanticGraphCause::UnsortedUnorderedMembers)
+        );
+        let ordered = EnumDeclaration::new(key(1), true, cases(&["Ready", "Done"])).unwrap();
+        assert!(ordered.is_ordered());
+        assert_eq!(ordered.key(), key(1));
+        assert_eq!(ordered.members(), cases(&["Ready", "Done"]).as_slice());
+    }
+
+    #[test]
+    fn a_member_carries_its_declaration_position_and_case() {
+        let status = EnumDeclaration::new(key(1), true, cases(&["Ready", "Done"])).unwrap();
+        let done = status.member("Done", key(3)).unwrap();
+        assert_eq!(done.declaration(), key(1));
+        assert_eq!(done.member(), key(3));
+        assert_eq!(done.position(), 1);
+        assert!(done.is_ordered());
+        assert_eq!(done.case(), "Done");
+        assert_eq!(
+            status.member("Closed", key(4)).unwrap_err().cause,
+            SemanticGraphCause::UndeclaredCase
+        );
+    }
 }

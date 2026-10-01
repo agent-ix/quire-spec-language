@@ -13,7 +13,7 @@ use ix_trace_rs::trace;
 use qsl_cst::{Limits, ParsedSource};
 use qsl_foundation::{Code, SourceIdentity};
 use qsl_semantics::value::enumeration::{
-    EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
+    AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use qsl_semantics::value::NodeIdentityPreimage;
 use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
@@ -432,8 +432,11 @@ fn owners() -> OwnerSelection {
     OwnerSelection::new([example_owner()])
 }
 
-fn declaration(preimage: &Value, key: NodeKey) -> Result<EnumDeclaration, InvalidSemanticGraph> {
-    EnumDeclaration::admit(
+fn declaration(
+    preimage: &Value,
+    key: NodeKey,
+) -> Result<AdmittedEnumDeclaration, InvalidSemanticGraph> {
+    AdmittedEnumDeclaration::admit(
         EnumDeclarationPreimage::from_json(preimage.clone())?,
         key,
         &owners(),
@@ -448,7 +451,7 @@ fn member_preimage(declaration: NodeKey, case: &str) -> Value {
     })
 }
 
-fn member(declaration: &EnumDeclaration, case: &str) -> EnumValue {
+fn member(declaration: &AdmittedEnumDeclaration, case: &str) -> EnumValue {
     let preimage = member_preimage(declaration.key(), case);
     declaration
         .admit_member(
@@ -468,7 +471,11 @@ fn declaration_preimage(qualified: [&str; 2], ordered: bool, members: &[&str]) -
     })
 }
 
-fn fixture_declaration(qualified: [&str; 2], ordered: bool, members: &[&str]) -> EnumDeclaration {
+fn fixture_declaration(
+    qualified: [&str; 2],
+    ordered: bool,
+    members: &[&str],
+) -> AdmittedEnumDeclaration {
     let preimage = declaration_preimage(qualified, ordered, members);
     declaration(&preimage, fixture_key(&preimage)).unwrap()
 }
@@ -728,7 +735,7 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
     for changed in changes {
         let preimage = EnumDeclarationPreimage::from_json(changed.clone()).unwrap();
         assert_eq!(
-            EnumDeclaration::admit(preimage.clone(), old_key, &selection),
+            AdmittedEnumDeclaration::admit(preimage.clone(), old_key, &selection),
             Err(InvalidSemanticGraph {
                 cause: SemanticGraphCause::StaleKey
             }),
@@ -736,7 +743,7 @@ fn t09_stale_enum_keys_refuse_and_recomputed_keys_are_new_identities() {
         );
         let new_key = fixture_key(&changed);
         assert_ne!(new_key, old_key);
-        let new = EnumDeclaration::admit(preimage, new_key, &selection).unwrap();
+        let new = AdmittedEnumDeclaration::admit(preimage, new_key, &selection).unwrap();
         let old_ready = member(&old, "READY");
         let new_case = new.preimage().members()[0].clone();
         let new_member = member(&new, &new_case);
