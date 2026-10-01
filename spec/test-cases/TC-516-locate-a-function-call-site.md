@@ -26,11 +26,10 @@ with the package it was looked up in, and an unsupplied domain package as
 `ModelIntake`, and a refused dependency input or an uncompilable supplied
 library as `DependencyInput` or `Dependency`.
 
-It keys a named state field under its declaring type's node by its
-name ordinal, returns the compiled package's bytes its `package_id`
-names, and builds a `DeclaredDomain` through the facade's re-exports.
+It returns the compiled package's bytes its `package_id` names, and
+builds a `DeclaredDomain` through the facade's re-exports.
 
-Scope: FR-121-AC-1 to FR-121-AC-15.
+Scope: FR-121-AC-1 to FR-121-AC-13.
 
 ## Test Procedure
 
@@ -76,19 +75,12 @@ Scope: FR-121-AC-1 to FR-121-AC-15.
     from a source with the unit's own authority and identity.
 11. Compile the step 4 unit through `call_site` with `test/units` supplied
     from source bytes that do not parse.
-12. Add `Sub`, a subtype of `ConfigVersion` declaring `zeta` then `alpha`,
-    to the step 3 domain package, and an invariant on `Config::Sub` to the
-    step 3 unit. Select `parent` and `versionNumber` through
-    `ConfigVersion`, and `versionNumber`, `alpha` and `zeta` through `Sub`;
-    compare each node with the graph's own `object_type` node for its
-    declaring type. Select `Config::Sub.nope`, `Config::ConfigVersion.alpha`,
-    `Config::Nope.parent` and `Nope::Sub.alpha`.
-13. Over the step 12 domain package without the `Sub` invariant, select
-    `Config::Sub.alpha`.
-14. Compile the step 2 unit through `call_site`; digest the RFC 8785 bytes
+12. Compile the step 2 unit through `call_site`; digest the RFC 8785 bytes
     of the returned `package`'s `identity_preimage` member.
-15. Over the step 1 unit, build a `DeclaredDomain` for `[0, 9]` on `x`'s
-    node using only `qsl_replay` root paths, and an inverted range.
+13. Over the step 1 unit, from outside the crate, build a `DeclaredDomain`
+    for `[0, 9]` on `x`'s node using only `qsl_replay` root paths, and an
+    inverted range through `FiniteBound::integer_range` and
+    `IntegerInterval::new`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -128,12 +120,8 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   `test/units`, and the unit's authority and identity.
 - Step 11: `call_site` refuses `CallSiteRefusal::Dependency` whose `path`
   is exactly `test/units`.
-- Step 12: `parent` is `[0]` and `versionNumber` `[1]` under
-  `ConfigVersion`'s node, through either type; `alpha` is `[0]` and `zeta`
-  `[1]` under `Sub`'s node; the four unresolved selections refuse
-  `CallSiteRefusal::UnknownField` paired with the package.
-- Step 13: the graph holds no `Sub` node, and the key equals step 12's.
-- Step 14: `package` equals the emitter's bytes, and the digest under
+- Step 12: `package` equals the emitter's bytes, and the digest under
   `quire.package.semantic/v2` equals `package_id`.
-- Step 15: the domain names `x`'s node and the range; the inverted range
-  refuses `EmptyFiniteBound::InvertedIntegerRange`.
+- Step 13: the domain names `x`'s node and the range, of kind
+  `FiniteBoundKind::IntegerRange`; the inverted range refuses
+  `EmptyFiniteBound::InvertedIntegerRange` and `EmptyInterval`.

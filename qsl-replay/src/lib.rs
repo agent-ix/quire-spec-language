@@ -39,8 +39,8 @@ mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 pub use call_site::{
-    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
-    FieldSite, FunctionSite, OperationSite,
+    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FunctionSite,
+    OperationSite,
 };
 pub use execute::{
     replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,

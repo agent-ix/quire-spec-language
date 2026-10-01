@@ -43,9 +43,6 @@ onto this contract, following QSpec's merged design (AD-015, FR-143,
 FR-146). It corrects the `SumCase` diagnostics in §3 and §12.1, and the S6a
 sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
 
-Amended 2026-09-30: §15.4 keys a state field's proof-bound domain under its
-declaring object type's node, by the field's name ordinal.
-
 ## Context
 
 #210 requires QSL semantic families to extend the compiler and the proof
@@ -1281,20 +1278,6 @@ operation anchor node they share.
   A frame's `modifies` entries are therefore (object type node, field name)
   pairs; `reaches` lowers to `quire.op.model.reaches_field` with the `field`
   member kind; an `operation_anchor` names its operation by a text literal.
-- **State field domain key.** A state field has no node either, so the
-  ADR-014 §4 domain a proof bound substitutes for one is keyed as its
-  member is: `DomainKey{node, path}` with `node` the `model`/`object_type`
-  node of the object type that *declares* the field, and `path` one
-  element, the field's ordinal among that type's own field declarations in
-  ascending field-name UTF-8 byte order. An inherited field is keyed under
-  its declaring type, never under the subtype it is named through. The
-  node is content-derived from the declaration, so the key is the same
-  whether or not a package's lowering keyed that node. Ascending name
-  order follows §15.7's population ordinal, an ascending declaration-key
-  sort, so reordering field declarations shifts no key; like that ordinal,
-  the key is stable within one domain-package digest only.
-  `qsl_replay::call_site` computes it for a `FieldName` selection
-  (FR-121).
 - **Operation anchor identity.** One anchor per (declaring object type,
   operation name). An operation inherited by a subtype and named as
   `M::Sub::op` anchors at its declaring type, so `M::Base::op` and
