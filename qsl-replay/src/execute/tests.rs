@@ -1053,6 +1053,136 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     );
 }
 
+/// FR-121-AC-4 (TC-516): `call_site` compiles TC-444 step 7's importing
+/// unit against a dependency input supplying `test/units`, and a request
+/// carrying that dependency, keyed only by `call_site`'s own `package_id`
+/// and parameter pair, replays and agrees. Without the dependency input the
+/// same unit refuses `Import`.
+#[trace("TC-516", "FR-121-AC-4")]
+#[test]
+fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
+    let importing = Importing::new();
+    let locate = |dependencies: &crate::DependencyInput| {
+        crate::call_site(
+            SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+            IDENTITY,
+            importing.unit.as_bytes(),
+            [],
+            dependencies,
+            &name(&["q"]),
+        )
+    };
+    let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
+        identity: "test/units".to_owned(),
+        version: "2".to_owned(),
+        source: SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        path: UNITS_IDENTITY.to_owned(),
+        bytes: importing.units.clone().into_bytes(),
+    }])
+    .unwrap();
+    let site = locate(&dependencies).expect("the importing unit compiles against test/units");
+    let [(parameter, node)] = &site.site.parameters[..] else {
+        panic!("q declares one parameter: {site:?}");
+    };
+    assert_eq!(parameter.as_str(), "x");
+
+    let mut wire = importing.request(vec![importing.units_entry()], &[importing.units.as_bytes()]);
+    wire.package_id = (
+        Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+        site.package_id.hex(),
+    );
+    wire.source = input(*node, 3);
+    let ReplayResult::Input(result) = replay(wire).expect("the replay runs") else {
+        panic!("Input arm");
+    };
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+
+    let refusal = locate(&crate::DependencyInput::default())
+        .expect_err("no library is supplied as test/units");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::Import(_)),
+        "an unsupplied import refuses Import, got {refusal:?}"
+    );
+}
+
+/// `call_site` over TC-444 step 7's importing unit, selecting `q`, with
+/// `test/units` supplied from `source` and `bytes`.
+fn locate_q_with_units(
+    importing: &Importing,
+    source: SourceIdentity,
+    bytes: &[u8],
+) -> Result<crate::CallSite<crate::FunctionSite>, Box<crate::CallSiteRefusal>> {
+    let dependencies = crate::DependencyInput::new(vec![crate::SuppliedLibrary {
+        identity: "test/units".to_owned(),
+        version: "2".to_owned(),
+        source,
+        path: UNITS_IDENTITY.to_owned(),
+        bytes: bytes.to_vec(),
+    }])
+    .expect("one library under one identity");
+    crate::call_site(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        importing.unit.as_bytes(),
+        [],
+        &dependencies,
+        &name(&["q"]),
+    )
+}
+
+/// FR-121-AC-10 (TC-516): a supplied library whose source has the unit's
+/// own source owner refuses `DependencyInput`, carrying the
+/// `DependencyInputRefusal` that names the unit and the library.
+#[trace("TC-516", "FR-121-AC-10")]
+#[test]
+fn call_site_refuses_a_library_sharing_the_units_owner_as_dependency_input() {
+    let importing = Importing::new();
+    let refusal = locate_q_with_units(
+        &importing,
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        importing.units.as_bytes(),
+    )
+    .expect_err("test/units has the unit's own owner");
+    let crate::CallSiteRefusal::DependencyInput(crate::DependencyInputRefusal::SharedOwner {
+        first,
+        second,
+        authority,
+        identity,
+    }) = *refusal
+    else {
+        panic!("expected DependencyInput(SharedOwner), got {refusal:?}");
+    };
+    assert_eq!(first, crate::SourceHolder::Unit);
+    assert_eq!(second.as_str(), "test/units");
+    assert_eq!(
+        (authority.as_str(), identity.as_str()),
+        (AUTHORITY, IDENTITY)
+    );
+}
+
+/// FR-121-AC-11 (TC-516): a supplied library whose source does not compile
+/// refuses `Dependency`, its path naming that library.
+#[trace("TC-516", "FR-121-AC-11")]
+#[test]
+fn call_site_refuses_a_library_that_does_not_compile_as_dependency() {
+    let importing = Importing::new();
+    let refusal = locate_q_with_units(
+        &importing,
+        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        b"language \"ix:native\" edition \"1-draft\";\nfunction {\n",
+    )
+    .expect_err("test/units does not parse");
+    let crate::CallSiteRefusal::Dependency { path, .. } = *refusal else {
+        panic!("expected Dependency, got {refusal:?}");
+    };
+    let path: Vec<&str> = path.iter().map(|library| library.as_str()).collect();
+    assert_eq!(path, ["test/units"]);
+}
+
 /// FR-098-AC-7 (TC-444 step 7): the `dependencies` entries' order, extent
 /// and sources refuse by ADR-015 D-4's rules, each with no verdict.
 #[trace("TC-444", "FR-098-AC-7")]

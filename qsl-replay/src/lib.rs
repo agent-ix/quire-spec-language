@@ -38,7 +38,10 @@ pub mod spine;
 mod witness;
 
 pub use bounds::{BoundExceeded, MAX_ENCODED_BYTES};
-pub use call_site::{call_site, CallSite, CallSiteRefusal};
+pub use call_site::{
+    call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FunctionSite,
+    OperationSite,
+};
 pub use execute::{
     replay, replay_frame, DependencySelectionsCause, FrameIdentityMismatch, FrameReplayResult,
     LimitAboveReader, ReplayRefusal,
@@ -52,27 +55,37 @@ pub use proof_result::{
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
     TerminalRecord, TerminalValue, ToolPin, UnavailabilityCause,
 };
+// The inputs `call_site` takes and the typed operation name it and FR-115
+// select by. They are defined in `spine` because the spine compile reads
+// them; re-exported at the root so CG names them without naming `spine`,
+// which it may not (ADR-011 §3 FB-05, T-12 rule (a)).
+pub use spine::{
+    DependencyInput, DependencyInputRefusal, OperationName, SourceHolder, SuppliedLibrary,
+};
 // The O-07 occurrence key and O-12 source region these envelopes carry
 // (#213 S-4), re-exported so CG, which reaches QSL only through this crate
-// (ADR-011 FB-05), can name and read them. The re-export is read-only:
-// their constructors' inputs (`qsl_foundation`'s `RawSourceRef`, `Revision`
-// and `InvalidProvenance`) are not re-exported, and CG builds neither type.
+// (ADR-011 FB-05), can name them. CG builds an occurrence key from a node id
+// and the `Origin` re-exported below; a source region's constructor inputs
+// (`qsl_foundation`'s `RawSourceRef`, `Revision` and `InvalidProvenance`)
+// are not re-exported, so CG builds no source region.
 pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
-// QSL-317: the kernel identity and digest types a `ReplayRequestWire`'s
-// members are built from -- `quire_exact`'s identifier and value-accounting
-// limits, and `qsl_foundation`'s node id and digest-record vocabulary --
-// re-exported so CG, which reaches QSL only through this crate (ADR-011
-// FB-05), builds one without its own direct dependency on `quire-exact` or
-// `qsl-foundation`. Unlike the occurrence key and source region above, this
-// re-export does add constructors CG can now call directly:
+// The kernel identity and digest types a `ReplayRequestWire`'s or a frame
+// counterexample's members are built from -- `quire_exact`'s identifier,
+// occurrence origin and role, and value-accounting limits, and
+// `qsl_foundation`'s node id and digest-record vocabulary -- re-exported so
+// CG, which reaches QSL only through this crate (ADR-011 FB-05), builds one
+// without its own direct dependency on `quire-exact` or `qsl-foundation`.
+// These re-exports add constructors CG can call directly:
 // `DigestRecord::mint`, `WireNodeId::from_digest`/`from_hex`,
-// `SourceIdentity::new` and `Identifier::new` among them. None is a
+// `SourceIdentity::new`, `Identifier::new` and `Origin::new`/`Role::new`
+// among them, and with `Origin` the occurrence key's own
+// `OccurrenceKey::new(WireNodeId, Origin)` becomes callable. None is a
 // T-12-governed constructor (ADR-011 §3 FB-05), so no rule is broken; CG
-// needs exactly these to build the request `call_site` (QSL-317) and
-// `replay` (FR-098) read.
+// needs exactly these to build the requests `call_site` and `replay`
+// (FR-098) and `replay_frame` (FR-116) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
 pub use qsl_foundation::SourceIdentity;
-pub use quire_exact::{Identifier, ScalarLimits};
+pub use quire_exact::{Identifier, Origin, Role, ScalarLimits};
 pub use request::{
     ByteProvision, DependencyEntry, DependencyEntryWire, ReplayRequest, ReplayRequestRefusal,
     ReplayRequestWire, StageLimits, StateEnvironment,
@@ -89,8 +102,8 @@ pub use witness::{
 // FR-116: the FR-106 document, object and FR-115 frame witness types a
 // frame counterexample and its replay result carry, re-exported so CG can
 // name and build them through this crate (ADR-011 FB-05). The node and
-// occurrence identities also need `qsl_foundation`'s `WireNodeId` and
-// `quire_exact`'s `Origin` and `Identifier`, as `WitnessPacket` already did.
+// occurrence identities are built from the `WireNodeId`, `Origin` and
+// `Identifier` re-exported above.
 pub use qsl_semantics::model::key::DeclarationKey;
 pub use qsl_semantics::model::observation::{
     AdmissionFailure, AdmissionRecord, DocumentRef, FrameChange, FrameWitness, SelectedObject,
