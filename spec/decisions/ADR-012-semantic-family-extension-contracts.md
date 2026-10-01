@@ -1133,7 +1133,7 @@ item settles `invalid-request` with no preference order
 | Two typing contexts constructed from the same resolved declarations, checking the same form through each, produce identical checked output (FR-062-AC-3's third clause, backed by `TC-160`/`two_contexts_from_the_same_declarations_check_identically`; its first two clauses are backed by tests in the same module) | Done |
 | The family-migration recipe document's programmatic content check (FR-066-AC-1 through AC-4; `TC-165` has zero tests) | Done |
 | The real `PreimageTerm`-conformant identity preimage (external `quire.checked-package-id/v2` `ApplicationNode`/`PreimageTerm` schema), replacing this migration's `Debug`-rendered (`{:?}`) pragmatic stopgap | Done |
-| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (FR-062-AC-10, FR-065-AC-6); `TC-166` is Planned and has zero tests | Planned; QSL-346 |
+| The layer-6 `replay` facade's typed `QualifiedName` call against a family's widened `evaluate` hook (FR-062-AC-10, FR-065-AC-6); implemented and tested, `TC-166` | Done |
 | `Value` function `requirements()` at operation-application granularity: one `value-validity` record per scalar operation application occurrence, with ADR-014 §4's operation-application extent (FR-062-AC-4, AC-13; FR-057-AC-10), and the `route` request builder over a package's records (FR-075-AC-8) | Done |
 
 Requirements needed before implementation starts:

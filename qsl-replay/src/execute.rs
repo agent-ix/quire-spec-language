@@ -295,6 +295,174 @@ const TOOLCHAIN: &str = concat!("qsl-replay/", env!("CARGO_PKG_VERSION"));
 /// FR-063 seam: adding a `FamilyOutcome` variant with no arm here fails
 /// `--cfg seam_probe` with `E0004`; FR-063-AC-7's `#[deny(...)]` closes the
 /// wildcard-arm escape the probe alone cannot see.
+///
+/// # Function selection (TC-166)
+///
+/// FR-062-AC-10, FR-065-AC-6: the request selects its function by a typed
+/// [`QualifiedName`], resolved against the recompiled package's own
+/// declarations; a name that resolves to none refuses
+/// [`ReplayRefusal::UnknownFunction`]. No entry takes a bare `&str` in its
+/// place: this request, which differs from the one after it only in its
+/// `selected_function` line, does not compile.
+///
+/// ```compile_fail,E0308
+/// # use qsl_replay::*;
+/// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
+/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
+/// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
+/// # let site = call_site(
+/// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "u",
+/// #     unit.as_bytes(),
+/// #     [],
+/// #     &DependencyInput::default(),
+/// #     &small,
+/// # )
+/// # .unwrap();
+/// # let digest = DigestRecord::mint(
+/// #     DigestDomain::SourceBytesV1,
+/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
+/// # );
+/// # let unlimited = ScalarLimits {
+/// #     integer_bits: u64::MAX,
+/// #     decimal_digits: u64::MAX,
+/// #     scale_expansion: u64::MAX,
+/// #     text_input_bytes: u64::MAX,
+/// #     text_scalars: u64::MAX,
+/// #     normalized_scalars: u64::MAX,
+/// #     unit_edges: u64::MAX,
+/// #     value_occurrences: u64::MAX,
+/// #     work_units: u64::MAX,
+/// #     result_units: u64::MAX,
+/// # };
+/// # let s1 = ScalarLimits {
+/// #     text_input_bytes: u64::try_from(MAX_ENCODED_BYTES).unwrap(),
+/// #     ..unlimited
+/// # };
+/// let wire = ReplayRequestWire {
+///     selected_function: "small",
+/// #   contract_version: "quire.native-runtime/v1".to_owned(),
+/// #   capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
+/// #   profile_selections: vec![],
+/// #   package_id: (
+/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+/// #       site.package_id.hex(),
+/// #   ),
+/// #   package_contract_version: "quire.checked-package/v2".to_owned(),
+/// #   source_digests: vec![(
+/// #       "a".to_owned(),
+/// #       "u".to_owned(),
+/// #       "git".to_owned(),
+/// #       "1".to_owned(),
+/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+/// #       digest.hex(),
+/// #   )],
+/// #   dependencies: Vec::new(),
+/// #   source: ReplaySource::Input(vec![CanonicalAssignment {
+/// #       parameter: site.site.parameters[0].1,
+/// #       value: WitnessValue::Integer(7),
+/// #   }]),
+/// #   originating_counterexample_identity: [0; 32],
+/// #   backend: (
+/// #       "kani-backend-1".to_owned(),
+/// #       Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
+/// #       DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [0; 32]).hex(),
+/// #   ),
+/// #   state_environment: StateEnvironment::new(vec![]),
+/// #   accounting_limits: unlimited,
+/// #   stage_limits: StageLimits { s1, s2: unlimited, s3: unlimited, s4: unlimited },
+/// #   byte_provision: vec![(
+/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+/// #       digest.hex(),
+/// #       unit.as_bytes().to_vec(),
+/// #   )],
+///     // ...every other member names the proved package and its input.
+/// };
+/// assert!(replay(wire).is_ok());
+/// ```
+///
+/// The same request selecting `small` by its `QualifiedName` compiles and
+/// replays:
+///
+/// ```
+/// # use qsl_replay::*;
+/// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
+/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
+/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
+/// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
+/// # let site = call_site(
+/// #     SourceIdentity::new("a", "u", "git", "1"),
+/// #     "u",
+/// #     unit.as_bytes(),
+/// #     [],
+/// #     &DependencyInput::default(),
+/// #     &small,
+/// # )
+/// # .unwrap();
+/// # let digest = DigestRecord::mint(
+/// #     DigestDomain::SourceBytesV1,
+/// #     ByteDigest::of(unit.as_bytes()).as_bytes(),
+/// # );
+/// # let unlimited = ScalarLimits {
+/// #     integer_bits: u64::MAX,
+/// #     decimal_digits: u64::MAX,
+/// #     scale_expansion: u64::MAX,
+/// #     text_input_bytes: u64::MAX,
+/// #     text_scalars: u64::MAX,
+/// #     normalized_scalars: u64::MAX,
+/// #     unit_edges: u64::MAX,
+/// #     value_occurrences: u64::MAX,
+/// #     work_units: u64::MAX,
+/// #     result_units: u64::MAX,
+/// # };
+/// # let s1 = ScalarLimits {
+/// #     text_input_bytes: u64::try_from(MAX_ENCODED_BYTES).unwrap(),
+/// #     ..unlimited
+/// # };
+/// let wire = ReplayRequestWire {
+///     selected_function: small,
+/// #   contract_version: "quire.native-runtime/v1".to_owned(),
+/// #   capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
+/// #   profile_selections: vec![],
+/// #   package_id: (
+/// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
+/// #       site.package_id.hex(),
+/// #   ),
+/// #   package_contract_version: "quire.checked-package/v2".to_owned(),
+/// #   source_digests: vec![(
+/// #       "a".to_owned(),
+/// #       "u".to_owned(),
+/// #       "git".to_owned(),
+/// #       "1".to_owned(),
+/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+/// #       digest.hex(),
+/// #   )],
+/// #   dependencies: Vec::new(),
+/// #   source: ReplaySource::Input(vec![CanonicalAssignment {
+/// #       parameter: site.site.parameters[0].1,
+/// #       value: WitnessValue::Integer(7),
+/// #   }]),
+/// #   originating_counterexample_identity: [0; 32],
+/// #   backend: (
+/// #       "kani-backend-1".to_owned(),
+/// #       Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
+/// #       DigestRecord::mint(DigestDomain::ToolManifestJcsV1, [0; 32]).hex(),
+/// #   ),
+/// #   state_environment: StateEnvironment::new(vec![]),
+/// #   accounting_limits: unlimited,
+/// #   stage_limits: StageLimits { s1, s2: unlimited, s3: unlimited, s4: unlimited },
+/// #   byte_provision: vec![(
+/// #       Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+/// #       digest.hex(),
+/// #       unit.as_bytes().to_vec(),
+/// #   )],
+///     // ...every other member names the proved package and its input.
+/// };
+/// assert!(replay(wire).is_ok());
+/// ```
 #[deny(clippy::wildcard_enum_match_arm)]
 pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire)?;
