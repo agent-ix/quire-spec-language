@@ -44,3 +44,9 @@ tests added; the worktree and `target/` are deleted.
 The FR-059 half is correct and well tested. Not mergeable until FND-001 is fixed: the
 change silently removes the one crate whose duplicate copy would split the kernel types
 (`Origin`, `NodeKey`) from the FR-061 guard, which the brief required to behave unchanged.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6fbd8726: `graph.rs` is byte-identical to main; the exemption is `metadata::edge_repo`, the only classifier `parse_edges` uses, and `edges_for_manifest` is `parse_edges`' only production caller. New `tc_arch_lint_duplicate_revisions_007` fails when the exemption is put back into `classify` (measured), and `tc_arch_lint_metadata_007` fails when `parse_edges` calls `classify` directly (measured). |

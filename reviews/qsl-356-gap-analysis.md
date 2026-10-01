@@ -58,3 +58,9 @@ stays true against #552's wording.
 
 Items 1, 2 and 4 are met, and the T-7 skip is the right call. Item 3 is met in QSL; its
 FR-146 half needs a QSpec ticket or an explicit note on QSL-356 that it is not wanted.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | accepted-no-change | The team leader recorded on QSL-356 (Linear comment 9ec0e7a2) that no QSpec FR-146 follow-up is wanted: the plan lead ruled the measure-discharge rule is QSL admission behaviour, so ADR-013 O-15 is its home. That explicit note is the remedy the finding offered. |

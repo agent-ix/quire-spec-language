@@ -39,3 +39,9 @@ Ticket: QSL-356. Base review of the spec diff.
 
 The ADR edits are accurate. FR-059's new classification rule needs scoping so it does not
 silently amend FR-061; this goes with SR-943 FND-001.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6fbd8726: FR-059's sentence is scoped to edge extraction and states that the shared `graph::classify`, and so FR-061, classifies a QSL-sourced `quire-exact` as QSL. FR-061 gains a Behavior paragraph and FR-061-AC-5; TC-158 gains step 6 and its expected result; `tests.md` widens TC-158 to AC-5. |
