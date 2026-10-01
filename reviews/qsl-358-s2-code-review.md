@@ -96,3 +96,14 @@ answer as before with the admitted-only filter kept. SV takes on no `std` and no
 QSL dependency. There are no shims and no duplicate types. The tests are real
 oracles. FND-002 should be fixed in this PR, because the module is new and moving
 it is cheap. FND-001 waits for slice 3. FND-003 and FND-004 are low.
+
+## Dispositions
+
+Round 1, reviewed at b76d59c25c0de3a41033df819fc85aaf9aa03444 (rebased onto main 0a399675 with slice 1 merged). `git range-diff a7df1ff0..bcc946cd 0a399675..b76d59c2`: the replayed slice-2 commits changed only rebase context (imports), the old ADR commit ca47f2c9 was dropped, and the fix commits are 134d2ef5, b43f3b21 (rebase import fixup) and b76d59c2.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | PR #567 (QSL-358 slice 3, https://github.com/agent-ix/quire-spec-language/pull/567) deletes `EnumValue::admitted`; its diff and body confirm the deletion. |
+| FND-002 | fixed | 134d2ef5: `OperationTable` is `qsl-semantics/src/model/operation.rs`, importing `super::domain_package::OperationEffect`; `model::observation` imports `crate::model::operation`; `value::operation` and its `LAYER_PERMITTED_MODULES` entry are gone, so no value<->model cycle remains. |
+| FND-003 | fixed | 134d2ef5: `Scope::new(types, operations, ...)` takes the table; `with_operations` is deleted. |
+| FND-004 | fixed | 134d2ef5: BELOW_CORE doc states what the list holds; `value/mod.rs` lists `enumeration`, `environment_stage` and `model_query`; the `EnumMemberIndex` doc sits above its derive. |

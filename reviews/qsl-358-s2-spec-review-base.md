@@ -48,3 +48,18 @@ collide with slice 1's open fix round on four lines. FND-001 and FND-002 say wha
 the merged text has to keep. FND-003 is a real gap: the new modules have no
 layer, and one of them imports upward. Fix FND-001 to FND-003 in this PR after
 #565's fix round lands and slice 2 rebases. FND-004 to FND-006 are low.
+
+## Dispositions
+
+Round 1, reviewed at b76d59c25c0de3a41033df819fc85aaf9aa03444. ADR-011 checked by word-diff against main 0a399675 (slice 1 merged): every slice-2 edit adds to slice 1's merged text and removes none of it.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b76d59c2: SV row (715) keeps slice 1's `semantic_node` entry and dependency cell `quire-canonical`, `serde` and `thiserror`, each without `std`, and adds `enumeration`'s runtime half, `declaration` and `containment`. |
+| FND-002 | fixed | b76d59c2: X-11 (1107) reads "**Extracted**" and lists `semantic_node`, `stop`, `quantity`, `declaration`, `containment` and the runtime halves of `unit` and `enumeration`; row 908 lists the same set. |
+| FND-003 | fixed | b76d59c2: new row 920 `model::operation` (`OperationTable`) at 3 `model`; row 909 puts `environment_stage` in 3 `semantic_value`, importing only F and SV. |
+| FND-004 | fixed | b76d59c2: the K-is-a-leaf sentence (776-780) keeps slice 1's `invalid_semantic_graph` refusal vocabulary and adds the enum values and the registry. |
+| FND-005 | fixed | b76d59c2: SV bullet (792-794) says SV retypes an admitted enum member's key as its `VariantId` through `VariantId::from_digest` and computes nothing for it. |
+| FND-006 | fixed | b76d59c2: ADR-012 (1550, 1554, 1624) and ADR-016 (113-117) name `quire_semantic_value::declaration` items (`TypeEnvironment::check_recursion`, `type_refusal`, `attribute`, all methods that exist) with no deleted path:line. |
+
+Round 2, reviewed at d576a0f76d75b0fc190f945128cb0cd95ad85bd5 (one doc-only commit on b76d59c2, ADR-011 X-6 row, raised by slice 3's review SR-960 FND-005). X-6 now lists `model::operation` under `model` and, for the layer-3 `value` submodules, `definition`, the compile-side halves of `enumeration` and `unit`, `environment_stage`, `member`, the rest of `semantic_node` and `model_query`; SV's `stop`, `quantity`, `declaration`, `containment`, the runtime halves of `unit` and `enumeration`, and `semantic_node`'s refusal vocabulary are in `quire-semantic-value`. That agrees with X-11 (1107) and the §6.2 rows 908, 909 and 920. `definition` stays in `qsl-semantics` for slice 3. No finding needed a round-2 row (none was still-open after round 1) and no new finding.

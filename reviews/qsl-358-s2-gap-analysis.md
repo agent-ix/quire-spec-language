@@ -52,3 +52,12 @@ The slice delivers its goal. RT's three named residue blocks now have a home in
 the no_std leaf, behaviour is unchanged, and the acceptance tests still bind.
 FND-001 is a spec-to-code drift that the PR body claims is fixed, so fix it here.
 FND-002 is a small missing test.
+
+## Dispositions
+
+Round 1, reviewed at b76d59c25c0de3a41033df819fc85aaf9aa03444.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b76d59c2: FR-068-AC-6, its Behavior list and SV entry, TC-175 and TC-390 step 2 drop `value::declaration`/`value::containment` and name `value::environment_stage` and `model::operation` (TC-390 covers it through `qsl-semantics/src/model/`). |
+| FND-002 | fixed | 134d2ef5: `model::operation` tests `an_operation_of_an_unadmitted_type_resolves_missing` (fails without the guard, since `conforms` is reflexive) and `an_operation_of_an_admitted_type_resolves_declared`. |
