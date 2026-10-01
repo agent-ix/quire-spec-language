@@ -30,9 +30,9 @@ Scope: FR-095-AC-3, FR-095-AC-4.
    serialized spelling.
 4. Read QSpec's published positive fixtures from
    `$QSPEC_DIR/proposals/checked-package-v2/fixtures/positive-*.json` through
-   QSL's whole I2 read, with each fixture's own locked artifacts as current
-   and its required features as supported, and look up every `source_map`
-   entry in the verified read's package source map.
+   QSL's whole I2 read, with each fixture's required features as supported,
+   and look up every `source_map` entry in the verified read's package source
+   map.
 5. Resolve location tags for a mapped occurrence, a node the map does not
    hold and a mapped node at an unmapped ordinal.
 6. Read a wire whose `source_map` entry names a node absent from its graph.

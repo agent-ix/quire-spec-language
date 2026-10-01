@@ -58,8 +58,7 @@ Scope: FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-17, FR-09
    `test/\u{1F600}` and `test/\u{FF61}`. Under
    `make conformance`, read QSpec's `dependency-selection-vectors.json`
    (FR-093-AC-16).
-9. Check and emit a package holding `t` (step 1). Compare
-   `qsl_package::diagnostics_catalog()` against the wire's
+9. Check and emit a package holding `t` (step 1) and read the wire's
    `diagnostics.catalog` member.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
@@ -91,16 +90,17 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   written before `test/\u{1F600}` and reads back Verified. The
   vectors' `package_id` recomputes, each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.
-- Step 9: `qsl_package::diagnostics_catalog()` equals the emitted
-  `diagnostics.catalog` reference, member for member (FR-093-AC-17).
+- Step 9: `diagnostics.catalog` is authority `agent-ix`, identity
+  `quire.native.diagnostics/v1`, revision `quire-draft` `1-draft.8`, digest
+  domain `quire.definition.bytes/v1`, and IR admits the package
+  (FR-093-AC-17).
 
 ## Status
 
 Steps 1 to 6 implemented in `qsl-package/src/emit/tests.rs`.
 Step 8 implemented (`emit/tests.rs` and
 `checked_v2::tests::conformance_dependency_selection_vectors`).
-Step 9 implemented
-(`diagnostics_catalog_matches_the_emitted_reference`).
+Step 9 implemented (`the_lock_selects_the_catalog_definitions`).
 Step 7 is implemented in `qsl-package/src/emit/tests/golden.rs`
 (`conformance_emitted_application_nodes_match_qspec_positive_fixtures`, tagged
 `FR-093-AC-13`, run by `make conformance`): 13 fixture application nodes are

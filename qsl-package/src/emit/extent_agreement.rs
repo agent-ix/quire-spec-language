@@ -50,8 +50,8 @@ use quire_exact::{
     ValueType,
 };
 
-use super::tests::{locked_artifacts, nodes, source, whole_unit, wire};
 use super::tests::{metre_units, METRE};
+use super::tests::{nodes, source, whole_unit, wire};
 use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
 
 const LIMIT: u64 = 1_000;
@@ -165,8 +165,6 @@ fn emit_and_read(types: TypeEnvironment) -> (Value, Box<CheckedPackageV2>, Vec<O
 fn read_emission(emission: &Emission) -> (Value, Box<CheckedPackageV2>) {
     let wire = wire(emission);
     let mut evidence = CheckedPackageEvidence::new();
-    locked_artifacts(&wire["lock"], &mut evidence);
-    locked_artifacts(&wire["diagnostics"], &mut evidence);
     for feature in wire["lock"]["required_features"].as_array().unwrap() {
         evidence.support_feature(feature.as_str().unwrap());
     }
