@@ -17,7 +17,7 @@ non-ecosystem crate resolved to two sources), reports exactly one finding
 naming both sources for an ecosystem repository resolved to two distinct
 sources whether or not its two packages share one crate name, treats a
 path/workspace-member package (no `source` field) as its own distinct source,
-and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-1 through FR-061-AC-4.
+and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-1 through FR-061-AC-5.
 
 ## Test Procedure
 
@@ -36,6 +36,8 @@ and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-
    the IR repository, at two distinct sources (#249 review R2).
 5. Run `arch-lint duplicate-revisions --lockfile Cargo.lock` against QSL's
    real root `Cargo.lock`.
+6. Run the check on a fixture lockfile with `quire-exact` resolved to two
+   distinct QSL git sources.
 
 ## Expected Results
 
@@ -54,6 +56,8 @@ and reports no duplicate against QSL's real root `Cargo.lock`. Scope: FR-061-AC-
 - Step 5: against the real root `Cargo.lock`, the check reports no duplicate
   and `arch-lint duplicate-revisions --lockfile Cargo.lock` exits `0`; `make
   ci` runs it.
+- Step 6: exactly one finding is reported, for the QSL repository, naming both
+  sources; FR-059's edge-extraction exemption does not reach this check.
 
 ## Metadata
 

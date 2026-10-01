@@ -18,7 +18,8 @@ quire-contract-ir's real current-head `cargo metadata` output, that resolving
 QSL's own manifest classifies its real edge on `quire-contract-model` as
 QSL → IR, and
 that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
-even built. Scope: FR-059-AC-1 through FR-059-AC-7.
+even built, and that the kernel leaf `quire-exact` classifies as no
+ecosystem repository. Scope: FR-059-AC-1 through FR-059-AC-8.
 
 ## Test Procedure
 
@@ -47,6 +48,9 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
    Then run `arch-lint direction` end to end against `--qsl .` and a real
    local checkout, and inspect the printed report for the resolved revision
    of every root.
+8. Parse a synthetic `cargo metadata` document in which RT depends on
+   `quire-exact` and on `qsl-eval`, both sourced from the QSL repository's
+   git url, and run the check on the resulting edges.
 
 ## Expected Results
 
@@ -75,6 +79,8 @@ even built. Scope: FR-059-AC-1 through FR-059-AC-7.
   the resolved revision for every root, including `--qsl`'s, regardless of
   whether the run passes, fails, or is skipping the comparison via
   `--offline`.
+- Step 8: the only edge is RT → QSL via `qsl-eval`, and the FB-05 report
+  names exactly that edge; the `quire-exact` dependency contributes no edge.
 
 ## Metadata
 

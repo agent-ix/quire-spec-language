@@ -10,6 +10,25 @@ use serde_json::Value;
 use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Edge, EdgeKind, Repo};
 
+/// The package name of the kernel crate K (ADR-011 §6.1), published from the
+/// QSL repository and depended on by RT and CG (ADR-011 §7.1).
+const KERNEL_LEAF: &str = "quire-exact";
+
+/// The ecosystem repository a resolved package contributes to the FR-059
+/// edge graph: `classify`'s answer, except that the kernel leaf
+/// [`KERNEL_LEAF`] contributes none. K depends on no QSL module and no
+/// ecosystem crate (ADR-011 §6.1 "K is a leaf"), so an edge into it closes no
+/// FB-11 cycle, and ADR-011 FB-05 places it outside the bypass. The exemption
+/// is local to edge extraction: FR-061's duplicate-revision check still
+/// classifies a QSL-sourced `quire-exact` as QSL through `classify`.
+fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
+    if name == KERNEL_LEAF {
+        None
+    } else {
+        classify(name, source)
+    }
+}
+
 /// Run `cargo metadata` for the crate at `manifest_path` and return every
 /// resolved normal/dev edge whose source and target both classify as one of
 /// the four ADR-011 repositories (`classify`, by package name and source
@@ -147,7 +166,7 @@ fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
         let source = package.get("source").and_then(Value::as_str);
-        id_repo.push((id, classify(name, source), name));
+        id_repo.push((id, edge_repo(name, source), name));
     }
 
     let nodes = document
@@ -326,6 +345,51 @@ mod tests {
             edges.contains(&expected),
             "expected {expected:?} among {edges:?}"
         );
+    }
+
+    /// tc_arch_lint_metadata_007: the kernel leaf `quire-exact`, git-sourced
+    /// from the QSL repository, contributes no repository to the edge graph
+    /// (`edge_repo`), so an RT dependency on it yields no edge and no finding; RT's dependency on
+    /// `qsl-eval`, from the same QSL git source, is still an RT -> QSL edge
+    /// and an FB-05 violation.
+    #[trace("TC-156", "FR-059-AC-8")]
+    #[test]
+    fn tc_arch_lint_metadata_007_quire_exact_leaf_is_exempt_but_qsl_eval_is_not() {
+        let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let document = json!({
+            "packages": [
+                {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                {"id": "exact 0.1.0", "name": "quire-exact", "source": qsl_git},
+                {"id": "eval 0.1.0", "name": "qsl-eval", "source": qsl_git},
+            ],
+            "resolve": {
+                "nodes": [
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]},
+                        {"name": "qsl_eval", "pkg": "eval 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]}
+                    ]},
+                    {"id": "exact 0.1.0", "deps": []},
+                    {"id": "eval 0.1.0", "deps": [
+                        {"name": "quire_exact", "pkg": "exact 0.1.0",
+                         "dep_kinds": [{"kind": null, "target": null}]}
+                    ]}
+                ]
+            }
+        });
+        let edges = parse_edges(&document).unwrap();
+        let expected = Edge {
+            from: Repo::Rt,
+            to: Repo::Qsl,
+            kind: EdgeKind::Normal,
+            via_crate: "qsl-eval".to_owned(),
+        };
+        assert_eq!(edges, vec![expected.clone()]);
+        let report = crate::graph::check(&edges);
+        assert_eq!(report.fb05.len(), 1, "{report:?}");
+        assert_eq!(report.fb05[0].edge, expected);
+        assert!(report.fb11.is_empty(), "{report:?}");
     }
 
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four
