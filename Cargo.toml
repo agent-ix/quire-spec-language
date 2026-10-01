@@ -3,9 +3,7 @@ members = [".", "xtask", "tools/arch-lint", "quire-exact", "qsl-attrs", "qsl-fou
 resolver = "2"
 
 [workspace.dependencies]
-# ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation, pinned once for
-# every crate that encodes an identity.
-quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", tag = "quire-canonical-v0.3.0" }
+quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main" }
 
 [package]
 name = "quire-spec-language"
