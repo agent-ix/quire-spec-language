@@ -3,7 +3,7 @@ name = "quire-exact"
 version = "0.1.0"
 publish = false
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 X-1: the quire-exact kernel -- checked identity, typestate, outcome/refusal, provenance and bound value types with no dependency on any other crate in the quire ecosystem."
 
