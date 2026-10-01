@@ -689,6 +689,7 @@ impl PackageDeclarations {
             self.ieee_profile,
             self.dispatch_operations,
         )
+        .with_operations(self.operations)
         .with_imports(self.imports);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
@@ -1857,7 +1858,7 @@ impl CheckedGraph {
     /// FR-115: the frame of the operation `selection` names, and its object
     /// type's identity. The operation resolves in the object type's
     /// effective view exactly as FR-104's Resolution resolves a clause's
-    /// operation (`TypeEnvironment::operation`), so an inherited operation
+    /// operation (`OperationTable::resolve`), so an inherited operation
     /// yields its declaring type's frame. `None` when the operation
     /// resolves to no single operation, or no clause or attempt of this unit
     /// names it (the package then holds no frame node for it, FR-105).
@@ -1874,13 +1875,14 @@ impl CheckedGraph {
         selection: &OperationSelection,
     ) -> Option<(quire_exact::EffectiveId, &CheckedOperationFrame)> {
         let context = *self.object_types.get(&selection.object)?;
-        let crate::value::declaration::OperationLookup::Declared {
+        let crate::value::operation::OperationLookup::Declared {
             declaring,
             operation,
-        } = self
-            .scope
-            .types()
-            .operation(context, selection.operation.as_str())
+        } = self.scope.operations().resolve(
+            self.scope.types(),
+            context,
+            selection.operation.as_str(),
+        )
         else {
             return None;
         };

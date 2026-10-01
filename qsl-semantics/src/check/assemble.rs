@@ -66,12 +66,12 @@ use crate::model::intake::{member_identity_name, type_identity_segment, Selected
 use crate::model::key::DeclarationKey;
 use crate::value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, FieldDeclaration, FieldRef,
-    InvalidDeclaration, ObjectTypeDeclaration, OperationDeclaration, OperationLookup,
-    TypeEnvironment,
+    InvalidDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 use crate::value::enumeration::{EnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage};
 use crate::value::semantic_node::OwnerSelection;
 use quire_semantic_value::semantic_node::InvalidSemanticGraph;
+use crate::value::operation::{OperationDeclaration, OperationLookup, OperationTable};
 
 /// The explicit limits the assembler takes (ADR-011 §2.3 Limits).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -526,11 +526,14 @@ impl TypeNames for Names {
 /// type environment cannot hold (a record value type, a systems part, port
 /// or allocation) refuses as [`AssemblyCause::UnsupportedModelMember`].
 /// Relationship and population records name no type environment entry;
-/// they stay in the admitted model `check` keys model nodes from.
+/// they stay in the admitted model `check` keys model nodes from. Each
+/// object type's operations go into `table`, keyed by its effective
+/// identity, beside the type environment rather than in it.
 fn model_object_types(
     alias: &str,
     model: &SelectedModel,
     span: Span,
+    table: &mut OperationTable,
 ) -> Result<Vec<ObjectTypeDeclaration>, Vec<AssemblyError>> {
     let package = model.view.domain_package();
     let identities = model.view.type_identities();
@@ -618,14 +621,16 @@ fn model_object_types(
                 None => errors.push(broken(&supertype.node)),
             }
         }
+        if let Some(declared) = operations.remove(key) {
+            table.declare(*identity, declared);
+        }
         declarations.push(
             ObjectTypeDeclaration::new(
                 *identity,
                 format!("{alias}::{artifact}"),
                 fields.remove(key).unwrap_or_default(),
             )
-            .with_supertypes(supertypes)
-            .with_operations(operations.remove(key).unwrap_or_default()),
+            .with_supertypes(supertypes),
         );
     }
     // An operation whose owner is no object type: a broken record (every
@@ -1160,6 +1165,7 @@ impl PackageDeclarations {
         // object types by name.
         let mut admitted = Vec::with_capacity(selections.models.len());
         let mut object_types = Vec::new();
+        let mut operations = OperationTable::default();
         let mut object_spans = BTreeMap::new();
         for selection in &selections.models {
             let Some(model) = models.iter().find(|model| model.alias == selection.alias) else {
@@ -1171,7 +1177,7 @@ impl PackageDeclarations {
                 });
                 continue;
             };
-            match model_object_types(&selection.alias, model, selection.span) {
+            match model_object_types(&selection.alias, model, selection.span, &mut operations) {
                 Ok(declarations) => {
                     for declaration in &declarations {
                         object_spans.insert(declaration.name().to_owned(), selection.span);
@@ -1553,10 +1559,16 @@ impl PackageDeclarations {
             &selections.profiles,
             &object_names,
             &types,
+            &operations,
             &admitted,
         );
-        let protocol_attempts =
-            protocol_attempts(&unit.protocols, &object_names, &types, &admitted);
+        let protocol_attempts = protocol_attempts(
+            &unit.protocols,
+            &object_names,
+            &types,
+            &operations,
+            &admitted,
+        );
         let (state_clauses, protocol_attempts) = match (state_clauses, protocol_attempts) {
             (Ok(clauses), Ok(attempts)) => (clauses, attempts),
             (clauses, attempts) => {
@@ -1570,6 +1582,7 @@ impl PackageDeclarations {
 
         let mut package = PackageDeclarations::new(source);
         package.types = types;
+        package.operations = operations;
         package.models = admitted;
         package.aliases = unit
             .aliases
@@ -1626,6 +1639,7 @@ fn state_clauses(
     profiles: &[qsl_foundation::selection::ProfileSelection],
     object_names: &BTreeMap<String, EffectiveId>,
     types: &TypeEnvironment,
+    operations: &OperationTable,
     models: &[AdmittedModel],
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let mut errors = Vec::new();
@@ -1656,7 +1670,7 @@ fn state_clauses(
         };
         let operation = match &form.operation {
             None => None,
-            Some(operation) => match types.operation(context, &operation.name) {
+            Some(operation) => match operations.resolve(types, context, &operation.name) {
                 OperationLookup::Declared {
                     declaring,
                     operation,
@@ -1753,6 +1767,7 @@ fn protocol_attempts(
     protocols: &[qsl_forms::ProtocolDeclarationForm],
     object_names: &BTreeMap<String, EffectiveId>,
     types: &TypeEnvironment,
+    operations: &OperationTable,
     models: &[AdmittedModel],
 ) -> Result<Vec<Vec<AttemptDeclaration>>, AssemblyRefusal> {
     let mut errors = Vec::new();
@@ -1771,7 +1786,7 @@ fn protocol_attempts(
                 ));
                 continue;
             };
-            let operation = match types.operation(context, &attempt.operation.name) {
+            let operation = match operations.resolve(types, context, &attempt.operation.name) {
                 OperationLookup::Declared {
                     declaring,
                     operation,

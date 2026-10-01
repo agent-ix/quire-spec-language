@@ -39,7 +39,8 @@ use crate::family::{
     DomainKind, FamilyContract, Requirements,
 };
 use crate::model::key::DeclarationKey;
-use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
+use crate::value::declaration::TypeEnvironment;
+use crate::value::operation::OperationDeclaration;
 
 /// The observation a clause of `kind` reads (FR-104, FR-107): `current`
 /// for an invariant, `pre` for a precondition, `post` for a postcondition.

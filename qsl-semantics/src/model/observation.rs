@@ -38,7 +38,8 @@ use crate::model::intake::{admit_selections, read_records};
 use crate::model::key::{hex, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
-use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
+use crate::value::declaration::TypeEnvironment;
+use crate::value::operation::OperationDeclaration;
 
 // ---------------------------------------------------------------------------
 // Clause facts (the model -> check edge must stay empty, FR-074-AC-3): the

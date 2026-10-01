@@ -72,8 +72,6 @@ use quire_exact::{
 };
 use quire_exact::{from_admitted_slots, retain_composite, Deferred, FieldValue, Value, ValueType};
 
-use crate::model::domain_package::OperationEffect;
-
 use super::enumeration::{compare_enum, EnumMemberIndex};
 use quire_exact::CollectionKind;
 use quire_exact::EffectiveId;
@@ -164,78 +162,6 @@ impl FieldDeclaration {
     pub fn presence(&self) -> Presence {
         self.presence
     }
-}
-
-/// A declared operation of an object type (FR-103, ADR-012 §15.2
-/// `StateModel`): its name, its parameters and result value types (typed by
-/// [`FieldDeclaration`]'s own FR-056 rule, with no `Option` wrapping --
-/// the domain package's own `OperationParameterRecord`/`OperationResult`
-/// carry no independent presence flag the way a field's `presence` does),
-/// and its producer-declared effect frame, carried unchanged from the
-/// domain package: the assembler resolves none of its keys further.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OperationDeclaration {
-    name: String,
-    parameters: Vec<(String, ValueType)>,
-    result: Option<ValueType>,
-    effect: OperationEffect,
-}
-
-impl OperationDeclaration {
-    /// `name(parameters): result` with `effect`, exactly as the domain
-    /// package's own operation member declares them.
-    pub fn new(
-        name: impl Into<String>,
-        parameters: Vec<(String, ValueType)>,
-        result: Option<ValueType>,
-        effect: OperationEffect,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            parameters,
-            result,
-            effect,
-        }
-    }
-
-    /// The declared name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The declared parameters, in declaration order.
-    pub fn parameters(&self) -> &[(String, ValueType)] {
-        &self.parameters
-    }
-
-    /// The declared result type, or `None` when the operation has no
-    /// result.
-    pub fn result(&self) -> Option<&ValueType> {
-        self.result.as_ref()
-    }
-
-    /// The declared effect frame.
-    pub fn effect(&self) -> &OperationEffect {
-        &self.effect
-    }
-}
-
-/// Where an operation name resolves in an object type's effective view
-/// ([`TypeEnvironment::operation`]).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OperationLookup<'a> {
-    /// The operation, and the object type that declares it.
-    Declared {
-        /// The declaring object type.
-        declaring: EffectiveId,
-        /// The operation.
-        operation: &'a OperationDeclaration,
-    },
-    /// No type of the view declares an operation of that name.
-    Missing,
-    /// Several declarations, none of whose declaring types is more derived
-    /// than every other: the declaring types, in key order.
-    Ambiguous(Vec<EffectiveId>),
 }
 
 /// A record field in a record value expression. Omitting a `?` field
@@ -441,16 +367,11 @@ pub struct ObjectTypeDeclaration {
     /// Every directly declared supertype (FR-151/FR-152/FR-153 generalization,
     /// #204 round 1 H1), empty unless [`Self::with_supertypes`] sets it.
     supertypes: Vec<EffectiveId>,
-    /// This type's own declared operations, in declaration order (FR-103).
-    /// Visible on a subtype through FR-081's effective view, as a field is;
-    /// this type stays its declaring, owning type.
-    operations: Vec<OperationDeclaration>,
 }
 
 impl ObjectTypeDeclaration {
     /// The object type `name` with declaration identity `key`, declaring no
-    /// supertype and no operation. See [`Self::with_supertypes`] and
-    /// [`Self::with_operations`] to declare either.
+    /// supertype. See [`Self::with_supertypes`] to declare them.
     pub fn new(
         key: EffectiveId,
         name: impl Into<String>,
@@ -461,7 +382,6 @@ impl ObjectTypeDeclaration {
             name: name.into(),
             attributes,
             supertypes: Vec::new(),
-            operations: Vec::new(),
         }
     }
 
@@ -473,15 +393,6 @@ impl ObjectTypeDeclaration {
     #[must_use]
     pub fn with_supertypes(mut self, supertypes: Vec<EffectiveId>) -> Self {
         self.supertypes = supertypes;
-        self
-    }
-
-    /// Declares this object type's own operations (FR-103). Consumes and
-    /// returns `self` so every existing [`Self::new`] call site is
-    /// unaffected.
-    #[must_use]
-    pub fn with_operations(mut self, operations: Vec<OperationDeclaration>) -> Self {
-        self.operations = operations;
         self
     }
 
@@ -505,11 +416,6 @@ impl ObjectTypeDeclaration {
     /// Every directly declared supertype, in declaration order.
     pub fn supertypes(&self) -> &[EffectiveId] {
         &self.supertypes
-    }
-
-    /// This type's own declared operations, in declaration order (FR-103).
-    pub fn operations(&self) -> &[OperationDeclaration] {
-        &self.operations
     }
 }
 
@@ -888,46 +794,6 @@ impl TypeEnvironment {
         self.attributes(object_type)?
             .iter()
             .find(|attribute| attribute.field().name() == name)
-    }
-
-    /// The operation `name` resolves to in the object type's effective view
-    /// (FR-103, FR-104): declared by the type itself or by an ancestor,
-    /// visible on a subtype as a field is, and keeping its declaring type.
-    /// A declaration an ancestor makes is hidden by one a more derived type
-    /// of the view makes; two declarations neither of whose types is more
-    /// derived are ambiguous.
-    pub fn operation(&self, object_type: EffectiveId, name: &str) -> OperationLookup<'_> {
-        let candidates: Vec<(EffectiveId, &OperationDeclaration)> = self
-            .object_types
-            .values()
-            .filter(|declaring| self.conforms(object_type, declaring.key()))
-            .flat_map(|declaring| {
-                declaring
-                    .operations()
-                    .iter()
-                    .filter(|operation| operation.name() == name)
-                    .map(move |operation| (declaring.key(), operation))
-            })
-            .collect();
-        let nearest: Vec<(EffectiveId, &OperationDeclaration)> = candidates
-            .iter()
-            .filter(|(declaring, _)| {
-                !candidates
-                    .iter()
-                    .any(|(other, _)| other != declaring && self.conforms(*other, *declaring))
-            })
-            .copied()
-            .collect();
-        match nearest.as_slice() {
-            [] => OperationLookup::Missing,
-            [(declaring, operation)] => OperationLookup::Declared {
-                declaring: *declaring,
-                operation,
-            },
-            many => {
-                OperationLookup::Ambiguous(many.iter().map(|(declaring, _)| *declaring).collect())
-            }
-        }
     }
 
     /// This environment with `units` as its quantity unit table.

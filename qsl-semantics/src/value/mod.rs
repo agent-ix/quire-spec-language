@@ -128,6 +128,7 @@ mod diagnostics_catalog;
 pub mod enumeration;
 pub(crate) mod member;
 pub mod model_query;
+pub mod operation;
 pub(crate) mod semantic_node;
 pub(crate) mod unit;
 

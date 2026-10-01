@@ -60,6 +60,7 @@ use crate::value::declaration::{
 };
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, EnumDeclaration, EnumMemberIndex, EnumValue};
+use crate::value::operation::OperationTable;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
     FunctionDeclaration,
@@ -277,6 +278,9 @@ pub struct PackageDeclarations {
     pub lock_evidence: super::lowering::LockEvidence,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
+    /// The model object types' own declared operations (FR-103), resolved
+    /// through [`Self::types`]' effective view.
+    pub operations: OperationTable,
     /// Enum declarations.
     pub enums: Vec<EnumBinding>,
     /// `type Name = T;` aliases, which create no declaration identity.
@@ -375,6 +379,7 @@ impl PackageDeclarations {
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
             types: TypeEnvironment::default(),
+            operations: OperationTable::default(),
             enums: Vec::new(),
             aliases: Vec::new(),
             alias_names: std::collections::BTreeMap::new(),
@@ -433,6 +438,8 @@ pub struct Scope {
     types: TypeEnvironment,
     /// Fixed once built, like `types`.
     enums: Vec<EnumBinding>,
+    /// The model object types' own declared operations (FR-103).
+    operations: OperationTable,
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
     /// The by-name lookups over the declared types, enums, aliases and
@@ -537,11 +544,19 @@ impl Scope {
         Self {
             types,
             enums,
+            operations: OperationTable::default(),
             ieee_profile,
             dispatch_operations,
             index,
             imports: BTreeMap::new(),
         }
+    }
+
+    /// This scope with `operations` as its model object types' declared
+    /// operations.
+    pub(crate) fn with_operations(mut self, operations: OperationTable) -> Self {
+        self.operations = operations;
+        self
     }
 
     /// This scope with `imports`, each admitted import by its qualifier.
@@ -633,6 +648,11 @@ impl Scope {
     /// The package's composite and object type declarations.
     pub fn types(&self) -> &TypeEnvironment {
         &self.types
+    }
+
+    /// The package's model object types' declared operations (FR-103).
+    pub fn operations(&self) -> &OperationTable {
+        &self.operations
     }
 
     /// The package's admitted IEEE profile, if it selects one.

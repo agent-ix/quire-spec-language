@@ -18,7 +18,8 @@ use super::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
-use crate::value::declaration::{OperationDeclaration, TypeEnvironment};
+use crate::value::declaration::TypeEnvironment;
+use crate::value::operation::OperationDeclaration;
 
 /// Which wire format a document is read as (FR-106 "Document forms").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
