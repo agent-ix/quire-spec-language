@@ -24,7 +24,7 @@ use crate::identity::{
     Backend, DeclaredDomain, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef,
     SourceDigestWire, TracePosition,
 };
-use qsl_foundation::bound::FiniteBound;
+use qsl_foundation::bound::{DomainKey, FiniteBound};
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId,
 };
@@ -812,7 +812,10 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
             .iter()
             .map(|declared| {
                 finite_bound_bytes(declared.bound())
-                    + std::mem::size_of_val(declared.domain().path())
+                    + match declared.domain() {
+                        DomainKey::Node { path, .. } => std::mem::size_of_val(path.as_slice()),
+                        DomainKey::Population { ordinal, .. } => std::mem::size_of_val(ordinal),
+                    }
             })
             .sum()
     });
@@ -1040,7 +1043,7 @@ mod envelope_tests {
     use super::*;
     use crate::bounds::MAX_ENCODED_BYTES;
     use ix_trace_rs::trace;
-    use qsl_foundation::bound::{DomainKey, ProofBound};
+    use qsl_foundation::bound::ProofBound;
     use quire_exact::Identifier;
 
     fn digest(byte: u8) -> [u8; 32] {
@@ -1092,7 +1095,10 @@ mod envelope_tests {
             )]),
             run_limits: Some(scalar_limits(64)),
             declared_domains: Some(vec![DeclaredDomain::new(ProofBound {
-                domain: DomainKey::new(WireNodeId::from_digest(digest(6)), Vec::new()),
+                domain: DomainKey::Node {
+                    node: WireNodeId::from_digest(digest(6)),
+                    path: Vec::new(),
+                },
                 bound: FiniteBound::integer_range(
                     quire_exact::Integer::from(0_i64),
                     quire_exact::Integer::from(u64::from(u32::MAX)),
@@ -1164,8 +1170,14 @@ mod envelope_tests {
         // Two bounds on one parameter, at the parameter's own position and
         // at its element: distinct by their domain keys.
         let parameter = WireNodeId::from_digest(digest(6));
-        let whole = DomainKey::new(parameter, Vec::new());
-        let element = DomainKey::new(parameter, vec![0]);
+        let whole = DomainKey::Node {
+            node: parameter,
+            path: Vec::new(),
+        };
+        let element = DomainKey::Node {
+            node: parameter,
+            path: vec![0],
+        };
         packet.declared_domains = Some(vec![
             DeclaredDomain::new(ProofBound {
                 domain: whole.clone(),
@@ -1189,10 +1201,10 @@ mod envelope_tests {
                 (&element, &FiniteBound::depth(3).unwrap()),
             ]
         );
-        assert!(envelope
-            .declared_domains()
-            .iter()
-            .all(|declared| declared.parameter() == parameter));
+        assert!(envelope.declared_domains().iter().all(|declared| matches!(
+            declared.domain(),
+            DomainKey::Node { node, .. } if *node == parameter
+        )));
         let round_tripped = WitnessEnvelope::reconstruct(envelope.to_packet()).unwrap();
         assert_eq!(round_tripped, envelope);
 
@@ -1409,7 +1421,10 @@ mod envelope_tests {
     fn tc_181_a_long_declared_domain_path_counts_toward_the_bound() {
         let domain = |path: Vec<u32>| {
             DeclaredDomain::new(ProofBound {
-                domain: DomainKey::new(WireNodeId::from_digest(digest(6)), path),
+                domain: DomainKey::Node {
+                    node: WireNodeId::from_digest(digest(6)),
+                    path,
+                },
                 bound: FiniteBound::cardinality(8),
             })
         };

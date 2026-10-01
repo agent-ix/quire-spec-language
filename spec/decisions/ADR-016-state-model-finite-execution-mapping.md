@@ -274,8 +274,8 @@ and no production path admits two bindings into one evaluation today
 the change needs no migration.
 
 **Keyings of simulation domains, kept apart.** A clause's requirement record
-keys a population domain as `DomainKey{node: object_type node, path:
-[population ordinal]}` (ADR-012 §15.7). That key crosses to `route`, CG and
+keys a population domain as `DomainKey::Population{member_type:
+object_type node, ordinal}` (ADR-012 §15.7). That key crosses to `route`, CG and
 QSpec FR-331. FR-120 names every simulation root (population, parameter,
 result, granted field) by a `WireNodeId::from_digest` over a naming object,
 and FR-101's `RequiresBound` reports it. That key is local to one

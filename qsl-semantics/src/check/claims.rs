@@ -744,7 +744,13 @@ pub(crate) fn key_claims(
         let mut domains = BTreeMap::new();
         for ((root, path), kind) in claim.domains {
             let node = binders.get(&root).ok_or_else(unkeyable)?;
-            domains.insert(DomainKey::new(wire(*node), path), kind);
+            domains.insert(
+                DomainKey::Node {
+                    node: wire(*node),
+                    path,
+                },
+                kind,
+            );
         }
         let record = RequirementRecord {
             requirements: Requirements::new(

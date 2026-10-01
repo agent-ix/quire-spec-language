@@ -26,10 +26,12 @@ with the package it was looked up in, and an unsupplied domain package as
 `ModelIntake`, and a refused dependency input or an uncompilable supplied
 library as `DependencyInput` or `Dependency`.
 
-It returns the compiled package's bytes its `package_id` names, and
-builds a `DeclaredDomain` through the facade's re-exports.
+It returns the compiled package's bytes its `package_id` names, builds a
+`DeclaredDomain` through the facade's re-exports, and keys a named state
+field under its declaring type's node by its name ordinal, apart from any
+population key.
 
-Scope: FR-121-AC-1 to FR-121-AC-13.
+Scope: FR-121-AC-1 to FR-121-AC-16.
 
 ## Test Procedure
 
@@ -81,6 +83,18 @@ Scope: FR-121-AC-1 to FR-121-AC-13.
     for `[0, 9]` on `x`'s node using only `qsl_replay` root paths, and an
     inverted range through `FiniteBound::integer_range` and
     `IntegerInterval::new`.
+14. Add `Sub`, a subtype of `ConfigVersion` declaring `zeta` then `alpha`,
+    to the step 3 domain package, and an invariant on `Config::Sub` to the
+    step 3 unit. Select `parent` and `versionNumber` through
+    `ConfigVersion`, and `versionNumber`, `alpha` and `zeta` through `Sub`;
+    compare each node with the graph's own `object_type` node for its
+    declaring type. Select `Config::Sub.nope`, `Config::ConfigVersion.alpha`,
+    `Config::Nope.parent` and `Nope::Sub.alpha`.
+15. Over the step 14 domain package without the `Sub` invariant, select
+    `Config::Sub.alpha`.
+16. Over the step 3 unit, select `Config::ConfigVersion.parent`, and read the
+    `config_history` population key from the compiled package's requirement
+    records.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -125,3 +139,11 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 - Step 13: the domain names `x`'s node and the range, of kind
   `FiniteBoundKind::IntegerRange`; the inverted range refuses
   `EmptyFiniteBound::InvertedIntegerRange` and `EmptyInterval`.
+- Step 14: `parent` is `[0]` and `versionNumber` `[1]` under
+  `ConfigVersion`'s node, through either type; `alpha` is `[0]` and `zeta`
+  `[1]` under `Sub`'s node; the four unresolved selections refuse
+  `CallSiteRefusal::UnknownField` paired with the package.
+- Step 15: the graph holds no `Sub` node, and the key equals step 14's.
+- Step 16: the population key is `DomainKey::Population` with member type
+  `ConfigVersion`'s node and ordinal 0, and differs from `parent`'s
+  `DomainKey::Node` on that node with path `[0]`.

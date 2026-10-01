@@ -2,9 +2,9 @@
 //! ADR-014 §4 and §11 (QSL-140): the wire-level bound types that cross from
 //! layer 3 to the O-20 request writer, to CG and to replay.
 //!
-//! - [`DomainKey`] names one unbounded domain of a requested item: the
-//!   checked node that carries it, then the child-index path into that
-//!   node's type.
+//! - [`DomainKey`] names one unbounded domain of a requested item by its
+//!   subject: a node and the child-index path into that node's type, or a
+//!   population by its member type and declaration ordinal.
 //! - [`FiniteBound`] is the finite domain a caller substitutes for one
 //!   unbounded domain. Each variant is valid by construction: an empty or
 //!   inverted range cannot be built.
@@ -30,41 +30,52 @@ use quire_exact::{EmptyInterval, Integer, IntegerInterval};
 use crate::digest::WireNodeId;
 use crate::selection::DefinitionRef;
 
-/// One unbounded domain of a requested item (ADR-014 §4 "Domain key").
+/// One unbounded domain of a requested item (ADR-014 §4 "Domain key"),
+/// keyed by what it is a domain *of*. The subject is explicit, so a key of
+/// one kind never coincides with a key of another.
 ///
-/// `node` is the checked node that carries the domain: a parameter, a bound
-/// variable, a loop or a temporal clause. `path` is the child-index path
-/// into that node's type (element, field, variant payload); a loop or a
-/// clause has an empty path. Keys order by node, then path, so a map keyed
-/// by them iterates deterministically.
+/// Keys order by variant (`Node` first), then by their fields in
+/// declaration order, so a map keyed by them iterates deterministically.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DomainKey {
-    node: WireNodeId,
-    path: Vec<u32>,
-}
-
-impl DomainKey {
-    /// The domain at `path` inside `node`'s type.
-    pub fn new(node: WireNodeId, path: Vec<u32>) -> Self {
-        Self { node, path }
-    }
-
-    /// The checked node that carries the domain.
-    pub fn node(&self) -> WireNodeId {
-        self.node
-    }
-
-    /// The child-index path into the node's type. Empty for the node
-    /// itself.
-    pub fn path(&self) -> &[u32] {
-        &self.path
-    }
+pub enum DomainKey {
+    /// A domain inside a node's type. `node` is the checked node that
+    /// carries the domain: a parameter, a bound variable, a loop, a
+    /// temporal clause, a frame (whose roots are indexed by the first path
+    /// element), or the `model`/`object_type` node of the type that
+    /// declares a state field (ADR-012 §15.4, the field's name ordinal
+    /// first). `path` is the child-index path into the type (element,
+    /// field, variant payload); empty for the node itself, a loop or a
+    /// clause.
+    Node {
+        /// The checked node that carries the domain.
+        node: WireNodeId,
+        /// The child-index path into the node's type.
+        path: Vec<u32>,
+    },
+    /// A population with no maximum (ADR-012 §15.7): its canonical member
+    /// type's `model`/`object_type` node, and its ordinal among its domain
+    /// package's population declarations in ascending `DeclarationKey`
+    /// order.
+    Population {
+        /// The population's canonical member type node.
+        member_type: WireNodeId,
+        /// The population's declaration ordinal.
+        ordinal: u32,
+    },
 }
 
 impl fmt::Display for DomainKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.node)?;
-        self.path.iter().try_for_each(|index| write!(f, "/{index}"))
+        match self {
+            Self::Node { node, path } => {
+                write!(f, "{node}")?;
+                path.iter().try_for_each(|index| write!(f, "/{index}"))
+            }
+            Self::Population {
+                member_type,
+                ordinal,
+            } => write!(f, "population {ordinal} of {member_type}"),
+        }
     }
 }
 
@@ -270,18 +281,43 @@ mod tests {
         );
     }
 
-    /// ADR-014 §4: domain keys order by node, then path, and name the
+    fn at(fill: u8, path: Vec<u32>) -> DomainKey {
+        DomainKey::Node {
+            node: node(fill),
+            path,
+        }
+    }
+
+    /// ADR-014 §4: node domain keys order by node, then path, and name the
     /// node's own position with an empty path.
     #[trace("TC-436", "FR-097-AC-1")]
     #[test]
     fn domain_keys_order_by_node_then_path() {
-        let root = DomainKey::new(node(1), Vec::new());
-        let element = DomainKey::new(node(1), vec![0]);
-        let other = DomainKey::new(node(2), Vec::new());
+        let root = at(1, Vec::new());
+        let element = at(1, vec![0]);
+        let other = at(2, Vec::new());
         assert!(root < element);
         assert!(element < other);
         assert_ne!(root, element);
         assert_eq!(element.to_string(), format!("{}/0", node(1)));
+    }
+
+    /// ADR-012 §15.4, §15.7: a population key and a node key over the same
+    /// object type node and the same ordinal are distinct keys.
+    #[trace("TC-436", "FR-097-AC-1")]
+    #[test]
+    fn a_population_key_never_equals_a_node_key() {
+        let population = DomainKey::Population {
+            member_type: node(1),
+            ordinal: 0,
+        };
+        let field = at(1, vec![0]);
+        assert_ne!(population, field);
+        assert!(field < population);
+        assert_eq!(
+            population.to_string(),
+            format!("population 0 of {}", node(1))
+        );
     }
 
     /// ADR-014 TR-3: an interval key refuses `lower > upper` and compares

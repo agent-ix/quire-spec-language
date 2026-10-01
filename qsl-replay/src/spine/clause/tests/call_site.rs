@@ -359,3 +359,239 @@ fn call_site_refuses_an_unsupplied_domain_package_as_model_intake() {
     };
     assert_eq!(alias, "Config");
 }
+
+/// [`config_version_domain_document_with_sub`] with `Sub` declaring two
+/// fields of its own, `zeta` then `alpha` -- out of name order, as
+/// `ConfigVersion`'s own `versionNumber` then `parent` are -- each of type
+/// `VersionNumber`.
+fn sub_with_fields_document() -> Vec<u8> {
+    let sub = format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub");
+    let field = |name: &str| {
+        let identity = format!("{sub}/{name}");
+        json!({
+            "identity": identity,
+            "name": name,
+            "typeRef": version_number_type(),
+            "presence": "required",
+            "nullable": false,
+            "defaultKind": "none",
+            "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+            "origin": {
+                "generated": {
+                    "generatorIdentity": identity,
+                    "generatorVersion": "1.0.0",
+                    "inputIdentities": [identity],
+                }
+            },
+        })
+    };
+    let mut envelope: serde_json::Value =
+        serde_json::from_slice(&config_version_domain_document_with_sub())
+            .expect("the document is JSON");
+    let types = envelope["types"].as_array_mut().expect("types is an array");
+    let entry = types
+        .iter_mut()
+        .find(|entry| entry["identity"] == sub.as_str())
+        .expect("the document declares Sub");
+    entry["fields"] = json!([field("zeta"), field("alpha")]);
+    envelope.to_string().into_bytes()
+}
+
+fn field(model: &str, object: &str, field: &str) -> crate::FieldName {
+    crate::FieldName {
+        model: identifier(model),
+        object: identifier(object),
+        field: identifier(field),
+    }
+}
+
+/// FR-121-AC-14 (ADR-012 §15.4): a field selection keys each state field
+/// under the `model`/`object_type` node of the type that declares it, at
+/// its ordinal among that type's own fields in ascending name order, not
+/// declaration order: `ConfigVersion` declares `versionNumber` then
+/// `parent`, keyed `[1]` and `[0]`; `Sub` declares `zeta` then `alpha`,
+/// keyed `[1]` and `[0]`. `versionNumber` named through `Sub` is keyed
+/// under `ConfigVersion`, its declaring type. Each node is the one the
+/// compiled graph's own lowering minted for that type -- `Sub`'s because
+/// an invariant on `Config::Sub` takes it as its context. A field the type
+/// does not have refuses `UnknownField`, paired with the package.
+#[trace("TC-516", "FR-121-AC-14")]
+#[test]
+fn call_site_keys_a_state_field_under_its_declaring_type_by_name_ordinal() {
+    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
+    let unit = insert_clause_after(
+        &unit,
+        "VersionUnchanged",
+        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
+    );
+    let compiled = compile_config_version_unit(&unit, &packages);
+    let graph = compiled.package.graph();
+    let config_version = wire(config_version_node_key(graph));
+    let sub_declaration = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: format!("ix://{CONFIG_VERSION_PACKAGE_IDENTITY}/Sub"),
+    };
+    let sub = graph
+        .semantic_graph()
+        .nodes()
+        .find(|node| graph.resolve_declaration(node.key()) == Some(&sub_declaration))
+        .map(|node| wire(node.key()))
+        .expect("SubAlpha's context mints Sub's own object_type node");
+    assert_ne!(sub, config_version);
+
+    let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let key = |object: &str, name: &str| {
+        locate(&unit, document, &field("Config", object, name))
+            .unwrap_or_else(|refusal| panic!("{object}.{name} resolves: {refusal:?}"))
+            .site
+            .domain
+    };
+    assert_eq!(
+        key("ConfigVersion", "parent"),
+        crate::DomainKey::Node {
+            node: config_version,
+            path: vec![0]
+        }
+    );
+    assert_eq!(
+        key("ConfigVersion", "versionNumber"),
+        crate::DomainKey::Node {
+            node: config_version,
+            path: vec![1]
+        }
+    );
+    assert_eq!(
+        key("Sub", "versionNumber"),
+        crate::DomainKey::Node {
+            node: config_version,
+            path: vec![1]
+        },
+        "an inherited field is keyed under its declaring type"
+    );
+    assert_eq!(
+        key("Sub", "alpha"),
+        crate::DomainKey::Node {
+            node: sub,
+            path: vec![0]
+        }
+    );
+    assert_eq!(
+        key("Sub", "zeta"),
+        crate::DomainKey::Node {
+            node: sub,
+            path: vec![1]
+        }
+    );
+
+    let package = compiled.emitted.package_id().record();
+    for selection in [
+        field("Config", "Sub", "nope"),
+        field("Config", "ConfigVersion", "alpha"),
+        field("Config", "Nope", "parent"),
+        field("Nope", "Sub", "alpha"),
+    ] {
+        let refusal = locate(&unit, document, &selection)
+            .expect_err("the selection names no field of the package");
+        match *refusal {
+            CallSiteRefusal::UnknownField {
+                selection: refused,
+                package: refused_in,
+            } => {
+                assert_eq!(refused, selection);
+                assert_eq!(refused_in, package);
+            }
+            other => panic!("expected UnknownField for {selection}, got {other:?}"),
+        }
+    }
+}
+
+/// FR-121-AC-15: a field's domain key does not depend on whether the
+/// package's lowering minted its declaring type's node. With no clause on
+/// `Sub`, nothing in the graph names `Sub`'s node, yet `Sub.alpha` is
+/// keyed under the same node the AC-14 unit, whose invariant mints it,
+/// keys it under.
+#[trace("TC-516", "FR-121-AC-15")]
+#[test]
+fn call_site_keys_a_field_of_a_type_no_clause_names() {
+    let (unit, packages) = config_version_unit_and_packages_for(sub_with_fields_document());
+    let [(_, document)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    let with_clause = insert_clause_after(
+        &unit,
+        "VersionUnchanged",
+        "invariant SubAlpha using v on Config::Sub at current { self.alpha <= self.zeta }",
+    );
+    let unminted = locate(&unit, document, &field("Config", "Sub", "alpha"))
+        .expect("Sub.alpha resolves")
+        .site
+        .domain;
+    let minted = locate(&with_clause, document, &field("Config", "Sub", "alpha"))
+        .expect("Sub.alpha resolves")
+        .site
+        .domain;
+    let crate::DomainKey::Node { node: sub, .. } = unminted else {
+        panic!("a field key is a node key: {unminted:?}");
+    };
+    let compiled = compile_config_version_unit(&unit, &packages);
+    assert!(
+        !compiled
+            .package
+            .graph()
+            .semantic_graph()
+            .nodes()
+            .any(|node| wire(node.key()) == sub),
+        "no clause names Sub, so its node is not in the graph"
+    );
+    assert_eq!(unminted, minted);
+}
+
+/// FR-121-AC-16 (ADR-012 §15.4, §15.7): `parent` is `ConfigVersion`'s field
+/// at name ordinal 0, and `config_history` is the package's population at
+/// ordinal 0 whose member type is `ConfigVersion`: one node, one ordinal,
+/// two distinct keys, because each names its subject.
+#[trace("TC-516", "FR-121-AC-16")]
+#[test]
+fn a_field_key_and_a_population_key_with_one_ordinal_are_distinct() {
+    let compiled = config_version_compiled();
+    let graph = compiled.package.graph();
+    let config_version = wire(config_version_node_key(graph));
+    let population = crate::DomainKey::Population {
+        member_type: config_version,
+        ordinal: 0,
+    };
+    let recorded: Vec<&crate::DomainKey> = graph
+        .requirements()
+        .values()
+        .filter_map(|record| match record.requirements().extent() {
+            qsl_semantics::family::ClaimExtent::Unbounded(domains) => Some(domains),
+            qsl_semantics::family::ClaimExtent::Bounded => None,
+        })
+        .flat_map(|domains| domains.iter().map(|(key, _)| key))
+        .collect();
+    assert!(
+        !recorded.is_empty() && recorded.iter().all(|key| **key == population),
+        "every recorded domain is config_history's population key: {recorded:?}"
+    );
+
+    let document = config_version_domain_document();
+    let (unit, _) = config_version_unit_and_packages();
+    let parent = locate(
+        &unit,
+        &document,
+        &field("Config", "ConfigVersion", "parent"),
+    )
+    .expect("parent resolves")
+    .site
+    .domain;
+    assert_eq!(
+        parent,
+        crate::DomainKey::Node {
+            node: config_version,
+            path: vec![0]
+        }
+    );
+    assert_ne!(parent, population);
+}

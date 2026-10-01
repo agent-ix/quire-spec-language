@@ -205,11 +205,16 @@ Three concepts, three types:
 - **Mode** is a property of a backend advertisement: `qsl_route::Mode{Bounded,
   Unbounded}`, which exists.
 
-**Domain key.** F `bound::DomainKey{node: WireNodeId, path: Vec<u32>}` names
-one unbounded domain: the checked node that carries it (a parameter, a bound
-variable, a loop, or a temporal clause), then, for a type position, the
-child-index path into that node's type (element, field, variant payload). A
-loop or a clause has an empty path. It is a
+**Domain key.** F `bound::DomainKey` names one unbounded domain by its
+subject, an enum with one variant per kind of subject, so a key of one kind
+never equals a key of another:
+`Node{node: WireNodeId, path: Vec<u32>}` is a domain inside a node's type --
+the checked node that carries it (a parameter, a bound variable, a loop, a
+temporal clause, a frame, or the object type that declares a state field,
+ADR-012 §15.4), then, for a type position, the child-index path into that
+node's type (element, field, variant payload); a loop or a clause has an
+empty path. `Population{member_type: WireNodeId, ordinal: u32}` is a
+population with no maximum (ADR-012 §15.7). It is a
 wire-level key because it crosses to CG and to replay; layer 3 converts its
 `NodeKey`s to `WireNodeId`s when it builds the request (ADR-013 O-04). F
 `bound` is a new foundation module that imports only K, F `digest` and F

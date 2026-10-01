@@ -44,10 +44,19 @@ fn a_declared_domain_is_built_through_the_facade_alone() {
     let bound = FiniteBound::integer_range(Integer::from(0_i64), Integer::from(9_i64))
         .expect("[0, 9] is not empty");
     let declared = DeclaredDomain::new(ProofBound {
-        domain: DomainKey::new(parameter, Vec::new()),
+        domain: DomainKey::Node {
+            node: parameter,
+            path: Vec::new(),
+        },
         bound: bound.clone(),
     });
-    assert_eq!(declared.parameter(), parameter);
+    assert_eq!(
+        declared.domain(),
+        &DomainKey::Node {
+            node: parameter,
+            path: Vec::new()
+        }
+    );
     assert_eq!(declared.bound(), &bound);
     assert_eq!(declared.bound().kind(), FiniteBoundKind::IntegerRange);
     let FiniteBound::IntegerRange(interval) = declared.bound() else {

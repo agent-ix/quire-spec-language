@@ -176,7 +176,10 @@ impl Checked {
                 .iter()
                 .map(|(function, index)| {
                     (
-                        DomainKey::new(wire(self.parameter(function, *index)), Vec::new()),
+                        DomainKey::Node {
+                            node: wire(self.parameter(function, *index)),
+                            path: Vec::new(),
+                        },
                         DomainKind::Integer,
                     )
                 })
@@ -962,7 +965,15 @@ fn extent(domains: &[(WireNodeId, &[u32], DomainKind)]) -> ClaimExtent {
     ClaimExtent::from_domains(
         domains
             .iter()
-            .map(|(node, path, kind)| (DomainKey::new(*node, path.to_vec()), *kind))
+            .map(|(node, path, kind)| {
+                (
+                    DomainKey::Node {
+                        node: *node,
+                        path: path.to_vec(),
+                    },
+                    *kind,
+                )
+            })
             .collect(),
     )
 }

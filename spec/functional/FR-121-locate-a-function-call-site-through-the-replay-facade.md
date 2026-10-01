@@ -34,7 +34,8 @@ one: the compiled package's own `package_id` and, for one selection, a
 named function's declared parameters, each paired with its own node id; a
 named operation's `operation_anchor` and `frame` nodes, the frame's
 occurrence key and the node and occurrence key of every state clause
-naming the operation; or a named state clause's node and occurrence key.
+naming the operation; a named state clause's node and occurrence key; or
+a named state field's domain key (ADR-012 §15.4).
 
 `call_site` compiles one unit through S1 to S4 -- the same
 `qsl_replay::spine::compile` FR-027's `compile` command uses -- against the
@@ -56,8 +57,8 @@ to build the harnesses and requests `replay` and `replay_frame` later
 execute. For the same reason `qsl_replay` re-exports, at its root, the
 types a caller constructs a `call_site` input from or matches a refusal
 on: `DependencyInput`, `SuppliedLibrary`, `DependencyInputRefusal`,
-`SourceHolder` and `OperationName`, and the kernel `Origin` and `Role`
-that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
+`SourceHolder`, `OperationName` and `FieldName`, and the kernel `Origin`
+and `Role` that `OccurrenceKey::new(WireNodeId, Origin)` takes. It also
 re-exports the types a caller builds a `DeclaredDomain` from: `ProofBound`,
 `DomainKey`, `FiniteBound`, `FiniteBoundKind`, `EmptyFiniteBound`, and the
 kernel `Integer`, `IntegerInterval` and `EmptyInterval`. A caller reads a
@@ -82,8 +83,9 @@ declaration by declared identity, never by position.
 - `selection`: a `QualifiedName` naming a function, an `OperationName`
   naming an operation `M::T::op` as model alias, object type and operation
   identifiers, or a `ClauseName` naming a state clause by its declared
-  `Identifier`. The selection types are exactly the three implementors of
-  the sealed trait `CallSiteSelection`.
+  `Identifier`, or a `FieldName` naming a state field `M::T.f` as model
+  alias, object type and field identifiers. The selection types are
+  exactly the four implementors of the sealed trait `CallSiteSelection`.
 
 ## Outputs
 
@@ -98,6 +100,7 @@ declaration by declared identity, never by position.
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
     `occurrence: OccurrenceKey`, in declaration order);
   - for a `ClauseName`, a `ClauseSite`: `name`, `node` and `occurrence`;
+  - for a `FieldName`, a `FieldSite`: `domain` (`DomainKey`);
 - or a typed `CallSiteRefusal` with no partial result.
 
 ## Behavior
@@ -145,6 +148,16 @@ declaration by declared identity, never by position.
   state-clause counterexample carries. A name that declares no state
   clause SHALL refuse `CallSiteRefusal::UnknownClause`, pairing the
   `ClauseName` with the compiled package's own `package_id` (FR-088-AC-6).
+- For a field selection, `call_site` SHALL resolve the model alias and
+  object type as an operation selection does, and the field in the object
+  type's effective attribute set, and SHALL return the field's ADR-012
+  §15.4 domain key: `DomainKey::Node` with the `model`/`object_type` node
+  of the type that declares the field, whether or not the package's own
+  lowering keyed that node, and the one-element path holding the field's
+  ordinal among that type's own field declarations in ascending field-name
+  UTF-8 byte order. A selection whose alias, object type or field does not
+  resolve SHALL refuse `CallSiteRefusal::UnknownField`, pairing the
+  `FieldName` with the compiled package's own `package_id` (FR-088-AC-6).
 - An operation selection whose model alias or object type does not
   resolve, whose operation resolves to no single operation, or that no
   clause or attempt of the unit names (FR-105 emits no frame for it) SHALL
@@ -174,6 +187,9 @@ declaration by declared identity, never by position.
 | FR-121-AC-11 | For the AC-4 unit, a `DependencyInput` supplying the imported library from source bytes that do not parse refuses `CallSiteRefusal::Dependency`, its `path` exactly that library's identity. | Test (TC-516) |
 | FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the RFC 8785 bytes of its `identity_preimage` member digest, under `quire.package.semantic/v2`, to the `CallSite`'s `package_id`. | Test (TC-516) |
 | FR-121-AC-13 | From outside the crate, a `DeclaredDomain` over an integer range on a parameter node `call_site` returned is built through `qsl_replay`'s root paths alone (`ProofBound`, `DomainKey`, `FiniteBound`, `Integer`), its kind is `FiniteBoundKind::IntegerRange` and its interval equals the `IntegerInterval` built there; an inverted range refuses `EmptyFiniteBound::InvertedIntegerRange` through `FiniteBound::integer_range` and `EmptyInterval` through `IntegerInterval::new`. | Test (TC-516) |
+| FR-121-AC-14 | For the ConfigVersion domain package plus `Sub`, a subtype of `ConfigVersion` declaring `zeta` then `alpha`, a field selection returns `DomainKey::Node` on `ConfigVersion`'s own `object_type` node with path `[0]` for `parent` and `[1]` for `versionNumber`, the same `[1]` key for `versionNumber` named through `Sub`, and on `Sub`'s own `object_type` node `[0]` for `alpha` and `[1]` for `zeta`; each node equals the one the compiled graph's lowering keyed for that type. `Config::Sub.nope`, `Config::ConfigVersion.alpha`, `Config::Nope.parent` and `Nope::Sub.alpha` each refuse `CallSiteRefusal::UnknownField`, pairing the `FieldName` with the package. | Test (TC-516) |
+| FR-121-AC-15 | For the AC-14 domain package and a unit with no clause on `Sub`, so that the compiled graph holds no `Sub` node, `Config::Sub.alpha`'s domain key equals the one returned for the AC-14 unit. | Test (TC-516) |
+| FR-121-AC-16 | For the ConfigVersion unit, the field key of `parent` (ordinal 0 under `ConfigVersion`) differs from the `config_history` population key its clauses' requirement records carry (ordinal 0, member type `ConfigVersion`), which is a `DomainKey::Population` on the same node. | Test (TC-516) |
 
 ## Dependencies
 
@@ -194,6 +210,8 @@ declaration by declared identity, never by position.
   selection supplies.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1, §3 FB-05, T-12 rule (a).
+- [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
+  §15.4, §15.7: the state field and population domain keys.
 - ADR-013 O-07, O-25, C-11, TK-01.
 - ADR-015 D-1: the dependency input.
 

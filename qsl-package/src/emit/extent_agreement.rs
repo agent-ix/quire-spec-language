@@ -264,7 +264,10 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
                 let named = domains
                     .iter()
                     .find(|(_, domain)| *domain == kind)
-                    .map(|(key, _)| key.node())
+                    .map(|(key, _)| match key {
+                        qsl_foundation::bound::DomainKey::Node { node, .. } => *node,
+                        other => panic!("{name}: a {kind:?} domain is a node key: {other:?}"),
+                    })
                     .unwrap_or_else(|| panic!("{name}: QSL names a {kind:?} domain: {domains:?}"));
                 let ir_node = node_by_id(&wire, unbounded_type);
                 match first {
@@ -442,10 +445,10 @@ fn integer_at(package: &CheckedPackage, function: &str, index: usize) -> ClaimEx
         .and_then(|node| node.function_parameters())
         .expect("a function node")[index];
     ClaimExtent::from_domains(std::collections::BTreeMap::from([(
-        qsl_foundation::bound::DomainKey::new(
-            WireNodeId::from_digest(*parameter.as_bytes()),
-            Vec::new(),
-        ),
+        qsl_foundation::bound::DomainKey::Node {
+            node: WireNodeId::from_digest(*parameter.as_bytes()),
+            path: Vec::new(),
+        },
         DomainKind::Integer,
     )]))
 }
