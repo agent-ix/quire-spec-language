@@ -39,7 +39,9 @@ specifies how QSL executes and compares them.
 
 One outcome for each executed vector: `passed`, `failed`, `unsupported`,
 `incomplete` or `tool-failure`, each holding the vector id, its capability
-id and, unless `passed`, the expected and actual typed result.
+id and, unless `passed`, the expected and actual typed result. `incomplete`
+and `tool-failure` are QSpec FR-311 `unexecuted` results, kept apart so the
+report names why the vector did not run to a result.
 
 ## Behavior
 

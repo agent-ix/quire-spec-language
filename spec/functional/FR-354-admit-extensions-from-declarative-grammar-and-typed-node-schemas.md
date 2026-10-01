@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-133
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-132
+    type: depends_on
 ---
 # FR-354: Admit extensions from declarative grammar and typed-node schemas
 
@@ -93,7 +95,8 @@ source locus involved.
 
 ## Dependencies
 
-- QSpec FR-133 (the extension mechanism and its refusals).
+- QSpec FR-133 (the extension mechanism and its refusals) and FR-132 (the
+  package's required-feature set; an unknown required capability refuses).
 - [ADR-012](../decisions/ADR-012-semantic-family-extension-contracts.md)
   §4 (a construct with independent clauses is a typed node with one typed
   subnode per clause).
