@@ -10,26 +10,19 @@
 //! unbounded node must be the form QSL named: a collection with no bound, or
 //! an `Integer` with no range.
 //!
-//! Three fixtures do not agree at the pinned revision, because of IR-side
-//! predicate gaps. They sit in an ignored test that asserts agreement, and
-//! join the passing test when IR fixes them:
+//! IR's `requires-bound` is position-sensitive: a `bounded_domain` over the
+//! shared `integer` scalar node does not bound an unranged `Integer` field
+//! beside it (`Mixed{n: Integer, k: Int[0, 9]}`), and the `integer` node a
+//! bounded collection's `collection_bounds` literals are typed at is not a
+//! position (`Flags{xs: Sequence<Boolean>[0, 3]}`). A type in a recursion
+//! group requires a bound, so the recursive `RangedTree`, which ADR-014 §4
+//! classifies as unbounded by depth, agrees too.
 //!
-//! - **IR-283.** IR's `requires-bound` does not distinguish positions. A
-//!   `bounded_domain` over the shared `integer` scalar node bounds every
-//!   integer position at once. So `Mixed{n: Integer, k: Int[0, 9]}` lowers,
-//!   and `Flags{xs: Sequence<Boolean>[0, 3]}` requires a bound for the
-//!   `integer` node its `collection_bounds` literals are typed at.
-//! - **IR-284.** IR has no recursion rule, so it lowers the recursive
-//!   `RangedTree`, which ADR-014 §4 classifies as unbounded by depth.
-//! - **A quantity** (`Measure{len: metre}`). QSL classifies it unbounded
-//!   and unboundable (ADR-014 §4). It cannot be compared yet: the emitter
-//!   omits the record, because it names the declared unit node lowering
-//!   does not build (`NamesAbsentNode`). IR's pinned `requires_bound`
-//!   reads unit types as needing no bound, so once the record is written it
-//!   is expected to disagree too.
-//!
-//! The ignored test gathers every fixture's disagreement before failing,
-//! so one run reports them all.
+//! One fixture cannot be compared: a quantity (`Measure{len: metre}`). QSL
+//! classifies it unbounded and unboundable (ADR-014 §4), but the emitter
+//! omits the record, because it names the declared unit node lowering does
+//! not build (`NamesAbsentNode`). It sits in an ignored test that asserts
+//! agreement.
 //!
 //! **Operation-application records** (FR-097-AC-6). QSL's requirement
 //! record is the authority for an operation-application claim's extent.
@@ -117,13 +110,14 @@ fn records() -> Vec<CompositeDeclaration> {
             "Ints",
             vec![("xs", sequence(ValueType::Integer, Some((0, 3))))],
         ),
-        // IR-283: a bounded collection of booleans.
+        // A bounded collection of booleans: its bound literals' `integer`
+        // node is not a position.
         record(
             7,
             "Flags",
             vec![("xs", sequence(ValueType::Boolean, Some((0, 3))))],
         ),
-        // IR-284: recursive (QSpec FR-143). The `Int[0, 9]` field covers
+        // Recursive (QSpec FR-143). The `Int[0, 9]` field covers
         // the bound literals' `integer` node, so only the recursion differs.
         record(
             8,
@@ -133,7 +127,7 @@ fn records() -> Vec<CompositeDeclaration> {
                 ("k", int_0_9()),
             ],
         ),
-        // IR-283: an unranged integer beside a ranged one.
+        // An unranged integer beside a ranged one.
         record(
             9,
             "Mixed",
@@ -223,42 +217,86 @@ fn ir_lowering(package: &CheckedPackageV2, id: &CheckedNodeId) -> CompleteLoweri
         .remove(0)
 }
 
-/// TC-440 (ADR-014 §4; §10 scenarios 2 and 3): over the agreeing fixtures,
-/// IR's `requires-bound` fires exactly when QSL's extent is unbounded, and
-/// IR's first unbounded node is a form QSL named as a domain.
+/// Where IR's first unbounded node must lie for it to agree with the domain
+/// QSL names.
+#[derive(Clone, Copy)]
+enum FirstUnbounded {
+    /// A node of this `semantic_form`, the form QSL names as the domain.
+    Form(&'static str),
+    /// Any member of the recursion group of the node QSL names
+    /// `Recursive`. IR reports the reachable group member with the lowest
+    /// node id, which depends on digest order, so only membership is
+    /// asserted.
+    InRecursionGroup,
+}
+
+/// TC-440 (ADR-014 §4; §10 scenarios 2 and 3): over the comparable
+/// fixtures, IR's `requires-bound` fires exactly when QSL's extent is
+/// unbounded, and IR's first unbounded node is a form QSL named as a domain
+/// or, for a recursive type, a member of the recursion group QSL named.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
 fn tc_440_qsl_extent_agrees_with_ir_requires_bound() {
+    use FirstUnbounded::{Form, InRecursionGroup};
     let expectations = [
-        ("Bag", Some(("sequence", DomainKind::Collection))),
-        ("Counter", Some(("integer", DomainKind::Integer))),
+        ("Bag", Some((Form("sequence"), DomainKind::Collection))),
+        ("Counter", Some((Form("integer"), DomainKind::Integer))),
         ("Box", None),
-        ("Outer", Some(("sequence", DomainKind::Collection))),
+        ("Outer", Some((Form("sequence"), DomainKind::Collection))),
         ("Holder", None),
-        ("Ints", Some(("integer", DomainKind::Integer))),
+        ("Ints", Some((Form("integer"), DomainKind::Integer))),
+        ("Flags", None),
+        (
+            "RangedTree",
+            Some((InRecursionGroup, DomainKind::Recursive)),
+        ),
+        ("Mixed", Some((Form("integer"), DomainKind::Integer))),
     ];
     for (name, expected) in expectations {
         let (extent, lowering, wire) = both_sides(name);
         match (expected, &extent, &lowering) {
             (None, ClaimExtent::Bounded, CompleteLoweringRecordV2::Lowered { .. }) => {}
             (
-                Some((form, kind)),
+                Some((first, kind)),
                 ClaimExtent::Unbounded(domains),
                 CompleteLoweringRecordV2::RequiresBound { unbounded_type, .. },
             ) => {
-                assert!(
-                    domains.iter().any(|(_, domain)| domain == kind),
-                    "{name}: QSL names a {kind:?} domain: {domains:?}"
-                );
-                assert_eq!(
-                    node_by_id(&wire, unbounded_type)["semantic_form"],
-                    form,
-                    "{name}: IR's first unbounded node is the {form} QSL named"
-                );
+                let named = domains
+                    .iter()
+                    .find(|(_, domain)| *domain == kind)
+                    .map(|(key, _)| key.node())
+                    .unwrap_or_else(|| panic!("{name}: QSL names a {kind:?} domain: {domains:?}"));
+                let ir_node = node_by_id(&wire, unbounded_type);
+                match first {
+                    Form(form) => assert_eq!(
+                        ir_node["semantic_form"], form,
+                        "{name}: IR's first unbounded node is the {form} QSL named"
+                    ),
+                    InRecursionGroup => {
+                        let group = &wire_node(&wire, named)["recursion_group"];
+                        assert!(
+                            group.is_string(),
+                            "{name}: QSL's Recursive root is in a recursion group"
+                        );
+                        assert_eq!(
+                            &ir_node["recursion_group"], group,
+                            "{name}: IR's first unbounded node is in the recursion group QSL named"
+                        );
+                    }
+                }
             }
             _ => panic!("{name}: QSL {extent:?} disagrees with IR {lowering:?}"),
         }
     }
+}
+
+/// The written node whose wire id is `node`.
+fn wire_node(wire: &Value, node: WireNodeId) -> &Value {
+    let digest = node.to_string();
+    nodes(wire)
+        .iter()
+        .find(|written| written["node_id"]["digest"] == json!(digest))
+        .unwrap_or_else(|| panic!("{digest} is written"))
 }
 
 /// QSL's extent of the record declared `name`, and IR's lowering of it.
@@ -274,30 +312,16 @@ fn both_sides(name: &str) -> (ClaimExtent, CompleteLoweringRecordV2, Value) {
     (extent, ir_lowering(&package, &ir_id), wire)
 }
 
-/// TC-440 (IR-283, IR-284): agreement over the fixtures IR's pinned
-/// predicate gets wrong (this module's doc). QSL: `Flags` bounded,
-/// `RangedTree` unbounded by depth, `Mixed` unbounded by its `Integer`.
+/// TC-440: agreement over a quantity record, `Measure{len: metre}`. Its
+/// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
+/// unboundable (ADR-014 §4).
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-#[ignore = "IR-283/IR-284: IR's pinned requires-bound predicate does not distinguish integer positions and has no recursion rule"]
-fn tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284() {
-    let mut disagreements = Vec::new();
-    for (name, expected) in [
-        ("Flags", None),
-        ("RangedTree", Some(DomainKind::Recursive)),
-        ("Mixed", Some(DomainKind::Integer)),
-    ] {
-        let (extent, lowering, _) = both_sides(name);
-        if let Some(disagreement) = disagreement(name, expected, &extent, &lowering) {
-            disagreements.push(disagreement);
-        }
-    }
-    // A quantity (QSL-140 review M4): its magnitude is an unbounded
-    // `Rational`, so QSL classifies it unbounded and unboundable.
+#[ignore = "the emitter omits a record naming a declared unit: lowering does not build the unit node (NamesAbsentNode), so Measure is never written for IR to compare"]
+fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
     let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
     let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
-    // `Flag` keeps the package non-empty when `Measure` is
-    // omitted.
+    // `Flag` keeps the package non-empty when `Measure` is omitted.
     let filler = record(11, "Flag", vec![("b", ValueType::Boolean)]);
     let types = TypeEnvironment::new([measure.clone(), filler], [])
         .expect("FR-143 admits Measure")
@@ -306,22 +330,19 @@ fn tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284() {
     let written = nodes(&wire)
         .iter()
         .any(|node| node["declaration"]["qualified_name"] == json!(["Measure"]));
-    if written {
-        let (ir_id, wire_id) = declared(&wire, "Measure");
-        let checked_type = ValueType::Composite(measure.key());
-        let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();
-        let lowering = ir_lowering(&package, &ir_id);
-        if let Some(disagreement) =
-            disagreement("Measure", Some(DomainKind::Quantity), &extent, &lowering)
-        {
-            disagreements.push(disagreement);
-        }
-    } else {
-        disagreements.push(format!(
-            "Measure: not compared: the emitter omits it ({omitted:?})"
-        ));
+    assert!(
+        written,
+        "Measure: not compared: the emitter omits it ({omitted:?})"
+    );
+    let (ir_id, wire_id) = declared(&wire, "Measure");
+    let checked_type = ValueType::Composite(measure.key());
+    let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();
+    let lowering = ir_lowering(&package, &ir_id);
+    if let Some(disagreement) =
+        disagreement("Measure", Some(DomainKind::Quantity), &extent, &lowering)
+    {
+        panic!("{disagreement}");
     }
-    assert!(disagreements.is_empty(), "{}", disagreements.join("\n"));
 }
 
 /// Whether QSL's `extent` and IR's `lowering` of `name` agree, given QSL's
@@ -379,14 +400,10 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
 
 /// The written node whose id is `node`, as IR's node id.
 fn written(wire: &Value, node: WireNodeId) -> CheckedNodeId {
-    let digest = node.to_string();
-    let written = nodes(wire)
-        .iter()
-        .find(|written| written["node_id"]["digest"] == json!(digest))
-        .unwrap_or_else(|| panic!("{digest} is written"));
+    let written = wire_node(wire, node);
     CheckedNodeId {
         domain: written["node_id"]["domain"].as_str().unwrap().into(),
-        digest: digest.into(),
+        digest: node.to_string().into(),
     }
 }
 
@@ -487,14 +504,13 @@ fn tc_440_operation_application_records_agree_with_ir_per_node() {
     assert_eq!(add, [integer_at(&package, "k", 1)]);
 }
 
-/// TC-440 step 4 (FR-097-AC-6, IR-283): IR requires a bound for the outer
-/// `+` of `(x + 1) + n`, whose record is `Unbounded` at `n`. At the pinned
-/// revision IR lowers it: `x: Int[0, 9]`'s `bounded_domain` over the shared
-/// `integer` node bounds `n`'s position too.
+/// TC-440 step 4 (FR-097-AC-6): IR requires a bound for the outer `+` of
+/// `(x + 1) + n`, whose record is `Unbounded` at `n`. `x: Int[0, 9]`'s
+/// `bounded_domain` over the shared `integer` node does not bound `n`'s
+/// position.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-#[ignore = "IR-283: IR's pinned requires-bound predicate does not distinguish integer positions"]
-fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283() {
+fn tc_440_an_unbounded_application_record_requires_a_bound_in_ir() {
     let [_, (_, outer)] = inner_and_outer();
     assert!(
         matches!(outer, CompleteLoweringRecordV2::RequiresBound { .. }),

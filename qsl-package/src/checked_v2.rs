@@ -40,38 +40,33 @@
 //!
 //! # Ceilings
 //!
-//! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`
-//! and `depth`, which this reader checks itself and also hands to IR as
-//! `bytes`/`depth`, and IR's other five
+//! [`V2ReadLimits`] carries every ceiling of this read: `artifact_bytes`,
+//! which this reader checks itself and also hands to IR as `bytes`,
+//! `depth`, handed to IR as its `depth`, and IR's other five
 //! [`quire_contract_ir::CheckedPackageReadLimits`] ceilings (`nodes`,
 //! `edges`, `occurrences`, `diagnostics`, `work`), passed through unchanged.
 //! Every one is the caller's, used as given; the defaults are IR's own
-//! `bounded()` values plus this reader's 16 MiB byte default. It is not the
-//! native-v1 `PackageLimits` (the root crate's `package`, FR-019, SEAM-1
-//! until M-6): that type's `string_bytes` and `entries` exist only for the
-//! native encode/intake path and have no IR counterpart. Every IR ceiling a
-//! caller can hit is reported, verbatim, as [`V2ReadIncomplete::Limit`]'s
-//! [`quire_contract_ir::CheckedPackageLimit`] -- except `depth` itself,
-//! which two IR-side facts (both raised as IR-238, not papered over here)
-//! keep from being a clean refused/
-//! incomplete split at every depth:
+//! `bounded()` values plus this reader's 16 MiB byte default and a depth of
+//! 128. It is not the native-v1 `PackageLimits` (the root crate's `package`,
+//! FR-019, SEAM-1 until M-6): that type's `string_bytes` and `entries` exist
+//! only for the native encode/intake path and have no IR counterpart. Every
+//! IR ceiling a caller can hit is reported, verbatim, as
+//! [`V2ReadIncomplete::Limit`]'s [`quire_contract_ir::CheckedPackageLimit`].
+//! Two facts shape `depth`:
 //!
-//! - **Above serde_json's parse-time recursion cap, refused, not
-//!   `Incomplete`.** IR's `strict_json_value` parses with
-//!   `serde_json::Deserializer` and never calls `disable_recursion_limit`,
-//!   so serde_json's own fixed 128-container recursion cap fires *before*
-//!   IR's own `json_depth` resource meter ever runs. A wire nested past
-//!   128 containers is reported `Refused(Envelope(MalformedWire))`, not
-//!   `Incomplete(Limit(Depth))`, regardless of [`V2ReadLimits::depth`]
-//!   (IR-238 item 1; pinned by this module's own
-//!   `depth_far_past_the_default_limit_is_refused_as_malformed_wire`
-//!   test).
+//! - **Charged at most IR's fixed maximum.** IR charges a caller's depth
+//!   limit up to [`CheckedPackageReadLimits::MAXIMUM_DEPTH`], which bounds
+//!   the stack its reader reserves; a larger `depth` is charged at that
+//!   maximum. A wire nested past the charged limit is reported
+//!   `Incomplete(Limit(Depth))` naming the charged limit and the measured
+//!   depth, never refused as malformed, however deep it is. A verified
+//!   read's `effective_limits` records the charged `depth`.
 //! - **Fail-closed at the boundary, for a scalar-terminated path.** IR's
-//!   `json_depth` counts a scalar leaf as depth 1 even at zero entered
+//!   depth count takes a scalar leaf as depth 1 even at zero entered
 //!   containers, while [`V2ReadLimits::depth`] counts only entered
 //!   containers, so e.g. `{"a":1}` is depth 2 in IR's units but depth 1
 //!   here. This reader passes `V2ReadLimits::depth` to IR *unchanged* --
-//!   no `+ 1` conversion (QSL-6 M2, decided fail-closed): no wire deeper
+//!   no `+ 1` conversion (fail-closed): no wire deeper
 //!   than `V2ReadLimits::depth` containers is ever admitted, for either
 //!   kind of deepest path. The cost is one-sided: a wire whose deepest
 //!   path ends in a scalar exactly at the configured boundary is refused
@@ -175,27 +170,23 @@ pub(crate) fn read_v2(
     }
 }
 
-/// serde_json's fixed container-recursion cap, which IR's
-/// `strict_json_value` inherits because it never calls
-/// `disable_recursion_limit`: a wire nested deeper is refused as malformed
-/// before any depth ceiling is consulted, so no `depth` above this is
-/// actually enforced. An IR-side defect tracked by IR-279, not a bound of
-/// this reader; remove it once IR parses without the cap.
-const SERDE_JSON_RECURSION_LIMIT: usize = 128;
-
 /// Every ceiling of one [`read_checked_package_v2`] call (see the module
 /// doc's "Ceilings" section). Each field is used exactly as the caller
 /// supplies it, above or below [`Self::default`]: an implementation ceiling
 /// is not a domain bound (NFR-001). The one ceiling a caller cannot raise
-/// is `depth` past [`SERDE_JSON_RECURSION_LIMIT`];
-/// [`V2ReadOutcome::Verified`]'s `effective_limits` records that.
+/// is `depth` past [`CheckedPackageReadLimits::MAXIMUM_DEPTH`]; a verified
+/// read's [`V2Read::effective_limits`] records that.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct V2ReadLimits {
     /// Offered bytes, checked here and handed to IR as its `bytes`.
     /// Defaults to 16 MiB.
     pub(crate) artifact_bytes: usize,
     /// Entered JSON containers, handed to IR as its `depth`. Defaults to
-    /// 128; enforced only up to [`SERDE_JSON_RECURSION_LIMIT`].
+    /// 128; IR charges at most [`CheckedPackageReadLimits::MAXIMUM_DEPTH`].
+    /// A package admitted deeper than the default is recursed over, one
+    /// frame per level, by every clone, comparison, `Debug` rendering and
+    /// drop of the [`V2Read`] holding it, on the caller's stack: a caller
+    /// that raises `depth` must run on a stack sized for it.
     pub(crate) depth: usize,
     /// IR's semantic-graph node ceiling.
     pub(crate) nodes: u64,
@@ -243,10 +234,12 @@ impl V2ReadLimits {
     }
 
     /// The ceilings actually enforced: every field as given, except `depth`,
-    /// which cannot exceed [`SERDE_JSON_RECURSION_LIMIT`].
+    /// which IR charges at most [`CheckedPackageReadLimits::MAXIMUM_DEPTH`].
     fn enforced(self) -> Self {
+        let maximum =
+            usize::try_from(CheckedPackageReadLimits::MAXIMUM_DEPTH).unwrap_or(usize::MAX);
         Self {
-            depth: self.depth.min(SERDE_JSON_RECURSION_LIMIT),
+            depth: self.depth.min(maximum),
             ..self
         }
     }
@@ -579,7 +572,8 @@ pub(crate) struct V2Read {
     pub(crate) source_map: PackageSourceMap,
     /// The ceilings this read actually enforced: the caller's
     /// [`V2ReadLimits`] as given, with `depth` reported as at most
-    /// [`SERDE_JSON_RECURSION_LIMIT`] (see [`V2ReadLimits::enforced`]).
+    /// [`CheckedPackageReadLimits::MAXIMUM_DEPTH`] (see
+    /// [`V2ReadLimits::enforced`]).
     pub(crate) effective_limits: V2ReadLimits,
     /// IR's admitted package, supplied to a later read whose
     /// `dependency_selections` name it.

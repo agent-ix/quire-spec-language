@@ -34,7 +34,8 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 ## Expected Results
 
 - IR returns `RequiresBound` exactly when QSL's extent is `Unbounded`, and
-  IR's first unbounded node is the form QSL names.
+  IR's first unbounded node is the form QSL names; for a recursive type it
+  is a member of the recursion group of the root QSL names `Recursive`.
 - Step 4: IR answers `requires-bound` for the outer `+` node, whose record
   is `Unbounded` at `n`, and not for the inner `+` node, whose record is
   `Bounded`. For RR-7's `*` record (rooted through `t`'s bound value) and
@@ -44,17 +45,15 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
 
 ## Status
 
-Partly passed. `Bag` to `Ints` pass
+Partly passed. `Bag` to `Mixed` pass
 (`qsl-package/src/emit/extent_agreement.rs`,
-`tc_440_qsl_extent_agrees_with_ir_requires_bound`). `Flags`, `RangedTree`
-and `Mixed` are in the ignored
-`tc_440_qsl_extent_agrees_with_ir_requires_bound_pending_ir_283_284`, which
-waits on IR-283 (the predicate does not distinguish integer positions) and
-IR-284 (no recursion rule). It also holds a quantity fixture, `Measure`,
-which cannot be compared yet: the emitter omits the record because it
-names the unit node lowering does not build. It reports every fixture's
-disagreement in one run. Step 4 passes for the inner `+` and for RR-7's
-`*` and `k`'s `+` (`tc_440_operation_application_records_agree_with_ir_per_node`).
-IR lowers the outer `+` of `(x + 1) + n` instead of requiring a bound
-(IR-283); that assertion is in the ignored
-`tc_440_an_unbounded_application_record_requires_a_bound_in_ir_pending_ir_283`.
+`tc_440_qsl_extent_agrees_with_ir_requires_bound`); for `RangedTree` the test
+asserts IR's first unbounded node is in the recursion group of the root QSL
+names `Recursive`. The quantity fixture,
+`Measure`, is in the ignored
+`tc_440_quantity_extent_agrees_with_ir_requires_bound`: it cannot be
+compared, because the emitter omits the record, which names the unit node
+lowering does not build. Step 4 passes: the inner `+` and RR-7's `*` and
+`k`'s `+` (`tc_440_operation_application_records_agree_with_ir_per_node`),
+and IR's bound requirement for the outer `+` of `(x + 1) + n`
+(`tc_440_an_unbounded_application_record_requires_a_bound_in_ir`).
