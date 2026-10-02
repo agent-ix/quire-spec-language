@@ -1,0 +1,64 @@
+---
+id: SR-1050
+title: "Spec review of PR #584 (sum types and case, QSL-383)"
+type: SpecReview
+analysis: integrity
+scope: "agent-ix/quire-spec-language@91eafc29b2fd21deb0d098def857cb07857c77e4; spec/decisions/ADR-012-semantic-family-extension-contracts.md, spec/functional/FR-046, FR-106, FR-315 to FR-324, spec/test-cases/TC-464, TC-815 to TC-834, spec/usecase/US-032, spec/spec.md, spec/tests.md"
+review_set: subset
+---
+
+## Summary
+
+Ticket: QSL-383. Review of `git diff origin/main...HEAD` at 91eafc29 (the
+head includes the ADR-012 "ledger" rewording) against the wave-B and wave-C
+owner rulings and the QSpec counterparts on QSpec branch
+`spec/wave-b-q6-sumtypes` at 36fb68cd: FR-440, FR-441, FR-143, FR-144,
+FR-146 ("Case result type"), FR-046-AC-7 and FR-208-AC-13.
+
+Lenses applied: integrity (cross-FR and FR-to-ADR consistency), QSpec
+consistency, EARS phrasing, AC-to-TC coverage, caps and limits, version
+tracking, compat paths, undefined-is-refuted.
+
+QSpec consistency on the four named points:
+
+- Union member key preimage: FR-319 matches QSpec FR-441 exactly
+  (`{version: "quire.union-member-node/v1", declaration_node_id, member}`,
+  domain `quire.checked-semantic-node/v1`, `VariantId` is the key retyped).
+- OrderedSet keeps first-occurrence order: FR-323 and TC-833 match QSpec
+  FR-144 (`OrderedSet<T>` row: first-occurrence order plus uniqueness).
+- Case refusal order: FR-318 (scrutinee, then arm bodies in source order,
+  then exhaustiveness in `duplicate-arm`, `unknown-member`, `arm-arity`,
+  `missing-arm` order; unresolved or wrong-arity arm bodies unchecked)
+  matches QSpec FR-146 "Case result type" steps 1 to 3 and "Case
+  exhaustiveness".
+- A precondition ignores the post side: FR-106's new paragraph states it,
+  matching QSpec FR-046 line 25 and FR-046-AC-7, but FR-106's numbered
+  checks still read the post side (FND-001).
+
+What is right: no depth cap anywhere (FR-316, FR-318, FR-321, FR-322 bound
+only by caller-configured ceilings that name themselves; the 1..10,000
+sequence cap is removed from FR-046); no pins, digests or ledgers; no compat
+path; ticket ids only in References; every new AC has a behaviour TC; the
+evaluator propagates an undefined scrutinee as QSpec FR-146 does.
+`quire validate` on the 37 changed files exits 0 and
+`tools/check-index-completeness.sh` passes.
+
+## Verdict
+
+**NOT MERGEABLE as it stands.** FND-001 is high: FR-106 contradicts itself
+on what a precondition selected by `Invocation` reads. FND-002 and FND-003
+leave ADR-012, which this PR implements and amends, contradicting FR-323 and
+FR-318.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | FR-106's new precondition paragraph says admission reads and checks nothing of an invocation's post snapshot, result or delta, but checks 1, 3, 4, 6 and 10 still read, digest-check, role-check, model-check, walk and result-check the post side for every invocation, so a missing or malformed post snapshot still stops a precondition, contradicting QSpec FR-046-AC-7. | spec/functional/FR-106-admit-snapshots-and-invocations.md:158-164, 175, 210-211, 215, 221, 260 |
+| FND-002 | medium | ADR-012 §16.4 "S3 collection element types" row and §16.8 "Adverse, collections" row still say `Set<U>`, `Bag<U>` and `OrderedSet<U>` refuse `ill_typed`/`operator-ineligible` until SC-G5, and §16.10 SC-G5's Blocks cell says the same; FR-323 admits them under QSpec FR-144's union key. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1561, 1785, 1843 |
+| FND-003 | medium | ADR-012 §16.5 "Result type" still types `case` by the `if` rule (`Branches::Inferred`) and the arm-body refusal row says "under the `if` rule above"; FR-318 and §16.10 SC-G6 use QSpec FR-146 "Case result type", which differs (expected-type positions such as the other operand of `=`, Integer widening of `Int[..]` arms). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1604-1614, 1629 |
+| FND-004 | low | FR-322 names charge points for "`case` selection", but QSpec FR-146 (and FR-146-AC-13) makes selection and payload binding charge nothing; the FR should state that a `case` charges its scrutinee then only the selected body. | spec/functional/FR-322-evaluate-union-construction-and-case.md:32-33, 66-69, 83 |
+| FND-005 | low | FR-324 calls itself "QSL's reading of QSpec AD-015" that QSpec's definition "governs wherever it differs", and states what it does not add; QSpec FR-143 "Value profile" now defines this, so the FR should cite it as the rule (and list it in Dependencies and relationships). | spec/functional/FR-324-admit-unions-under-the-value-profile.md:23-28 |
+| FND-006 | low | FR-318-AC-4 omits QSpec FR-146-AC-14's `arm-arity` arm whose body uses an unbound identifier (reports only `arm-arity`); only the `unknown-member` half of "body not checked" is tested. | spec/functional/FR-318-check-case-expressions-and-exhaustiveness.md:121 |
+| FND-007 | low | TC-821's file name still says "applies-the-if-rule-to" while its title and FR-318 use QSpec FR-146 "Case result type". | spec/test-cases/TC-821-s3-checks-a-case-types-its-binders-per-arm-and-applies-the-if-rule-to.md |
+| FND-008 | low | ADR-012 §16.10 SC-G2 row (rewritten here) and §16.3 SC-R3 say "FR-323 typed values" meaning QSpec FR-323, now ambiguous with this PR's QSL FR-323 (collections). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1539, 1840 |

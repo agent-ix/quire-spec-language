@@ -13,6 +13,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/AD-015
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-143
+    type: depends_on
 ---
 # FR-324: Admit unions and case under the value profile that admits records and tuples
 
@@ -22,10 +24,8 @@ When a declaration's `using` alias selects a value profile that admits
 records and tuples (`quire.value.complete/v1`), the compiler SHALL admit
 union declarations, union constructions and `case` in that declaration on
 the same basis, and SHALL add no profile identity, profile version or
-per-feature edition gate for them. This is QSL's reading of QSpec AD-015,
-which extends the complete value system to the record, tuple and union
-composite family; QSpec's value-profile definition (References) governs
-wherever it differs (ADR-012 §16.9 "Profiles").
+per-feature edition gate for them, as QSpec FR-143 "Value profile" defines
+(QSpec AD-015; ADR-012 §16.9 "Profiles").
 
 ## Inputs
 
@@ -53,7 +53,7 @@ wherever it differs (ADR-012 §16.9 "Profiles").
 
 ## Dependencies
 
-- QSpec AD-015, AD-005.
+- QSpec FR-143 ("Value profile"), AD-015, AD-005.
 - FR-110 (header profile selections), FR-316.
 
 ## References

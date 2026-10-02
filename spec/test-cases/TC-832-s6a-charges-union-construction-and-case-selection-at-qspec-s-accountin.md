@@ -1,12 +1,12 @@
 ---
 id: TC-832
-title: "S6a charges union construction and case selection at QSpec's accounting points"
+title: "S6a charges union construction at QSpec's accounting point and nothing for case selection"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-322
     type: verifies
 ---
-# TC-832: S6a charges union construction and case selection at QSpec's accounting points
+# TC-832: S6a charges union construction at QSpec's accounting point and nothing for case selection
 
 ## Description
 
@@ -22,9 +22,10 @@ Tag each test `#[trace("TC-832", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: exactly the charge points, sizes and order QSpec's value
-  accounting lists for union construction and `case` selection, and no
-  other charge for those steps.
+- Step 1: one `composite.result-retain` for the construction with
+  `value_occurrences = 3`; for the `case`, the scrutinee's charges and then
+  the `Rect` body's charges, with no charge for arm selection or payload
+  binding and none for the unselected arms.
 - Step 2: stops at the last listed point with
   `incomplete { limit_kind: work_units }`.
 

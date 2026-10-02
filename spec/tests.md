@@ -525,7 +525,7 @@ names different artifacts in each.
 | TC-829 | Argument admission refuses ill-formed supplied union values before any charge | Unit | P1 | FR-321-AC-1, FR-321-AC-2 | 🚧 Planned |
 | TC-830 | Union values round-trip through v2 union_value nodes at any depth | Unit | P1 | FR-321-AC-3, FR-321-AC-4 | 🚧 Planned |
 | TC-831 | S6a evaluates case and construction, propagates stopped operands and faults on a broken invariant | Unit | P1 | FR-322-AC-1, FR-322-AC-2, FR-322-AC-4 | 🚧 Planned |
-| TC-832 | S6a charges union construction and case selection at QSpec's accounting points | Unit | P1 | FR-322-AC-3 | 🚧 Planned |
+| TC-832 | S6a charges union construction at QSpec's accounting point and nothing for case selection | Unit | P1 | FR-322-AC-3 | 🚧 Planned |
 | TC-833 | Union values as collection elements, in queries and in predicates | Unit | P1 | FR-323-AC-1, FR-323-AC-2, FR-323-AC-3, FR-046-AC-9 | 🚧 Planned |
 | TC-834 | Unions compile under the value profile with the same lock selections as records | Integration | P1 | FR-324-AC-1 | 🚧 Planned |
 

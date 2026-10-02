@@ -52,7 +52,9 @@ their `sha256-jcs` digest.
 6. Admit the forbidden-parent-change invocation (TC-465) selected for a
    precondition on `attemptUpdate`, and evaluate it; then admit and evaluate
    `PreCall` over that invocation's pre snapshot, `self` and parameters for
-   the same precondition.
+   the same precondition. Repeat the invocation selection with its `post`
+   snapshot removed from the provision, and with its `post` snapshot bytes
+   replaced by malformed (non-JSON) bytes.
 
 Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
 
@@ -78,7 +80,9 @@ Tag the tests `#[trace("TC-464", "FR-106-AC-n")]`.
   `invalid_runtime_input`/`wrong-value-kind` at `target` twice.
 - Step 6: the invocation admits one pre observation with no post
   observation, result or delta and no frame check run (no
-  `frame_violation`); its verdict equals the `PreCall` verdict.
+  `frame_violation`); its verdict equals the `PreCall` verdict. The
+  missing-post and malformed-post repeats each admit with the same verdict
+  and no refusal.
 
 ## Status
 

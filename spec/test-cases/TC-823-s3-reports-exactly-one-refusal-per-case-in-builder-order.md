@@ -16,10 +16,12 @@ Scope: FR-318-AC-4.
 
 1. A `case` with two `Empty` arms and no `Rect` arm.
 2. A `case` with an `unknown-member` arm whose body is `1 + true`.
-3. A `case` whose resolved `Circle` arm body is `1 + true` and which has no
+3. A `case` whose `Circle(a, b)` arm (wrong arity) has body `z`, an unbound
+   identifier, with every other arm well formed.
+4. A `case` whose resolved `Circle` arm body is `1 + true` and which has no
    `Rect` arm.
-4. A `case` over an `Integer` scrutinee with arms naming unknown members.
-5. A `case` over a scrutinee of an enum type.
+5. A `case` over an `Integer` scrutinee with arms naming unknown members.
+6. A `case` over a scrutinee of an enum type.
 
 Tag each test `#[trace("TC-823", "<AC id>")]`.
 
@@ -27,8 +29,9 @@ Tag each test `#[trace("TC-823", "<AC id>")]`.
 
 - Step 1: only `duplicate-arm`.
 - Step 2: only `unknown-member`.
-- Step 3: only `ill_typed` at `1 + true`.
-- Steps 4 and 5: only `ill_typed`/`type-mismatch` at the scrutinee,
+- Step 3: only `arm-arity`, at the `Circle(a, b)` arm.
+- Step 4: only `ill_typed` at `1 + true`.
+- Steps 5 and 6: only `ill_typed`/`type-mismatch` at the scrutinee,
   expected "a declared union".
 
 ## Status
