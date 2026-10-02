@@ -335,7 +335,7 @@ fn longest_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {
         assert_longest_chain("+", 9_995, sum_chain);
         assert_longest_chain("implies", 5_553, implies_chain);
-        assert_longest_chain("not", 49_974, not_chain);
+        assert_longest_chain("not", 49_978, not_chain);
         assert_longest_chain("let", 4_164, let_chain);
         assert_longest_chain("if", 2_271, if_chain);
         assert_longest_chain("let value", 4_164, let_value_chain);
@@ -348,9 +348,9 @@ fn longest_chains_parse_and_one_longer_names_a_ceiling() {
 #[test]
 fn longest_temporal_chains_parse_and_one_longer_names_a_ceiling() {
     on_bounded_stack(|| {
-        assert_longest_chain("always", 12_492, always_chain);
+        assert_longest_chain("always", 12_493, always_chain);
         assert_longest_chain("temporal implies", 8_330, temporal_implies_chain);
-        assert_longest_chain("temporal not", 49_971, temporal_not_chain);
+        assert_longest_chain("temporal not", 49_975, temporal_not_chain);
     });
 }
 

@@ -78,7 +78,7 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
 fn formatter_cannot_raise_the_hard_content_ceiling() {
     let header = concat!(
         "language\"ix:native\"edition\"1-draft\";",
-        "profile v=\"quire.value.complete/v1\"version\"1\"digest\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";",
+        "profile v=\"quire.value.complete/v1\";",
         "type Digit=Int[0,9];"
     );
     assert_eq!(OUTPUT_BYTE_CEILING, 1_048_576);

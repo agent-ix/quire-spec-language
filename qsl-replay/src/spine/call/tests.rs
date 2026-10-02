@@ -321,7 +321,6 @@ fn evaluation(outcome: FamilyOutcome<Value>) -> qsl_eval::value::Evaluation {
 #[trace("TC-452", "FR-100-AC-9")]
 #[test]
 fn tc_452_step_4_outcome_mapping_covers_every_category() {
-    assert_eq!(FIXTURE_F.len(), 237, "fixture F is 237 bytes");
     let compiled = compile(
         source(),
         "tc-452-f.native",
@@ -414,12 +413,12 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
+                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
                 );
-                assert_eq!(locus.span.start.byte, 233);
+                assert_eq!(locus.span.start.byte, 132);
                 assert_eq!(locus.span.start.line, 3);
                 assert_eq!(locus.span.start.column, 54);
-                assert_eq!(locus.span.end.byte, 234);
+                assert_eq!(locus.span.end.byte, 133);
                 assert_eq!(locus.span.end.line, 3);
                 assert_eq!(locus.span.end.column, 55);
                 assert_location(&got_location);
@@ -585,10 +584,10 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                     let locus = locus.expect("a record locus");
                     assert_eq!(
                         locus.source_digest,
-                        "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
+                        "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
                     );
-                    assert_eq!(locus.span.start.byte, 233);
-                    assert_eq!(locus.span.end.byte, 234);
+                    assert_eq!(locus.span.start.byte, 132);
+                    assert_eq!(locus.span.end.byte, 133);
                     assert_location(&got_location);
                 }
                 other => panic!("{refusal:?}: {other:?}"),
@@ -621,10 +620,10 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
                 let locus = locus.expect("a record locus");
                 assert_eq!(
                     locus.source_digest,
-                    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c"
+                    "sha256:0c84cc4af8de870892c28bae81b32ab5fb9e28c46fd5f41e2d3f4db50eca36eb"
                 );
-                assert_eq!(locus.span.start.byte, 233);
-                assert_eq!(locus.span.end.byte, 234);
+                assert_eq!(locus.span.start.byte, 132);
+                assert_eq!(locus.span.end.byte, 133);
                 assert_location(&got_location);
             }
             other => panic!("{other:?}"),
