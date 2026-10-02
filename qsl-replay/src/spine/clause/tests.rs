@@ -5014,3 +5014,4 @@ mod frame;
 mod frame_replay;
 mod state_clause_replay;
 mod witness;
+mod witness_member;

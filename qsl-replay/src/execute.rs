@@ -56,7 +56,7 @@ pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 mod state_clause;
 pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
 #[cfg(test)]
-pub(crate) use state_clause::{separate, stopped_reason, SeparationOutcome};
+pub(crate) use state_clause::{separate, settle_separation, stopped_reason, SeparationOutcome};
 
 /// The S1 limit a request names that is above this executor's reader
 /// limit (ADR-013 O-26: "a limit above the reader limit").

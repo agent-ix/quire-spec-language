@@ -25,7 +25,7 @@ pub use qsl_foundation::witness::{
 };
 use qsl_semantics::check::{CheckedGraph, Operator, SemanticTerm};
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::{CollectionValue, ObjectReference, Value};
+use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::location::Location;
 
 use super::super::evaluate::Evaluation;
@@ -113,7 +113,8 @@ pub enum Separation {
     Stopped(SeparationStep, Box<Evaluation>),
 }
 
-/// Where a collection's elements are stored.
+/// Where a collection's elements, or a record read from a stored object,
+/// are stored.
 #[derive(Clone, Debug)]
 pub(crate) struct Provenance {
     observation: ObservationIdentity,
@@ -147,6 +148,20 @@ impl Provenance {
             steps: vec![ValuePathStep::Member(member)],
             positions: None,
         }
+    }
+
+    /// The provenance of `field` of the record stored here; `None` for a
+    /// selection of elements, which has no fields.
+    pub(crate) fn field(&self, field: &str) -> Option<Self> {
+        if self.positions.is_some() {
+            return None;
+        }
+        let mut steps = self.steps.clone();
+        steps.push(ValuePathStep::Field(field.to_owned()));
+        Some(Self {
+            steps,
+            ..self.clone()
+        })
     }
 
     /// The provenance of a collection whose element `j` is this
@@ -196,9 +211,9 @@ pub(crate) struct Trail {
     pub(crate) pre: Option<ObservationIdentity>,
     decisions: BTreeMap<Location, bool>,
     stops: BTreeMap<Location, StopReport>,
-    /// Each recorded collection beside its provenance; looked up by
-    /// pointer identity, which a `let` binding or a stored copy keeps.
-    collections: Vec<(Arc<CollectionValue>, Provenance)>,
+    /// Each recorded collection or record beside its provenance; looked up
+    /// by pointer identity, which a `let` binding or a stored copy keeps.
+    located: Vec<(Value, Provenance)>,
 }
 
 impl Trail {
@@ -208,7 +223,7 @@ impl Trail {
             pre,
             decisions: BTreeMap::new(),
             stops: BTreeMap::new(),
-            collections: Vec::new(),
+            located: Vec::new(),
         }
     }
 
@@ -220,14 +235,22 @@ impl Trail {
         self.stops.insert(at.clone(), report);
     }
 
-    pub(crate) fn record(&mut self, collection: &Arc<CollectionValue>, provenance: Provenance) {
-        self.collections.push((Arc::clone(collection), provenance));
+    /// Record where `value`, a collection or a record, is stored; any other
+    /// value has no elements or fields to locate and is not recorded.
+    pub(crate) fn record(&mut self, value: &Value, provenance: Provenance) {
+        if matches!(value, Value::Collection(_) | Value::Composite(_)) {
+            self.located.push((value.clone(), provenance));
+        }
     }
 
-    pub(crate) fn provenance(&self, collection: &Arc<CollectionValue>) -> Option<&Provenance> {
-        self.collections
+    pub(crate) fn provenance(&self, value: &Value) -> Option<&Provenance> {
+        self.located
             .iter()
-            .find(|(recorded, _)| Arc::ptr_eq(recorded, collection))
+            .find(|(recorded, _)| match (recorded, value) {
+                (Value::Collection(left), Value::Collection(right)) => Arc::ptr_eq(left, right),
+                (Value::Composite(left), Value::Composite(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            })
             .map(|(_, provenance)| provenance)
     }
 }

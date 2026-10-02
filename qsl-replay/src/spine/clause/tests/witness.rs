@@ -3,18 +3,15 @@
 //! separating witness of a state clause, over a `witness` unit on FR-108's
 //! `Config` domain package.
 //!
-//! FR-265's fixture ranges its invariants over the current observation's
-//! `ConfigVersion` population. A state-clause body cannot name a
-//! population (ADR-016 FE-4; S6a refuses `allInstances` in a clause), so
-//! each invariant here ranges over a collection built inside the claim from
-//! `self`'s and its parent's members instead: the decision path, the
-//! decisive occurrence, the index and the built-collection value path are
-//! the ones FR-265 states for a built domain (FR-265-AC-5).
+//! FR-265's fixture: a state-clause body cannot name a population
+//! (ADR-016 FE-4), so each invariant here ranges over a collection built
+//! inside the claim from `self`'s and its parent's members. The member
+//! domains are in `witness_member`.
 
 use super::frame::object;
 use super::frame_replay::{package_digest, packet, request, unit_for, witness_source, Unit};
 use super::*;
-use crate::execute::{separate, stopped_reason, SeparationOutcome};
+use crate::execute::{separate, settle_separation, stopped_reason, SeparationOutcome};
 use crate::proof_result::SettlementBasis;
 use crate::result::SeparatingWitnessRecord;
 use crate::witness::{derive_separating_witness, Derived};
@@ -1152,11 +1149,11 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
     .unwrap();
     let cause = witness_arm(&result).disagreement().unwrap().clone();
     let text = cause.to_json().expect("the cause encodes");
-    assert_eq!(DisagreementCause::from_json(&text).unwrap(), cause);
+    assert_eq!(DisagreementCause::from_json(&text, &unit.compiled.package).unwrap(), cause);
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["failure"] = json!({"failure": "approximate"});
-    assert!(DisagreementCause::from_json(&document.to_string()).is_err());
+    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]
@@ -1164,11 +1161,11 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
         .unwrap()
         .remove("index")
         .expect("the record carries its index");
-    assert!(DisagreementCause::from_json(&document.to_string()).is_err());
+    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["given"]["index"] = serde_json::Value::Null;
-    assert!(DisagreementCause::from_json(&document.to_string()).is_err());
+    assert!(DisagreementCause::from_json(&document.to_string(), &unit.compiled.package).is_err());
 
     let DisagreementCause::Witness {
         proved,
@@ -1196,4 +1193,291 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
         failure,
     };
     assert_ne!(cause, other);
+}
+
+/// TC-744 step 2 (FR-269-AC-2): a matching record whose separation check
+/// fails at a step disagrees with `Witness`'s `Separation` failure naming
+/// that step and reason, holding the record as both `given` and `derived`;
+/// one that holds agrees; an exhausted check settles no witness check.
+#[trace("TC-744", "FR-269-AC-2")]
+#[test]
+fn tc_744_a_failed_separation_check_disagrees_naming_its_step() {
+    let unit = witness_unit();
+    let record = all_below_record(&unit);
+    assert_eq!(
+        settle_separation(unmet(SeparationStep::Body), &record),
+        Some(crate::WitnessCheck::Disagrees {
+            given: Some(Box::new(record.clone())),
+            derived: Some(Box::new(record.clone())),
+            failure: WitnessFailure::Separation {
+                step: SeparationStep::Body,
+                reason: SeparationReason::Unmet,
+            },
+        })
+    );
+    assert_eq!(
+        settle_separation(SeparationOutcome::Holds, &record),
+        Some(crate::WitnessCheck::Agrees(Some(Box::new(record.clone()))))
+    );
+    assert_eq!(settle_separation(SeparationOutcome::Exhausted, &record), None);
+}
+
+/// The `witness` unit with a record declaration and a declared unit, so a
+/// deciding element of every value kind names a declaration the checked
+/// package holds.
+fn codec_unit() -> Unit {
+    let text = format!(
+        "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n\
+         dimension L;\n\
+         unit m : L = rational(1, 1);\n",
+        witness_unit_text()
+    );
+    unit_for(text, config_version_domain_document())
+}
+
+/// A text value of `Text[0, 64; nfc]` holding `payload`.
+fn text(payload: &str) -> Value {
+    let text_type = quire_exact::TextType::new(0, 64, quire_exact::TextProfile::Nfc).unwrap();
+    let payload = quire_exact::TextPayload::from_utf8(payload.as_bytes()).unwrap();
+    let mut meter = Meter::new(default_accounting(1_000_000));
+    match quire_exact::admit_text(&payload, &text_type, &mut meter) {
+        Outcome::Completed(text) => Value::Text(text),
+        other => panic!("the text admits: {other:?}"),
+    }
+}
+
+/// A `Witness` cause whose `given` record decides on `element`.
+fn cause_deciding(unit: &Unit, element: Value) -> DisagreementCause {
+    let violation = Verdict::from_category(ProofCategory::Violation);
+    DisagreementCause::Witness {
+        proved: violation,
+        replayed: violation,
+        given: Some(Box::new(SeparatingWitnessRecord {
+            deciding_element: element,
+            ..all_below_record(unit)
+        })),
+        derived: None,
+        failure: WitnessFailure::Mismatch,
+    }
+}
+
+/// TC-744 step 3 (FR-269-AC-3): a deciding element of each value kind
+/// round-trips through the cause codec, reading back equal and encoding
+/// back to the same document; an element naming a declaration the package
+/// does not hold refuses.
+#[trace("TC-744", "FR-269-AC-3")]
+#[test]
+fn tc_744_every_deciding_element_kind_round_trips() {
+    use quire_exact::{
+        CardinalityBound, CollectionKind, CollectionType, Decimal, FieldValue, IeeeValue,
+        IntegerInterval, ObjectId, ObjectReference, OptionValue, Quantity, Rational, UnitId,
+        UniverseId, ValueType, VariantId,
+    };
+    let unit = codec_unit();
+    let package = &unit.compiled.package;
+    let types = package.graph().scope().types();
+    let point = types.composites().next().expect("Point is declared").key();
+    let object_type = types
+        .object_types()
+        .next()
+        .expect("ConfigVersion is declared")
+        .key();
+    let metre = types.units().ids().next().expect("m is declared");
+    let int = |value: i64| Value::Integer(quire_exact::Integer::from(value));
+    let digit = ValueType::Int(
+        IntegerInterval::new(quire_exact::Integer::from(0), quire_exact::Integer::from(9))
+            .unwrap(),
+    );
+    let rational = |n: i64, d: i64| {
+        Rational::new(quire_exact::Integer::from(n), quire_exact::Integer::from(d)).unwrap()
+    };
+    let sequence = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Integer,
+        Some(CardinalityBound::new(0, 3).unwrap()),
+    );
+    let set = CollectionType::new(CollectionKind::Set, ValueType::Integer, None);
+    let references = CollectionType::new(
+        CollectionKind::Sequence,
+        ValueType::Reference(object_type),
+        None,
+    );
+    let elements = [
+        ("boolean", Value::Boolean(true)),
+        ("integer", int(-42)),
+        ("rational", Value::Rational(rational(-3, 4))),
+        (
+            "decimal",
+            Value::Decimal(Decimal::new(quire_exact::Integer::from(12_345), 2)),
+        ),
+        (
+            "float64",
+            Value::Float(IeeeValue::binary64(0x4009_21fb_5444_2d18)),
+        ),
+        ("float32", Value::Float(IeeeValue::binary32(0x4049_0fdb))),
+        (
+            "declared quantity",
+            Value::Quantity(Quantity::new(rational(5, 2), metre)),
+        ),
+        (
+            "compound quantity",
+            Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound([5; 32]))),
+        ),
+        ("text", text("cafe\u{301}")),
+        (
+            "enum",
+            Value::Enum(quire_exact::EnumMember::new(
+                VariantId::from_digest([9; 32]),
+                1,
+            )),
+        ),
+        (
+            "present option",
+            OptionValue::present(digit.clone(), int(7)).unwrap(),
+        ),
+        (
+            "absent option",
+            OptionValue::none(ValueType::Composite(point)),
+        ),
+        (
+            "composite",
+            quire_exact::from_admitted_slots(
+                point,
+                vec![FieldValue::Present(int(1)), FieldValue::Present(int(2))].into(),
+            ),
+        ),
+        (
+            "sequence",
+            quire_exact::from_admitted(sequence, vec![int(2), int(1), int(2)]),
+        ),
+        ("set", quire_exact::from_admitted(set, vec![int(1), int(2)])),
+        (
+            "empty reference sequence",
+            quire_exact::from_admitted(references, Vec::new()),
+        ),
+        (
+            "reference",
+            Value::Reference(ObjectReference::new(
+                UniverseId::from_digest([2; 32]),
+                object_type,
+                ObjectId::new("root".to_owned()).unwrap(),
+            )),
+        ),
+    ];
+    for (kind, element) in elements {
+        let cause = cause_deciding(&unit, element);
+        let text = cause.to_json().unwrap_or_else(|error| panic!("{kind}: {error}"));
+        let read = DisagreementCause::from_json(&text, package)
+            .unwrap_or_else(|error| panic!("{kind}: {error}"));
+        assert_eq!(read, cause, "{kind}");
+        assert_eq!(read.to_json().unwrap(), text, "{kind}");
+    }
+
+    // The witness unit declares no `Point`: the composite refuses there.
+    let composite = cause_deciding(
+        &unit,
+        quire_exact::from_admitted_slots(point, vec![FieldValue::Absent, FieldValue::Null].into()),
+    )
+    .to_json()
+    .unwrap();
+    assert!(DisagreementCause::from_json(&composite, package).is_ok());
+    assert!(matches!(
+        DisagreementCause::from_json(&composite, &witness_unit().compiled.package),
+        Err(crate::CauseCodecError::Unresolved("declaration"))
+    ));
+}
+
+/// TC-744 step 3 (FR-269-AC-3, QSpec FR-352-AC-7): a refused separation
+/// step round-trips; a refusal whose code is not a catalog code, or whose
+/// cause or a field name is empty or not a catalog spelling, refuses.
+#[trace("TC-744", "FR-269-AC-3")]
+#[test]
+fn tc_744_a_refusal_reads_only_catalog_spellings() {
+    let unit = witness_unit();
+    let package = &unit.compiled.package;
+    let violation = Verdict::from_category(ProofCategory::Violation);
+    let cause = DisagreementCause::Witness {
+        proved: violation,
+        replayed: violation,
+        given: None,
+        derived: Some(Box::new(all_below_record(&unit))),
+        failure: WitnessFailure::Separation {
+            step: SeparationStep::Domain,
+            reason: SeparationReason::Refused(crate::SeparationRefusal {
+                code: "integer_out_of_domain".to_owned(),
+                cause: "value-out-of-domain".to_owned(),
+                fields: BTreeMap::from([("value".to_owned(), "1".to_owned())]),
+            }),
+        },
+    };
+    let text = cause.to_json().unwrap();
+    assert_eq!(DisagreementCause::from_json(&text, package).unwrap(), cause);
+    for (member, value) in [
+        ("code", json!("")),
+        ("code", json!("made_up_code")),
+        ("cause", json!("")),
+        ("cause", json!("Value Out")),
+        ("fields", json!({"": "1"})),
+        ("fields", json!({"Value": "1"})),
+    ] {
+        let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
+        document["failure"]["reason"][member] = value.clone();
+        assert!(
+            matches!(
+                DisagreementCause::from_json(&document.to_string(), package),
+                Err(crate::CauseCodecError::Spelling(_))
+            ),
+            "{member} = {value}"
+        );
+    }
+}
+
+/// TC-743 step 4 (FR-268-AC-4): a record whose deciding element is a long
+/// text, or whose value path names an object with a long identity, is
+/// measured by those lengths and refuses past the reader bound.
+#[trace("TC-743", "FR-268-AC-4")]
+#[test]
+fn tc_743_long_text_or_object_identity_exceeds_the_reader_bound() {
+    let unit = witness_unit();
+    let long = "x".repeat(crate::MAX_ENCODED_BYTES + 1);
+    let long_text = {
+        let text_type = quire_exact::TextType::new(
+            0,
+            u64::try_from(long.len()).unwrap(),
+            quire_exact::TextProfile::UnicodeScalars,
+        )
+        .unwrap();
+        let payload = quire_exact::TextPayload::from_utf8(long.as_bytes()).unwrap();
+        let mut meter = Meter::new(default_accounting(u64::MAX));
+        match quire_exact::admit_text(&payload, &text_type, &mut meter) {
+            Outcome::Completed(text) => Value::Text(text),
+            other => panic!("the text admits: {other:?}"),
+        }
+    };
+    let text_record = SeparatingWitnessRecord {
+        deciding_element: long_text,
+        ..all_below_record(&unit)
+    };
+    let object = quire_exact::ObjectReference::new(
+        quire_exact::UniverseId::from_digest([2; 32]),
+        quire_exact::EffectiveId::from_digest([3; 32]),
+        quire_exact::ObjectId::new(long).unwrap(),
+    );
+    let mut object_record = all_below_record(&unit);
+    object_record.value_path.subject = ValuePathSubject::Object(object);
+    for record in [text_record, object_record] {
+        assert!(record.measured_bytes() > crate::MAX_ENCODED_BYTES);
+        let (_, envelope) = replay_case(
+            &unit,
+            "AllBelow",
+            Snapshot::High,
+            "mid",
+            Some(record),
+            witness_source(),
+        );
+        assert!(matches!(
+            envelope,
+            Err(crate::WitnessRefusal::BoundExceeded(_))
+        ));
+    }
 }

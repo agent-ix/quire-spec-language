@@ -388,11 +388,6 @@ fn compare_witness(
     sources: &[Source],
     meter: &mut Meter,
 ) -> Result<Option<WitnessCheck>, ReplayRefusal> {
-    let disagrees = |failure| WitnessCheck::Disagrees {
-        given: given.cloned().map(Box::new),
-        derived: derived.cloned().map(Box::new),
-        failure,
-    };
     match (given, derived) {
         (None, None) => Ok(Some(WitnessCheck::Agrees(None))),
         (Some(given_record), Some(derived_record)) if given_record == derived_record => {
@@ -404,17 +399,32 @@ fn compare_witness(
                 sources,
                 meter,
             )?;
-            Ok(match outcome {
-                SeparationOutcome::Holds => {
-                    Some(WitnessCheck::Agrees(Some(Box::new(derived_record.clone()))))
-                }
-                SeparationOutcome::Failed(step, reason) => {
-                    Some(disagrees(WitnessFailure::Separation { step, reason }))
-                }
-                SeparationOutcome::Exhausted => None,
-            })
+            Ok(settle_separation(outcome, derived_record))
         }
-        _ => Ok(Some(disagrees(WitnessFailure::Mismatch))),
+        _ => Ok(Some(WitnessCheck::Disagrees {
+            given: given.cloned().map(Box::new),
+            derived: derived.cloned().map(Box::new),
+            failure: WitnessFailure::Mismatch,
+        })),
+    }
+}
+
+/// FR-269: the witness check of a matching `record` whose separation check
+/// ended `outcome`: it agrees when the check holds, disagrees naming the
+/// failing step and reason when it fails, and `None` when the meter was
+/// exhausted.
+pub(crate) fn settle_separation(
+    outcome: SeparationOutcome,
+    record: &SeparatingWitnessRecord,
+) -> Option<WitnessCheck> {
+    match outcome {
+        SeparationOutcome::Holds => Some(WitnessCheck::Agrees(Some(Box::new(record.clone())))),
+        SeparationOutcome::Failed(step, reason) => Some(WitnessCheck::Disagrees {
+            given: Some(Box::new(record.clone())),
+            derived: Some(Box::new(record.clone())),
+            failure: WitnessFailure::Separation { step, reason },
+        }),
+        SeparationOutcome::Exhausted => None,
     }
 }
 

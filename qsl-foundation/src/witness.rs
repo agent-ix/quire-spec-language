@@ -36,6 +36,8 @@ pub enum ValuePathSubject {
 /// QSpec FR-207's traversal steps a state clause's domain path uses.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValuePathStep {
+    /// A declared field of a record, by its exact spelling.
+    Field(String),
     /// A declared model member, by its exact spelling.
     Member(String),
     /// The element at this zero-based position of a collection.

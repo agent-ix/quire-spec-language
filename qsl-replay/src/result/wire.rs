@@ -16,9 +16,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
-use quire_exact::{
-    EffectiveId, Integer, ObjectId, ObjectReference, Origin, Role, UniverseId, Value,
-};
+use qsl_foundation::diagnostic::catalog_category;
+use qsl_package::CheckedPackage;
+use quire_exact::{Origin, Role};
 use quire_semantic_value::location::{Location, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -28,6 +28,9 @@ use super::{
 };
 use crate::identity::TracePosition;
 use crate::proof_result::ProofCategory;
+
+mod value;
+use value::{reference_of, Keys, ValueWire};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
@@ -49,9 +52,20 @@ pub enum CauseCodecError {
     /// quantifier's family assigns one (QSpec FR-351).
     #[error("a record naming a deciding quantifier carries no index")]
     MissingIndex,
-    /// A deciding element of a kind this codec has no encoding for.
+    /// A deciding element of a kind this codec has no encoding for: a
+    /// population, which no claim's domain holds.
     #[error("the deciding element's kind has no encoding")]
     UnsupportedElement,
+    /// A declaration identity the checked package does not hold.
+    #[error("the member {0} names no declaration of the checked package")]
+    Unresolved(&'static str),
+    /// A value member outside its kind's domain, or not in canonical form.
+    #[error("the {0} is not a canonical value of its kind")]
+    Value(&'static str),
+    /// A refusal's code is not a catalog code, or its cause or a field name
+    /// is empty or not a catalog spelling.
+    #[error("the refusal's {0} is not a catalog spelling")]
+    Spelling(&'static str),
 }
 
 impl DisagreementCause {
@@ -61,9 +75,10 @@ impl DisagreementCause {
     }
 
     /// FR-269: read a cause from `text`, refusing any document that is not
-    /// exactly a cause this codec writes.
-    pub fn from_json(text: &str) -> Result<Self, CauseCodecError> {
-        serde_json::from_str::<CauseWire>(text)?.read()
+    /// exactly a cause this codec writes. Declaration identities resolve
+    /// among those `package` admitted.
+    pub fn from_json(text: &str, package: &CheckedPackage) -> Result<Self, CauseCodecError> {
+        serde_json::from_str::<CauseWire>(text)?.read(Keys::new(package))
     }
 }
 
@@ -143,7 +158,7 @@ impl CauseWire {
         })
     }
 
-    fn read(self) -> Result<DisagreementCause, CauseCodecError> {
+    fn read(self, keys: Keys<'_>) -> Result<DisagreementCause, CauseCodecError> {
         Ok(match self {
             Self::Verdicts { proved, replayed } => DisagreementCause::Verdicts {
                 proved: proved.read(),
@@ -162,9 +177,12 @@ impl CauseWire {
             } => DisagreementCause::Witness {
                 proved: proved.read(),
                 replayed: replayed.read(),
-                given: given.map(|record| record.read()).transpose()?.map(Box::new),
+                given: given
+                    .map(|record| record.read(keys))
+                    .transpose()?
+                    .map(Box::new),
                 derived: derived
-                    .map(|record| record.read())
+                    .map(|record| record.read(keys))
                     .transpose()?
                     .map(Box::new),
                 failure: failure.read()?,
@@ -250,15 +268,15 @@ impl RecordWire {
         })
     }
 
-    fn read(self) -> Result<SeparatingWitnessRecord, CauseCodecError> {
+    fn read(self, keys: Keys<'_>) -> Result<SeparatingWitnessRecord, CauseCodecError> {
         // The record names a deciding quantifier, so its family is a
         // collection quantifier's, which assigns an index (QSpec FR-351).
         let index = self.index.ok_or(CauseCodecError::MissingIndex)?;
         Ok(SeparatingWitnessRecord {
             quantifier: self.quantifier.read()?,
-            deciding_element: self.deciding_element.read()?,
+            deciding_element: self.deciding_element.read(keys)?,
             index: Some(index),
-            value_path: self.value_path.read()?,
+            value_path: self.value_path.read(keys)?,
             trace_position: self.trace_position.map(TracePosition::new),
         })
     }
@@ -287,71 +305,6 @@ impl OccurrenceWire {
             WireNodeId::from_digest(digest(&self.node_id, "node_id")?),
             Origin::new(Role::new(self.role), self.ordinal),
         ))
-    }
-}
-
-/// A deciding element, by its value kind.
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-enum ValueWire {
-    Boolean {
-        value: bool,
-    },
-    Integer {
-        decimal: String,
-    },
-    Reference {
-        universe: String,
-        #[serde(rename = "type")]
-        object_type: String,
-        object_identity: String,
-    },
-}
-
-impl ValueWire {
-    fn of(value: &Value) -> Result<Self, CauseCodecError> {
-        Ok(match value {
-            Value::Boolean(value) => Self::Boolean { value: *value },
-            Value::Integer(integer) => Self::Integer {
-                decimal: integer.to_string(),
-            },
-            Value::Reference(reference) => Self::Reference {
-                universe: hex(reference.universe().as_bytes()),
-                object_type: hex(reference.object_type().as_bytes()),
-                object_identity: reference.object().as_str().to_owned(),
-            },
-            Value::Rational(_)
-            | Value::Decimal(_)
-            | Value::Float(_)
-            | Value::Quantity(_)
-            | Value::Text(_)
-            | Value::Enum(_)
-            | Value::Population(_)
-            | Value::Option(_)
-            | Value::Composite(_)
-            | Value::Collection(_) => return Err(CauseCodecError::UnsupportedElement),
-        })
-    }
-
-    fn read(self) -> Result<Value, CauseCodecError> {
-        Ok(match self {
-            Self::Boolean { value } => Value::Boolean(value),
-            Self::Integer { decimal } => Value::Integer(
-                decimal
-                    .parse::<Integer>()
-                    .map_err(|_| CauseCodecError::Integer("decimal"))?,
-            ),
-            Self::Reference {
-                universe,
-                object_type,
-                object_identity,
-            } => Value::Reference(ObjectReference::new(
-                UniverseId::from_digest(digest(&universe, "universe")?),
-                EffectiveId::from_digest(digest(&object_type, "type")?),
-                ObjectId::new(object_identity)
-                    .map_err(|_| CauseCodecError::Empty("object_identity"))?,
-            )),
-        })
     }
 }
 
@@ -403,6 +356,7 @@ enum SubjectWire {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum StepWire {
+    Field { name: String },
     Member { name: String },
     Index { index: u64 },
 }
@@ -434,6 +388,7 @@ impl PathWire {
                 .steps
                 .iter()
                 .map(|step| match step {
+                    ValuePathStep::Field(name) => StepWire::Field { name: name.clone() },
                     ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
                 })
@@ -441,7 +396,7 @@ impl PathWire {
         }
     }
 
-    fn read(self) -> Result<RuntimeValuePath, CauseCodecError> {
+    fn read(self, keys: Keys<'_>) -> Result<RuntimeValuePath, CauseCodecError> {
         let PathKind::RuntimeValue = self.kind;
         let observation = self.root.observation;
         Ok(RuntimeValuePath {
@@ -456,18 +411,19 @@ impl PathWire {
                     universe,
                     object_type,
                     object_identity,
-                } => ValuePathSubject::Object(ObjectReference::new(
-                    UniverseId::from_digest(digest(&universe, "universe")?),
-                    EffectiveId::from_digest(digest(&object_type, "type")?),
-                    ObjectId::new(object_identity)
-                        .map_err(|_| CauseCodecError::Empty("object_identity"))?,
-                )),
+                } => ValuePathSubject::Object(reference_of(
+                    keys,
+                    &universe,
+                    &object_type,
+                    object_identity,
+                )?),
                 SubjectWire::Built { occurrence } => ValuePathSubject::Built(occurrence.read()?),
             },
             steps: self
                 .steps
                 .into_iter()
                 .map(|step| match step {
+                    StepWire::Field { name } => ValuePathStep::Field(name),
                     StepWire::Member { name } => ValuePathStep::Member(name),
                     StepWire::Index { index } => ValuePathStep::Index(index),
                 })
@@ -559,15 +515,44 @@ impl FailureWire {
                         code,
                         cause,
                         fields,
-                    } => SeparationReason::Refused(SeparationRefusal {
-                        code,
-                        cause,
-                        fields,
-                    }),
+                    } => SeparationReason::Refused(refusal(code, cause, fields)?),
                 },
             },
         })
     }
+}
+
+/// A refusal read from the wire: its code is a catalog code, and its cause
+/// and each field name are catalog spellings, lower-case words joined by
+/// `-` or `_`.
+fn refusal(
+    code: String,
+    cause: String,
+    fields: BTreeMap<String, String>,
+) -> Result<SeparationRefusal, CauseCodecError> {
+    if catalog_category(&code).is_none() {
+        return Err(CauseCodecError::Spelling("code"));
+    }
+    if !is_spelling(&cause) {
+        return Err(CauseCodecError::Spelling("cause"));
+    }
+    if !fields.keys().all(|name| is_spelling(name)) {
+        return Err(CauseCodecError::Spelling("field"));
+    }
+    Ok(SeparationRefusal {
+        code,
+        cause,
+        fields,
+    })
+}
+
+/// Whether `text` is a catalog spelling: lower-case ASCII words of letters
+/// and digits, joined by single `-` or `_`.
+fn is_spelling(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .split(['-', '_'])
+            .all(|word| !word.is_empty() && word.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
 }
 
 /// An expression location: its declaration and child-index path.

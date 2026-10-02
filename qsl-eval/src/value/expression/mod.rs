@@ -466,13 +466,17 @@ impl<'a> ClauseSetup<'a> {
                 })?;
             bindings.push(value);
         }
-        let trail = s6a::separation::Trail::new(
-            s6a::separation::observation_identity(&current.identity),
-            observations
-                .pre
-                .as_ref()
-                .map(|observation| s6a::separation::observation_identity(&observation.identity)),
-        );
+        let pre = observations
+            .pre
+            .as_ref()
+            .map(|observation| s6a::separation::observation_identity(&observation.identity));
+        // A precondition reads the pre snapshot, so its value paths name it
+        // whether the run is pre-call or over an invocation (FR-104).
+        let own = match (declaration.observation(), &pre) {
+            (qsl_semantics::check::Observation::Pre, Some(pre)) => pre.clone(),
+            _ => s6a::separation::observation_identity(&current.identity),
+        };
+        let trail = s6a::separation::Trail::new(own, pre);
         Ok(Self {
             declaration,
             current: &current.environment,

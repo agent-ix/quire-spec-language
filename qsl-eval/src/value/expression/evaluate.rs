@@ -30,7 +30,7 @@ use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use quire_exact::Rational;
 use quire_exact::{
-    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
+    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, CompositeValue, FieldValue,
     ObjectReference, OptionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
@@ -737,12 +737,14 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     /// FR-265: where `collection`'s elements are stored: its recorded
-    /// provenance, or, for a collection with none recorded (computed by a
-    /// call, read from a record, converted), the collection the expression
-    /// at `node` builds inside the claim.
+    /// provenance (a member or a record field read from a stored object, a
+    /// conversion or selection of a stored collection, a literal), or, for a
+    /// collection with no stored location (computed by a call), the
+    /// collection the expression at `node` builds inside the claim
+    /// (QSpec FR-207).
     fn provenance_of(&self, collection: &Arc<CollectionValue>, node: &Node) -> Option<Provenance> {
         let trail = self.trail.as_ref()?;
-        if let Some(provenance) = trail.provenance(collection) {
+        if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
             return Some(provenance.clone());
         }
         let occurrence = occurrence_at(self.graph, node.location(), None)?;
@@ -1294,7 +1296,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                Self::project(slot, *optional, node.value_type())?
+                let value = Self::project(slot, *optional, node.value_type())?;
+                self.note_field(&composite, *index, &value);
+                value
             }
             NodeKind::Attribute {
                 field,
@@ -1470,13 +1474,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_visit(self.meter)?;
                     produced.push(element.clone());
                 }
-                if source_kind == CollectionKind::Sequence
+                // Only a traced run reads the kept elements again.
+                let kept = self.trail.is_some().then(|| produced.clone());
+                let value = if source_kind == CollectionKind::Sequence
                     && target.kind() != CollectionKind::Sequence
                 {
                     outcome_into_stop(form(target, produced, self.meter))?
                 } else {
                     outcome_into_stop(form_grouped(target, produced, self.meter))?
+                };
+                if let Some(kept) = kept {
+                    self.note_converted(&source, &kept, &value);
                 }
+                value
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
@@ -2079,9 +2089,9 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// FR-265: a collection literal at `node` on the claim's own level is
     /// built inside the claim (QSpec FR-207-AC-9).
     fn note_built(&mut self, node: &Node, value: &Value) {
-        let Value::Collection(collection) = value else {
+        if !matches!(value, Value::Collection(_)) {
             return;
-        };
+        }
         if !self.on_claim_level() {
             return;
         }
@@ -2092,17 +2102,17 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         if let Some(trail) = self.trail.as_mut() {
             let provenance = Provenance::built(trail.observation.clone(), occurrence);
-            trail.record(collection, provenance);
+            trail.record(value, provenance);
         }
     }
 
-    /// FR-265: a collection read from `member` of `object` at `node` on the
-    /// claim's own level is stored there, in the observation the read
-    /// observes.
+    /// FR-265: a collection or record read from `member` of `object` at
+    /// `node` on the claim's own level is stored there, in the observation
+    /// the read observes.
     fn note_member(&mut self, node: &Node, object: &ObjectReference, member: &str, value: &Value) {
-        let Value::Collection(collection) = value else {
+        if !matches!(value, Value::Collection(_) | Value::Composite(_)) {
             return;
-        };
+        }
         if !self.on_claim_level() {
             return;
         }
@@ -2115,7 +2125,75 @@ impl<'a, 'm> Machine<'a, 'm> {
                 _ => trail.observation.clone(),
             };
             let provenance = Provenance::member(observation, object.clone(), member.to_owned());
-            trail.record(collection, provenance);
+            trail.record(value, provenance);
+        }
+    }
+
+    /// FR-265: field `index` of a record with a stored location is stored
+    /// at that location's field of the same name (QSpec FR-207's field
+    /// selection). A tuple position has no field spelling and is not
+    /// located.
+    fn note_field(&mut self, composite: &Arc<CompositeValue>, index: usize, value: &Value) {
+        if !matches!(value, Value::Collection(_) | Value::Composite(_)) || !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(record) = trail.provenance(&Value::Composite(Arc::clone(composite))) else {
+            return;
+        };
+        let Some(CompositeShape::Record(fields)) = self
+            .scope
+            .types()
+            .composite(composite.declaration())
+            .map(|declaration| declaration.shape())
+        else {
+            return;
+        };
+        let Some(provenance) = fields.get(index).and_then(|field| record.field(field.name()))
+        else {
+            return;
+        };
+        trail.record(value, provenance);
+    }
+
+    /// FR-265: a conversion of a collection with a recorded location keeps
+    /// each element's stored position: `produced` lists the elements the
+    /// conversion kept, in source order, and `value` is what it formed.
+    fn note_converted(&mut self, source: &Arc<CollectionValue>, produced: &[Value], value: &Value) {
+        let Value::Collection(collection) = value else {
+            return;
+        };
+        if !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(source))) else {
+            return;
+        };
+        // Each kept element's position in the source, in source order.
+        let mut cursor = 0usize;
+        let mut sources = Vec::with_capacity(produced.len());
+        for element in produced {
+            let Some(offset) = source.elements()[cursor..]
+                .iter()
+                .position(|candidate| compare_keys(candidate, element) == Some(Ordering::Equal))
+            else {
+                return;
+            };
+            sources.push(cursor + offset);
+            cursor += offset + 1;
+        }
+        let kind = collection.collection_type().kind();
+        let Some(positions) = formed_sources(kind, &sources, produced, collection.elements())
+        else {
+            return;
+        };
+        if let Some(selected) = provenance.select(&positions) {
+            trail.record(value, selected);
         }
     }
 
@@ -2143,7 +2221,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         };
         if let (Some(selected), Some(trail)) = (provenance.select(&positions), self.trail.as_mut())
         {
-            trail.record(collection, selected);
+            trail.record(value, selected);
         }
     }
 

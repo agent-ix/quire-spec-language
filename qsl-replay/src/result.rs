@@ -278,7 +278,7 @@ impl Eq for SeparatingWitnessRecord {}
 impl SeparatingWitnessRecord {
     /// FR-268's state-clause record: FR-265's stop report, with no trace
     /// position.
-    pub fn from_stop(report: &StopReport) -> Self {
+    pub(crate) fn from_stop(report: &StopReport) -> Self {
         Self {
             quantifier: report.quantifier.clone(),
             deciding_element: report.element.clone(),
@@ -294,7 +294,7 @@ impl SeparatingWitnessRecord {
     pub fn measured_bytes(&self) -> usize {
         let observation = &self.value_path.observation;
         let subject = match &self.value_path.subject {
-            ValuePathSubject::Object(_) => 96,
+            ValuePathSubject::Object(object) => 64 + object.object().as_str().len(),
             ValuePathSubject::Built(occurrence) => {
                 32 + occurrence.origin().role().as_str().len() + 8
             }
@@ -304,7 +304,7 @@ impl SeparatingWitnessRecord {
             .steps
             .iter()
             .map(|step| match step {
-                ValuePathStep::Member(name) => name.len(),
+                ValuePathStep::Field(name) | ValuePathStep::Member(name) => name.len(),
                 ValuePathStep::Index(_) => 8,
             })
             .sum();
@@ -325,16 +325,32 @@ impl SeparatingWitnessRecord {
     }
 }
 
-/// A kernel value's measured encoded size: its scalar text or fixed width,
-/// summed over every nested occurrence.
+/// A kernel value's measured encoded size, summed over every nested
+/// occurrence: each variable-length member (integer digits, text, object
+/// identity) by its byte length, each digest by its 32 bytes and each other
+/// fixed-width member by its width.
 fn value_bytes(value: &Value) -> usize {
+    let digits = |integer: &quire_exact::Integer| integer.to_string().len();
     let mut total = 0usize;
     let mut pending = vec![value];
     while let Some(value) = pending.pop() {
         total += match value {
             Value::Boolean(_) => 1,
-            Value::Integer(integer) => integer.to_string().len(),
-            Value::Reference(_) => 96,
+            Value::Integer(integer) => digits(integer),
+            Value::Rational(rational) => digits(rational.numerator()) + digits(rational.denominator()),
+            Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
+            Value::Float(_) => 8,
+            Value::Quantity(quantity) => {
+                let magnitude = quantity.magnitude();
+                digits(magnitude.numerator()) + digits(magnitude.denominator()) + 32
+            }
+            // The payload, then the type's two bounds and its profile.
+            Value::Text(text) => {
+                text.payload().as_str().len() + 16 + text.text_type().profile().as_str().len()
+            }
+            Value::Enum(_) => 32 + 4,
+            Value::Population(_) => 32,
+            Value::Reference(reference) => 64 + reference.object().as_str().len(),
             Value::Collection(collection) => {
                 pending.extend(collection.elements());
                 8
@@ -348,15 +364,8 @@ fn value_bytes(value: &Value) -> usize {
                     quire_exact::FieldValue::Present(value) => Some(value),
                     quire_exact::FieldValue::Absent | quire_exact::FieldValue::Null => None,
                 }));
-                8
+                32
             }
-            Value::Rational(_)
-            | Value::Decimal(_)
-            | Value::Float(_)
-            | Value::Quantity(_)
-            | Value::Text(_)
-            | Value::Enum(_)
-            | Value::Population(_) => 32,
         };
     }
     total
