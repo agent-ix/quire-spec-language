@@ -27,7 +27,7 @@ stored field plus four derived ones).
 
 The envelope carries, for deterministic replay, every ADR-013 O-25 member:
 the obligation identity and clause occurrence key; the selected function's
-`QualifiedName`; the `package_id`, contract version and `RawSourceRef`
+`QualifiedName`; the `package_id` and `RawSourceRef`
 digests of the package the harness was generated from; the semantic profile
 selections; the `run_limits` and declared domains; the `backend` member
 (O-19); the trace position where the family has one; and the `ReplaySource`

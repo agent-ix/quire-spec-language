@@ -180,8 +180,10 @@ bytes) is a source limit, not part of the identity.
 
 ### D-4 Replay pairs each dependency's sources with its identity
 
-The replay request's package reference is QSpec FR-323's
-`{package_id, contract_version, sources, dependencies}`. `sources` is the
+The in-process replay request's package reference is
+`{package_id, sources, dependencies}`, QSpec FR-323's reference without
+the wire's `contract_version`, which the in-process request does not
+carry (ADR-013 O-26). `sources` is the
 proved package's own lock `sources`. `dependencies` holds one entry per
 entry of the proved package's `dependency_selections`, in order, each
 `{identity, version, package_id, sources}`, where `sources` is that

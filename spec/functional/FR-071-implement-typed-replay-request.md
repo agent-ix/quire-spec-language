@@ -56,7 +56,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 - The request type SHALL carry exactly the ADR-013 O-26 members (the O-25
   packet plus the FR-070 envelope members) and SHALL invent no additional
   member; a construct → serialize → read round trip SHALL preserve the
-  package reference (`package_id`, contract version, every `RawSourceRef`
+  package reference (`package_id`, every `RawSourceRef`
   digest), the replay members (`ReplaySource`, `QualifiedName`, arguments
   keyed by parameter node id, profile selections, proof bounds and declared
   domains, trace position, `backend`), the byte provision, and the limits

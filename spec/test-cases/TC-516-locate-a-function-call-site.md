@@ -29,7 +29,7 @@ library as `DependencyInput` or `Dependency`.
 It returns the compiled package's bytes its `package_id` names, and
 builds a `DeclaredDomain` through the facade's re-exports.
 
-Scope: FR-121-AC-1 to FR-121-AC-13.
+Scope: FR-121-AC-1 to FR-121-AC-14.
 
 ## Test Procedure
 
@@ -81,6 +81,10 @@ Scope: FR-121-AC-1 to FR-121-AC-13.
     for `[0, 9]` on `x`'s node using only `qsl_replay` root paths, and an
     inverted range through `FiniteBound::integer_range` and
     `IntegerInterval::new`.
+14. Read `CallSiteRefusal::code` for the refusals of steps 2, 5, 8, 9,
+    10 and 11 and step 4's unit with no dependency input, and for a unit
+    with a syntax error; run `replay` over the same unit, packages and
+    dependency input for each and read `ReplayRefusal::code`.
 
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
@@ -125,3 +129,7 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 - Step 13: the domain names `x`'s node and the range, of kind
   `FiniteBoundKind::IntegerRange`; the inverted range refuses
   `EmptyFiniteBound::InvertedIntegerRange` and `EmptyInterval`.
+- Step 14: `missing_declaration` for steps 2, 5 and 8; for the others,
+  each `CallSiteRefusal::code` equals the `ReplayRefusal::code` for the
+  same input, the syntax error's equal to that of `replay`'s
+  `ReplayRefusal::Recompile`.

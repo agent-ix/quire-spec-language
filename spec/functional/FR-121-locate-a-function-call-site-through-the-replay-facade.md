@@ -154,6 +154,20 @@ declaration by declared identity, never by position.
   function node, its parameter count disagrees with its checked signature,
   or a declared parameter or clause name is not itself a valid
   `Identifier` -- SHALL refuse `CallSiteRefusal::Fault(InternalFault)`.
+- `CallSiteRefusal::code` SHALL return each refusal's code from the closed
+  catalog `ReplayRefusal::code` (FR-098) draws on, the same code `replay`
+  gives the same refusal: `Compile`, `ModelIntake`, `Import` and
+  `Dependency` the code of the compile, intake, import-resolution or
+  library refusal they carry, as `ReplayRefusal::Recompile` does;
+  `DependencyInput` its `DependencyInputRefusal::code`; `UnknownFunction`,
+  `UnknownOperation` and `UnknownClause` `missing_declaration`; and `Fault`
+  `runtime_invariant`. Each variant other than `Fault` carries the code of
+  the refusal it was built from rather than only its rendered message.
+- Every `CallSiteRefusal` other than `Fault` refuses the obligation's own
+  input before any backend run, so a consumer settles it `declined` with
+  its code, by the terminal mapping ADR-013 C-09 owns (QSpec FR-331); a `ReplayRefusal` after a backend refutation
+  refuses replay setup and settles `inconclusive`, `ReplayRefused`, with its
+  code; a `Fault` of either settles `failed`.
 - `call_site` SHALL read no path, environment variable, clock or search
   location, and SHALL give the same result for the same input.
 
@@ -174,6 +188,7 @@ declaration by declared identity, never by position.
 | FR-121-AC-11 | For the AC-4 unit, a `DependencyInput` supplying the imported library from source bytes that do not parse refuses `CallSiteRefusal::Dependency`, its `path` exactly that library's identity. | Test (TC-516) |
 | FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the RFC 8785 bytes of its `identity_preimage` member digest, under `quire.package.semantic/v2`, to the `CallSite`'s `package_id`. | Test (TC-516) |
 | FR-121-AC-13 | From outside the crate, a `DeclaredDomain` over an integer range on a parameter node `call_site` returned is built through `qsl_replay`'s root paths alone (`ProofBound`, `DomainKey`, `FiniteBound`, `Integer`), its kind is `FiniteBoundKind::IntegerRange` and its interval equals the `IntegerInterval` built there; an inverted range refuses `EmptyFiniteBound::InvertedIntegerRange` through `FiniteBound::integer_range` and `EmptyInterval` through `IntegerInterval::new`. | Test (TC-516) |
+| FR-121-AC-14 | `CallSiteRefusal::code` returns `missing_declaration` for AC-2's `UnknownFunction`, AC-5's `UnknownOperation` and AC-8's `UnknownClause`; for AC-9's `ModelIntake`, AC-10's `DependencyInput`, AC-11's `Dependency` and AC-4's `Import`, the code `ReplayRefusal::code` returns when `replay` is given the same unit, packages and dependency input; and for a unit with a syntax error, `Compile` carrying the same code as the `ReplayRefusal::Recompile` `replay` returns for it. | Test (TC-516) |
 
 ## Dependencies
 
@@ -203,4 +218,5 @@ Implemented: `qsl_replay::call_site`, sharing its parameter node-key
 derivation with `qsl_replay::replay`'s own selection
 (`callable_parameter_keys`) and its operation resolution with FR-115's
 `Frame` selection and its clause lookup with FR-106's clause selection,
-verified by TC-516.
+verified by TC-516. Remaining work: `CallSiteRefusal::code` (FR-121-AC-14); each
+variant other than `Fault` keeps the code of the refusal it carries.
