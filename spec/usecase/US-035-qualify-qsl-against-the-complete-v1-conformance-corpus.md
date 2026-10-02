@@ -24,7 +24,7 @@ relationships:
 
 **As a** QSL maintainer, or a team that adopts QSL as its complete-V1
 compiler and reference runtime
-**I want** one command that runs the QSpec complete-V1 conformance corpus
+**I want** one repository gate that runs the QSpec complete-V1 conformance corpus
 against QSL and reports, for each capability, whether QSL passed its
 vectors, with a coverage figure and a qualified or not-qualified verdict
 **So that** "QSL is complete V1" is a statement the product measures on
@@ -50,24 +50,24 @@ vectors as the core language.
 ### US-035-EX-1: A clean run reports complete V1 qualified
 
 - **Given** a corpus in which every vector that applies to QSL passes.
-- **When** the maintainer runs the conformance command.
+- **When** the maintainer runs the `qualify` gate.
 - **Then** every capability reports `passed`, coverage is 100 per cent,
-  the verdict is qualified and the command exits 0.
+  the verdict is qualified and the gate exits 0.
 
 ### US-035-EX-2: One failing vector blocks only its capability
 
 - **Given** a corpus in which one refusal vector expects
   `ill_typed`/`unit-mismatch` and QSL returns `ill_typed`/`type-mismatch`.
-- **When** the maintainer runs the conformance command.
+- **When** the maintainer runs the `qualify` gate.
 - **Then** that vector's capability reports `failed`, naming the vector,
   the expected and the actual code and cause; every other capability keeps
   its own outcome; the verdict is not qualified and names that capability.
 
 ### US-035-EX-3: A capability with no vector is uncovered, not passed
 
-- **Given** a corpus that lists a capability for the language subject and
+- **Given** a corpus that lists a capability for the `language` consumer type and
   holds no vector for it.
-- **When** the maintainer runs the conformance command.
+- **When** the maintainer runs the `qualify` gate.
 - **Then** the capability reports `uncovered` and counts against coverage.
 
 ### US-035-EX-4: An extension declared by schema parses and checks

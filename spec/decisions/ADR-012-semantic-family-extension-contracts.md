@@ -532,6 +532,16 @@ Builder rules:
 - Diagnostics are ordered by builder state, then by source position within a
   state. The order is a property of the builder, so it can be tested.
 
+**Extension forms (amended for FR-354).** A selected extension's declaration
+forms are checked by one schema-driven builder, written once. Its states are
+the clause positions of the form's production, read from the extension's
+typed-node schema, and its step function `accept(state, clause)` matches on
+the closed pair (position present or absent, clause present or absent) with
+an explicit arm for each and no `_` arm. Each clause checks against the type
+or node kind the schema names through the core's own checkers. The same
+order, refusal and `finish` rules apply. The builder adds no Rust type per
+extension.
+
 ### 4.3 Dispatch seams are thin
 
 A central `match` over a closed form enum is a dispatch seam. It is legal
@@ -566,8 +576,8 @@ listed seam.
 | # | Closed enum | Seams that must fail to compile | Owner |
 |---|---|---|---|
 | S1 | `FamilyKind` | every `match` on `FamilyKind`: `catalog_code()` family prefix, and the stage-participation table that says which hook each family has at each stage. The ADR-011 S6a seam dispatches over the S6a family kind, a closed enum beside `ReferenceEvaluation` in layer-5 `value::expression` (ADR-011 §6.2 `family` row) with one variant per family that implements `ReferenceEvaluation`, matched with one arm per variant and no `_` arm, so `Relation` and `StateModel` have no evaluation arm (§2, FR-090-AC-4, ADR-016 FP-3). The calls into a family's `check`, `requirements` and `evaluate` are S2 and S3 arms, grouped by family. | QSL (#214) |
-| S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum | parser entry table; check seam | QSL, owning family |
-| S3 | checked node enum (today `NodeKind`) | evaluator, v2 emitter, requirement derivation | QSL, owning family |
+| S2 | parsed form enum (for expressions, the one `Expression` enum) and the leading-token kind enum. Every selected extension's declaration forms are one `Extension` variant of each, carrying the extension's definition identity, the production and its clauses (amended for FR-354). | parser entry table; check seam | QSL, owning family |
+| S3 | checked node enum (today `NodeKind`). Every admitted extension form is one `Extension` variant carrying the extension's definition identity, its schema node kind and its typed subnodes, built by §4.2's schema-driven builder (amended for FR-354). | evaluator, v2 emitter, requirement derivation | QSL, owning family |
 | S4 | family `Cause` enums | `catalog_code()` | owning family |
 | S5 | clause kind. Canonical: the QSL checked clause kind in the layer-3 `check` core, where ADR-011 M-5 moves `value::expression::check` (ADR-013 O-10, as ruled by the coordinator). The layer-4 `package` emitter converts it to v2 and depends downward. The v2, IR and CG conversions are total; IR → RT is total with refusal. | QSL → IR conversion, IR → RT observation conversion, IR → CG obligation kind (AD-016 scenario 2) | QSL, IR, RT, CG |
 | S6 | IR checked-node tag and semantic-form enums, decoded at v2 intake | IR `lower` arm; CG `negotiate_*` arm; CG harness arm; RT op selection. No vocabulary is re-derived from a wire string after intake. | IR (agent-ix/quire-contract-ir#141), CG, RT |
@@ -580,6 +590,10 @@ These rules make the failure certain:
 - No `match` at a listed seam has a `_` or catch-all arm. Seam modules deny
   `clippy::wildcard_enum_match_arm` and
   `clippy::match_wildcard_for_single_variants`, and the lint gate runs them.
+- The `Extension` variants of S2 and S3 are ordinary variants. Every seam
+  matches them with one explicit arm; adding an extension adds catalog data,
+  never a variant, so no seam changes. A seam that cannot run an extension
+  node settles it `unsupported` with a catalog code in that arm.
 - No S1–S9 enum is `#[non_exhaustive]`. A cross-crate match on a
   `#[non_exhaustive]` enum must have a `_` arm, which would defeat the seam.
 - S9 is a settlement point by construction, not by coincidence. Today CG has one

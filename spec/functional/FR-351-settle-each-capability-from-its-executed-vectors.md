@@ -25,7 +25,7 @@ executed in the same run (FR-350).
 - The per-vector outcomes of FR-350.
 - The scope: the capability ids the caller selects, or, when the caller
   selects none, every capability the corpus lists whose applicability names
-  a QSL subject.
+  a QSL consumer type (FR-350).
 
 ## Outputs
 
@@ -35,7 +35,8 @@ of the vectors that decided it.
 
 ## Behavior
 
-- If a capability in scope has no vector that applies to a QSL subject,
+- If a capability in scope has no vector whose applicability names a QSL
+  consumer type,
   then its outcome SHALL be `uncovered`.
 - Otherwise its outcome SHALL be the first of these that holds:
   1. `failed`, when any of its vectors is `failed`;
@@ -57,7 +58,7 @@ of the vectors that decided it.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-351-AC-1 | A capability whose three vectors are `passed` is `passed`. A capability with one `passed` and one `failed` vector is `failed`, holding the failed vector's id. A capability with one `unsupported` and one `incomplete` vector is `unsupported`. A capability with one `tool-failure` and one `failed` vector is `failed`. | Test (TC-877) |
-| FR-351-AC-2 | A capability the corpus lists for the language subject with no vector is `uncovered`. A capability whose applicability names no QSL subject is outside the default scope and appears in no outcome. | Test (TC-877) |
+| FR-351-AC-2 | A capability whose applicability names the `language` consumer type, with no vector, is `uncovered`. A capability whose applicability names only the `monitor` consumer type is outside the default scope and appears in no outcome. | Test (TC-877) |
 | FR-351-AC-3 | A corpus whose `results` member records `passed` for a vector QSL fails settles that vector's capability `failed`. | Test (TC-878) |
 | FR-351-AC-4 | A run scoped to two capability ids settles exactly those two. A run scoped to an id the corpus does not list refuses `unknown_required_feature`/`unknown-feature` naming the id and executes no vector. | Test (TC-878) |
 

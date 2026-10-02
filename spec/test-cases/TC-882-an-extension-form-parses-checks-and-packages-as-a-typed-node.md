@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-882", "FR-354-AC-n")]`.
 ## Expected Results
 
 - Step 1: the checked package holds one node of kind `retention` naming the extension, with subnodes `"audit"` and `30` and the form's span.
-- Step 2: `ill_typed`/`type-mismatch` naming `days`, `Int[1, 3650]` and `Text`; then `ill_typed`/`type-mismatch` naming the missing `days` clause.
+- Step 2: `ill_typed`/`type-mismatch` naming `days`, `Int[1, 3650]` and `Text`; then `invalid_package`/`missing-member` naming the missing `days` clause.

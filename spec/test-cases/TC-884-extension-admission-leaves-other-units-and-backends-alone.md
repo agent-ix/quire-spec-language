@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-884", "FR-354-AC-5")]`.
 
 - Step 1: equal checked package identities.
 - Step 2: equal checked package identities.
-- Step 3: `unknown_required_feature`/`unknown-feature` naming the extension and the `retention` node.
+- Step 3: `unknown_required_feature`/`unknown-feature` naming the extension and the `retention` node; the refusal retains the package's source and its `package_id`.

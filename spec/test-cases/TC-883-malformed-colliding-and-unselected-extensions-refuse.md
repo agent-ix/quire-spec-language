@@ -20,7 +20,8 @@ Scope: FR-354-AC-3, FR-354-AC-4.
 2. An extension whose production begins with `function`.
 3. Two selected extensions whose productions both begin with `retention`; two whose node kinds are both `retention`.
 4. Two extensions whose dependency edges name each other.
-5. A unit declaring TC-882's form without selecting the extension.
+5. A unit declaring TC-882's form without selecting the extension, compiled over a catalog with and without the extension.
+6. A unit that selects TC-882's extension and has a function whose parameter is named `retention`.
 
 Tag the tests `#[trace("TC-883", "FR-354-AC-n")]`.
 
@@ -30,4 +31,5 @@ Tag the tests `#[trace("TC-883", "FR-354-AC-n")]`.
 - Step 2: `invalid_package`/`conflicting-definition` naming the extension, the core grammar and `function`.
 - Step 3: `invalid_package`/`conflicting-definition` naming both extensions, with the keyword, then with the node kind.
 - Step 4: `invalid_package`/`definition-cycle` naming both in path order.
-- Step 5: `unsupported_construct`/`declaration-form` naming the form, its span and the unit's selections.
+- Step 5: `unsupported_construct`/`declaration-form` naming `retention`, its span and the unit's selections, identical over both catalogs.
+- Step 6: the unit compiles, and `retention` is an ordinary parameter name.

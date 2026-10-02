@@ -16,6 +16,8 @@ Scope: FR-353-AC-1, FR-353-AC-2.
 
 ## Test Procedure
 
+Every step runs the gate as `cargo run --package xtask -- qualify --corpus <dir>` over a fixture corpus in the test's temporary directory, and reads its report and exit status.
+
 1. Run a fixture corpus whose in-scope vectors all pass, over the default scope.
 2. Change one refusal vector's expected cause and run.
 3. Restore it, remove every vector of one capability and run.
