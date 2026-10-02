@@ -128,7 +128,7 @@ false when they replay it.
 - ADR-026 §3 TS-1 to TS-7; ADR-018 SM-1 to SM-5 as amended by ADR-026.
 - [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-230](FR-230-check-time-declarations-clocks-and-clock-constraints.md).
 - QSpec FR-090, FR-161 and FR-181 own the timed subject, delay moves, the
   time-divergence premise, quiescent states and the idle tail as normative

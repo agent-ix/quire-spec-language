@@ -175,7 +175,7 @@ edges, automaton states and stored zone bytes.
 
 - ADR-026 §8 EZ-1, EZ-3 to EZ-5; ADR-018 EN-1, S6c and E10; ADR-014 B-5.
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-075](FR-075-compute-candidates-from-registered-backends.md) (the
   provider manifest registers through it),
   [FR-231](FR-231-read-a-timed-subject-s-behaviours-as-timed-traces.md),

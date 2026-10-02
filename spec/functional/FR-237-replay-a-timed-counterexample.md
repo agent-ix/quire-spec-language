@@ -129,7 +129,7 @@ refutation.
 - ADR-026 §7 CT-3, §4 TD-3; ADR-018 CX-3 and SM-8; ADR-022 GX-3.
 - [FR-128](FR-128-replay-a-model-counterexample.md),
   [FR-098](FR-098-execute-a-replay-request.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-231](FR-231-read-a-timed-subject-s-behaviours-as-timed-traces.md),
   [FR-232](FR-232-derive-the-time-lock-freedom-item-and-read-deadlocks-over-time.md),
   [FR-236](FR-236-carry-exact-rational-delays-in-a-timed-counterexample.md).
