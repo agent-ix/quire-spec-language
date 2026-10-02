@@ -331,10 +331,16 @@ impl RegisteredDefinition {
                 RegisteredSource {
                     identity,
                     revision,
-                    ..definition!("native-diagnostics", "", "", [], [
-                        rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
-                        rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),
-                    ])
+                    ..definition!(
+                        "native-diagnostics",
+                        "",
+                        "",
+                        [],
+                        [
+                            rule!("qsl-foundation/src/diagnostic.rs"),
+                            rule!("docs/native-error-codes.md"),
+                        ]
+                    )
                 }
             }
         }
