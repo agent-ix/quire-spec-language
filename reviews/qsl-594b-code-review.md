@@ -56,3 +56,33 @@ Changes requested: one medium finding and one low.
 | --- | --- | --- | --- |
 | FND-001 | medium | `FCD_LIFT_CLAP` and `FCD_LIFT_SCRATCH` are a two-entry allow-list. They are as narrow as an exemption can be, and both causes are FCD's (verified above), but the plan lead's rule is "no allow-list", so keeping them needs the plan lead's explicit acceptance as a temporary exception. Separately, the PR deletes their exit conditions. The old Status said "Fix: put `clap` behind a feature in filament-core-data" and "Fix: a `lift` in filament-core-data that returns the document bytes". Neither the new Status nor the const docs state when the exemptions end, so they now read as permanent. Fix: restore the two exit conditions in FR-284's Status and in each const's doc comment; open the FCD Linear ticket that carries them; and delete both consts, with their tests, once FCD ships. | tools/arch-lint/qualified_core.rs:110-124; spec/functional/FR-284-keep-the-qualified-core-separable-by-crate.md:93-104 |
 | FND-002 | low | The `clap` skip depends on breadth-first discovery order. `is_fcd_lift_clap` reads the single `previous[frontend]`. If a core crate reaches `agent-ix-extraction-frontend` both directly from `qsl-semantics` and through another crate (for example `qsl-semantics -> Y -> frontend`), the first discovery wins. Every later route is then marked seen, so that route's `clap` is skipped too. FR-284's Status and the module doc say "Any other path from a core crate to `clap` fails", which overstates the check. Fix: refuse any edge into `agent-ix-extraction-frontend` from a crate other than `qsl-semantics`, so that `clap` under the frontend is always the one sanctioned edge. Alternatively, narrow the claim to "any path to `clap` not under `agent-ix-extraction-frontend`". | tools/arch-lint/qualified_core.rs:345-357; tools/arch-lint/qualified_core.rs:27-30; spec/functional/FR-284-keep-the-qualified-core-separable-by-crate.md:96-99 |
+
+## Dispositions
+
+Round 1, reviewed at `f226897faada9f69876f60f11a8d6f2eb9ad296e`. The branch is rebased onto 0578c960, and
+`git range-diff` shows the three reviewed commits unchanged (`=`). The fix
+commit is f226897f, which also commits these review files.
+
+Checks run on the head:
+- The 13 `qualified_core` arch-lint tests pass.
+- The live `arch-lint qualified-core` run passes for both direction and
+  ambient input.
+
+#598, now on main, conflicts with this branch only on the Makefile `ci:`
+line. The conflict is purely textual: the resolution keeps both
+`checked-input` and `arch-lint-qualified-core`, and spec.md auto-merges.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f226897faada9f69876f60f11a8d6f2eb9ad296e |
+| FND-002 | fixed | f226897faada9f69876f60f11a8d6f2eb9ad296e |
+
+FND-001: both consts carry their end condition in their doc comments, in FR-284
+Behavior and in FR-284 Status, and the code carries no ticket ids. FCD ticket
+PLAT-1131 carries both end conditions. The plan lead's acceptance of the
+temporary exemptions is outside the branch.
+
+FND-002: the check refuses any edge into `agent-ix-extraction-frontend` from a
+crate other than `qsl-semantics` (`Offence::FcdFrontend`), and it runs before
+the crate is marked seen. So the frontend is queued only through
+`qsl-semantics`, and the `clap` skip holds whatever the walk order.

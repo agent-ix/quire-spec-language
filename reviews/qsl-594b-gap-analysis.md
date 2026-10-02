@@ -26,3 +26,20 @@ Changes requested: two low findings.
 | --- | --- | --- | --- |
 | FND-001 | low | No AC or Behavior paragraph of FR-284 owns the two exemptions. AC-1 says the direction check "passes over the QSL workspace", and AC-4 says the scan fails "naming the file and line of each ... filesystem or search-path access", with no exception. Only the Status prose describes the skipped edge and the skipped site, yet both new tests trace to AC-1 and AC-4 and assert the exemption behaviour. Fix: state both exemptions, with their exit conditions (SR-1233 FND-001), in FR-284's Behavior or in AC-1 and AC-4, so the tests trace to stated behaviour. | spec/functional/FR-284-keep-the-qualified-core-separable-by-crate.md:81-84; tools/arch-lint/qualified_core.rs:1143; tools/arch-lint/qualified_core.rs:1303 |
 | FND-002 | low | No test covers a second route to `agent-ix-extraction-frontend` alongside the sanctioned one. A fixture such as `qsl-semantics -> Y -> agent-ix-extraction-frontend` added to `with_fcd_frontend()` passes today (SR-1233 FND-002). Add that case to `tc_767_only_the_fcd_frontend_clap_edge_is_skipped`, expecting a finding. | tools/arch-lint/qualified_core.rs:1143-1173 |
+
+## Dispositions
+
+Round 1, reviewed at `f226897faada9f69876f60f11a8d6f2eb9ad296e`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f226897faada9f69876f60f11a8d6f2eb9ad296e |
+| FND-002 | fixed | f226897faada9f69876f60f11a8d6f2eb9ad296e |
+
+FND-001: FR-284 Behavior states both exemptions with their end conditions, and
+AC-1 and AC-4 each name the one exemption they skip.
+
+FND-002: `tc_767_only_the_fcd_frontend_clap_edge_is_skipped` adds
+`qsl-semantics -> y -> agent-ix-extraction-frontend` and expects
+`FcdFrontend`, with `via` `["y"]`, for every core crate that reaches the
+frontend.
