@@ -25,12 +25,6 @@ pub struct Limits {
     /// expressions; the composed path also counts declarations, parameters,
     /// captures, activation/interval records and protocol binding/control records.
     pub nodes: usize,
-    /// Maximum bracket-pair nesting depth (NFR-001 "Nesting level"): one
-    /// level is one `(…)`, `[…]`, `{…}` or composed type-argument `<…>`
-    /// pair; operator, prefix, `let … in` and `if … else` chains add none.
-    /// The default is NFR-001's 64. A ceiling the implementation imposes on
-    /// a larger request is not a domain bound.
-    pub nesting: usize,
 }
 
 impl Default for Limits {
@@ -39,7 +33,6 @@ impl Default for Limits {
             source_bytes: qsl_foundation::source::MAX_SOURCE_BYTES,
             tokens: 100_000,
             nodes: 50_000,
-            nesting: 64,
         }
     }
 }
@@ -51,7 +44,6 @@ impl Limits {
             source_bytes: self.source_bytes.min(hard.source_bytes),
             tokens: self.tokens.min(hard.tokens),
             nodes: self.nodes.min(hard.nodes),
-            nesting: self.nesting.min(hard.nesting),
         }
     }
 }

@@ -97,7 +97,7 @@ impl Parser {
                 self.temporal_binary(minimum, combined, relation_seen, frames)
             }
             Frame::Group { start, operators } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 let group =
                     self.temporal_add(TemporalKind::Group(formula), self.range_from(start))?;
                 self.temporal_wrap(group, operators).map(Next::Formula)
@@ -192,13 +192,12 @@ impl Parser {
         let kind = match token.kind {
             K::True | K::False => TemporalKind::Constant(token.kind == K::True),
             K::Holds => {
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 let value = self.expression()?;
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 TemporalKind::Holds(value)
             }
             K::OpenParen => {
-                self.open_taken(token.span)?;
                 frames.push(Frame::Group {
                     start: token.span.start,
                     operators,

@@ -193,16 +193,16 @@ impl Parser {
     }
 
     fn bound_parameter(&mut self) -> Result<Parameter, Box<Diagnostic>> {
-        self.open(K::OpenParen)?;
+        self.expect(K::OpenParen)?;
         let parameter = self.parameter()?;
-        self.close(K::CloseParen)?;
+        self.expect(K::CloseParen)?;
         Ok(parameter)
     }
 
     fn value_block(&mut self) -> Result<ExprId, Box<Diagnostic>> {
-        self.open(K::OpenBrace)?;
+        self.expect(K::OpenBrace)?;
         let expression = self.expression()?;
-        self.close(K::CloseBrace)?;
+        self.expect(K::CloseBrace)?;
         Ok(expression)
     }
 
@@ -217,9 +217,9 @@ impl Parser {
         self.expect(K::Each)?;
         let trigger = self.bound_parameter()?;
         let guard = if self.eat(K::When) {
-            self.open(K::OpenParen)?;
+            self.expect(K::OpenParen)?;
             let expression = self.expression()?;
-            self.close(K::CloseParen)?;
+            self.expect(K::CloseParen)?;
             Some(expression)
         } else {
             None
@@ -251,11 +251,11 @@ impl Parser {
 
     fn interval(&mut self) -> Result<Interval, Box<Diagnostic>> {
         self.charge(self.peek().span)?;
-        let start = self.open(K::OpenBracket)?.span.start;
+        let start = self.expect(K::OpenBracket)?.span.start;
         let lower = self.unsigned()?;
         self.expect(K::Comma)?;
         let upper = self.unsigned()?;
-        self.close(K::CloseBracket)?;
+        self.expect(K::CloseBracket)?;
         Ok(Interval {
             lower,
             upper,
@@ -282,7 +282,7 @@ impl Parser {
         let profile = self.identifier()?;
         let kind = match token.kind {
             K::Predicate => {
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 let mut parameters = Vec::new();
                 if !self.is(K::CloseParen) {
                     parameters.push(self.parameter()?);
@@ -290,7 +290,7 @@ impl Parser {
                         parameters.push(self.parameter()?);
                     }
                 }
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.expect(K::Colon)?;
                 let result = self.expect(K::BooleanType)?.span;
                 let body = self.value_block()?;
@@ -330,10 +330,10 @@ impl Parser {
                 self.expect(K::Clock)?;
                 let clock = self.string()?;
                 let activation = Box::new(self.activation()?);
-                self.open(K::OpenBrace)?;
+                self.expect(K::OpenBrace)?;
                 let captures = self.captures()?;
                 let formula = self.temporal_expression(0)?;
-                self.close(K::CloseBrace)?;
+                self.expect(K::CloseBrace)?;
                 DeclarationKind::Temporal {
                     input,
                     clock,

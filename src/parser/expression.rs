@@ -324,7 +324,7 @@ impl Parser {
                 Ok(Next::Value(argument))
             }
             Frame::Group { start } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_primary(ExprKind::Group { inner: value }, start, None)
             }
             Frame::Builtin {
@@ -332,7 +332,7 @@ impl Parser {
                 builtin,
                 operator_span,
             } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_primary(
                     ExprKind::Call {
                         builtin,
@@ -365,7 +365,7 @@ impl Parser {
                 domain,
                 operator_span,
             } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_primary(
                     ExprKind::Quantifier {
                         universal,
@@ -396,7 +396,7 @@ impl Parser {
             } => {
                 self.expect(K::Comma)?;
                 let field = self.member()?;
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_primary(
                     ExprKind::Reaches {
                         start: first,
@@ -421,11 +421,11 @@ impl Parser {
                     });
                     return Ok(Next::Descend(Goal::Expression));
                 }
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_extended(ValueKind::Invoke { name, arguments }, &token)
             }
             Frame::SizeArgument { token, domain } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_extended(
                     ValueKind::Size {
                         domain,
@@ -443,7 +443,7 @@ impl Parser {
                 Ok(Next::Descend(Goal::Expression))
             }
             Frame::ContainsMember { token, collection } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_extended(
                     ValueKind::Contains {
                         collection,
@@ -475,7 +475,7 @@ impl Parser {
                 binder,
                 domain,
             } => {
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 let op = Spanned {
                     value: op,
                     span: token.span,
@@ -597,7 +597,7 @@ impl Parser {
                 ExprKind::ResultValue
             }
             K::OpenParen => {
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 frames.push(Frame::Group { start });
                 return Ok(Next::Descend(Goal::Expression));
             }
@@ -610,7 +610,7 @@ impl Parser {
                     _ => Builtin::Pre,
                 };
                 self.take();
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 frames.push(Frame::Builtin {
                     start,
                     builtin,
@@ -620,7 +620,7 @@ impl Parser {
             }
             keyword @ (K::Forall | K::Exists) => {
                 self.take();
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 let name = self.identifier()?;
                 self.expect(K::In)?;
                 frames.push(Frame::QuantifierDomain {
@@ -633,7 +633,7 @@ impl Parser {
             }
             K::Reaches => {
                 self.take();
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 frames.push(Frame::ReachesStart {
                     start,
                     operator_span: token.span,
@@ -691,9 +691,9 @@ impl Parser {
                     .is_some_and(|t| t.kind == K::OpenParen) =>
             {
                 let name = self.identifier()?;
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 if self.is(K::CloseParen) {
-                    self.close(K::CloseParen)?;
+                    self.expect(K::CloseParen)?;
                     let arguments = Vec::new();
                     return self
                         .finish_extended(ValueKind::Invoke { name, arguments }, &token)
@@ -708,11 +708,11 @@ impl Parser {
             }
             K::Rational => {
                 self.take();
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 let numerator = self.signed()?;
                 self.expect(K::Comma)?;
                 let denominator = self.signed()?;
-                self.close(K::CloseParen)?;
+                self.expect(K::CloseParen)?;
                 self.finish_extended(
                     ValueKind::Rational {
                         numerator,
@@ -729,16 +729,16 @@ impl Parser {
                     .is_some_and(|t| t.kind == K::Less) =>
             {
                 self.take();
-                self.open(K::Less)?;
+                self.expect(K::Less)?;
                 let domain = self.qualified()?;
-                self.close(K::Greater)?;
-                self.open(K::OpenParen)?;
+                self.expect(K::Greater)?;
+                self.expect(K::OpenParen)?;
                 frames.push(Frame::SizeArgument { token, domain });
                 Ok(Some(Next::Descend(Goal::Expression)))
             }
             K::Contains => {
                 self.take();
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 frames.push(Frame::ContainsCollection { token });
                 Ok(Some(Next::Descend(Goal::Expression)))
             }
@@ -751,14 +751,14 @@ impl Parser {
                     _ => QueryOp::Sum,
                 };
                 let result = if matches!(op, QueryOp::Count | QueryOp::Sum) {
-                    self.open(K::Less)?;
+                    self.expect(K::Less)?;
                     let ty = self.qualified()?;
-                    self.close(K::Greater)?;
+                    self.expect(K::Greater)?;
                     Some(ty)
                 } else {
                     None
                 };
-                self.open(K::OpenParen)?;
+                self.expect(K::OpenParen)?;
                 let binder = self.identifier()?;
                 self.expect(K::In)?;
                 frames.push(Frame::QueryDomain {

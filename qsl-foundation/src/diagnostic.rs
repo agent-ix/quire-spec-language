@@ -360,13 +360,6 @@ pub struct Diagnostic {
 /// distinguishes the ceilings by variant, never by message text.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SyntaxLimit {
-    /// Bracket-pair nesting depth (NFR-001 "Nesting level"): `bound` is the
-    /// selected nesting ceiling and the refusal's span is the opening
-    /// bracket of pair `bound + 1`.
-    NestingDepth {
-        /// Selected nesting ceiling, in bracket pairs.
-        bound: usize,
-    },
     /// Token (complete-V1: retained CST leaf) ceiling:
     /// `stage_limit_exceeded`/`token-count-exceeded` (catalog revision
     /// `1-draft.8`).
@@ -395,9 +388,6 @@ pub enum SyntaxLimit {
 impl std::fmt::Display for SyntaxLimit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NestingDepth { bound } => {
-                write!(f, "nesting depth exceeds the ceiling of {bound} levels")
-            }
             Self::Tokens { bound } => write!(f, "token ceiling of {bound} tokens exhausted"),
             Self::Nodes { bound } => write!(f, "syntax node ceiling of {bound} nodes exhausted"),
             Self::Work { bound } => write!(f, "parser work budget of {bound} steps exhausted"),
@@ -413,7 +403,6 @@ impl SyntaxLimit {
     /// `1-draft.8`).
     pub const fn stage_kind(self) -> LimitKind {
         match self {
-            Self::NestingDepth { .. } => LimitKind::NestingDepth,
             Self::Tokens { .. } => LimitKind::TokenCount,
             Self::Nodes { .. } => LimitKind::NodeCount,
             Self::Work { .. } => LimitKind::WorkBudget,
@@ -1325,10 +1314,6 @@ mod foundation_tests {
         let source = source();
         let span = Span { start: 0, end: 1 };
         let cases = [
-            (
-                SyntaxLimit::NestingDepth { bound: 4 },
-                Code::StageLimitExceeded,
-            ),
             (SyntaxLimit::Nodes { bound: 4 }, Code::StageLimitExceeded),
             (SyntaxLimit::Work { bound: 4 }, Code::StageLimitExceeded),
             (

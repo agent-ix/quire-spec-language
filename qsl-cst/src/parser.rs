@@ -900,9 +900,6 @@ struct Matched {
     children: std::ops::Range<usize>,
     /// Matches in this subtree, itself included: the CST nodes it lowers to.
     size: usize,
-    /// Bracket depth the production was entered at; with `production` and
-    /// `start`, the memo key.
-    depth: usize,
     /// The match stored before this one at the same `start`: the memo is
     /// one list per position, threaded through the store.
     earlier: Option<usize>,
@@ -953,7 +950,6 @@ enum Frame<'g> {
     Production {
         production: Production,
         position: usize,
-        depth: usize,
         first: usize,
     },
     /// `rules[index]` is being matched.
@@ -961,7 +957,6 @@ enum Frame<'g> {
         rules: &'g [Rule],
         index: usize,
         first: usize,
-        depth: usize,
     },
     /// Alternative `rules[index]` is being matched at `position`.
     Choice {
@@ -969,7 +964,6 @@ enum Frame<'g> {
         index: usize,
         position: usize,
         first: usize,
-        depth: usize,
         failure: Option<Failure>,
     },
     /// The optional rule is being matched at `position`.
@@ -983,16 +977,15 @@ enum Frame<'g> {
         count: usize,
         first: usize,
         iteration: usize,
-        depth: usize,
     },
 }
 
 /// What the engine does next.
 enum Step<'g> {
-    /// Start matching `rule` at a position and bracket depth.
-    Rule(&'g Rule, usize, usize),
-    /// Start matching a production at a position and bracket depth.
-    Production(Production, usize, usize),
+    /// Start matching `rule` at a position.
+    Rule(&'g Rule, usize),
+    /// Start matching a production at a position.
+    Production(Production, usize),
     /// Hand an outcome to the innermost suspended frame.
     Return(Outcome),
 }
@@ -1052,9 +1045,11 @@ const WORK_PER_TOKEN: usize = 256;
 /// discarding a failed attempt truncates `pending` and dropping a result
 /// never recurses.
 ///
-/// A production's outcome is a function of the production, position and
-/// bracket depth alone, so a match is memoized under that key and reused by
-/// reference.
+/// A production's outcome is a function of the production and position
+/// alone, so a match is memoized under that key and reused by reference:
+/// the memo holds at most one match per production per position (FR-256).
+/// Bracket nesting is not tracked; it is bounded only by the token, node
+/// and work ceilings.
 ///
 /// Memory. `matches` and `links` are append-only for the engine's lifetime,
 /// so they are bounded by the work budget, not by the node ceiling: a failed
@@ -1200,13 +1195,13 @@ impl<'a> Engine<'a> {
         self.frames.clear();
         self.pending.clear();
         self.farthest_failure = None;
-        let mut step = Step::Production(production, position, 0);
+        let mut step = Step::Production(production, position);
         loop {
             step = match step {
-                Step::Production(production, position, depth) => {
-                    self.enter_production(production, position, depth)
+                Step::Production(production, position) => {
+                    self.enter_production(production, position)
                 }
-                Step::Rule(rule, position, depth) => self.enter_rule(rule, position, depth),
+                Step::Rule(rule, position) => self.enter_rule(rule, position),
                 Step::Return(outcome) => match self.frames.pop() {
                     None => {
                         return match outcome {
@@ -1243,28 +1238,22 @@ impl<'a> Engine<'a> {
         })
     }
 
-    fn enter_production(
-        &mut self,
-        production: Production,
-        position: usize,
-        depth: usize,
-    ) -> Step<'a> {
+    fn enter_production(&mut self, production: Production, position: usize) -> Step<'a> {
         if !self.charge(position) {
             return Step::Return(self.work_exhausted());
         }
         // Reuse, not copy: the memoized match joins this attempt by
         // reference, one step for the whole subtree. The walk is not charged
-        // per entry. It is bounded: a (production, depth) pair is stored at
-        // most once per position, because once stored it is never matched
-        // again there, so the list holds at most one entry per production
-        // per bracket depth (`Production` count × (nesting ceiling + 1)),
-        // and in practice the few productions that can start at one token.
+        // per entry. It is bounded: a production is stored at most once per
+        // position, because once stored it is never matched again there, so
+        // the list holds at most one entry per production, and in practice
+        // the few productions that can start at one token.
         let mut cursor = self.memo.get(position).copied().flatten();
         while let Some(node) = cursor {
             let Some(matched) = self.matches.get(node) else {
                 break;
             };
-            if matched.production == production && matched.depth == depth {
+            if matched.production == production {
                 let end = matched.end;
                 self.adopt_later(node);
                 return Step::Return(Outcome::Match(end));
@@ -1278,20 +1267,19 @@ impl<'a> Engine<'a> {
         self.frames.push(Frame::Production {
             production,
             position,
-            depth,
             first: self.pending.len(),
         });
-        Step::Rule(rule, position, depth)
+        Step::Rule(rule, position)
     }
 
-    fn enter_rule(&mut self, rule: &'a Rule, position: usize, depth: usize) -> Step<'a> {
+    fn enter_rule(&mut self, rule: &'a Rule, position: usize) -> Step<'a> {
         if !self.charge(position) {
             return Step::Return(self.work_exhausted());
         }
         let first = self.pending.len();
         match rule {
-            Rule::Terminal(terminal) => Step::Return(self.terminal(terminal, position, depth)),
-            Rule::Production(production) => Step::Production(*production, position, depth),
+            Rule::Terminal(terminal) => Step::Return(self.terminal(terminal, position)),
+            Rule::Production(production) => Step::Production(*production, position),
             Rule::Sequence(rules) => {
                 let Some(head) = rules.first() else {
                     return Step::Return(Outcome::Match(position));
@@ -1300,9 +1288,8 @@ impl<'a> Engine<'a> {
                     rules,
                     index: 0,
                     first,
-                    depth,
                 });
-                Step::Rule(head, position, depth)
+                Step::Rule(head, position)
             }
             Rule::Choice(rules) => {
                 let Some(head) = rules.first() else {
@@ -1315,14 +1302,13 @@ impl<'a> Engine<'a> {
                     index: 0,
                     position,
                     first,
-                    depth,
                     failure: None,
                 });
-                Step::Rule(head, position, depth)
+                Step::Rule(head, position)
             }
             Rule::Optional(inner) => {
                 self.frames.push(Frame::Optional { position, first });
-                Step::Rule(inner, position, depth)
+                Step::Rule(inner, position)
             }
             Rule::Repeat {
                 rule: inner,
@@ -1337,9 +1323,8 @@ impl<'a> Engine<'a> {
                     count: 0,
                     first,
                     iteration: first,
-                    depth,
                 });
-                Step::Rule(inner, position, depth)
+                Step::Rule(inner, position)
             }
         }
     }
@@ -1354,7 +1339,6 @@ impl<'a> Engine<'a> {
             Frame::Production {
                 production,
                 position,
-                depth,
                 first,
             } => match outcome {
                 Outcome::Match(end) => {
@@ -1383,7 +1367,6 @@ impl<'a> Engine<'a> {
                         end,
                         children: links..self.links.len(),
                         size: descendants + 1,
-                        depth,
                         earlier,
                     });
                     self.adopt_later(node);
@@ -1395,20 +1378,11 @@ impl<'a> Engine<'a> {
                 rules,
                 index,
                 first,
-                depth,
             } => match outcome {
                 Outcome::Match(end) => {
                     if self.matched_since(first) > self.limits.nodes {
                         return Step::Return(self.nodes_exhausted());
                     }
-                    // A bracket pair opens and closes within one sequence
-                    // (`tc_197_brackets_are_direct_sequence_elements`), so
-                    // the sequence alone tracks the depth of what follows.
-                    let depth = match &rules[index] {
-                        Rule::Terminal(Terminal::Open(_)) => depth.saturating_add(1),
-                        Rule::Terminal(Terminal::Close(_)) => depth.saturating_sub(1),
-                        _ => depth,
-                    };
                     let index = index + 1;
                     let Some(next) = rules.get(index) else {
                         return Step::Return(Outcome::Match(end));
@@ -1417,9 +1391,8 @@ impl<'a> Engine<'a> {
                         rules,
                         index,
                         first,
-                        depth,
                     });
-                    Step::Rule(next, end, depth)
+                    Step::Rule(next, end)
                 }
                 other => Step::Return(other),
             },
@@ -1428,7 +1401,6 @@ impl<'a> Engine<'a> {
                 index,
                 position,
                 first,
-                depth,
                 failure,
             } => match outcome {
                 Outcome::No(next) => {
@@ -1446,10 +1418,9 @@ impl<'a> Engine<'a> {
                         index,
                         position,
                         first,
-                        depth,
                         failure: Some(failure),
                     });
-                    Step::Rule(alternative, position, depth)
+                    Step::Rule(alternative, position)
                 }
                 other => Step::Return(other),
             },
@@ -1471,7 +1442,6 @@ impl<'a> Engine<'a> {
                 count,
                 first,
                 iteration,
-                depth,
             } => {
                 let failure = match outcome {
                     Outcome::Match(next) if next > end => {
@@ -1486,9 +1456,8 @@ impl<'a> Engine<'a> {
                             count: count + 1,
                             first,
                             iteration: self.pending.len(),
-                            depth,
                         });
-                        return Step::Rule(rule, next, depth);
+                        return Step::Rule(rule, next);
                     }
                     // A repetition that consumed nothing ends the loop and
                     // keeps none of its matches.
@@ -1517,7 +1486,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    fn terminal(&mut self, terminal: &Terminal, position: usize, depth: usize) -> Outcome {
+    fn terminal(&mut self, terminal: &Terminal, position: usize) -> Outcome {
         let accepted = match terminal {
             Terminal::End => {
                 return if position == self.tokens.len() {
@@ -1531,10 +1500,9 @@ impl<'a> Engine<'a> {
                     return self.fail(Failure::expected(position, terminal.description()));
                 };
                 match terminal {
-                    Terminal::Exact(value)
-                    | Terminal::Literal(value)
-                    | Terminal::Open(value)
-                    | Terminal::Close(value) => token.spelling.as_ref() == *value,
+                    Terminal::Exact(value) | Terminal::Literal(value) => {
+                        token.spelling.as_ref() == *value
+                    }
                     Terminal::Identifier => {
                         crate::token::identifier_spelling(&token.spelling)
                             && !self.reserved_words.contains(token.spelling.as_ref())
@@ -1552,16 +1520,6 @@ impl<'a> Engine<'a> {
         if !accepted {
             return self.fail(Failure::expected(position, terminal.description()));
         }
-        // NFR-001 "Nesting level": the opening bracket of pair `nesting + 1`
-        // is refused at its own span.
-        if matches!(terminal, Terminal::Open(_)) && depth >= self.limits.nesting {
-            return Outcome::Exhausted(Refusal {
-                limit: SyntaxLimit::NestingDepth {
-                    bound: self.limits.nesting,
-                },
-                position,
-            });
-        }
         Outcome::Match(position + 1)
     }
 }
@@ -1569,7 +1527,7 @@ impl<'a> Engine<'a> {
 impl Terminal {
     fn description(&self) -> String {
         match self {
-            Self::Exact(value) | Self::Literal(value) | Self::Open(value) | Self::Close(value) => {
+            Self::Exact(value) | Self::Literal(value) => {
                 format!("`{value}`")
             }
             Self::Identifier => "identifier".into(),
@@ -1787,17 +1745,12 @@ mod tests {
             .expect("the parser must not overflow a 512 KiB stack");
     }
 
-    // A caller may raise the nesting ceiling far past the default; brackets
-    // nested that deep still never recurse, and are refused by the token or
-    // node ceiling (or parse). `parse` here is the engine entry below the
-    // public entry points' own ceiling.
+    // Brackets nested deep never recurse: they parse, or are refused by the
+    // token or node ceiling.
     #[test]
-    fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
+    fn deep_brackets_never_overflow_the_stack() {
         on_bounded_stack(|| {
-            let limits = Limits {
-                nesting: 100_000,
-                ..Limits::default()
-            };
+            let limits = Limits::default();
             // Deeper than the node ceiling can hold for parentheses.
             let depth = 6_000;
             let temporal = format!(

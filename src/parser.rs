@@ -49,7 +49,6 @@ fn lexer_limits(limits: Limits) -> lexer::Limits {
         source_bytes: limits.source_bytes,
         tokens: limits.tokens,
         nodes: limits.nodes,
-        nesting: limits.nesting,
     }
 }
 
@@ -90,7 +89,6 @@ struct Parser {
     tokens: Vec<Token>,
     at: usize,
     nodes: Vec<Expr>,
-    depth: usize,
     limits: Limits,
     composed: bool,
     values: Vec<c::Expression>,
@@ -106,7 +104,6 @@ impl Parser {
             tokens,
             at: 0,
             nodes: Vec::new(),
-            depth: 0,
             limits,
             composed: false,
             values: Vec::new(),
@@ -200,38 +197,6 @@ impl Parser {
         } else {
             Err(self.unexpected(expected.description()))
         }
-    }
-    /// Match a nesting-level-opening bracket -- `(`, `[`, `{`, or a
-    /// type-argument `<` (composed.rs) -- charging nesting depth exactly
-    /// once per bracket pair (NFR-001 "Nesting level"), never per
-    /// `expression()`/`binary()` call. This parser is fully predictive (no
-    /// PEG backtracking that could try, fail, and retry a bracket from the
-    /// same position), so a plain mutable `self.depth` counter is sound.
-    fn open(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
-        let token = self.expect(expected)?;
-        self.open_taken(token.span)?;
-        Ok(token)
-    }
-    /// Charge nesting depth for an opening bracket already consumed via
-    /// `self.take()` before its kind was known (e.g. a lookahead `match` on
-    /// a token fetched up front). `span` is that bracket's own span.
-    fn open_taken(&mut self, span: Span) -> Result<(), Box<Diagnostic>> {
-        if self.depth >= self.limits.nesting {
-            return Err(self.exhausted(
-                span,
-                SyntaxLimit::NestingDepth {
-                    bound: self.limits.nesting,
-                },
-            ));
-        }
-        self.depth += 1;
-        Ok(())
-    }
-    /// The `close` counterpart of [`Self::open`].
-    fn close(&mut self, expected: K) -> Result<Token, Box<Diagnostic>> {
-        let token = self.expect(expected)?;
-        self.depth = self.depth.saturating_sub(1);
-        Ok(token)
     }
     fn identifier(&mut self) -> Result<Spanned<String>, Box<Diagnostic>> {
         match &self.peek().kind {
@@ -345,9 +310,9 @@ impl Parser {
             self.expect(K::Qualify)?;
             Some(self.identifier()?)
         };
-        self.open(K::OpenBrace)?;
+        self.expect(K::OpenBrace)?;
         let expression = self.expression()?;
-        let end = self.close(K::CloseBrace)?.span.end;
+        let end = self.expect(K::CloseBrace)?.span.end;
         Ok(Clause {
             kind,
             name,
@@ -418,18 +383,14 @@ mod tests {
         .expect("test source")
     }
 
-    // A caller may raise the nesting ceiling far past the default; brackets
-    // nested that deep still never recurse. `Parser` here sits below the
-    // public entry points' own ceiling.
+    // Bracket nesting has no ceiling: brackets nested far past any native
+    // recursion budget parse within the token and node ceilings.
     #[test]
-    fn brackets_under_a_raised_nesting_ceiling_never_overflow_the_stack() {
+    fn deep_brackets_never_overflow_the_stack() {
         std::thread::Builder::new()
             .stack_size(512 * 1024)
             .spawn(|| {
-                let limits = Limits {
-                    nesting: 100_000,
-                    ..Limits::default()
-                };
+                let limits = Limits::default();
                 let depth = 30_000;
                 let historical = format!(
                     "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\ninvariant T on M::Thing at current {{ {}1{} }}\n",

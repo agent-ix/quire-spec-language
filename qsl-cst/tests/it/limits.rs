@@ -6,9 +6,8 @@
 //! through the public [`qsl_cst::parse`]/[`qsl_cst::parse_source`] entry
 //! points, so a ceiling clamped anywhere on that path turns it red.
 //!
-//! Raising `nesting` is safe because both the lexer and the parser keep
-//! explicit stacks; the nesting tests below run on a 512 KiB
-//! thread to prove a raised ceiling can never abort the process.
+//! Bracket nesting has no ceiling of its own: the lexer and the parser keep
+//! explicit stacks, so the deep-nesting test below runs on a 512 KiB thread.
 use ix_trace_rs::trace;
 use qsl_cst::diagnostic::read_source;
 use qsl_cst::{CompleteCode, CompleteDiagnostic, Limits, ParsedSource};
@@ -36,7 +35,6 @@ fn unbounded() -> Limits {
         source_bytes: usize::MAX,
         tokens: usize::MAX,
         nodes: usize::MAX,
-        nesting: Limits::default().nesting,
     }
 }
 
@@ -288,26 +286,20 @@ fn assert_admitted_under(outcome: Result<ParsedSource, Box<CompleteDiagnostic>>,
     let parsed = outcome.unwrap_or_else(|refusal| panic!("expected admission, got {refusal:?}"));
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.effective_limits(), limits);
-    assert_eq!(parsed.effective_limits().nesting, 100_000);
 }
 
-/// Raising `nesting` to 100,000 never crashes the
-/// parser. 6,000 nested parentheses (through [`qsl_cst::parse`]) and 6,000
-/// nested `Option<...>` (through [`qsl_cst::parse_source`]) on a 512 KiB
-/// thread are admitted with the raised limits recorded. Node and token
-/// ceilings are raised too, so the parse must succeed outright rather than
-/// stop at another ceiling.
-#[trace("TC-012", "NFR-001-M-4")]
+/// Deep brackets parse under raised token and node ceilings, which the
+/// parse records. 6,000 nested parentheses (through [`qsl_cst::parse`])
+/// and 6,000 nested `Option<...>` (through [`qsl_cst::parse_source`]) on a
+/// 512 KiB thread are admitted outright.
+#[trace("TC-722", "FR-256-AC-1")]
 #[test]
-fn a_raised_nesting_ceiling_never_crashes_the_parser() {
+fn deep_brackets_parse_under_raised_ceilings_with_the_limits_recorded() {
     on_bounded_stack(|| {
         const DEPTH: usize = 6_000;
-        let limits = Limits {
-            nesting: 100_000,
-            tokens: 10_000_000,
-            nodes: 10_000_000,
-            ..Limits::default()
-        };
+        let limits = Limits::default()
+            .with_tokens(10_000_000)
+            .with_nodes(10_000_000);
 
         let parens = nested_parens(DEPTH);
         let outcome = qsl_cst::parse(
@@ -328,51 +320,5 @@ fn a_raised_nesting_ceiling_never_crashes_the_parser() {
         .unwrap();
         let outcome = qsl_cst::parse_source(source, limits);
         assert_admitted_under(outcome, limits);
-    });
-}
-
-/// A caller-raised `nesting` ceiling admits a unit the
-/// default of 64 refuses, and one pair past the raised ceiling refuses
-/// naming it.
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn a_caller_raised_nesting_ceiling_admits_past_the_default() {
-    on_bounded_stack(|| {
-        let default = Limits::default().nesting;
-        // `default` parentheses inside the body's `{ }`: default + 1 levels.
-        let text = nested_parens(default);
-        let refusal = qsl_cst::parse(
-            identity("nesting-default"),
-            "limits.native",
-            text.as_bytes(),
-            Limits::default(),
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal.limit(),
-            Some(SyntaxLimit::NestingDepth { bound: default })
-        );
-
-        let raised = Limits {
-            nesting: default + 1,
-            ..Limits::default()
-        };
-        let parsed = parse("nesting-raised", &text, raised)
-            .expect("a caller-raised nesting ceiling must admit a unit at it");
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        assert_eq!(parsed.effective_limits(), raised);
-
-        let deeper = nested_parens(default + 1);
-        let refusal = qsl_cst::parse(
-            identity("nesting-past"),
-            "limits.native",
-            deeper.as_bytes(),
-            raised,
-        )
-        .unwrap_err();
-        assert_eq!(
-            refusal.limit(),
-            Some(SyntaxLimit::NestingDepth { bound: default + 1 })
-        );
     });
 }

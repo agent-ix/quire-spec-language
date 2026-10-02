@@ -6,6 +6,7 @@
 mod complete_cst;
 mod complete_grammar;
 mod cst_identity;
+mod deep_sources;
 mod limits;
 mod nesting_levels;
 mod selection;
