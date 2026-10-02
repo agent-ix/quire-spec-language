@@ -49,3 +49,12 @@ ceremony was found.
 Changes requested: FND-001 is medium and FND-002 is low. The SR-1219 FND-001
 fix also needs TC-745 plants: a method-syntax `.check(..)` on a value from a
 `pub` non-pre-check function, and a `<PackageDeclarations>::check` call.
+
+## Dispositions
+
+Round 1, reviewed at 74769baa93e0d2aa60ad1df6206e7116c53f8f65.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7e11be057: the TC-745 look-alike `pub fn plant(l: qsl_cst::Limits) {}` in qsl-eval asserts no finding. A stage entry now exercises the configuration filter, and deleting the filter would fail it. FR-270-AC-3 names the case, and FR-270 Behavior states the team-leader configuration rule. |
+| FND-002 | fixed | 7e11be057: FR-270-AC-4 is now "Test (TC-745); Inspection (the `ci:` wiring)", and TC-745 step 4 inspects the Makefile. Verified at this head: `ci:` lists `checked-input`, and its recipe runs `cargo run --package xtask -- checked-input`. |
