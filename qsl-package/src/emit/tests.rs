@@ -34,6 +34,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod admission_corpus;
 mod golden;
+mod identity_depth;
 
 /// The unit the fixture packages are read from; every occurrence's region is
 /// the whole of it.
