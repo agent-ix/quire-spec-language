@@ -32,7 +32,8 @@
 //! `arch-lint api-surface` holds both allow-lists
 //! (`tools/arch-lint/api_surface.rs`): T12-B reports every
 //! `from_digest` call outside `check`, and T12-F every `decode_admitted`
-//! call outside the admitted-package reader.
+//! call in QSL, which has no decode site; a backend's own admitted-package
+//! reader is the intended caller.
 
 use alloc::string::String;
 use core::fmt;

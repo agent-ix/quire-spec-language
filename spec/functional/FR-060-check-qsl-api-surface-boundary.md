@@ -88,7 +88,7 @@ six rules:
 | T12-C | Qsl | The kernel `EffectiveId` constructor (ADR-013 O-05) | `model` and every descendant module; plus the named debt list below, which only shrinks | the constructor's current source file |
 | T12-D | Qsl | The kernel `PopulationId` constructor (ADR-013 O-13 Population row, QC-21; ADR-011 T-12(d)) | `model` | `qsl-semantics/src/model/population.rs` |
 | T12-E | Qsl | The ADR-011 §4 condition-1 witness minter `library::SupportedV2Wire::attest_ir_admitted_v2` (ADR-013 T-1, FR-087-AC-1), `pub` only for the `qsl-semantics` crate boundary | `qsl-package`'s `checked_v2` (layer-4 v2 reader, allow-listed by crate and module); no debt list | `qsl-semantics/src/library/witness.rs` |
-| T12-F | Qsl | The kernel `NodeKey::decode_admitted` decoder (ADR-011 T-12, "Decoding an admitted key"): it re-reads a key `check` minted from an admitted package's bytes, after the admitted-package identity check | `qsl-package`'s `checked_v2` (the layer-4 I2 reader, allow-listed by crate and module); no debt list | none |
+| T12-F | Qsl | The kernel `NodeKey::decode_admitted` decoder (ADR-011 T-12, "Decoding an admitted key"): it re-reads a key `check` minted from an admitted package's bytes, after the admitted-package identity check | none in QSL: QSL has no decode site, so any QSL call fails the rule (FR-087-AC-6, AC-11); a backend names its own admitted-package reader in its own run of the check; no debt list | none |
 
 A rule's call patterns SHALL include every textual spelling that constructs
 the protected value, not only its primary constructor name.

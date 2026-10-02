@@ -16,7 +16,7 @@ use quire_contract_model::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use super::{read_checked_package_v2, read_v2, Read, V2Read, V2ReadLimits, V2ReadRefusal};
+use super::{read_v2, Read, V2ReadLimits, V2ReadRefusal};
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::{
@@ -30,7 +30,7 @@ use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
     RefusalClass, Selection, StaleCause, StalePin,
 };
-use quire_exact::{NodeKey, Origin, Role};
+use quire_exact::{Origin, Role};
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";
@@ -274,74 +274,6 @@ fn accepts_valid_bytes() {
         }
         other => panic!("expected Verified, got {other:?}"),
     }
-}
-
-/// ADR-011 T-12 (3): read `bytes` through the full I2 identity check and,
-/// only from the admitted package that check returns, decode every graph
-/// node key with `NodeKey::decode_admitted`. The reader returns no admitted
-/// package for bytes the check refuses, so there are no key bytes to decode.
-fn decode_admitted_keys(bytes: &[u8], pinned: &PinnedRequest) -> Option<Vec<NodeKey>> {
-    let outcome = read_checked_package_v2(
-        bytes,
-        identity("pkg"),
-        "1".to_owned(),
-        V2ReadLimits::default(),
-        &CheckedPackageEvidence::new(),
-        pinned,
-    );
-    let read: V2Read = outcome.ok()?.into_value();
-    Some(
-        read.admitted
-            .graph()
-            .nodes
-            .iter()
-            .map(|node| {
-                let wire = WireNodeId::from_hex(&node.node_id.digest).unwrap();
-                NodeKey::decode_admitted(*wire.as_bytes())
-            })
-            .collect(),
-    )
-}
-
-/// ADR-011 T-12 (1), (3): after the identity check admits a package, each
-/// key decoded from its bytes is the key `check` minted for that node: the
-/// `quire.checked-semantic-node/v1` digest the wire carries.
-#[test]
-fn decodes_admitted_keys_after_the_identity_check() {
-    let (preimage, envelope) = envelope_declaring(&[("pkg::A", "A"), ("pkg::B", "B")]);
-    let keys = decode_admitted_keys(&jcs(&envelope), &pinned_for(&preimage))
-        .expect("the identity check admits the package");
-    let mut expected: Vec<NodeKey> = ["pkg::A", "pkg::B"]
-        .iter()
-        .map(|label| NodeKey::from_digest(Sha256::digest(label.as_bytes()).into()))
-        .collect();
-    expected.sort();
-    assert_eq!(keys, expected);
-}
-
-/// ADR-011 T-12 (3): a forged package -- its node ids replaced
-/// while it still declares the original package's `package_id`, so its
-/// forged keys would otherwise resolve against its own node table -- is
-/// refused by the identity check before any key is decoded: the read
-/// yields no admitted package to decode from. The genuine package under
-/// the same pin decodes.
-#[test]
-fn a_forged_package_is_refused_before_any_key_is_decoded() {
-    let (preimage, genuine) = envelope_declaring(&[("pkg::A", "A")]);
-    let (_, mut forged) = envelope_declaring(&[("pkg::Forged", "A")]);
-    forged["package_id"] = genuine["package_id"].clone();
-    let pinned = pinned_for(&preimage);
-    let outcome = read(&jcs(&forged), &pinned);
-    assert!(
-        matches!(
-            &outcome,
-            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
-                if refusal.code == CheckedPackageRefusalCode::StaleDependency
-        ),
-        "expected the package_id recompute to refuse, got {outcome:?}"
-    );
-    assert_eq!(decode_admitted_keys(&jcs(&forged), &pinned), None);
-    assert!(decode_admitted_keys(&jcs(&genuine), &pinned).is_some());
 }
 
 /// A wire whose projection declares `exports` (label, qualified name), each
