@@ -13,17 +13,23 @@ use std::fmt;
 /// repository this crate lives in; `Ir`, `Rt` and `Cg` are Contract IR,
 /// Runtime and Codegen.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(crate) enum Repo {
+pub enum Repo {
+    /// Quire Spec Language, this repository.
     Qsl,
+    /// Contract IR.
     Ir,
+    /// Contract Runtime.
     Rt,
+    /// Contract Codegen.
     Cg,
 }
 
 impl Repo {
-    pub(crate) const ALL: [Repo; 4] = [Repo::Qsl, Repo::Ir, Repo::Rt, Repo::Cg];
+    /// Every repository, in declaration order.
+    pub const ALL: [Repo; 4] = [Repo::Qsl, Repo::Ir, Repo::Rt, Repo::Cg];
 
-    pub(crate) fn as_str(self) -> &'static str {
+    /// The repository's name.
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Qsl => "quire-spec-language",
             Self::Ir => "quire-contract-ir",
@@ -47,7 +53,7 @@ impl fmt::Display for Repo {
 /// published from the same git repository under a different crate name (for
 /// example IR's own workspace member, published as `quire-contract-model`)
 /// still classifies as that one repository, never a second, distinct one.
-pub(crate) fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
+pub fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
     let haystack = source.unwrap_or(name);
     if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
         Some(Repo::Qsl)
@@ -69,13 +75,16 @@ pub(crate) fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
 /// tests, examples or benches. FB-11 forbids a cycle over either kind; FB-05
 /// forbids most normal or dev edges into QSL.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EdgeKind {
+pub enum EdgeKind {
+    /// A build-time link.
     Normal,
+    /// A link for tests, examples or benches only.
     Dev,
 }
 
 impl EdgeKind {
-    pub(crate) fn as_str(self) -> &'static str {
+    /// The kind as `cargo metadata` names it.
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Normal => "normal",
             Self::Dev => "dev",
@@ -87,37 +96,47 @@ impl EdgeKind {
 /// through `via_crate` (the dependency's package name, which may differ from
 /// its owning repository's own crate name, e.g. IR's `quire-contract-model`).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Edge {
-    pub(crate) from: Repo,
-    pub(crate) to: Repo,
-    pub(crate) kind: EdgeKind,
-    pub(crate) via_crate: String,
+pub struct Edge {
+    /// The depending repository.
+    pub from: Repo,
+    /// The repository depended on.
+    pub to: Repo,
+    /// Normal or dev.
+    pub kind: EdgeKind,
+    /// The dependency's package name.
+    pub via_crate: String,
 }
 
 /// One FB-05 finding: an edge into QSL that the only stated exception
 /// (ADR-011 §3 FB-05: CG's normal dependency on the QSL layer-6 `replay`
 /// facade) does not cover.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Fb05Violation {
-    pub(crate) edge: Edge,
+pub struct Fb05Violation {
+    /// The edge into QSL.
+    pub edge: Edge,
 }
 
 /// One FB-11 finding: a cycle over QSL/IR/RT/CG, normal and dev edges
 /// combined. `path` lists the repositories in cycle order, starting and
 /// ending at the same repository.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Fb11Cycle {
-    pub(crate) path: Vec<Repo>,
+pub struct Fb11Cycle {
+    /// The repositories in cycle order, first and last equal.
+    pub path: Vec<Repo>,
 }
 
+/// Every FB-05 and FB-11 finding over one edge list.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DirectionReport {
-    pub(crate) fb05: Vec<Fb05Violation>,
-    pub(crate) fb11: Vec<Fb11Cycle>,
+pub struct DirectionReport {
+    /// The FB-05 findings.
+    pub fb05: Vec<Fb05Violation>,
+    /// The FB-11 cycles.
+    pub fb11: Vec<Fb11Cycle>,
 }
 
 impl DirectionReport {
-    pub(crate) fn is_clean(&self) -> bool {
+    /// Whether there is no finding.
+    pub fn is_clean(&self) -> bool {
         self.fb05.is_empty() && self.fb11.is_empty()
     }
 }
@@ -219,7 +238,9 @@ fn find_cycles(
     }
 }
 
-pub(crate) fn check(edges: &[Edge]) -> DirectionReport {
+/// FR-059's direction check over `edges`: every FB-05 violation and FB-11
+/// cycle.
+pub fn check(edges: &[Edge]) -> DirectionReport {
     DirectionReport {
         fb05: fb05_violations(edges),
         fb11: fb11_cycles(edges),

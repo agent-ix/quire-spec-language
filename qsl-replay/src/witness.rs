@@ -58,6 +58,8 @@ pub enum MalformedTranscript {
 /// recompute their answer from `transcript` on every call; none is cached
 /// alongside it, so no code path can leave a derived fact disagreeing with
 /// the stored transcript (FR-070-AC-1).
+///
+/// quire:canonical
 #[derive(Clone, Eq, PartialEq)]
 pub struct Witness {
     transcript: String,

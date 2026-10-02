@@ -870,6 +870,8 @@ impl CheckCause {
 }
 
 /// A located checking refusal, made before any charge.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 #[error("{} at {location:?}: {cause:?}", cause.code().as_str())]
 pub struct CheckRefusal {

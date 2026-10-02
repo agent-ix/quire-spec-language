@@ -562,6 +562,8 @@ impl ManifestDigest {
 /// `NodeKey`, until a lookup in an already-checked package resolves it, at
 /// E4 (the dependency's own checked package) or E9 (`replay`'s recompiled
 /// package) -- never by a conversion function, and none is defined here.
+///
+/// quire:canonical
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireNodeId([u8; 32]);
 

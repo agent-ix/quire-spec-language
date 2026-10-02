@@ -295,6 +295,8 @@ fn function_state<'a>(
 ///     graph
 /// }
 /// ```
+///
+/// quire:canonical
 #[derive(Debug)]
 pub struct CheckedGraph {
     /// FR-001: the checked unit's `RawSourceRef`, for the lock's `sources`

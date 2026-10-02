@@ -39,6 +39,8 @@ use quire_exact::NODE_KEY_DOMAIN;
 /// (the wire union's own `kind` discriminant) with equal fields, so a
 /// `Field` and an `Operation` sharing a declaration and name are never
 /// confused, matching the schema's own discriminated-union shape.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Member {
     /// A composite type's named field.

@@ -49,6 +49,8 @@ use num_traits::{One, Signed, Zero};
 use crate::accounting::length_amount;
 
 /// An exact, arbitrary-precision mathematical integer.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Integer(BigInt);
 

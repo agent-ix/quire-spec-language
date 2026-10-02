@@ -45,6 +45,8 @@ use crate::text::TextType;
 use alloc::boxed::Box;
 
 /// Exactly one of a completed value, undefined, refused or incomplete.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[must_use]
 pub enum Outcome<T> {
@@ -96,6 +98,8 @@ impl<T> Outcome<T> {
 }
 
 /// Why an operation is undefined.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Undefined {
     /// A divisor is (normalized) zero.
@@ -121,6 +125,8 @@ pub enum Undefined {
 /// width its catalog record renders (FR-096), so the record is built
 /// from the variant and never from a message. Bigint domains are boxed, which
 /// keeps `Refusal` small; it is `Clone`, not `Copy`.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Refusal {
     /// Strict `exact` rounding would discard a nonzero digit.

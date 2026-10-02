@@ -23,7 +23,8 @@ Scope: FR-272-AC-1 to FR-272-AC-4.
    module; `impl<'de> Visitor<'de> for V { type Value = T; … }`; a `struct
    Value` in `#[cfg(test)] mod tests`; `pub use v::Value;` where crate V
    holds `pub use k::Value;`; `pub use k::Value as Datum;`; `pub use
-   k::Value;`. Then K itself holds `pub use self::value::Value;`. Then K
+   k::Value;`; `pub use v::*;`; `mod m; pub use m::Value;` with `m`
+   defining `pub struct Value`. Then K itself holds `pub use self::value::Value;`. Then K
    tags `pub struct Outcome` and a workspace member whose only target is
    `[[bin]] path = "main.rs"` outside `src/` holds `struct Outcome`.
 2. Fixture `cargo metadata` with K a workspace member tagging `pub enum
@@ -33,8 +34,10 @@ Scope: FR-272-AC-1 to FR-272-AC-4.
    `LessOrEqual`; with two variants swapped; a `struct` with those field
    names. Then the same copy in a package outside the ecosystem.
 3. A fixture backend workspace depending on K as an ecosystem package and
-   defining `pub enum Value` with K's variants. Then run the gate over the
-   QSL workspace and read the `quire-contract-model` findings.
+   defining `pub enum Value` with K's variants and holding
+   `pub use qsl_replay::Value as Kernel;`, where the QSL facade
+   `qsl-replay` holds `pub use quire_exact::Value;`. Then run the gate over
+   the QSL workspace and read the `quire-contract-model` findings.
 4. Plant two namesakes in W in one run; run over a fixture with none.
 
 Tag the tests `#[trace("TC-747", "FR-272-AC-n")]`.
@@ -43,13 +46,14 @@ Tag the tests `#[trace("TC-747", "FR-272-AC-n")]`.
 
 - Step 1: `identifier` findings for the first two plants naming both
   locations; none for the associated type or the test-module struct; a
-  `re-export` finding for W's re-export of V's re-export and for its `as`
-  rename; none for W's `pub use k::Value` or for K's; an `identifier`
+  `re-export` finding for W's re-export of V's re-export, for its `as`
+  rename and for its glob of V; none for W's `pub use k::Value` or for K's;
+  only the `identifier` finding for `m`'s `Value`; an `identifier`
   finding for the `[[bin]]` member's `Outcome`.
 - Step 2: `copy` findings for the first two; none for the other three; none
   outside the ecosystem.
-- Step 3: one `copy` finding in the backend run; no `copy` finding for any
-  of `CollectionType`, `ComparisonOperator`, `EnumDeclaration`,
-  `IntegerDomain` or `ValueType`.
+- Step 3: one `copy` finding in the backend run and none for the facade
+  re-export; `ValueType` is in the canonical set and IR's `ValueType` gives
+  no `copy` finding.
 - Step 4: two findings, each with both locations and its rule, and a
   non-zero exit; then exit 0.

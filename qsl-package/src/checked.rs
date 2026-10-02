@@ -127,6 +127,8 @@ use crate::emit::{emit_checked, EmitRefusal};
 /// Row 5, a `protocol_artifact`-read value, is at the root crate's
 /// `protocol_artifact::AdmittedPackage`: only the root crate can name both
 /// it and `CheckedPackage`.
+///
+/// quire:canonical
 #[derive(Debug)]
 pub struct CheckedPackage {
     graph: Arc<CheckedGraph>,
@@ -475,6 +477,8 @@ fn unify(
 ///     package_id: todo!(),
 /// };
 /// ```
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmittedPackage {
     bytes: Vec<u8>,
