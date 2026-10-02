@@ -69,13 +69,14 @@ The FR-331 terminal record of the claim.
 
 | Provider result | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
-| `Unsat` or `EnclosureDisjoint` from a method sound for that outcome | `proved`, labelled `trusted` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}}` | success |
+| `Unsat` or `EnclosureDisjoint` from a method sound for that outcome | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}}` | success |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
 | `Stopped(limit)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 
 - No provider result SHALL settle `refuted`.
-- A `BoundedSolver` proof SHALL carry the label `trusted`, since it comes
-  from a third-party provider (ADR-018 PC-1, ADR-026 HY-2).
+- A `BoundedSolver` proof SHALL carry the label `uncertified`: a solver
+  QSL runs is a native engine with no core certificate checker (ADR-018
+  PC-1, ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
   jump bound, and the record SHALL carry both.
 - A further hybrid engine SHALL be one more negotiated backend whose
@@ -86,7 +87,7 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
-| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}}`, labelled `trusted`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `incomplete`, `LimitReached`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}}`, labelled `uncertified`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `incomplete`, `LimitReached`. No fixture result settles `refuted`. | Test (TC-705) |
 
 ## Dependencies
 
