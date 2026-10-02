@@ -1768,6 +1768,35 @@ pub mod fixtures {
             .clone()
     }
 
+    /// The deepest JSON array/object nesting in `bytes`, a JSON document
+    /// such as an identity preimage. A scalar document is depth 0. Brackets
+    /// inside strings are not counted. One pass, no recursion.
+    pub fn json_depth(bytes: &[u8]) -> usize {
+        let (mut depth, mut deepest) = (0_usize, 0_usize);
+        let (mut in_string, mut escaped) = (false, false);
+        for &byte in bytes {
+            if in_string {
+                match (escaped, byte) {
+                    (true, _) => escaped = false,
+                    (false, b'\\') => escaped = true,
+                    (false, b'"') => in_string = false,
+                    (false, _) => {}
+                }
+                continue;
+            }
+            match byte {
+                b'"' => in_string = true,
+                b'{' | b'[' => {
+                    depth += 1;
+                    deepest = deepest.max(depth);
+                }
+                b'}' | b']' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        deepest
+    }
+
     /// `check`'s unbounded scalar limits (`pub(crate)`).
     pub const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = super::SCALAR_LIMITS_UNLIMITED;
 

@@ -28,6 +28,7 @@ mod binder_scope;
 mod depth;
 mod differential;
 mod expression_depth;
+mod identity_depth;
 mod leaves;
 mod rows;
 

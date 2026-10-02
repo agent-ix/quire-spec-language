@@ -65,7 +65,7 @@ fn boxed(expression: Expression) -> Box<Expression> {
 /// A nested expression form: `f`'s parameters, result and body when the
 /// form is nested `levels` times.
 #[derive(Clone, Copy, Debug)]
-enum Form {
+pub(super) enum Form {
     /// `a and (a and (… a))`, the ticket's reproduction.
     And,
     /// `((a and a) and a) …`.
@@ -123,7 +123,7 @@ enum Form {
     Tuple,
 }
 
-const FORMS: [Form; 25] = [
+pub(super) const FORMS: [Form; 25] = [
     Form::And,
     Form::AndLeft,
     Form::IfThen,
@@ -396,7 +396,7 @@ impl Form {
 /// and `tv(t: T): Boolean`, with the alias `Total = Integer`, under `limits`
 /// on a [`STACK`]-byte thread. The body is built and dropped on that thread
 /// too.
-fn check_on_small_stack(
+pub(super) fn check_on_small_stack(
     form: Form,
     levels: usize,
     limits: CheckingLimits,

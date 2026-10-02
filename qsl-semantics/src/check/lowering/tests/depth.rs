@@ -20,7 +20,7 @@ fn handle(label: &str) -> NodeKey {
 /// `C0 .. C{length-1}`, each `record Ci { next?: C{i+1}; }`, the last one's
 /// field into `record Leaf { label: Text[0, 8; nfc]; }`, declared in chain
 /// order.
-fn chain(length: usize) -> Vec<CompositeDeclaration> {
+pub(super) fn chain(length: usize) -> Vec<CompositeDeclaration> {
     let mut records: Vec<CompositeDeclaration> = (0..length)
         .map(|at| {
             let next = if at + 1 < length {
@@ -81,7 +81,7 @@ fn equality_over_head() -> FunctionDeclaration {
 
 /// Check a package declaring `records` and holding `functions` under
 /// `limits`, on a [`STACK`]-byte thread.
-fn check_on_small_stack(
+pub(super) fn check_on_small_stack(
     records: Vec<CompositeDeclaration>,
     functions: Vec<FunctionDeclaration>,
     limits: CheckingLimits,
