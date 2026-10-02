@@ -190,6 +190,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-019
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-024
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
@@ -405,6 +407,30 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-185
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-186
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-187
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-188
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-189
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-190
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-191
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-192
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-193
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-194
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-311
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-022
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-219
     type: contains
@@ -657,6 +683,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-020](usecase/US-020-state-that-something-is-possible-in-a-model.md) | US | Draft |
 | [US-021](usecase/US-021-compare-runs-over-every-behaviour-of-a-model.md) | US | Draft |
 | [US-018](usecase/US-018-prove-that-a-detailed-model-implements-an-abstract-one.md) | US | Draft |
+| [US-022](usecase/US-022-measure-a-probabilistic-property-of-a-model-or-a-live-system.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -901,6 +928,17 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-148](functional/FR-148-decide-steps-against-an-abstract-protocol.md) | FR | Specified: abstract protocol state sets closed under internal steps, visible steps matched by label, QSpec FR-177's further checks on the same product, replay through `ProtocolSystem` (ADR-027 PR-2, PR-3); not yet implemented -- TC-553 planned |
 | [FR-149](functional/FR-149-check-a-refinement-s-simulation-certificate.md) | FR | Specified: the simulation certificate EN-1 writes for a proved safety half and its checker in `qsl-replay`, which recomputes initial states, successors and `check_step` over the relation; certified, `uncertified` and `CertificateRejected` settlement (ADR-020 CT-1 to CT-4); not yet implemented -- TC-556 planned |
 | [FR-310](functional/FR-310-build-the-s2-form-of-a-refinement-declaration.md) | FR | Specified: the S2 `RefinementForm` for a `refinement` declaration, every row as written in source order with its span, no name resolved (ADR-020 RM-1, RM-9); not yet implemented -- TC-889 planned |
+| [FR-185](functional/FR-185-declare-random-parameters-workloads-and-rewards.md) | FR | Specified: S3 admits random parameters (distributions over a finite support, read by postconditions and rewards only), workloads (one positive weight per operation) and parameter-only rewards (ADR-024 PM-1, PM-2, PM-5); not yet implemented -- TC-620 planned |
+| [FR-186](functional/FR-186-check-probabilistic-claim-forms-at-s3.md) | FR | Specified: S3 classifies `probabilistic-satisfaction` claims: scheduler, events and bounded measures, probability, quantile, mean-of-fraction and long-run forms, thresholds in (0, 1), units, optional confidence parameters, and the obligation identity (ADR-024 §2, PM-8); not yet implemented -- TC-621 planned |
+| [FR-187](functional/FR-187-give-model-transitions-step-probabilities-and-rewards.md) | FR | Specified: `ModelSystem` gives actions with draw distributions, exact step probabilities under a workload, rewards per transition, `NotMarkov`, and the reward non-negativity check at admission (ADR-024 PM-1 to PM-6); not yet implemented -- TC-622 planned |
+| [FR-188](functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md) | FR | Specified: weighted choices by exact integer weights with rejection and a choice index in the sampler preimage, and probabilistic sampling of a model step (ADR-024 ST-2); not yet implemented -- TC-623 planned |
+| [FR-189](functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md) | FR | Specified: `statistical` in `qsl-analyze` (EN-4): Okamoto and SPRT over exact rational bounds, Bonferroni over tests, symmetry over orbits, activation and censoring, sample stops, the provider manifest (ADR-024 ST-1 to ST-6, ST-9, ST-10, RX-1); a sampled undefined rejecting its test (ADR-024 SV-11); not yet implemented -- TC-624, TC-640 planned |
+| [FR-190](functional/FR-190-measure-a-long-run-fraction-by-regeneration.md) | FR | Specified: the regenerative method for long-run fractions with the ratio estimator, asymptotic interval, `min_cycles` and `Asymptotic` coverage (ADR-024 ST-7); not yet implemented -- TC-625 planned |
+| [FR-191](functional/FR-191-bound-and-reproduce-a-statistical-run.md) | FR | Specified: `StatisticalLimits` as caller-set budgets with published defaults, stop records that name the limit, its value and how to raise it, provenance and exact reproduction from the seed (ADR-024 ST-8, RP-1 to RP-3); not yet implemented -- TC-626 planned |
+| [FR-192](functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md) | FR | Specified: `TerminalValue::Measured` on the FR-331 value `measured` with its own axis (accepted, rejected, undecided), no truth or basis, Rejected failing the pipeline, never proof evidence, and negotiation by evidence kind (ADR-024 SV-1 to SV-5, SV-9, SV-10); a rejection by an undefined sample; not yet implemented -- TC-627, TC-640 planned |
+| [FR-193](functional/FR-193-keep-and-replay-sampled-witnesses.md) | FR | Specified: sampled witnesses kept in trace order and `replay_sampled_witness` with support and draw checks, and their use as qualitative counterexamples (ADR-024 SV-6 to SV-8); the undefined sample kept and replayed; not yet implemented -- TC-628, TC-640 planned |
+| [FR-194](functional/FR-194-evaluate-window-aggregates-in-monitors.md) | FR | Specified: aggregate terms over past windows of trace subjects (count, sum, min, max, fraction, nearest-rank quantile), `InsufficientData` as undefined, `max_window_values`, derived Boolean signals for tl-mltl (ADR-024 WA-1 to WA-8); not yet implemented -- TC-629 planned |
+| [FR-311](functional/FR-311-build-random-reward-and-workload-forms-at-s2.md) | FR | Specified: S2 builds `random-decl`, `reward-decl` and `workload-decl` forms (QSpec shared grammar) with their dispatch entries; not yet implemented -- TC-890 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -915,3 +953,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-022](decisions/ADR-022-possible-properties-and-state-graph-queries.md) | ADR | Proposed; possible properties and state-graph queries over a model: `possible` (EF), `always possible` (AG EF) and `unique path` as a property family beside temporal claims, their semantics over the explored state graph, witness sampling and backward reachability on the explicit-state engine, witness, trap and path-pair evidence that replays, and verdicts |
 | [ADR-023](decisions/ADR-023-hyperproperties-over-every-behaviour.md) | ADR | Proposed; hyperproperties over every behaviour of a model: trace variables bound to model aliases, lockstep or projection alignment with input matching, per-variable fairness, the admitted fragment (step relations on model and code, universal formulas, `∀∃` with safety bodies, single-existential claims routed to the possible family), the self-composition, projected and witness-set products on EN-1, compiler-verified copy-swap symmetry, tuple counterexamples and their replay, and the owner's rulings (§12) |
 | [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
+| [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |

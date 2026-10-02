@@ -431,6 +431,18 @@ names different artifacts in each.
 | TC-555 | A refused or incomplete mapping row or argument leaves the refinement undetermined, and an undefined argument refutes | Unit | P1 | FR-140-AC-5, FR-141-AC-7, FR-144-AC-6 | 🚧 Planned |
 | TC-556 | The simulation certificate checker accepts a true relation and rejects a false one | Integration | P1 | FR-149-AC-1, FR-149-AC-2, FR-149-AC-3, FR-149-AC-4, FR-144-AC-7 | 🚧 Planned |
 | TC-889 | S2 builds the refinement form with every row in source order | Unit | P1 | FR-310-AC-1, FR-310-AC-2, FR-310-AC-3 | 🚧 Planned |
+| TC-620 | S3 admits random parameters, workloads and rewards and refuses malformed ones | Unit | P1 | FR-185-AC-1, FR-185-AC-2, FR-185-AC-3, FR-185-AC-4 | 🚧 Planned |
+| TC-890 | S2 builds random, reward and workload declaration forms | Unit | P1 | FR-311-AC-1, FR-311-AC-2, FR-311-AC-3 | 🚧 Planned |
+| TC-621 | S3 checks probabilistic claim forms, thresholds, units and confidence parameters | Unit | P1 | FR-186-AC-1, FR-186-AC-2, FR-186-AC-3, FR-186-AC-4 | 🚧 Planned |
+| TC-622 | ModelSystem gives actions, step probabilities and rewards, and reports NotMarkov | Integration | P1 | FR-187-AC-1, FR-187-AC-2, FR-187-AC-3, FR-187-AC-4 | 🚧 Planned |
+| TC-623 | The QSpec sampler draws weighted choices exactly and reproducibly | Integration | P1 | FR-188-AC-1, FR-188-AC-2, FR-188-AC-3 | 🚧 Planned |
+| TC-624 | EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation | Integration | P1 | FR-189-AC-1, FR-189-AC-2, FR-189-AC-3, FR-189-AC-4, FR-189-AC-5 | 🚧 Planned |
+| TC-625 | EN-4 measures a long-run fraction by regeneration with asymptotic coverage | Integration | P1 | FR-190-AC-1, FR-190-AC-2, FR-190-AC-3 | 🚧 Planned |
+| TC-626 | Statistical runs stop on caller-set budgets and reproduce from their provenance | Integration | P1 | FR-191-AC-1, FR-191-AC-2, FR-191-AC-3, FR-191-AC-4 | 🚧 Planned |
+| TC-627 | Statistical results settle on the measured axis, fail the pipeline when rejected, and never count as proof | Integration | P1 | FR-192-AC-1, FR-192-AC-2, FR-192-AC-3, FR-192-AC-4 | 🚧 Planned |
+| TC-628 | Sampled witnesses are kept in trace order and replay through the model | Integration | P1 | FR-193-AC-1, FR-193-AC-2, FR-193-AC-3 | 🚧 Planned |
+| TC-629 | Window aggregates evaluate exactly over past windows and keep the temporal layer Boolean | Integration | P1 | FR-194-AC-1, FR-194-AC-2, FR-194-AC-3, FR-194-AC-4 | 🚧 Planned |
+| TC-640 | A sampled undefined evaluation is a rejection and replays | Integration | P1 | FR-189-AC-6, FR-192-AC-5, FR-193-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
