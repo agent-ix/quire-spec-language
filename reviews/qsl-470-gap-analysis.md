@@ -75,3 +75,10 @@ Round 1, reviewed at `cd999fc8badbaad0450286a92e2b90838091357b` (diff `d1ae0de9.
 | FND-002 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
 | FND-003 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
 | FND-004 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
+
+Round 2, reviewed at `f742a64e179a20a327f1ef973de10ed227ea7a20` (diff `cd999fc8..f742a64e`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |
+| FND-006 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |

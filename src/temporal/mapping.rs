@@ -86,8 +86,8 @@ pub enum Support {
 }
 
 /// What a classification retains from the native declaration. Nothing is
-/// substituted or reduced: the subject, the selected profile identity and
-/// revision, and the activation record are the admitted declaration's own.
+/// substituted or reduced: the subject, the selected profile identity and the
+/// activation record are the admitted declaration's own.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Retained {
     /// The native declaration subject the request was made against.

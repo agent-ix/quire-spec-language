@@ -72,3 +72,16 @@ Round 1, reviewed at `cd999fc8badbaad0450286a92e2b90838091357b` (diff `d1ae0de9.
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | Round 2 deleted `Retained::profile_revision`, but the doc on `Retained` still says "the subject, the selected profile identity and revision, and the activation record are the admitted declaration's own". | src/temporal/mapping.rs:88-90 |
+
+Round 2, reviewed at `f742a64e179a20a327f1ef973de10ed227ea7a20` (diff `cd999fc8..f742a64e`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |
+| FND-003 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |
