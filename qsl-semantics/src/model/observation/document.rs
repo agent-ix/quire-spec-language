@@ -168,10 +168,6 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
     None
 }
 
-fn labels_match(document: &DocumentRef, selection: &DocumentRef) -> bool {
-    document.authority == selection.authority && document.identity == selection.identity
-}
-
 /// FR-106 check 1: read one document from `provision` under `selected`'s
 /// digest, running the eight ordered conditions.
 pub(super) fn read_document(
@@ -312,13 +308,6 @@ pub(super) fn read_document(
     if let Some(blank_label) = first_blank_label(&document_identity) {
         return Err(refuse(
             admission_record(Code::InvalidSourceIdentity, "blank-label").with("label", blank_label),
-        ));
-    }
-    if !labels_match(&document_identity, selected) {
-        return Err(refuse(
-            admission_record(Code::StaleDependency, "content-mismatch")
-                .with("required", format!("{selected:?}"))
-                .with("supplied", format!("{document_identity:?}")),
         ));
     }
 
