@@ -65,7 +65,10 @@ pub fn encode_smt_query(
 - The encoding SHALL declare one state copy per position `0..=depth`, each
   field of each universe object as one constant of the field's SMT sort
   (`Int` for integer and enumeration fields with range assertions, `Bool`
-  for Boolean fields), named `s<i>.<object>.<field>`.
+  for Boolean fields), named `s<i>.<object>.<field>`; an optional field is
+  a `Bool` presence constant `s<i>.<object>.<field>.present` and a value
+  constant of its element's sort. Every term the encoding prints is linear,
+  so each query is a `QF_LIA` script.
 - The encoding SHALL assert the initial-state predicate on copy 0 for
   `Unrolling` and `InductionBase`, and on no copy for `InductionStep`.
 - The encoding SHALL assert, for each step `i` to `i+1`, the disjunction
@@ -114,7 +117,7 @@ pub fn encode_smt_query(
 | FR-315-AC-1 | Over the `Counter` subject (universe `{c}`, initial value 0), `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` declares `s0.c.value` to `s3.c.value` in order, asserts `(= s0.c.value 0)`, one transition assertion per step and the negated property, and ends with `(check-sat)`; encoding it twice gives byte-equal scripts. | Test (TC-900) |
 | FR-315-AC-2 | `InductionStep{depth: 1}` for `always holds(c.value <= 3)` asserts no initial-state predicate, asserts the property at position 0 and its violation at position 1; `InductionBase{depth: 1}` asserts the initial-state predicate on copy 0. | Test (TC-900) |
 | FR-315-AC-3 | An item over a field whose sort the encoding has no form for refuses `SmtEncodingRefusal` naming the field, with its locus, and writes no script. | Test (TC-900) |
-| FR-315-AC-4 | `Unrolling{depth: 3}` for `always holds(6 / (2 - c.value) >= 0)` over `Counter` makes the negated property hold when `(- 2 s<i>.c.value)` is 0 at some position `i` in `0..=3`, so a solver cannot refute the query and no `proved` follows for a claim UE-1 refutes; a precondition guard with a division contributes the same definedness disjunct at the step that reads it. | Test (TC-900) |
+| FR-315-AC-4 | Over a `Slot` subject (universe `{s}`, an optional `Int[0, 3]` field `held`, initially present with value 0; operation `drop` with frame `modifies [held]` that clears `held`, and operation `take` with precondition `pre Has { value(self.held) <= 3 }` that sets `held` to 1), `Unrolling{depth: 2}` for `always holds(value(s.held) <= 3)` makes the negated property hold when `(not s<i>.s.held.present)` holds at some position `i` in `0..=2`, since `value` of an absent field is undefined (`none-value`); the `take` disjunct's guard contributes the same definedness disjunct at the step that reads it. A solver therefore cannot refute the query once `drop` is reachable, and no `proved` follows for a claim UE-1 refutes. Every term of the script is linear. | Test (TC-900) |
 | FR-315-AC-5 | `InductionStep{depth: 2}` for `always holds(c.value <= 3)` asserts that copies 0, 1 and 2 are pairwise distinct; for a TP-3 item it declares `m0` to `m2` and asserts the monitor steps, the property at a position being the monitor state there not rejecting. | Test (TC-900) |
 
 ## Dependencies
