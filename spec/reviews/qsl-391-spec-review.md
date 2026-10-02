@@ -76,3 +76,10 @@ Delta reviewed: dcf73683..1b844d36 (48804542 fixes SR-1085; 1b844d36 gives root 
 | FND-006 | fixed | 48804542 |
 | FND-007 | fixed | 48804542 |
 
+Round 2, reviewed at 8c4c7213871b0f138eb98f584ca1011b9c7eb101.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 8c4c7213: The keep rule is a path through the owner crate's public API, and the rows name `quire_exact::Integer` and `quire_exact::Origin`. |
+| FND-009 | fixed | 8c4c7213: `checking::proof::Meter`, `checking::proof::Value` and `linking::DeclarationKey` are deleted with M-6e, SEAM-2. |
+| FND-010 | fixed | 8c4c7213: `canonical-types` runs on demand until M-6d lands and no merge gate waits on IR, per the plan lead's ruling (ADR-032 R-1). |
