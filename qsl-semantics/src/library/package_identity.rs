@@ -60,7 +60,17 @@ const NODE_OPTIONAL: [&str; 3] = [
 /// Why an identity preimage is structurally malformed.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum PreimageDefect {
-    /// The bytes are not one JSON object.
+    /// The bytes are not JSON: `quire-canonical`'s reader refused them at
+    /// byte `offset`.
+    Malformed {
+        /// The byte offset where the fault starts.
+        offset: usize,
+    },
+    /// The reader could not hold the bytes' tree: its refusal for want of
+    /// memory. The read sets no byte limit of its own, since the bytes are
+    /// already held whole under the package reader's artifact byte limit.
+    Unreadable(quire_canonical::ReadError),
+    /// The bytes are JSON but not one JSON object.
     NotObject,
     /// The bytes are not the canonical serialization of their JSON value, so
     /// one logical preimage could carry two `package_id`s. See
@@ -365,22 +375,31 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
 /// Validate `bytes` as an identity preimage and derive the wire node id of
 /// each nominal declaration in its `identity_projection`.
 ///
+/// The bytes are read first through `quire-canonical`'s shared reader: bytes
+/// it refuses are [`PreimageDefect::Malformed`] at its byte offset.
 /// Canonicity is enforced by requiring `bytes` to be byte-identical to the
-/// RFC 8785 encoding of the JSON value they parse to, produced by
+/// RFC 8785 encoding of the tree the reader read, produced by
 /// `quire-canonical` (ADR-013 §2, ADR-013:113: the one RFC 8785
 /// implementation): object members in UTF-16 code-unit order, no
 /// insignificant whitespace and one string and number spelling per value. A
 /// member name outside ASCII is admitted exactly when it is in that order.
-/// A value with no RFC 8785 encoding (an integer no IEEE 754 double equals)
-/// has no canonical bytes and is refused as [`PreimageDefect::NonCanonical`].
+/// A number is the double its text denotes, so an integer spelling no IEEE
+/// 754 double equals is not its canonical spelling and is refused as
+/// [`PreimageDefect::NonCanonical`].
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
+    let document = quire_canonical::read(bytes, u64::MAX).map_err(|error| match error {
+        quire_canonical::ReadError::Malformed { offset, .. } => {
+            PreimageDefect::Malformed { offset }
+        }
+        unreadable => PreimageDefect::Unreadable(unreadable),
+    })?;
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
         MemberDefect::NotObject => PreimageDefect::NotObject,
         MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
         MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
     })?;
-    if quire_canonical::to_vec(&value, LIMITS).ok().as_deref() != Some(bytes) {
+    if quire_canonical::to_vec(&document, LIMITS).ok().as_deref() != Some(bytes) {
         return Err(PreimageDefect::NonCanonical);
     }
     if preimage.get("version").and_then(Value::as_str) != Some(PACKAGE_ID_VERSION) {
@@ -533,15 +552,17 @@ mod tests {
     /// (UTF-16 `D83D DE00`) sorts before U+E000 (`E000`) in RFC 8785, but
     /// after it in UTF-8 byte order (`F0` > `EE`): the RFC 8785 order is
     /// admitted, and the UTF-8 order the old re-serialize-and-compare check
-    /// required is refused as non-canonical. A trailing space, a repeated
-    /// member and a non-canonical number spelling stay refused.
+    /// required is refused as non-canonical. A trailing space and a
+    /// non-canonical number spelling stay refused.
     #[trace("QSpec-TC-227", "QSpec-FR-307-AC-1")]
     #[test]
     fn canonicity_admits_a_non_ascii_member_name_in_rfc_8785_order() {
         let mut preimage: Value =
             serde_json::from_slice(&one_node_preimage(b"L::R", &["L", "R"])).unwrap();
         preimage["edition"]["names"] = serde_json::json!({"\u{E000}": 1, "😀": 2});
-        let rfc_8785 = quire_canonical::to_vec(&preimage, LIMITS).unwrap();
+        let document =
+            quire_canonical::read(&serde_json::to_vec(&preimage).unwrap(), u64::MAX).unwrap();
+        let rfc_8785 = quire_canonical::to_vec(&document, LIMITS).unwrap();
         let text = std::str::from_utf8(&rfc_8785).unwrap();
         assert!(text.contains("{\"😀\":2,\"\u{E000}\":1}"), "{text}");
         assert!(project_declarations(&rfc_8785).is_ok());

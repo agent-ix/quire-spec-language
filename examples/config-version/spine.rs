@@ -48,10 +48,8 @@ fn population_identity() -> String {
 /// JSON, then digested over RFC 8785 canonical bytes -- the same recipe
 /// `qsl_semantics::model::observation`'s own document digest uses.
 fn document_digest(bytes: &[u8]) -> [u8; 32] {
-    let value: Value = serde_json::from_slice(bytes).expect("spine fixture is JSON");
-    let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-        .expect("MAX_DEPTH is within MAX_DEPTH");
-    *quire_canonical::sha256(&value, limits)
+    let document = quire_canonical::read(bytes, u64::MAX).expect("spine fixture is JSON");
+    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
         .expect("spine fixture is RFC 8785 canonical")
         .as_bytes()
 }

@@ -6,6 +6,7 @@
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
+use quire_canonical::FixedShape;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
@@ -103,7 +104,7 @@ pub(crate) struct PinnedSampler {
 /// One draw's JCS preimage: `{"choice":"<decimal>","draw":"<decimal>",
 /// "seed":"<decimal>","step":"<decimal>","trace":"<decimal>"}` (QSpec
 /// FR-181).
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct DrawPreimage {
     choice: String,
     draw: String,
@@ -336,9 +337,8 @@ mod tests {
             step: "0".to_owned(),
             trace: "0".to_owned(),
         };
-        let limits =
-            quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH).unwrap();
-        let bytes = quire_canonical::to_vec(&preimage, limits).expect("a draw preimage encodes");
+        let bytes = quire_canonical::to_vec(&preimage, quire_canonical::Limits::new(u64::MAX))
+            .expect("a draw preimage encodes");
         assert_eq!(
             bytes,
             br#"{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}"#

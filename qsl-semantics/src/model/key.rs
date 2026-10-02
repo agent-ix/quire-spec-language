@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use qsl_foundation::ByteDigest;
+use quire_canonical::{Encode, FixedShape};
 use serde::Serialize;
 
 use crate::model::refusal::ModelRefusalCause;
@@ -118,7 +119,7 @@ impl DeclarationKey {
 }
 
 /// A [`DeclarationKey`]'s preimage form: `{package, node, digest_domain}`.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(super) struct DeclarationKeyWire<'a> {
     package: &'a str,
     node: &'a str,
@@ -135,7 +136,7 @@ pub struct RuleRef {
 }
 
 /// A [`RuleRef`]'s preimage form: `{identity, revision}`.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(super) struct RuleRefWire {
     pub(super) identity: &'static str,
     pub(super) revision: &'static str,
@@ -292,7 +293,7 @@ pub struct Fact {
 
 /// A [`Fact`]'s preimage form: `{ordinal, rule, inputs}`, the ordinal a
 /// decimal string.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct FactWire<'a> {
     ordinal: String,
     rule: RuleRefWire,
@@ -338,7 +339,7 @@ impl EffectiveIdExt for EffectiveId {
 /// An [`EffectiveId`]'s `{domain, digest}` preimage form
 /// (`model-effective-declaration.schema.json`). A local view rather than a
 /// `Serialize` impl, which the orphan rule forbids on the kernel type.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(super) struct EffectiveIdWire {
     domain: &'static str,
     digest: String,
@@ -370,7 +371,7 @@ pub struct EffectiveDeclarationPreimage {
 /// An [`EffectiveDeclarationPreimage`]'s preimage form: `{version,
 /// owner_effective_type, original, derivation}`, `owner_effective_type`
 /// `null` for an effective type.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 pub(super) struct EffectiveDeclarationWire<'a> {
     version: &'static str,
     owner_effective_type: Option<EffectiveIdWire>,
@@ -497,13 +498,13 @@ pub fn hex(bytes: &[u8]) -> String {
 /// and hashing them after costs no extra copy of note.
 ///
 /// Every preimage this module and `normalize`/`population` hand here is a
-/// typed view of strings, `null`s, arrays and objects with fixed ASCII member
-/// names: it has an RFC 8785 encoding, and [`LIMITS`] sets no byte ceiling
-/// and a depth far above any view's fixed nesting. The one refusal left is a
+/// fixed-shape typed view of strings, `null`s, arrays and objects with fixed
+/// ASCII member names: it has an RFC 8785 encoding, and [`LIMITS`] sets no
+/// byte ceiling. The one refusal left is a
 /// failed heap reservation for an object's buffered members, which the
 /// `serde_json` encoder this replaced aborted the process on; this panics
 /// with the encoder's reason instead.
-pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
+pub(super) fn sha256_and_len(preimage: &impl Encode) -> ([u8; 32], u64) {
     // ADR-013 §2 (arch-lint `canonical-encoder`): the digest goes
     // through `quire-canonical`'s own `sha256` directly, never `to_vec` and
     // then `ByteDigest::of` over the resulting bytes -- that pair is a
@@ -532,7 +533,7 @@ pub(super) fn sha256_and_len(preimage: &impl Serialize) -> ([u8; 32], u64) {
 /// still buffers each open object's members to sort them (a top-level
 /// object in full), as every encoding does. Refuses only as
 /// [`sha256_and_len`] does.
-pub(super) fn canonical_len(preimage: &impl Serialize) -> u64 {
+pub(super) fn canonical_len(preimage: &impl Encode) -> u64 {
     quire_canonical::encode(
         &mut quire_canonical::WriteSink(std::io::sink()),
         preimage,

@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use quire_canonical::FixedShape;
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
@@ -58,13 +59,13 @@ struct DimensionDocument {
 }
 
 // JCS preimages: fields are declared in ascending key order (see `semantic_node`).
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalDimensionTerm {
     dimension_node_id: CanonicalNodeId,
     exponent: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalDimension<'a> {
     owner: CanonicalOwner<'a>,
     qualified_declaration: &'a [String],
@@ -215,7 +216,7 @@ struct UnitDocument {
     offset: RationalDocument,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalUnit<'a> {
     dimension_node_id: CanonicalNodeId,
     offset: CanonicalRational,

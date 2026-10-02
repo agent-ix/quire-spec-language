@@ -708,6 +708,9 @@ pub enum IntakeLimit {
     InputBytes,
     /// The number of arrays and objects enclosing any one value.
     NestingDepth,
+    /// Heap memory: reading or digesting the document could not reserve
+    /// the bytes the cause's `bound` names.
+    Memory,
 }
 
 impl IntakeLimit {
@@ -716,6 +719,7 @@ impl IntakeLimit {
         match self {
             Self::InputBytes => "input_bytes",
             Self::NestingDepth => "nesting_depth",
+            Self::Memory => "memory",
         }
     }
 }

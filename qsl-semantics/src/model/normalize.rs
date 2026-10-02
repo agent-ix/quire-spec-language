@@ -199,6 +199,7 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
+use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -775,7 +776,7 @@ impl ObjectUniverse {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct EffectiveViewWire<'a> {
     version: &'static str,
     model_selection: DomainPackageRefWire<'a>,
@@ -783,13 +784,13 @@ struct EffectiveViewWire<'a> {
     declarations: Vec<ViewEntryWire<'a>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct ViewEntryWire<'a> {
     effective_id: EffectiveIdWire,
     preimage: EffectiveDeclarationWire<'a>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct ObjectUniverseWire<'a> {
     version: &'static str,
     model_selection: DomainPackageRefWire<'a>,

@@ -133,6 +133,7 @@
     reason = "cold refusal path; ModelRefusalCause carries DeclarationKeys inline, matching state::evaluation's typed-failure precedent"
 )]
 
+use quire_canonical::FixedShape;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -733,7 +734,7 @@ fn population_id_preimage<'a>(
 }
 
 /// [`population_id_preimage`]'s typed form.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct PopulationIdWire<'a> {
     version: &'static str,
     domain_package_selection: DomainPackageRefWire<'a>,

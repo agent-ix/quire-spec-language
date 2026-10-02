@@ -1155,10 +1155,8 @@ const FRAME_CLAUSES: &str = "pre AttemptUpdatePre using v on Config::ConfigVersi
     { true }\npost AttemptUpdatePost using v on Config::ConfigVersion::attemptUpdate { true }\n";
 
 fn frame_document_digest(bytes: &[u8]) -> [u8; 32] {
-    let value: serde_json::Value = serde_json::from_slice(bytes).expect("test fixture is JSON");
-    let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-        .expect("MAX_DEPTH is within MAX_DEPTH");
-    *quire_canonical::sha256(&value, limits)
+    let document = quire_canonical::read(bytes, u64::MAX).expect("test fixture is JSON");
+    *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
         .expect("test fixture is RFC 8785 canonical")
         .as_bytes()
 }

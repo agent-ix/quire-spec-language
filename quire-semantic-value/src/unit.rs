@@ -32,6 +32,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::hash::{Hash, Hasher};
 
+use quire_canonical::FixedShape;
 use serde::Serialize;
 
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
@@ -639,13 +640,13 @@ pub enum CompoundUnitCause {
 
 // RFC 8785 JCS: `quire-canonical` orders members itself, so field
 // declaration order carries no meaning.
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalCompoundTerm {
     exponent: String,
     unit_node_id: CanonicalNodeId,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalCompound {
     terms: Vec<CanonicalCompoundTerm>,
     version: &'static str,

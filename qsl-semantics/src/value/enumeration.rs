@@ -22,6 +22,7 @@
 //! [`AdmittedEnumDeclaration`] pairs that declaration with the preimage its
 //! key was verified against.
 
+use quire_canonical::FixedShape;
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
@@ -59,7 +60,7 @@ struct MemberDocument {
 }
 
 // JCS preimages: fields are declared in ascending key order (see `semantic_node`).
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalDeclaration<'a> {
     members: &'a [String],
     ordered: bool,
@@ -68,7 +69,7 @@ struct CanonicalDeclaration<'a> {
     version: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, FixedShape)]
 struct CanonicalMember<'a> {
     case: &'a str,
     declaration_node_id: CanonicalNodeId,

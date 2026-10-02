@@ -120,7 +120,7 @@ pub(super) fn member<'de, D: Deserializer<'de>>(
     };
     // The decoded member must re-encode to exactly the wire it came from, so
     // a field this decoder drops cannot pass silently.
-    if member.to_wire() != wire {
+    if serde_json::to_value(&member).map_err(D::Error::custom)? != wire {
         return Err(D::Error::custom(format!(
             "member {wire} does not round-trip"
         )));

@@ -1552,12 +1552,23 @@ dependencies = [
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#9572a21687058279bc1b729a4830a28f26ef7173"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#59fe4f06370fbdbd8de4fa446ad78f3974926252"
 dependencies = [
+ "quire-canonical-derive",
  "ryu-js",
  "serde",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "quire-canonical-derive"
+version = "0.3.0"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#59fe4f06370fbdbd8de4fa446ad78f3974926252"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
 ]
 
 [[package]]

@@ -608,7 +608,7 @@ fn l08_a_structurally_malformed_identity_preimage_is_invalid_before_resolution()
             PreimageDefect::NonCanonical,
         ),
         (not_an_object, &[], PreimageDefect::NotObject),
-        (not_json, &[], PreimageDefect::NotObject),
+        (not_json, &[], PreimageDefect::Malformed { offset: 1 }),
         (
             jcs(&unknown_member),
             &["R"],

@@ -40,6 +40,7 @@ use crate::model::normalize::{normalize, EffectiveView, NormalizeOutcome};
 use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
 // ---------------------------------------------------------------------------
 // Clause facts (the model -> check edge must stay empty, FR-074-AC-3): the
@@ -518,19 +519,19 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 // sha256-jcs digest (FR-056)
 // ---------------------------------------------------------------------------
 
-/// FR-106's digest-first rule, checked against `expected`: bytes that parse
-/// as JSON are digested over their RFC 8785 canonical encoding, through
-/// `quire-canonical` directly -- the one sanctioned encoder (ADR-013 §2);
-/// bytes that do not parse are digested raw. The raw fallback itself is
-/// `model::intake::check_package_digest` (widened, to serve this
-/// second caller) -- never an ad hoc `ByteDigest::of` here, and never a
-/// second call site of `model::key::raw_bytes_digest` outside that already-
-/// exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one raw-fallback
-/// call site). A value that parses as JSON but has no RFC 8785 encoding
-/// (e.g. a non-finite float) refuses `stale_dependency`/`byte-digest-
-/// mismatch` directly: admission cannot verify it against `expected` either
-/// way, so this is that same outcome, not a silently substituted raw-bytes
-/// fallback (the previous behavior).
+/// FR-106's digest-first rule, checked against `expected`: bytes that
+/// `quire-canonical`'s shared reader reads are digested over their RFC 8785
+/// canonical encoding, the reader's tree encoded by `quire-canonical`
+/// directly -- the one sanctioned encoder (ADR-013 §2); bytes the reader
+/// refuses as malformed are digested raw (FR-106 check 1.3). The raw
+/// fallback itself is `model::intake::check_package_digest` (widened, to
+/// serve this second caller) -- never an ad hoc `ByteDigest::of` here, and
+/// never a second call site of `model::key::raw_bytes_digest` outside that
+/// already-exempt function (ADR-013 §2 O-05: one RFC 8785 encoder, one
+/// raw-fallback call site). The caller has already held the bytes to
+/// `ObservationLimits::document_bytes`, so the read sets no byte limit of
+/// its own; a read or encoding that cannot reserve memory refuses
+/// `resource_exhausted`.
 fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
     let mismatch = || {
         refuse(AdmissionRecord::new(
@@ -538,16 +539,20 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
             "byte-digest-mismatch",
         ))
     };
-    let parsed_digest = match serde_json::from_slice::<serde_json::Value>(bytes) {
-        Ok(value) => {
-            let limits = quire_canonical::Limits::new(u64::MAX, quire_canonical::Limits::MAX_DEPTH)
-                .map_err(|_| fault("canonical-limits-invalid"))?;
-            let digest = quire_canonical::sha256(&value, limits)
-                .map(|digest| *digest.as_bytes())
-                .map_err(|_| mismatch())?;
-            Some(digest)
-        }
-        Err(_) => None,
+    let exhausted = || {
+        refuse(AdmissionRecord::new(
+            Code::ResourceExhausted,
+            "memory-exhausted",
+        ))
+    };
+    let parsed_digest = match quire_canonical::read(bytes, u64::MAX) {
+        Ok(document) => Some(
+            *quire_canonical::sha256(&document, IDENTITY_LIMITS)
+                .map_err(|_| exhausted())?
+                .as_bytes(),
+        ),
+        Err(quire_canonical::ReadError::Malformed { .. }) => None,
+        Err(_) => return Err(exhausted()),
     };
     crate::model::intake::check_package_digest(expected, bytes, parsed_digest)
         .map_err(|_| mismatch())
