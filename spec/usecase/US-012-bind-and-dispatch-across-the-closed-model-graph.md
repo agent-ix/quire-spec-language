@@ -15,6 +15,14 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-086
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-300
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-301
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-302
+    type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-303
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/US-002
     type: references
   - target: "ix://agent-ix/quire-spec-language/StR-001"
@@ -107,3 +115,7 @@ independently supplied runtime inputs.
 - [FR-084](../functional/FR-084-admit-closed-populations-and-resolve-lookup.md)
 - [FR-085](../functional/FR-085-resolve-relationship-end-references.md)
 - [FR-086](../functional/FR-086-bind-systems-model-references.md)
+- [FR-300](../functional/FR-300-check-model-forms-through-the-state-model-family.md)
+- [FR-301](../functional/FR-301-render-state-model-causes-under-the-enclosing-family.md)
+- [FR-302](../functional/FR-302-link-dispatch-during-unit-compile.md)
+- [FR-303](../functional/FR-303-keep-the-model-correspondence-one-to-one.md)

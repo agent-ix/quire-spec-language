@@ -1,0 +1,99 @@
+---
+id: FR-305
+title: "Relate a frame binding to its operation's frame and anchor"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-031
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-017
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-104
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-105
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-114
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-304
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-012
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-013
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-353
+    type: depends_on
+---
+# FR-305: Relate a frame binding to its operation's frame and anchor
+
+## Description
+
+When the S3 checker checks a `FrameBinding` keyed by an `OperationKey`, the
+checker SHALL accept the binding whether or not a clause or attempt names the
+operation, and SHALL record in the checked binding's `frame_nodes` member
+the operation's one `state`/`frame` node key and one
+`state`/`operation_anchor` node key when a clause or attempt names the
+operation.
+
+## Inputs
+
+- A `FrameBinding` of a `CheckedAbstractionRelation`, keyed by `OperationKey
+  { declaring: DeclarationKey, operation: Identifier }`
+  ([FR-304](FR-304-check-an-authored-abstraction-relation.md)).
+- The unit's `CheckedOperationFrame`s, one per (declaring type, operation
+  name) that a clause or attempt names ([FR-104](FR-104-check-state-clauses.md),
+  [FR-114](FR-114-bind-a-protocol-attempt-to-its-operation-frame.md)).
+
+## Outputs
+
+The checked `FrameBinding` of the `CheckedAbstractionRelation`, holding
+`frame_nodes: Option<FrameNodes { frame: NodeKey, anchor: NodeKey }>`:
+`Some` with the `NodeKey`s of the operation's `state`/`frame` and
+`state`/`operation_anchor` nodes when the unit has its
+`CheckedOperationFrame`, and `None` otherwise. The v2 relation node does not
+carry `frame_nodes`; a reader joins a frame entry to those nodes by its
+operation key (QSpec FR-451).
+
+## Behavior
+
+### The operation key determines the frame identities
+
+An operation has one anchor and one frame
+([FR-105](FR-105-emit-state-nodes.md)). Its QSpec FR-013 frame identity and
+its QSpec FR-012 pre, post and result anchor identities are functions of its
+`OperationKey` (ADR-017 AR-2), so the binding's key carries no anchor member.
+The bound function's entry is the pre anchor, its exit the post anchor, and
+its return value the result. The operation's parameters are read at entry
+through the binding's `parameters`, the framed state at entry and exit
+through its `receiver`, a framed field through its object type's
+`ObjectBinding.fields`, and a created or deleted object through its
+population's `PopulationBinding`. The key derivation is QSpec FR-353-AC-1's.
+
+### Inherited operations bind at their declaring type
+
+An inherited operation anchors at its declaring type (FR-105), so its
+`OperationKey` names the declaring type. A binding whose `OperationKey`
+names a subtype that inherits the operation without declaring it is keyed by
+a type that declares no such operation, and refuses as FR-304 states
+(`missing_declaration`/`missing-name`).
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-305-AC-1 | A unit that binds the frame of an operation no clause or attempt names checks, and its checked relation holds that `FrameBinding` under the operation's `OperationKey` with `frame_nodes` `None`. | Test (TC-802) |
+| FR-305-AC-2 | A unit that binds `attemptUpdate`'s frame and has a clause naming `attemptUpdate` checks, and the checked `FrameBinding`'s `frame_nodes` is `Some(FrameNodes { frame, anchor })` whose `frame` and `anchor` equal the `NodeKey`s of the `state`/`frame` and `state`/`operation_anchor` nodes of `attemptUpdate`'s `CheckedOperationFrame`. | Test (TC-802) |
+| FR-305-AC-3 | A frame binding keyed by `OperationKey { Sub, op }`, where `Sub` inherits `op` from `Base` without redeclaring it, refuses `missing_declaration`/`missing-name` naming the key; the same binding keyed by `OperationKey { Base, op }` checks. | Test (TC-803) |
+
+## Dependencies
+
+- **Upstream:** QSpec FR-353, FR-012 and FR-013 own the frame and anchor
+  identities; QSpec FR-353-AC-1 fixes the derived key;
+  ADR-017 AR-2 fixes the key; [FR-105](FR-105-emit-state-nodes.md) gives one
+  anchor and one frame per operation.
+- **Downstream:** [FR-307](FR-307-export-the-bindings-each-item-references.md)
+  returns the frame binding for a frame, precondition or postcondition item.
+
+## References
+
+- ADR-017 §3 AR-2 ("Anchors", "Frame identity").
+- QSpec FR-353-AC-1 (specification ticket STD-121, Q-7).
+- Linear QSL-388 (specification), QSL-36 (implementation).

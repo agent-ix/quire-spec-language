@@ -277,6 +277,27 @@ names different artifacts in each.
 | TC-746 | Canonical doc tags define the canonical set, and misplaced or duplicate tags fail | Unit | P1 | FR-271-AC-1, FR-271-AC-2 | 🚧 Planned |
 | TC-747 | The canonical-types gate finds namesakes, re-exports and same-shaped copies | Unit | P1 | FR-272-AC-1, FR-272-AC-2, FR-272-AC-3, FR-272-AC-4 | 🚧 Planned |
 | TC-748 | Once every namesake is deleted or renamed, the canonical-types gate and make ci pass | Integration | P1 | FR-273-AC-1 | 🚧 Planned |
+| TC-790 | Each model form types through StateModel and refuses with a StateModel cause | Integration | P1 | FR-300-AC-1, FR-300-AC-2 | 🚧 Planned |
+| TC-791 | The seam probe reports the StateModel arms at S1, S2 and S3 | Integration | P1 | FR-300-AC-3 | 🚧 Planned |
+| TC-792 | StateModel causes raised under Value and ProtocolClause evaluation render with the state-model prefix | Integration | P1 | FR-301-AC-1, FR-301-AC-2 | 🚧 Planned |
+| TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | 🚧 Planned |
+| TC-794 | Unit compile refuses ambiguous and inapplicable dispatch with no checked package | Integration | P1 | FR-302-AC-2, FR-302-AC-3, FR-302-AC-4 | 🚧 Planned |
+| TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | 🚧 Planned |
+| TC-796 | The model correspondence faults on a second, different entry in either direction | Integration | P1 | FR-303-AC-1, FR-303-AC-2, FR-303-AC-3, FR-303-AC-4 | 🚧 Planned |
+| TC-797 | An abstraction relation checks into one binding per key, total or partial | Unit | P1 | FR-304-AC-1, FR-304-AC-2 | 🚧 Planned |
+| TC-798 | An abstraction binding whose model key resolves to nothing refuses missing-name | Unit | P1 | FR-304-AC-3 | 🚧 Planned |
+| TC-799 | Duplicate and conflicting abstraction bindings refuse conflicting-binding | Unit | P1 | FR-304-AC-4 | 🚧 Planned |
+| TC-800 | Abstraction bindings with malformed parameter or field maps refuse malformed-declaration | Unit | P1 | FR-304-AC-5 | 🚧 Planned |
+| TC-801 | RustPath, RustField and RustReceiver segments are checked against Rust syntax | Unit | P1 | FR-304-AC-6 | 🚧 Planned |
+| TC-802 | A frame binding checks without a naming clause and relates to the frame and anchor when one exists | Integration | P1 | FR-305-AC-1, FR-305-AC-2 | 🚧 Planned |
+| TC-803 | An inherited operation's frame binds only at its declaring type | Unit | P1 | FR-305-AC-3 | 🚧 Planned |
+| TC-804 | The abstraction relation is emitted as a v2 node and enters the package_id | Integration | P1 | FR-306-AC-1, FR-306-AC-2 | 🚧 Planned |
+| TC-805 | The abstraction relation changes no requirement record, route result or clause run | Integration | P1 | FR-306-AC-3, FR-306-AC-4 | 🚧 Planned |
+| TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 Planned |
+| TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 Planned |
+| TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 Planned |
+| TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 Planned |
+| TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -677,3 +698,20 @@ locally; the rest are `🚧 Planned`. TC-513's emitted-node
 assertions wait on STD-111, as TC-462's do. FR-116's decode of a Kani frame
 witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49; TC-515 drives a hand-built envelope.
+
+## StateModel family and abstraction relation (FR-300 to FR-307) coverage
+
+[FR-300](functional/FR-300-check-model-forms-through-the-state-model-family.md)
+to [FR-303](functional/FR-303-keep-the-model-correspondence-one-to-one.md)
+carry ADR-016 G-2a to G-2c, G-7 and G-8: the `StateModel` check hook and its
+seams (TC-790, TC-791), `state-model` causes under the enclosing family's
+evaluation (TC-792), dispatch linked at S3 during unit compile (TC-793 to
+TC-795, TC-809) and the one-to-one model correspondence (TC-796).
+[FR-304](functional/FR-304-check-an-authored-abstraction-relation.md) to
+[FR-307](functional/FR-307-export-the-bindings-each-item-references.md)
+carry ADR-017 AR-1 to AR-6, QSL's share of QSpec FR-353 (QSpec TC-268): the
+S3 check (TC-797 to TC-801, TC-810), the S2 source form (TC-811), the frame binding key (TC-802, TC-803), the v2
+relation node (TC-804, TC-805) and the per-item export (TC-806, TC-807).
+TC-797 to TC-803 and TC-806 to TC-807 build the relation input in the test
+from checked packages; TC-804 and TC-811 use the spelling and node
+QSpec FR-450 and FR-451 give. Every row is `🚧 Planned`.
