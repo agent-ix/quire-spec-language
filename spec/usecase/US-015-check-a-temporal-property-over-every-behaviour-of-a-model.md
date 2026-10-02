@@ -15,6 +15,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-128
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-337
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: traces_to
 ---
@@ -88,3 +90,4 @@ builds on this check.
 - [FR-126](../functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
 - [FR-127](../functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
 - [FR-128](../functional/FR-128-replay-a-model-counterexample.md)
+- [FR-337](../functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md)

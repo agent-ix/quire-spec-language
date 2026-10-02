@@ -58,7 +58,7 @@ Proposed, 2026-10-01. §9 records the owner's rulings on the four questions
 this record first left open, on undefined evaluation (RU-5), on uncertified
 proofs (RU-6) and on undefined model-side expressions (RU-7); §10 and §11
 carry the two that add design. The
-QSL compiler requirements that implement it are FR-123 to FR-128 (use case
+QSL compiler requirements that implement it are FR-123 to FR-128 and FR-337 (use case
 US-015). The owning ticket and related work are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
@@ -439,7 +439,7 @@ checkers and the settlement map, and already depends on layer 5.
 **Sequencing in QSL.** The explicit-state path depends only on QSL work.
 
 1. **Specification.** This record and the QSL compiler requirements
-   (FR-123 to FR-128).
+   (FR-123 to FR-128, and FR-337 for the v2 temporal clause node).
 2. **Prerequisites already planned in QSL.** FR-101 findings and stopped
    expansions (ADR-016 G-1); FR-120 `ModelSystem` (ADR-016 G-4); the temporal
    spine migration with infinite-trace admission, the layer-5 evaluator and
@@ -463,7 +463,7 @@ checkers and the settlement map, and already depends on layer 5.
 | QS-8 | Counterexample wire and its replay rules (CX-2, CX-3, UE-5) | QSpec FR-364 |
 | QS-9 | The FR-331 request's subject members (initial-state snapshot references, universes) and the subject's place in the obligation identity; what an advertisement of (`temporal-satisfaction`, `unbounded`) commits to, given that V-5 is a valid result; reconciling QSpec FR-161-AC-7's "liveness backend" wording with the FR-290 mode table | QSpec FR-290, FR-331, FR-161 |
 | QS-10 | Conformance vectors, each with expected verdict kind and, for a refutation, a counterexample that must replay (validity is checked; the exact counterexample is not, since engines may return different valid ones): (a) the QSpec TC-200 operator lassos with fair and unfair variants; (b) the §6 worked example, its three verdicts and the bounded variant; (c) one model with an intended terminal state (DL-1) read under event-position false-extension and under infinite-trace, with different verdicts; (d) a bound-reached case (V-5) and an undecided-successor case (V-6); (e) replay refusals: a loop that does not close, an unfair lasso, a post-state digest mismatch, a transition not enabled; (f) deadlocks: a model whose deadlock-freedom item settles `refuted` with a prefix that replays, the same model with `terminal when` covering that state, settling `proved`, and with `terminal any`, which adds no item; (g) interval operators under infinite-trace: the recovery-stability formula of §11 over lassos that satisfy and violate it, `always (req implies eventually[0,5] ack)` classified TP-3, and a case that reaches `max_automaton_states` and settles V-7 | QSpec TC-200 and new TCs |
-| QS-11 | v2 temporal operation identities for bounded and infinite-trace forms, needed by the SMT path only | the open item in ADR-014 §13 |
+| QS-11 | v2 temporal operation identities for bounded and infinite-trace forms; QSL emits the clause node by FR-337 | QSpec FR-370 |
 | QS-12 | Deadlocks (§10): the `terminal` member's syntax and meaning (DL-1), the deadlock definition (DL-2), the deadlock-freedom item, its identity and its addition to every request with a model subject unless the model opts out (DL-3), the counterexample `kind` member (DL-4) and its replay (DL-5) | QSpec FR-181, FR-331, the new temporal FR, the shared grammar |
 | QS-13 | Interval operators under infinite-trace (§11): closed intervals on every interval-capable operator under the profile (IV-1), their meaning over an infinite trace (IV-2), the safety fragment with interval operators (IV-4), and the automaton-state limit with its V-7 settlement (IV-6). This replaces the rule that the profile admits no interval bound | QSpec FR-090, FR-250-AC-6, FR-255, FR-091 and FR-092 (their infinite-trace paragraphs), FR-161, the shared grammar note on `[a,*]` |
 
