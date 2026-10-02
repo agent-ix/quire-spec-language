@@ -70,7 +70,9 @@ constraint, in FR-123's order.
 ## Behavior
 
 - The checker SHALL run FR-338's check on the certificate's closure,
-  without the monitor-rejection part of `BadState`.
+  without the monitor-rejection part of `BadState`; a deadlocked state is
+  not bad for a TP-4 item, whose terminal state reads by its stutter edge
+  (ADR-018 DL-6).
 - The checker SHALL reject with `NotPartition` when the components do not
   partition the closure's reached states.
 - The checker SHALL reject with `BackwardEdge` when an edge it computed

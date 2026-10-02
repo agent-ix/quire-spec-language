@@ -83,10 +83,8 @@ pub enum ProofBasis {
 }
 
 pub enum Certification { Certified, Uncertified, Trusted }
-// TerminalValue::Proved carries certification: Option<Certification>;
-// a Kani Checks proof has None.
 
-// TerminalValue::Proved { basis: ProofBasis, certification: Certification }
+// TerminalValue::Proved { basis: ProofBasis, certification: Option<Certification> }
 // InconclusiveCause gains:
 //   BoundReached { depth: u64 }, InductionNotClosed { depth: u64 },
 //   UndecidedSuccessor, NoInitialState,
@@ -161,22 +159,25 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
 - The checkers SHALL be FR-338's `check_closure` and FR-339's
   `check_components`; a rejection names the rule and the product state at
   which it failed.
-- `TerminalValue::Proved` with a `BoundedComplete` or `Inductive` basis
-  SHALL carry `certification: None` when it arrives with an
-  `SmtProofCertificate` that FR-314's `check_smt_proof` accepts, and
-  `Some(Uncertified)` when it arrives with none; a rejected certificate
-  settles `inconclusive`, `CertificateRejected` (ADR-018 PC-6). A proof
-  from any other native engine with no core certificate checker SHALL
+- For an SMT `BoundedComplete` or `Inductive` result that CG's SMT map
+  hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
+  result's `SmtProofCertificate` and settle `proved` with
+  `certification: None` when it accepts, `Inconclusive(CertificateRejected{rule,
+  state})` when it rejects, and `proved` with `Some(Uncertified)` when the
+  result carries no certificate (ADR-018 PC-6). A proof from any other
+  native engine with no core certificate checker SHALL
   carry `Some(Uncertified)`; one from a third-party plugin SHALL
   carry `Some(Trusted)`; a Kani `Checks` proof, from the qualified core's
   prove path, SHALL carry `None`. Each settles `proved` and maps to success
   (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
-  map (ADR-018 DS-2) construct those values; this settlement map covers
-  QSL's native engine, EN-1, only.
-- Downstream need (IR/CG overlap): QSL needs each SMT `BoundedComplete` or
-  `Inductive` result handed over with the solver's proof certificate, the
-  SMT-LIB query the solver refuted and its proof in a format FR-314 names,
-  so that the SMT label can be checked away (ADR-018 DS-2).
+  map (ADR-018 DS-2) construct the values of their backends; this
+  settlement map covers QSL's native engine, EN-1, and the SMT certificate
+  check.
+- Downstream need (IR/CG overlap): QSL needs CG's SMT backend to build its
+  queries with FR-315's encoding and to hand each SMT `BoundedComplete` or
+  `Inductive` result over with the solver's proof certificate, each refuted
+  query and its proof in a format FR-314 names, so that the SMT label can
+  be checked away (ADR-018 DS-2).
 
 ### Categories of every proof value
 
@@ -215,7 +216,8 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
   [FR-128](FR-128-replay-a-model-counterexample.md),
   [FR-338](FR-338-check-an-en-1-closure-certificate.md) and
   [FR-339](FR-339-check-an-en-1-component-certificate.md) and
-  [FR-314](FR-314-check-an-smt-proof-certificate.md) (the checkers).
+  [FR-314](FR-314-check-an-smt-proof-certificate.md) (the checkers),
+  [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) (the SMT encoding).
 
 ## References
 

@@ -66,11 +66,12 @@ member of its own.
   provision holds the subject's initial-state snapshots by `sha256-jcs`
   digest; the request names the subject's universes.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070). Its payload is
-  QSpec FR-364's counterexample, read by FR-364's member names: `kind`
-  (formula, deadlock or undefined evaluation), `initial_state`, `prefix`,
-  `loop` (whose steps are transition identities with post-state digests,
-  or FR-364's `terminal-stutter` step), `over_binding`, `fairness` and
-  `trace_position` (ADR-018 CX-2). The envelope names the clause, or the
+  QSpec FR-364's counterexample, read by FR-364's member names: `trace`
+  (`"model"` here; the `"observed"` arm replays through FR-331), `kind`
+  (formula, deadlock or the undefined-evaluation envelope), `initial_state`,
+  `prefix`, `loop` (whose steps are transition identities with post-state
+  digests, or FR-364's `terminal-stutter` step), `over_binding`,
+  `fairness`, `interval` and `trace_position` (ADR-018 CX-2). The envelope names the clause, or the
   deadlock-freedom item, by its clause node and occurrence key (FR-070).
 - `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5).
 
@@ -101,6 +102,15 @@ member of its own.
 - The executor SHALL read the fairness set from the recompiled clause. A
   payload fairness set that differs from it SHALL refuse
   `stale_dependency`/`content-mismatch`, naming both sets.
+- For `kind: formula` the executor SHALL compute the interval of the
+  recompiled clause's first interval-carrying operator in pre-order, as
+  `{lower, upper}`, `{lower, upper: null}` or `null`, and refuse
+  `stale_dependency`/`content-mismatch` naming `interval` when the
+  payload's `interval` differs from it member by member (QSpec FR-364
+  step 5).
+- A payload whose `trace` is `"observed"` SHALL refuse
+  `invalid_runtime_input`/`invalid-value` before recompiling; it replays
+  through FR-331.
 - The executor SHALL build the subject's `ModelSystem` by FR-120 from the
   byte provision and the request's universes, and refuse with FR-106's
   record when admission fails. An `initial_state` outside the subject's
@@ -142,13 +152,16 @@ member of its own.
   `ContractUndetermined` with an `Undefined` evaluation) reproduces as an
   undefined evaluation at that state (ADR-018 UE-6).
   - When the first position whose letter, or whose contract conjunction,
-    is undefined is `where`, with an
-    undefined cause equal to `cause`, the executor SHALL settle
+    is undefined is `where.position`, at the expression `where.locus`
+    names (and, for a guard, the transition `where.transition` names),
+    with an undefined cause equal to `cause`, the executor SHALL settle
     `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
     the arm's value: the reproduced undefined value is the reproduced
     witness, not FR-072's `NoValue` case.
-  - A defined letter at `where`, an undefined letter before `where`, a
-    `where` past the replayed positions, or a different cause SHALL settle
+  - A defined letter at `where.position`, an undefined letter before it, a
+    `where.position` past the replayed positions, an undefined value at
+    another expression than `where.locus`, or a different cause SHALL
+    settle
     `inconclusive`, `ReplayParity`.
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
@@ -172,9 +185,9 @@ member of its own.
 |----|----------|--------------|
 | FR-128-AC-1 | FR-126-AC-1's lasso under the weak constraint with no granularity replays to `reproduced-with-evaluated-witness` with `trace_position` 0. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. Over the `Branch` subject (one object `x`, field `v: Int[0, 2]`, initial 0, and operation `step` with no precondition and postcondition `self.v != pre(self.v)`, so `step` from 0 has the two post-states 1 and 2 under one transition identity), for the clause `always holds(x.v != 2)`, a prefix whose one step records the digest of `v = 2` replays through that successor and reproduces with `trace_position` 1, and one recording a digest that no successor of `step` has refuses `stale_dependency`/`content-mismatch` naming the step and that digest. | Test (TC-523) |
 | FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `ReplayParity`. The original payload truncated to end at value 2 settles `inconclusive`, `ReplayParity`, since `inc` is enabled there. | Test (TC-523) |
-| FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`content-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`content-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial_state` of 1 over a one-snapshot subject; a `terminal-stutter` loop on a non-terminal state. | Test (TC-523) |
+| FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`content-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`content-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial_state` of 1 over a one-snapshot subject; a `terminal-stutter` loop on a non-terminal state; AC-1's payload with `interval` set to `{lower: "0", upper: "2"}` for a clause with no interval (`stale_dependency`/`content-mismatch` naming `interval`); AC-1's payload with `trace: "observed"` (refused before recompiling). | Test (TC-523) |
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `ReplayParity`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`content-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
-| FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `ReplayParity`. | Test (TC-539) |
+| FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `ReplayParity`, and so does the payload with `where.locus` naming another expression of the clause. | Test (TC-539) |
 | FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 / (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` also settles `reproduced-with-evaluated-witness` with value `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`, and the item settles `refuted`. Over FR-120-AC-9's `test/tallies` subject, FR-126-AC-6's empty-prefix counterexample at `t1` with `kind: UndefinedEvaluation{cause: SumOutOfDomain}` reproduces through the undefined `pre Low`. | Test (TC-539) |
 
 ## Dependencies

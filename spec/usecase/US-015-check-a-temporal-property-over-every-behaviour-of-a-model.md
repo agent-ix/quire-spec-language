@@ -23,6 +23,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-314
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-315
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: traces_to
 ---
@@ -100,3 +102,4 @@ builds on this check.
 - [FR-338](../functional/FR-338-check-an-en-1-closure-certificate.md)
 - [FR-339](../functional/FR-339-check-an-en-1-component-certificate.md)
 - [FR-314](../functional/FR-314-check-an-smt-proof-certificate.md)
+- [FR-315](../functional/FR-315-encode-the-smt-lib-transition-relation.md)

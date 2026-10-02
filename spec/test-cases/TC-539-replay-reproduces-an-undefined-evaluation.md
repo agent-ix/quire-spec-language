@@ -24,7 +24,8 @@ source in the byte provision and universe `{c}` in the request.
 
 1. Replay it.
 2. Replay it with `where` set to 1.
-3. Replay it with its last step removed, so it ends at value 1.
+3. Replay it with its last step removed, so it ends at value 1; then with
+   `where.locus` naming another expression of the clause.
 4. Replay TC-537 step 4's deadlock-freedom counterexample (`terminal when
    6 / (3 - c.value) = 0`, prefix to value 3).
 5. Replay that prefix with `kind: Deadlock`.
@@ -37,7 +38,7 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness`, `trace_position` 2, value
   `UndefinedEvaluation{where: position 2, cause: division-by-zero}`.
-- Steps 2 and 3: `inconclusive`, `ReplayParity`.
+- Steps 2 and 3: `inconclusive`, `ReplayParity`, each time.
 - Step 4: `reproduced-with-evaluated-witness`, `trace_position` 3, value
   `UndefinedEvaluation{where: position 3, cause: division-by-zero}`.
 - Step 5: `reproduced-with-evaluated-witness`, value

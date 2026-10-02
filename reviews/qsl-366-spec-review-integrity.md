@@ -48,3 +48,23 @@ The ids are internally consistent. FND-001 is the one real gap: the
 ADR-011 stage DAG is half-amended, and its S6c row disagrees with FR-127 on
 where a refutation's terminal record is written. The rest are small
 alignment fixes.
+
+## New findings (disposition pass 1)
+
+Reviewed at ed7bcc8b (first seen at f7180085; unchanged at the head).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The ADR-013 O-16 amendment says a model-check run stopped by a run limit, including `max_automaton_states`, "maps to incomplete with `ResourceExhausted`, `TimedOut` or `Cancelled`", and the O-16 incomplete row keeps that cause. ADR-018 IV-6 and FR-127's V-7 row settle a reached limit as `Incomplete(LimitReached{limit, value, setting})` and a cancelled run as `Incomplete(Cancelled)`, written `cancelled`. `ModelCheckLimits` has no time member, so `TimedOut` has no producer. Two readers would write different causes. State the two causes FR-127 uses. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:428-431 |
+
+## Dispositions
+
+Round 1, reviewed at ed7bcc8b (re-checked at the #562 head; first drafted at f7180085). This file's findings were posted on QSL-366 under the id SR-950.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 204b4db1 |
+| FND-002 | fixed | 204b4db1 |
+| FND-003 | fixed | 204b4db1 |
+| FND-004 | fixed | 204b4db1 |
+| FND-005 | fixed | 204b4db1 |

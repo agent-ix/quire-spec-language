@@ -22,7 +22,8 @@ Scope: FR-338-AC-1 to FR-338-AC-3.
 2. Check it with the product state for model state `(1, 0)` removed; with
    the initial product state removed.
 3. Check a certificate holding every reachable `Counter` state for the
-   deadlock-freedom item, with no `terminal` member.
+   deadlock-freedom item, with no `terminal` member; then the same states
+   for `always holds(c.value <= 3)`.
 4. Check a certificate holding `t1` for `always holds(true)` over
    `test/tallies`.
 
@@ -33,7 +34,7 @@ Tag the tests `#[trace("TC-525", "FR-338-AC-n")]`.
 - Step 1: accepted.
 - Step 2: `SuccessorMissing` at `(1, 0)`; `InitialMissing` at the initial
   state.
-- Step 3: `BadState` at value 3.
+- Step 3: `BadState` at value 3; accepted.
 - Step 4: `BadState` at `t1`.
 
 ## Status

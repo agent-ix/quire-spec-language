@@ -34,9 +34,9 @@ Tag the tests `#[trace("TC-536", "FR-101-AC-15")]` and
 ## Expected Results
 
 - Step 1: `Limits::default()` is `max_states` 10,000,000 and
-  `max_transitions` 100,000,000; `ModelCheckLimits::default()` is
-  `max_states` 1,000,000, `max_transitions` 10,000,000 and
-  `max_automaton_states` 65,536; neither limits type has a depth member.
+  `max_transitions` 100,000,000; `ModelCheckLimits::default()` has
+  `limits` equal to `Limits::default()` and `max_automaton_states`
+  1,048,576; neither limits type has a depth member.
 - Step 2: `Exhaustive`; `Outcome::Bounded` at `Limit::States`, value 2.
 - Step 3: the FR-126-AC-1 outcomes; `Stopped{ResourceExhausted,
   {MaxStates, 2}}`.

@@ -100,8 +100,9 @@ reports.
   SM-8: 0 for an atom; the largest operand reach for a Boolean or future
   operator; `R + 1` for a previous-position operator; `R + b` for a past
   interval operator with upper bound `b`, with the larger operand reach for
-  `since[a,b]` and `triggered[a,b]`; and the largest operand reach plus `L`
-  for an unbounded `once`, `historically`, `since` or `triggered`.
+  `since[a,b]` and `triggered[a,b]`; the largest operand reach plus `L`
+  for an unbounded `once`, `historically`, `since` or `triggered`; and the
+  largest operand reach plus `a + L` for a past `[a,*]` operator.
 - The evaluator SHALL unroll the loop `m = ceil(R(φ) / L) + 1` times for a
   formula `φ`, evaluate every subformula over the `n + m × L` unrolled
   positions with past operators reading back to position 0, and read a

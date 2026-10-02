@@ -97,3 +97,24 @@ findings does not force a structural change in #563, #564 or #568:
 - FND-002 (phase two at `max_depth`) carries over to ADR-021's reduced graph under its depth rule RV-5.
 - FND-001 (past operators over a lasso) bears on ADR-020 RC-2, which recomputes history values along a replayed lasso.
 - ADR-019 SR-2(a) already uses the wording FND-005 asks for.
+
+## Dispositions
+
+Round 1, reviewed at ed7bcc8b (re-checked at the #562 head; first drafted at f7180085). This file's findings were posted on QSL-366 under the id SR-949.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 204b4db1 |
+| FND-002 | fixed | 906c3b0b |
+| FND-003 | fixed | 204b4db1 |
+| FND-004 | fixed | 204b4db1 |
+| FND-005 | fixed | 204b4db1 |
+| FND-006 | fixed | 906c3b0b |
+| FND-007 | fixed | 906c3b0b |
+| FND-008 | fixed | 906c3b0b |
+| FND-009 | fixed | 906c3b0b |
+| FND-010 | fixed | e6a5fb56 |
+| FND-011 | fixed | 204b4db1 |
+| FND-012 | fixed | 204b4db1 |
+| FND-013 | fixed | 204b4db1 |
+| FND-014 | fixed | 906c3b0b |

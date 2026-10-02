@@ -30,3 +30,12 @@ are wording only.
 ## Verdict
 
 EARS-conformant apart from two wording nits.
+
+## Dispositions
+
+Round 1, reviewed at ed7bcc8b (re-checked at the #562 head; first drafted at f7180085). This file's findings were posted on QSL-366 under the id SR-952.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 906c3b0b |
+| FND-002 | fixed | 906c3b0b |

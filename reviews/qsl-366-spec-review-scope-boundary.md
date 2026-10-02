@@ -46,3 +46,13 @@ and FR-124 do not (FND-001).
 The split is sound in design: the QS table is complete, and QSL keeps what
 is QSL's. FND-001 is the one place where QSL specifies QSpec's grammar
 normatively, against the ADR's own statement.
+
+## Dispositions
+
+Round 1, reviewed at ed7bcc8b (re-checked at the #562 head; first drafted at f7180085). This file's findings were posted on QSL-366 under the id SR-951.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 906c3b0b |
+| FND-002 | fixed | 17928bf4 |
+| FND-003 | fixed | 204b4db1 |
