@@ -266,8 +266,7 @@ const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayRequestRefusal {
     /// A profile selection names a semantic profile outside the closed
-    /// known set: catalog `unknown_profile`/`unsupported-selection`
-    /// (revision `1-draft.3`). It
+    /// known set: catalog `unknown_profile`/`unsupported-selection`. It
     /// retains the supplied selection and the role it was supplied for, as
     /// that catalog row requires.
     #[error(
@@ -997,8 +996,9 @@ mod tests {
     /// A semantic-profile identifier outside the closed set refuses at
     /// decode with the catalog's profile-selection refusal, before the byte
     /// provision is read: a malformed byte-provision entry alongside it
-    /// would otherwise refuse `ByteDigestMismatch`. FR-071's Outputs name
-    /// this refusal; no acceptance criterion traces it.
+    /// would otherwise refuse `ByteDigestMismatch` (FR-071-AC-10, TC-186
+    /// step 8).
+    #[trace("TC-186", "FR-071-AC-10")]
     #[test]
     fn refuses_an_unknown_semantic_profile_before_the_byte_provision() {
         let mut bad_profile = wire(1);

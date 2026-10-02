@@ -42,7 +42,7 @@ compiled package.
 4. Compile a unit that selects `tests/fixtures/spine-model.semantic-ir.json`
    by `sha256-jcs`; replay it with and without the document in the byte
    provision.
-5. Replay with an unknown contract version; the selections `large` and
+5. Replay with the selections `large` and
    `module.small`; no argument, an extra argument naming `flag`'s parameter,
    and `x` bound twice; `maybe(1)`, `flag(2)` and `small(12)`; S1
    `text_input_bytes` above 1 MiB and at 16, and S3 `work_units` at 0; a
@@ -80,7 +80,7 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `ByteDigestMismatch`.
 - Step 4: agreement with the document; stage `intake`, `missing_import`
   without it.
-- Step 5: in order, `UnknownContractVersion`; `UnknownFunction` naming the
+- Step 5: in order, `UnknownFunction` naming the
   selection and the recompiled package; `UnboundParameter`,
   `UnknownParameter` and `DuplicateArgument` naming the node; `Input`
   `WrongValueKind` (`invalid_runtime_input`) three times, the first two

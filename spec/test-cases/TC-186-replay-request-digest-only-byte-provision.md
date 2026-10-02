@@ -29,7 +29,7 @@ constructor that admits a request whose package reference names a digest
 with no matching byte-provision entry, silently deferring the gap to
 whatever consumes the request later (#243's executor) instead of refusing
 at construction. Scope: FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7,
-FR-071-AC-9.
+FR-071-AC-9, FR-071-AC-10.
 
 ## Test Procedure
 
@@ -59,6 +59,9 @@ FR-071-AC-9.
    entries and round-trip it; omit one entry's source from the byte
    provision; decode an entry with an empty identity, one with an empty version, and one whose
    `package_id` is in the `quire.source.bytes/v1` domain.
+8. Decode a request whose semantic profile selection names
+   `quire.profile.unknown/v1`, with a byte-provision entry whose bytes do
+   not match its digest.
 
 ## Expected Results
 
@@ -77,3 +80,7 @@ FR-071-AC-9.
 - Step 7: the round trip preserves both entries in order; the omitted
   source refuses construction as step 5 does; the empty identity, the empty
   version and the source-domain `package_id` each refuse at decode.
+- Step 8 refuses `unknown_profile`/`unsupported-selection`, not
+  `ByteDigestMismatch`, keeping the selection
+  (`quire.profile.unknown/v1`) and its role
+  (`replay.semantic_profile_selections`).

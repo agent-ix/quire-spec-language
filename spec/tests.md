@@ -91,7 +91,7 @@ names different artifacts in each.
 | TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
-| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally |
+| TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9, FR-071-AC-10 | ✅ Passed locally; step 8 (FR-071-AC-10, an unknown semantic profile) passes locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
 | TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | ✅ Passed locally |
@@ -657,6 +657,7 @@ as a row that was.
 - TC-184 (FR-070-AC-5): `qsl-replay/src/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
 - TC-185 (FR-071-AC-1): `qsl-replay/src/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
 - TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `qsl-replay/src/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
+- TC-186 step 8 (FR-071-AC-10): `qsl-replay/src/request.rs::tests::refuses_an_unknown_semantic_profile_before_the_byte_provision`
 - TC-189 (FR-072-AC-1): `qsl-replay/src/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
 - TC-190 (FR-072-AC-2): `qsl-replay/src/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
 - TC-191 (FR-072-AC-3, FR-072-AC-5): `qsl-replay/src/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`
