@@ -194,6 +194,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-029
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-028
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-020
@@ -534,6 +536,60 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-024
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-275
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-276
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-277
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-278
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-279
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-280
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-281
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-282
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-283
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-284
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-286
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-287
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-288
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-289
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-290
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-291
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-292
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-293
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-294
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-295
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-296
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-297
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-298
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-299
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-029
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-030
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-230
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-231
@@ -855,7 +911,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix; FR-024-AC-6 (four source labels, TC-431) implemented (ADR-013 §7 S-4b) |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); the `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
-| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); FR-027-AC-5 to FR-027-AC-8 (edition routing: `1-draft` to the spine, `0-draft` to native, TC-435) implemented (ADR-011 §7.3 M-6a); FR-027-AC-9 (domain packages on the spine, `model_selections`, TC-442) implemented; FR-027-AC-10 (`libraries`, TC-446 step 7) implemented |
+| [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); FR-027-AC-5 to FR-027-AC-8 (edition routing: `1-draft` to the spine, `0-draft` to native, TC-435) implemented (ADR-011 §7.3 M-6a); FR-027-AC-9 (domain packages on the spine, `model_selections`, TC-442) implemented; FR-027-AC-10 (`libraries`, TC-446 step 7) implemented; FR-027-AC-11 (the command as the composition of FR-278's operations, TC-785) specified, not yet implemented |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
@@ -930,7 +986,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-097](functional/FR-097-classify-claim-extent-and-write-bounded-requests.md) | FR | Specified and implemented (ADR-013 §7 S-6, ADR-014 §11): F `bound`, `ClaimExtent`, the O-20 request writer, `explore::Outcome::category()` and the optional kernel bounds -- TC-436 to TC-439 and TC-441 pass locally; TC-440 is partly passed, its quantity fixture in an ignored agreement test |
 | [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) implemented, TC-444 step 7 passes locally |
 | [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended) |
-| [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR | Implemented (ADR-011 §5 spine `run`, OQ-1): CLI `run` routes a native-run/1 request by the program's declared edition, and a `1-draft` program's named function runs through `qsl_replay::spine::run` (spine compile, then `CheckedPackage::call`) with name-keyed canonical integer arguments, the full FR-096 outcome mapping (record, family and kernel refusal rows, and the internal-failure path) and FR-301 exit codes -- TC-450 to TC-452 (see FR-100's Status for the kernel catalog codes still pending STD-110) |
+| [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR | Implemented (ADR-011 §5 spine `run`, OQ-1): CLI `run` routes a native-run/1 request by the program's declared edition, and a `1-draft` program's named function runs through `qsl_replay::spine::run` (spine compile, then `CheckedPackage::call`) with name-keyed canonical integer arguments, the full FR-096 outcome mapping (record, family and kernel refusal rows, and the internal-failure path) and FR-301 exit codes -- TC-450 to TC-452 (see FR-100's Status for the kernel catalog codes still pending STD-110); FR-100-AC-11 and the amended AC-10 (exit statuses from FR-285, undefined exits 10, TC-786) specified, not yet implemented; TC-452 is planned again until its undefined assertions expect exit 10 |
 | [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md) | FR | Specified: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, `quire.simulation.sampler/v1` (preimage with `choice`), `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned; AC-12 to AC-14 (findings, `ExpansionStop`, `Outcome::Stopped`, stopped-trace replay) specified -- TC-474 planned; AC-15 (published `Limits` defaults) specified -- TC-536 planned |
 | [FR-102](functional/FR-102-build-state-clause-forms.md) | FR | Specified: S2 `invariant`/`pre`/`post` state clause forms and the `self`, `result` and `reaches` expressions (ADR-012 §15); not yet implemented -- TC-456, TC-457 planned |
 | [FR-103](functional/FR-103-admit-model-operations-and-frames-on-the-spine.md) | FR | Specified: I1 and E3 admit a domain package's operations and frames (amends FR-056's operation refusal); not yet implemented -- TC-458 planned |
@@ -1019,6 +1075,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-217](functional/FR-217-replay-a-protocol-counterexample.md) | FR | Specified: the protocol counterexample and its replay through `ProtocolSystem`, with lasso fairness over scheduler constraints and the deadlock check with recomputed blocked threads (ADR-027 PX-1, PX-2); not yet implemented -- TC-662 planned |
 | [FR-218](functional/FR-218-check-every-protocol-control-construct-at-s3.md) | FR | Specified: S3 checks of `parallel` and its join policy, `choice`, `repeat`, `await`, `check`, channel and event nodes, captures, compensation templates, replicated roles and activation, with the edge relation, binder readers and role regions in a `CheckedProtocolClause` (ADR-027 DS-1); not yet implemented -- TC-663 planned |
 | [FR-308](functional/FR-308-build-the-complete-protocol-forms-at-s2.md) | FR | Specified: S2 forms for the complete protocol productions (roles, channels, `parallel` join policies, `repeat` with optional maximum and loop proof, `await`, compensation, `terminal`, `scheduling`, `activation on each`), citing QSpec's shared grammar; not yet implemented -- TC-887 planned |
+| [FR-275](functional/FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md) | FR | Specified (ADR-029): the one call shape over eleven operations, `format` in `qsl-cst` included: typed request, caller limits, `&Cancel`, `Staged`/`StageFailure`; predecessor types; not yet implemented |
+| [FR-276](functional/FR-276-cancel-a-lifecycle-operation.md) | FR | Specified (ADR-029): `Cancel` with `Requested` and `Deadline`; stop within one charge; `StageFailure::Cancelled`, `CallFailure::Cancelled`; exit 22; not yet implemented |
 | [FR-219](functional/FR-219-declare-and-select-the-memory-model-of-a-parallel.md) | FR | Specified: the `memory sc|tso|ra` clause of a `parallel` with its nesting and join-policy refusals, request selection of an outermost `parallel`'s model, and the resolved models in the obligation identity (ADR-025 MM-1 to MM-5); not yet implemented -- TC-664 planned |
 | [FR-220](functional/FR-220-check-access-orderings-fences-and-access-classification.md) | FR | Specified: access orderings and the `fence` control, load/store/RMW/local classification over shared footprints, admitted orderings and the single-location access shape (ADR-025 MM-6, MA-1 to MA-4); not yet implemented -- TC-665 planned |
 | [FR-221](functional/FR-221-explore-the-x86-tso-memory-model.md) | FR | Specified: `Tso: MemoryModel`: per-thread FIFO store buffers, `flush(b)`, locked accesses, fences and the fork, join and send gates (ADR-025 TSO-1 to TSO-8); not yet implemented -- TC-666 planned |
@@ -1149,6 +1207,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, deadlocks reported by default with intended terminal states (§10), interval operators inside infinite-trace formulas with their automaton cost and limit (§11), and the QSL sequencing |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR | Proposed; compiler requirements FR-205 to FR-218; the protocol transition system for `parallel`: protocol subjects and states keyed canonically, step kinds with folded structural moves and atomic attempts, causal interleavings, the memory-model seam, fit with ADR-018's behaviours, deadlocks and fairness, `ProtocolSystem` on FR-101, footprints for partial-order reduction, protocol steps in refinement, compensation, replicated roles and activation on each; owner rulings RU-1 to RU-5 |
+| [ADR-029](decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md) | ADR | Proposed; requirements in FR-275 to FR-299; lifecycle stages and owners, the driver CLI and the separable qualified core, typed library operations including `analyze` and offline `monitor`, provider negotiation that leaves results unchanged, the out-of-process plugin wire, content-keyed cache, the execution-backend seam with JIT semantics and the AOT boundary, inspection and rendering, and the first bounded slice |
 | [ADR-025](decisions/ADR-025-weak-memory-models-for-parallel.md) | ADR | Proposed; compiler requirements FR-219 to FR-229; weak memory models for `parallel`: a source default with request selection of `sc`, x86-TSO or RC11 release-acquire with relaxed and `seq_cst` accesses, as operational models on the explicit-state engine; memory bounds as request budgets, memory fairness, the race-freedom item, reduction rows, counterexamples with buffer and view state, and the preconditions for transfer to code |
 | [ADR-022](decisions/ADR-022-possible-properties-and-state-graph-queries.md) | ADR | Proposed; possible properties and state-graph queries over a model: `possible` (EF), `always possible` (AG EF) and `unique path` as a property family beside temporal claims, their semantics over the explored state graph, witness sampling and backward reachability on the explicit-state engine, witness, trap and path-pair evidence that replays, and verdicts |
 | [ADR-023](decisions/ADR-023-hyperproperties-over-every-behaviour.md) | ADR | Proposed; hyperproperties over every behaviour of a model: trace variables bound to model aliases, lockstep or projection alignment with input matching, per-variable fairness, the admitted fragment (step relations on model and code, universal formulas, `∀∃` with safety bodies, single-existential claims routed to the possible family), the self-composition, projected and witness-set products on EN-1, compiler-verified copy-swap symmetry, tuple counterexamples and their replay, and the owner's rulings (§12) |
@@ -1163,3 +1222,28 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-267](functional/FR-267-write-run-results-as-native-run-result-2.md) | FR | Specified (ADR-031 SW-10, SW-11): the library writes `run_clause`'s report as `native-run-result/2` with `basis` and `witness`, and `run` its command-error envelopes, landing with FR-100's clause runner (ADR-031 R-1); the strict reader refuses malformed records and `/1`; not yet implemented -- TC-742 planned |
 | [FR-268](functional/FR-268-check-a-state-clause-witness-on-replay.md) | FR | Specified (ADR-031 SW-8, SW-12 to SW-14): `StateClauseCounterexample` carries the witness; replay re-derives it, compares componentwise and runs the separation check; not yet implemented -- TC-743 planned |
 | [FR-269](functional/FR-269-settle-a-witness-disagreement-as-a-typed-cause.md) | FR | Specified (ADR-031 SW-12, SW-13): `DisagreementCause::Witness` carries both verdicts, both records and a `Mismatch` or `Separation(step)` failure; not yet implemented -- TC-744 planned |
+| [FR-278](functional/FR-278-parse-select-check-and-package-as-library-operations.md) | FR | Specified (ADR-029): `parse`, `select`, `check`, `package` as library operations composing to spine `compile`; not yet implemented |
+| [FR-279](functional/FR-279-execute-a-checked-entry-as-a-library-operation.md) | FR | Specified (ADR-029): `execute` through the execution-backend seam; FR-100's command encodes it; not yet implemented |
+| [FR-299](functional/FR-299-run-one-source-end-to-end-through-cli-library-provider-and-cache.md) | FR | Specified (ADR-029): one Value-family source through `check`, `package` and `execute`, with documents and exit codes; not yet implemented |
+| [US-029](usecase/US-029-drive-the-lifecycle-through-one-cli-or-the-library.md) | US | Draft |
+| [US-030](usecase/US-030-extend-quire-without-changing-results.md) | US | Draft |
+| [FR-298](functional/FR-298-render-outcomes-and-views-from-typed-values.md) | FR | Specified (ADR-029): JSON, text and DOT rendering from typed values only; not yet implemented |
+| [FR-288](functional/FR-288-build-the-registry-from-provider-manifests.md) | FR | Specified (ADR-029): one manifest-to-`BackendDescriptor` conversion for compile-time providers and plugins; one `qsl-foundation` `BackendId`; no tool identity in the descriptor; not yet implemented |
+| [FR-289](functional/FR-289-keep-results-unchanged-by-provider-installation.md) | FR | Specified (ADR-029): provider installation changes results only through touched candidate sets; not yet implemented |
+| [FR-290](functional/FR-290-settle-plugin-results-as-typed-terminal-records.md) | FR | Specified (ADR-029): plugin results as typed terminal records; a trust basis on every `proved` (plugin `trusted`; `analyze` `certificate-checked` or `uncertified`; Kani unlabelled through CG's C-09, as the qualified prove path); not yet implemented |
+| [FR-291](functional/FR-291-bound-plugin-runs-and-settle-plugin-failures.md) | FR | Specified (ADR-029): QSpec FR-462 plugin-run settlements as typed terminal records per item; not yet implemented |
+| [FR-292](functional/FR-292-key-cached-results-by-content-identity.md) | FR | Specified (ADR-029): canonical `analyze` request and record forms and the typed reader the QSpec FR-306 cache uses; not yet implemented |
+| [FR-285](functional/FR-285-map-every-outcome-category-to-one-exit-code.md) | FR | Specified (ADR-029): one `Category` type and one total exit-code function; undefined exits 10; pending supplied-trace clause exits 0; severity order; not yet implemented |
+| [FR-286](functional/FR-286-serialize-every-outcome-as-one-json-outcome-document.md) | FR | Specified (ADR-029): the `quire-outcome/1` JSON outcome document; the `undefined` label only on non-proof outcomes; not yet implemented |
+| [FR-287](functional/FR-287-reach-qsl-through-the-driver-cli.md) | FR | Specified (ADR-029): the driver's `quire` CLI as a thin frontend over QSL's library; QSL builds no binary; `command` writes nothing; not yet implemented |
+| [FR-297](functional/FR-297-inspect-packages-outcomes-and-traces-as-typed-views.md) | FR | Specified (ADR-029): typed inspection views located by source map; not yet implemented |
+| [FR-280](functional/FR-280-serve-the-driver-s-lower-generate-and-prove-operations.md) | FR | Specified (ADR-029): QSL's side of the driver's `lower`, `generate`, `prove`: engine manifests and the provider entry; not yet implemented |
+| [FR-281](functional/FR-281-analyze-claims-with-in-process-engines.md) | FR | Specified (ADR-029): `analyze` over layer-A engines: certificate-checked or `uncertified` `proved`, replayed `refuted` (an undefined evaluation is `refuted`, `UndefinedEvaluation`), `unsupported`, `inconclusive`, `incomplete`; not yet implemented |
+| [FR-282](functional/FR-282-check-analyze-certificates-in-the-qualified-core.md) | FR | Specified (ADR-029): layer-6 certificate checkers in the qualified core (zone, EN-5, EN-1 closure, SCC and ranking, simulation relation, product closure); `check-certificate`; not yet implemented |
+| [FR-283](functional/FR-283-monitor-a-supplied-trace-offline.md) | FR | Specified (ADR-029): offline `monitor` of a finite trace or lasso under ADR-014 A-4; undefined evaluation is a violation (exit 10); a non-empty fairness set settles unsupported (QSpec FR-362); not yet implemented |
+| [FR-293](functional/FR-293-never-cache-failed-cancelled-timed-out-or-plugin-results.md) | FR | Specified (ADR-029): typed categories, causes and `BackendId` that let the cache apply QSpec FR-306's never-stored rule; no wall time in records; not yet implemented |
+| [FR-294](functional/FR-294-run-every-execution-backend-behind-one-seam.md) | FR | Specified (ADR-029): one `ExecutionBackend` seam; checked-only input by type; interpreter as reference; not yet implemented |
+| [FR-295](functional/FR-295-return-interpreter-outcomes-from-jit-and-aot.md) | FR | Specified (ADR-029): JIT and AOT return the interpreter's outcomes; parity gate; not yet implemented |
+| [FR-296](functional/FR-296-select-the-execution-backend-in-the-request.md) | FR | Specified (ADR-029): backend chosen in the request (`--engine`), no substitution; not yet implemented |
+| [FR-277](functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md) | FR | Specified (ADR-029): every bound a caller limit with a published default; `LimitExceeded` names the limit, value and field; depth is not a limit (ADR-030); not yet implemented |
+| [FR-284](functional/FR-284-keep-the-qualified-core-separable-by-crate.md) | FR | Specified (ADR-029): the qualified core's crate set, the `cargo tree` direction check, no ambient input; not yet implemented |

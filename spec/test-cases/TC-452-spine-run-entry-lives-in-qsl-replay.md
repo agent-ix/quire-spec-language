@@ -18,7 +18,7 @@ catches CLI-only run behavior (ADR-011 §5: no behavior is reachable only
 through the CLI), a layer-5 type leaking through `qsl_replay`, and an
 outcome kind rendered with the wrong spelling or exit status.
 
-Scope: FR-100-AC-7 to FR-100-AC-10.
+Scope: FR-100-AC-7 to FR-100-AC-9.
 
 ## Test Procedure
 
@@ -79,15 +79,10 @@ Scope: FR-100-AC-7 to FR-100-AC-10.
      `absent-key`;
    - a `CallFailure::Fault` of `InternalFault::new("S6a",
      "checked-identity-not-resolved-by-package")`.
-5. With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, evaluate
-   `sum<Pos>(x in q: x)` through S6a for `q` of `Sequence<Int[1, 9]>[0, 2]`,
-   once empty and once holding `4`, and convert each outcome with the
-   outcome mapping.
 
 Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
-`#[trace("TC-452", "FR-100-AC-8")]` (step 3),
-`#[trace("TC-452", "FR-100-AC-9")]` (step 4) and
-`#[trace("TC-452", "FR-100-AC-10")]` (step 5).
+`#[trace("TC-452", "FR-100-AC-8")]` (step 3) and
+`#[trace("TC-452", "FR-100-AC-9")]` (step 4).
 
 ## Expected Results
 
@@ -144,7 +139,7 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
     `runtime_invariant` command error at stage `call` with `details`
     `{"stage": "S6a", "invariant": "checked-program-invariant"}`, at
     FR-100's internal-failure exit status.
-  - `undefined` with each kernel reason's tabled spelling, exit 20;
+  - `undefined` with each kernel reason's tabled spelling, exit 10;
     `incomplete` with `limit` `work_units`, exit 22.
   - `AbsentKey`: `code` `invalid_runtime_input`, `cause` `absent-key`,
     `fields` exactly `{"binding": "people", "key": "p7"}`; exit 20.
@@ -155,19 +150,20 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   - `TypeMismatch`: `code` `ill_typed`, `cause` `type-mismatch`, no `fields`
     member; exit 20. `AncestorSteps`: `code` `resource_exhausted`, `cause`
     `ancestor-steps`, no `fields` member; exit 22.
-  - `undefined` with `reason` `precondition-false` and `absent-key`, exit 20.
+  - `undefined` with `reason` `precondition-false` and `absent-key`, exit 10.
   - `CallFailure::Fault`: a `runtime_invariant` command error at stage
     `call` with `details` `{"stage": "S6a", "invariant":
     "checked-identity-not-resolved-by-package"}`, at the internal-failure
     exit status.
-- Step 5: the empty `q` gives `Outcome::Undefined(Undefined::SumOutOfDomain)`
-  with `Evaluation.location` at the `sum` node, rendered
-  `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 20. `q`
-  holding `4` completes with integer `"4"`, exit 0.
 
 ## Status
 
-Passed locally. Step 4's `ForeignReference` row updated, now
+Planned. FR-100's outcome mapping now exits 10 for every undefined outcome
+(FR-285). The code test `undefined_kernel_reasons_render_and_exit_20` still
+asserts exit 20 and needs updating to exit 10, and the code test traced to
+FR-100-AC-10 (`tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes`)
+moves to TC-786's tag; both changes belong to the implementation work for
+FR-100-AC-11. Before that change, TC-452 passed locally: step 4's `ForeignReference` row updated, now
 that the kernel variant carries both universes. Step 4's ten
 kernel records, asserted by code, cause, exact fields and
 locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a

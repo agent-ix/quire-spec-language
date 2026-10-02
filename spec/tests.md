@@ -234,7 +234,7 @@ names different artifacts in each.
 | TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ Passed locally: `library::bundle_tests`, keeping the `QSpec-FR-131`/`QSpec-FR-339` tags |
 | TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | ✅ Passed locally |
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ Passed locally |
-| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | ✅ Passed locally |
+| TC-452 | The spine run entry is qsl_replay::spine::run, agrees with the CLI, and maps every outcome | Unit | P1 | FR-100-AC-7, FR-100-AC-8, FR-100-AC-9 | 🚧 Planned: the code test `undefined_kernel_reasons_render_and_exit_20` asserts exit 20 and needs updating to exit 10 (FR-285); passed locally before that change |
 | TC-456 | S2 builds state clause forms and the self, result and reaches expressions | Unit | P1 | FR-102-AC-1, FR-102-AC-2, FR-102-AC-3 | 🚧 Planned |
 | TC-457 | S2 state clause dispatch is thin, bounded and seam-probed | Unit | P1 | FR-102-AC-4, FR-102-AC-5, FR-102-AC-6 | 🚧 Planned |
 | TC-458 | Spine intake and assembly admit operations and frames | Integration | P1 | FR-103-AC-1, FR-103-AC-2, FR-103-AC-3, FR-103-AC-4, FR-103-AC-5 | 🚧 Planned |
@@ -364,6 +364,7 @@ names different artifacts in each.
 | TC-662 | The replay facade replays a protocol counterexample through ProtocolSystem | Integration | P1 | FR-217-AC-1, FR-217-AC-2, FR-217-AC-3, FR-217-AC-4 | 🚧 Planned |
 | TC-663 | S3 checks every protocol control construct and records scopes | Unit | P1 | FR-218-AC-1, FR-218-AC-2, FR-218-AC-3, FR-218-AC-4, FR-218-AC-5, FR-218-AC-6, FR-218-AC-7 | 🚧 Planned |
 | TC-887 | S2 builds the complete protocol forms with their members and spans | Unit | P1 | FR-308-AC-1, FR-308-AC-2, FR-308-AC-3, FR-308-AC-4, FR-308-AC-5 | 🚧 Planned |
+| TC-755 | Every lifecycle operation takes a typed request, limits and Cancel, and rejects wrong-stage input at compile time | Unit | P1 | FR-275-AC-1, FR-275-AC-2, FR-275-AC-3, FR-275-AC-5 | 🚧 Planned |
 | TC-664 | The memory clause checks and the request selects the resolved model | Unit | P1 | FR-219-AC-1, FR-219-AC-2, FR-219-AC-3, FR-219-AC-4, FR-219-AC-5 | 🚧 Planned |
 | TC-665 | S3 checks orderings and fences and classifies every access | Unit | P1 | FR-220-AC-1, FR-220-AC-2, FR-220-AC-3, FR-220-AC-4, FR-220-AC-5 | 🚧 Planned |
 | TC-666 | The tso memory model explores store buffers, flushes and locked accesses | Integration | P1 | FR-221-AC-1, FR-221-AC-2, FR-221-AC-3, FR-221-AC-4 | 🚧 Planned |
@@ -985,3 +986,34 @@ union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 | TC-743 | Replay re-derives a state-clause witness and checks that the element separates the clause | Integration | P1 | FR-268-AC-1, FR-268-AC-2, FR-268-AC-3, FR-268-AC-4 | 🚧 Planned |
 | TC-744 | A witness disagreement settles inconclusive with a typed Witness cause that round-trips | Unit | P1 | FR-269-AC-1, FR-269-AC-2, FR-269-AC-3 | 🚧 Planned |
 | TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4 | 🚧 Planned |
+| TC-779 | Each non-interpreter backend matches the interpreter over the conformance corpus and generated programs | Integration | P1 | FR-295-AC-1 | 🚧 Planned |
+| TC-780 | Backends match the interpreter on budgets, limits and internal errors, and the outcome names no backend | Integration | P1 | FR-295-AC-2, FR-295-AC-3, FR-295-AC-4 | 🚧 Planned |
+| TC-781 | The request selects the execution backend and no other backend runs in its place | Integration | P1 | FR-296-AC-1, FR-296-AC-2, FR-296-AC-3 | 🚧 Planned |
+| TC-778 | The interpreter implements the execution seam, and the seam admits checked input only | Unit | P1 | FR-294-AC-1, FR-294-AC-2, FR-294-AC-3, FR-294-AC-4 | 🚧 Planned |
+| TC-773 | Installing, removing or reordering providers changes nothing outside the touched candidate sets | Unit | P1 | FR-289-AC-1, FR-289-AC-2, FR-289-AC-3 | 🚧 Planned |
+| TC-774 | Plugin results settle as typed records, and plugin proofs carry the trusted label | Unit | P1 | FR-290-AC-1, FR-290-AC-2, FR-290-AC-3, FR-290-AC-4 | 🚧 Planned |
+| TC-775 | Plugin-run failures settle as typed records of the plugin's own items | Unit | P1 | FR-291-AC-1, FR-291-AC-2, FR-291-AC-3 | 🚧 Planned |
+| TC-772 | One manifest conversion serves compile-time providers and plugins | Unit | P1 | FR-288-AC-1, FR-288-AC-2, FR-288-AC-3, FR-288-AC-4 | 🚧 Planned |
+| TC-764 | Certificate checkers accept genuine certificates and reject altered or misbound ones in a core-only process | Integration | P1 | FR-282-AC-1, FR-282-AC-2, FR-282-AC-3, FR-282-AC-4, FR-282-AC-5, FR-282-AC-6, FR-282-AC-7, FR-282-AC-8 | 🚧 Planned |
+| TC-765 | monitor reports violations, pending and tested verdicts over finite traces and lassos | Unit | P1 | FR-283-AC-1, FR-283-AC-2, FR-283-AC-5 | 🚧 Planned |
+| TC-766 | monitor refuses inadmissible traces and agrees with replay's trace evaluation | Unit | P1 | FR-283-AC-3, FR-283-AC-4, FR-283-AC-6 | 🚧 Planned |
+| TC-767 | The direction check keeps frontends, analyze, the cache and the plugin host out of the qualified core | Integration | P1 | FR-284-AC-1, FR-280-AC-3 | 🚧 Planned |
+| TC-768 | Core operations read no ambient input and write nothing to the process streams | Integration | P1 | FR-284-AC-2, FR-284-AC-3 | 🚧 Planned |
+| TC-785 | The compile command is the composition of the front-end operations | Unit | P1 | FR-027-AC-11 | 🚧 Planned |
+| TC-786 | run's exit statuses come from the exit function, with undefined at 10 | Unit | P1 | FR-100-AC-10, FR-100-AC-11 | 🚧 Planned |
+| TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4 | 🚧 Planned |
+| TC-771 | QSL builds no binary, and command is a library operation that writes nothing | Integration | P1 | FR-287-AC-1, FR-287-AC-2 | 🚧 Planned |
+| TC-769 | The exit function maps every category and multi-item outcome, with undefined at 10 | Unit | P1 | FR-285-AC-1, FR-285-AC-2, FR-285-AC-3, FR-285-AC-4 | 🚧 Planned |
+| TC-776 | analyze requests and records have one canonical form that changes only with key members | Unit | P1 | FR-292-AC-1, FR-292-AC-2, FR-292-AC-3 | 🚧 Planned |
+| TC-777 | QSL records tell the cache what it never stores, and hold no wall time | Unit | P1 | FR-293-AC-1, FR-293-AC-2 | 🚧 Planned |
+| TC-758 | Every bound is a caller limit that names itself when reached | Unit | P1 | FR-277-AC-1, FR-277-AC-2 | 🚧 Planned |
+| TC-759 | The front-end operations compose to spine compile | Unit | P1 | FR-278-AC-1, FR-278-AC-2, FR-278-AC-3 | 🚧 Planned |
+| TC-756 | No lifecycle operation panics on arbitrary input | Property | P1 | FR-275-AC-4 | 🚧 Planned |
+| TC-757 | A cancelled operation stops within one charge and emits nothing | Unit | P1 | FR-276-AC-1, FR-276-AC-2, FR-276-AC-3, FR-276-AC-4, FR-276-AC-5 | 🚧 Planned |
+| TC-760 | execute returns what CheckedPackage::call and evaluate return | Unit | P1 | FR-279-AC-1, FR-279-AC-2, FR-279-AC-3 | 🚧 Planned |
+| TC-761 | QSL engine manifests register, and the provider entry returns analyze's records | Unit | P1 | FR-280-AC-1, FR-280-AC-2 | 🚧 Planned |
+| TC-782 | inspect builds each typed view from the source map | Unit | P1 | FR-297-AC-1, FR-297-AC-2, FR-297-AC-3, FR-297-AC-4 | 🚧 Planned |
+| TC-783 | render produces text and DOT from typed values only, leaving JSON unchanged | Unit | P1 | FR-298-AC-1, FR-298-AC-2, FR-298-AC-3, FR-298-AC-4 | 🚧 Planned |
+| TC-784 | One Value-family source runs through check, package and execute with documents and exit codes | Integration | P1 | FR-299-AC-1, FR-299-AC-2, FR-299-AC-3, FR-299-AC-4 | 🚧 Planned |
+| TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 Planned |
+| TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 Planned |

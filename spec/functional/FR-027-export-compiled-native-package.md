@@ -9,6 +9,12 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-019
     type: references
+  - target: ix://agent-ix/quire-spec-language/FR-278
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-287
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
 ---
@@ -21,6 +27,12 @@ Each selected source carries the four source labels of
 [FR-026](FR-026-run-standalone-native-workflow.md) defines, and the
 native-linked-package/1 `source` renders all four. The package bytes, the
 schema and the golden vectors carry them.
+
+The request handling is the QSL library operation `command`, which the
+driver's `quire compile` reaches (FR-287). A `1-draft` native-compile/1
+request is the command encoding of the `parse`, `select`, `check` and
+`package` operations composed (FR-278). Every exit status this requirement
+states is FR-285's exit code of the outcome's ADR-013 O-16 category.
 
 ## Inputs
 
@@ -106,6 +118,7 @@ typed failure without a successful artifact.
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) exits with that stage's cause code and reports the stage, with empty stdout. | Test (TC-435) |
 | FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, version, `sha256-jcs` and digest, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
 | FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library, and a library with an empty identity or version, refuse with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
+| FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
 
 ## Dependencies
 
@@ -115,6 +128,9 @@ typed failure without a successful artifact.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §7.3 M-6a: the spine route for `1-draft` sources.
 - [FR-056](FR-056-admit-domain-package-model-declarations.md): domain package admission, which spine intake runs.
 - [FR-099](FR-099-compile-against-supplied-libraries.md): the dependency input `libraries` supplies.
+- [FR-278](FR-278-parse-select-check-and-package-as-library-operations.md): the library operations the command encodes.
+- [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit function.
+- [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): the driver CLI.
 
 ## Status
 
@@ -122,3 +138,4 @@ FR-027-AC-4 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430.
 FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
 FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
 Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.
+FR-027-AC-11 (the command as the composition of FR-278's operations) is specified and not yet implemented -- TC-785 planned.
