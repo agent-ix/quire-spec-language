@@ -90,3 +90,10 @@ Round 1, reviewed at c608c0a26baab69d95c7461046544f3e1c9172d8 (fix commit c608c0
 | FND-011 | fixed | c608c0a2 |
 
 Round 2, reviewed at 63b7a058b8c150c4bbb411eb1d366f01ef3bc53d. No finding had a still-open or missing outcome before this round, so no row is added. FND-012 and FND-013 are new and have no outcome yet.
+
+Round 3, reviewed at 02a1b790cb0dc5773ed12aa860e7ba2e458526f3.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-012 | fixed | 02a1b790: FR-307-AC-6 is deleted; FR-307-AC-1 (TC-806) covers the bound and refused export. |
+| FND-013 | fixed | 02a1b790: TC-808 is deleted with its index rows; no reference to it remains. |
