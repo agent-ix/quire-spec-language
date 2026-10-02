@@ -16,7 +16,7 @@ use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
 use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode,
-    RegistrationCause, RegistrationRefusal, Registry, ToolIdentity,
+    RegistrationCause, RegistrationRefusal, Registry,
 };
 use qsl_semantics::check::Capability;
 
@@ -29,11 +29,7 @@ fn backend(
     seed: &[u8],
     advertises: impl IntoIterator<Item = (Capability, Mode)>,
 ) -> BackendDescriptor {
-    BackendDescriptor::new(
-        Candidate::new(BackendId::new(id), digest(seed)),
-        ToolIdentity::new(format!("tool-for-{id}")),
-        advertises,
-    )
+    BackendDescriptor::new(Candidate::new(BackendId::new(id), digest(seed)), advertises)
 }
 
 /// A candidate outcome's backend ids, in the order the registry returns
@@ -891,7 +887,6 @@ mod tc_282_duplicate_backend_identity {
             let attempt_m = || {
                 BackendDescriptor::admit(
                     Candidate::new(BackendId::new("a"), d2),
-                    ToolIdentity::new("tool-for-a"),
                     [(Some("value-validity"), Some("finite"))],
                 )
                 .expect_err("`finite` is not an FR-290 mode")

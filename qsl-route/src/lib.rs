@@ -82,28 +82,6 @@ impl fmt::Display for BackendId {
     }
 }
 
-/// A backend's pinned tool identity (ADR-012 §7.1).
-///
-/// This module carries `ToolIdentity` through registration and candidate
-/// output unread and uninterpreted (FR-075 Inputs): the probe that checks a
-/// routed backend's tool against this pin runs after routing, at run time
-/// (ADR-012 §7.4, FR-290 "Tool absence"), outside `route`'s scope.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ToolIdentity(String);
-
-impl ToolIdentity {
-    /// Build a `ToolIdentity` from its pinned identity string. Opaque data;
-    /// this module neither parses nor interprets it.
-    pub fn new(identity: impl Into<String>) -> Self {
-        Self(identity.into())
-    }
-
-    /// The pinned identity's exact spelling.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
 /// Whether a backend advertises a capability kind over a bounded domain
 /// only, or over an unbounded domain too (ADR-012 §1.1).
 ///
@@ -204,8 +182,10 @@ impl Candidate {
 }
 
 /// One backend's registration (FR-075 Inputs): its identity, the digest of
-/// its own FR-331 provider manifest, its pinned tool, and the
-/// `(capability kind, mode)` pairs it advertises.
+/// its own FR-331 provider manifest, and the `(capability kind, mode)` pairs
+/// it advertises. The manifest digest is the descriptor's only binding to
+/// the backend's tool; there is no separate tool identity (FR-057
+/// registers a backend from its identity and advertised labels alone).
 ///
 /// `BackendDescriptor`, the candidate set and `Capability` cross repository
 /// boundaries as QSpec data, never through a shared Rust crate
@@ -213,23 +193,20 @@ impl Candidate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackendDescriptor {
     backend: Candidate,
-    tool: ToolIdentity,
     advertises: HashSet<(Capability, Mode)>,
 }
 
 impl BackendDescriptor {
     /// Build a descriptor from already-typed FR-331 provider-manifest
     /// fields. A backend supplies one descriptor per registration, so its
-    /// identity carries exactly one manifest digest and one `tool` at a
-    /// time (FR-075 Inputs).
+    /// identity carries exactly one manifest digest at a time (FR-075
+    /// Inputs).
     pub fn new(
         backend: Candidate,
-        tool: ToolIdentity,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> Self {
         Self {
             backend,
-            tool,
             advertises: advertises.into_iter().collect(),
         }
     }
@@ -265,7 +242,6 @@ impl BackendDescriptor {
     /// registry.
     pub fn admit<'a>(
         backend: Candidate,
-        tool: ToolIdentity,
         advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     ) -> Result<Self, RegistrationRefusal> {
         let refuse = |cause| RegistrationRefusal {
@@ -287,7 +263,6 @@ impl BackendDescriptor {
         }
         Ok(Self {
             backend,
-            tool,
             advertises,
         })
     }
@@ -301,12 +276,6 @@ impl BackendDescriptor {
     /// FR-331 provider manifest.
     pub fn candidate(&self) -> &Candidate {
         &self.backend
-    }
-
-    /// This backend's pinned tool identity, carried unread (see the type's
-    /// own doc).
-    pub fn tool(&self) -> &ToolIdentity {
-        &self.tool
     }
 
     /// Every advertised `(kind, mode)` pair, in no particular order: the
@@ -526,7 +495,7 @@ impl Registry {
     ///   the identity's recorded conflict digests, and `held` is left
     ///   untouched (it already holds nothing for this identity).
     /// - When the identity is held with an equal descriptor (same identity,
-    ///   manifest digest, tool and advertised pairs), the repeat is one
+    ///   manifest digest and advertised pairs), the repeat is one
     ///   registration and is not refused (FR-290-AC-9).
     /// - When the identity is held with a descriptor that differs in any
     ///   member, the two conflict: the held registration is withdrawn, both
@@ -683,11 +652,7 @@ mod tests {
         digest_byte: u8,
         advertises: impl IntoIterator<Item = (Capability, Mode)>,
     ) -> BackendDescriptor {
-        BackendDescriptor::new(
-            candidate(id, digest_byte),
-            ToolIdentity::new("tool"),
-            advertises,
-        )
+        BackendDescriptor::new(candidate(id, digest_byte), advertises)
     }
 
     /// FR-075-AC-5 (TC-193 step 6, narrowed to what a unit test -- not a
@@ -703,9 +668,8 @@ mod tests {
     }
 
     /// FR-075-AC-7 (quire-specification TC-282 DB-01, FR-290-AC-9):
-    /// repeating an identical registration -- same id, manifest digest,
-    /// tool and advertised pairs -- is one registration and is never
-    /// refused.
+    /// repeating an identical registration -- same id, manifest digest and
+    /// advertised pairs -- is one registration and is never refused.
     #[test]
     #[trace("TC-448", "FR-075-AC-7")]
     fn identical_repeat_registration_is_idempotent_and_not_refused() {

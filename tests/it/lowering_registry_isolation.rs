@@ -41,9 +41,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::digest::ByteDigest;
-use qsl_route::{
-    BackendDescriptor, BackendId, Candidate, ManifestDigest, Mode, Registry, ToolIdentity,
-};
+use qsl_route::{BackendDescriptor, BackendId, Candidate, ManifestDigest, Mode, Registry};
 use qsl_semantics::check::Capability;
 use quire_spec_language::lowering::{lower_for, LoweringLimits, ProjectionTarget};
 use quire_spec_language::native_model::NativeModel;
@@ -87,7 +85,6 @@ fn kani_backend_registry() -> Registry {
                 BackendId::new("kani"),
                 ManifestDigest::from_digest(ByteDigest::of(b"kani-manifest").as_bytes()),
             ),
-            ToolIdentity::new("kani"),
             [(Capability::OperationContract, Mode::Bounded)],
         ))
         .expect("a fresh registry accepts its one registration");

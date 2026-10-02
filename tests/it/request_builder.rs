@@ -16,7 +16,6 @@ use qsl_route::request::{
 };
 use qsl_route::{
     BackendDescriptor, BackendId, Candidate, CandidateOutcome, ManifestDigest, Mode, Registry,
-    ToolIdentity,
 };
 use qsl_semantics::check::{Capability, CheckedGraph, PackageDeclarations};
 use qsl_semantics::family::DomainKind;
@@ -71,7 +70,6 @@ fn backend(id: &str, advertises: (Capability, Mode)) -> BackendDescriptor {
             BackendId::new(id),
             ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         ),
-        ToolIdentity::new(format!("tool-for-{id}")),
         [advertises],
     )
 }
