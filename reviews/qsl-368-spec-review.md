@@ -115,6 +115,14 @@ Reviewed at 31d5eb9ae92691b81b6b42a0d7563268b6f7274a, limited to the plan lead's
 | --- | --- | --- | --- |
 | FND-014 | low | TC-886 is the reduced-versus-unreduced differential test, and it carries the trace tag `#[trace("TC-886", "FR-160-AC-6")]`. `make ci` runs `cargo test --locked --workspace`, so it gates TC-886 once implemented, but only if the test is not `#[ignore]`. The repo already splits one corpus-wide test out of `make ci` this way (`make test-differential` runs the parser differential with `--include-ignored`). TC-886 does not say it runs in the gate. State that TC-886 runs under `make ci` and is not ignored, or name the part of the corpus that `make ci` runs if a full run is too slow. | spec/test-cases/TC-886-reduced-and-unreduced-runs-agree-over-the-corpus.md:36 |
 
+## New findings (disposition pass 4)
+
+Reviewed at 450d70ede85affad5413ea9f9486e5f0f44384bc (rebased onto main 4d7ba58e), limited to the delta 31d5eb9a..450d70ed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-015 | low | Amended FT-3's enabling footprint holds the pre-state locations a step's postconditions read and the membership of its receiver and reference arguments. Its closing list, "A disabled step can be enabled only by a step that writes one of these", names a writer of the precondition's model locations but no writer of those postcondition pre-state locations or of that membership. POR-7's closure uses the footprint meet, so a closure built per POR-7 is still sound. A closure built from FT-3's list would miss those enablers, which is the §7.6 false-`proved` pattern. Add "a writer of a location its postconditions read in the pre-state, a creator or deleter of its receiver or a reference argument" to the list, or replace the list with "a step whose write footprint meets this enabling footprint". | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:305 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -146,3 +154,9 @@ Round 3, reviewed at 31d5eb9ae92691b81b6b42a0d7563268b6f7274a.
 | --- | --- | --- |
 | FND-012 | fixed | 31d5eb9a: POR-11 step (4) covers a terminal `v` with empty `E(v)`. |
 | FND-013 | fixed | 31d5eb9a: 5(d) and §2 cite Lamport 1983 for next-free implies stutter-invariant, QSpec FR-161/TC-328 for `since` and `triggered`, and Peled and Wilke as the converse. |
+
+Round 4, reviewed at 450d70ede85affad5413ea9f9486e5f0f44384bc.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-014 | fixed | 450d70ed: TC-886 runs under `make ci` over the whole corpus and is not ignored. |
