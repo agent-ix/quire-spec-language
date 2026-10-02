@@ -29,3 +29,11 @@ Examined:
 ## Verdict
 
 One low finding: G-7's Test cell omits TC-809, which verifies FR-302-AC-6. Otherwise right. Mergeable once FND-001 is fixed.
+
+## Dispositions
+
+Round 1, reviewed at b90154043d438979178bece8c02c3b5f400a84a0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 56ada8f8 |

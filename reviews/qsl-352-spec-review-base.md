@@ -35,3 +35,13 @@ Examined:
 ## Verdict
 
 Three findings. FND-001 (medium): ADR-015 D-4 still gives the replay package reference as `{package_id, contract_version, sources, dependencies}`, so the sweep is incomplete. FND-002 (medium): the FR-121 and TC-516 index rows still report AC-1 to AC-13 implemented and passed, without AC-14. FND-003 (low): the settlement rule allocates to CG and should cite ADR-013 C-09. Not mergeable until FND-001 and FND-002 are fixed.
+
+## Dispositions
+
+Round 1, reviewed at b90154043d438979178bece8c02c3b5f400a84a0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 7da6b2aa |
+| FND-002 | fixed | 7da6b2aa |
+| FND-003 | fixed | 7da6b2aa |

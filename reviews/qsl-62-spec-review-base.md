@@ -34,3 +34,26 @@ Examined:
 ## Verdict
 
 Two findings. FND-001 (medium): `check_fences` is a new library operation that ADR-029's operation tables and FR-275/FR-277's "eleven operations" do not include. FND-002 (low): the enum-versus-string error that US-036 and QSL-62 lead with has no acceptance criterion. Not mergeable until FND-001 is fixed.
+
+## New findings (disposition pass 1)
+
+Reviewed at b90154043d438979178bece8c02c3b5f400a84a0, the fix round squashed into the QSL-62 commit.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | An enumeration artifact binds to `quire.meaning.model.variant-type/v1`. FR-056:170 says "If a clause names a declaration bound to `quire.meaning.model.variant-type/v1`, then the compiler SHALL refuse the clause with `unsupported_construct`/`declaration-form` (FR-150)". The intake code goes further: `read_type_node` (qsl-semantics/src/model/intake.rs, the `other if meaning::ALL.contains(&other)` arm) refuses any variant-type declaration with `unsupported_construct`/`declaration-form`, so FR-056's bundle entry point refuses TC-901's whole fixture as a `StageFailure`, even at step 1. AC-2 expects `ill_typed`/`type-mismatch` for `self.tier = "Gold"`, which disagrees with FR-056. Pick one: expect FR-056's `unsupported_construct`/`declaration-form` for that fence (and keep the variant artifact out of steps 1 and 3 to 5), or amend FR-056 so a clause can read an enum-typed field and compare it, making type-mismatch the expected refusal. | spec/functional/FR-355-check-the-quire-fences-of-spec-artifacts.md:105 |
+
+## Dispositions
+
+Round 1, reviewed at b90154043d438979178bece8c02c3b5f400a84a0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b9015404 |
+| FND-002 | fixed | b9015404 |
+
+Round 2, reviewed at 6e6e89c7294224c785f73c628dc8a33725ad32f2.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 6e6e89c7 |

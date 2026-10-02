@@ -28,3 +28,12 @@ Examined:
 ## Verdict
 
 Two low findings: AC-5's cancellation result has no Behavior statement, and AC-2's "a parse refusal" gives no code. Mergeable once they are fixed.
+
+## Dispositions
+
+Round 1, reviewed at b90154043d438979178bece8c02c3b5f400a84a0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b9015404 |
+| FND-002 | fixed | b9015404 |
