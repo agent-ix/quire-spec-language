@@ -95,3 +95,12 @@ production path. Both can be fixed in this PR.
 | --- | --- | --- | --- |
 | FND-001 | low | The `ValueType` `Debug` doc says it "Prints what `#[derive(Debug)]` printed, in compact and alternate mode". In alternate mode, leaves get plain `{:#?}`, so hex, width, fill and zero-pad flags are dropped. Measured: `format!("{:#x?}", ValueType::Population(Some(255)))` prints `0xff` with the derive and `255` here. `Decimal` scales and `CardinalityBound` fields differ the same way. Fix: copy `Value`'s caveat into this doc: "In alternate mode a leaf gets plain `{:#?}`, so the width, fill, precision and hex flags of the caller's format spec reach compact-mode leaves only." Also qualify the `ValueType` type doc. | quire-exact/src/value/value_type.rs:213-214 |
 | FND-002 | low | The `Hash` oracles assert only that equal types hash equal. A `Hash` that writes nothing, or that ignores everything below the root link, passes all four `tc_735_*` tests. Fix: in `tc_735_value_types_equal_and_hash_equal_their_clones_only`, assert that distinct samples hash distinct (`hash_of(a) != hash_of(b)` for `index != other_index`) and that `bounded(3)` and `bounded(4)` hash differently. In the deep test, assert `hash_of(&value_type) != hash_of(&ValueType::option(copy.clone()))`. | quire-exact/src/value/value_type.rs:463, 494-512 |
+
+## Dispositions
+
+Round 1, reviewed at 1871a38092fada9e4f163cebb26ffebe51cfe8f0.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1871a38092fada9e4f163cebb26ffebe51cfe8f0 |
+| FND-002 | fixed | 1871a38092fada9e4f163cebb26ffebe51cfe8f0 |
