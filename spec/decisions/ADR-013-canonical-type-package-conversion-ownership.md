@@ -58,8 +58,8 @@ Inputs this record builds on:
   7 unchanged.
 - **QSpec contracts**: FR-201 (identity-domain vocabulary), FR-321 (model
   selection), FR-322 (`quire.checked-package/v2`), FR-323
-  (`quire.native-runtime/v1`), FR-331 (`quire.backend-provider/v1`), FR-351
-  (separating witness record), FR-352 (`native-run-result/2`), AD-014, and the
+  (`quire.native-runtime/v1`), FR-331 (`quire.backend-provider/v1`), QSpec FR-351
+  (separating witness record), QSpec FR-352 (`native-run-result/2`), AD-014, and the
   `proposals/checked-package-v2/` schemas and vectors that FR-322 names as its
   normative transport.
 - **Witness fact**: IR PR #139, merged at `954c2f2`, defined `Witness` with
@@ -816,9 +816,9 @@ Equality: not an identity. Each bound value compares under its owning type.
 | --- | --- |
 | Owner | QSpec for each contract version identifier; the producing repository fixes it in each artifact. |
 | Implementing ticket | #213 S-5b for the one QSL reader outside #231: the I2 reader, which carries IR's version refusal as `unknown_wire`/`unsupported-wire` located at `Locus::Artifact{raw-artifact-digest, /contract_version}` (FR-096). #231 for version refusal in its envelopes (the replay request and the proof result). The native-v1 readers are lane-private (§6). |
-| Rule | There is no negotiation. A producer writes exactly one version. A reader accepts exactly one version per contract and refuses every other one with an explicit unsupported-version refusal, catalog code `unknown_wire`/`unsupported-wire`, which names the actual and expected contract identifiers. The order of that refusal relative to structural parse errors follows each contract's own refusal order (FR-322, FR-323, FR-331). A version is never inferred from content (FR-352-AC-2). |
+| Rule | There is no negotiation. A producer writes exactly one version. A reader accepts exactly one version per contract and refuses every other one with an explicit unsupported-version refusal, catalog code `unknown_wire`/`unsupported-wire`, which names the actual and expected contract identifiers. The order of that refusal relative to structural parse errors follows each contract's own refusal order (FR-322, FR-323, FR-331). A version is never inferred from content (QSpec FR-352-AC-2). |
 | Package schema | `quire.checked-package/v2` is the only QSL → IR package contract (AD-016). IR's `read_checked_package` dispatch admits `v2` only. |
-| Tests | IR TC-048 (v2 reader); QSpec TC-255 (FR-352); #231 adds an unknown-version test for each envelope it reads. |
+| Tests | IR TC-048 (v2 reader); QSpec TC-255 (QSpec FR-352); #231 adds an unknown-version test for each envelope it reads. |
 | Equality | lexical on the version identifier. |
 
 #### O-23 Revision pins (OBS-022, OBS-034)
@@ -846,9 +846,9 @@ Two witness objects exist; they are different concepts, not duplicates.
 | Field | Backend witness | Separating witness |
 | --- | --- | --- |
 | Owner | QSL `qsl-replay` `Witness` (FR-070), OQ-H ruling. CG's backend adapter parses the Kani run output into the transcript `Witness::parse` admits. IR's `src/kani/witness.rs` copy (IR PR #139) is deleted. | QSL replay executor produces it; QSpec FR-351 defines it |
-| Public type | `Witness{transcript}`. `transcript` is the only stored field. `harness_symbol()`, `check()`, `check_text()`, `concrete_values()` and `decode(&[WitnessBinding])` are derived from it on every call. `parse` selects the single assertion block; cover and unwinding playback refuse (AD-016 allow-list). | FR-351 record: deciding element, index, value path, trace position |
-| Admission | A `Witness` is admitted only through `parse`, including on deserialization: the stored transcript is the selected, trimmed assertion block, and a transcript that differs from its own selected block refuses. A malformed or cover transcript never reaches an accessor. | FR-351 and FR-352 readers |
-| Carrier | QSL: `WitnessEnvelope.source: ReplaySource` (FR-070), an enum with two variants: `Witness(Witness)` or `Input(values)`. An envelope holds one, never both. CG builds the envelope from its backend run; IR defines no packet or `ReplaySource` of its own (OQ-H). Serialized: an FR-331 `counterexamples` entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript (QC-6). This replaces the AD-016 Packet row `witness: Option<Witness>` (QC-20). | `native-run-result/2` (FR-352) |
+| Public type | `Witness{transcript}`. `transcript` is the only stored field. `harness_symbol()`, `check()`, `check_text()`, `concrete_values()` and `decode(&[WitnessBinding])` are derived from it on every call. `parse` selects the single assertion block; cover and unwinding playback refuse (AD-016 allow-list). | QSpec FR-351 record: deciding element, index, value path, trace position |
+| Admission | A `Witness` is admitted only through `parse`, including on deserialization: the stored transcript is the selected, trimmed assertion block, and a transcript that differs from its own selected block refuses. A malformed or cover transcript never reaches an accessor. | QSpec FR-351 and QSpec FR-352 readers |
+| Carrier | QSL: `WitnessEnvelope.source: ReplaySource` (FR-070), an enum with two variants: `Witness(Witness)` or `Input(values)`. An envelope holds one, never both. CG builds the envelope from its backend run; IR defines no packet or `ReplaySource` of its own (OQ-H). Serialized: an FR-331 `counterexamples` entry names either the transcript's `artifacts` entry, whose assignments are its decode and are not stored, or the canonical assignments of a counterexample with no transcript (QC-6). This replaces the AD-016 Packet row `witness: Option<Witness>` (QC-20). | `native-run-result/2` (QSpec FR-352) |
 | Identity | lexical over the admitted transcript | declared over its components (deciding element, index, value path, trace position); the deciding value compares under O-13 semantic equality |
 | Implementing ticket | #231 built `Witness`, `ReplaySource` and the counterexample envelope that stores the transcript (FR-070): `transcript` is private and `Witness::parse` is the only constructor. IR deletes its copy (OQ-H, TK-04). CG's backend adapter owns the Kani transcript parser that feeds `parse`. | #231 builds the common record carrier; #186 adds only its state-specific payload |
 
@@ -893,7 +893,7 @@ keys each value by parameter node id and orders the call arguments by the
 function's declared parameter positions. A binding with no parameter, a
 parameter with no binding, or a width or type mismatch refuses. `decode`
 refusals carry the packet's obligation identity as provenance, not placeholder
-strings. The FR-351 record's deciding element is a kernel `Value`; its value
+strings. The QSpec FR-351 record's deciding element is a kernel `Value`; its value
 path names members by O-06 member identity, never by collection position.
 
 `decode`'s input and output types, `WitnessBinding` and `WitnessValue` (with
@@ -936,11 +936,11 @@ stores one and derives four (QC-13).
 | --- | --- |
 | Owner | QSL owns the result type (`ReplayResult`, FR-072) and the executor produces it and settles parity in each arm result's `settle` (FR-072). The orchestrating driver (ADR-011 T-13) calls the executor. CG's parity comparator builds its sealed backend-evidence verdict only from an agreeing `Witness`-arm result (AD-016 Replay-ownership). IR takes no part in a replay result (OQ-H). |
 | Implementing ticket | #231 for the common result type and record carrier; #186 for the `native-run-result/2` serializer and its state-specific payload. |
-| Public type | One typed per-item result carrying the O-16 category, the evaluated value, the FR-351 separating witness when the settlement basis is decisive, the resolved nested regions (O-12), and the replay charges. Parity is an identical verdict under the same package and input domain, each verdict taken from the QSpec outcome → verdict map per O-16 category (QC-8); a disagreement is `inconclusive` with a typed cause and is never repaired (AD-016 arrow 7). Agreement on an `Input`-sourced packet settles `reproduced-without-witness` (AD-016 WP9), not backend evidence. |
-| Serialized authority | `native-run-result/2` (FR-352, AD-014) carries the FR-351 record; FR-323 carries per-item dispositions. FR-352 `native-run-result/2` is the replay-result record, and FR-323 keeps the request and the per-item disposition vocabulary (OQ-2 ruling). The per-item result's member `arm` is a sum of the `Witness`-arm and `Input`-arm result types, and each arm result carries its own `settlement` (#231; AD-016 as amended by agent-ix/quire-specification#140, QC-7). |
+| Public type | One typed per-item result carrying the O-16 category, the evaluated value, the QSpec FR-351 separating witness when the settlement basis is decisive, the resolved nested regions (O-12), and the replay charges. Parity is an identical verdict under the same package and input domain, each verdict taken from the QSpec outcome → verdict map per O-16 category (QC-8); a disagreement is `inconclusive` with a typed cause and is never repaired (AD-016 arrow 7). Agreement on an `Input`-sourced packet settles `reproduced-without-witness` (AD-016 WP9), not backend evidence. |
+| Serialized authority | `native-run-result/2` (QSpec FR-352, AD-014) carries the QSpec FR-351 record; FR-323 carries per-item dispositions. QSpec FR-352 `native-run-result/2` is the replay-result record, and FR-323 keeps the request and the per-item disposition vocabulary (OQ-2 ruling). The per-item result's member `arm` is a sum of the `Witness`-arm and `Input`-arm result types, and each arm result carries its own `settlement` (#231; AD-016 as amended by agent-ix/quire-specification#140, QC-7). |
 | Conversions | kernel `Outcome` → per-item disposition (total, category-preserving, O-16, C-08). |
-| Validation and diagnostics | A version other than the selected one refuses (FR-352-AC-5, QSpec TC-255). |
-| Equality | lexical over the RFC 8785 encoding of the FR-323 result-identity members. The embedded FR-351 record compares as in O-25. |
+| Validation and diagnostics | A version other than the selected one refuses (QSpec FR-352-AC-2, QSpec TC-255). |
+| Equality | lexical over the RFC 8785 encoding of the FR-323 result-identity members. The embedded QSpec FR-351 record compares as in O-25. |
 
 ### 3.1 Stage contracts for ADR-011
 
@@ -1019,7 +1019,7 @@ flowchart LR
   K -->|C-09 and C-10| PKT[QSL WitnessEnvelope with ReplaySource]
   PKT -->|C-11 and C-12 plus 231 envelope| REQ[FR-323 replay request]
   REQ -->|C-13 digest inputs and key lookup| EXE[QSL executor]
-  EXE -->|C-08| RES[replay result with FR-351 record]
+  EXE -->|C-08| RES[replay result with QSpec FR-351 record]
 ```
 
 ### 5. Version policy
@@ -1028,9 +1028,9 @@ flowchart LR
   are refused explicitly.
 - No component reads an older artifact version. An older artifact is
   regenerated from source at the current version.
-- `native-run-result/1` and `/2` (FR-352) are two versions of one contract.
+- `native-run-result/1` and `/2` (QSpec FR-352) are two versions of one contract.
   Under R-08 a QSL build produces one of them: `run` produces `/2` only (OQ-1
-  ruling, AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231
+  ruling, AD-014, QSpec FR-352). `/1` is deleted in the change that lands `/2`; #231
   builds the carrier and #186 the serializer. No build produces both.
 
 ### 6. Lane-private representations
@@ -1074,7 +1074,7 @@ duplicates that #213 S-2 folds into the O-18 record.
 | #131 / QSL PR #200 | O-01 intake wiring, O-03 native references as `ValueTypeRef::Native` with an adverse test for the `quire/native` refusal. | FCD PR #200 |
 | #215, #226 | R-09 and R-06 static checks. | #209 accepted |
 | agent-ix/quire-contract-codegen#50 | C-11 widening, C-12 reconstruction, parity comparison (O-27). agent-ix/quire-contract-codegen#50 uses #231's counterexample envelope and builds no second one, and it targets the QSL executor entry (TK-01), not `runtime::execute`. Amending the agent-ix/quire-contract-codegen#50 body to say so is an owner action. | #231, QC-8 |
-| agent-ix/quire-specification#114 | FR-351 and `native-run-result/2` (O-25, O-27). | — |
+| agent-ix/quire-specification#114 | QSpec FR-351 and `native-run-result/2` (O-25, O-27). | — |
 | agent-ix/quire-specification#81, spec-objects-business PR #8 (merged), agent-ix/filament-core-data#172, agent-ix/filament-core-data#173, agent-ix/filament-core-data#199 | ADR-010 §7.5 downstream tickets routed to #211; they implement the owners above (compiled-protocol `Model`, object tables, Semantic IR producer and intake shapes) and receive no new ownership decision here. | — |
 
 Proposed #213 slices, in order. The split itself is an owner action on #213.
@@ -1166,7 +1166,7 @@ Questions for #210, answered in ADR-012 §13.5:
 | Q210-1 | Does a selected capability travel in the counterexample packet or replay request, or only in FR-331 negotiation? | Only in FR-331 negotiation. The packet and request carry the `backend` member, not a capability. |
 | Q210-2 | Do the ADR-012 §1.1 selection mechanics need a representation beyond O-20 once #222 fixes the mode vocabulary (Q222-3)? | No. |
 | Q210-3 | How does each family result (including the simulation lane) map to the eight O-16 categories? | By O-16's columns; `Relation` has no S6a result, because S6a's input type admits no `Relation` (O-16, owner ruling on FR-090-OQ-2). No family adds a category. |
-| Q210-4 | Do family witness payloads use the FR-351 record unchanged? | Yes; a family adds only its witness binding schema, so O-25 needs no family-specific envelope. |
+| Q210-4 | Do family witness payloads use the QSpec FR-351 record unchanged? | Yes; a family adds only its witness binding schema, so O-25 needs no family-specific envelope. |
 
 Questions for #222:
 
@@ -1187,8 +1187,8 @@ owner's delegation ("do what is reasonable"). Each closes its question.
 
 | ID | Question | Ruling |
 | --- | --- | --- |
-| OQ-1 | Which `native-run-result` version the QSL `run` command produces | `/2` only (AD-014, FR-352). `/1` is deleted in the change that lands `/2`; #231 builds the carrier and #186 the serializer. No build produces both (§5). |
-| OQ-2 | Which record is the replay result: FR-323 `results` or FR-352 `native-run-result/2` | FR-352 `native-run-result/2`. FR-323 keeps the request and the per-item disposition vocabulary (O-27). |
+| OQ-1 | Which `native-run-result` version the QSL `run` command produces | `/2` only (AD-014, QSpec FR-352). `/1` is deleted in the change that lands `/2`; #231 builds the carrier and #186 the serializer. No build produces both (§5). |
+| OQ-2 | Which record is the replay result: FR-323 `results` or QSpec FR-352 `native-run-result/2` | QSpec FR-352 `native-run-result/2`. FR-323 keeps the request and the per-item disposition vocabulary (O-27). |
 | OQ-3 | The AD-016 amendments this record requires | Accepted. They are QC-13 to QC-17, filed as one QSpec AD-016 amendment PR (TK-10). QC-15's six types (`EffectiveId`, `UniverseId`, `ObjectId`, `UnitId`, `VariantId`, `MemberId`) and no others: confirmed 2026-09-19 by Agent A under the owner's delegation. QC-20 joins the same PR. |
 | OQ-4 | Tickets for the work no ticket owns | Opened at the #212 consolidation, as listed in Tickets to open at #212. |
 | OQ-5 | The replay executor key (ADR-012 §13.2 Q1) | Option 1: a typed `QualifiedName` (O-11), resolved against the recompiled package's declarations. AD-016 arrow 7 stays unchanged. R-06 names this lookup as its one exception. The packet and the replay request carry it (QC-8). Option 2 (node id) is not taken. |

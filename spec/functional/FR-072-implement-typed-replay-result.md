@@ -20,7 +20,7 @@ QSL SHALL implement a typed replay result, defined in the layer-6 `replay`
 module and part of its public API (ADR-013 O-27), as one per-item result
 whose `arm` member is a sum of two distinct, independently-typed arm
 results — a `Witness`-arm result and an `Input`-arm result — each carrying
-its own settlement, the O-16 category, the evaluated value, the nested FR-351
+its own settlement, the O-16 category, the evaluated value, the nested QSpec FR-351
 separating-witness record when the settlement basis is decisive, the
 resolved nested regions (ADR-013 O-12), and the replay charges.
 
@@ -44,13 +44,13 @@ exemplar.
 - A native execution outcome (kernel `Outcome`, ADR-013 O-16) for the
   replayed item.
 - The originating `ReplaySource` arm (`Witness` or `Input`) and, for the
-  `Witness` arm, the FR-351 separating-witness record decoded from it.
+  `Witness` arm, the QSpec FR-351 separating-witness record decoded from it.
 - Replay accounting charges.
 
 ## Outputs
 
 - A typed replay result carrying the O-16 category, arm-specific settlement,
-  nested FR-351 witness record where decisive, resolved regions and charges.
+  nested QSpec FR-351 witness record where decisive, resolved regions and charges.
 
 ## Behavior
 
@@ -75,7 +75,7 @@ exemplar.
   the fixed O-16-category-to-verdict map) SHALL settle `inconclusive` with a
   typed cause, with no public API path on the result type that constructs
   an agreement result from disagreeing verdicts.
-- An arm result's evaluated value, and a `Witness`-arm result's FR-351
+- An arm result's evaluated value, and a `Witness`-arm result's QSpec FR-351
   record with it, SHALL be absent when the replay completed no value (a
   `refused`, `incomplete` or `undefined` S6a outcome, or a family result).
   A result with no value SHALL settle `inconclusive` with a `NoValue`
@@ -88,10 +88,10 @@ exemplar.
   undefined evaluation reproduced at the counterexample's `where` is a
   completed value, `ModelTraceValue::Undefined`, not the no-value case.
 - A construct → serialize → read round trip of a decisive `Witness`-arm
-  result SHALL preserve the nested FR-351 record's deciding element, index,
+  result SHALL preserve the nested QSpec FR-351 record's deciding element, index,
   value path and trace position exactly.
 - A comparison of two results for agreement SHALL read only the typed
-  FR-351 fields, never a transcript's rendered text or a diagnostic message
+  QSpec FR-351 fields, never a transcript's rendered text or a diagnostic message
   string.
 - #217's function-application exemplar SHALL construct and compare a
   replay result using the result type together with FR-070's witness
@@ -105,7 +105,7 @@ exemplar.
 
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
-| FR-072-CON-1 | The `native-run-result/2` wire this result type's serializer targets is QSpec's own contract (FR-352); this requirement's Rust type accepts and refuses versions exactly as FR-352-AC-5 requires, and adds no separate version vector of its own. `native-run-result/2`'s wire serializer itself is #186's (ADR-013 §5). | Design | Inspection |
+| FR-072-CON-1 | The `native-run-result/2` wire this result type's serializer targets is QSpec's own contract (QSpec FR-352); this requirement's Rust type accepts and refuses versions exactly as QSpec FR-352-AC-2 requires, and adds no separate version vector of its own. `native-run-result/2`'s wire serializer itself is #186's (ADR-013 §5). | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -113,7 +113,7 @@ exemplar.
 |----|----------|--------------|
 | FR-072-AC-1 | Given a `Witness`-arm agreement and an `Input`-arm agreement, each settles its own distinct value (`reproduced-with-evaluated-witness` and `reproduced-without-witness` respectively); the `Witness`-arm and `Input`-arm result types are distinct with no `From`, `TryFrom`, `Into` or blanket conversion between them, so no `Input`-arm result can satisfy a call site typed for a `Witness`-arm result (the only input CG's sealed backend-evidence-verdict type, AD-016, admits). | Test (TC-189) |
 | FR-072-AC-2 | Given a proved verdict and a replayed verdict for the same item that differ under the fixed O-16-category-to-verdict map, the result settles `inconclusive` with a typed cause, and no public constructor, setter or `From`/`TryFrom` conversion on the result type can produce an agreement result from those disagreeing verdicts. | Test (TC-190) |
-| FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested FR-351 record's deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
+| FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested QSpec FR-351 record's deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
 | FR-072-AC-4 | #217's function-application exemplar constructs and compares a replay result using only this type together with FR-070's witness envelope and FR-071's request type, with no new witness or replay type defined in #217's repository scope. | Test (TC-192) |
 | FR-072-AC-5 | A result whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated result is returned. | Test (TC-191) |
 
@@ -122,9 +122,9 @@ exemplar.
 - **Upstream**: [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),
   [FR-071](FR-071-implement-typed-replay-request.md); ADR-013 O-27, O-16
   (category-to-verdict map); QSpec
-  [FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)
+  [QSpec FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)
   (separating-witness record) and
-  [FR-352](https://github.com/agent-ix/quire-specification/blob/main/spec/functional/foundation/FR-352-mint-native-run-result-witness-wire.md)
+  [QSpec FR-352](https://github.com/agent-ix/quire-specification/blob/main/spec/functional/foundation/FR-352-mint-native-run-result-witness-wire.md)
   (`native-run-result/2` wire; both QSpec status **Draft** as of this
   writing — fully specified with acceptance criteria and cited here as the
   normative record shape this result type carries and the version-refusal

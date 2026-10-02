@@ -19,9 +19,10 @@ When validated source is formatted, the formatter shall preserve every token spe
 ## Inputs
 
 The S1 output `qsl_cst::ParsedSource` (its lossless CST and exact source)
-and an optional selected output-byte ceiling. ADR-011 §6.1 places `format` in
-the tool layer over S1, depending on layer 1 and F, and ADR-011 §6.2 and §7.3
-(M-6a row) retarget it from the arena parse to the CST.
+and an optional selected output-byte ceiling. `format` is the layer-1
+library operation `qsl_cst::format`, beside `cst` in crate `qsl-cst`,
+depending on F only (ADR-011 §6.1 layer 1 and X-12; ADR-029 OP-1). ADR-011
+§6.2 and §7.3 (M-6a row) retarget it from the arena parse to the CST.
 
 ## Outputs
 
@@ -74,7 +75,7 @@ checked package identity as checking the original source.
 
 - [US-001](../usecase/US-001-author-native-source.md) supplies the user need.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
-  §6.1 (tool layer), §6.2 (`format` row) and §7.3 (M-6a row) set the input
+  §6.1 (layer 1), §6.2 (`format` row) and §7.3 (M-6a row) set the input
   to the CST.
 - [Detailed contract or implementation evidence](../../src/format.rs) supplies the scoped context.
 
