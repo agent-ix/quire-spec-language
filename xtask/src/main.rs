@@ -11,8 +11,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use xtask::{
-    canonical_types,
-    checked_input,
+    canonical_types, checked_input,
     error::{Error, Result},
     route_lint, seam_probe, string_edge,
 };
