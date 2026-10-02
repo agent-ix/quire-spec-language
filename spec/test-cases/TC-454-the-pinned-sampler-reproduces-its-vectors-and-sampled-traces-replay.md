@@ -1,12 +1,12 @@
 ---
 id: TC-454
-title: "The pinned sampler reproduces its vectors, and sampled traces replay"
+title: "The sampler reproduces its vectors, and sampled traces replay"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
     type: verifies
 ---
-# TC-454: The pinned sampler reproduces its vectors, and sampled traces replay
+# TC-454: The sampler reproduces its vectors, and sampled traces replay
 
 ## Description
 

@@ -139,7 +139,10 @@ refusal order and its results.
     `NoValue` (FR-072).
 - For `kind: UndefinedEvaluation{where, cause}` the executor SHALL
   evaluate the letters of the replayed positions in order by FR-125, and
-  check no fairness (ADR-018 UE-3, UE-5).
+  check no fairness (ADR-018 UE-3, UE-5). For the deadlock-freedom item a
+  letter at a terminal state holds the state model's `terminal when`
+  predicate `P` (FR-124, FR-125), so an undefined `P` there reproduces as
+  an undefined letter.
   - When the first position whose letter is undefined is `where`, with an
     undefined cause equal to `cause`, the executor SHALL settle
     `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
@@ -152,8 +155,8 @@ refusal order and its results.
   identities enabled at the last replayed state through `ModelSystem`, and
   evaluate the state model's `terminal when` predicate there when it has
   one. No enabled identity and the predicate `false` or absent SHALL settle
-  `reproduced-with-evaluated-witness`; otherwise `inconclusive`,
-  `Verdicts`.
+  `reproduced-with-evaluated-witness`; an enabled identity, or the
+  predicate `true` or undefined, SHALL settle `inconclusive`, `Verdicts`.
 - An internal fault SHALL refuse with an `InternalFault` and settle no
   result.
 - Replay SHALL read no path, environment variable, clock or search
@@ -169,6 +172,7 @@ refusal order and its results.
 | FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`revision-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`revision-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial` index of 1 over a one-snapshot subject; a stutter marker on a non-terminal loop; AC-1's envelope with its steps given as `Observed{prefix, loop}` (refused before recompiling). | Test (TC-523) |
 | FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `Verdicts`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`revision-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
 | FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `Verdicts`. | Test (TC-539) |
+| FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 / (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` settles `inconclusive`, `Verdicts`. | Test (TC-539) |
 
 ## Dependencies
 

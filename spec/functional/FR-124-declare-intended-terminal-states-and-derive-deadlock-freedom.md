@@ -88,7 +88,13 @@ when` and `terminal any` follow ADR-018 DL-1 and are illustrative.
   FR-120's successor relation gives it no successor (ADR-018 FA-2, DL-2).
 - The deadlock classifier SHALL classify a terminal state as **intended**
   when the declaration is `Any`, or `When(P)` and `P` evaluates `true` at
-  the state's observation by FR-107, and as **deadlocked** otherwise.
+  the state's observation by FR-107; as **deadlocked** when the
+  declaration is `None`, or `When(P)` and `P` evaluates `false`.
+- If `P` evaluates `Undefined` at a terminal state, then the classifier
+  SHALL classify the state as neither intended nor deadlocked, and the
+  deadlock-freedom item's letter at that state is undefined: the item
+  settles `refuted` with cause `UndefinedEvaluation{where, cause}`
+  (ADR-018 UE-1, FR-126).
 - The deadlock classifier SHALL evaluate `P` only at terminal states, so a
   state that satisfies `P` and has a successor is not terminal.
 - The deadlock classifier SHALL read the state graph alone; fairness

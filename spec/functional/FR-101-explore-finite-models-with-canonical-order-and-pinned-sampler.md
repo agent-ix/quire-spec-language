@@ -63,12 +63,15 @@ AC-14).
 - For exploration: `Limits{max_states, max_depth, max_transitions}` and a
   cancellation poll `impl FnMut() -> bool`. `max_states` and
   `max_transitions` are caller-raisable resource budgets (ADR-014 B-5).
-  `max_depth` is the search horizon: states at depth `>= max_depth` are not
-  expanded, and a run that stops there reports the horizon it used.
+  `max_depth` is the search horizon `k`, a method parameter and not a
+  limit: states at depth `>= max_depth` are not expanded, and a run that
+  expands every reachable state below the horizon returns
+  `Outcome::BoundReached` stating the horizon it used.
   `Limits::default()` publishes `max_states` 10,000,000, `max_transitions`
   100,000,000 and `max_depth` `usize::MAX`, which sets no horizon. A run that
-  reaches a limit names it and its value in `Outcome::Bounded`, and the
-  caller raises it by setting that `Limits` member.
+  reaches `max_states` or `max_transitions` names it and its value in
+  `Outcome::Bounded`, and the caller raises it by setting that `Limits`
+  member.
 - For sampling: a `u64` seed, a `u64` trace index, a `usize` step ceiling
   and the sampler's `DefinitionRef` (`qsl_foundation::selection`) from the
   ecosystem lock's `definitions`.
@@ -76,7 +79,9 @@ AC-14).
 ## Outputs
 
 - `Exploration<F>{outcome, findings}`, whose `outcome` is
-  `Outcome::Exhaustive(Stats)`, `Outcome::Bounded{stats, frontier, limit}`,
+  `Outcome::Exhaustive(Stats)`, `Outcome::BoundReached{stats, depth,
+  frontier}`, `Outcome::Bounded{stats, frontier, limit}` (`limit` is
+  `Limit::States` or `Limit::Transitions` with its value),
   `Outcome::Cancelled{stats, frontier, cause}` or
   `Outcome::Stopped{stats, frontier, cause}`.
 - A sampled `Trace<T, F>` with its `SampleProvenance{seed, trace, sampler,
@@ -215,7 +220,7 @@ RFC 8785 JCS UTF-8 bytes of their transition identity,
 FR-181 does not order two successors with equal transition identities and
 different post-states. QSL orders them by the post-state's state-key bytes,
 ascending. Initial states are admitted in ascending state-key byte order,
-with equal keys coalesced into one state. Both are QSL's choices; STD-109
+with equal keys coalesced into one state. Both are QSL's choices; QSpec
 settles them upstream in FR-181.
 
 **Initial states.** A `max_states` cap reached while admitting initial
@@ -252,7 +257,9 @@ choice index `c = 0` (QSpec FR-181); the further choices a workload adds
 are FR-188's.
 Draw `d` of choice `c` at trace `t`, step `s` under seed `k` is SHA-256 of
 the JCS object `{"choice":"c","draw":"d","seed":"k","step":"s","trace":"t"}`,
-each member a decimal string, encoded through `quire-canonical`. `s` is the
+each member a decimal string, encoded through `quire-canonical`; this is
+the preimage QSpec FR-181 states, and QSpec TC-210's vector is computed
+under it. `s` is the
 0-based index of the transition within the trace: it advances once per
 transition taken, whether or not that step computed a digest. With `n`
 successors in canonical order and `v` the digest read as a big-endian
@@ -263,12 +270,19 @@ successors in canonical order and `v` the digest read as a big-endian
 `StopReason::StepLimit`. FR-181 names one initial state; when a
 `TransitionSystem` has `m > 1` initial states after coalescing equal keys,
 QSL starts trace `t` from the initial state at index `t mod m` in canonical
-order, with no draw. This is QSL's choice; STD-109 settles it upstream.
+order, with no draw. This is QSL's choice.
 Provenance records the seed, the trace index and the sampler identity
 (ADR-014 TR-1). `CounterSampler` is removed.
 
+**Horizon.** With `max_depth = k`, a run whose frontier holds only states
+at depth `k` once every state below depth `k` is expanded returns
+`BoundReached{stats, depth: k, frontier}`: it completed its method to the
+horizon, `frontier` is those depth-`k` states in next-expansion order, and
+it never reports `Exhaustive`. A run whose frontier empties before depth
+`k` returns `Exhaustive`.
+
 **Stopped outcomes.** A run that stops before its frontier empties never
-reports `Exhaustive`. `Bounded` carries the limit that stopped it.
+reports `Exhaustive`. `Bounded` carries the resource limit that stopped it.
 `Cancelled` carries `cause: CatalogCode` (`qsl_foundation::diagnostic`),
 always `CatalogCode::new("cancelled", "caller-cancelled")`. Both carry the
 unexplored frontier in the order the run would have expanded it next.
@@ -326,11 +340,11 @@ repository (this repository's TC-210 is a witness-envelope case).
 | --- | --- | --- |
 | FR-101-AC-1 | Exploration visits each parent's successors in ascending JCS byte order of their transition identity, whatever order the `TransitionSystem` lists them in and whatever their post-states' keys: a state listing `z` before `a` is expanded `a` first, and `step(10)` is visited before `step(9)`, because `{"arguments":[{"type":"integer","value":"10"}],…}` precedes `{"arguments":[{"type":"integer","value":"9"}],…}` bytewise. Successors with equal transition identities are visited in ascending state-key byte order. Parent states keep FIFO discovery order within a level, whatever their keys. | Test (TC-453) |
 | FR-101-AC-2 | The state key is the JCS encoding of FR-181's typed canonical form, and exploration coalesces two states exactly when their full key bytes are equal. The state whose `semantic` member is `float64` bits `0000000000000000` and every map empty has digest `943ae638f84583f2a35a7a92f1eac7f58c380c045298892fb1412756a1cc95e6`; with bits `8000000000000000` (negative zero) it has digest `92a3e9557f9aaf672a61aaab71eb2bfad13a0d88662953998de4057ed54e4b01`, and the two remain two states. Two NaNs with different payloads are two states. Each digest is a `DigestRecord` under `quire.simulation.state-key/v1`. | Test (TC-453) |
-| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4, and the step-0 preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to `d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2`. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
+| FR-101-AC-3 | The sampler reproduces QSpec TC-210's vector, as amended with QSpec FR-181's `choice` preimage member: seed `424242`, trace `0`, choice `0`, `n = 5` draws indices `1, 3, 3, 4, 4` at steps 0 to 4, and the step-0 preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` hashes to `d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2`. Seed `424242`, trace `1`, `n = 5` draws `4, 4, 1, 3, 4`; seed `424242`, trace `0`, `n = 3` draws `1, 2, 0, 0, 1`. `n = 1` selects index 0 and computes no digest, and still advances the step: seed `424242`, trace `0`, with `n = 1` at steps 0 and 1 and `n = 5` at step 2, selects index `3` at step 2. `n = 0` ends the trace with `StopReason::NoSuccessors`. | Test (TC-454) |
 | FR-101-AC-4 | Two sampled runs with equal seeds and trace indices over the same `TransitionSystem` produce identical traces, including provenance. The provenance records the seed, the trace index and the sampler identity; a different seed or trace index gives different provenance. With `m > 1` initial states after coalescing equal keys, trace `t` starts at canonical initial state `t mod m`, and no draw selects the start. | Test (TC-454) |
 | FR-101-AC-5 | A trace records its initial state and each step's state as state-key digests, and replays against the `TransitionSystem` that produced it without the simulator, by recomputed digest. When several successors share a transition identity, replay takes the one whose digest equals the recorded digest. A trace whose initial digest matches no initial state, whose step names a transition the current state does not offer, or whose recorded digest differs from every matching successor's digest refuses at that step with `UnknownInitial`, `MissingTransition` or `KeyMismatch`. | Test (TC-454) |
 | FR-101-AC-6 | A run the poll cancels returns `Outcome::Cancelled` with `cause` `CatalogCode::new("cancelled", "caller-cancelled")`, category incomplete, and the unexplored frontier as state-key digests in next-expansion order. It never returns `Exhaustive` or `Bounded`. | Test (TC-455) |
-| FR-101-AC-7 | A run that reaches `max_states`, `max_depth` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state-key digests in next-expansion order, category incomplete. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
+| FR-101-AC-7 | A run that reaches `max_states` or `max_transitions` before its frontier empties returns `Outcome::Bounded` with that `Limit` and the unexplored frontier as state-key digests in next-expansion order, category incomplete. On the chain 0 → 1 → 2, `max_depth` 2 returns `Outcome::BoundReached{depth: 2}` with frontier `[<2>]`, category inconclusive, and `Limit` has no depth member. The same model returns `Exhaustive` once `max_states` is at least its reachable state count, `max_transitions` at least its transition count, and `max_depth` greater than its deepest state's depth. `Exhaustive` is returned only when the frontier is empty, and its `Stats` count distinct states, explored transitions and the deepest depth. | Test (TC-455) |
 | FR-101-AC-8 | `explore_request` or `sample_request` over `domains` that include an unbounded domain under the ADR-014 §4 extent rule returns `NotSimulated::RequiresBound` naming each unbounded domain's key and kind, calls no `TransitionSystem` method, and returns no `Outcome`. A `classify_extent` stage limit returns `NotSimulated::Extent`. The same request with every domain bounded explores. Raising exploration `Limits` does not change a `RequiresBound` result. | Test (TC-455) |
 | FR-101-AC-9 | Initial states are admitted in ascending state-key byte order, and equal keys coalesce into one state. A `max_states` cap reached during admission returns `Bounded` at `Limit::States` with frontier: admitted, then refused, then the rest, in canonical order; `max_states` 0 admits none and puts every initial state in the frontier. Exploring a system with no initial state returns `Exhaustive` with zero stats. | Test (TC-453) |
 | FR-101-AC-10 | `sample_request` refuses before any draw with `NotSimulated::GeneratorMismatch` when the supplied `DefinitionRef`'s identity is not `quire.simulation.sampler/v1`, and with `NotSimulated::EmptyInitial` when the system has no initial state. A run that reaches `max_steps` stops with `StopReason::StepLimit`, whether or not the current state has successors. `GeneratorMismatch`'s catalog code is `invalid_runtime_input`/`invalid-value`. | Test (TC-454) |
@@ -376,7 +390,9 @@ compares recomputed digests. Sampling runs the
 `quire.simulation.sampler/v1` generator under the preimage without
 `choice`, and checks the definition's version; the `choice` preimage
 member, AC-3's vectors under it, and the identity-only check of AC-10 are
-not yet implemented. `CounterSampler` is deleted. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
+not yet implemented. `CounterSampler` is deleted. `Outcome::BoundReached`
+and the removal of the depth member of `Limit` (AC-7) are not yet
+implemented. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
 "caller-cancelled")`, asserted literally by both cancellation tests.
 `explore_request` and `sample_request` classify `domains` before calling any
 `TransitionSystem` method, returning `NotSimulated::RequiresBound`,

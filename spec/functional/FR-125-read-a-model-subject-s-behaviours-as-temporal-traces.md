@@ -136,8 +136,9 @@ a lasso, what it charges and what it reports.
 ### Undefined evaluation
 
 - At each position a claim reads, the evaluator SHALL read the claim's
-  letter: the value of every atom of the claim at that position (ADR-018
-  UE-1).
+  letter: the value of every atom of the claim at that position, and, for
+  the deadlock-freedom item, the value of DL-1's `P` (FR-124's `When(P)`)
+  at a terminal state (ADR-018 UE-1).
 - A TP-2 `on origin` claim SHALL read positions 0 to its horizon `h`;
   every other claim SHALL read every position of the behaviour. A position
   that a bounded profile's closed-boundary rule supplies past a terminal

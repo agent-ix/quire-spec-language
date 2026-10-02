@@ -34,8 +34,7 @@ Tag the tests `#[trace("TC-536", "FR-101-AC-15")]` and
 ## Expected Results
 
 - Step 1: `max_states` 10,000,000, `max_transitions` 100,000,000,
-  `max_depth` `usize::MAX`; `max_automaton_states` 1,048,576;
-  `max_live_instances`, `max_store_buffer` and `max_messages` unset.
+  `max_depth` `usize::MAX`; `max_automaton_states` 1,048,576.
 - Step 2: `Exhaustive`; `Outcome::Bounded` at `Limit::States`, value 2.
 - Step 3: the FR-126-AC-1 outcomes; `Stopped{ResourceExhausted,
   {MaxStates, 2}}`.

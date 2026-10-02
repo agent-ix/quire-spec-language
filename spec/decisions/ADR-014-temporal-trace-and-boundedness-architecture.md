@@ -346,7 +346,8 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Tool changed after a passing probe | the run | QSpec FR-331 result `failed` | `unsupported_projection`/`tool-unavailable`; internal failure |
 | Bound exhaustion, S6a charge | S6a meter | `Outcome::Incomplete` | `resource_exhausted`/`insufficient-next-charge`; incomplete |
 | Bound exhaustion, read-only B-2 ceiling | S3 model normalization and S6a population admission | `Refused` with the `ancestor-steps` cause (FR-082) | `resource_exhausted`; refusal |
-| Bound exhaustion, finite exploration | `qsl_eval::simulation::explore` | `Outcome::Bounded{stats, frontier, limit}` | incomplete; never success, never violation |
+| Bound exhaustion, finite exploration | `qsl_eval::simulation::explore` | `Outcome::Bounded{stats, frontier, limit}`, `limit` `max_states` or `max_transitions` | incomplete; never success, never violation |
+| Completed search horizon, finite exploration | `qsl_eval::simulation::explore` | `Outcome::BoundReached{stats, depth, frontier}` (FR-101; ADR-018 §1: `max_depth` is the search horizon, not a limit) | inconclusive; never success, never violation |
 | Bound exhaustion, backend | backend | `IncompleteCause::ResourceExhausted` | QSpec FR-331 `incomplete`; incomplete |
 | Stage ceiling | S1 to S4, I2, `check`, `replay`, `route` | `StageFailure::Limit(LimitExceeded)` | `stage_limit_exceeded`; a stage failure |
 | Timeout | backend | `IncompleteCause::TimedOut` | QSpec FR-331 `incomplete`; incomplete |
@@ -355,7 +356,8 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
 | Unresolved liveness on a finite prefix | S6a | pending truth | inconclusive |
 
 One mapping is new: `explore::Outcome` to O-16. `Exhaustive` is success;
-`Bounded` and `Cancelled` are incomplete, each keeping its frontier. It lives
+`BoundReached` is inconclusive; `Bounded` and `Cancelled` are incomplete,
+each keeping its frontier. It lives
 in layer 5 as `qsl_eval::simulation::explore::Outcome::category()`, which
 returns F's O-16 category type (layer 5 may depend on F; F may not depend on
 layer 5).
@@ -439,9 +441,11 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    bound would not be available, and the item would settle `unsupported`,
    warned, `unbounded-extent`, naming the kind, the candidate and its modes.
 4. **Finite exploration that exhausts its bound.**
-   `qsl_eval::simulation::explore` stops at `Limits{max_states, max_depth,
-   max_transitions}` and returns `Outcome::Bounded{stats, frontier, limit}`.
-   `Outcome::category()` maps it to incomplete (§7). The frontier and the
+   `qsl_eval::simulation::explore` stops at `max_states` or
+   `max_transitions` and returns `Outcome::Bounded{stats, frontier, limit}`,
+   which `Outcome::category()` maps to incomplete (§7); a run that completes
+   its `max_depth` search horizon returns `Outcome::BoundReached{stats,
+   depth, frontier}`, which it maps to inconclusive. The frontier and the
    reached limit are kept. No exhaustive success and no verdict is reported.
    The run is deterministic given its `Limits` and the model, so it
    reproduces.
