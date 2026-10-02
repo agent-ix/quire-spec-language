@@ -50,9 +50,10 @@ pub struct ClosureCertificate { pub states: Vec<ProductStateRef> }
 
 pub enum CertificateRule {
     InitialMissing, SuccessorMissing, BadState, NotPartition, BackwardEdge,
-    WitnessFails,
+    WitnessFails, QueryMismatch, ProofStepInvalid, NotRefutation,
 }
-pub struct CertificateRejection { pub rule: CertificateRule, pub state: ProductStateRef }
+pub struct CertificateRejection { pub rule: CertificateRule, pub state: CertificateLocus }
+pub enum CertificateLocus { ProductState(ProductStateRef), Query, ProofStep { index: u64 } }
 
 pub fn check_closure(request: &CertificateRequest<'_>, certificate: &ClosureCertificate)
     -> Result<(), CertificateRejection>;

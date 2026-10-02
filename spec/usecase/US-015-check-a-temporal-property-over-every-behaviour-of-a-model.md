@@ -21,6 +21,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-339
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-314
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: traces_to
 ---
@@ -97,3 +99,4 @@ builds on this check.
 - [FR-337](../functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md)
 - [FR-338](../functional/FR-338-check-an-en-1-closure-certificate.md)
 - [FR-339](../functional/FR-339-check-an-en-1-component-certificate.md)
+- [FR-314](../functional/FR-314-check-an-smt-proof-certificate.md)
