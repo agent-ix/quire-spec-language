@@ -947,7 +947,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix; FR-031-AC-5 (four source labels on the body record, TC-430) implemented (ADR-013 §7 S-4b) |
+| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix; FR-031-AC-5 (the body record as document identity plus content digest, TC-430) specified, not yet implemented: the code still emits the old revision fields (QSL-381) |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR | Implemented; tested in the native-lowering test matrix |
 | [FR-034](functional/FR-034-project-state-scalars.md) | FR | Implemented; tested in the native-lowering test matrix |
