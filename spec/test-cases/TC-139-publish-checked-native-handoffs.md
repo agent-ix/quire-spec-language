@@ -23,7 +23,7 @@ procedure below described that deleted surface and no longer runs.
 
 ~~Integration, property and compile-fail tests derive both documents from real
 parse/link/check/compiled-protocol-v2 admission, read them against the same and
-foreign admitted packages, recompute schema/content digests independently, and
+foreign admitted packages, recompute content digests independently, and
 mutate every field and boundary described by FR-051. Exact and one-over limits
 cover bytes, depth, strings, populations, expressions and visited fields.~~
 
