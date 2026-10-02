@@ -80,7 +80,9 @@ pub enum ProofBasis {
     Inductive { depth: u64 },
 }
 
-pub enum Certification { Certified, Uncertified }
+pub enum Certification { Certified, Uncertified, Trusted }
+// TerminalValue::Proved carries certification: Option<Certification>;
+// a Kani Checks proof has None.
 
 // TerminalValue::Proved { basis: ProofBasis, certification: Certification }
 // InconclusiveCause gains:
@@ -157,9 +159,11 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
 - The checkers SHALL be FR-338's `check_closure` and FR-339's
   `check_components`; a rejection names the rule and the product state at
   which it failed.
-- `TerminalValue::Proved` with a `Checks`, `BoundedComplete` or
-  `Inductive` basis, whose engines have no core certificate checker, SHALL
-  carry `certification: Uncertified`, settle `proved` and map to success
+- `TerminalValue::Proved` with a `BoundedComplete` or `Inductive` basis,
+  from a native engine with no core certificate checker, SHALL carry
+  `certification: Some(Uncertified)`; one from a third-party plugin SHALL
+  carry `Some(Trusted)`; a Kani `Checks` proof, from the qualified core's
+  prove path, SHALL carry `None`. Each settles `proved` and maps to success
   (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
   map (ADR-018 DS-2) construct those values; this settlement map covers
   QSL's native engine, EN-1, only.
@@ -187,7 +191,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
 
 | FR-127-AC-7 | FR-338-AC-1's TP-1 proof with its accepted certificate settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; with FR-338-AC-2's `(1, 0)`-removed certificate it settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{SuccessorMissing, (1, 0)})`. | Test (TC-522) |
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
-| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Uncertified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}` and `Proved{Inductive{depth: 2}, Uncertified}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
+| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, None}`, `Proved{BoundedComplete{depth: 5}, Some(Uncertified)}`, `Proved{Inductive{depth: 2}, Some(Uncertified)}` and a plugin's `Proved{Exhaustive, Some(Trusted)}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`; the Kani one carries no label. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the FR-331 record. | Test (TC-522) |
 
 ## Dependencies
