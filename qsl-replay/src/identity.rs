@@ -219,8 +219,9 @@ impl RawSourceRef {
 /// ADR-013 O-19: the `backend` member every proof-result envelope, witness
 /// envelope and replay request carries unchanged (QC-8) -- the provider
 /// identity exactly as the FR-331 manifest states it, plus the digest of
-/// that manifest (domain `quire.tool-manifest.jcs/v1`, [`ManifestDigest`]),
-/// which also pins the tool. Two backend identities are equal iff both
+/// that manifest (domain `quire.tool-manifest.jcs/v1`, [`ManifestDigest`]).
+/// The manifest digest is the only binding to the backend's tool; there is
+/// no separate tool identity. Two backend identities are equal iff both
 /// fields are equal.
 ///
 /// The manifest digest is typed [`ManifestDigest`] (shared with
@@ -253,8 +254,7 @@ impl Backend {
         &self.identity
     }
 
-    /// The manifest's digest (always domain `quire.tool-manifest.jcs/v1`),
-    /// which also pins the tool.
+    /// The manifest's digest (always domain `quire.tool-manifest.jcs/v1`).
     pub fn manifest_digest(&self) -> ManifestDigest {
         self.manifest_digest
     }
