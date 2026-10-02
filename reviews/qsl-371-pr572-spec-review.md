@@ -84,3 +84,33 @@ FND-002), and the branch must be rebased onto the current
 `spec/366-temporal-properties` (FND-003). The ruling coverage, the worked
 examples' main numbers and the AC-to-TC coverage are sound. FND-002 and
 FND-001 also need the matching QSpec FR-407 and FR-408 fix.
+
+## New findings (disposition pass 1)
+
+Reviewed at 67993855 (`git diff 18a9c22b...67993855`). The base,
+`origin/spec/366-temporal-properties`, is now 0ecfb9e9. It is one
+review-record commit past 18a9c22b, and #572 and #579 still apply to it
+cleanly. `quire validate` on the changed files exited 0, and so did the
+index check.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | low | §7.3 still says the run needs `⌈z² · 0.000677 / ι²⌉ = 91,624` cycles. With the `S² + 1/n` half-width that FND-001's fix introduced, the stopping point solves `n = K · 0.000678 + K / n` with `K = z² / (ι² L̄²) ≈ 1.351 · 10⁸`, which gives about 93,080 cycles. State the new count, or say "about 93,000". | spec/decisions/ADR-024-statistical-and-probabilistic-properties.md:335 |
+| FND-014 | low | SV-7's first clause still reads "a behaviour of positive probability on which the event is false" for every bound direction. Under a `<= θ` bound the witness's event is true, as SV-6 and the rest of SV-7 now say. Write "on the violating side of its bound". | spec/decisions/ADR-024-statistical-and-probabilistic-properties.md:185 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 67993855 |
+| FND-002 | fixed | 67993855 |
+| FND-003 | fixed | 67993855 |
+| FND-004 | fixed | 67993855 |
+| FND-005 | fixed | 67993855 |
+| FND-006 | fixed | 67993855 |
+| FND-007 | fixed | 67993855 |
+| FND-008 | fixed | 67993855 |
+| FND-009 | fixed | 67993855 |
+| FND-010 | fixed | 67993855 |
+| FND-011 | fixed | 67993855 |
+| FND-012 | fixed | 67993855 |
