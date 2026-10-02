@@ -56,7 +56,7 @@ names another.
 6. Run the gate over an empty corpus; over step 1's corpus without the state
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
-7. Run the local test target over `tests/fixtures/refinement/layering/`,
+7. Run `make refinement-layering` over `tests/fixtures/refinement/layering/`,
    then over a copy with one `witness` entry removed.
 
 Each expected result is a literal in the test. Tag the test
@@ -88,4 +88,5 @@ Each expected result is a literal in the test. Tag the test
   state graph / `witness` and E5 / `distinguishing`; one naming the
   `entry.json` path and the member `expected`, with every other entry still
   compiled. Each verdict tool failure, exit 30.
-- Step 7: the target passes over the real corpus and fails over the copy.
+- Step 7: the make target passes over the real corpus, and the gate run
+  over the copy exits non-zero.

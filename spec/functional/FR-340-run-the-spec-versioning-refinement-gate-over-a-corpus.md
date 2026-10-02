@@ -111,9 +111,10 @@ passed to FR-344's report.
 
 ### Where it runs
 
-- The repository's local test target SHALL run the gate over
-  `tests/fixtures/refinement/versioning/`, the real corpus, and SHALL fail
-  when the gate's exit code is not 0.
+- The make target `refinement-versioning`, which `make ci` runs, SHALL run
+  `cargo run --package xtask -- refinement versioning
+  tests/fixtures/refinement/versioning/` over the real corpus and SHALL
+  fail when the gate's exit code is not 0 (FR-344 "Invocation and exit").
 
 ## Constraints
 
@@ -130,7 +131,7 @@ passed to FR-344's report.
 | FR-340-AC-3 | A pair whose `prior` carries revision `b` and `superseding` revision `a` is compared in that direction: a case the `prior` unit admits and the `superseding` unit refuses is a regression. Swapping only the two revision labels leaves every case's two classes and its result unchanged. | Test (TC-860) |
 | FR-340-AC-4 | A case stating no limit sets runs with each set's published default; the same case stating `accounting` with a work budget of one unit runs both revisions with that budget: both classes are `incomplete` and the case is `unresolved (incomplete)`. | Test (TC-860) |
 | FR-340-AC-5 | Copying a corpus to another directory and running the gate there gives a report byte-equal to the original's. | Test (TC-860) |
-| FR-340-AC-6 | The local test target runs the gate over `tests/fixtures/refinement/versioning/` and passes; adding the seeded-regression pair of TC-864 to that corpus makes the target fail. | Test (TC-864) |
+| FR-340-AC-6 | `make refinement-versioning` runs the gate over `tests/fixtures/refinement/versioning/` and passes; adding the seeded-regression pair of TC-864 to that corpus makes the target fail. | Test (TC-864) |
 
 ## Dependencies
 

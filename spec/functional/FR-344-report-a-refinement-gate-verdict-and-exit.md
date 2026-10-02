@@ -37,6 +37,25 @@ FR-340's pair-level tool-failure results.
   reached, and the result; then `verdict`; then `exit`.
 - The process exit code.
 
+## Invocation and exit
+
+The refinement gates are xtask repository gates, in the family of
+`seam-probe`, `string-edge` and `route-lint`: a contributor or `make ci`
+runs them, and no QSL frontend (`command`, the driver's `quire` binary)
+exposes them as a verb, so FR-285's frontend exit function governs none of
+their exits.
+
+- The gates SHALL be invoked as `cargo run --package xtask -- refinement
+  versioning <corpus>` and `cargo run --package xtask -- refinement
+  layering <corpus>`, and through the make targets `refinement-versioning`
+  and `refinement-layering`, each over its real corpus, both listed in
+  `make ci`.
+- The gate process SHALL write the report to stdout and exit with the
+  verdict's code from the table below, and with no other code.
+- A make target SHALL fail exactly when its gate exits with a code other
+  than 0, so any tool failure, unresolved result or regression in a real
+  corpus fails `make ci`.
+
 ## Behavior
 
 - The report SHALL list every result in groups, in this order: a
@@ -84,9 +103,10 @@ FR-340's pair-level tool-failure results.
 | FR-344-AC-1 | For result sets containing, respectively, only `holds`; `holds` and a `regression`; a `regression` and an `unresolved (incomplete)`; that plus an `unresolved (unsupported)`; and that plus a `tool failure`, the verdicts are success, violation, incomplete, unsupported and tool failure, with exits 0, 10, 22, 21 and 30. | Test (TC-866) |
 | FR-344-AC-2 | In the result set whose verdict is unsupported and which holds one `regression`, the report lists that `regression` with its name, both classes and the superseding codes. | Test (TC-866) |
 | FR-344-AC-3 | A corpus of three pairs, created on disk in an order other than their names' order, yields a report ordered by case name; two runs give byte-equal reports. | Test (TC-866) |
-| FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
 | FR-344-AC-4 | A case whose superseding run exceeds its `accounting` work budget names, in its entry, `work_units`, the budget's value and the member `accounting`. | Test (TC-865) |
 | FR-344-AC-5 | The seeded-regression test corpus of TC-864 reports verdict violation, exit 10, and exactly one `regression`, naming the seeded case. | Test (TC-864) |
+| FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
+| FR-344-AC-7 | `make ci` runs `refinement-versioning` and `refinement-layering`; a gate run over a corpus whose verdict is violation exits 10 from `cargo run --package xtask -- refinement …` and fails its make target, and a success run exits 0 and passes it. | Test (TC-866) |
 
 ## Dependencies
 

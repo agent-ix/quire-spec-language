@@ -333,7 +333,7 @@ names different artifacts in each.
 | TC-863 | The versioning comparison returns the table's result for every class pair | Unit | P1 | FR-343-AC-1 | 🚧 Planned |
 | TC-864 | A seeded spec-versioning regression fails the gate naming exactly that case | Integration | P1 | FR-340-AC-6, FR-343-AC-2, FR-343-AC-3, FR-343-AC-4, FR-344-AC-5 | 🚧 Planned |
 | TC-865 | An unsupported or incomplete superseding run is unresolved, never holds, and names its limit | Integration | P1 | FR-343-AC-5, FR-344-AC-4 | 🚧 Planned |
-| TC-866 | The refinement report orders every result, lists every regression, and gives FR-301's verdict and exit | Unit | P1 | FR-344-AC-1, FR-344-AC-2, FR-344-AC-3, FR-344-AC-6 | 🚧 Planned |
+| TC-866 | The refinement report orders every result, lists every regression, and gives FR-301's verdict and exit | Unit | P1 | FR-344-AC-1, FR-344-AC-2, FR-344-AC-3, FR-344-AC-6, FR-344-AC-7 | 🚧 Planned |
 | TC-867 | The layering comparison returns the table's result for every parent and child class | Unit | P1 | FR-345-AC-1, FR-345-AC-2, FR-345-AC-3 | 🚧 Planned |
 | TC-868 | A seeded profile-layering regression fails the gate naming the case and its edge | Integration | P1 | FR-345-AC-4, FR-345-AC-5, FR-345-AC-6, FR-345-AC-7, FR-345-AC-8, FR-345-AC-9 | 🚧 Planned |
 

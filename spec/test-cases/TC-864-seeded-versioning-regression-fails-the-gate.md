@@ -17,8 +17,8 @@ relationships:
 Verify the gate end to end over a test-only corpus that the gate's real run
 does not read: one real pair whose superseding revision tightens a
 ConfigVersion clause is a violation naming exactly the seeded case, while
-the rest of the corpus holds. Verify also that the real corpus passes in
-the local test target and fails once the seed is added.
+the rest of the corpus holds. Verify also that the real corpus passes
+`make refinement-versioning` and fails once the seed is added.
 
 Scope: FR-340-AC-6, FR-343-AC-2 to FR-343-AC-4, FR-344-AC-5.
 
@@ -39,9 +39,10 @@ Build the test corpus from FR-108's ConfigVersion fixtures:
 1. Run the gate over the seed pair together with the identity pair.
 2. Run the gate over the dropped pair.
 3. Run the gate over the broken pair.
-4. Run the local test target's gate step over
+4. Run `make refinement-versioning` over
    `tests/fixtures/refinement/versioning/`; add the seed pair to a copy of
-   that corpus and run the step over the copy.
+   that corpus and run `cargo run --package xtask -- refinement versioning`
+   over the copy.
 
 Each expected result is a literal in the test. Tag the tests
 `#[trace("TC-864", "<AC>")]` with the AC each step backs.

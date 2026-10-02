@@ -141,9 +141,10 @@ hook.
   and tool-failure result.
 - Each case SHALL be named by its two units' `RawSourceRef`s and its edge's
   two layer identities, never by a display string or a directory name.
-- The repository's local test target SHALL run the gate over
-  `tests/fixtures/refinement/layering/`, the real corpus, and SHALL fail
-  when the gate's exit code is not 0.
+- The make target `refinement-layering`, which `make ci` runs, SHALL run
+  `cargo run --package xtask -- refinement layering
+  tests/fixtures/refinement/layering/` over the real corpus and SHALL fail
+  when the gate's exit code is not 0 (FR-344 "Invocation and exit").
 
 ## Acceptance Criteria
 
@@ -157,7 +158,7 @@ hook.
 | FR-345-AC-6 | Each of the five layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent once from each candidate backend by name, settles `supported` under at least one candidate; with two candidates of which one supports and one does not, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-7 | On each of E1 to E5, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-9 | The local test target runs the gate over `tests/fixtures/refinement/layering/` and passes; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
+| FR-345-AC-9 | `make refinement-layering` runs the gate over `tests/fixtures/refinement/layering/` and passes; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |
 
 ## Dependencies
 
