@@ -27,20 +27,27 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::Identifier;
 
-use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
+use super::{consumed, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
 use crate::identity::RawSourceRef;
 use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
-    WitnessArmResult,
+    EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, SeparationReason,
+    SeparationRefusal, Verdict, WitnessArmResult, WitnessCheck, WitnessFailure,
 };
 use crate::spine::{
-    check_clause, CallOutcome, CallValue, ClauseDisposition, ClauseRunSelection, CompiledRun,
-    UnitProvenance,
+    check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
+    ClauseDisposition, ClauseRunSelection, CompiledRun, UnitProvenance,
 };
 use crate::witness::{ReplaySource, StateClauseCounterexample};
 use crate::WitnessEnvelope;
+use qsl_eval::value::{
+    CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
+};
+use qsl_foundation::source::Source;
+use qsl_semantics::check::CheckedGraph;
+use qsl_semantics::model::observation::AdmittedObservations;
+use quire_exact::Meter;
 
 /// FR-122's `stale_dependency`/`revision-mismatch`: an envelope clause
 /// identity that is not the recompiled clause's, naming both.
@@ -220,14 +227,18 @@ pub fn replay_state_clause(
         model_selections: graph.model_selections().to_vec(),
         selection: ClauseRunSelection::Clause(selection.clone()),
     };
-    let report = check_clause(&run, clause, &selection);
+    let ClauseCheck {
+        report,
+        observations,
+        mut meter,
+    } = check_clause_admitted(&run, clause, &selection);
 
     let fault = |invariant| {
         Err(ReplayRefusal::Fault(InternalFault::new(
             "replay", invariant,
         )))
     };
-    let (replayed, value) = match report.disposition {
+    let (replayed, mut value) = match report.disposition {
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Boolean(holds))) => (
             if holds {
                 ProofCategory::Success
@@ -266,24 +277,43 @@ pub fn replay_state_clause(
         }
     };
     let proved = Verdict::from_category(ProofCategory::Violation);
-    let charges = charges(report.usage.evaluation_consumed.iter().copied());
+    // FR-268: an agreeing verdict compares the payload's record with the
+    // re-derived one, then checks the record separates the clause.
+    let witness = if value == Some(EvaluatedValue::Boolean(false)) {
+        let observations = observations.as_ref().ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "evaluated-clause-was-admitted",
+            ))
+        })?;
+        match compare_witness(
+            &compiled.package,
+            &selection.name,
+            observations,
+            payload.witness.as_ref(),
+            report.witness.as_ref(),
+            &sources,
+            &mut meter,
+        )? {
+            Some(check) => check,
+            // An exhausted meter during the separation check settles
+            // `NoValue`, as an exhausted evaluation does (FR-268).
+            None => {
+                value = None;
+                WitnessCheck::Agrees(None)
+            }
+        }
+    } else {
+        WitnessCheck::Agrees(None)
+    };
+    let charges = consumed(&meter);
     let result = match envelope.source() {
         ReplaySource::Witness(_) => ReplayResult::Witness(WitnessArmResult::settle(
             proved,
             Verdict::from_category(replayed),
             replayed,
-            // As in FR-098: the verdict's whole value decides it.
-            value.map(|value| {
-                (
-                    value,
-                    SeparatingWitnessRecord {
-                        deciding_element: value,
-                        index: 0,
-                        value_path: Vec::new(),
-                        trace_position: None,
-                    },
-                )
-            }),
+            value,
+            witness,
             Vec::new(),
             charges,
         )),
@@ -292,6 +322,7 @@ pub fn replay_state_clause(
             Verdict::from_category(replayed),
             replayed,
             value,
+            &witness,
             Vec::new(),
             charges,
         )),
@@ -341,4 +372,160 @@ fn check_identities(
         }));
     }
     Ok(())
+}
+
+/// FR-268: compare the payload's record `given` with the re-derived record
+/// `derived` (QSpec FR-351 identity, the deciding element under ADR-013
+/// O-13), and, when both are present and equal, run the separation check
+/// over `observations`, charged to `meter`. `Ok(None)` when the meter is
+/// exhausted during the separation check.
+fn compare_witness(
+    package: &qsl_package::CheckedPackage,
+    clause: &str,
+    observations: &AdmittedObservations,
+    given: Option<&SeparatingWitnessRecord>,
+    derived: Option<&SeparatingWitnessRecord>,
+    sources: &[Source],
+    meter: &mut Meter,
+) -> Result<Option<WitnessCheck>, ReplayRefusal> {
+    match (given, derived) {
+        (None, None) => Ok(Some(WitnessCheck::Agrees(None))),
+        (Some(given_record), Some(derived_record)) if given_record == derived_record => {
+            let outcome = separate(
+                package,
+                clause,
+                observations,
+                derived_record,
+                sources,
+                meter,
+            )?;
+            Ok(settle_separation(outcome, derived_record))
+        }
+        _ => Ok(Some(WitnessCheck::Disagrees {
+            given: given.cloned().map(Box::new),
+            derived: derived.cloned().map(Box::new),
+            failure: WitnessFailure::Mismatch,
+        })),
+    }
+}
+
+/// FR-269: the witness check of a matching `record` whose separation check
+/// ended `outcome`: it agrees when the check holds, disagrees naming the
+/// failing step and reason when it fails, and `None` when the meter was
+/// exhausted.
+pub(crate) fn settle_separation(
+    outcome: SeparationOutcome,
+    record: &SeparatingWitnessRecord,
+) -> Option<WitnessCheck> {
+    match outcome {
+        SeparationOutcome::Holds => Some(WitnessCheck::Agrees(Some(Box::new(record.clone())))),
+        SeparationOutcome::Failed(step, reason) => Some(WitnessCheck::Disagrees {
+            given: Some(Box::new(record.clone())),
+            derived: Some(Box::new(record.clone())),
+            failure: WitnessFailure::Separation { step, reason },
+        }),
+        SeparationOutcome::Exhausted => None,
+    }
+}
+
+/// FR-268's separation check, settled: it holds, it fails at a step for a
+/// reason (FR-269), or the meter was exhausted (`NoValue`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SeparationOutcome {
+    /// Every step passed.
+    Holds,
+    /// The step failed, for the reason.
+    Failed(SeparationStep, SeparationReason),
+    /// The meter was exhausted during a step.
+    Exhausted,
+}
+
+/// FR-268: run the separation check of `record` over the state clause
+/// named `clause` and its admitted `observations`, charged to `meter`, and
+/// settle the answer: an `undefined` step evaluation as
+/// `UndefinedEvaluation` naming the expression and its reason, a refused
+/// one as its refusal record, an exhausted meter as
+/// [`SeparationOutcome::Exhausted`].
+pub(crate) fn separate(
+    package: &qsl_package::CheckedPackage,
+    clause: &str,
+    observations: &AdmittedObservations,
+    record: &SeparatingWitnessRecord,
+    sources: &[Source],
+    meter: &mut Meter,
+) -> Result<SeparationOutcome, ReplayRefusal> {
+    let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
+    // A state clause's record always carries its index (ADR-031 SW-5);
+    // a record without one names no element to check.
+    let Some(index) = record.index else {
+        return Ok(SeparationOutcome::Failed(
+            SeparationStep::Element,
+            SeparationReason::Unmet,
+        ));
+    };
+    let qualified =
+        QualifiedName::unqualified(clause).map_err(|_| fault("state-clause-name-qualifies"))?;
+    let claim = WitnessClaim {
+        quantifier: &record.quantifier,
+        element: &record.deciding_element,
+        index,
+        value_path: &record.value_path,
+    };
+    let separation = match package.check_separation(&qualified, observations, claim, meter) {
+        Ok(separation) => separation,
+        Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
+        // The clause was resolved by name and admitted for that clause.
+        Err(CallFailure::Input(_)) => {
+            return Err(fault("separation-check-over-the-admitted-clause"))
+        }
+    };
+    match separation {
+        Separation::Holds => Ok(SeparationOutcome::Holds),
+        Separation::Unmet(step) => Ok(SeparationOutcome::Failed(step, SeparationReason::Unmet)),
+        Separation::Stopped(step, evaluation) => {
+            stopped_reason(*evaluation, package.graph(), sources).map(|reason| match reason {
+                Some(reason) => SeparationOutcome::Failed(step, reason),
+                None => SeparationOutcome::Exhausted,
+            })
+        }
+    }
+}
+
+/// FR-269: why a separation-check evaluation that completed no value
+/// fails its step; `None` for an exhausted meter, which is not a witness
+/// failure.
+pub(crate) fn stopped_reason(
+    evaluation: qsl_eval::value::Evaluation,
+    graph: &CheckedGraph,
+    sources: &[Source],
+) -> Result<Option<SeparationReason>, ReplayRefusal> {
+    let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
+    let location = evaluation.location.clone();
+    let outcome =
+        convert_outcome(evaluation, graph, sources).map_err(|refusal| match *refusal {
+            crate::spine::RunRefusal::Fault(fault) => ReplayRefusal::Fault(fault),
+            _ => fault("separation-evaluation-maps-to-an-outcome"),
+        })?;
+    Ok(match outcome {
+        CallOutcome::Incomplete { .. } => None,
+        CallOutcome::Undefined { reason } => Some(SeparationReason::UndefinedEvaluation {
+            expression: location.ok_or_else(|| fault("undefined-evaluation-is-located"))?,
+            cause: reason.to_owned(),
+        }),
+        CallOutcome::Refused(refusal) => {
+            let (code, fields) = match refusal {
+                CallRefusal::Record { code, fields, .. } => (code, fields),
+                CallRefusal::Family { code, .. } => (code, std::collections::BTreeMap::new()),
+            };
+            Some(SeparationReason::Refused(SeparationRefusal {
+                code: code.code().to_owned(),
+                cause: code.cause().to_owned(),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, value)| (name.to_owned(), value))
+                    .collect(),
+            }))
+        }
+        CallOutcome::Completed(_) => return Err(fault("stopped-evaluation-completes-no-value")),
+    })
 }

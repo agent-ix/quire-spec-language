@@ -405,7 +405,14 @@ impl fmt::Debug for ReplaySource {
 /// payload by implementing this trait, never by writing into a
 /// `String`-keyed map. The common envelope carries `P: FamilyPayload` as a
 /// generic parameter and never inspects it.
-pub trait FamilyPayload: Clone + fmt::Debug + Eq {}
+pub trait FamilyPayload: Clone + fmt::Debug + Eq {
+    /// The payload's own measured encoded size, counted against the
+    /// envelope's reader bound (FR-070-AC-7): by default its inline size; a
+    /// payload holding variable-length content measures that content too.
+    fn measured_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+    }
+}
 
 /// The payload for a family with nothing of its own to attach (e.g. a
 /// function-application exemplar, TC-192).
@@ -421,6 +428,13 @@ pub use frame::{ClaimedChange, FrameCounterexample, FrameOperation};
 // counterexample.
 mod state_clause;
 pub use state_clause::StateClauseCounterexample;
+
+// FR-265: the one derivation of a state clause's settlement basis and
+// separating witness, which the clause run and the replay share.
+mod derivation;
+pub(crate) use derivation::derive_separating_witness;
+#[cfg(test)]
+pub(crate) use derivation::Derived;
 
 /// FR-070/ADR-013 O-25: the typed counterexample/witness envelope, generic
 /// over its family-owned payload `P` (the extension point FR-070-AC-5
@@ -825,7 +839,7 @@ fn measured_encoded_bytes<P: FamilyPayload>(packet: &WitnessPacket<P>) -> usize 
     total += packet
         .family_payload
         .as_ref()
-        .map_or(0, std::mem::size_of_val);
+        .map_or(0, FamilyPayload::measured_bytes);
     total
 }
 

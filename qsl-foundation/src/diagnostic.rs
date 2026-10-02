@@ -888,9 +888,15 @@ const CATALOG_CATEGORIES: [(&str, Category); 48] = [
 /// alone. `None` for a code the catalog does not define: an unknown code has
 /// no category, and this map never guesses one.
 pub fn category_of(code: &CatalogCode) -> Option<Category> {
+    catalog_category(code.code())
+}
+
+/// The O-16 category of the catalog code spelled `code`; `None` for a
+/// spelling the catalog does not define.
+pub fn catalog_category(code: &str) -> Option<Category> {
     CATALOG_CATEGORIES
         .iter()
-        .find(|(spelling, _)| *spelling == code.code())
+        .find(|(spelling, _)| *spelling == code)
         .map(|&(_, category)| category)
 }
 

@@ -9,12 +9,21 @@
 //! disagreement; no other public API on either type can turn a
 //! disagreement into an agreement result (FR-072-AC-2, "never repaired").
 
-use quire_exact::ScalarLimits;
+use std::collections::BTreeMap;
+
+use qsl_eval::value::StopReport;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
+use quire_exact::{compare_keys, ScalarLimits, Value};
+use quire_semantic_value::location::Location;
 
 use crate::bounds::BoundExceeded;
+
+mod wire;
 use crate::identity::TracePosition;
 use crate::proof_result::ProofCategory;
 use qsl_foundation::source::provenance::SourceRegion;
+pub use wire::CauseCodecError;
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -46,7 +55,7 @@ impl Verdict {
 
 /// Why a replay settled `inconclusive` (FR-072-AC-2): typed, never a
 /// display string. Each case carries both verdicts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DisagreementCause {
     /// The replay completed a value, and its verdict differs from the
     /// proved one.
@@ -64,35 +73,138 @@ pub enum DisagreementCause {
         /// The verdict the replay run reached.
         replayed: Verdict,
     },
+    /// FR-269 (ADR-031 SW-12, SW-13): the verdicts agree but the
+    /// separating witness does not: the payload's record differs from the
+    /// re-derived one, is present on one side only, or fails the
+    /// separation check.
+    Witness {
+        /// The verdict the original proving run reached.
+        proved: Verdict,
+        /// The verdict the replay run reached, equal to `proved`.
+        replayed: Verdict,
+        /// The payload's record, or its absence.
+        given: Option<Box<SeparatingWitnessRecord>>,
+        /// The re-derived record, or its absence.
+        derived: Option<Box<SeparatingWitnessRecord>>,
+        /// Why the witness does not agree.
+        failure: WitnessFailure,
+    },
 }
 
 impl DisagreementCause {
     /// The verdict the original proving run reached.
-    pub fn proved(self) -> Verdict {
+    pub fn proved(&self) -> Verdict {
         match self {
-            Self::Verdicts { proved, .. } | Self::NoValue { proved, .. } => proved,
+            Self::Verdicts { proved, .. }
+            | Self::NoValue { proved, .. }
+            | Self::Witness { proved, .. } => *proved,
         }
     }
 
     /// The verdict the replay run reached.
-    pub fn replayed(self) -> Verdict {
+    pub fn replayed(&self) -> Verdict {
         match self {
-            Self::Verdicts { replayed, .. } | Self::NoValue { replayed, .. } => replayed,
+            Self::Verdicts { replayed, .. }
+            | Self::NoValue { replayed, .. }
+            | Self::Witness { replayed, .. } => *replayed,
         }
     }
 
     /// The cause of settling `proved` against `replayed`, where `completed`
-    /// tells whether the replay completed a value: `None` exactly when the
-    /// settlement agrees.
-    fn of(proved: Verdict, replayed: Verdict, completed: bool) -> Option<Self> {
+    /// tells whether the replay completed a value and `witness` is the
+    /// witness comparison: `None` exactly when the settlement agrees.
+    fn of(
+        proved: Verdict,
+        replayed: Verdict,
+        completed: bool,
+        witness: &WitnessCheck,
+    ) -> Option<Self> {
         if !completed {
             Some(Self::NoValue { proved, replayed })
         } else if proved != replayed {
             Some(Self::Verdicts { proved, replayed })
         } else {
-            None
+            match witness {
+                WitnessCheck::Agrees(_) => None,
+                WitnessCheck::Disagrees {
+                    given,
+                    derived,
+                    failure,
+                } => Some(Self::Witness {
+                    proved,
+                    replayed,
+                    given: given.clone(),
+                    derived: derived.clone(),
+                    failure: failure.clone(),
+                }),
+            }
         }
     }
+}
+
+/// FR-269: why a separating witness does not agree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WitnessFailure {
+    /// The payload's record differs from the re-derived one, or only one
+    /// is present.
+    Mismatch,
+    /// The separation check failed at `step`, for `reason`.
+    Separation {
+        /// The failing FR-268 step.
+        step: SeparationStep,
+        /// Why it failed.
+        reason: SeparationReason,
+    },
+}
+
+/// FR-269: why a separation-check step failed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SeparationReason {
+    /// The step's requirement does not hold.
+    Unmet,
+    /// The step's evaluation ended `undefined`: the expression where it
+    /// arose and the undefined reason's tabled spelling (FR-100).
+    UndefinedEvaluation {
+        /// The expression the undefined result arose at.
+        expression: Location,
+        /// The undefined reason, as `quire.native.diagnostics/v1` spells
+        /// it.
+        cause: String,
+    },
+    /// The step's evaluation was refused, with its refusal record.
+    Refused(SeparationRefusal),
+}
+
+/// FR-269: a separation-check evaluation's refusal record (ADR-013 O-17):
+/// its catalog code and cause and its catalog fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeparationRefusal {
+    /// The catalog code's spelling.
+    pub code: String,
+    /// The catalog cause.
+    pub cause: String,
+    /// The catalog fields, by payload name.
+    pub fields: BTreeMap<String, String>,
+}
+
+/// FR-268: how a replay's separating witness compares, given to
+/// [`WitnessArmResult::settle`] and [`InputArmResult::settle`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WitnessCheck {
+    /// The witness agrees: the record the result carries on agreement
+    /// (present exactly when the settlement basis is decisive; always
+    /// absent for a function or frame replay, which has no decisive
+    /// occurrence, ADR-031 SW-7).
+    Agrees(Option<Box<SeparatingWitnessRecord>>),
+    /// The witness disagrees (FR-269).
+    Disagrees {
+        /// The payload's record, or its absence.
+        given: Option<Box<SeparatingWitnessRecord>>,
+        /// The re-derived record, or its absence.
+        derived: Option<Box<SeparatingWitnessRecord>>,
+        /// Why.
+        failure: WitnessFailure,
+    },
 }
 
 /// The `Witness`-arm settlement (ADR-013 O-27, AD-016 WP9).
@@ -130,21 +242,146 @@ pub enum EvaluatedValue {
     Boolean(bool),
 }
 
-/// The nested FR-351 separating-witness record, decoded when the
-/// settlement basis is decisive: the deciding element, its index, its value
-/// path (member names, never collection positions -- ADR-013 O-25) and its
-/// trace position.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// QSpec FR-351's separating witness record (ADR-031 SW-5, SW-7): the
+/// deciding quantifier, the deciding element, its index, its value path and
+/// its trace position. Compared componentwise, the deciding element under
+/// ADR-013 O-13 semantic equality.
+#[derive(Clone, Debug)]
 pub struct SeparatingWitnessRecord {
-    /// The value that decided the settlement.
-    pub deciding_element: EvaluatedValue,
-    /// The deciding element's index within its collection.
-    pub index: u64,
-    /// The deciding element's member-name path (never collection positions
-    /// -- ADR-013 O-25).
-    pub value_path: Vec<String>,
-    /// The deciding element's trace position, if the backend reported one.
+    /// The decisive quantifier's occurrence key (ADR-013 O-07).
+    pub quantifier: OccurrenceKey,
+    /// The kernel value bound to the quantifier's binder at the stop.
+    pub deciding_element: Value,
+    /// The element's zero-based position in its stored or built
+    /// collection; absent for a family that assigns no position.
+    pub index: Option<u64>,
+    /// The QSpec FR-207 runtime value path of the element's location.
+    pub value_path: RuntimeValuePath,
+    /// The trace position; absent for a family that keeps no trace (a
+    /// state clause reads one observation).
     pub trace_position: Option<TracePosition>,
+}
+
+impl PartialEq for SeparatingWitnessRecord {
+    fn eq(&self, other: &Self) -> bool {
+        self.quantifier == other.quantifier
+            && same_element(&self.deciding_element, &other.deciding_element)
+            && self.index == other.index
+            && self.value_path == other.value_path
+            && self.trace_position == other.trace_position
+    }
+}
+
+impl Eq for SeparatingWitnessRecord {}
+
+/// Two deciding elements are the same under ADR-013 O-13 semantic
+/// equality. A value holding a float has no canonical key (O-13 excludes
+/// floats from `=`), so two such values are the same exactly when they
+/// encode identically, bit pattern for bit pattern.
+fn same_element(left: &Value, right: &Value) -> bool {
+    match compare_keys(left, right) {
+        Some(order) => order == std::cmp::Ordering::Equal,
+        None => wire::same_encoding(left, right),
+    }
+}
+
+impl SeparatingWitnessRecord {
+    /// FR-268's state-clause record: FR-265's stop report, with no trace
+    /// position.
+    pub(crate) fn from_stop(report: &StopReport) -> Self {
+        Self {
+            quantifier: report.quantifier.clone(),
+            deciding_element: report.element.clone(),
+            index: Some(report.index),
+            value_path: report.value_path.clone(),
+            trace_position: None,
+        }
+    }
+
+    /// This record's own measured encoded size (FR-070-AC-7, FR-072-AC-5,
+    /// ADR-031 SW-14): every variable-length member's byte length and a
+    /// fixed width for each fixed-width one.
+    pub fn measured_bytes(&self) -> usize {
+        let observation = &self.value_path.observation;
+        let subject = match &self.value_path.subject {
+            ValuePathSubject::Object(object) => 64 + object.object().as_str().len(),
+            ValuePathSubject::Built(occurrence) => {
+                32 + occurrence.origin().role().as_str().len() + 8
+            }
+        };
+        let steps: usize = self
+            .value_path
+            .steps
+            .iter()
+            .map(|step| match step {
+                ValuePathStep::Field(name) | ValuePathStep::Member(name) => name.len(),
+                ValuePathStep::Index(_) => 8,
+                ValuePathStep::OptionValue => 1,
+            })
+            .sum();
+        32 + self.quantifier.origin().role().as_str().len()
+            + 8
+            + value_bytes(&self.deciding_element)
+            + 8
+            + observation.authority.len()
+            + observation.identity.len()
+            + observation.revision_namespace.len()
+            + observation.revision.len()
+            + subject
+            + steps
+            + self
+                .trace_position
+                .as_ref()
+                .map_or(0, |position| position.as_str().len())
+    }
+}
+
+/// A kernel value's measured encoded size, summed over every nested
+/// occurrence: each variable-length member (integer digits, text, object
+/// identity) by its byte length, each digest by its 32 bytes and each other
+/// fixed-width member by its width.
+fn value_bytes(value: &Value) -> usize {
+    let digits = |integer: &quire_exact::Integer| integer.to_string().len();
+    let mut total = 0usize;
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        total += match value {
+            Value::Boolean(_) => 1,
+            Value::Integer(integer) => digits(integer),
+            Value::Rational(rational) => {
+                digits(rational.numerator()) + digits(rational.denominator())
+            }
+            Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
+            Value::Float(_) => 8,
+            Value::Quantity(quantity) => {
+                let magnitude = quantity.magnitude();
+                digits(magnitude.numerator()) + digits(magnitude.denominator()) + 32
+            }
+            // The payload, then the type's two bounds and its profile.
+            Value::Text(text) => {
+                text.payload().as_str().len() + 16 + text.text_type().profile().as_str().len()
+            }
+            Value::Enum(_) => 32 + 4,
+            Value::Population(_) => 32,
+            Value::Reference(reference) => 64 + reference.object().as_str().len(),
+            Value::Collection(collection) => {
+                pending.extend(collection.elements());
+                8
+            }
+            Value::Option(option) => {
+                pending.extend(option.payload());
+                1
+            }
+            Value::Composite(composite) => {
+                pending.extend(composite.slots().iter().filter_map(|slot| match slot {
+                    quire_exact::FieldValue::Present(value) => Some(value),
+                    quire_exact::FieldValue::Absent | quire_exact::FieldValue::Null => None,
+                }));
+                32
+            }
+        };
+    }
+    total
 }
 
 /// FR-072/ADR-013 O-27: the `Witness`-arm per-item result. No `From`,
@@ -157,31 +394,33 @@ pub struct WitnessArmResult {
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
     value: Option<EvaluatedValue>,
-    record: Option<SeparatingWitnessRecord>,
+    record: Option<Box<SeparatingWitnessRecord>>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
 }
 
 impl WitnessArmResult {
     /// The only public constructor (FR-072-AC-2): settles
-    /// `ReproducedWithEvaluatedWitness`, with the record attached, only
-    /// when the replay completed a value (`decisive` is `Some`) and `proved`
-    /// and `replayed` agree; otherwise `Inconclusive` with no record and a
-    /// typed [`DisagreementCause`]. No other public API on this type can
-    /// turn a disagreement, or a replay that completed no value, into an
-    /// agreement result (FR-098).
+    /// `ReproducedWithEvaluatedWitness` only when the replay completed a
+    /// value, `proved` and `replayed` agree and the witness agrees, with
+    /// the agreeing record attached when there is one (ADR-031 SW-7: the
+    /// record is its own `Option`, independent of the value); otherwise
+    /// `Inconclusive` with no record and a typed [`DisagreementCause`]. No
+    /// other public API on this type can turn a disagreement, or a replay
+    /// that completed no value, into an agreement result (FR-098, FR-269).
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
-        decisive: Option<(EvaluatedValue, SeparatingWitnessRecord)>,
+        value: Option<EvaluatedValue>,
+        witness: WitnessCheck,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
     ) -> Self {
-        let disagreement = DisagreementCause::of(proved, replayed, decisive.is_some());
-        let (value, record) = match decisive {
-            Some((value, record)) => (Some(value), Some(record)),
-            None => (None, None),
+        let disagreement = DisagreementCause::of(proved, replayed, value.is_some(), &witness);
+        let record = match witness {
+            WitnessCheck::Agrees(record) if disagreement.is_none() => record,
+            WitnessCheck::Agrees(_) | WitnessCheck::Disagrees { .. } => None,
         };
         Self {
             settlement: if disagreement.is_none() {
@@ -192,7 +431,7 @@ impl WitnessArmResult {
             disagreement,
             category,
             value,
-            record: record.filter(|_| disagreement.is_none()),
+            record,
             resolved_regions,
             charges,
         }
@@ -205,8 +444,8 @@ impl WitnessArmResult {
     }
     /// The typed disagreement cause, present only when settlement went
     /// `Inconclusive`.
-    pub fn disagreement(&self) -> Option<DisagreementCause> {
-        self.disagreement
+    pub fn disagreement(&self) -> Option<&DisagreementCause> {
+        self.disagreement.as_ref()
     }
     /// The category this arm's settlement carries.
     pub fn category(&self) -> ProofCategory {
@@ -220,7 +459,7 @@ impl WitnessArmResult {
     /// The nested FR-351 record, present only when the settlement basis is
     /// decisive (an agreement).
     pub fn record(&self) -> Option<&SeparatingWitnessRecord> {
-        self.record.as_ref()
+        self.record.as_deref()
     }
     /// The resolved source regions this arm's result cites.
     pub fn resolved_regions(&self) -> &[SourceRegion] {
@@ -249,18 +488,20 @@ pub struct InputArmResult {
 
 impl InputArmResult {
     /// The only public constructor: settles `ReproducedWithoutWitness` only
-    /// when the replay completed a value and `proved` and `replayed` agree;
-    /// otherwise `Inconclusive` with a typed [`DisagreementCause`].
-    /// Agreement here is never backend evidence.
+    /// when the replay completed a value, `proved` and `replayed` agree and
+    /// the witness agrees; otherwise `Inconclusive` with a typed
+    /// [`DisagreementCause`]. Agreement here is never backend evidence, and
+    /// this arm carries no record.
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
         category: ProofCategory,
         value: Option<EvaluatedValue>,
+        witness: &WitnessCheck,
         resolved_regions: Vec<SourceRegion>,
         charges: ScalarLimits,
     ) -> Self {
-        let disagreement = DisagreementCause::of(proved, replayed, value.is_some());
+        let disagreement = DisagreementCause::of(proved, replayed, value.is_some(), witness);
         Self {
             settlement: if disagreement.is_none() {
                 InputSettlement::ReproducedWithoutWitness
@@ -281,8 +522,8 @@ impl InputArmResult {
     }
     /// The typed disagreement cause, present only when settlement went
     /// `Inconclusive`.
-    pub fn disagreement(&self) -> Option<DisagreementCause> {
-        self.disagreement
+    pub fn disagreement(&self) -> Option<&DisagreementCause> {
+        self.disagreement.as_ref()
     }
     /// The category this arm's settlement carries.
     pub fn category(&self) -> ProofCategory {
@@ -339,13 +580,9 @@ fn measured_encoded_bytes(result: &ReplayResult) -> usize {
     match result {
         ReplayResult::Witness(arm) => {
             common_measured_bytes(arm.resolved_regions())
-                + arm.record().map_or(0, |record| {
-                    record.value_path.iter().map(String::len).sum::<usize>()
-                        + record
-                            .trace_position
-                            .as_ref()
-                            .map_or(0, |position| position.as_str().len())
-                })
+                + arm
+                    .record()
+                    .map_or(0, SeparatingWitnessRecord::measured_bytes)
         }
         ReplayResult::Input(arm) => common_measured_bytes(arm.resolved_regions()),
     }
@@ -396,12 +633,38 @@ mod tests {
     }
 
     fn record(value_path: Vec<&str>) -> SeparatingWitnessRecord {
+        use qsl_eval::value::ObservationIdentity;
+        use qsl_foundation::digest::WireNodeId;
+        use quire_exact::{Origin, Role};
         SeparatingWitnessRecord {
-            deciding_element: EvaluatedValue::Boolean(true),
-            index: 2,
-            value_path: value_path.into_iter().map(str::to_owned).collect(),
+            quantifier: OccurrenceKey::new(
+                WireNodeId::from_digest([7; 32]),
+                Origin::new(Role::new("expression"), 0),
+            ),
+            deciding_element: Value::Integer(quire_exact::Integer::from(600_i64)),
+            index: Some(2),
+            value_path: RuntimeValuePath {
+                observation: ObservationIdentity {
+                    authority: "test".to_owned(),
+                    identity: "high".to_owned(),
+                    revision_namespace: "ns".to_owned(),
+                    revision: "1".to_owned(),
+                },
+                subject: ValuePathSubject::Built(OccurrenceKey::new(
+                    WireNodeId::from_digest([8; 32]),
+                    Origin::new(Role::new("expression"), 0),
+                )),
+                steps: value_path
+                    .into_iter()
+                    .map(|name| ValuePathStep::Member(name.to_owned()))
+                    .collect(),
+            },
             trace_position: Some(TracePosition::new("frame-0".to_owned())),
         }
+    }
+
+    fn agrees(record: SeparatingWitnessRecord) -> WitnessCheck {
+        WitnessCheck::Agrees(Some(Box::new(record)))
     }
 
     /// FR-072-AC-1 (TC-189): a `Witness`-arm agreement settles
@@ -426,7 +689,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            Some((EvaluatedValue::Boolean(true), record(vec!["field"]))),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(record(vec!["field"])),
             regions(),
             charges(),
         );
@@ -435,6 +699,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
             Some(EvaluatedValue::Boolean(true)),
+            &WitnessCheck::Agrees(None),
             regions(),
             charges(),
         );
@@ -468,14 +733,15 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
-            Some((EvaluatedValue::Boolean(false), record(vec!["field"]))),
+            Some(EvaluatedValue::Boolean(false)),
+            agrees(record(vec!["field"])),
             regions(),
             charges(),
         );
         assert_eq!(disagreeing.settlement(), WitnessSettlement::Inconclusive);
         assert_eq!(
             disagreeing.disagreement(),
-            Some(DisagreementCause::Verdicts {
+            Some(&DisagreementCause::Verdicts {
                 proved: Verdict::from_category(ProofCategory::Success),
                 replayed: Verdict::from_category(ProofCategory::Refusal),
             })
@@ -488,6 +754,7 @@ mod tests {
             Verdict::from_category(ProofCategory::Refusal),
             ProofCategory::Refusal,
             Some(EvaluatedValue::Boolean(false)),
+            &WitnessCheck::Agrees(None),
             regions(),
             charges(),
         );
@@ -509,13 +776,14 @@ mod tests {
             violation,
             ProofCategory::Violation,
             None,
+            WitnessCheck::Agrees(None),
             regions(),
             charges(),
         );
         assert_eq!(witness.settlement(), WitnessSettlement::Inconclusive);
         assert_eq!(
             witness.disagreement(),
-            Some(DisagreementCause::NoValue {
+            Some(&DisagreementCause::NoValue {
                 proved: violation,
                 replayed: violation,
             })
@@ -528,6 +796,7 @@ mod tests {
             violation,
             ProofCategory::Violation,
             None,
+            &WitnessCheck::Agrees(None),
             regions(),
             charges(),
         );
@@ -556,10 +825,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            Some((
-                EvaluatedValue::Boolean(true),
-                record(vec!["outer", "items", "member"]),
-            )),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(record(vec!["outer", "items", "member"])),
             regions(),
             charges(),
         );
@@ -574,19 +841,16 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            Some((EvaluatedValue::Boolean(true), read_back_record.clone())),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(read_back_record.clone()),
             regions(),
             charges(),
         );
         assert_eq!(round_tripped.record(), Some(&read_back_record));
-        assert_eq!(
-            round_tripped.record().unwrap().deciding_element,
-            EvaluatedValue::Boolean(true)
-        );
-        assert_eq!(round_tripped.record().unwrap().index, 2);
+        assert_eq!(round_tripped.record().unwrap().index, Some(2));
         assert_eq!(
             round_tripped.record().unwrap().value_path,
-            vec!["outer", "items", "member"]
+            record(vec!["outer", "items", "member"]).value_path
         );
         assert_eq!(
             round_tripped.record().unwrap().trace_position,
@@ -597,10 +861,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            Some((
-                EvaluatedValue::Boolean(true),
-                record(vec!["outer", "items", "other_member"]),
-            )),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(record(vec!["outer", "items", "other_member"])),
             regions(),
             charges(),
         );
@@ -621,10 +883,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Success),
             Verdict::from_category(ProofCategory::Success),
             ProofCategory::Success,
-            Some((
-                EvaluatedValue::Boolean(true),
-                record(vec![huge_segment.as_str()]),
-            )),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(record(vec![huge_segment.as_str()])),
             regions(),
             charges(),
         );
@@ -731,7 +991,8 @@ mod tests {
             Verdict::from_category(ProofCategory::Violation),
             Verdict::from_category(ProofCategory::Violation),
             ProofCategory::Violation,
-            Some((EvaluatedValue::Boolean(true), record(vec!["x"]))),
+            Some(EvaluatedValue::Boolean(true)),
+            agrees(record(vec!["x"])),
             regions(),
             charges(),
         ));

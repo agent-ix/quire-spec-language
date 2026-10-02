@@ -61,7 +61,7 @@ pub(super) fn snapshot(
 }
 
 /// One invocation of `attemptUpdate` with self `child`, and its request.
-struct FrameInput {
+pub(super) struct FrameInput {
     invocation: DocumentRef,
     pre: DocumentRef,
     post: DocumentRef,
@@ -72,7 +72,7 @@ struct FrameInput {
 /// `attemptUpdate` over them, `edit` applied to the invocation document
 /// before its digest is taken, into a `Frame` request selecting
 /// `operation_name` over `request_builder`'s unit.
-fn frame_input(
+pub(super) fn frame_input(
     request_builder: fn(ClauseRunSelection) -> ClauseRunRequest,
     operation_name: &str,
     pre_objects: &[serde_json::Value],
@@ -159,7 +159,7 @@ fn emitted_frame_identity() -> NodeKey {
     identity
 }
 
-fn run(input: FrameInput) -> super::super::ClauseRunReport {
+pub(super) fn run(input: FrameInput) -> super::super::ClauseRunReport {
     run_clause(input.request).expect("a well-formed request always reports")
 }
 

@@ -24,6 +24,10 @@ use quire_exact::Meter;
 /// impl) instead nests under `s6a`).
 pub(crate) mod protocol_clause;
 
+/// FR-265 and FR-268: what a state-clause evaluation reports beside its
+/// outcome, and the separation check's types.
+pub(crate) mod separation;
+
 /// ADR-012 §2's `ReferenceEvaluation`: the `evaluate` hook every family
 /// implements except `Relation` (which has no native evaluation: S6a's input
 /// type admits no `Relation`, ADR-012 §2 and FR-090-AC-4, so no S6a arm or

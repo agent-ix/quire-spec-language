@@ -26,20 +26,21 @@ provision.
 1. `AllBelow` over `high` carrying FR-265-AC-1's record, on the `Witness`
    and the `Input` arm; `NestedAll` over `high` with FR-265-AC-4's record;
    `FilteredAll` over `high` with FR-265-AC-5's record.
-2. `AllBelow` over `high` with a record naming `leaf` at index 2; with a
+2. `AllBelow` over `high` with a record naming 600 at index 2; with a
    record naming `GuardedAll`'s `forall`; with no record.
 3. Call the separation check over the admitted `high` observation and
    `AllBelow` with FR-265-AC-1's record; with its quantifier set to a node
    outside the claim; with index 3; with the value path naming another
-   member; with the deciding element `leaf` at index 1; with `root` at
+   member; with the deciding element 700 at index 1; with 0 at
    index 0. Repeat FR-265-AC-1's record over variants of `AllBelow` whose
    domain expression evaluates `undefined` on `high`, whose body evaluates
-   `undefined` for `mid`, and whose domain is refused (a `lookup` of an
-   absent key under `absent refused`); then over `AllBelow` with the
+   `undefined` for `mid`, and whose domain is refused (a `count` into
+   `Int[0, 0]` of a one-element collection); then over `AllBelow` with the
    evaluation meter one unit below step 2's need.
 4. TC-517 step 1's `VersionUnchanged` and `ParentOrder` envelopes; an
    `AllBelow` envelope whose reader bound is smaller than its encoded
-   record; step 1's `Witness`-arm envelope twice.
+   record, by a long member name, a long text deciding element or a long
+   object identity in its value path; step 1's `Witness`-arm envelope twice.
 
 Tag the tests `#[trace("TC-743", "FR-268-AC-n")]`.
 

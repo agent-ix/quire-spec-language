@@ -15,10 +15,14 @@ use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     ProtocolClauseUnsupported, StateModelUndefined,
 };
+use super::s6a::separation::{
+    locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
+    WitnessClaim,
+};
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot,
-    Scope, Slot, Visit,
+    Arithmetic, CheckedGraph, Connective, DispatchTable, Node, NodeKind, Operator, OrderedKind,
+    RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -27,8 +31,8 @@ use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use quire_exact::Rational;
 use quire_exact::{
-    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, FieldValue,
-    ObjectReference, OptionValue, Value, ValueType,
+    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
+    CompositeValue, FieldValue, ObjectReference, OptionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -180,6 +184,48 @@ impl From<ModelQueryHalt> for Halt {
     }
 }
 
+/// QSpec FR-207 "Computed collections": the source position of each
+/// element of `formed`, the collection a `map` or `filter` formed (with
+/// `kind`) from `results`, where `results[i]` came from source position
+/// `sources[i]`. A sequence or ordered set keeps the results' order (an
+/// ordered set keeps each first occurrence); a set or bag is in canonical
+/// key order, so the results are matched in that order. `None` when an
+/// element matches no result, which forming never produces.
+fn formed_sources(
+    kind: CollectionKind,
+    sources: &[usize],
+    results: &[Value],
+    formed: &[Value],
+) -> Option<Vec<usize>> {
+    let mut order: Vec<usize> = (0..results.len()).collect();
+    if matches!(kind, CollectionKind::Set | CollectionKind::Bag) {
+        order.sort_by(|left, right| {
+            compare_keys(&results[*left], &results[*right]).unwrap_or(Ordering::Equal)
+        });
+    }
+    let mut candidates = order.into_iter();
+    formed
+        .iter()
+        .map(|element| {
+            candidates
+                .by_ref()
+                .find(|i| compare_keys(&results[*i], element) == Some(Ordering::Equal))
+                .and_then(|i| sources.get(i).copied())
+        })
+        .collect()
+}
+
+/// A completed evaluation's value, or the evaluation that completed none.
+fn completed(evaluation: Evaluation) -> Result<Value, Box<Evaluation>> {
+    match evaluation.outcome {
+        FamilyOutcome::Evaluated(Outcome::Completed(value)) => Ok(value),
+        outcome => Err(Box::new(Evaluation {
+            outcome,
+            ..evaluation
+        })),
+    }
+}
+
 /// The real `Stop` a checked-invariant break constructs -- shared by
 /// [`invariant`] (for a `Halt`-returning `Machine` method) and
 /// [`Machine::run`]'s own no-value fallback (which calls [`Machine::stopped`]
@@ -321,6 +367,9 @@ struct Iteration<'a> {
     next: usize,
     awaiting: bool,
     results: Vec<Value>,
+    /// For a `map` or `filter` on the claim's own level, the source
+    /// position of each of `results`, in order (FR-265's source binding).
+    sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
 }
@@ -386,6 +435,12 @@ pub(crate) struct Machine<'a, 'm> {
     /// the call in the caller's own graph: the library's node locations
     /// name another package's source (ADR-015 D-5).
     imported: Vec<&'a Node>,
+    /// FR-265: what a state-clause evaluation records beside its outcome;
+    /// `None` for every other evaluation.
+    trail: Option<Trail>,
+    /// How many queries and folds are in progress: a node is on the
+    /// claim's own level only when none is.
+    iterations: usize,
 }
 
 impl<'a, 'm> Machine<'a, 'm> {
@@ -464,7 +519,26 @@ impl<'a, 'm> Machine<'a, 'm> {
             units: UnitScope::new(scope.types().units()),
             enum_members,
             imported: Vec::new(),
+            trail: None,
+            iterations: 0,
         }
+    }
+
+    /// FR-265: record `trail` while evaluating (a state clause's own
+    /// evaluation, or FR-268's separation check).
+    pub(crate) fn with_trail(mut self, trail: Trail) -> Self {
+        self.trail = Some(trail);
+        self
+    }
+
+    /// Whether a node evaluated now is on the claim's own level of a
+    /// traced evaluation: outside every query or fold body and every
+    /// called function's body.
+    fn on_claim_level(&self) -> bool {
+        self.trail.is_some()
+            && self.frames.len() == 1
+            && self.iterations == 0
+            && self.imported.is_empty()
     }
 
     /// Evaluate against `package` from now on, returning the package this
@@ -509,9 +583,38 @@ impl<'a, 'm> Machine<'a, 'm> {
         slots: usize,
         arguments: Vec<Value>,
     ) -> Result<Evaluation, InternalFault> {
+        self.enter_frame(slots, arguments);
+        self.drive(root)
+    }
+
+    /// FR-265: [`Self::run`] over a state clause's body, returning the
+    /// evaluation and the trail recorded beside it. The machine must carry
+    /// a trail ([`Self::with_trail`]).
+    pub(crate) fn run_traced(
+        mut self,
+        root: &'a Node,
+        slots: usize,
+        arguments: Vec<Value>,
+    ) -> Result<(Evaluation, Trail), InternalFault> {
+        self.enter_frame(slots, arguments);
+        let evaluation = self.drive(root)?;
+        let trail = self
+            .trail
+            .take()
+            .ok_or_else(|| InternalFault::new("S6a", "traced-evaluation-carries-a-trail"))?;
+        Ok((evaluation, trail))
+    }
+
+    /// Push the outermost frame: `arguments` in its first slots.
+    fn enter_frame(&mut self, slots: usize, arguments: Vec<Value>) {
         let mut frame: Vec<Option<Value>> = arguments.into_iter().map(Some).collect();
         frame.resize(slots.max(frame.len()), None);
         self.frames.push(frame);
+    }
+
+    /// Evaluate `root` on the current frame to its outcome: the task loop
+    /// [`Self::run`] and FR-268's separation check share.
+    fn drive(&mut self, root: &'a Node) -> Result<Evaluation, InternalFault> {
         self.tasks.push(Task::Eval(root));
         while let Some(task) = self.tasks.pop() {
             // The task's node, borrowed from the checked tree, not
@@ -556,10 +659,97 @@ impl<'a, 'm> Machine<'a, 'm> {
             (Some(value), true) => Ok(Evaluation {
                 outcome: FamilyOutcome::Evaluated(Outcome::Completed(value)),
                 location: None,
-                losses: self.losses,
+                losses: std::mem::take(&mut self.losses),
             }),
             _ => Self::stopped(checked_invariant(), root.location()),
         }
+    }
+
+    /// FR-268 (ADR-031 SW-13): the separation check's steps 2 to 4 over
+    /// `quantifier`, a `forall` or `exists` node of a state clause's claim
+    /// that step 1 resolved, with the clause's bindings in its first slots.
+    /// `lets` are the `let` nodes on the path from the claim's root to
+    /// `quantifier`, outermost first: their values are bound before the
+    /// domain evaluates (ADR-031 SW-4). The machine must carry a trail, so
+    /// the domain's provenance is recorded. Every evaluation is charged to
+    /// this machine's meter.
+    pub(crate) fn separate(
+        mut self,
+        slots: usize,
+        arguments: Vec<Value>,
+        lets: &[&'a Node],
+        quantifier: &'a Node,
+        claim: WitnessClaim<'_>,
+    ) -> Result<Separation, InternalFault> {
+        let fault = || InternalFault::new("S6a", "separation-check-over-a-checked-claim");
+        let NodeKind::Query {
+            visit,
+            slot,
+            source,
+            body,
+        } = quantifier.kind()
+        else {
+            return Err(fault());
+        };
+        self.enter_frame(slots, arguments);
+        for binding in lets {
+            let NodeKind::Let { slot, value, .. } = binding.kind() else {
+                return Err(fault());
+            };
+            match completed(self.drive(value)?) {
+                Ok(bound) => *self.slot(*slot).map_err(|_| fault())? = Some(bound),
+                Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Domain, stopped)),
+            }
+        }
+        let domain = match completed(self.drive(source)?) {
+            Ok(Value::Collection(domain)) => domain,
+            Ok(_) => return Err(fault()),
+            Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Domain, stopped)),
+        };
+        let Some(provenance) = self.provenance_of(&domain, source) else {
+            return Err(fault());
+        };
+        let found = (0..domain.elements().len())
+            .find(|j| provenance.position(*j) == Some(claim.index))
+            .and_then(|j| domain.elements().get(j));
+        let Some(element) = found else {
+            return Ok(Separation::Unmet(SeparationStep::Element));
+        };
+        if provenance.path(claim.index) != *claim.value_path
+            || compare_keys(element, claim.element) != Some(Ordering::Equal)
+        {
+            return Ok(Separation::Unmet(SeparationStep::Element));
+        }
+        *self.slot(*slot).map_err(|_| fault())? = Some(element.clone());
+        let separates = match completed(self.drive(body)?) {
+            Ok(Value::Boolean(holds)) => match visit {
+                Visit::Forall => !holds,
+                Visit::Exists => holds,
+                Visit::Map | Visit::Filter | Visit::Count | Visit::Sum => return Err(fault()),
+            },
+            Ok(_) => return Err(fault()),
+            Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Body, stopped)),
+        };
+        Ok(if separates {
+            Separation::Holds
+        } else {
+            Separation::Unmet(SeparationStep::Body)
+        })
+    }
+
+    /// FR-265: where `collection`'s elements are stored: its recorded
+    /// provenance (a member or a record field read from a stored object, a
+    /// conversion or selection of a stored collection, a literal), or, for a
+    /// collection with no stored location (computed by a call), the
+    /// collection the expression at `node` builds inside the claim
+    /// (QSpec FR-207).
+    fn provenance_of(&self, collection: &Arc<CollectionValue>, node: &Node) -> Option<Provenance> {
+        let trail = self.trail.as_ref()?;
+        if let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(collection))) {
+            return Some(provenance.clone());
+        }
+        let occurrence = occurrence_at(self.graph, node.location(), None)?;
+        Some(Provenance::built(trail.observation.clone(), occurrence))
     }
 
     /// Converts a stop to an `Evaluation`. A kernel `CheckedInvariant` is an
@@ -746,7 +936,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 else {
                     return Err(invariant());
                 };
-                let taken = if self.pop_boolean()? { then } else { otherwise };
+                let condition = self.pop_boolean()?;
+                self.decide(node, condition);
+                let taken = if condition { then } else { otherwise };
                 self.tasks.push(Task::Eval(taken));
                 Ok(())
             }
@@ -755,6 +947,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let left = self.pop_boolean()?;
+                self.decide(node, left);
                 let skipped = match connective {
                     Connective::And => (!left).then_some(false),
                     Connective::Or => left.then_some(true),
@@ -1104,7 +1297,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     return Err(invariant());
                 };
                 let slot = composite.slots().get(*index).ok_or_else(invariant)?;
-                Self::project(slot, *optional, node.value_type())?
+                let value = Self::project(slot, *optional, node.value_type())?;
+                self.note_field(&composite, *index, &value);
+                value
             }
             NodeKind::Attribute {
                 field,
@@ -1135,7 +1330,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .objects_for(node)?
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
-                Self::project(slot, *optional, node.value_type())?
+                let value = Self::project(slot, *optional, node.value_type())?;
+                self.note_member(node, &reference, &field.name, &value);
+                value
             }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {
@@ -1147,10 +1344,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Option(option) = self.pop()? else {
                     return Err(invariant());
                 };
-                option
+                let payload = option
                     .payload()
                     .cloned()
-                    .ok_or(Stop::Undefined(Undefined::NoneValue))?
+                    .ok_or(Stop::Undefined(Undefined::NoneValue))?;
+                self.note_unwrapped(&option, &payload);
+                payload
             }
             NodeKind::Call {
                 function,
@@ -1258,7 +1457,9 @@ impl<'a, 'm> Machine<'a, 'm> {
                 elements,
             } => {
                 let occurrences = self.pop_many(elements.len())?;
-                outcome_into_stop(form(collection_type, occurrences, self.meter))?
+                let value = outcome_into_stop(form(collection_type, occurrences, self.meter))?;
+                self.note_built(node, &value);
+                value
             }
             NodeKind::ConvertCollection { target, .. } => {
                 let source = self.pop_collection()?;
@@ -1276,13 +1477,19 @@ impl<'a, 'm> Machine<'a, 'm> {
                     charge_visit(self.meter)?;
                     produced.push(element.clone());
                 }
-                if source_kind == CollectionKind::Sequence
+                // Only a traced run reads the kept elements again.
+                let kept = self.trail.is_some().then(|| produced.clone());
+                let value = if source_kind == CollectionKind::Sequence
                     && target.kind() != CollectionKind::Sequence
                 {
                     outcome_into_stop(form(target, produced, self.meter))?
                 } else {
                     outcome_into_stop(form_grouped(target, produced, self.meter))?
+                };
+                if let Some(kept) = kept {
+                    self.note_converted(&source, &kept, &value);
                 }
+                value
             }
             NodeKind::ConvertScalar(operand, _) => {
                 let value = self.pop()?;
@@ -1713,6 +1920,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     }
 
     fn start_iteration(&mut self, node: &'a Node) -> Result<(), Halt> {
+        self.iterations = self.iterations.saturating_add(1);
         let (identity, reduce) = match node.kind() {
             NodeKind::Fold { identity, .. } => (
                 match identity {
@@ -1730,6 +1938,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             next: 0,
             awaiting: false,
             results: Vec::new(),
+            sources: Vec::new(),
             accumulator: identity,
             count: Integer::zero(),
         });
@@ -1762,11 +1971,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 NodeKind::Query { visit, body, .. } => match (visit, result) {
                     (Visit::Map, value) => {
                         iteration.results.push(value);
+                        iteration.sources.push(iteration.next - 1);
                         false
                     }
                     (Visit::Filter, Value::Boolean(kept)) => {
                         if kept {
                             iteration.results.push(element);
+                            iteration.sources.push(iteration.next - 1);
                         }
                         false
                     }
@@ -1825,6 +2036,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 _ => return Err(invariant()),
             };
             if stop_early {
+                self.iterations = self.iterations.saturating_sub(1);
+                self.note_stop(&iteration)?;
                 let found = matches!(
                     node.kind(),
                     NodeKind::Query {
@@ -1866,19 +2079,234 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(())
     }
 
+    /// FR-265: record `value` as the decision of the `and`, `or`,
+    /// `implies` or `if` at `node`, on the claim's own level.
+    fn decide(&mut self, node: &Node, value: bool) {
+        if self.on_claim_level() {
+            if let Some(trail) = self.trail.as_mut() {
+                trail.decide(node.location(), value);
+            }
+        }
+    }
+
+    /// FR-265: a collection literal at `node` on the claim's own level is
+    /// built inside the claim (QSpec FR-207-AC-9).
+    fn note_built(&mut self, node: &Node, value: &Value) {
+        if !matches!(value, Value::Collection(_)) {
+            return;
+        }
+        if !self.on_claim_level() {
+            return;
+        }
+        let Some(occurrence) =
+            occurrence_at(self.graph, node.location(), Some(Operator::Collection))
+        else {
+            return;
+        };
+        if let Some(trail) = self.trail.as_mut() {
+            let provenance = Provenance::built(trail.observation.clone(), occurrence);
+            trail.record(value, provenance);
+        }
+    }
+
+    /// FR-265: a collection or record read from `member` of `object` at
+    /// `node` on the claim's own level is stored there, in the observation
+    /// the read observes.
+    fn note_member(&mut self, node: &Node, object: &ObjectReference, member: &str, value: &Value) {
+        if !locatable(value) || !self.on_claim_level() {
+            return;
+        }
+        let pre = self.reads.is_some_and(|reads| {
+            reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+        });
+        if let Some(trail) = self.trail.as_mut() {
+            let observation = match (&trail.pre, pre) {
+                (Some(observation), true) => observation.clone(),
+                _ => trail.observation.clone(),
+            };
+            let provenance = Provenance::member(observation, object.clone(), member.to_owned());
+            trail.record(value, provenance);
+        }
+    }
+
+    /// FR-265: field `index` of a record with a stored location is stored
+    /// at that location's field of the same name (QSpec FR-207's field
+    /// selection). A tuple position has no field spelling and is not
+    /// located.
+    fn note_field(&mut self, composite: &Arc<CompositeValue>, index: usize, value: &Value) {
+        if !locatable(value) || !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(record) = trail.provenance(&Value::Composite(Arc::clone(composite))) else {
+            return;
+        };
+        let Some(CompositeShape::Record(fields)) = self
+            .scope
+            .types()
+            .composite(composite.declaration())
+            .map(|declaration| declaration.shape())
+        else {
+            return;
+        };
+        let Some(provenance) = fields
+            .get(index)
+            .and_then(|field| record.field(field.name()))
+        else {
+            return;
+        };
+        trail.record(value, provenance);
+    }
+
+    /// FR-265: the payload of a present optional value with a stored
+    /// location is stored at that location's option-value selection
+    /// (QSpec FR-207).
+    fn note_unwrapped(&mut self, option: &Arc<OptionValue>, payload: &Value) {
+        if !locatable(payload) || !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(provenance) = trail
+            .provenance(&Value::Option(Arc::clone(option)))
+            .and_then(Provenance::option_value)
+        else {
+            return;
+        };
+        trail.record(payload, provenance);
+    }
+
+    /// FR-265: a conversion of a collection with a recorded location keeps
+    /// each element's stored position: `produced` lists the elements the
+    /// conversion kept, in source order, and `value` is what it formed.
+    fn note_converted(&mut self, source: &Arc<CollectionValue>, produced: &[Value], value: &Value) {
+        let Value::Collection(collection) = value else {
+            return;
+        };
+        if !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(provenance) = trail.provenance(&Value::Collection(Arc::clone(source))) else {
+            return;
+        };
+        // Each kept element's position in the source, in source order.
+        let mut cursor = 0usize;
+        let mut sources = Vec::with_capacity(produced.len());
+        for element in produced {
+            let Some(offset) = source.elements()[cursor..]
+                .iter()
+                .position(|candidate| compare_keys(candidate, element) == Some(Ordering::Equal))
+            else {
+                return;
+            };
+            sources.push(cursor + offset);
+            cursor += offset + 1;
+        }
+        let kind = collection.collection_type().kind();
+        let Some(positions) = formed_sources(kind, &sources, produced, collection.elements())
+        else {
+            return;
+        };
+        if let Some(selected) = provenance.select(&positions) {
+            trail.record(value, selected);
+        }
+    }
+
+    /// FR-265 (QSpec FR-207 "Computed collections"): a `map` or `filter`
+    /// on the claim's own level whose `results` came from `source_value`'s
+    /// elements at `sources` formed `value`; each element of `value` is
+    /// bound from the stored or built collection `source_value` is.
+    fn note_computed(
+        &mut self,
+        source_value: &Arc<CollectionValue>,
+        source: &Node,
+        sources: &[usize],
+        results: &[Value],
+        value: &Value,
+    ) {
+        let Value::Collection(collection) = value else {
+            return;
+        };
+        let Some(provenance) = self.provenance_of(source_value, source) else {
+            return;
+        };
+        let kind = collection.collection_type().kind();
+        let Some(positions) = formed_sources(kind, sources, results, collection.elements()) else {
+            return;
+        };
+        if let (Some(selected), Some(trail)) = (provenance.select(&positions), self.trail.as_mut())
+        {
+            trail.record(value, selected);
+        }
+    }
+
+    /// FR-265 (ADR-031 SW-1, SW-9): `iteration`, a `forall` or `exists`,
+    /// stopped at its last visited element; on the claim's own level,
+    /// report it with its quantifier, the element, its source position and
+    /// value path.
+    fn note_stop(&mut self, iteration: &Iteration<'a>) -> Result<(), Halt> {
+        if !self.on_claim_level() {
+            return Ok(());
+        }
+        let NodeKind::Query { source, .. } = iteration.node.kind() else {
+            return Err(invariant());
+        };
+        let position = iteration.next.checked_sub(1).ok_or_else(invariant)?;
+        let element = iteration
+            .source
+            .elements()
+            .get(position)
+            .cloned()
+            .ok_or_else(invariant)?;
+        let quantifier = occurrence_at(
+            self.graph,
+            iteration.node.location(),
+            Some(Operator::Quantify),
+        )
+        .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "quantifier-has-an-occurrence")))?;
+        let provenance = self
+            .provenance_of(&iteration.source, source)
+            .ok_or_else(|| Halt::Fault(InternalFault::new("S6a", "domain-has-an-occurrence")))?;
+        let index = provenance.position(position).ok_or_else(invariant)?;
+        let report = StopReport {
+            quantifier,
+            index,
+            element,
+            value_path: provenance.path(index),
+        };
+        if let Some(trail) = self.trail.as_mut() {
+            trail.stopped(iteration.node.location(), report);
+        }
+        Ok(())
+    }
+
     fn finish(&mut self, iteration: Iteration<'a>) -> Result<(), Halt> {
+        self.iterations = self.iterations.saturating_sub(1);
         let node = iteration.node;
         let value = match node.kind() {
-            NodeKind::Query { visit, .. } => match visit {
+            NodeKind::Query { visit, source, .. } => match visit {
                 Visit::Map | Visit::Filter => {
                     let ValueType::Collection(result_type) = node.value_type() else {
                         return Err(invariant());
                     };
-                    if *visit == Visit::Map {
+                    let produced = self
+                        .on_claim_level()
+                        .then(|| (iteration.sources, iteration.results.clone()));
+                    let value = if *visit == Visit::Map {
                         outcome_into_stop(form(result_type, iteration.results, self.meter))?
                     } else {
                         outcome_into_stop(form_grouped(result_type, iteration.results, self.meter))?
+                    };
+                    if let Some((sources, results)) = produced {
+                        self.note_computed(&iteration.source, source, &sources, &results, &value);
                     }
+                    value
                 }
                 Visit::Forall => retain_scalar(Value::Boolean(true), self.meter)?,
                 Visit::Exists => retain_scalar(Value::Boolean(false), self.meter)?,
@@ -2515,6 +2943,117 @@ mod tests {
             charges,
             [ChargePoint::ModelDeref, ChargePoint::ModelNavigate],
             "deref(r).x charges model.deref once, then model.navigate once"
+        );
+    }
+
+    /// FR-265 (QSpec FR-207's field and option-value selections): on the
+    /// claim's own level, a record read from a stored object locates its
+    /// field `items` at the record's path plus a `Field` step, and the
+    /// payload of a present optional value stored there at that path plus
+    /// an `OptionValue` step. A domain package declares no record-typed
+    /// member, so no admitted snapshot stores a record; this drives
+    /// `note_field` and `note_unwrapped` directly.
+    #[trace("TC-740", "FR-265-AC-7")]
+    #[test]
+    fn a_stored_record_locates_its_field_and_an_option_its_payload() {
+        use super::super::s6a::separation::{
+            ObservationIdentity, RuntimeValuePath, ValuePathStep, ValuePathSubject,
+        };
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, FieldDeclaration as DeclaredField, TypeEnvironment,
+        };
+        let items_type =
+            quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let point = quire_exact::NodeKey::from_digest([4; 32]);
+        let record = CompositeDeclaration::new(
+            point,
+            "Holder",
+            CompositeShape::Record(vec![DeclaredField::new(
+                "items",
+                ValueType::collection(items_type.clone()),
+                quire_exact::Presence::Required,
+            )]),
+        );
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new([record], []).expect("one record admits"),
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("the record checks");
+        let package = qsl_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let observation = ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: "current".to_owned(),
+            revision_namespace: "ns".to_owned(),
+            revision: "1".to_owned(),
+        };
+        let mut machine = Machine::new(
+            package.graph().scope(),
+            package.graph(),
+            &objects,
+            &mut meter,
+            &[],
+        )
+        .with_trail(Trail::new(observation.clone(), None));
+        machine.enter_frame(0, Vec::new());
+
+        let items = quire_exact::from_admitted(
+            items_type.clone(),
+            vec![Value::Integer(Integer::from(1_i64))],
+        );
+        let stored = quire_exact::from_admitted_slots(
+            point,
+            vec![FieldValue::Present(items.clone())].into(),
+        );
+        let Value::Composite(holder) = &stored else {
+            panic!("a record value");
+        };
+        let object = ObjectReference::new(
+            quire_exact::UniverseId::from_digest([1; 32]),
+            quire_exact::EffectiveId::from_digest([2; 32]),
+            quire_exact::ObjectId::new("o".to_owned()).unwrap(),
+        );
+        let trail = machine.trail.as_mut().unwrap();
+        trail.record(
+            &stored,
+            Provenance::member(observation.clone(), object.clone(), "holder".to_owned()),
+        );
+        machine.note_field(holder, 0, &items);
+        let path = |steps: Vec<ValuePathStep>| RuntimeValuePath {
+            observation: observation.clone(),
+            subject: ValuePathSubject::Object(object.clone()),
+            steps,
+        };
+        let trail = machine.trail.as_ref().unwrap();
+        assert_eq!(
+            trail.provenance(&items).map(|located| located.path(0)),
+            Some(path(vec![
+                ValuePathStep::Member("holder".to_owned()),
+                ValuePathStep::Field("items".to_owned()),
+            ]))
+        );
+
+        let option = OptionValue::present(ValueType::collection(items_type), items.clone())
+            .expect("the payload admits");
+        let Value::Option(maybe) = &option else {
+            panic!("an optional value");
+        };
+        let trail = machine.trail.as_mut().unwrap();
+        trail.record(
+            &option,
+            Provenance::member(observation.clone(), object.clone(), "maybe".to_owned()),
+        );
+        let payload = maybe.payload().cloned().unwrap();
+        machine.note_unwrapped(maybe, &payload);
+        let trail = machine.trail.as_ref().unwrap();
+        assert_eq!(
+            trail.provenance(&payload).map(|located| located.path(0)),
+            Some(path(vec![
+                ValuePathStep::Member("maybe".to_owned()),
+                ValuePathStep::OptionValue,
+            ]))
         );
     }
 }

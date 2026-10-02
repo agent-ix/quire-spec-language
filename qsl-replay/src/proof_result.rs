@@ -51,6 +51,59 @@ impl ProofCategory {
     ];
 }
 
+/// QSpec FR-243's settlement basis: the closed vocabulary every truth
+/// result carries exactly one of (ADR-031 SW-3, SW-10). Compared by its
+/// exact label.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SettlementBasis {
+    /// `closed-scope`: the decision scope is complete and closed.
+    ClosedScope,
+    /// `decisive-witness`: a retained witness preserves a `satisfied`
+    /// truth.
+    DecisiveWitness,
+    /// `decisive-counterexample`: a retained counterexample preserves a
+    /// `violated` truth.
+    DecisiveCounterexample,
+    /// `unsettled`: execution completed but the truth is still pending.
+    Unsettled,
+    /// `unavailable`: no truth was settled (a refusal, an undefined or
+    /// incomplete execution, an internal failure).
+    Unavailable,
+}
+
+impl SettlementBasis {
+    /// The exact QSpec FR-243 label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ClosedScope => "closed-scope",
+            Self::DecisiveWitness => "decisive-witness",
+            Self::DecisiveCounterexample => "decisive-counterexample",
+            Self::Unsettled => "unsettled",
+            Self::Unavailable => "unavailable",
+        }
+    }
+
+    /// Whether this basis is decisive, so a separating witness record
+    /// accompanies it (QSpec FR-351).
+    pub fn is_decisive(self) -> bool {
+        match self {
+            Self::DecisiveWitness | Self::DecisiveCounterexample => true,
+            Self::ClosedScope | Self::Unsettled | Self::Unavailable => false,
+        }
+    }
+
+    /// The decisive basis for a clause whose truth is `truth` (ADR-031
+    /// SW-3): `decisive-witness` for `true`, `decisive-counterexample` for
+    /// `false`.
+    pub fn decisive(truth: bool) -> Self {
+        if truth {
+            Self::DecisiveWitness
+        } else {
+            Self::DecisiveCounterexample
+        }
+    }
+}
+
 /// FR-331's `incomplete` cause: which charge point the run failed to complete.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum IncompleteCause {

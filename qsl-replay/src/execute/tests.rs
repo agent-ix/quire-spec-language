@@ -236,8 +236,9 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
         result.settlement(),
         WitnessSettlement::ReproducedWithEvaluatedWitness
     );
-    let record = result.record().expect("a decisive settlement has a record");
-    assert_eq!(record.deciding_element, EvaluatedValue::Boolean(false));
+    // FR-098-AC-2 (ADR-031 SW-7): a function call's result has no
+    // decisive occurrence, so the agreement carries no record.
+    assert!(result.record().is_none());
 
     let refused = replay(witness(String::new())).unwrap_err();
     assert!(
@@ -281,7 +282,7 @@ fn tc_444_a_disagreement_settles_inconclusive() {
     assert_eq!(holds.settlement(), InputSettlement::Inconclusive);
     assert_eq!(
         holds.disagreement(),
-        Some(crate::DisagreementCause::Verdicts {
+        Some(&crate::DisagreementCause::Verdicts {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Success),
         })
@@ -345,7 +346,7 @@ fn tc_444_a_nested_function_call_disagreement_settles_inconclusive() {
     assert_eq!(result.settlement(), InputSettlement::Inconclusive);
     assert_eq!(
         result.disagreement(),
-        Some(crate::DisagreementCause::Verdicts {
+        Some(&crate::DisagreementCause::Verdicts {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Success),
         })

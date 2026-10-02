@@ -15,45 +15,56 @@ Verify FR-265's derivation over FR-265's `witness` unit: a decisive
 quantifier, element, index and value path; every other path yields
 `closed-scope`; an incomplete evaluation yields no basis.
 
-Scope: FR-265-AC-1 to FR-265-AC-6.
+Scope: FR-265-AC-1 to FR-265-AC-7.
 
 ## Test Procedure
 
 Compile FR-265's `witness` unit against FR-108's `Config` domain package.
-Admit FR-265's `low`, `high` and `tail` snapshots by FR-106 for each
-invariant (`self` `child` in `low`, `mid` in `high` and `tail`, unless a
-step says otherwise). Evaluate each clause once by FR-107 and pass the
-evaluation, its stop reports and the observation to the derivation.
+Admit FR-265's `low` and `high` snapshots by FR-106 for each invariant
+(`self` `child` in `low`, `mid` in `high`, unless a step says otherwise).
+Evaluate each clause once by FR-107 and pass the evaluation, its stop
+reports and the observation to the derivation.
 
-1. `AllBelow` over `high`, over `tail` and over `low`; record the work
-   charges of the `high` and `tail` evaluations.
+1. `AllBelow` over `high` and over `low`; count the element visits of the
+   `high` evaluation.
 2. `SomeAtLeast` over `high` and `low`; `NotAllBelow` over `high`;
    `EqualsAll` over `high`.
 3. `GuardedAll` over `high` with `self` `mid`, then with `self` `root`;
    `LetAll` over `high`; `OrAll` over `high`.
 4. `NestedAll` over `high`.
-5. `FilteredAll` and `MappedAll` over `high`; `BuiltAll` over `low`.
+5. `FilteredAll` and `MappedAll` over `high`.
 6. `AllBelow` over `high` with the evaluation budget at zero; `NoneSelected`
    over `low`.
+7. Run FR-265's member clauses through `run_clause` with `self` `mid`:
+   `MemberAll` with `history` `[0, 600, 700]`; `ConvertedAll` with
+   `history` `[700, 0, 600]`; `MaybeAll` with `history` `[0, 600, 700]`;
+   `MemberPre` over a pre-call observation with
+   `history` `[0, 600, 700]`, and over an invocation whose pre and post
+   snapshots hold that `history`.
 
 Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
 
 ## Expected Results
 
 - Step 1: `decisive-counterexample`, record (`AllBelow`'s `forall`
-  occurrence key, reference to `mid`, index 1, population-root path, no
-  trace position) for `high` and an equal record for `tail`, with equal work
-  charges; `closed-scope` and no record for `low`.
-- Step 2: `decisive-witness` with `mid` at index 1 naming the `exists`, then
+  occurrence key, 600, index 1, a path rooted at the built list ending in
+  index step 1, no trace position) for `high`, with two element visits;
+  `closed-scope` and no record for `low`.
+- Step 2: `decisive-witness` with 600 at index 1 naming the `exists`, then
   `closed-scope` with no record; `decisive-witness` naming `NotAllBelow`'s
   `forall`; `closed-scope` with no record for `EqualsAll`.
-- Step 3: `AllBelow`-shaped record for `GuardedAll`'s `forall`, then
+- Step 3: a record for `GuardedAll`'s `forall` naming the reference to
+  `mid` at index 1, then
   `closed-scope`; a record for `LetAll`'s `forall`; `closed-scope` and no
   record for `OrAll`.
-- Step 4: one record naming the outer `forall`, the reference to `root`,
-  index 0; no inner occurrence appears.
-- Step 5: `mid`, index 1, population root (`FilteredAll`); element 600,
-  index 1, population root (`MappedAll`); element 600, index 1, path rooted
-  at a `built` subject naming the list expression's occurrence key and
-  ending in an index step for position 1 (`BuiltAll`).
+- Step 4: one record naming the outer `forall`, element 0, index 0; no
+  inner occurrence appears.
+- Step 5: element 600, index 2 (`FilteredAll`); element 601, index 1
+  (`MappedAll`); each path rooted at a `built` subject naming the list's
+  occurrence key and ending in an index step for its index.
 - Step 6: `incomplete`, no basis, no record; `closed-scope`, no record.
+- Step 7: 600 at index 1 on the path `mid` / member `history` in the current
+  observation; 600 at index 2 on the same path; 600 at index 1 on the path
+  `mid` / member `maybeHistory` / option value; for `MemberPre`, equal
+  records in both runs, 600 at index 1, the path naming the pre
+  observation.

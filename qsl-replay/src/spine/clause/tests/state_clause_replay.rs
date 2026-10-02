@@ -241,6 +241,7 @@ fn case_with(
     let payload = StateClauseCounterexample {
         clause: name(clause),
         observation: documents.observation.clone(),
+        witness: None,
     };
     let (clause_node, occurrence_key) = identity;
     let envelope = WitnessEnvelope::reconstruct(packet(
@@ -302,11 +303,9 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
     );
     assert_eq!(arm.category(), ProofCategory::Violation);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
-    let record = arm.record().expect("a reproduced witness has its record");
-    assert_eq!(record.deciding_element, EvaluatedValue::Boolean(false));
-    assert_eq!(record.index, 0);
-    assert!(record.value_path.is_empty());
-    assert_eq!(record.trace_position, None);
+    // FR-122-AC-1, FR-268-AC-4: neither clause reaches a decisive
+    // occurrence (FR-265), so the result carries no QSpec FR-351 record.
+    assert!(arm.record().is_none());
     assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
     assert_eq!(result.package_id(), package_id);
@@ -383,7 +382,7 @@ fn assert_inconclusive_by_verdicts(result: &StateClauseReplayResult) {
     assert_eq!(arm.settlement(), WitnessSettlement::Inconclusive);
     assert_eq!(
         arm.disagreement(),
-        Some(DisagreementCause::Verdicts {
+        Some(&DisagreementCause::Verdicts {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Success),
         })
@@ -437,7 +436,7 @@ fn an_exhausted_evaluation_budget_is_inconclusive_with_no_value() {
     assert_eq!(arm.settlement(), WitnessSettlement::Inconclusive);
     assert_eq!(
         arm.disagreement(),
-        Some(DisagreementCause::NoValue {
+        Some(&DisagreementCause::NoValue {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Incomplete),
         })
@@ -566,6 +565,7 @@ fn a_source_edit_refuses_by_the_stale_package_rule() {
         StateClauseCounterexample {
             clause: name("VersionUnchanged"),
             observation: documents.observation,
+            witness: None,
         },
     ))
     .unwrap();
@@ -592,6 +592,7 @@ fn a_clause_naming_no_state_clause_refuses_missing_name() {
         let payload = StateClauseCounterexample {
             clause: name(missing),
             observation: case.documents.observation.clone(),
+            witness: None,
         };
         let package_id = package_digest(case.unit.compiled.emitted.package_id());
         case.envelope = WitnessEnvelope::reconstruct(packet(

@@ -53,7 +53,7 @@ pub use identity::{
 pub use proof_result::{
     read_backend_provider_envelope, BackendProviderSource, EmptyEnvelopeSet, IncompleteCause,
     InconclusiveCause, ProofCategory, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    TerminalRecord, TerminalValue, UnavailabilityCause,
+    SettlementBasis, TerminalRecord, TerminalValue, UnavailabilityCause,
 };
 // The inputs `call_site` takes and the typed operation name it and FR-115
 // select by. They are defined in `spine` because the spine compile reads
@@ -104,8 +104,15 @@ pub use request::{
     ReplayRequestWire, StageLimits, StateEnvironment,
 };
 pub use result::{
-    read_bounded, DisagreementCause, EvaluatedValue, InputArmResult, InputSettlement, ReplayResult,
-    SeparatingWitnessRecord, Verdict, WitnessArmResult, WitnessSettlement,
+    read_bounded, CauseCodecError, DisagreementCause, EvaluatedValue, InputArmResult,
+    InputSettlement, ReplayResult, SeparatingWitnessRecord, SeparationReason, SeparationRefusal,
+    Verdict, WitnessArmResult, WitnessCheck, WitnessFailure, WitnessSettlement,
+};
+// FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
+// path a separating witness record carries, re-exported so CG names them
+// through this crate (ADR-011 FB-05).
+pub use qsl_foundation::witness::{
+    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
 pub use witness::{
     CanonicalAssignment, ClaimedChange, DecodeRefusal, FamilyPayload, FrameCounterexample,

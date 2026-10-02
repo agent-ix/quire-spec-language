@@ -27,6 +27,7 @@ pub mod serde_object;
 pub mod source;
 pub mod source_map;
 pub mod wire_format;
+pub mod witness;
 
 pub use diagnostic::{
     CatalogCode, CatalogCoded, Category, Code, Diagnostic, InternalFault, Phase, SyntaxLimit,

@@ -37,8 +37,7 @@ use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
 use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
-    WitnessArmResult,
+    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
     compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
@@ -56,6 +55,8 @@ pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod state_clause;
 pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
+#[cfg(test)]
+pub(crate) use state_clause::{separate, settle_separation, stopped_reason, SeparationOutcome};
 
 /// The S1 limit a request names that is above this executor's reader
 /// limit (ADR-013 O-26: "a limit above the reader limit").
@@ -524,19 +525,10 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             proved,
             Verdict::from_category(replayed),
             replayed,
-            // A predicate's whole result decides it: the deciding element
-            // is the value itself, at no index, path or trace position.
-            value.map(|value| {
-                (
-                    value,
-                    SeparatingWitnessRecord {
-                        deciding_element: value,
-                        index: 0,
-                        value_path: Vec::new(),
-                        trace_position: None,
-                    },
-                )
-            }),
+            value,
+            // ADR-031 SW-7: a function call's or a frame check's result
+            // has no decisive occurrence, so it carries no record.
+            WitnessCheck::Agrees(None),
             regions,
             charges,
         )),
@@ -545,6 +537,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             Verdict::from_category(replayed),
             replayed,
             value,
+            &WitnessCheck::Agrees(None),
             regions,
             charges,
         )),

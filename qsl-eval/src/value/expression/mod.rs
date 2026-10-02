@@ -37,6 +37,10 @@ use s6a::{ReferenceEvaluation, S6aFamilyKind};
 
 pub use evaluate::Evaluation;
 pub use family::{InvalidQualifiedName, QualifiedName};
+pub use s6a::separation::{
+    ClauseEvaluation, ObservationIdentity, RuntimeValuePath, Separation, SeparationStep,
+    StopReport, ValuePathStep, ValuePathSubject, WitnessClaim,
+};
 
 // `CheckedExpression` is `check`'s own checked-output type; this module
 // imports it from `qsl_semantics::check` and re-exports none of it (FR-068-AC-10 is
@@ -343,12 +347,36 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// resolves to no state clause, or `InputRefusal::ObservationsMismatch`
     /// when `observations` were admitted for a different clause, in either
     /// case without charging `meter`.
+    ///
+    /// FR-265: the result carries, beside the evaluation, what the
+    /// evaluation recorded on the claim's own level: each decision and each
+    /// quantifier stop report ([`ClauseEvaluation`]).
     fn evaluate_clause(
         &self,
         clause: &QualifiedName,
         observations: &qsl_semantics::model::observation::AdmittedObservations,
         meter: &mut Meter,
-    ) -> Result<Evaluation, CallFailure>;
+    ) -> Result<ClauseEvaluation, CallFailure>;
+
+    /// FR-268 (ADR-031 SW-13): check that `claim` separates the state
+    /// clause `clause` over `observations`, charged to `meter`: step 1
+    /// resolves the claim's quantifier to a `forall` or `exists` node of the
+    /// clause's claim reached through `let` bodies, `if` branches, `not`
+    /// and the operands of `and`, `or` and `implies`; step 2 evaluates its
+    /// domain in the clause's bindings and the `let` bindings on that path;
+    /// step 3 reads the element at the claim's index and compares its value
+    /// path and value; step 4 evaluates the body once with the binder bound
+    /// to it.
+    ///
+    /// Refuses as [`Self::evaluate_clause`] does for an unknown clause or
+    /// mismatched observations.
+    fn check_separation(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        claim: WitnessClaim<'_>,
+        meter: &mut Meter,
+    ) -> Result<Separation, CallFailure>;
 
     /// FR-115: check `invocation` (admitted by FR-106's checks 1 and 3 to
     /// 10) against the operation frame whose frame node identity is
@@ -364,6 +392,163 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         invocation: &qsl_semantics::model::observation::AdmittedInvocation<'_>,
         meter: &mut Meter,
     ) -> Result<FrameEvaluation, CallFailure>;
+}
+
+/// What evaluating one state clause over its admitted observations reads
+/// (FR-107): the resolved declaration, the clause's own and pre object
+/// environments, the `self`/`result`/parameter bindings in slot order, and
+/// a fresh trail naming the observations (FR-265).
+struct ClauseSetup<'a> {
+    declaration: &'a qsl_semantics::check::CheckedStateClause,
+    current: &'a ObjectEnvironment,
+    pre: Option<&'a ObjectEnvironment>,
+    bindings: Vec<Value>,
+    trail: s6a::separation::Trail,
+}
+
+impl<'a> ClauseSetup<'a> {
+    fn of(
+        package: &'a CheckedPackage,
+        clause: &QualifiedName,
+        observations: &'a qsl_semantics::model::observation::AdmittedObservations,
+    ) -> Result<Self, CallFailure> {
+        let name = clause
+            .as_unqualified()
+            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+        let declaration = package
+            .graph()
+            .state_clause(name)
+            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
+        if declaration.identity() != observations.clause {
+            return Err(InputRefusal::ObservationsMismatch.into());
+        }
+        // The clause's own observation (FR-107): `current` for an
+        // invariant, `post` for a postcondition. A precondition's own
+        // observation is `pre`, and it reads every model read there
+        // (FR-104): an invocation also carries its post snapshot, which the
+        // clause never reads apart from `pre`; a pre-call observation
+        // carries the pre snapshot alone.
+        let current = match declaration.observation() {
+            qsl_semantics::check::Observation::Current => observations.current.as_ref(),
+            qsl_semantics::check::Observation::Post => observations.post.as_ref(),
+            qsl_semantics::check::Observation::Pre => {
+                observations.post.as_ref().or(observations.pre.as_ref())
+            }
+        }
+        .ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new(
+                "S6a",
+                "clause-observations-missing-the-clause-observation",
+            ))
+        })?;
+
+        let mut bindings = Vec::with_capacity(declaration.parameters().len());
+        bindings.push(Value::Reference(observations.self_object.clone()));
+        let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
+        // FR-104 "Behavior": slot 1 is `result` exactly when the checker's
+        // own typed `binds_result` says so (FR-064's string-edge
+        // rule) -- never decided here by comparing a parameter's name.
+        if declaration.binds_result() {
+            remaining.next();
+            let result = observations.result.clone().ok_or_else(|| {
+                CallFailure::Fault(InternalFault::new("S6a", "postcondition-result-missing"))
+            })?;
+            bindings.push(result);
+        }
+        for (parameter, _) in remaining {
+            let value = observations
+                .parameters
+                .iter()
+                .find(|(name, _)| name == parameter)
+                .map(|(_, value)| value.clone())
+                .ok_or_else(|| {
+                    CallFailure::Fault(InternalFault::new("S6a", "clause-parameter-not-admitted"))
+                })?;
+            bindings.push(value);
+        }
+        let pre = observations
+            .pre
+            .as_ref()
+            .map(|observation| s6a::separation::observation_identity(&observation.identity));
+        // A precondition reads the pre snapshot, so its value paths name it
+        // whether the run is pre-call or over an invocation (FR-104).
+        let own = match (declaration.observation(), &pre) {
+            (qsl_semantics::check::Observation::Pre, Some(pre)) => pre.clone(),
+            _ => s6a::separation::observation_identity(&current.identity),
+        };
+        let trail = s6a::separation::Trail::new(own, pre);
+        Ok(Self {
+            declaration,
+            current: &current.environment,
+            pre: observations
+                .pre
+                .as_ref()
+                .map(|observation| &observation.environment),
+            bindings,
+            trail,
+        })
+    }
+}
+
+/// FR-268 step 1 (ADR-031 SW-13): resolve `quantifier` in `graph` to a
+/// `forall` or `exists` node of `clause`'s claim, reached from the claim's
+/// root through `let` bodies, `if` branches, `not` and the operands of
+/// `and`, `or` and `implies` -- the nodes a decision path passes (SW-2), so
+/// no binder of an enclosing quantifier is in scope (SW-4). Returns the
+/// `let` nodes on the path, outermost first, and the quantifier node.
+/// `None` when the occurrence names no node of the package, a node of
+/// another declaration, or a node not reached that way.
+fn resolve_quantifier<'g>(
+    graph: &'g qsl_semantics::check::CheckedGraph,
+    clause: &'g qsl_semantics::check::CheckedStateClause,
+    quantifier: &qsl_foundation::source::provenance::OccurrenceKey,
+) -> Option<(
+    Vec<&'g qsl_semantics::check::Node>,
+    &'g qsl_semantics::check::Node,
+)> {
+    use qsl_semantics::check::{NodeKind, Visit};
+    let key = graph.semantic_graph().resolve_wire(quantifier.node())?;
+    let location = graph.occurrence(key, quantifier.origin())?;
+    let applies_quantify = matches!(
+        graph.semantic_graph().node(key).map(|node| node.body()),
+        Some(qsl_semantics::check::SemanticTerm::Application {
+            operator: qsl_semantics::check::Operator::Quantify,
+            ..
+        })
+    );
+    if !applies_quantify {
+        return None;
+    }
+    // Depth-first over the decision-path node kinds, each pending node with
+    // the `let` nodes above it.
+    let mut pending = vec![(clause.body(), Vec::new())];
+    while let Some((node, lets)) = pending.pop() {
+        match node.kind() {
+            NodeKind::Query {
+                visit: Visit::Forall | Visit::Exists,
+                ..
+            } if node.location() == location => return Some((lets, node)),
+            NodeKind::Let { body, .. } => {
+                let mut inner = lets;
+                inner.push(node);
+                pending.push((body, inner));
+            }
+            NodeKind::If {
+                then, otherwise, ..
+            } => {
+                pending.push((then, lets.clone()));
+                pending.push((otherwise, lets));
+            }
+            NodeKind::Not(operand) => pending.push((operand, lets)),
+            NodeKind::Connective(_, left, right) => {
+                pending.push((left, lets.clone()));
+                pending.push((right, lets));
+            }
+            // Every other node ends a decision path (ADR-031 SW-2).
+            _ => {}
+        }
+    }
+    None
 }
 
 impl CheckedPackageEvaluation for CheckedPackage {
@@ -426,78 +611,69 @@ impl CheckedPackageEvaluation for CheckedPackage {
         clause: &QualifiedName,
         observations: &qsl_semantics::model::observation::AdmittedObservations,
         meter: &mut Meter,
-    ) -> Result<Evaluation, CallFailure> {
-        let name = clause
-            .as_unqualified()
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        let declaration = self
-            .graph()
-            .state_clause(name)
-            .ok_or_else(|| InputRefusal::UnknownClause(clause.to_string()))?;
-        if declaration.identity() != observations.clause {
-            return Err(InputRefusal::ObservationsMismatch.into());
-        }
-        // The clause's own observation (FR-107): `current` for an
-        // invariant, `post` for a postcondition. A precondition's own
-        // observation is `pre`, and it reads every model read there
-        // (FR-104): an invocation also carries its post snapshot, which the
-        // clause never reads apart from `pre`; a pre-call observation
-        // carries the pre snapshot alone.
-        let current = match declaration.observation() {
-            qsl_semantics::check::Observation::Current => observations.current.as_ref(),
-            qsl_semantics::check::Observation::Post => observations.post.as_ref(),
-            qsl_semantics::check::Observation::Pre => {
-                observations.post.as_ref().or(observations.pre.as_ref())
-            }
-        }
-        .ok_or_else(|| {
-            CallFailure::Fault(InternalFault::new(
-                "S6a",
-                "clause-observations-missing-the-clause-observation",
-            ))
-        })?;
-        let pre_environment = observations
-            .pre
-            .as_ref()
-            .map(|observation| &observation.environment);
-
-        let mut bindings = Vec::with_capacity(declaration.parameters().len());
-        bindings.push(Value::Reference(observations.self_object.clone()));
-        let mut remaining = declaration.parameters().get(1..).unwrap_or(&[]).iter();
-        // FR-104 "Behavior": slot 1 is `result` exactly when the checker's
-        // own typed `binds_result` says so (FR-064's string-edge
-        // rule) -- never decided here by comparing a parameter's name.
-        if declaration.binds_result() {
-            remaining.next();
-            let result = observations.result.clone().ok_or_else(|| {
-                CallFailure::Fault(InternalFault::new("S6a", "postcondition-result-missing"))
-            })?;
-            bindings.push(result);
-        }
-        for (parameter, _) in remaining {
-            let value = observations
-                .parameters
-                .iter()
-                .find(|(name, _)| name == parameter)
-                .map(|(_, value)| value.clone())
-                .ok_or_else(|| {
-                    CallFailure::Fault(InternalFault::new("S6a", "clause-parameter-not-admitted"))
-                })?;
-            bindings.push(value);
-        }
-
-        let identity = declaration.identity();
+    ) -> Result<ClauseEvaluation, CallFailure> {
+        let setup = ClauseSetup::of(self, clause, observations)?;
+        let identity = setup.declaration.identity();
         let mut env = s6a::protocol_clause::ProtocolClauseEnv::new(
             self.graph(),
-            &current.environment,
-            pre_environment,
-            bindings,
+            setup.current,
+            setup.pre,
+            setup.bindings,
+            setup.trail,
         );
-        evaluate_declaration(
+        let evaluation = evaluate_declaration(
             S6aFamilyKind::ProtocolClause,
             &identity,
             EvaluationTarget::ProtocolClause(&mut env),
             meter,
+        )
+        .map_err(CallFailure::Fault)?;
+        let trail = env.trail.take().ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new(
+                "S6a",
+                "clause-evaluation-environment-carries-a-trail",
+            ))
+        })?;
+        Ok(ClauseEvaluation::new(evaluation, trail))
+    }
+
+    fn check_separation(
+        &self,
+        clause: &QualifiedName,
+        observations: &qsl_semantics::model::observation::AdmittedObservations,
+        claim: WitnessClaim<'_>,
+        meter: &mut Meter,
+    ) -> Result<Separation, CallFailure> {
+        let setup = ClauseSetup::of(self, clause, observations)?;
+        let graph = self.graph();
+        let declaration = setup.declaration;
+        let Some((lets, quantifier)) = resolve_quantifier(graph, declaration, claim.quantifier)
+        else {
+            return Ok(Separation::Unmet(SeparationStep::Quantifier));
+        };
+        let reads: std::collections::BTreeMap<
+            quire_semantic_value::location::Location,
+            qsl_semantics::check::Observation,
+        > = declaration
+            .reads()
+            .map(|(location, observation)| (location.clone(), observation))
+            .collect();
+        Machine::with_pre(
+            graph.scope(),
+            graph,
+            setup.current,
+            setup.pre,
+            Some(&reads),
+            meter,
+            graph.dispatch_tables(),
+        )
+        .with_trail(setup.trail)
+        .separate(
+            declaration.slots(),
+            setup.bindings,
+            &lets,
+            quantifier,
+            claim,
         )
         .map_err(CallFailure::Fault)
     }
@@ -805,6 +981,15 @@ mod tests {
                         &objects,
                         None,
                         Vec::new(),
+                        s6a::separation::Trail::new(
+                            ObservationIdentity {
+                                authority: String::new(),
+                                identity: String::new(),
+                                revision_namespace: String::new(),
+                                revision: String::new(),
+                            },
+                            None,
+                        ),
                     );
                     evaluate_declaration(
                         kind,

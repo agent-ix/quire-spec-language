@@ -31,6 +31,9 @@ use quire_exact::{Identifier, Meter, NodeKey, ScalarLimits, Value, ValueType};
 use super::call::{convert_call_failure, convert_outcome, select};
 pub use super::call::{CallOutcome, CallValue, RunRefusal};
 use super::{compile, CompileRefusal, DependencyInput, SpineLimits};
+use crate::proof_result::SettlementBasis;
+use crate::result::SeparatingWitnessRecord;
+use crate::witness::derive_separating_witness;
 
 /// FR-109's `Function` selection argument value: FR-100's canonical
 /// integer, or an object reference resolved in the selection's current
@@ -445,6 +448,25 @@ pub struct ClauseRunReport {
     pub provenance: ClauseRunProvenance,
     /// FR-109 Outputs' usage.
     pub usage: ClauseRunUsage,
+    /// FR-266 (QSpec FR-243): the run's settlement basis, on every report.
+    pub basis: SettlementBasis,
+    /// FR-266 (QSpec FR-351): the separating witness record, present
+    /// exactly when `basis` is decisive.
+    pub witness: Option<SeparatingWitnessRecord>,
+}
+
+/// FR-266: the basis of a report that derives no witness: `closed-scope`
+/// for a `success` or `violation` at stage `evaluate` (a `Function` run's
+/// result is decided by the whole call, a `Frame` run's witness is
+/// FR-115's), `unavailable` for every other disposition.
+fn undecided_basis(disposition: &ClauseDisposition) -> SettlementBasis {
+    use qsl_foundation::diagnostic::Category;
+    match (disposition.stage(), disposition.category()) {
+        (ClauseRunStage::Evaluate, Category::Success | Category::Violation) => {
+            SettlementBasis::ClosedScope
+        }
+        _ => SettlementBasis::Unavailable,
+    }
 }
 
 /// The `DocumentRef`s a selection names, in read order (before any are
@@ -609,10 +631,12 @@ pub fn run_clause(request: ClauseRunRequest) -> Result<ClauseRunReport, ClauseRu
     // from then on (FR-109-AC-2's own "no snapshot in its provenance" for
     // a compile-stage refusal).
     let report = |package_id,
-                  disposition,
+                  disposition: ClauseDisposition,
                   model_selections: Vec<qsl_semantics::model::domain_package::DomainPackageRef>,
                   documents: Vec<DocumentRef>| {
         ClauseRunReport {
+            basis: undecided_basis(&disposition),
+            witness: None,
             source_digest: unit_provenance.digest.clone(),
             package_id,
             disposition,
@@ -796,6 +820,8 @@ impl CompiledRun<'_> {
         frame: Option<NodeKey>,
     ) -> ClauseRunReport {
         ClauseRunReport {
+            basis: undecided_basis(&disposition),
+            witness: None,
             source_digest: self.unit.digest.clone(),
             package_id: Some(self.package_id),
             disposition,
@@ -822,6 +848,27 @@ pub(crate) fn check_clause(
     clause: &CheckedStateClause,
     selection: &ClauseSelection,
 ) -> ClauseRunReport {
+    check_clause_admitted(run, clause, selection).report
+}
+
+/// [`check_clause`]'s report, with the observations admission produced
+/// (when it admitted) and the evaluation meter, which FR-268's separation
+/// check goes on charging.
+pub(crate) struct ClauseCheck {
+    /// The report.
+    pub(crate) report: ClauseRunReport,
+    /// The admitted observations; `None` when admission failed.
+    pub(crate) observations: Option<AdmittedObservations>,
+    /// The evaluation meter, after the clause's evaluation.
+    pub(crate) meter: Meter,
+}
+
+/// [`check_clause`], keeping the admitted observations and the meter.
+pub(crate) fn check_clause_admitted(
+    run: &CompiledRun<'_>,
+    clause: &CheckedStateClause,
+    selection: &ClauseSelection,
+) -> ClauseCheck {
     use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, QualifiedName};
     use quire_semantic_value::call::InputRefusal;
 
@@ -837,34 +884,49 @@ pub(crate) fn check_clause(
     ) {
         Ok(observations) => observations,
         Err(failure) => {
-            return run.report(
-                ClauseDisposition::Admit(failure),
-                vec![clause_input_document(&selection.input).clone()],
-                None,
-            )
+            return ClauseCheck {
+                report: run.report(
+                    ClauseDisposition::Admit(failure),
+                    vec![clause_input_document(&selection.input).clone()],
+                    None,
+                ),
+                observations: None,
+                meter: Meter::new(run.accounting),
+            }
         }
     };
     let documents = admitted_documents(&selection.input, &observations);
-    let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
-        return run.report(
-            ClauseDisposition::MissingName {
-                name: selection.name.clone(),
-            },
-            documents,
-            None,
-        );
-    };
     let mut meter = Meter::new(run.accounting);
+    let Ok(qualified) = QualifiedName::unqualified(&selection.name) else {
+        return ClauseCheck {
+            report: run.report(
+                ClauseDisposition::MissingName {
+                    name: selection.name.clone(),
+                },
+                documents,
+                None,
+            ),
+            observations: Some(observations),
+            meter,
+        };
+    };
+    let mut derived = None;
     let disposition = match run
         .package
         .evaluate_clause(&qualified, &observations, &mut meter)
     {
-        Ok(evaluation) => match convert_outcome(evaluation, graph, run.sources) {
-            Ok(outcome) => ClauseDisposition::Evaluate(outcome),
-            Err(refusal) => match *refusal {
-                RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
-                other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
-            },
+        Ok(evaluation) => match derive_separating_witness(clause, &evaluation) {
+            Err(fault) => ClauseDisposition::EvaluateFault(fault),
+            Ok(witness) => {
+                derived = witness;
+                match convert_outcome(evaluation.evaluation, graph, run.sources) {
+                    Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+                    Err(refusal) => match *refusal {
+                        RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                        other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+                    },
+                }
+            }
         },
         Err(CallFailure::Input(input)) => match input {
             InputRefusal::UnknownClause(name) => ClauseDisposition::MissingName { name },
@@ -887,7 +949,19 @@ pub(crate) fn check_clause(
     };
     let mut report = run.report(disposition, documents, None);
     report.usage = ClauseRunUsage::from_meter(&meter, observations.usage);
-    report
+    // FR-266: a `Clause` run that completed a Boolean takes FR-265's basis
+    // and record; every other disposition keeps `unavailable`.
+    if let (Some(derived), ClauseRunStage::Evaluate) = (derived, report.disposition.stage()) {
+        if report.disposition.truth().is_some() {
+            report.basis = derived.basis;
+            report.witness = derived.record;
+        }
+    }
+    ClauseCheck {
+        report,
+        observations: Some(observations),
+        meter,
+    }
 }
 
 /// FR-115: resolve `operation` to its frame, admit `invocation` by FR-106's
@@ -1050,7 +1124,9 @@ fn run_function(
     // `selection_documents`' one snapshot; FR-109's own provenance is what
     // admission read, never merely what the selection named (FR-109-AC-2).
     let documents_read = std::cell::RefCell::new(Vec::<DocumentRef>::new());
-    let report = |disposition| ClauseRunReport {
+    let report = |disposition: ClauseDisposition| ClauseRunReport {
+        basis: undecided_basis(&disposition),
+        witness: None,
         source_digest: unit.digest.clone(),
         package_id: Some(package_id),
         disposition,

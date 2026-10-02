@@ -53,7 +53,8 @@ one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
 - The cause SHALL serialize and read back with `given` and `derived` each
   present in full or absent (QSpec FR-351 has no partial record), and a
   reader SHALL refuse a `Witness` cause whose `failure` is not one of the
-  values above.
+  values above, and a record whose deciding element is a record or tuple
+  whose slots do not fit its declaration's shape (QSpec FR-351-AC-5).
 - Two results that differ only in their `Witness` cause's `given` or
   `derived` record SHALL compare unequal.
 
@@ -61,9 +62,15 @@ one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-269-AC-1 | FR-268-AC-2's `leaf`-at-index-2 replay settles `inconclusive` with `Witness { proved: violation, replayed: violation, given: <leaf record>, derived: <mid record>, failure: Mismatch }`, and its `Witness`-arm result carries no QSpec FR-351 record; the no-record replay holds `given` absent and `derived` the `mid` record. | Test (TC-744) |
+| FR-269-AC-1 | FR-268-AC-2's index-2 replay settles `inconclusive` with `Witness { proved: violation, replayed: violation, given: <index-2 record>, derived: <index-1 record>, failure: Mismatch }`, and its `Witness`-arm result carries no QSpec FR-351 record; the no-record replay holds `given` absent and `derived` the index-1 record. | Test (TC-744) |
 | FR-269-AC-2 | FR-268-AC-3's failing records map to `failure` `Separation { Quantifier, Unmet }`, `Separation { Element, Unmet }` (three times) and `Separation { Body, Unmet }`; its undefined-domain, undefined-body and refused-domain variants map to `Separation { Domain, UndefinedEvaluation }`, `Separation { Body, UndefinedEvaluation }` and `Separation { Domain, Refused }`, each `UndefinedEvaluation` naming the expression and its undefined cause. | Test (TC-744) |
 | FR-269-AC-3 | A replay result holding FR-269-AC-1's cause round-trips through serialize and read to an equal result; the same document with `failure` set to an undefined value refuses, and one with `given` missing its `index` refuses; two results that differ only in `derived` compare unequal. | Test (TC-744) |
+
+## Status
+
+The cause's own codec round-trips here. The round-trip of a whole replay
+result holding the cause lands with the `native-run-result/2` wire
+([FR-267](FR-267-write-run-results-as-native-run-result-2.md)).
 
 ## Dependencies
 
