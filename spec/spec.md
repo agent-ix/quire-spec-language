@@ -284,12 +284,19 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-165
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-166
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-167
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-168
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-169
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-170
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-020
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-129
