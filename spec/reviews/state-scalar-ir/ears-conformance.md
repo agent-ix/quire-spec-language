@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed the implementation and spec
+Reviewed implementation/spec revision `b789eed`
 at PR readiness, using the owner's selected all-set. No applicable AssuranceProfile.
 
 Ran scoped Quire validation and inspected all 14 normative FR-034 statements for trigger intent, named subjects and concrete responses. Selection/input requests are events; unsupported receivers and stopped work are unwanted conditions. Existing inherited documents remain in the validation scope; no new grammar finding was reported.

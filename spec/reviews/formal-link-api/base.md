@@ -5,6 +5,7 @@ type: SpecReview
 analysis: base
 scope: "FR-013, formal-environment-linking.md, TC-020–024, TC-030–034 and IT-005 linking seam"
 review_set: all
+evaluated_revision: "c78792a"
 review_date: "2026-09-08"
 ---
 
@@ -37,10 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
-IT-005 consistency re-review: PASS for the corrected specification.
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
 IT-005 now names the same count field as TC-020/030. Its signed 0..1000 counter selection remains binding; the unsigned test setup must be corrected before merge.
 
 
-Evaluated before continuing the corrected qualification implementation.
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 The corrected fixture now obeys both existing grammars: PackageId is a namespace and count is an identifier. The same TC-020/030 assertions retain exact owner/source/digest discrimination.

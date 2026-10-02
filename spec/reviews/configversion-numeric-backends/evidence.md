@@ -33,7 +33,7 @@ and model-checking evidence choices are recorded as review judgment rather than 
 - Property: all four generated constructive populations execute; all 778 observed values are
   in-domain and replay against native execution with the same verdict, with explicit zero-discard
   rates.
-- Analysis: actual cargo-kani proves the identity subject and prints a failing changed-state
-  playback.
+- Analysis: actual cargo-kani 0.67.0 proves the identity subject and prints a failing changed-state
+  playback; its executable digest and exact graph options are asserted.
 - Negative controls: out-of-domain admission, changed-state counterexample, malformed playback,
   wrong tool identity and object/graph refusal with source loci.

@@ -13,11 +13,11 @@ relationships:
 ---
 ## Summary
 
-Current recheck is narrow: reverse ownership and trace backing for the correction
-against the integrated baseline, covering only the four external
+Current recheck is narrow: reverse ownership and trace backing for correction
+`09c50a5` against integrated baseline `87b35ea`, covering only the four external
 findings' corrected behavior in FR-034 and TC-112. It is not a status
 reconciliation, a backlog campaign or a re-run of the complete Plan-008 verdict
-below, which stands unchanged from the earlier assessment. The optional
+below, which stands unchanged from the earlier `b789eed` assessment. The optional
 QUOIN semantic pass was declined by the owner; read-only coverage was used with
 an explicit repository scope.
 
@@ -64,8 +64,8 @@ alias candidates, the exact/one-short/retry budgets, the three-target
 Boolean/integer controls, the public predecessor refusals and the explicit
 instruction not to fabricate a validated context.
 
-Coverage reconciliation: actual `quire coverage --scope . --json`;
-no grep fallback. Global rollup 373/382 backed. No FR-034 or
+Coverage reconciliation: actual `quire coverage --scope . --json`, Quire 0.31.0,
+engine `ca7362d4`; no grep fallback. Global rollup 373/382 backed. No FR-034 or
 TC-112 row is unbacked, no unmatched tag and no untracked symbol occurs in
 `tests/state_scalar_lowering.rs`, and the three new tests carry resolving
 `#[trace]` attributes for TC-112 and FR-034-AC-1/3/4/5. The nine unbacked rows

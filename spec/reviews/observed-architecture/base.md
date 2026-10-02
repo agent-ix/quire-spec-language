@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed `task/206-observed-architecture` against the quoin
+Reviewed commit faa1731 on `task/206-observed-architecture` against the quoin
 spec-review checklist. ADR-010 is a descriptive architecture record with no US,
 FR, AC, TC, option or constraint rows, so the user-story, functional-requirement
 and six test-coverage rules have no subject; the applicable gates are ID format
@@ -47,7 +47,7 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | FND-002 | low | Item-id schemes `OBS-NNN`, `DA-NN` and `L1-Dn` are local to ADR-010 and are not catalog id kinds. Layer 1 tickets must cite them as `ADR-010 OBS-nnn` to stay unambiguous across repositories. Fix: state the citation form in the Decision section. | ADR-010 §9 |
 | FND-003 | medium | §8 states merge order #204 → #228 → #200 (coordinator's order) while the ARCH-01 comment on #207 lists #228 first. The record discloses both; the conflict is for #208 to settle, not this record. Fix: keep both orders visible and name #208 as the place the order is fixed. | ADR-010 §8 · #207 ARCH-01 comment |
 
-## Round 2
+## Round 2 (commit 432e615)
 
 Re-checked after the round-1 revision. Item ids now run `OBS-001` to `OBS-041`
 (sequential, no gaps) and `DA-01` to `DA-17`; `L1-D1` unchanged. Mermaid blocks

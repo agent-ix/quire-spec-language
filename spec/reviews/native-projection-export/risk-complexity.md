@@ -10,7 +10,7 @@ review_set: all
 
 The main risks are widening the supported target accidentally and emitting a successful prefix after a later failure. The command delegates the complete package to existing lowering and writes only after success. A new negative control keeps the first clause supported while making the later clause numeric. Shared compile intake avoids divergent source/model policies; the change adds no dependencies or concurrency.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `d1fcf16`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

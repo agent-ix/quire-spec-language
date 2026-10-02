@@ -16,7 +16,9 @@ relationships:
 
 Actual Claude Sonnet code/Rust review inspected the new test file, repository
 instructions, the actual code-review and rust-review skills, shared test setup,
-wire records, decision implementation, FR-042 and TC-121. The reviewer ran no gates;
+wire records, decision implementation, FR-042 and TC-121. Its result is retained
+at `/tmp/quire-mixed-observation-review.jsonl` (session
+`9125689e-4c40-44d7-a33a-e87e4b972a32`). The reviewer ran no gates;
 execution results below came from the separate parent gate run.
 
 Both tests exercise actual parse, binding, type admission and proof discharge
@@ -43,7 +45,8 @@ breadth remains outside this test-only increment.
 ## Validation
 
 Parent gates completed with 2 focused tests passed, 0 failed; formatting and
-both strict Clippy configurations passed. The subsequent source change removes
+both strict Clippy configurations passed. The output is retained at
+`/tmp/quire-mixed-observation-gates.log`. The subsequent source change removes
 only the incorrect trace tag; its direct rustfmt check passed. Quire validated
 both review artifacts: 2/2 grammar-clean, zero grammar findings, exit 0. Its
 loader also emitted duplicate-archetype and duplicate-inverse-edge diagnostics;

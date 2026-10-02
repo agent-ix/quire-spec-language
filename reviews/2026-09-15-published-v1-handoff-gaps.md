@@ -32,7 +32,7 @@ this review does not claim that downstream work complete.
 
 ## Coverage and plan
 
-Quire reports FR-042 10/10 targets backed and repository-wide coverage
+Quire 0.32.0 reports FR-042 10/10 targets backed and repository-wide coverage
 491/512. The changed matrix deliberately keeps FR-042-AC-10 partial because
 cross-repository completion cannot be inferred from a QSL trace tag. The 21
 inherited repository gaps and status-column/module diagnostics predate this

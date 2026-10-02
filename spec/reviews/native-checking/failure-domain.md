@@ -5,6 +5,7 @@ type: SpecReview
 analysis: failure-domain
 scope: "FR-015/016, FR-006 judgments, docs/native-model-checking.md, IT-005, TC-025–029/040–053 and TM-003"
 review_set: all
+evaluated_revision: "ceccabb564b61742597ad356eb1019ab0c8d1544"
 review_date: "2026-09-08"
 ---
 
@@ -16,7 +17,7 @@ The corrected contract distinguishes model identity from runtime population and 
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | Resolved: enumerating object instances in the model would couple artifact identity to population contents; the selected carrier now contains a bounded opaque text ID and runtime membership stays separate. | FR-015; FR-016-AC-9; TC-040; TC-052 |
+| FND-001 | high | Resolved in 6d58113: enumerating object instances in the model would couple artifact identity to population contents; the selected carrier now contains a bounded opaque text ID and runtime membership stays separate. | FR-015; FR-016-AC-9; TC-040; TC-052 |
 | FND-002 | high | Resolved in the reviewed contract: shared Boolean aliases and alternative joins need bounded, sound fact derivation before IR materialization; TC-053 independently checks the new presence rules. | FR-016-AC-1; FR-016-AC-7; FR-016-AC-8; TC-051; TC-053 |
 
 ## Failure domains

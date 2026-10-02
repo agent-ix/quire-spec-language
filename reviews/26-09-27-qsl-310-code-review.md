@@ -3,12 +3,12 @@ id: SR-768
 title: "QSL-310 code review (with rust-review lane) of PR 507"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-replay/src/spine/clause/tests.rs (new: config_version_invocation_snapshot, config_version_invocation_bytes, config_version_invocation_selection, run_config_version_invocation, config_version_step2_unit_and_packages, config_version_step2_request, tc466_step1_version_unchanged_over_an_invocation, tc466_step2_pre_version_number_is_two, tc466_step2_post_version_number_is_three, tc466_step2_pre_parent_implies_version_one; read unchanged: config_version_unit_and_packages, config_version_request, config_version_snapshot, run_config_version_current, boolean_disposition, s4_emits_exactly_the_fr_105_state_nodes); spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (frame check, unchanged)"
+scope: "agent-ix/quire-spec-language@6200370a44f5521e3b4618739a95535980cee603; qsl-replay/src/spine/clause/tests.rs (new: config_version_invocation_snapshot, config_version_invocation_bytes, config_version_invocation_selection, run_config_version_invocation, config_version_step2_unit_and_packages, config_version_step2_request, tc466_step1_version_unchanged_over_an_invocation, tc466_step2_pre_version_number_is_two, tc466_step2_post_version_number_is_three, tc466_step2_pre_parent_implies_version_one; read unchanged: config_version_unit_and_packages, config_version_request, config_version_snapshot, run_config_version_current, boolean_disposition, s4_emits_exactly_the_fr_105_state_nodes); spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (frame check, unchanged)"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-310. PR: quire-spec-language#507.
+Ticket: QSL-310. PR: quire-spec-language#507 at 6200370a, base f17c2d4f.
 Methods: code-review with the rust-review lane folded in. The diff is
 test-only: +301/-0 in `qsl-replay/src/spine/clause/tests.rs`.
 
@@ -54,8 +54,8 @@ Rust-review lane: test-only diff. The `expect`/`unwrap`/`panic!` calls are
 confined to test code, there are no casts, and no production code changed.
 `i64::to_string()` feeds the snapshot's canonical integer text directly.
 
-Gates, run fresh by me (not taken from the PR's `ci-qsl-310.log`):
-`make ci` exited 0 with the worktree's own `CARGO_TARGET_DIR`. The
+Gates, run fresh by me (not taken from the PR's `ci-qsl-310.log`): at
+6200370a, `make ci` exited 0 with the worktree's own `CARGO_TARGET_DIR`. The
 log has 93 `test result: ok` lines and 0 FAILED, and all five new tests plus
 TC-462's `s4_emits_exactly_the_fr_105_state_nodes` ran and passed. A first
 run against the shared `~/.cargo-target` exited 2: two arch-lint live-tree
@@ -64,7 +64,7 @@ tests (`tc_452_spine_surface_check_passes_over_qsl_replay`,
 That was environmental: stale binaries in the shared target dir, with
 another checkout's `CARGO_MANIFEST_DIR` baked in. Both tests pass in the
 own-target run, and the PR does not touch arch-lint. On a scratch merge of
-origin/main with the PR, the TC-466 and TC-462 tests pass too
+origin/main (760ef144) with the PR, the TC-466 and TC-462 tests pass too
 (6 passed).
 
 ## Findings

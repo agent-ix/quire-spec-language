@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed branch `task/210-family-extension`:
+Reviewed commit `048deb3` (branch `task/210-family-extension`):
 `spec/decisions/ADR-012-semantic-family-extension-contracts.md`, its
 `contains` relationship (line 39) and its index row (line 388) in
 `spec/spec.md`. ADR-012 is an ADR, not an FR, NFR or StR. The engine's EARS
@@ -53,8 +53,8 @@ registry behaviour before #185, the builder behaviour before #214, and the
 absent-capability and solver-absence outcomes before #213. FR-036 must also
 be revised before #185 (FND-013).
 
-Verdict: ACCEPT WITH FINDINGS (round 2). The round-1 verdict
-was also ACCEPT WITH FINDINGS, with FND-001 and FND-002 (high) to
+Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
+at 048deb3 was also ACCEPT WITH FINDINGS, with FND-001 and FND-002 (high) to
 be resolved before #212 scenario 7. Round 2 finds both resolved; see Round 2.
 
 ## Method
@@ -105,9 +105,9 @@ be resolved before #212 scenario 7. Round 2 finds both resolved; see Round 2.
 
 ## Round 2
 
-Reviewed branch `task/210-family-extension` against the
+Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
 round-1 findings above, using
-`git diff -- spec/decisions/`. Each revised normative
+`git diff 048deb3 8fb238b -- spec/decisions/`. Each revised normative
 statement was checked again for one subject, one condition and one observable
 response. Round-1 verdict: ACCEPT WITH FINDINGS (FND-001 and FND-002 high).
 
@@ -164,9 +164,9 @@ names the owner that holds the remaining work.
 | FND-024 | Fixed: §5.2 states that the CLI edge refuses an unknown name and forms no request. `negotiate_*` settles `invalid-request` for a request that reaches it. |
 | FND-025 | Fixed: §1.1 applies the rules per `Requirements` entry, settles the most restrictive result, and defines "within" (bounded within both modes, unbounded within unbounded only). |
 
-## PR review (QSL PR #234)
+## PR review (QSL PR #234, delta 43677c9..10664aa)
 
-The PR reviewer checked the author-closure lines above against ADR-012.
-FND-010, FND-012, FND-015 and FND-022 to FND-025 are confirmed
+The PR reviewer checked the author-closure lines above against ADR-012 at
+10664aa. FND-010, FND-012, FND-015 and FND-022 to FND-025 are confirmed
 fixed. Negative phrasings remain at ADR-012:234, :254 and :487 (SR-474
 PR-L10). The open PR findings are in SR-474.

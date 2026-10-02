@@ -3,7 +3,7 @@ id: SR-677
 title: "QSL-271 PR 469 EARS review of FR-100's refusal-record mapping"
 type: SpecReview
 analysis: ears-conformance
-scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md (changed statements at lines 102-106, 111-138, 168, 231-238, 256, 281-288); spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md"
+scope: "agent-ix/quire-spec-language@ceb5d905; spec/functional/FR-100-run-a-named-function-through-the-spine.md (changed statements at lines 102-106, 111-138, 168, 231-238, 256, 281-288); spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -33,8 +33,8 @@ Approve with a nit: no statement changes meaning.
 
 ## Dispositions
 
-Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60cc` and `bec5791c`, on main 9425dd82). I checked each outcome against the spec at that head and the code on main 9425dd82, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | The kernel table's "until" cells are gone. The normative text states the rule at `1-draft.7`, and the STD-110, QSL-281 and "later record" notes are in Status. |
+| FND-001 | fixed e71e60cc | The kernel table's "until" cells are gone. The normative text states the rule at `1-draft.7`, and the STD-110, QSL-281 and "later record" notes are in Status. |

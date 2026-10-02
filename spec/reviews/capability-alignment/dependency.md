@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed `task/229-capability-spec`, the diff
+Round 1. Reviewed commit cd4f71a on `task/229-capability-spec`, the diff
 against `origin/main`. The change adds FR-057, amends FR-036, TC-115,
 `spec/model-linking/tests.md` and `spec/spec.md`, and adds TC-153, TC-154 and
 TC-155. This pass checks the prerequisite edges of each requirement, the
@@ -120,7 +120,7 @@ ticket (FND-001).
 
 ## Method
 
-- Read the diff `origin/main...HEAD` in full.
+- Read the diff `origin/main...HEAD` in full at cd4f71a.
 - Read #229 and its owner ruling, and #185, #210, #211, #212, #213 and #222 as
   of 2026-09-19.
 - Read QSpec `origin/main` FR-290, AD-010, AD-016 (arrows 1–4, Terminal-disposition
@@ -133,7 +133,7 @@ ticket (FND-001).
 
 ## Round 2 dispositions
 
-Checked against the current tree, including the uncommitted edits. The
+Checked against the current tree: cd4f71a plus the uncommitted edits. The
 upstream is the widened FR-290 in the quire-specification #134 worktree.
 
 | Finding | Disposition | Evidence |

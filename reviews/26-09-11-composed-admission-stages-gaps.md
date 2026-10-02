@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 QUOIN `gap-analysis` over the TC-115 increment, with a fresh
-`quire coverage --scope . --json`. TC-115 and its
+`quire coverage --scope . --json` (quire 0.31.0, engine 0.46.0). TC-115 and its
 three acceptance criteria are now backed by eleven tagged Rust controls in
 `tests/composed_admission_stages.rs`. FR-036 reads 8/8 backed and
 `spec/model-linking/tests.md` reads 42/42. The long-standing four-row FND-001

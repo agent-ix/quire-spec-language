@@ -3,7 +3,7 @@ id: SR-758
 title: "QSL-287/QSL-288 code review (with rust-review lane) of PR 501"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; src/protocol_artifact/v2/wire.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v2/refusal.rs; src/protocol_artifact/mod.rs; src/protocol_artifact/native/temporal_v2.rs; src/protocol_artifact/handoff/writer.rs; tests/it/handoff_writer.rs; tests/it/compiled_protocol_v2.rs; examples/native_protocol_v2_handoff.rs; docs/compiled-protocol-v2.md; artifacts/compiled-protocol-v2; xtask/src/string_edge.rs; xtask/src/import_graph.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/lowering.rs; qsl-package/src/emit.rs; qsl-eval/src/simulation/sample.rs; src/state/evaluation.rs; src/command.rs; src/linking/composed/inventory.rs; tests/it/family_outcome_layering.rs; the remaining #[string_edge] mark sites in the diff"
+scope: "agent-ix/quire-spec-language@8b5606b9d2f5b92c14837142f6c0ac99e82b8dd2; src/protocol_artifact/v2/wire.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v2/refusal.rs; src/protocol_artifact/mod.rs; src/protocol_artifact/native/temporal_v2.rs; src/protocol_artifact/handoff/writer.rs; tests/it/handoff_writer.rs; tests/it/compiled_protocol_v2.rs; examples/native_protocol_v2_handoff.rs; docs/compiled-protocol-v2.md; artifacts/compiled-protocol-v2; xtask/src/string_edge.rs; xtask/src/import_graph.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/lowering.rs; qsl-package/src/emit.rs; qsl-eval/src/simulation/sample.rs; src/state/evaluation.rs; src/command.rs; src/linking/composed/inventory.rs; tests/it/family_outcome_layering.rs; the remaining #[string_edge] mark sites in the diff"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-050
@@ -14,13 +14,13 @@ relationships:
 ## Summary
 
 Tickets: QSL-288 (typed clock_name in the v2 wire), QSL-287 (const-resolving
-string-edge detector). PR: quire-spec-language#501, base main.
+string-edge detector). PR: quire-spec-language#501 at 8b5606b9, base main.
 Method: code-review with the rust-review lane folded in. `make ci` and `make
 conformance` exit 0 at this head were measured by the dispatching session and
 not re-run here.
 
 Mutation checks were run by this reviewer, each in a scratch detached worktree
-with `cargo test --workspace` (plus `--all-features` for the v2
+at 8b5606b9 with `cargo test --workspace` (plus `--all-features` for the v2
 one):
 
 - `lowering.rs` `members.first()` changed to `members.last()`: killed (6

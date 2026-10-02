@@ -10,7 +10,7 @@ review_set: all
 
 Scoped Quire validation passes with no grammar findings. FR-033 uses explicit event/selection and unwanted-condition patterns with one shall per normative statement. Numeric translation, source retention, wire shape, whole-package refusal, fresh limits and generator I/O failure name observable behavior. The target describes strict IR output, without an ambiguous claim of generated execution.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 ## Findings

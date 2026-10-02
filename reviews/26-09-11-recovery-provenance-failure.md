@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 `spec-failure-domain-analysis` over the shared native-emission/parser-free-reader
-authority introduced by this change. The previously recorded failure mode — two
+authority introduced at `a33a3c1`. The previously recorded failure mode — two
 structurally different derivations compared for exact equality, so a divergence
 refuses a package this compiler just produced (SR-350 FND-001) — is eliminated
 at its root rather than papered over: one traversal, one selection, both paths.

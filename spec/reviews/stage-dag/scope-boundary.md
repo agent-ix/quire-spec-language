@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed branch `task/209-stage-dag`, file
+Round 1. Reviewed commit: 944a1c8 (branch `task/209-stage-dag`), file
 `spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md` and its index
 row in `spec/spec.md`.
 
@@ -89,9 +89,9 @@ can be fixed in the same revision.
 | FND-007 | low | Two wire questions are routed without naming QSpec as the authoring home. SEAM-3 says "Whether these formats remain as separate wires is decided in #211". Compiled-protocol /1 to /3 and the checked handoffs cross into IR, and #211 states that "Normative cross-repository wire/API changes are authored in QSpec". The §7.1 IR root → QSL removal names QSpec correctly. SEAM-3 and the matching "To #211" bullet do not. Fix: add "authored in QSpec" to SEAM-3 and to the #211 question. | ADR-011 §6.2 SEAM-3, Questions to #211; #211 Required design |
 | FND-008 | low | The frontmatter relationships do not record the binding input. ADR-011 declares AD-016 binding ("Its seven arrows … are binding"), but lists only `depends_on` ADR-010 and `relates_to` IT-010. The traceability graph therefore cannot show that ADR-011 depends on AD-016. Fix: add `target: ix://agent-ix/quire-specification/AD-016`, `type: depends_on` (or `references`, if cross-repository `depends_on` is not allowed). | ADR-011 frontmatter, Context bullet 2 |
 
-## Round 2
+## Round 2 (HEAD 5cbd853)
 
-Reviewed branch `task/209-stage-dag`, the same ADR file.
+Reviewed commit: 5cbd853 (branch `task/209-stage-dag`), the same ADR file.
 Ticket bodies re-read: #185, #205, #209, #210, #212, #216 and #229. AD-016
 stays binding. Items routed under "Owner questions" count as routed.
 
@@ -124,9 +124,10 @@ QSL, but no legal edge or wire carries registration into it or selection out of
 it to E7. FND-010 is medium and can be fixed in the same revision. The
 remaining items routed under "Owner questions" are acceptable as routed.
 
-## Round 3
+## Round 3 (HEAD 22fa948)
 
-Delta review, with ADR-012 and ADR-013. Replay ownership is now split one way in all three records. CG
+Delta review f781e32 → 22fa948, with ADR-012 at 10664aa and ADR-013 at
+4152eb8. Replay ownership is now split one way in all three records. CG
 reconstructs and compares. QSL layer-6 `replay` recompiles, checks identities
 and calls S6a. IR holds the packet.
 

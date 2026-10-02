@@ -10,7 +10,7 @@ review_set: all
 
 Each case has distinct snapshot/invocation identity; native, Markdown and extracted-body identities remain separate. The named universe, complete/incomplete populations and explicit parent carriers avoid deriving object identity from equal values. Actual cycle/self-loop, missing target, missing model, frame and exhaustion cases exercise existing finite runtime behavior. Generator I/O errors propagate; it introduces no callback, mutable runtime state or graph algorithm.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `53431cb`, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 Model admission, runtime construction and filesystem failures propagate from the

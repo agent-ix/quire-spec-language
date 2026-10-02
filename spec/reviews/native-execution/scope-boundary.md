@@ -10,7 +10,7 @@ review_set: all
 
 The change is A's native in-process execution interface under LC05. It does not alter portable verification envelopes, producer extraction or hosted execution. Input construction and eventual standalone file intake remain separate steps; native outcomes do not claim backend qualification.
 
-Author PR-readiness review, following implementation as directed.
+Author PR-readiness review of `9c3e5ff`, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

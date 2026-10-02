@@ -3,7 +3,7 @@ id: SR-683
 title: "QSL-271 base review of the FR-110 pinned root headers in FR-108 and TC-452"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/functional/FR-100 to FR-110; spec/test-cases/TC-450 to TC-469; code evidence qsl-replay/src/spine/call/tests.rs, qsl-semantics/src/value/definition.rs, qsl-foundation/src/source.rs"
+scope: "agent-ix/quire-spec-language@63370c5584ad49440e997e889b457652f342b09a; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/functional/FR-100 to FR-110; spec/test-cases/TC-450 to TC-469; code evidence qsl-replay/src/spine/call/tests.rs, qsl-semantics/src/value/definition.rs, qsl-foundation/src/source.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-108
@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-271 (PR agent-ix/quire-spec-language#481, spec only, 6 changed
-lines, based on main). Each value was recomputed at the PR head,
+lines, base main a88829bf). Each value was recomputed at the reviewed sha,
 not taken from the PR body.
 
 Measured and clean:

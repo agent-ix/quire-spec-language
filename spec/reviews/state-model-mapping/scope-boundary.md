@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed `spec/19-arch40-mapping`: the new
+Round 1. Reviewed commit `47b1b806` on `spec/19-arch40-mapping`: the new
 ADR-016 and its amendments to ADR-012 Status, the ADR-013 §6 Outcomes row,
 FR-089 Status and `spec/spec.md`. Linear QSL-19 (#220) was read as data. Code
 claims were checked in the worktree.

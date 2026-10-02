@@ -3,7 +3,7 @@ id: SR-740
 title: "PR 490 FR-096 TC-428 TC-500 spec review"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; FR-096; FR-001; TC-428; TC-500; spec/spec.md; spec/tests.md; FR-093-AC-17; FR-100 (read only); QSpec native-diagnostics.md and FR-145 (read via git show)"
+scope: "agent-ix/quire-spec-language@985e0d016fa50ef1da5dadff950941ccc7823e86; FR-096; FR-001; TC-428; TC-500; spec/spec.md; spec/tests.md; FR-093-AC-17; FR-100 (read only); QSpec 84ed5298 native-diagnostics.md and FR-145 (read via git show)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -19,8 +19,8 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#490.
-Base spec review of the FR-001, FR-096, TC-428, TC-500, spec.md and tests.md edits. Each was checked against QSpec (catalog 1-draft.8 and FR-145) and against the code at HEAD.
+Ticket: QSL-245. PR: quire-spec-language#490 at 985e0d01.
+Base spec review of the FR-001, FR-096, TC-428, TC-500, spec.md and tests.md edits. Each was checked against QSpec 84ed5298 (catalog 1-draft.8 and FR-145) and against the code at HEAD.
 
 These parts are sound:
 
@@ -30,7 +30,7 @@ These parts are sound:
 - **Protected files:** the diff touches no FR-100..111, TC-450..469 or `.github/workflows` file.
 - **Remaining `1-draft.7` mentions:** all are either historical ("added at 1-draft.7": FR-035, FR-062, TC-113, TC-427, FR-096 OQ-1 and Status line 399, ADR-013, ADR-014, the boundedness reviews) or in another lane's files (FR-100:367, FR-110:101, FR-111-AC-7, TC-491). The one exception is FR-093-AC-17 (FND-002).
 
-On the interim state for `sum-out-of-domain`: it is not described honestly, but the error runs the other way from the brief. FR-100 on main (#488) already has the row `Undefined::SumOutOfDomain` -> `sum-out-of-domain`, and AC-10 for the empty sum. The code's spelling matches that row. It is FR-096's text that is stale (FND-001).
+On the interim state for `sum-out-of-domain`: it is not described honestly, but the error runs the other way from the brief. FR-100 on main (c3632ca3, #488 fee4abfc) already has the row `Undefined::SumOutOfDomain` -> `sum-out-of-domain`, and AC-10 for the empty sum. The code's spelling matches that row. It is FR-096's text that is stale (FND-001).
 
 ## Verdict
 
@@ -47,11 +47,11 @@ On the interim state for `sum-out-of-domain`: it is not described honestly, but 
 
 ## Dispositions
 
-Round 1, re-checked after the fix.
+Round 1, re-checked at 94e49221.
 
-| FND | outcome | reason |
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-096 Behavior and Status both say FR-100's kernel undefined-reason table owns the `sum-out-of-domain` spelling (FR-100-AC-10) |
-| FND-002 | fixed | FR-093-AC-17 reads `1-draft.8` |
-| FND-003 | fixed | the spec.md FR-096 row says "each of the ten kernel value refusals carries its target domain or width". The new wording repeats one clause; that is SR-741 FND-001. |
+| FND-001 | fixed | 54633014: FR-096 Behavior and Status both say FR-100's kernel undefined-reason table owns the `sum-out-of-domain` spelling (FR-100-AC-10) |
+| FND-002 | fixed | 54633014: FR-093-AC-17 reads `1-draft.8` |
+| FND-003 | fixed | 54633014: the spec.md FR-096 row says "each of the ten kernel value refusals carries its target domain or width". The new wording repeats one clause; that is SR-741 FND-001. |
 | FND-004 | deferred | FR-100 is agent-a's lane, and the PR leaves it untouched. The stale "Remaining work" text is routed to FR-100's owner. |

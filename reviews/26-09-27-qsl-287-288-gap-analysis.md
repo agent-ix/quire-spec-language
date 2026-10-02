@@ -3,7 +3,7 @@ id: SR-759
 title: "QSL-287/QSL-288/QSL-294 gap analysis of PR 501"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/functional/FR-050-publish-authenticated-temporal-artifacts.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/functional/FR-031-run-extracted-native-source.md; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; src/command.rs; src/command/extraction.rs; qsl-replay/src/spine/clause.rs; xtask/src/string_edge.rs; tests/it/handoff_writer.rs"
+scope: "agent-ix/quire-spec-language@8b5606b9d2f5b92c14837142f6c0ac99e82b8dd2; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/functional/FR-050-publish-authenticated-temporal-artifacts.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/functional/FR-031-run-extracted-native-source.md; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; src/command.rs; src/command/extraction.rs; qsl-replay/src/spine/clause.rs; xtask/src/string_edge.rs; tests/it/handoff_writer.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -16,7 +16,7 @@ relationships:
 ## Summary
 
 Tickets: QSL-287, QSL-288 (closed by the PR), QSL-294 (left open, claimed
-blocked). PR: quire-spec-language#501. A manual check of the
+blocked). PR: quire-spec-language#501 at 8b5606b9. A manual check of the
 tickets' done-when criteria against spec text and tests. The QSL-294 claim
 was checked against the spec text and the code, not against the PR body.
 

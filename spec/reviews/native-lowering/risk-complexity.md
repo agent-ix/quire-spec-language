@@ -3,7 +3,7 @@ id: SR-121
 title: "Risk review of native Boolean lowering"
 type: SpecReview
 analysis: risk-complexity
-scope: "PR #13; FR-009, TC-092–094, IT-008, Plan-008; code/test baseline with POC delivery amendment"
+scope: "PR #13; FR-009, TC-092–094, IT-008, Plan-008; code/test baseline d58ca7a with POC delivery amendment"
 review_set: all
 ---
 

@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` reviewed the diff from `agent-a/received-choice-handoff`.
+QUOIN `gap-analysis` reviewed `agent-a/received-choice-handoff...ff5e22a`.
 The production change adds only a narrow Attempt eligibility arm: after the
 existing EventRecord, control-anchor and flow checks, it resolves the attempt
 role at that control and requires exact SymbolId equality with the choice owner.
@@ -39,6 +39,6 @@ review; SR-365 records their final passing results and separate Opus recheck.
 
 ## Coverage
 
-Reconciliation: `quire coverage --scope /home/peter/dev/worktrees/quire-language-owned-attempt-choices --json` reports 374/383 rows backed. TC-010 (Manual) and FR-017-AC-2 (Inspection) are `no_source_symbol` exemptions; FND-001 lists the four ordinary gaps. `status_lies` is empty, but inherited `status-column-matches-nothing` diagnostics qualify that result. FR-042 is 9/10 backed corpus-wide; the six new tests carry TC-121 and relevant FR-042 tags.
+Reconciliation: `quire coverage --scope /home/peter/dev/worktrees/quire-language-owned-attempt-choices --json` (quire 0.31.0, engine `ca7362d4`; `/tmp/quire-owned-attempt-coverage.json`) reports 374/383 rows backed. TC-010 (Manual) and FR-017-AC-2 (Inspection) are `no_source_symbol` exemptions; FND-001 lists the four ordinary gaps. `status_lies` is empty, but inherited `status-column-matches-nothing` diagnostics qualify that result. FR-042 is 9/10 backed corpus-wide; the six new tests carry TC-121 and relevant FR-042 tags.
 
-No plan bundle covers protocol-artifact emission (SR-355 precedent), so plan completion is inapplicable and no plan was fabricated. Optional semantic review was not selected. Parent reports the focused 15-test lane and both strict Clippy configurations passed; full gates were not terminal at review time.
+No plan bundle covers protocol-artifact emission (SR-355 precedent), so plan completion is inapplicable and no plan was fabricated. Optional semantic review was not selected. Parent reports the focused 15-test lane and both strict Clippy configurations passed; full gates at `/tmp/quire-owned-attempt-gates.log` were not terminal at review time.

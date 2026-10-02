@@ -14,9 +14,9 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` over the branch diff, re-running `quire coverage
---scope /home/peter/dev/worktrees/quire-language-recovery-provenance --json`.
-Step 1 (plan completion) remains not
+QUOIN `gap-analysis` over `origin/main...a33a3c1`, re-running `quire coverage
+--scope /home/peter/dev/worktrees/quire-language-recovery-provenance --json`
+(quire 0.31.0, engine `ca7362d4`). Step 1 (plan completion) remains not
 applicable — `plan/` holds Plan-001..009, none covering protocol-artifact
 emission — so matrix reconciliation is the operative gate. The optional semantic
 review (Step 4) was declined by the requester. Reconciliation is unchanged from
@@ -51,7 +51,8 @@ delivery signal the increment is clean at medium, and the FAIL is corpus debt.
 `totals`: backed 367, total 376, criteria 258, property-shaped 83,
 specific-shaped 13. `status_lies` 0. `binding_census`: 572 Rust candidates, 572
 tagged, 572 bound, 62 self-named and bound. Two of the six unbacked rows are in
-the module's `no_source_symbol` vocabulary.
+the module's `no_source_symbol` vocabulary. Raw report retained at
+`/tmp/quire-recovery-provenance-review-coverage.json`.
 
 ### FND-002 — the one new obligation with no evidence
 

@@ -10,7 +10,7 @@ review_set: all
 
 One file open/read owns each selected byte sequence, avoiding a probe/reopen race. Paths are authorized local operands, resolved from the request directory; this command does not define a tenant sandbox. Exact digests reject changed source and runtime bytes. Unknown format precedes request decoding. Caller work limits and hard intake ceilings stop without truth; independent invocations share no mutable request state. No callbacks, network retry loops or producer processes are introduced.
 
-Author PR-readiness re-review using the owner-selected all set.
+Author PR-readiness re-review of `d7437e2` using the owner-selected all set.
 No applicable AssuranceProfile was found. Reviews occur at PR readiness.
 
 Incomplete classification now comes from the typed cause and native code catalog, including cancelled package errors. Refused/evaluated payload variants cannot acquire truth, and the result wrapper exposes no mutation.

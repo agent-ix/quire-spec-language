@@ -5,6 +5,7 @@ type: SpecReview
 analysis: base
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
+evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -44,8 +45,9 @@ are no selectable semantic fallbacks requiring another option matrix.
 
 ## Automated checks
 
-Scoped structural validation succeeded and reports 189/189 grammar-clean
-documents and zero grammar findings. Six existing module/relationship duplicate notices are registry
+data/spec-validation-full.txt is the successful scoped structural validation;
+data/spec-validation.txt reports 189/189 grammar-clean documents and zero grammar
+findings. Six existing module/relationship duplicate notices are registry
 first-wins messages, not duplicate IDs introduced by this packet. Coverage
 reports 113 existing bound Rust test symbols, no status lies and no untracked
 symbols; none is offered as execution of these 23 new cases.
@@ -65,10 +67,11 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Read the TC-055–057 setup correction.
+Read the TC-055–057 setup correction at dc63f337fcdaee1320d221383eca38599239f62c.
 The original shared setup sentence incorrectly required a CheckedPackage for
 construction. The corrected cases use the public input constructors and existing
 IR identities, as FR-018 already requires. All seven AC mappings, three case
 procedures, expected results and six coverage-rule dispositions remain intact.
 No ID, relationship, interface or acceptance result changed. Scoped strict
-validation records 204/204 grammar-clean documents and no grammar findings. PASS for the correction.
+validation records 204/204 grammar-clean documents and no grammar findings in
+reviews/data/native-runtime/input-setup-validation.txt. PASS for the correction.

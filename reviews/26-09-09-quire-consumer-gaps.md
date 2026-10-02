@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–029 are done. Actual Quire Rust extraction is connected to
+Task-021–029 are done at 55649b3. Actual Quire Rust extraction is connected to
 native compilation and healthy/violating/refused execution. Broader LC05 adoption
 and deferred assurance remain open.
 

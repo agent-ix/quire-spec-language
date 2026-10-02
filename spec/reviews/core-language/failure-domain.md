@@ -3,7 +3,7 @@ id: SR-391
 title: "Failure-domain review of the reconciled core language and compiler handoff"
 type: SpecReview
 analysis: failure-domain
-scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline; D Producer interface 1.2.0; merged L5"
+scope: "FR-046–050; NFR-009; TC-126–138; IT-009; spec/spec.md; TM-003; docs/compiled-protocol-v2.md; compiler issues #36/#37/#39/#40/#66; immutable native-v1 baseline 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f; D Producer interface 1.2.0 revision 6259d3a5b99088740df9bcc8e8d60f3720aaa603; L5 revision 72507f856457ba0922719bd5d9f5cadcce4058cd"
 review_set: subset
 review_date: "2026-09-11"
 relationships:
@@ -47,7 +47,7 @@ may substitute for that gate.
 | FND-001 | resolved | FR-046 requires complete request, artifact and supplied-value validation before evaluation, makes every refusal win regardless of occurrence order, permits short-circuit only over admitted `Unavailable` values or unentered work, and discards partial traversal output on incomplete or exhausted outcomes. FR-049 defines the admitted unavailable representation; TC-127/128/136 exercise the precedence boundary. |
 | FND-002 | resolved | FR-047 and NFR-009 select deterministic depth-first traversal in authored edge-occurrence order, define start and recursive graph depth, charge-before-work ordering, duplicate-edge charging, exact/one-short limits and fresh retries. Boolean reachability is the promised result; no path-evidence promise remains. TC-130/131/137 cover these rules. |
 | FND-003 | resolved | FR-047 defines the arena storage key as anchor, model, universe, object type and object identifier, while separately defining its anchor-independent logical-object projection. TC-129/136 distinguish a same-key duplicate from the same logical object at distinct pre/post anchors. |
-| FND-004 | resolved for specification | FR-048/049 select D Producer interface 1.2.0, split D static authority from F concrete assessment facts and require typed unsupported/incomplete/refused outcomes. FR-050/TC-138 own the `/2` producer, strict reader and authenticated L5 entry points. TC-135 names the D-owned external gate and explicitly prevents unavailable B/F revisions from being replaced by local fixtures. The remaining campaign run is delivery work, not an unstated failure contract. |
+| FND-004 | resolved for specification | FR-048/049 pin D Producer interface 1.2.0 at `6259d3a5b99088740df9bcc8e8d60f3720aaa603`, split D static authority from F concrete assessment facts and require typed unsupported/incomplete/refused outcomes. FR-050/TC-138 own the `/2` producer, strict reader and authenticated L5 entry points. TC-135 names the D-owned external gate and explicitly prevents unavailable B/F revisions from being replaced by local fixtures. The remaining campaign run is delivery work, not an unstated failure contract. |
 | FND-005 | resolved | FR-048 preserves the first exact trigger, refuses selection of unordered concurrent eligible triggers, makes repeat delivery and later distinct triggers non-reactivating, and separates provenance from activation identity. TC-134 supplies the independent mutations. |
 
 Additional risks discovered during the complete-packet recheck were also
@@ -58,7 +58,7 @@ resolved:
 | RCK-001 | high | resolved | An intermediate FR-046/049 reading allowed an invalid occurrence after a decisive value to be hidden by short-circuiting. FR-046 and TC-127 now require complete validation first and limit short-circuiting to admitted unavailable/unentered work. |
 | RCK-002 | high | resolved | The #40 `/2` obligation initially appeared only in choreography prose. FR-050, TC-138 and `docs/compiled-protocol-v2.md` now own the closed wire schema, canonical form, native admission and strict reader. |
 | RCK-003 | high | resolved | A `/2` admitted package initially had no type-correct path into L5's strict `/1` APIs. FR-050 now defines `evaluate_v2`, `evaluate_with_progress_v2` and `mapping_support_v2` over `v2::AdmittedPackage`, retains the existing `/1` signatures, and authenticates the exact trace clock parameter map before position evaluation. |
-| RCK-004 | medium | resolved | The F observation authority was briefly pinned to an earlier baseline. FR-049 and the packet now select the immutable native-v1 baseline. |
+| RCK-004 | medium | resolved | The F observation authority was briefly pinned to an earlier baseline. FR-049 and the packet now select the immutable native-v1 revision `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. |
 
 ## Final checklist disposition
 

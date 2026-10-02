@@ -5,6 +5,7 @@ type: SpecReview
 analysis: integrity
 scope: "FR-014, docs/formal-source-binding.md, TC-035–039 and TM-003 addition"
 review_set: all
+evaluated_revision: "4eb4ef6"
 review_date: "2026-09-08"
 ---
 
@@ -24,7 +25,7 @@ Trace: US-002 → FR-014 → StR-001; FR-014-AC-1..5 → TC-035..39 → real Rus
     
 Each normative sentence has one subject and one observable response. The description is refined by the forward/reverse behavior, rather than a separate source identity policy. Inferring opaque revisions, treating path as portable identity and clamping false loci are explicitly excluded. Typed positive IR revisions are supplied separately. FR-006's existing broader tests remain unchanged and unclaimed.
     
-The hidden-assumption probes find no external CLI/API/authentication/pagination calls, generated application scaffolding or multi-source lookup. The actual IR source constructors already exist. There is no stub fallback or unresolved external implementation prerequisite.
+The hidden-assumption probes find no external CLI/API/authentication/pagination calls, generated application scaffolding or multi-source lookup. The actual pinned IR source constructors already exist. There is no stub fallback or unresolved external implementation prerequisite.
 
 ## Verdict and provenance
 

@@ -8,9 +8,9 @@ review_set: all
 ---
 ## Summary
 
-Integration and negative tests are appropriate for this composition boundary; actual parser, linker, checker, package and runtime paths execute. Quoin advise exited 2 because its CLI-version discovery failed; no advisor output is claimed. Verification methods were selected using the installed catalog and the concrete obligations. Programmatic mapping does not qualify Quire extraction.
+Integration and negative tests are appropriate for this composition boundary; actual parser, linker, checker, package and runtime paths execute. Quoin advise exited 2 because its CLI-version discovery failed despite Quire 0.31.0; no advisor output is claimed. Verification methods were selected using the installed catalog and the concrete obligations. Programmatic mapping does not qualify Quire extraction.
 
-PR-readiness review of implementation baseline; the owner's selected
+PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

@@ -3,7 +3,7 @@ id: SR-633
 title: "Pair review of ADR-015 with QSpec PR 161 (compile and replay against dependencies)"
 type: SpecReview
 analysis: integrity
-scope: "QSL PR 447: ADR-015, FR-099, TC-446, and the amendments to FR-001, FR-027, FR-071, FR-098, TC-186, TC-444, ADR-011, ADR-013, spec/spec.md, spec/tests.md; reviewed as one design with QSpec PR 161 (FR-307, FR-322, FR-323, TC-227, TC-233, TC-277, native-diagnostics step 7, both v2 schemas); checked for id collisions against open QSL PRs 445 and 446"
+scope: "QSL PR 447 head 30fa18f3 (git diff origin/main...HEAD at main be338c34): ADR-015, FR-099, TC-446, and the amendments to FR-001, FR-027, FR-071, FR-098, TC-186, TC-444, ADR-011, ADR-013, spec/spec.md, spec/tests.md; reviewed as one design with QSpec PR 161 head 8bdf48a4 (FR-307, FR-322, FR-323, TC-227, TC-233, TC-277, native-diagnostics step 7, both v2 schemas); checked for id collisions against open QSL PRs 445 and 446"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-015

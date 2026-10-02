@@ -3,7 +3,7 @@ id: SR-753
 title: "QSL-302 gap analysis of PR 499 (QSpec FR-340 frame-body admission evidence)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; Makefile; qsl-package/src/checked_v2/tests.rs; spec/functional/FR-087-typestate-and-cross-package-node-key.md; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/model-linking/tests.md (TC-053 row); spec/test-cases/TC-053-prove-guard-fact-soundness.md"
+scope: "agent-ix/quire-spec-language@172f4111aa0c515977abb650c364a7a929c7b556; Makefile; qsl-package/src/checked_v2/tests.rs; spec/functional/FR-087-typestate-and-cross-package-node-key.md; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/model-linking/tests.md (TC-053 row); spec/test-cases/TC-053-prove-guard-fact-soundness.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-087
@@ -13,13 +13,13 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-302. PR: quire-spec-language#499. This PR has no plan
+Ticket: QSL-302. PR: quire-spec-language#499 at 172f4111. This PR has no plan
 bundle. Its scope is the rescoped ticket, as the team-leader's comment on
 QSL-302 describes it: FR-340 frame-body admission in the checked-package-v2
 I2 reader, with QSpec's `frame_mutations` as the conformance evidence.
 
 Plan completion: not applicable, because there is no plan bundle. On the
-ticket's own terms, the admission logic already exists in the IR dependency, and
+ticket's own terms, the admission logic already exists in the pinned IR, and
 QSL's I2 read delegates to it (verified in SR-752). The evidence is
 delivered: 26 of 26 vectors are replayed with exact code, cause and locus,
 and three always-run unit tests are added.
@@ -63,7 +63,7 @@ QSL's matrix does not own. The fix is cheap and belongs in this PR.
 
 - Vectors: 26 of 26 `frame_mutations` replayed. Every vector is a refusal,
   and each is checked for code, cause and locus digest. The run against QSpec
-  main at the time passed. QSpec main has since changed this contract (SR-752
+  0d53cf2 passed. QSpec main e56756f has changed this contract (SR-752
   FND-001).
 - Always-run unit tests: 3. One is an admit case, one refuses
   `missing_declaration`, and one refuses `invalid_model_binding`. Each asserts

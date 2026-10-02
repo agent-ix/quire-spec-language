@@ -13,16 +13,17 @@ relationships:
 
 ## Summary
 
-Round 2. Reviewed branch `task/206-observed-architecture`,
+Round 2. Reviewed commit: 432e615 (branch `task/206-observed-architecture`),
 file `spec/decisions/ADR-010-observed-architecture-baseline.md` and its index
-row in `spec/spec.md`. This round checks each round-1
-finding and reviews the revised parts for new scope-boundary
+row in `spec/spec.md`. Round 1 reviewed faa1731. This round checks each round-1
+finding against 432e615 and reviews the revised parts for new scope-boundary
 problems: §1.2, the §7 owner rule and remaps, the §7.5 rule and §8.
 
 Sources checked: the bodies of #205, #209, #210, #211 and #229; the ARCH-01
 comment on #207 (issuecomment-5743530928); the bodies of all 68 open QSL
 issues (`gh issue list --state open`), scanned for downstream issue
-references; and the code in QSL, IR, RT and QSpec.
+references; and the code at the ADR's Context revisions (QSL de627b5, IR
+553b6d1, RT d97bc0b, QSpec dccddab).
 
 Coordinator constraint applied: each §9 item has one owner among #209, #210 and
 #211, and #229 may only be a secondary input.
@@ -60,16 +61,16 @@ findings are resolved or partly resolved.
 | FND-001 | medium | The §7.5 downstream set does not match its own rule, and the Summary count "Downstream issues mapped 28: every downstream issue cited by a mapped QSL issue body, §8 or §9" is false. The rule reaches issues the table leaves out, including spec-objects-business #8 (cited by #133) and quire-wasm #6 (cited by #207), and several shared-specification questions. The table also lists two issues as cited in places that do not cite them. IR #137 is "cited by §8, OBS-027", but neither §8 nor OBS-027 names IR #137. RT #51 is "cited by §8 (RT PR #52 on #207)", but §8 has no RT PR #52 row. Both come from ARCH-01, not from ADR-010. A smaller gap: one "Cited by" cell leaves out #190. Fix: add the five missing issues, marked "unrelated" where no Layer 1 decision is consumed (quire-wasm #6 is a #205 non-goal). Either widen the rule to "or cited by the ARCH-01 comment", or give IR #137 and RT #51 a real citation in §8 or §9. Update the Summary count. | ADR-010 Summary counts, §7.5, §8; #1, #42, #133, #155, #190, #207 bodies; ARCH-01 §2a |
 | FND-002 | low | In some §7.1 and §7.2 "decision consumed" cells, the ticket named disagrees with the §9 owner of the items in the parentheses. #215 lists "#209 (OBS-031, OBS-034)", but OBS-034 belongs to #211. #217 lists "#209 (…, OBS-027, …)", but OBS-027 belongs to #211. #231 lists "#211 (OBS-002, OBS-027, OBS-028, X6)", but OBS-002 and OBS-028 belong to #209. #222 in §7.1 and #189 in §7.2 attribute DA-12 to #210, but §9.3 gives DA-12 to #211. The §7 owner rule adds to the ambiguity: it gives the "unbounded" family to #210 and the "accounting representation" to #211. Both #210 ("finite, bounded, and unbounded execution/proof modes") and #211 ("finite/bounded/unbounded limits") name bounds, and the rule does not say which ticket owns what. Fix: in each cell, group the items under their §9 owner, for example "#209 (OBS-031); #211 (OBS-034)". Add one clause to the owner rule: the bounded or unbounded mode belongs to the #210 family contract, and the limit or budget representation (DA-12) belongs to #211. | ADR-010 §7 owner rule, §7.1 #215/#217/#222/#231, §7.2 #189, §9.2, §9.3 DA-12; #210 Families in scope; #211 Objects requiring decisions |
 | FND-003 | low | The §8 exclusion clause ("PRs whose disposition names no Layer 1 ticket") drops one capability-vocabulary item that sits inside #229's scope and DA-11, so a #210 or #229 reader of ADR-010 will not see it. Fix: give it a §8 row, or widen the exclusion clause so that it states why the item is excluded. | ADR-010 §8, Decision 3, §9.3 DA-11; ARCH-01 §2a; #229 Scope |
-| FND-004 | low | The negative evidence in the §1.2 Runtime row, "absent: `replay` in `src` (RT, case-insensitive)", does not follow the Evidence convention. The convention defines `absent:` as `git grep -n -F` at the named revision, which is case-sensitive. The claim holds: `git grep -n -i -F replay -- src` in RT returns nothing. But the cell uses an undefined form, and the repository is named in a parenthesis instead of by a prefix. OBS-038 repeats the same form. Fix: add a case-insensitive variant (`-i`) to the Evidence convention, or write the cell as two case-sensitive absences (`replay`, `Replay`) with an `RT:` path. | ADR-010 Evidence convention, §1.2 Runtime row, OBS-038 |
+| FND-004 | low | The negative evidence in the §1.2 Runtime row, "absent: `replay` in `src` (RT, case-insensitive)", does not follow the Evidence convention. The convention defines `absent:` as `git grep -n -F` at the named revision, which is case-sensitive. The claim holds: `git grep -n -i -F replay d97bc0b -- src` in RT returns nothing. But the cell uses an undefined form, and the repository is named in a parenthesis instead of by a prefix. OBS-038 repeats the same form. Fix: add a case-insensitive variant (`-i`) to the Evidence convention, or write the cell as two case-sensitive absences (`replay`, `Replay`) with an `RT:` path. | ADR-010 Evidence convention, §1.2 Runtime row, OBS-038 |
 
 ## Round 1 resolution
 
-Round-1 findings are those of SR-464. Tally: 10 resolved, 1 partly
+Round-1 findings are those of SR-464 at faa1731. Tally: 10 resolved, 1 partly
 resolved, 0 unresolved.
 
 | Round-1 ID | Severity | Status | Reason |
 | --- | --- | --- | --- |
-| FND-001 | high | resolved | §1.2 checks all seven #205 ownership statements against code (0 agree, 5 partial, 2 disagree). OBS-038 records that QSL and IR host execution and replay that #205 gives to RT (owner #209). OBS-039 records that AD-016 and #205 name different replay owners (owner #211, secondary #209). The evidence checks out. |
+| FND-001 | high | resolved | §1.2 checks all seven #205 ownership statements against code (0 agree, 5 partial, 2 disagree). OBS-038 records that QSL and IR host execution and replay that #205 gives to RT (owner #209). OBS-039 records that AD-016 and #205 name different replay owners (owner #211, secondary #209). The evidence checks out at QSL de627b5, IR 553b6d1, RT d97bc0b and QSpec dccddab. |
 | FND-002 | high | resolved | §8 table notes and prose agree on #228 → #204 → #200, and cite ARCH-01 "Rulings applied" and §3. That matches issuecomment-5743530928. |
 | FND-003 | medium | resolved | Under the coordinator constraint: Context and Consequences name #229 as a Layer 1 ticket. Decision 3, §7.1, §9.2 OBS-012 and OBS-013, and §9.3 DA-11 make #229 the secondary input on its FR-290 scope. |
 | FND-004 | medium | resolved | OBS-031 is now owned by #209, with #211 secondary for the pin versus current-head rule, and it cites the ARCH-01 deferral of the integration item. |

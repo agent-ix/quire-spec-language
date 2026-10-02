@@ -17,7 +17,7 @@ relationships:
 
 ## Summary
 
-Reviewed QSL (branch `task/212-arch-g1-gate`) plus the uncommitted
+Reviewed QSL `457a131` (branch `task/212-arch-g1-gate`) plus the uncommitted
 ADR-011 edits that SR-498 records. The four ADRs were read together as one
 `/spec-review all` subject. Line anchors are to that working tree.
 

@@ -26,11 +26,11 @@ relationships:
 
 ## Summary
 
-Retrospective Rust/code review examined PR #70 through its final head,
+Retrospective Rust/code review examined PR #70 through final head `e0afa9f`,
 including the temporal evaluator, activation, progress, mapping, resource
 accounting, and their real compiler-to-reader controls. The review found one
 subject-attribution defect in the first unaffordable evaluator charge; it is
-fixed and guarded by `tc_124_visit_exhaustion_names_the_current_subject`.
+fixed in `e0afa9f` and guarded by `tc_124_visit_exhaustion_names_the_current_subject`.
 
 No production `unsafe`, debug output, placeholder implementation, unchecked
 wire conversion, or unbounded temporal traversal was found in the reviewed
@@ -51,7 +51,7 @@ and native-to-TL correspondence requires Contract IR #63/#64.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Resolved: `Evaluator::evaluate` now assigns the current subject before visit/depth charges, so an exhausted first operation reports its actual declaration, instance and node. The new source-local TC-124 regression uses nonzero identities and a zero visit ceiling. | src/temporal/formula.rs; NFR-008-AC-2; TC-124 |
+| FND-001 | medium | Resolved in `e0afa9f`: `Evaluator::evaluate` now assigns the current subject before visit/depth charges, so an exhausted first operation reports its actual declaration, instance and node. The new source-local TC-124 regression uses nonzero identities and a zero visit ceiling. | src/temporal/formula.rs; NFR-008-AC-2; TC-124 |
 | FND-002 | medium | Outstanding assurance: targeted mutation controls exist, but mutation adequacy has not measured every exhaustion path. This does not weaken or misstate the passing deterministic controls and remains an explicit later qualification item. | NFR-008; TC-124; TM-008; SR-383 |
 | FND-003 | low | External interface boundary: `/1` input remains readable but cannot authenticate temporal definition digest or clock parameters; the evaluator and classifier must not claim native-to-TL correspondence until A's `/2` and Contract IR #63/#64 are delivered. | FR-043; FR-045; TM-008; quire-spec-language#40; quire-contract-ir#63; quire-contract-ir#64 |
 

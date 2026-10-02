@@ -3,7 +3,7 @@ id: SR-764
 title: "QSL-279 gap analysis of PR 504 (FR-105 state node emission, FR-108 boundary cases)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-105-emit-state-nodes.md; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/functional/FR-088-clause-name-and-type-identity.md (AC-4); spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/test-cases/TC-466-s6a-evaluates-state-clauses.md; spec/test-cases/TC-469-configversion-spine-corpus-matches-native.md; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/check/identity.rs; tests/it/config_version.rs; examples/config-version/cases.rs"
+scope: "agent-ix/quire-spec-language@852cf4015fb4408ceaef67cc0a10c90600350af7; spec/functional/FR-105-emit-state-nodes.md; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/functional/FR-088-clause-name-and-type-identity.md (AC-4); spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/test-cases/TC-466-s6a-evaluates-state-clauses.md; spec/test-cases/TC-469-configversion-spine-corpus-matches-native.md; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/check/identity.rs; tests/it/config_version.rs; examples/config-version/cases.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -17,7 +17,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-279. PR: quire-spec-language#504. There is no plan
+Ticket: QSL-279. PR: quire-spec-language#504 at 852cf401. There is no plan
 bundle, so the scope is the ticket (FR-105 with TC-462/TC-463, FR-108 with
 TC-469) as the team leader narrowed it. QSL-307 takes the I2 read-back
 (FR-105-AC-3), and QSL-308 takes TC-469 and 13 of FR-108's 17 cases.

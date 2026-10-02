@@ -18,7 +18,7 @@ relationships:
 ## Summary
 
 Round 1. Reviewed ADR-010, ADR-011, ADR-012 and ADR-013 together on
-`task/212-arch-g1-gate`. The working tree edits to ADR-011
+`task/212-arch-g1-gate` at 457a131. The working tree edits to ADR-011
 (Decision 8, §2.3 rule 8, FB-10, the agent-ix/quire-contract-runtime#53 row, E3 and §10 row 8) are part of
 the subject. ADR-010 is the observed baseline; it is read only for the edges it
 pins.

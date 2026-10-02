@@ -3,7 +3,7 @@ id: SR-744
 title: "Spec review of TC-426 step 3 status flip"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/test-cases/TC-426-a-check-location-resolves-to-its-unit-region.md; spec/tests.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/functional/FR-095-occurrence-keyed-source-map-and-locus.md; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md"
+scope: "agent-ix/quire-spec-language@09e9d18585d4aed678ce681ef824a24b19a24b27; spec/test-cases/TC-426-a-check-location-resolves-to-its-unit-region.md; spec/tests.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/functional/FR-095-occurrence-keyed-source-map-and-locus.md; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/TC-426
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493.
+Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493 at 09e9d185.
 The spec edits are the TC-426 Status section and the TC-426 row in
 `spec/tests.md`. No FR-100 to FR-111, TC-450 to TC-469 or `.github/workflows`
 file is touched.
@@ -42,14 +42,15 @@ written.
 
 ## Dispositions
 
-First pass, corrected below: FND-001 was recorded as fixed.
+First pass (at aea25ff4), corrected below: FND-001 was recorded as fixed.
 It was not -- the fourth case was added, but the surrounding text and the
-AC/TC were not updated to match it. The later disposition pass found this and returned it to still-open; the corrected
+AC/TC were not updated to match it. The disposition pass at c69d7cf7 (Linear
+comment d384c3f1) found this and returned it to still-open; the corrected
 row replaces the original entry rather than standing beside it, since the
 original was simply wrong, not a later change of outcome.
 
 | ID | Disposition |
 | --- | --- |
-| FND-001 | **still-open** (later disposition pass): "The fourth case was added as list item 4, but the text around the list was not updated and now contradicts it ... FR-096:96 still says 'A location SHALL resolve to no region in exactly three cases. In each, the tree holding the position was not read from the unit, so no region of the unit names it.' The list now has four items, and item 4 is a position that *was* read from the unit. The count and the premise of the lead-in are both wrong. FR-096:168 still reads 'The position resolves to no region (the three cases above).' The original finding said 'The rule then goes into FR-096 and an AC.' FR-096-AC-1 (FR-096:332) and TC-426's Procedure and Expected Results do not mention the split case. The case is recorded only in the Status prose, yet `a_span_the_embedding_splits_has_no_region` is traced `FR-096-AC-1`, which does not state it. Fix: change the count to four in both places and reword the lead-in ... Add one AC-1 sentence and one TC-426 step or expected result for the split span ... The wording of item 4 itself ... matches the style of items 1 to 3, and its meaning matches the test." Fixed in this follow-up round: FR-096:96 now says "exactly four cases" with a lead-in covering both premises ("In the first three ... was not read from the unit ... in the fourth, the position was read from the unit, but its span does not map to a single region"); FR-096:168 says "the four cases above"; AC-1 (FR-096:332-area) states the split disposition; TC-426 gained step 5 and its Expected Results entry for the split case. |
-| FND-002 | fixed: FR-096's Status no longer lists the embedded-document mapping as not built; a new "Implemented under QSL-293" entry records what is built, the fourth no-region case, and the QSL-294 production-wiring gap. |
-| FND-003 | fixed: `spec/tests.md`'s S-5b coverage prose now names TC-426 alongside TC-427, TC-429, TC-378, TC-428 and TC-500. |
+| FND-001 | **still-open** (disposition pass at c69d7cf7, Linear comment d384c3f1): "The fourth case was added as list item 4, but the text around the list was not updated and now contradicts it ... FR-096:96 still says 'A location SHALL resolve to no region in exactly three cases. In each, the tree holding the position was not read from the unit, so no region of the unit names it.' The list now has four items, and item 4 is a position that *was* read from the unit. The count and the premise of the lead-in are both wrong. FR-096:168 still reads 'The position resolves to no region (the three cases above).' The original finding said 'The rule then goes into FR-096 and an AC.' FR-096-AC-1 (FR-096:332) and TC-426's Procedure and Expected Results do not mention the split case. The case is recorded only in the Status prose, yet `a_span_the_embedding_splits_has_no_region` is traced `FR-096-AC-1`, which does not state it. Fix: change the count to four in both places and reword the lead-in ... Add one AC-1 sentence and one TC-426 step or expected result for the split span ... The wording of item 4 itself ... matches the style of items 1 to 3, and its meaning matches the test." Fixed in this follow-up round: FR-096:96 now says "exactly four cases" with a lead-in covering both premises ("In the first three ... was not read from the unit ... in the fourth, the position was read from the unit, but its span does not map to a single region"); FR-096:168 says "the four cases above"; AC-1 (FR-096:332-area) states the split disposition; TC-426 gained step 5 and its Expected Results entry for the split case. |
+| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: FR-096's Status no longer lists the embedded-document mapping as not built; a new "Implemented under QSL-293" entry records what is built, the fourth no-region case, and the QSL-294 production-wiring gap. |
+| FND-003 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `spec/tests.md`'s S-5b coverage prose now names TC-426 alongside TC-427, TC-429, TC-378, TC-428 and TC-500. |

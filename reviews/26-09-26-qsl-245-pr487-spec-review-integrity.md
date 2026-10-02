@@ -3,7 +3,7 @@ id: SR-725
 title: "QSL-245 integrity analysis of PR 487 (catalog 1-draft.8 adoption)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500; read-only context spec/functional/FR-106-admit-snapshots-and-invocations.md"
+scope: "agent-ix/quire-spec-language@913375e2255351626fdcb6f318b130938d351df9; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500; read-only context spec/functional/FR-106-admit-snapshots-and-invocations.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -37,9 +37,9 @@ can go in this PR. FND-002 needs routing, not an edit here.
 
 ## Dispositions
 
-Verified against the fix diff on 2026-09-26.
+Verified against `git diff 913375e2..e0d028af` on 2026-09-26.
 
-| FND | outcome | reason |
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-096-AC-7 and TC-428 step 3 now cover only the `CatalogCoded` rows; AC-8 covers the twelve kernel rows. |
+| FND-001 | fixed | e0d028af: FR-096-AC-7 and TC-428 step 3 now cover only the `CatalogCoded` rows; AC-8 covers the twelve kernel rows. |
 | FND-002 | deferred | FR-106 is in agent-a's lane and this PR correctly leaves it alone. The move of condition 7 to `invalid_source_identity`/`blank-label` still needs routing to the FR-106 owner. |

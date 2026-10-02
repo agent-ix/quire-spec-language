@@ -3,7 +3,7 @@ id: SR-282
 title: "Scope review of the runtime input schema"
 type: SpecReview
 analysis: scope-boundary
-scope: "FR-024-AC-5"
+scope: "FR-024-AC-5 at f4679ef"
 review_set: all
 ---
 ## Summary

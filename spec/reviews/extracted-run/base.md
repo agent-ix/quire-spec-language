@@ -10,7 +10,7 @@ review_set: all
 
 FR-031 scopes one optional run mode: an original Markdown selection, one authored binding and explicit derived-body identities. TC-109 exercises all four criteria through the actual binary, including LF/CRLF truth/refusal, original-byte maps, closed descriptors, disabled feature, unsupported combinations and fresh limits. Ordinary native requests remain covered by the full suite.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `0d3d294`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

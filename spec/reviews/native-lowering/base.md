@@ -3,7 +3,7 @@ id: SR-116
 title: "PR specification review of native Boolean lowering"
 type: SpecReview
 analysis: base
-scope: "PR #13; FR-009, TC-092–094, IT-008, Plan-008; code/test baseline with POC delivery amendment"
+scope: "PR #13; FR-009, TC-092–094, IT-008, Plan-008; code/test baseline d58ca7a with POC delivery amendment"
 review_set: all
 ---
 
@@ -11,7 +11,7 @@ review_set: all
 
 The retained owner selection is all eight analyses, applied once at PR readiness.
 No applicable AssuranceProfile requires an enforced run. Reviewed FR-009,
-TC-092–094, IT-008 and Plan-008 against production/test code and
+TC-092–094, IT-008 and Plan-008 against production/test revision d58ca7a and
 the accompanying owner-approved proof-of-concept delivery amendment.
 
 IDs, relative links and all seven AC-to-TC mappings resolve. US-004 supplies

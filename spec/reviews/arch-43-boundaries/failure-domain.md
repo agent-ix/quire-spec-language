@@ -13,13 +13,14 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` and its pointer amendments to ADR-011 §1, ADR-012 §3
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (QSL
+`main` at `99e9b6c7`) and its pointer amendments to ADR-011 §1, ADR-012 §3
 and §13.5, ADR-013 R-06, O-08 and O-25, and `spec/spec.md`. The review
 checked unstated failure modes, identity confusion, purity gaps and edge
 cases. It covered the refinement gate classification, recorded-baseline
 staleness, frame replay identity, abstraction-relation keys, inheritance
 and unbound-refusal scope. Code claims were opened at file and line. QSpec
-was read at `origin/main` (FR-353, AD-003, FR-110 context, the
+was read at `origin/main` `4634f5f` (FR-353, AD-003, FR-110 context, the
 native-diagnostics catalog). Linear ticket text was not relied on.
 
 What holds:

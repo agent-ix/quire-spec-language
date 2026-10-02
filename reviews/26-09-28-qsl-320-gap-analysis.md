@@ -3,7 +3,7 @@ id: SR-781
 title: "QSL-320 gap analysis of PR 518 (ADR-013 replay-type ownership vs qsl-replay code)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (O-24, O-25, C-09, C-11, OQ-H, TK-04); qsl-replay/src/witness.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/identity.rs; qsl-replay/src/lib.rs; qsl-replay/src/proof_result.rs; agent-ix/quire-contract-ir spec FR-031 (context only)"
+scope: "agent-ix/quire-spec-language@4a4f1c286339abf7e86969800989f2da295d3467; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (O-24, O-25, C-09, C-11, OQ-H, TK-04); qsl-replay/src/witness.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/identity.rs; qsl-replay/src/lib.rs; qsl-replay/src/proof_result.rs; agent-ix/quire-contract-ir spec FR-031 (context only)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-013

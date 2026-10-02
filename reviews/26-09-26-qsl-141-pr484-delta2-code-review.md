@@ -3,7 +3,7 @@ id: SR-721
 title: "Second delta code review of the PR #484 fix round"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/assemble/tests.rs; qsl-forms/tests/it/value_forms.rs; spec/test-cases/TC-402-assembler-reads-no-cst.md; reviews/"
+scope: "agent-ix/quire-spec-language@5e11d336ab776ceafd592ce12802a3f5c3f99d2a; qsl-semantics/src/check/assemble/tests.rs; qsl-forms/tests/it/value_forms.rs; spec/test-cases/TC-402-assembler-reads-no-cst.md; reviews/"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
@@ -13,7 +13,7 @@ relationships:
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-a257651e. Ticket QSL-141, PR quire-spec-language#484.
 
-Delta review of the second fix round. It covers the TC-402 and TC-403 test changes and the review files the coder transcribed. All three findings are low. None of them lets a real CST edge into the assembler today.
+Delta review of the second fix round, `bee599c7..5e11d336`. It covers the TC-402 and TC-403 test changes and the review files the coder transcribed. All three findings are low. None of them lets a real CST edge into the assembler today.
 
 ## Findings
 
@@ -25,9 +25,9 @@ Delta review of the second fix round. It covers the TC-402 and TC-403 test chang
 
 ## Reviewer comment (verbatim)
 
-<!-- reviewer repo=agent-ix/quire-spec-language visibility=public id=SR-721 method=code-review lang=rust pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-721 method=code-review lang=rust pr=quire-spec-language#484 reviewed=5e11d336ab776ceafd592ce12802a3f5c3f99d2a date=2026-09-26 -->
 
-Delta review of the second fix round. It covers the TC-402 and TC-403 test changes and the review files the coder transcribed. All three findings are low. None of them lets a real CST edge into the assembler today.
+Delta review of the second fix round, `bee599c7..5e11d336`. It covers the TC-402 and TC-403 test changes and the review files the coder transcribed. All three findings are low. None of them lets a real CST edge into the assembler today.
 
 | FND | Severity | Check | Summary |
 | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ findings:
               if !matches!(item.vis, syn::Visibility::Inherited) && use_tree_names_cst(&item.tree) {
     finding: "TC-402 step 2 says 'or to any type it re-exports'. A public type alias is a
       re-export in effect, and this repo's own tests/it/layer_crate_reexports.rs counts
-      `pub type` as one. Mutation: `pub type CstProduction = qsl_cst::Production;`
+      `pub type` as one. Mutation at 5e11d336: `pub type CstProduction = qsl_cst::Production;`
       in qsl-forms/src/lib.rs plus `use qsl_forms::CstProduction as _P;` in check/assemble.rs
       left all 41 check::assemble tests green. No such alias exists today. Fix: also
       visit ItemType with non-inherited visibility whose type names a qsl_cst path."
@@ -77,10 +77,10 @@ findings:
       type: SpecReview
       analysis: code-review
       ---
-    finding: "`quire validate --scope . reviews/26-09-26-qsl-141-pr484-*.md` fails
+    finding: "`quire validate --scope . reviews/26-09-26-qsl-141-pr484-*.md` at 5e11d336 fails
       on this file: required 'summary' (section_body(Summary)) is missing, and required
       'findings' (table_row(under Findings)) is missing. The frontmatter also has no
-      `scope`. The content matches the Linear
+      `scope: agent-ix/quire-spec-language@bee599c7...`. The content matches the Linear
       comment verbatim. Only the SpecReview wrapper is missing. make ci does not run
       quire validate, so nothing is red. Fix: add `scope`, a `## Summary`, and a
       `## Findings` table with the three rows (ID/Severity/Summary/Refs), keeping

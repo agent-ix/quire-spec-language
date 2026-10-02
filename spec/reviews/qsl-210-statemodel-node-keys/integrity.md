@@ -3,7 +3,7 @@ id: SR-607
 title: "Integrity review of the QSL-210 model-owned, StateModel and quantity node-key requirements"
 type: SpecReview
 analysis: integrity
-scope: "FR-094 against QSpec FR-322 and proposals/checked-package-v2, the model, check and value code it cites, and the FR-092, FR-093 and ADR-013 edits"
+scope: "Commit ac4f974f: FR-094 against QSpec FR-322 and proposals/checked-package-v2 at e72756f, the model, check and value code it cites, and the FR-092, FR-093 and ADR-013 edits"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-094
@@ -20,7 +20,7 @@ relationships:
 
 ## Summary
 
-These parts match QSpec, the code, or both:
+These parts match QSpec at `e72756f`, the code, or both:
 
 - **Application rows.** E4 to E9 conform to their `operation-catalog.json`
   entries:

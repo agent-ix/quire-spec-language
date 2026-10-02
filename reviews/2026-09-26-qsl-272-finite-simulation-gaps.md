@@ -3,7 +3,7 @@ id: SR-673
 title: "QSL-272 gap analysis of the FR-101 finite simulation implementation against FR-101 and TC-453 to TC-455"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md (X-8); spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (TR-1, TR-7); spec/tests.md; qsl-eval/src/simulation/*.rs; qsl-eval/tests/it/finite_simulation.rs; tests/it/family_outcome_layering.rs"
+scope: "agent-ix/quire-spec-language@05db9adf6e2c557f30c2911ab286d02d946bdcb2; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md (X-8); spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (TR-1, TR-7); spec/tests.md; qsl-eval/src/simulation/*.rs; qsl-eval/tests/it/finite_simulation.rs; tests/it/family_outcome_layering.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
@@ -18,7 +18,7 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-272 (PR agent-ix/quire-spec-language#467).
+Ticket: QSL-272 (PR agent-ix/quire-spec-language#467, head 05db9adf).
 This analysis traces each FR-101 AC and each TC-453 to TC-455 step to a test,
 and checks whether the test's oracle is a literal value. It also checks the
 FR-101 disposition table and the ADR-011 X-8 and ADR-014 TR-1/TR-7 contracts
@@ -83,17 +83,18 @@ FND-003 and FND-004). The remaining gaps are low.
 
 ## Dispositions
 
-Disposition pass (rebased onto main with #465 / FR-096).
+Disposition pass at 54732520 (rebased onto main with #465 / FR-096; fixes in
+e8c5f6c7 and 54732520).
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `cause` is implemented and asserted literally in `cancellation_stops_the_run_and_returns_the_frontier` and in `cancellation_frontier_keeps_fifo_order_not_key_order`. |
-| FND-002 | fixed | `CatalogCoded for NotSimulated`. `GeneratorMismatch` gives `invalid_runtime_input`/`invalid-value`, asserted in the TC-454 step 8 test. `catalog_fields` follows the FR-096 key table: `Extent(Limit)` delegates to `LimitExceeded` (`kind`/`bound`/`actual` row), and every other variant returns `None`, since no key-table row exists for `invalid-value` or `runtime_invariant`. No new code or field is invented. See R1-FND-002 for the `RequiresBound` mapping. |
-| FND-003 | fixed | the first iteration is tight (1/1/1) and the second generous. The test asserts domain key node `[7;32]`, path `[]` and `DomainKind::Integer`, and asserts `Extent(ClassifyFailure::Limit)` with `LimitKind::NodeCount` and zero calls. |
-| FND-004 | fixed | `several_initial_states_in_descending_order_stop_bounded_at_depth_zero` lists `c,b,a,a` with `max_states` 3 and `max_depth` 0, and expects `Bounded` at `Depth` with frontier a,b,c. |
-| FND-005 | fixed | the test asserts provenance seed 42, trace 0 and `sampler == sampler_ref()`, and `replay(&system, &first) == Ok(())`. |
-| FND-006 | fixed | the test is retagged `#[trace("TC-453", "FR-101-AC-1")]`. |
-| FND-007 | fixed | TC-453 to TC-455 Status now reads Implemented, and the FR-101 Status matches the code. |
+| FND-001 | fixed | e8c5f6c7: `cause` is implemented and asserted literally in `cancellation_stops_the_run_and_returns_the_frontier` and in `cancellation_frontier_keeps_fifo_order_not_key_order`. |
+| FND-002 | fixed | e8c5f6c7 and 54732520: `CatalogCoded for NotSimulated`. `GeneratorMismatch` gives `invalid_runtime_input`/`invalid-value`, asserted in the TC-454 step 8 test. `catalog_fields` follows the FR-096 key table: `Extent(Limit)` delegates to `LimitExceeded` (`kind`/`bound`/`actual` row), and every other variant returns `None`, since no key-table row exists for `invalid-value` or `runtime_invariant`. No new code or field is invented. See R1-FND-002 for the `RequiresBound` mapping. |
+| FND-003 | fixed | e8c5f6c7: the first iteration is tight (1/1/1) and the second generous. The test asserts domain key node `[7;32]`, path `[]` and `DomainKind::Integer`, and asserts `Extent(ClassifyFailure::Limit)` with `LimitKind::NodeCount` and zero calls. |
+| FND-004 | fixed | e8c5f6c7: `several_initial_states_in_descending_order_stop_bounded_at_depth_zero` lists `c,b,a,a` with `max_states` 3 and `max_depth` 0, and expects `Bounded` at `Depth` with frontier a,b,c. |
+| FND-005 | fixed | e8c5f6c7: the test asserts provenance seed 42, trace 0 and `sampler == sampler_ref()`, and `replay(&system, &first) == Ok(())`. |
+| FND-006 | fixed | e8c5f6c7: the test is retagged `#[trace("TC-453", "FR-101-AC-1")]`. |
+| FND-007 | fixed | e8c5f6c7: TC-453 to TC-455 Status now reads Implemented, and the FR-101 Status matches the code. |
 
 New findings, round 1:
 
@@ -104,7 +105,7 @@ New findings, round 1:
 
 ## R1 Dispositions
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| R1-FND-002 | fixed | `NotSimulated` no longer implements `CatalogCoded` (that trait is documented as always `Category::Refusal`); `catalog_code`/`catalog_fields` are inherent `Option`-returning methods, `None` for `RequiresBound`. Neither the diagnostics catalog nor `qsl-route`'s `Disposition` types define a requires-bound code (`qsl-route`'s own `Disposition::RequiresBound` carries none either), so none is invented. FR-101:143-158 states the rule; the TR-2 analogy now covers only `EmptyInitial` and `KeyEncoding`. |
-| R1-FND-003 | fixed | `GeneratorMismatch`'s catalog-code sentence moved from AC-11 to AC-10 and into TC-454 step 8's expected results. `not_simulated_catalog_code_and_fields_cover_every_variant` asserts `catalog_code`/`catalog_fields` for every `NotSimulated` variant, including `Extent(Limit)`'s delegation to `LimitExceeded`'s `kind`/`bound`/`actual` fields. |
+| R1-FND-002 | fixed in ce67367b | `NotSimulated` no longer implements `CatalogCoded` (that trait is documented as always `Category::Refusal`); `catalog_code`/`catalog_fields` are inherent `Option`-returning methods, `None` for `RequiresBound`. Neither the diagnostics catalog nor `qsl-route`'s `Disposition` types define a requires-bound code (`qsl-route`'s own `Disposition::RequiresBound` carries none either), so none is invented. FR-101:143-158 states the rule; the TR-2 analogy now covers only `EmptyInitial` and `KeyEncoding`. |
+| R1-FND-003 | fixed in ce67367b | `GeneratorMismatch`'s catalog-code sentence moved from AC-11 to AC-10 and into TC-454 step 8's expected results. `not_simulated_catalog_code_and_fields_cover_every_variant` asserts `catalog_code`/`catalog_fields` for every `NotSimulated` variant, including `Extent(Limit)`'s delegation to `LimitExceeded`'s `kind`/`bound`/`actual` fields. |

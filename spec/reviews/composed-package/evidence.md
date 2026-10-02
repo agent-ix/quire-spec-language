@@ -5,11 +5,13 @@ type: SpecReview
 analysis: evidence
 scope: "FR-035/036; TC-113–115; IT-009; TM-003 composed amendment"
 review_set: all
+evaluated_revision: "fa07b07"
 ---
 ## Summary
 
 Reviewed the fourteen authored acceptance criteria and the real-producer
-integration prerequisite against the current compiler and the standard draft. The planned Rust controls have concrete oracles; the advisor could not
+integration prerequisite against the current compiler and the standard draft at
+`d7483f3`. The planned Rust controls have concrete oracles; the advisor could not
 produce recommendations because its CLI-version check failed.
 
 ## Findings
@@ -22,7 +24,9 @@ produce recommendations because its CLI-version check failed.
 ## Advisor and catalog evidence
 
 `quoin advise --repo /home/peter/dev/worktrees/quire-language-composed-spec --json`
-exited 2 with `could not determine the quire CLI version (expected >= 0.21.0)`. No obligation recommendation,
+exited 2 with `could not determine the quire CLI version (expected >= 0.21.0)`.
+The actual version command reports `quire 0.31.0 (cli 4f6ed024, engine
+0.46.0@ca7362d4)`; installed Quoin reports `0.23.1`. No obligation recommendation,
 matched applicability rule, evidence-store observation or mismatch population was
 returned. This limitation is not an inconclusive recommendation for each AC and
 does not justify changing authored methods from an imagined advisor result.
@@ -67,7 +71,7 @@ model checker or family evaluator to qualify this compiler admission slice.
 
 ## Correction recheck
 
-Targeted reread of the correction confirms that TC-114 now independently exercises
+Targeted reread at `d5047a8` confirms that TC-114 now independently exercises
 mixed available editions and a package/header selection conflict, with a matching
 positive control. Its resource cases read the declared accounting version,
 dimensions, capacities and effective limits, then derive expected charges
@@ -79,7 +83,7 @@ execution evidence. The advisor limitation and IT-009 prerequisites remain.
 
 ## Verdict
 
-PASS for the scoped authored evidence strategy and the correction
+PASS for the scoped authored evidence strategy and the `d5047a8` correction
 recheck, with the advisor limitation recorded. This is a specification review,
 not executed qualification or permission
 to bypass the stated standard/producer acceptance gates. No build, Rust test,

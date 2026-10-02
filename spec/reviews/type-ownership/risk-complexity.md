@@ -13,9 +13,10 @@ relationships:
 
 ## Summary
 
-Reviewed branch `task/211-type-ownership`. The subject is
+Reviewed commit: 660aa25 (branch `task/211-type-ownership`). The subject is
 ADR-013 and its row in `spec/spec.md` (lines 167 and 398). Spot checks ran
-against QSL `origin/main`, QSL PR #200, IR PR #139, QSpec `origin/main` (AD-016, FR-323 and
+against QSL `origin/main`, QSL PR #200 at head 9e59dde, IR PR #139 at head
+417ec86, QSpec `origin/main` (AD-016, FR-323 and
 `proposals/checked-package-v2/schema.json`), the RT and CG `Cargo.toml` on
 `origin/main`, and the live text of issues #211, #213 and #231.
 
@@ -80,9 +81,9 @@ at the cited PR head.
 | FND-004 | medium | Replay by recompilation depends on a source input that no contract carries. O-15 and O-26 require the executor to recompile "the locked source" and recompute `package_id` (C-13). FR-323 `package` is only "exact FR-322 checked-package reference" (FR-323 line 23). The v2 `PackageLock.sources` holds `RawSourceRef`s, which name sources by reference, not by content (checked-package-v2 `schema.json:28`). Recompiling also needs the selected FCD domain-package bytes (O-01). No owner, contract or store is named for getting those bytes to the executor. Either this is a QSpec change the record does not declare (beside OQ-2 and OQ-3), or it is an unowned local resolver, which R-02 forbids. #231's replay request cannot be finished without it. Fix: add an owner question (OQ-4) or a #209 question that says how the executor obtains the source and domain-package bytes named by the lock. Examples: a content-addressed source set carried in, or referenced by, the FR-323 request, or a named resolver owned by a stage. State that a missing or mismatched source refuses with `source_digest_mismatch` or `stale_dependency`. | ADR-013 O-15, O-26, C-13; QSpec FR-323 lines 22–24; checked-package-v2 `schema.json:28` |
 | FND-005 | medium | The replay-execution tasking conflicts with #231. Issue #231's non-goals say "No … replay execution is implemented here." ADR-013 O-26 gives #231 the QSL executor side ("Request → execution (QSL): the executor recompiles …, recomputes `package_id` …, selects by node id and calls `CheckedPackage::call`"), and C-13 names "#231 stale-package test". O-24's owner is IR `KaniOutcome`, but its implementing ticket is #231, which is a QSL ticket. Fix: limit #231 in O-24, O-26 and §7 to the typed envelopes and the reader-side refusals: request, result, round trips, and version and stale-identity refusal at decode. Assign executor recompilation and selection (C-13) to #217, or to the ticket #209 names under Q209-5. Change O-24's implementing ticket to IR (#137 or its successor), with #231 carrying the result unchanged. | ADR-013 O-24, O-26, C-13, §7 #231 row; issue #231 Non-goals |
 | FND-006 | medium | OQ-2 blocks the replay-result part of #231, and #231 is not split. O-27's serialized authority is open: OQ-2 asks whether FR-323 `results` or FR-352 `native-run-result/2` is the record, and the parity carrier is `OPEN — decided in WP9` (AD-016 line 242). #231 as one ticket cannot finish until QSpec answers. Fix: in §7, split #231 into three parts: (a) the proof-result and counterexample envelopes (O-24, O-25), which can start after #213 S3; (b) the replay request (O-26), after FND-004; (c) the replay result (O-27), gated on OQ-2 and WP9. | ADR-013 O-27, §7 #231 row, §8 OQ-2; AD-016 line 242 |
-| FND-007 | medium | The witness decision depends on an open IR PR, and the named type is only checked when it is read. At IR PR #139, `Witness` is `#[derive(Serialize, Deserialize)]` with `pub transcript: String` (`src/kani/witness.rs:99-108`). That means a `Witness` holding a cover, unwinding or malformed block can be built by deserializing or by struct literal, without calling `parse`. The "cover and unwinding playback refuse" rule in O-25 and C-10 runs only in `parse` and when an accessor is called. The O-25 envelope invariant ("cannot disagree with its own backend evidence") holds, but a packet can still carry a witness that is invalid, and it is refused only when first read. That may be after the packet has crossed a boundary. If PR #139 changes before it merges, the adopted fact (Context, "Witness fact") goes stale. Fix: in O-25, require the #231 envelope reader (and the IR packet reader) to validate the transcript when it decodes, with the same allow-list as `parse`, and to refuse before admission. Say that O-25 is re-checked against IR #139's merged head. | ADR-013 Context "Witness fact", O-25, C-10; IR PR #139 `src/kani/witness.rs:99-108,140,167-180` |
+| FND-007 | medium | The witness decision depends on an open IR PR, and the named type is only checked when it is read. At IR PR #139 head 417ec86, `Witness` is `#[derive(Serialize, Deserialize)]` with `pub transcript: String` (`src/kani/witness.rs:99-108`). That means a `Witness` holding a cover, unwinding or malformed block can be built by deserializing or by struct literal, without calling `parse`. The "cover and unwinding playback refuse" rule in O-25 and C-10 runs only in `parse` and when an accessor is called. The O-25 envelope invariant ("cannot disagree with its own backend evidence") holds, but a packet can still carry a witness that is invalid, and it is refused only when first read. That may be after the packet has crossed a boundary. If PR #139 changes before it merges, the adopted fact (Context, "Witness fact") goes stale. Fix: in O-25, require the #231 envelope reader (and the IR packet reader) to validate the transcript when it decodes, with the same allow-list as `parse`, and to refuse before admission. Say that O-25 is re-checked against IR #139's merged head. | ADR-013 Context "Witness fact", O-25, C-10; IR PR #139@417ec86 `src/kani/witness.rs:99-108,140,167-180` |
 | FND-008 | medium | Lane-private types sit next to canonical ones with nothing to enforce R-09 and no end date. R-09 says a lane-private type is "consumed by no new family, stage or boundary", but no check, visibility rule or gate enforces it. Deletion waits on Q209-1, which has no date. Because canonical and lane-private types have near-identical names (`DeclarationKey` ×2, `CheckedPackage` ×2 and more), new code can import the wrong one, and a review would miss it. §6 also lists `state::input::CanonicalDigest` as lane-private "until #213 folds it", while O-18 says #213 folds it into the canonical record. R-09 forbids converting a lane-private type to canonical, so both cannot be true. Fix: name how R-09 is enforced, for example a #226 drift check or a #209 module-visibility rule that refuses imports of §6 paths from complete-V1 modules. Take `CanonicalDigest` out of §6 and record it in O-18 as a type #213 replaces. | ADR-013 R-09, §6, O-18, §8 Q209-1 |
-| FND-009 | low | The PR #200 consequence has already been met. Consequences says "PR #200 must encode native references as `ValueTypeRef::Native` before it merges (O-03)". PR #200 already defines `ValueTypeRef{Native(NativeValueType), Package(DeclarationKey)}`, with a doc comment that rules out the "quire/native" pseudo-package (`src/model/domain_package.rs:131-143`). Fix: reword the consequence as a condition to re-check at merge, not as outstanding work. | ADR-013 O-01, O-03, Consequences; QSL PR #200 `src/model/domain_package.rs:131-143` |
+| FND-009 | low | The PR #200 consequence has already been met, and the record cites no PR #200 head. Consequences says "PR #200 must encode native references as `ValueTypeRef::Native` before it merges (O-03)". PR #200 at head 9e59dde already defines `ValueTypeRef{Native(NativeValueType), Package(DeclarationKey)}`, with a doc comment that rules out the "quire/native" pseudo-package (`src/model/domain_package.rs:131-143`). O-03 and O-01 cite PR #200 with no sha, so the claim cannot be re-checked against a fixed head. Fix: cite PR #200@9e59dde in O-01 and O-03. Reword the consequence as a condition to re-check at merge, not as outstanding work. | ADR-013 O-01, O-03, Consequences; QSL PR #200@9e59dde `src/model/domain_package.rs:131-143` |
 | FND-010 | low | The `spec/spec.md` index row is correct. Line 398 reads "Proposed; canonical type, package and conversion ownership (#211)", which matches Status, and line 167 adds the relationship. Risk-wise, the Status line ties acceptance to #212, but gives no revision condition if a sibling Layer 1 decision (#209, #210) contradicts a §3 cell. Fix: optional. Add to Status that a #209 or #210 decision that contradicts a §3 cell reopens that cell. | `spec/spec.md:167,398`; ADR-013 Status |
 
 ## Top hazards
@@ -96,15 +97,15 @@ at the cited PR head.
 
 ## Failure-domain gaps
 
-No `spec/reviews/type-ownership/failure-domain.md` exists. The
+No `spec/reviews/type-ownership/failure-domain.md` exists at 660aa25. The
 identity and purity gaps this review overlaps with are FND-007 (a witness that
 is checked only when read) and FND-004 (where replay sources come from). A
 failure-domain review should look at both.
 
-## Round 2
+## Round 2 (commit 0042691)
 
-Reviewed ADR-013. I read the full revised record and compared it
-with round 1. I re-checked IR PR #139 (still open) and QSL
+Reviewed ADR-013 at 0042691. I read the full revised record and compared it
+with 660aa25. I re-checked IR PR #139 (head still 417ec86, still open) and QSL
 `origin/main:src/value/expression/mod.rs:18`, where the evaluator imports
 `value::accounting::Meter`.
 
@@ -118,7 +119,7 @@ with round 1. I re-checked IR PR #139 (still open) and QSL
 | FND-006 | resolved differently | #231 is not split into tickets. Its §7 gate says the result half also waits on OQ-2, and QC-7 carries the parity field. That is enough for the owner to split #231 during tasking. |
 | FND-007 | resolved | The O-25 Admission row requires admission only through `parse`, including on deserialization. #231 waits for #139 to merge at a recorded sha. Who implements that rule on the IR side is not assigned: FND-012. |
 | FND-008 | resolved | R-09 names the #226 drift gate as its enforcement, and §7 gives #215/#226 the R-09 and R-06 static checks. `CanonicalDigest` and `ByteDigest` are out of §6 and fold into O-18 under S-2. |
-| FND-009 | resolved | The outstanding work is now #131's adverse test for the pseudo-package refusal. |
+| FND-009 | resolved | Consequences and §7 cite PR #200 at `9e59dde`. The outstanding work is now #131's adverse test for the pseudo-package refusal. |
 | FND-010 | resolved | Status says a #209, #210, #222 or #229 decision that contradicts a §3 cell reopens that cell only. |
 
 New findings from the revision:
@@ -126,14 +127,15 @@ New findings from the revision:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-011 | medium | S-1's gate and kernel scope put all of #213 on the slowest dependency, and they split the kernel across slices. All of S-2 to S-6 wait on S-1, and S-1 waits on OQ-3 (c), which is a QSpec amendment. So all of #213 waits on QSpec. Yet OQ-3 (c) only concerns adding `EffectiveId` and the reference identities to the kernel, and that belongs to O-05, which is in S-2. S-1 also moves `NodeKey`, values and outcomes, but not `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location`, `BoundedInteger`, `CardinalityBound` or `BoundViolation`. AD-016's kernel row (line 295) lists all of these as kernel types. Kernel `Value` operations use them: `CheckedPackage::call` takes `&mut Meter`, and the evaluator imports `value::accounting::Meter` (QSL `src/value/expression/mod.rs:18`). O-21 puts the "single meter" in S-6, gated on #222 acceptance. Read literally, S-1 builds a kernel whose operations depend on types still in QSL `value`, or it pulls them in without saying so. Moving the whole kernel row is also the largest single move in #213, so S-1 is the slice most likely to exceed 1–3 sessions. Fix: make S-1 exactly the AD-016 kernel row (including `Meter`, `ChargePoint`, `Incomplete`, `Origin`/`Location` and the bound value types), gated on Q209-4 only. Move the `EffectiveId` and reference-identity kernel additions to S-2 with O-05, gated on OQ-3 (c). Limit S-6's O-21 item to the `model::accounting` fold and the #222 bound types. If S-1 still looks larger than 3 sessions, say where it splits (crate and type move; then retargeting QSL consumers). | ADR-013 §7 slice table (S-1, S-2, S-6), O-05, O-13, O-21, OQ-3 (c); AD-016 line 295; QSL `src/value/expression/mod.rs:18` |
-| FND-012 | low | Nobody owns the witness admission rule on the IR side. O-25 requires `Witness` to be admitted only through `parse`, including on deserialization. At IR PR #139 (still open), `Witness` derives `Deserialize` with a `pub transcript` field (`src/kani/witness.rs:99-108`). The §7 #231 gate asks only that #139 merge "at a recorded sha". The OQ-4 list of unowned IR work names the packet members, the WP9 map and reader codes, but not this rule. #231 could start against a merged `Witness` that still admits any transcript. Fix: make the #231 gate "#139 merged with admission through `parse` on deserialization", or add the admission rule to the OQ-4 IR list. | ADR-013 O-25 Admission row, §7 #231 row, OQ-4; IR PR #139 `src/kani/witness.rs:99-108` |
+| FND-012 | low | Nobody owns the witness admission rule on the IR side. O-25 requires `Witness` to be admitted only through `parse`, including on deserialization. At IR PR #139 head 417ec86 (still open), `Witness` derives `Deserialize` with a `pub transcript` field (`src/kani/witness.rs:99-108`). The §7 #231 gate asks only that #139 merge "at a recorded sha". The OQ-4 list of unowned IR work names the packet members, the WP9 map and reader codes, but not this rule. #231 could start against a merged `Witness` that still admits any transcript. Fix: make the #231 gate "#139 merged with admission through `parse` on deserialization", or add the admission rule to the OQ-4 IR list. | ADR-013 O-25 Admission row, §7 #231 row, OQ-4; IR PR #139@417ec86 `src/kani/witness.rs:99-108` |
 
 Round-2 verdict: ACCEPT WITH FINDINGS (0 high, 1 medium, 1 low). No high finding remains. FND-001 is resolved; FND-011 is the leftover slicing problem and does not block.
 
-## Round 3
+## Round 3 (commit 4152eb8)
 
-PR #236 re-review of the delta, against ADR-011 and ADR-012. The full
-finding table is in [base.md](base.md) Round 3.
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
 
 - The S-1 slice is now bounded: exactly the kernel row plus the QC-15
   component types. `CatalogCode` and the category type move to S-5.

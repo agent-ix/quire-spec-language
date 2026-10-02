@@ -10,7 +10,7 @@ review_set: all
 
 Unsupported command/package combinations and multiple bindings refuse before dependent reads. Stale original bytes refuse before extraction; Quire schema/availability failures remain visible. The consumer checks correspondence before native parsing. Runtime incomplete/refused results retain extraction metadata without truth; other intake failures keep their existing envelope. No callback, shared mutation or new graph traversal is added.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `0d3d294`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 Three mode refusals now have distinct catalogued codes; wrong-clause-count

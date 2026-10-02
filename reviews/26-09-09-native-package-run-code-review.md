@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review using actual code-review, rust-review and
+Author PR-readiness review of 4f15f0f using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict

@@ -15,8 +15,8 @@ relationships:
 ## Summary
 
 `/spec-review` base-checklist recheck over the FR-042, TC-121 and
-`docs/compiled-protocol-v1.md` changes in the correction commit
-against the reviewed commit. Scope is the rewritten reader paragraphs, the
+`docs/compiled-protocol-v1.md` changes in the correction commit `b7aafe1`
+against the reviewed `c7275f5`. Scope is the rewritten reader paragraphs, the
 three new SHALLs, the new attempt-bound paragraph, the rewritten FR-042-AC-6 and
 TC-121 step 6; no other requirement is re-analysed. No `AssuranceProfile`
 document is installed anywhere in this repository — `^type: AssuranceProfile`
@@ -41,9 +41,10 @@ has grown past the point of identifying what failed.
 | ------- | -------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------- |
 | FND-001 | medium   | The new `recovery_bindings` SHALL requires "the declaration's population/closure pairs for recovery and contributing captured origins" without defining contribution, and two implementations define it differently | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:167; docs/compiled-protocol-v1.md:459 | missing-requirement |
 | FND-002 | medium   | FR-042-AC-6 grew from eleven refusal conditions to five sentences spanning providers, cardinality, registration, retries, commit, recovery, typed-effect support and five prerequisite classes; a failure no longer identifies what failed | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:204                     | missing-requirement |
-| FND-003 | low      | Compensation-anchored await and compensation-associated domain events are emitted and tested but named in no requirement (unchanged from the reviewed commit) | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:203                     | missing-requirement |
+| FND-003 | low      | Compensation-anchored await and compensation-associated domain events are emitted and tested but named in no requirement (unchanged from `c7275f5`) | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:203                     | missing-requirement |
 
-## Dispositions of the SR-349 findings
+## Dispositions of the SR-349 findings recorded at c7275f5
+
 | Prior   | Disposition                                                                                                                                   |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | FND-001 | **Resolved.** Line 156 is now `If an otherwise valid compensation effect carries a non-null value type, then the current reader SHALL return Unsupported::Export`, with the reason given (no authoritative effect-payload selector in the profile) and the identity-mismatch case held at `Invalid::Binding`. TC-121 step 6 names both mutations. The wire contract at `docs/compiled-protocol-v1.md:430-437` matches. Correct register: this is an explicit missing-interface refusal, not a claim that a typed observation may be untyped. |

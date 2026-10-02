@@ -10,7 +10,7 @@ review_set: all
 
 Scoped engine validation reports no grammar findings. FR-031 uses an explicit request event and named command actions, with If/then refusals for unsupported mode and feature combinations. Author judgment confirms that extraction observations and execution truth are independently observable; neither an available producer outcome nor an incomplete runtime is described as a passing assessment.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `0d3d294`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

@@ -65,7 +65,8 @@ the lock before the first Cargo command.
 | Formatting | exit 0 |
 | cargo-deny | Not applicable: no deny.toml |
 
-Both full runs include 16 composed proof tests, 24 historical
+Logs: `/tmp/quire-composed-proofs-rereview-20260910-234908.log` and its
+`-summary.log`. Both full runs include 16 composed proof tests, 24 historical
 checker tests and three compile-fail doctests. The initial review's claim of
 a two-doctest difference at the same tree was incorrect: its `--all-targets`
 runs excluded three doctests, and the earlier root run preceded a parent test

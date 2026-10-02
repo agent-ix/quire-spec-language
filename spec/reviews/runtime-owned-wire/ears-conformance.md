@@ -3,7 +3,7 @@ id: SR-272
 title: "EARS review of owned runtime decoding"
 type: SpecReview
 analysis: ears-conformance
-scope: "FR-024 amendment; TC-099/100; Task-035"
+scope: "FR-024 amendment; TC-099/100; Task-035; implementation 3c6a0e6"
 review_set: all
 ---
 ## Summary

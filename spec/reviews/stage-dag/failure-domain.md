@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-011 (ARCH-10, #209), plus
+Reviewed ADR-011 (ARCH-10, #209) at quire-spec-language commit 944a1c8, plus
 the uncommitted Decision 11 citation line, and its `spec/spec.md` index row.
 The inputs were #209, gate #212, ADR-010 and accepted QSpec AD-016
 (`origin/main`). The failure-domain checklist was applied to an architecture
@@ -80,9 +80,9 @@ Each has a concrete fix below. None of them reopens AD-016 or decides a #210 or
 - `spec/spec.md` index row for ADR-011 (line 388): the link, type and
   description are correct.
 
-## Round 2
+## Round 2 (HEAD 5cbd853)
 
-Re-reviewed the revised ADR-011 against the round-1
+Re-reviewed the revised ADR-011 at commit 5cbd853 against the round-1
 findings. The `CheckedPackage` placement was checked against
 `QSL:src/value/expression/mod.rs:71,452,650`. Today the type, its private
 fields and `call` all live in `value::expression`.
@@ -121,9 +121,9 @@ were not re-litigated. The ADR designs no compatibility layer: every §7.3 row
 has disposition "none", and the AD-016 path is kept as the contract, not as a
 shim.
 
-## Round 3
+## Round 3 (HEAD 22fa948)
 
-Delta review, with ADR-013. Round-2 FND-012
+Delta review f781e32 → 22fa948, with ADR-013 at 4152eb8. Round-2 FND-012
 (typestate privacy across layers 3 and 4) is resolved: the binding and both I2
 types are in layer-3 `library`, and the reader calls down. E9 now names its
 package source (recompile through `replay`), identity mismatch, the source

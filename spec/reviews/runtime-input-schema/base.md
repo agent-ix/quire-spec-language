@@ -3,7 +3,7 @@ id: SR-276
 title: "Base review of the runtime input schema"
 type: SpecReview
 analysis: base
-scope: "FR-024-AC-5; TC-099/100; Task-036"
+scope: "FR-024-AC-5; TC-099/100; Task-036; f4679ef against 6d7de6a"
 review_set: all
 ---
 ## Summary

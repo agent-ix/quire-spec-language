@@ -5,6 +5,7 @@ type: SpecReview
 analysis: ears-conformance
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
+evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -22,8 +23,9 @@ The changed requirement-bearing scope has four singular, named-subject obligatio
 ## Engine and semantic checks
 
 Run: quire validate --scope . 'spec/**/*.md' --summary.
-It records 189/189 grammar-clean documents and zero
-grammar findings; full structural validation also exits zero.
+data/spec-validation.txt records 189/189 grammar-clean documents and zero
+grammar findings; full structural validation also exits zero. Quire is
+0.31.0 with engine 0.46.0@ca7362d4, above the required split-scope CLI version.
 
 FR-018 construction, FR-007 validation and FR-008 evaluation use event-triggered
 When statements: their triggers are API requests, not ongoing states. NFR-006
@@ -51,9 +53,10 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed the TC-055–057 setup correction. The only changed prose is
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. The only changed prose is
 TC-055–057 setup, outside this lens's requirement-bearing FR/NFR/StR scope.
 The four previously reviewed requirement statements are byte-unchanged.
-The fresh strict engine run reports 204/204 grammar-clean documents and zero grammar findings; the six
+The fresh strict engine run in reviews/data/native-runtime/input-setup-validation.txt
+reports 204/204 grammar-clean documents and zero grammar findings; the six
 existing registry duplicate notices remain visible. No EARS rewrite or new
 semantic judgment is inferred from test-procedure prose. PASS.

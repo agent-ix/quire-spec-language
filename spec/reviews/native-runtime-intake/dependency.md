@@ -10,7 +10,7 @@ review_set: all
 
 Existing structural admission and execution are implemented prerequisites. The new reader needs no producer process, external service or model reader. It enables serialized runtime inputs while standalone model intake, a CLI command and C's Quire extraction remain later work.
 
-Author PR-readiness re-review, after implementation as directed.
+Author PR-readiness re-review of `0016103`, after implementation as directed.
 Selected set: all. No applicable AssuranceProfile was found.
 
 The correction uses existing Serde and artifact constructors; it adds no dependency or producer prerequisite.

@@ -3,7 +3,7 @@ id: SR-268
 title: "Dependency review of owned runtime decoding"
 type: SpecReview
 analysis: dependency
-scope: "FR-024 amendment; TC-099/100; Task-035"
+scope: "FR-024 amendment; TC-099/100; Task-035; implementation 3c6a0e6"
 review_set: all
 ---
 ## Summary

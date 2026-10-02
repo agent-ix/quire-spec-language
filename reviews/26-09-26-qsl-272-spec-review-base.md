@@ -3,7 +3,7 @@ id: SR-641
 title: "QSL-272 base checklist review of the finite simulation spec (FR-101, TC-453 to TC-455)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/spec.md; spec/tests.md; spec/usecase/US-003-evaluate-bounded-state.md; qsl-eval/tests/it/finite_simulation.rs (unchanged, retag target)"
+scope: "agent-ix/quire-spec-language@84a691bf8beb9df40aa945c48e1e05d7f5fb070b; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-453-exploration-orders-successors-canonically-and-keys-states-by-jcs-bytes.md; spec/test-cases/TC-454-the-pinned-sampler-reproduces-its-vectors-and-sampled-traces-replay.md; spec/test-cases/TC-455-stopped-explorations-stay-incomplete-and-unbounded-requests-require-a-bound.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/spec.md; spec/tests.md; spec/usecase/US-003-evaluate-bounded-state.md; qsl-eval/tests/it/finite_simulation.rs (unchanged, retag target)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
@@ -16,7 +16,7 @@ Ticket: QSL-272 (PR agent-ix/quire-spec-language#457, spec only). Base
 checklist over the nine changed files: ID formats, AC testability and
 oracles, index rows, relationships, and the retag and replacement plan for
 the existing simulation tests. QSpec reference: agent-ix/quire-specification
-at origin/main (FR-181, FR-201, TC-210,
+at origin/main 0d53cf2d (FR-181, FR-201, TC-210,
 `proposals/quire-v1/definitions/simulation-sampler.md`).
 
 What holds:
@@ -61,17 +61,17 @@ Two defects, below.
 
 ## Dispositions
 
-Disposition pass. I re-checked each outcome against the spec. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
+Disposition pass at `agent-ix/quire-spec-language@be1851894b7dbe9f47a606186f181900e5e6eb3b` (fix commit `be185189`, "QSL-272 spec: fix PR #457 review findings (SR-641 to SR-645)"). I re-checked each outcome against the spec at that head. I did not take any outcome from the commit message. Vectors re-run: the mixed-n vector (n=1 at steps 0 and 1, n=5 at step 2, seed 424242, trace 0) selects 4, and a counter that skips no-draw steps selects 0. The NaN digests for 7ff8000000000000 and 7ff8000000000001 are a3d5ecff68c7cfb60a687aa72b743a04e1dc8513e348b9c3f64393dd96f4bdec and 62c344cca9a4942b80644ca8527bc7ccced905f01bf67262a9bd5e824356a955, and they match TC-453 step 6.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-101 has a new "Existing test disposition" table (FR-101:221-252). It covers all 23 `#[test]` functions in finite_simulation.rs, and I counted 23. Each has a retag, replace or delete target at a TC step and an AC. `multi_initial_sample_picks_the_sampler_selected_start` is replaced by TC-454 step 6. New AC-9 covers initial admission, coalescing, `max_states` 0 and exploring with no initial state. New AC-10 covers `GeneratorMismatch`, `EmptyInitial` and `StepLimit`. |
-| FND-002 | fixed | TC-453 step 1 now makes `a`'s post-state key greater than `z`'s. Step 2 makes `step(10)`'s greater than `step(9)`'s. Step 5 requires key(1) > key(2) and key(3) > key(4). Only FIFO order and transition-identity order give the stated frontiers. Step 4 adds a duplicate initial state under `max_states` 3, which also catches an engine that does not coalesce. |
-| FND-003 | fixed | FR-101 makes `explore`, `sample` and the `Sampler` trait `pub(crate)`, so `explore_request` and `sample_request` are the only public entries (Behavior and Status). Every step in TC-453, TC-454 and TC-455 names its entry, with a bounded or empty `domains` set; TC-454 steps 1b and 3b are named in-crate unit tests. |
+| FND-001 | fixed be185189 | FR-101 has a new "Existing test disposition" table (FR-101:221-252). It covers all 23 `#[test]` functions in finite_simulation.rs, and I counted 23. Each has a retag, replace or delete target at a TC step and an AC. `multi_initial_sample_picks_the_sampler_selected_start` is replaced by TC-454 step 6. New AC-9 covers initial admission, coalescing, `max_states` 0 and exploring with no initial state. New AC-10 covers `GeneratorMismatch`, `EmptyInitial` and `StepLimit`. |
+| FND-002 | fixed be185189 | TC-453 step 1 now makes `a`'s post-state key greater than `z`'s. Step 2 makes `step(10)`'s greater than `step(9)`'s. Step 5 requires key(1) > key(2) and key(3) > key(4). Only FIFO order and transition-identity order give the stated frontiers. Step 4 adds a duplicate initial state under `max_states` 3, which also catches an engine that does not coalesce. |
+| FND-003 | fixed 561abc41 | FR-101 makes `explore`, `sample` and the `Sampler` trait `pub(crate)`, so `explore_request` and `sample_request` are the only public entries (Behavior and Status). Every step in TC-453, TC-454 and TC-455 names its entry, with a bounded or empty `domains` set; TC-454 steps 1b and 3b are named in-crate unit tests. |
 
 ## New findings (disposition pass)
 
-These were found in the disposition pass. They are new, not dispositions of the rows above.
+These were found at `be185189`. They are new, not dispositions of the rows above.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |

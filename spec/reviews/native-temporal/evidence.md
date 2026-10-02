@@ -5,28 +5,30 @@ type: SpecReview
 analysis: evidence
 scope: "FR-043, FR-044, FR-045, NFR-008, TC-122-125, TM-008, docs/native-temporal-evaluation.md"
 review_set: subset
+evaluated_revision: "87bc83f5fad724413737e0a707cf80bdbcba931a"
+previous_evaluated_revision: "4c1eee8646b51e00cd141d15eb110a33354b8475"
 review_date: "2026-09-11"
 ---
 
 ## Summary
 
-Re-run of this review against the revision that reworked the temporal scope in
-response to the sixteen findings recorded in the first cycle. Thirty-two acceptance
+Re-run of this review against 87bc83f, which reworked the temporal scope in
+response to the sixteen findings recorded at 4c1eee8. Thirty-two acceptance
 criteria across FR-043, FR-044, FR-045 and NFR-008 and five NFR-008 metric rows
 were re-examined, together with the newly published counter contract in
 `docs/native-temporal-evaluation.md`. All three high findings are resolved: the
 metric table now uses catalog ids and honours NFR-040's method assignment row for
 row, NFR-008 publishes eight counters with kinds, units and defaults, and the
 evaluator now owns the retained-state table that eviction is forced through. The
-installed advisor and method catalog were run for the first time on this scope.
-Ten residual findings
+installed advisor and method catalog were run for the first time on this scope
+and their complete outputs are recorded under `data/`. Ten residual findings
 remain, none high; the most consequential is that the newly added Inspection,
 Analysis and Demonstration methods are invisible to the advisor and name no
 evidence artifact of their own.
 
 ### Disposition
 
-| Prior finding | Status | Evidence |
+| Prior finding | Status at 87bc83f | Evidence |
 | --- | --- | --- |
 | FND-001 weakened eviction method | Resolved | Metric row 3 is `model-based-test-generation`; all five rows carry catalog ids and name a population. |
 | FND-002 no counter definitions | Resolved | NFR-008 Counter definitions lists eight counters; `docs/native-temporal-evaluation.md` publishes kinds, units and defaults under `quire.native.temporal-work/1`; `src/temporal/budget.rs` lands `Limits`, `Usage` and `Dimension` with the same eight. |
@@ -43,12 +45,13 @@ evidence artifact of their own.
 | FND-013 unnamed ticket | Resolved | #38 is named in NFR-008, FR-043, FR-045, TC-124, TC-125 and TM-008. |
 | FND-014 unowned TC-123 refusals | Resolved | The `self`, `result` and `pre(expr)` assertions are gone from TC-123. |
 | FND-015 dropped history term | Resolved | Row 3 reads "retained valuation or capture". |
+| FND-016 absent data files | Resolved | `data/methods.json`, `data/advice.json` and both stderr files are authored by this review from the installed tools. |
 
 ## Findings
 
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
-| FND-001 | medium | The advisor reads the Verification column as a single value, so the new non-test methods are machine-invisible: FR-044-AC-3 and FR-044-AC-6 are `uncatalogued: true` because Analysis and Demonstration lead their cell, while FR-043-AC-1/2/3/13 and NFR-008-AC-1/4 parse as bare `Test` and their Inspection and Analysis halves are dropped entirely. | FR-043-AC-1; FR-043-AC-2; FR-043-AC-3; FR-043-AC-13; FR-044-AC-3; FR-044-AC-6; NFR-008-AC-1; NFR-008-AC-4 | correct-requirement-no-evidence |
+| FND-001 | medium | The advisor reads the Verification column as a single value, so the new non-test methods are machine-invisible: FR-044-AC-3 and FR-044-AC-6 are `uncatalogued: true` because Analysis and Demonstration lead their cell, while FR-043-AC-1/2/3/13 and NFR-008-AC-1/4 parse as bare `Test` and their Inspection and Analysis halves are dropped entirely. | FR-043-AC-1; FR-043-AC-2; FR-043-AC-3; FR-043-AC-13; FR-044-AC-3; FR-044-AC-6; NFR-008-AC-1; NFR-008-AC-4; data/advice.json | correct-requirement-no-evidence |
 | FND-002 | medium | TC-124 group 3's generated eviction schedules cannot be realized: no document publishes an eviction selection rule or an injection seam, so with only a retention ceiling as the knob the test cannot place an eviction point inside the required set — the victim is chosen by unpublished policy. | NFR-008-AC-3; NFR-008-M-3; TC-124 | correct-requirement-no-evidence |
 | FND-003 | medium | Metric row 1's "enumerated nested-interval population" and TC-124 group 1's "declared finite population" are declared nowhere; the denominator is named but never enumerated, unlike row 5 whose population is fully determined as eight dimensions by four ceilings. | NFR-008-M-1; TC-124 | correct-requirement-no-evidence |
 | FND-004 | low | Row 1 labels an exhaustive enumeration `property-based-testing`; the repository carries no property harness in `[dev-dependencies]` and TC-124 disclaims randomized campaigns. The technique is defensible and arguably stronger, but the catalog id overstates it and the judgment is not recorded where SR-092 and SR-105 record theirs. | NFR-008-M-1; TC-124 | wrong-requirement |
@@ -66,7 +69,7 @@ Rust test alone. Nine now carry a second method, and every one of those nine is
 the right call; the residual problems are machine-readability (FND-001) and, in
 three cases, an unnamed artifact.
 
-| Criterion | Declared | Disposition |
+| Criterion | Declared at 87bc83f | Disposition |
 | --- | --- | --- |
 | FR-043-AC-1 | Test (TC-122), Inspection | Correct. TC-122 group 1 inspects the emitted graph for distinct `Constant` and `Holds` nodes, so the Inspection has a concrete subject. |
 | FR-043-AC-2 | Test (TC-122), Analysis | Correct method; the Analysis is discharged by the pairwise identity comparison in group 2, which is a test step, so the Analysis adds nothing the test does not already do. |
@@ -148,9 +151,11 @@ five is `uncatalogued` or `inconclusive`.
 ## Deterministic advice and judgment
 
 `quoin catalog methods --json` and `quoin advise --json` were run from the
-installed toolchain; both exited zero with empty stderr. `quoin advise` has no
-scope flag, so it was run repo-wide over 336 obligations, 37 of them in scope;
-the method catalog has 33 entries.
+installed toolchain at this revision; both exited zero with empty stderr, and
+both stderr files are retained alongside their outputs. Quire independently
+reports 0.31.0. `quoin advise` has no scope flag, so it was run repo-wide over
+336 obligations and `data/advice.json` retains the 37 in-scope records verbatim;
+`data/methods.json` is the complete 33-entry catalog, unfiltered.
 
 Of the 37 records, 30 have `mismatch`, `uncatalogued` and `inconclusive` all
 false. Five are the metric rows discussed above. Two — FR-044-AC-3 and
@@ -180,6 +185,7 @@ activation-time record, not against a stored snapshot file.
 | FR-044-AC-1 to AC-9 | test, analysis, demonstration | `tests/composed_temporal_activation.rs` per TC-123; compile-fail doctest in group 3; per-instance evaluation counter in groups 6 and 9 |
 | FR-045-AC-1 to AC-5 | test, inspection | `tests/composed_temporal_mapping.rs` per TC-125; classifier input inspection in group 1 |
 | NFR-008-AC-1 to AC-5, M-1 to M-5 | test, analysis | `tests/composed_temporal_limits.rs` per TC-124; counters published in `docs/native-temporal-evaluation.md`; `src/temporal/budget.rs` |
+| Advisor and catalog | inspection | `data/advice.json`, `data/methods.json`, `data/advice.stderr`, `data/methods.stderr` |
 
 Three Analysis obligations have no artifact of their own: FR-043-AC-13,
 NFR-008-AC-1 and NFR-008-AC-4. Each needs a named location — a paragraph in the
@@ -207,8 +213,9 @@ as a gate on this scope, because six criteria's second method is currently
 invisible to it.
 
 No FR, NFR, TC, matrix, doc or source file was edited by this review; the only
-file authored is this document. The installed
-`quoin catalog methods --json` and `quoin advise --json` were executed; no Cargo build, test run, mutation tool or fuzz
+files authored are this document and the four `data/` files. The installed
+`quoin catalog methods --json` and `quoin advise --json` were executed and their
+complete outputs retained; no Cargo build, test run, mutation tool or fuzz
 campaign was executed, and no execution result is claimed. All TM-008 rows remain
 Planned. `src/temporal/` now lands `budget.rs`, `profile.rs` and `result.rs`;
 these were read to check that the published counters exist as specified, not

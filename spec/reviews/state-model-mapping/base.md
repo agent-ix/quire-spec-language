@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-016 on `spec/19-arch40-mapping`, and the
+Reviewed ADR-016 on `spec/19-arch40-mapping` at commit `47b1b806`, and the
 amendments made in the same commit: the ADR-012 Status paragraph, the ADR-013
 §6 Outcomes row, the FR-089 Status paragraph and the `spec/spec.md` index row
 and `contains` edge. The checklist was applied as it fits an ADR: ID formats

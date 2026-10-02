@@ -3,7 +3,7 @@ id: SR-774
 title: "QSL-300 code review of PR 513 (FR-115 Frame selection, ProtocolClause S6a evaluate arm)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; spec/spec.md; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/model/observation.rs; qsl-semantics/src/model/observation/frame.rs; qsl-semantics/src/model/population.rs (read, unchanged); qsl-eval/src/value/expression/mod.rs; qsl-eval/src/value/expression/causes.rs; qsl-eval/src/value/expression/s6a/protocol_clause.rs; qsl-eval/src/value/mod.rs; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/call.rs (read, unchanged); qsl-replay/src/spine/clause/tests.rs; qsl-replay/src/spine/clause/tests/frame.rs; examples/config-version/spine.rs; tools/arch-lint/api_surface.rs (read, unchanged); spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/tests.md"
+scope: "agent-ix/quire-spec-language@5f4ecb55c255545b85e0b02d59527cbe46598b1f; spec/spec.md; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/model/observation.rs; qsl-semantics/src/model/observation/frame.rs; qsl-semantics/src/model/population.rs (read, unchanged); qsl-eval/src/value/expression/mod.rs; qsl-eval/src/value/expression/causes.rs; qsl-eval/src/value/expression/s6a/protocol_clause.rs; qsl-eval/src/value/mod.rs; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/call.rs (read, unchanged); qsl-replay/src/spine/clause/tests.rs; qsl-replay/src/spine/clause/tests/frame.rs; examples/config-version/spine.rs; tools/arch-lint/api_surface.rs (read, unchanged); spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-115
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-300. PR: quire-spec-language#513. This review covers
+Ticket: QSL-300. PR: quire-spec-language#513 at 5f4ecb55. This review covers
 code and Rust (the rust-review lane is folded in here).
 
 What was checked:
@@ -92,8 +92,8 @@ are shared code, not copies. Clause-run behaviour is unchanged.
 
 ## Dispositions
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `run_frame` maps `witness: None` with `Completed(Boolean(false))` to `EvaluateFault("frame-false-verdict-without-a-witness")` |
-| FND-002 | fixed | FR-115 Inputs names the spine-owned `OperationName` |
-| FND-003 | fixed | the spec.md FR-115 row says implemented under QSL-300, TC-514 passed locally |
+| FND-001 | fixed | cfa2770a: `run_frame` maps `witness: None` with `Completed(Boolean(false))` to `EvaluateFault("frame-false-verdict-without-a-witness")` |
+| FND-002 | fixed | cfa2770a: FR-115 Inputs names the spine-owned `OperationName` |
+| FND-003 | fixed | cfa2770a: the spec.md FR-115 row says implemented under QSL-300, TC-514 passed locally |

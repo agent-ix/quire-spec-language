@@ -3,7 +3,7 @@ id: SR-275
 title: "Compiler matrix status consumer review"
 type: SpecReview
 analysis: base
-scope: "compiler #28; TM-001–007; docs/matrix-status.md"
+scope: "compiler #28; TM-001–007 at 7619105; docs/matrix-status.md"
 review_set: subset
 ---
 ## Summary
@@ -27,7 +27,10 @@ adoption remain open. No new runtime or requirement semantics were authored.
 
 ## Evidence
 
-The repeatable commands are in
+The clean CLI ff638b9 embeds clean engine d3bc2ba; its executable SHA-256 is
+bb0bd39281508b4148dda05fee920e57f9a0af26ffd6b96536c5758ebafff089.
+Exact clean module checkouts are process e6ea515 and ISO a60ee12. The full
+revision identities and repeatable commands are in
 [matrix-status.md](../docs/matrix-status.md).
 
 Real coverage: 325/329, zero status-column diagnostics, zero status lies.
@@ -45,7 +48,7 @@ observations through the actual Rust CLI, not new automated helper programs or
 a qualification of the entire engine. No Java/Node/Python checks were added.
 
 No requirement, source, test, dependency or workflow changed. Existing code
-verification remains the runs recorded in SR-273; Cargo was not rerun for
+verification remains the 3c6a0e6 runs recorded in SR-273; Cargo was not rerun for
 this documentation correction. Old review records retain their original tool
 limitations. No new all-set requirement review or semantic gap review is claimed.
 Only the affected interpretation and this PR-readiness review are added.

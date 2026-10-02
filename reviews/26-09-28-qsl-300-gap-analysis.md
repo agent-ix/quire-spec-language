@@ -3,7 +3,7 @@ id: SR-775
 title: "QSL-300 gap analysis of PR 513 (FR-115 against TC-514)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/test-cases/TC-514-run-an-operation-frame-over-an-invocation.md; spec/functional/FR-106-admit-snapshots-and-invocations.md (checks 1-11, read); spec/functional/FR-116-replay-a-frame-counterexample.md (read); spec/decisions/ADR-012-semantic-family-extension-contracts.md §12.2 (read); spec/tests.md; qsl-replay/src/spine/clause/tests/frame.rs; qsl-replay/src/spine/clause.rs; qsl-semantics/src/model/observation.rs; qsl-semantics/src/model/observation/frame.rs; qsl-eval/src/value/expression/s6a/protocol_clause.rs"
+scope: "agent-ix/quire-spec-language@5f4ecb55c255545b85e0b02d59527cbe46598b1f; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md; spec/test-cases/TC-514-run-an-operation-frame-over-an-invocation.md; spec/functional/FR-106-admit-snapshots-and-invocations.md (checks 1-11, read); spec/functional/FR-116-replay-a-frame-counterexample.md (read); spec/decisions/ADR-012-semantic-family-extension-contracts.md §12.2 (read); spec/tests.md; qsl-replay/src/spine/clause/tests/frame.rs; qsl-replay/src/spine/clause.rs; qsl-semantics/src/model/observation.rs; qsl-semantics/src/model/observation/frame.rs; qsl-eval/src/value/expression/s6a/protocol_clause.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-115
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-300. PR: quire-spec-language#513. This review maps
+Ticket: QSL-300. PR: quire-spec-language#513 at 5f4ecb55. This review maps
 each FR-115 acceptance criterion and Behavior bullet to TC-514's tests
 (`qsl-replay/src/spine/clause/tests/frame.rs`) and to the code.
 
@@ -59,7 +59,7 @@ witness, not only a missing one.
 
 ## Dispositions
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `a_deletion_outside_the_frame_is_a_violation_naming_it` asserts a `Deleted` witness naming `c2`, its type and an empty `deletes`, exit 10 |
+| FND-001 | fixed | cfa2770a: `a_deletion_outside_the_frame_is_a_violation_naming_it` asserts a `Deleted` witness naming `c2`, its type and an empty `deletes`, exit 10 |
 | FND-002 | accepted-no-change | The note is in the PR body only, so nothing in the repo is wrong. FR-116 stays with QSL-301. QSL-301's QSL side is unblocked once #513 merges, and only the IR witness decode waits on IR#109/CG#49. |

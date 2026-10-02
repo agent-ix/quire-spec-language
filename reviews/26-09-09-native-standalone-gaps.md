@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021–025 are done. The source-to-runtime file command is implemented;
-broader LC05 extraction adoption and assurance remain ongoing.
+Task-021–025 are done. The source-to-runtime file command is implemented at
+d7437e2; broader LC05 extraction adoption and assurance remain ongoing.
 
 ## Verdict
 

@@ -3,17 +3,17 @@ id: SR-768
 title: "QSL-314 code review (with rust-review lane) of PR 509"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; tests/it/config_version_spine.rs; examples/config-version/spine.rs; examples/config-version/model.semantic-ir.json; examples/config-version/model.semantic-ir.json.license; examples/config-version/fixtures.rs; tests/it/main.rs; examples/config-version/cases.rs (unchanged); tests/it/config_version.rs (unchanged); qsl-replay/src/spine/clause/tests.rs config_version_domain_document (unchanged); qsl-semantics/src/model/intake.rs read_records/validate_with_semantic_ir (unchanged); qsl-semantics/src/check/node_key/mod.rs FrameField (unchanged); qsl-semantics/src/check/lowering/state.rs frame_node/frame_field (unchanged); quire-contract-model checked_package/v2/mod.rs validate_frame_body/visit_node_refs/frame_eligibility (dependency)"
+scope: "agent-ix/quire-spec-language@01356698adcabce3ed91138221b7424b12097bed; tests/it/config_version_spine.rs; examples/config-version/spine.rs; examples/config-version/model.semantic-ir.json; examples/config-version/model.semantic-ir.json.license; examples/config-version/fixtures.rs; tests/it/main.rs; examples/config-version/cases.rs (unchanged); tests/it/config_version.rs (unchanged); qsl-replay/src/spine/clause/tests.rs config_version_domain_document (unchanged); qsl-semantics/src/model/intake.rs read_records/validate_with_semantic_ir (unchanged); qsl-semantics/src/check/node_key/mod.rs FrameField (unchanged); qsl-semantics/src/check/lowering/state.rs frame_node/frame_field (unchanged); quire-contract-model@48ab5dc checked_package/v2/mod.rs validate_frame_body/visit_node_refs/frame_eligibility (pinned dependency)"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-314. PR: quire-spec-language#509.
-It is two commits behind main, and merges cleanly. Methods:
+Ticket: QSL-314. PR: quire-spec-language#509 at 01356698, base f17c2d4f.
+It is two commits behind main at 760ef144, and merges cleanly. Methods:
 code-review, with the rust-review lane folded in.
 
-Gate: I ran my own `make ci` on a local, unpushed merge of the PR head with
-origin/main, using a fresh `CARGO_TARGET_DIR`. It exited 0, with 93
+Gate: I ran my own `make ci` on a local, unpushed merge of 01356698 with
+origin/main 760ef144, using a fresh `CARGO_TARGET_DIR`. It exited 0, with 93
 `test result: ok` lines and 0 FAILED. All five TC-469 tests that run passed:
 steps 1, 2+3, 4 and 6-pin in both the default and the all-features pass, and
 step 5 in the all-features pass only. The I04 test was reported ignored.
@@ -26,7 +26,7 @@ What I checked, and what I found:
    is the package identity (`example/` instead of `test/`), and
    `PLACEHOLDER_DIGEST` is the same all-zero digest. Schema validation is live,
    not assumed: `intake::read_records` always calls `validate_with_semantic_ir`
-   (the `agent-ix-semantic-ir` input-bundle schema plus its rules)
+   (the pinned `agent-ix-semantic-ir` input-bundle schema plus its rules)
    before reading nodes. So every case that reaches `evaluate` in step 1
    (16 of 17) proves the committed document admits.
 2. **The three claimed bug fixes are correct in the code.** All three are
@@ -43,7 +43,7 @@ What I checked, and what I found:
    `--ignored`, the test fails with
    `Refused(CheckedPackageRefusal { code: InvalidSemanticGraph, path:
    "/semantic_graph/nodes/2/body/modifies/0" })`, which is exactly QSL-315.
-   The reader's `visit_node_refs` checks every `modifies` entry as a
+   The pinned reader's `visit_node_refs` checks every `modifies` entry as a
    bare node reference, and `FrameField` serializes as 3 members.
    Side note for QSL-315, outside this PR: `frame_field` returns the *owning
    object type* node, and the reader's `frame_eligibility` allows only a

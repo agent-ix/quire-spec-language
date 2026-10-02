@@ -3,7 +3,7 @@ id: SR-086
 title: "Code and Rust review of native clause checking"
 type: SpecReview
 analysis: code-review
-scope: "FR-006/016"
+scope: "FR-006/016 at cdb6560ea26b9baad725b17ab82a315ae7c39a30"
 review_set: subset
 ---
 
@@ -27,9 +27,9 @@ backend qualification and Quire integration remain required downstream work.
 
 ## Review context
 
-Reviewed against FR-006/016 and the
-concrete docs/native-model-checking.md contract reviewed by the
-owner-selected all-review set SR-066–073. Applied the actual
+Reviewed cdb6560ea26b9baad725b17ab82a315ae7c39a30 against FR-006/016 and the
+concrete docs/native-model-checking.md contract reviewed at ceccabb by the
+owner-selected all-review set SR-066–073 at 3cdeb59. Applied the actual
 /home/peter/dev/agent-skills/code-review/SKILL.md and rust-review/SKILL.md,
 portable rust-style defaults and implementation-gap-analysis discovery.
 AGENTS.md, README.md, LICENSE-DECISION.md and Cargo lints govern. No applicable
@@ -98,7 +98,8 @@ hosted CI has only workflow_dispatch and was not dispatched.
 
 The initial population collector inspected only direct object/reference types.
 The valid expression pre(envelope)=envelope omitted other_nodes when Envelope
-contained an OtherRef. inputs.rs now traverses nested records/reference targets and
+contained an OtherRef. checker-nested-runtime-before.txt records the failing
+public regression. inputs.rs now traverses nested records/reference targets and
 all context/frame/invocation inputs. The final suite also checks skipped inputs
 and a cross-population cycle. This was an implementation gap under the existing
 FR-016-AC-9/FR-007 boundary, not a new requirement or semantic decision.
@@ -110,7 +111,12 @@ two insufficient generated boundary examples. The corrected tests use an admitte
 sequence maximum, actual measured graph expansion and an exact depth-64 control.
 No setup failure is presented as proof of refusal.
 
-The usage figures measure the documented work counters,
+checker-complete-cases-first.txt retains the first 20-pass/3-fail result with
+lines clipped to 500 characters; the enormous CheckedPackage Debug line is an
+excerpt. The original full log is retained locally at
+/tmp/agent-a-checker-complete-cases-first-full.txt. Terminal trailing whitespace
+and final blank lines were normalized in selected logs. Final commands/results
+are retained intact. The usage figures measure the documented work counters,
 not allocator capacity, execution time or arbitrary maximum-sized inputs under
 all simultaneous ceilings. Native linkage already enforces its 10,000-node
 ceiling before the checker can receive an over-limit unit.
@@ -119,22 +125,23 @@ ceiling before the checker can receive an over-limit unit.
 
 All final commands exited 0. Cargo phases ran serially with nice 10, locked and
 offline, one build job and one test thread, reusing explicit target caches.
+Paths below are relative to reviews/data/native-checking/.
 
-| Command | Result |
-| --- | --- |
-| `nice -n 10 cargo fmt --all -- --check` | Passed |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --all-targets --no-default-features -- -D warnings` | Passed |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 110 passed; 3 named private tests ignored |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected tests passed |
-| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted |
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `nice -n 10 cargo fmt --all -- --check` | Passed | checker-fmt.txt |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | checker-clippy-all.txt |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --all-targets --no-default-features -- -D warnings` | Passed | checker-clippy-minimal.txt |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 110 passed; 3 named private tests ignored | checker-full-tests.txt |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected tests passed | checker-private-audits.txt |
+| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache | checker-minimal-build.txt |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | checker-rustdoc.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed | checker-audit-self-test.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests and exact producer pin passed | checker-audit-model-bytes.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | checker-cli-parse.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | checker-cli-format.txt |
 
-Quire validates spec and plan with exit 0. Coverage binds 113/113 Rust
+Quire 0.31.0 validates spec and plan with exit 0. Coverage binds 113/113 Rust
 symbols, reports no status lies or untracked symbols, FR-006 5/5, FR-016 9/9 and
 TM-003 35/35. Eighteen existing catalog/classifier diagnostics, three extra IT-004
 tags and six registry duplicate notices remain explicit tool limitations. The

@@ -3,7 +3,7 @@ id: SR-115
 title: "Independent re-review of the LC04 hard-limit remediation"
 type: SpecReview
 analysis: code-review
-scope: "PR #13; SR-114 FND-001..FND-004; src/lowering.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009"
+scope: "PR #13 at d58ca7a; SR-114 FND-001..FND-004; src/lowering.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009"
 review_set: subset
 ---
 
@@ -17,17 +17,17 @@ message and keeps the version tripwire while tolerating a rewording — verified
 printing the message the test actually sees. FR-009 gained the sentence
 explaining that lowering's ceilings sit above the checker's, which is what keeps
 a later reader from deleting the depth bound as dead. The remaining verdict is
-driven entirely by a low the owner deferred, not by anything new.
+driven entirely by two lows the owner deferred, not by anything new.
 
 ## Verdict
 
 **CONDITIONAL** — no high or medium findings. Both findings this change targets
-are closed; the open low is the owner-deferred FND-002 from
+are closed; the two open lows are the owner-deferred FND-002 and FND-003 from
 SR-114, carried forward unchanged.
 
-## Gates run
+## Gates run at `d58ca7a`
 
-Run with `-j 1`, `--test-threads=1` and an isolated target directory.
+Rust 1.98.1, `-j 1`, `--test-threads=1`, isolated target directory.
 
 | Gate | Result |
 | --- | --- |
@@ -37,10 +37,10 @@ Run with `-j 1`, `--test-threads=1` and an isolated target directory.
 
 ## Mutation evidence
 
-Each mutant applied to the remediated head and reverted; the tree was clean before and
+Each mutant applied to `d58ca7a` and reverted; the tree was clean before and
 after.
 
-| # | Mutant | before remediation | after remediation |
+| # | Mutant | at `813069f` | at `d58ca7a` |
 | --- | --- | --- | --- |
 | M2 | All three defaults raised to `usize::MAX` | all 266 pass | **FAIL** — `exact_limits_and_fresh_retries` at `tests/native_lowering.rs:225` |
 | M2a | `nodes` 10,000 → 10,001 only | not probed | **FAIL**, same assertion |
@@ -68,9 +68,10 @@ rewording — which was the whole point of the finding.
 | ID | Severity | Summary | Refs | Escape Cause |
 | --- | --- | --- | --- | --- |
 | FND-001 | low | Deferred from SR-114: the CI job gains a from-source tool build while `timeout-minutes: 10` is unchanged | .github/workflows/ci.yml | correct-requirement-no-evidence |
+| FND-002 | low | Deferred from SR-114: `docs/dependency-licenses.json` is referenced by no test, tool or CI step | docs/dependency-licenses.json | missing-requirement |
 
-It is the owner's deferral, recorded so it is not lost rather than
-re-argued. It does not block this change and is not affected by it.
+Both are the owner's deferral, recorded so they are not lost rather than
+re-argued. Neither blocks this change, and neither is affected by it.
 
 ## Closure detail
 
@@ -131,7 +132,7 @@ would keep both items where the next author looks.
 ## Unchanged and re-confirmed
 
 - The backend qualification still does real work; nothing in this change touches
-  the lowering itself, and the full suite reproduces green.
+  the lowering itself, and the full suite reproduces green at `d58ca7a`.
 - `TM-006` still marks FR-009-AC-5 and TC-094 `⛔ Activation pending`, Task-020
   is still `in_progress` with unchecked subtasks, and the required activation
   lane is still an explicit `#[ignore]` naming its cause. Nothing was quietly

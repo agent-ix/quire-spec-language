@@ -10,13 +10,14 @@ review_set: subset
 ## Summary
 
 QUOIN gap analysis of the multi-unit producer handoff increment on
-`agent-a/native-ecosystem-handoff` against `origin/main`. The increment
+`agent-a/native-ecosystem-handoff` against `origin/main` (`9c145bd`). The increment
 introduces **no new unbacked matrix row and no new untraced code**; the verdict is
 driven entirely by inherited corpus debt plus the deliberately unmet
 FR-042-AC-10 B-side acceptance. Semantic review (step 4) was declined by the owner
 and was not run.
 
-**Updated 2026-09-11 (recheck):** the integrated correction rechecked against the recorded findings. Coverage was re-run after the added example trace tags; the
+**Updated 2026-09-11 (recheck):** correction `b34ab8c` rechecked against `549dd81`,
+integrated at `485573b`. Coverage was re-run after the added example trace tags; the
 rollup is unchanged. FND-004 is resolved as to execution. The resulting FND-006
 trace-binding residual was subsequently resolved by local author verification,
 distinct from Claude's recheck below.
@@ -45,7 +46,7 @@ reviewed change.
 | FND-001 | high     | FR-042-AC-10 unbacked: B's public Rust consumer never accepts the emitted bytes       | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:208 | correct-requirement-no-evidence |
 | FND-002 | high     | Inherited unbacked rows: TC-115/FR-036-AC-5/6/8, TC-010/NFR-005-M-1, FR-017-AC-2      | spec/model-linking/tests.md:107, spec/tests.md:45           | correct-requirement-no-evidence |
 | FND-003 | medium   | StR-001 has 0 of 2 stakeholder validation criteria backed                             | spec/stakeholder/StR-001-native-assessment-trust.md         | correct-requirement-no-evidence |
-| FND-004 | medium   | RESOLVED by the correction — a named ignored release test now executes the recipe and passed  | examples/native_protocol_handoff.rs:29                      | correct-requirement-no-evidence |
+| FND-004 | medium   | RESOLVED in b34ab8c — a named ignored release test now executes the recipe and passed  | examples/native_protocol_handoff.rs:29                      | correct-requirement-no-evidence |
 | FND-005 | low      | OPEN — the reviewed increment has no owning plan bundle, so plan completion is unverifiable | plan/                                                  | missing-requirement             |
 | FND-006 | low      | RESOLVED — local author verification confirms all five ids bind the actual example test | examples/native_protocol_handoff.rs:33                 | correct-requirement-no-evidence |
 
@@ -79,11 +80,11 @@ Both stakeholder validation criteria under StR-001 are unbacked. Not enumerated 
 is easy to miss; recorded here so the FAIL is not read as consisting solely of FND-001
 and FND-002.
 
-### FND-004 — code with no owning test (step 3, reverse gap) — resolved by the correction
+### FND-004 — code with no owning test (step 3, reverse gap) — resolved in b34ab8c
 
-As recorded, `examples/protocol-handoff/producer.rs` and
+As recorded at `549dd81`, `examples/protocol-handoff/producer.rs` and
 `examples/native_protocol_handoff.rs` were referenced by no test and no trace tag.
-The correction adds `stripped_release_producer_keeps_original_owners_and_compensations`,
+`b34ab8c` adds `stripped_release_producer_keeps_original_owners_and_compensations`,
 which runs the real `producer::write` into a temp dir and asserts the four source
 owners, six declaration owners and both compensation records; the root executed it at
 the integrated head (1 passed, 0 failed, 0 ignored). The reverse gap is closed as to
@@ -108,7 +109,8 @@ directive, but it is why "is the plan done?" cannot be answered here.
 
 ## Coverage
 
-`quire coverage --scope /home/peter/dev/worktrees/quire-language-native-ecosystem-handoff --json`:
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-native-ecosystem-handoff --json`
+(quire 0.31.0, engine `ca7362d4`):
 
 - Rollup **367/376 backed** (97.6%); 258 criteria, 83 property-shaped, 13 specific-shaped.
 - Partially backed groups: FR-017 3/4, FR-036 5/8, **FR-042 9/10**, StR-001 0/2,

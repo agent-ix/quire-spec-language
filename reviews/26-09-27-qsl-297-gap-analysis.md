@@ -3,7 +3,7 @@ id: SR-754
 title: "QSL-297 gap analysis of PR 500 (FR-112; TC-510)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-112-build-protocol-scoped-anchor-forms.md; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/test-cases/TC-510-s2-builds-protocol-scoped-anchor-forms.md; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-semantics/src/check/assemble.rs"
+scope: "agent-ix/quire-spec-language@6a093e9d0a531e9154a9f3d8c0e21075673aa5d6; spec/functional/FR-112-build-protocol-scoped-anchor-forms.md; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/test-cases/TC-510-s2-builds-protocol-scoped-anchor-forms.md; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-semantics/src/check/assemble.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-112
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-297. PR: quire-spec-language#500. There is no plan
+Ticket: QSL-297. PR: quire-spec-language#500 at 6a093e9d. There is no plan
 bundle for QSL-297, so this analysis checks FR-112's acceptance criteria and
 TC-510 against the tests and the code.
 
