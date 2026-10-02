@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! `cargo xtask seam-probe` / `cargo xtask string-edge` / `cargo xtask
-//! route-lint`: the gates `make ci` runs standalone.
+//! route-lint` / `cargo xtask checked-input`: the gates `make ci` runs
+//! standalone.
 #![forbid(unsafe_code)]
 
 use std::ffi::OsString;
@@ -9,12 +10,13 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use xtask::{
+    checked_input,
     error::{Error, Result},
     route_lint, seam_probe, string_edge,
 };
 
-const USAGE: &str =
-    "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       cargo xtask route-lint";
+const USAGE: &str = "usage: cargo xtask seam-probe\n       cargo xtask string-edge\n       \
+                     cargo xtask route-lint\n       cargo xtask checked-input";
 
 #[qsl_attrs::string_edge]
 fn run(arguments: &[OsString]) -> Result<String> {
@@ -33,6 +35,7 @@ fn run(arguments: &[OsString]) -> Result<String> {
         "seam-probe" => seam_probe::run(&workspace_root),
         "string-edge" => string_edge::run(&workspace_root),
         "route-lint" => route_lint::run(&workspace_root),
+        "checked-input" => checked_input::run(&workspace_root),
         _ => Err(Error::Usage(USAGE)),
     }
 }

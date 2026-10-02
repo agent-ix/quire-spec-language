@@ -21,6 +21,9 @@ pub enum Code {
     /// FR-080-AC-3: `cargo xtask route-lint` found a `static`,
     /// `OnceLock` or `thread_local!` item in the `#185` registry module.
     RouteLint,
+    /// FR-270: `cargo xtask checked-input` found a stage entry that takes,
+    /// or a stage crate function that rebuilds, a pre-check representation.
+    CheckedInput,
 }
 
 impl Code {
@@ -32,6 +35,7 @@ impl Code {
             Self::StringEdge => "string-edge",
             Self::ImportGraph => "import-graph",
             Self::RouteLint => "route-lint",
+            Self::CheckedInput => "checked-input",
         }
     }
 }
@@ -196,6 +200,13 @@ pub enum Error {
         /// The findings, formatted for display.
         summary: String,
     },
+    /// `xtask::checked_input` found one or more `signature` or
+    /// `reconstruction` violations; `summary` lists them.
+    #[error("{summary}")]
+    CheckedInputFound {
+        /// The findings, one per line.
+        summary: String,
+    },
 }
 
 impl Error {
@@ -225,6 +236,7 @@ impl Error {
             Self::StringEdgeMissingRoot { .. } => Code::Usage,
             Self::ImportGraphParse { .. } => Code::ImportGraph,
             Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
+            Self::CheckedInputFound { .. } => Code::CheckedInput,
         }
     }
 
@@ -232,7 +244,11 @@ impl Error {
     /// finding (1).
     pub fn exit_code(&self) -> u8 {
         match self.code() {
-            Code::SeamProbe | Code::StringEdge | Code::ImportGraph | Code::RouteLint => 1,
+            Code::SeamProbe
+            | Code::StringEdge
+            | Code::ImportGraph
+            | Code::RouteLint
+            | Code::CheckedInput => 1,
             Code::Usage | Code::Io => 2,
         }
     }
