@@ -265,8 +265,7 @@ pub struct SeparatingWitnessRecord {
 impl PartialEq for SeparatingWitnessRecord {
     fn eq(&self, other: &Self) -> bool {
         self.quantifier == other.quantifier
-            && compare_keys(&self.deciding_element, &other.deciding_element)
-                == Some(std::cmp::Ordering::Equal)
+            && same_element(&self.deciding_element, &other.deciding_element)
             && self.index == other.index
             && self.value_path == other.value_path
             && self.trace_position == other.trace_position
@@ -274,6 +273,17 @@ impl PartialEq for SeparatingWitnessRecord {
 }
 
 impl Eq for SeparatingWitnessRecord {}
+
+/// Two deciding elements are the same under ADR-013 O-13 semantic
+/// equality. A value holding a float has no canonical key (O-13 excludes
+/// floats from `=`), so two such values are the same exactly when they
+/// encode identically, bit pattern for bit pattern.
+fn same_element(left: &Value, right: &Value) -> bool {
+    match compare_keys(left, right) {
+        Some(order) => order == std::cmp::Ordering::Equal,
+        None => wire::same_encoding(left, right),
+    }
+}
 
 impl SeparatingWitnessRecord {
     /// FR-268's state-clause record: FR-265's stop report, with no trace
@@ -337,7 +347,9 @@ fn value_bytes(value: &Value) -> usize {
         total += match value {
             Value::Boolean(_) => 1,
             Value::Integer(integer) => digits(integer),
-            Value::Rational(rational) => digits(rational.numerator()) + digits(rational.denominator()),
+            Value::Rational(rational) => {
+                digits(rational.numerator()) + digits(rational.denominator())
+            }
             Value::Decimal(decimal) => digits(decimal.representation().coefficient()) + 4,
             Value::Float(_) => 8,
             Value::Quantity(quantity) => {

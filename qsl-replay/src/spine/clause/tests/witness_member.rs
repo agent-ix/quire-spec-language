@@ -129,7 +129,11 @@ fn run_current(clause: &str, history: &[i64]) -> super::super::ClauseRunReport {
     let (label, bytes) = document_ref_and_bytes("member-current", |label| {
         snapshot(label, "current", history)
     });
-    let mut request = request(config_version_current_selection(clause, label.clone(), "mid"));
+    let mut request = request(config_version_current_selection(
+        clause,
+        label.clone(),
+        "mid",
+    ));
     request.snapshots.insert(label.digest, bytes);
     run_clause(request).expect("a well-formed request always reports")
 }
@@ -137,9 +141,8 @@ fn run_current(clause: &str, history: &[i64]) -> super::super::ClauseRunReport {
 /// `MemberPre` over a pre-call observation whose pre snapshot holds
 /// `history`.
 fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
-    let (label, bytes) = document_ref_and_bytes("member-pre", |label| {
-        snapshot(label, "pre", history)
-    });
+    let (label, bytes) =
+        document_ref_and_bytes("member-pre", |label| snapshot(label, "pre", history));
     let mut request = request(ClauseSelection {
         name: "MemberPre".to_owned(),
         input: ClauseSelectionInput::PreCall {
@@ -152,14 +155,15 @@ fn run_pre_call(history: &[i64]) -> super::super::ClauseRunReport {
     run_clause(request).expect("a well-formed request always reports")
 }
 
-/// `MemberPre` over an `attemptUpdate` invocation whose pre snapshot holds
-/// `pre` and whose post snapshot holds `post`.
-fn run_invocation(pre: &[i64], post: &[i64]) -> super::super::ClauseRunReport {
+/// `MemberPre` over an `attemptUpdate` invocation whose pre and post
+/// snapshots, two documents, each hold `history` (`attemptUpdate`'s frame
+/// leaves `history` unchanged).
+fn run_invocation(history: &[i64]) -> super::super::ClauseRunReport {
     let digest_hex = model_digest_hex();
     let (pre_label, pre_bytes) =
-        document_ref_and_bytes("member-pre", |label| snapshot(label, "pre", pre));
+        document_ref_and_bytes("member-pre", |label| snapshot(label, "pre", history));
     let (post_label, post_bytes) =
-        document_ref_and_bytes("member-post", |label| snapshot(label, "post", post));
+        document_ref_and_bytes("member-post", |label| snapshot(label, "post", history));
     let (invocation_label, invocation_bytes) = document_ref_and_bytes("member-call", |label| {
         config_version_invocation_bytes(label, &digest_hex, &pre_label, &post_label, "mid")
     });
@@ -227,13 +231,13 @@ fn tc_740_a_converted_member_keeps_the_stored_position() {
 }
 
 /// TC-740 step 7 (FR-265-AC-7): a precondition reads the pre snapshot, so a
-/// pre-call run and a run over an invocation whose post `history` differs
-/// give the same record, naming `mid.history` in the pre observation.
+/// pre-call run and a run over an invocation give the same record, naming
+/// `mid.history` in the pre observation, not the invocation's post one.
 #[trace("TC-740", "FR-265-AC-7")]
 #[test]
 fn tc_740_a_precondition_names_the_pre_observation_in_both_forms() {
     let pre_call = run_pre_call(&[0, 600, 700]);
-    let invocation = run_invocation(&[0, 600, 700], &[0, 0, 0]);
+    let invocation = run_invocation(&[0, 600, 700]);
     let witness = pre_call.witness.as_ref().expect("the forall is refuted");
     assert_eq!(witness.index, Some(1));
     assert_eq!(witness.value_path, history_path(&pre_call, "member-pre"));

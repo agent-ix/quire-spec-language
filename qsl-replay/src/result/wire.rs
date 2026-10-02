@@ -11,14 +11,14 @@
 
 use std::collections::BTreeMap;
 
+use qsl_foundation::diagnostic::catalog_category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
-use qsl_foundation::diagnostic::catalog_category;
 use qsl_package::CheckedPackage;
-use quire_exact::{Origin, Role};
+use quire_exact::{Origin, Role, Value};
 use quire_semantic_value::location::{Location, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -550,9 +550,12 @@ fn refusal(
 /// and digits, joined by single `-` or `_`.
 fn is_spelling(text: &str) -> bool {
     !text.is_empty()
-        && text
-            .split(['-', '_'])
-            .all(|word| !word.is_empty() && word.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
+        && text.split(['-', '_']).all(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        })
 }
 
 /// An expression location: its declaration and child-index path.
@@ -623,6 +626,17 @@ impl LocationWire {
             },
             path: self.path,
         }
+    }
+}
+
+/// Whether `left` and `right` have the same typed value encoding; a value
+/// with no encoding is the same as nothing.
+pub(super) fn same_encoding(left: &Value, right: &Value) -> bool {
+    match (ValueWire::of(left), ValueWire::of(right)) {
+        (Ok(left), Ok(right)) => {
+            matches!((serde_json::to_value(left), serde_json::to_value(right)), (Ok(l), Ok(r)) if l == r)
+        }
+        _ => false,
     }
 }
 

@@ -38,8 +38,8 @@ reports and the observation to the derivation.
 7. Run FR-265's member clauses through `run_clause` with `self` `mid`:
    `MemberAll` with `history` `[0, 600, 700]`; `ConvertedAll` with
    `history` `[700, 0, 600]`; `MemberPre` over a pre-call observation with
-   `history` `[0, 600, 700]`, and over an invocation with that pre `history`
-   and post `history` `[0, 0, 0]`.
+   `history` `[0, 600, 700]`, and over an invocation whose pre and post
+   snapshots hold that `history`.
 
 Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
 

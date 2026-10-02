@@ -30,8 +30,8 @@ use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use quire_exact::Rational;
 use quire_exact::{
-    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue, CompositeValue, FieldValue,
-    ObjectReference, OptionValue, Value, ValueType,
+    compare_keys, form, form_grouped, member_equal, retain_composite, CollectionValue,
+    CompositeValue, FieldValue, ObjectReference, OptionValue, Value, ValueType,
 };
 use quire_exact::{compare_text, ComparisonOperator};
 use quire_exact::{
@@ -2151,7 +2151,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         else {
             return;
         };
-        let Some(provenance) = fields.get(index).and_then(|field| record.field(field.name()))
+        let Some(provenance) = fields
+            .get(index)
+            .and_then(|field| record.field(field.name()))
         else {
             return;
         };

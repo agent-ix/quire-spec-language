@@ -248,8 +248,11 @@ impl IntervalWire {
     }
 
     fn read(self) -> Result<IntegerInterval, CauseCodecError> {
-        IntegerInterval::new(integer(&self.lower, "lower")?, integer(&self.upper, "upper")?)
-            .map_err(|_| CauseCodecError::Value("interval"))
+        IntegerInterval::new(
+            integer(&self.lower, "lower")?,
+            integer(&self.upper, "upper")?,
+        )
+        .map_err(|_| CauseCodecError::Value("interval"))
     }
 }
 
@@ -603,11 +606,7 @@ impl ValueWire {
             },
             Value::Option(option) => Self::Option {
                 payload_type: TypeWire::of(option.payload_type()),
-                payload: option
-                    .payload()
-                    .map(Self::of)
-                    .transpose()?
-                    .map(Box::new),
+                payload: option.payload().map(Self::of).transpose()?.map(Box::new),
             },
             Value::Composite(composite) => Self::Composite {
                 declaration: hex(composite.declaration().as_bytes()),

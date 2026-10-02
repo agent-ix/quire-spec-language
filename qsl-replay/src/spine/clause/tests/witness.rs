@@ -1149,7 +1149,10 @@ fn tc_744_the_witness_cause_round_trips_and_reads_strictly() {
     .unwrap();
     let cause = witness_arm(&result).disagreement().unwrap().clone();
     let text = cause.to_json().expect("the cause encodes");
-    assert_eq!(DisagreementCause::from_json(&text, &unit.compiled.package).unwrap(), cause);
+    assert_eq!(
+        DisagreementCause::from_json(&text, &unit.compiled.package).unwrap(),
+        cause
+    );
 
     let mut document: serde_json::Value = serde_json::from_str(&text).unwrap();
     document["failure"] = json!({"failure": "approximate"});
@@ -1219,17 +1222,17 @@ fn tc_744_a_failed_separation_check_disagrees_naming_its_step() {
         settle_separation(SeparationOutcome::Holds, &record),
         Some(crate::WitnessCheck::Agrees(Some(Box::new(record.clone()))))
     );
-    assert_eq!(settle_separation(SeparationOutcome::Exhausted, &record), None);
+    assert_eq!(
+        settle_separation(SeparationOutcome::Exhausted, &record),
+        None
+    );
 }
 
-/// The `witness` unit with a record declaration and a declared unit, so a
-/// deciding element of every value kind names a declaration the checked
-/// package holds.
+/// The `witness` unit with a record declaration, so a composite deciding
+/// element names a declaration the checked package holds.
 fn codec_unit() -> Unit {
     let text = format!(
-        "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n\
-         dimension L;\n\
-         unit m : L = rational(1, 1);\n",
+        "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n",
         witness_unit_text()
     );
     unit_for(text, config_version_domain_document())
@@ -1282,11 +1285,13 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         .next()
         .expect("ConfigVersion is declared")
         .key();
-    let metre = types.units().ids().next().expect("m is declared");
     let int = |value: i64| Value::Integer(quire_exact::Integer::from(value));
     let digit = ValueType::Int(
-        IntegerInterval::new(quire_exact::Integer::from(0), quire_exact::Integer::from(9))
-            .unwrap(),
+        IntegerInterval::new(
+            quire_exact::Integer::from(0_i64),
+            quire_exact::Integer::from(9_i64),
+        )
+        .unwrap(),
     );
     let rational = |n: i64, d: i64| {
         Rational::new(quire_exact::Integer::from(n), quire_exact::Integer::from(d)).unwrap()
@@ -1308,17 +1313,13 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         ("rational", Value::Rational(rational(-3, 4))),
         (
             "decimal",
-            Value::Decimal(Decimal::new(quire_exact::Integer::from(12_345), 2)),
+            Value::Decimal(Decimal::new(quire_exact::Integer::from(12_345_i64), 2)),
         ),
         (
             "float64",
             Value::Float(IeeeValue::binary64(0x4009_21fb_5444_2d18)),
         ),
         ("float32", Value::Float(IeeeValue::binary32(0x4049_0fdb))),
-        (
-            "declared quantity",
-            Value::Quantity(Quantity::new(rational(5, 2), metre)),
-        ),
         (
             "compound quantity",
             Value::Quantity(Quantity::new(rational(1, 1), UnitId::compound([5; 32]))),
@@ -1366,12 +1367,29 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     ];
     for (kind, element) in elements {
         let cause = cause_deciding(&unit, element);
-        let text = cause.to_json().unwrap_or_else(|error| panic!("{kind}: {error}"));
+        let text = cause
+            .to_json()
+            .unwrap_or_else(|error| panic!("{kind}: {error}"));
         let read = DisagreementCause::from_json(&text, package)
             .unwrap_or_else(|error| panic!("{kind}: {error}"));
         assert_eq!(read, cause, "{kind}");
         assert_eq!(read.to_json().unwrap(), text, "{kind}");
     }
+
+    // A declared unit the package's unit table does not hold refuses.
+    let declared = cause_deciding(
+        &unit,
+        Value::Quantity(Quantity::new(
+            rational(5, 2),
+            UnitId::declared(quire_exact::NodeKey::from_digest([6; 32])),
+        )),
+    )
+    .to_json()
+    .unwrap();
+    assert!(matches!(
+        DisagreementCause::from_json(&declared, package),
+        Err(crate::CauseCodecError::Unresolved("unit"))
+    ));
 
     // The witness unit declares no `Point`: the composite refuses there.
     let composite = cause_deciding(
