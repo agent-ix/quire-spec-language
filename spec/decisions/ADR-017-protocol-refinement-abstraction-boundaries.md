@@ -354,6 +354,9 @@ modules ADR-012 §12.2 and §15.3 name:
    and CG arms only.
 4. **An abstraction relation over frames** (§3): reads operation member
    identities; no `ProtocolClause` change.
+5. **The protocol transition system** (amended by ADR-027): `ProtocolSystem`
+   lands in layer 5 `simulation`, reads the checked protocol clause S3
+   produces and leaves the `ProtocolClause` family's identities unchanged.
 
 The coupling found (G-1 to G-3) consists of local defects with bounded
 tickets. SEAM-3 and the composed protocol checker are not on the spine path,

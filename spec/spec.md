@@ -190,6 +190,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-019
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-027
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -319,6 +321,38 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-205
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-206
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-207
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-208
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-209
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-210
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-211
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-212
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-213
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-214
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-215
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-216
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-217
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-218
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-308
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-024
     type: contains
 ---
 # Master Requirements Specification
@@ -508,6 +542,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-035](usecase/US-035-qualify-qsl-against-the-complete-v1-conformance-corpus.md) | US | Draft |
 | [US-016](usecase/US-016-prove-liveness-of-a-contended-model-under-strong-fairness.md) | US | Draft |
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
+| [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -688,6 +723,21 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-132](functional/FR-132-settle-fairness-over-a-supplied-trace-as-a-missing-premise.md) | FR | Specified: a clause with any fairness constraint over a supplied trace settles `unsupported`, `MissingFairnessPremise` (ADR-019 SV-2); not yet implemented -- TC-533 planned |
 | [FR-133](functional/FR-133-name-the-strong-constraint-that-would-exclude-a-refutation.md) | FR | Specified: the `fairness.strong-would-exclude` warning on a refuted liveness record, computed at replay, outside every identity (ADR-019 SV-6); not yet implemented -- TC-534 planned |
 | [FR-134](functional/FR-134-advertise-the-fairness-kinds-en-1-decides.md) | FR | Specified: EN-1 advertises the `weak` and `strong` fairness kinds, and the registry leaves out of an item's candidates every backend lacking a fairness kind the item uses (ADR-019 SV-1, BE-1, DS-2); not yet implemented -- TC-535 planned |
+| [FR-205](functional/FR-205-define-the-protocol-subject-and-its-state-key.md) | FR | Specified: the protocol subject (model subject, protocol clause, `over` and role bindings, replicated role universes, memory models), thread paths and lowest-free ordinals, removal rules and the canonical FR-181 state key (ADR-027 PS-1 to PS-8, FO-3, AE-2); not yet implemented -- TC-650 planned |
+| [FR-206](functional/FR-206-take-the-protocol-step-kinds-with-folded-structural-moves.md) | FR | Specified: the step kinds `attempt`, `event`, `send`, `receive`, `duplicate`, `lose`, `fork`, `join`, `timeout`, `finish` and memory steps, structural moves folded, every step atomic and an attempt one FR-120 application (ADR-027 ST-1 to ST-10, FO-1, FO-2, AT-1 to AT-3); not yet implemented -- TC-651 planned |
+| [FR-207](functional/FR-207-run-compensation-templates-as-protocol-threads.md) | FR | Specified: compensation templates: registration on the forward effect, folded activation, `cattempt` under the authored count and retry relation, the commit cutoff and `cend` with its recovery status (ADR-027 CP-1 to CP-5, ST-11, ST-12); not yet implemented -- TC-652 planned |
+| [FR-208](functional/FR-208-spawn-and-retire-replicated-role-instances.md) | FR | Specified: replicated roles: `spawn` under the authored `max`, acting instances, `workflow`, `scope` and `until` lifetimes, retired instances kept and keyed by object reference (ADR-027 RR-1 to RR-4, ST-14, ST-15); not yet implemented -- TC-653 planned |
+| [FR-209](functional/FR-209-start-a-protocol-instance-per-trigger-under-the-instance-budget.md) | FR | Specified: `activation on each`: one instance per `activate` step, lowest-free instance ordinals, removal on finish, and the `max_live_instances` method bound, default 3, settling `InstanceBoundReached` and stated in every terminal record (ADR-027 AE-1 to AE-4, ST-13); not yet implemented -- TC-654 planned |
+| [FR-210](functional/FR-210-admit-exactly-the-causal-interleavings.md) | FR | Specified: causal interleavings: every compiled causal edge enforced, no other order added, event projections exactly the linear extensions (ADR-027 CI-1 to CI-3); not yet implemented -- TC-655 planned |
+| [FR-211](functional/FR-211-declare-protocol-terminal-states-and-report-protocol-deadlocks.md) | FR | Specified: the protocol `terminal when P` / `terminal any` member, terminal, intended and deadlocked protocol states, the derived deadlock-freedom item per protocol subject, and blocked threads with wait causes (ADR-027 PB-4, PD-1 to PD-5); not yet implemented -- TC-656 planned |
+| [FR-212](functional/FR-212-derive-scheduler-fairness-with-an-adversarial-opt-out.md) | FR | Specified: protocol fairness targets and classes, one derived `fair weak whole` scheduler constraint per branch, root and compensation template with a `scheduler` origin, and the `scheduling adversarial` opt-out (ADR-027 PA-1 to PA-4); not yet implemented -- TC-657 planned |
+| [FR-213](functional/FR-213-measure-protocol-intervals-in-counted-steps.md) | FR | Specified: protocol positions and anchors, and interval distance in counted steps (operations, events, sends, receives) (ADR-027 PB-2, PB-3); not yet implemented -- TC-658 planned |
+| [FR-214](functional/FR-214-require-an-explicit-refinement-row-for-every-protocol-step-class.md) | FR | Specified: an explicit refinement `step` row for every concrete protocol step class, control steps included, with missing and duplicate rows refused at S3 and each row's observation (ADR-027 PR-1 to PR-3); not yet implemented -- TC-659 planned |
+| [FR-215](functional/FR-215-implement-protocolsystem-as-a-transitionsystem.md) | FR | Specified: `ProtocolSystem<M: MemoryModel>` as an FR-101 `TransitionSystem`, its typed canonical transition identity, the shared FR-120 application function, `Sc` as the memory seam's identity, the pre-check and model checking over a protocol subject (ADR-027 TS-1 to TS-6, SE-1 to SE-4); not yet implemented -- TC-660 planned |
+| [FR-216](functional/FR-216-give-every-protocol-step-a-static-footprint.md) | FR | Specified: static read and write footprints, enabling footprints, independence and visibility for every protocol step (ADR-027 FT-1 to FT-5); not yet implemented -- TC-661 planned |
+| [FR-217](functional/FR-217-replay-a-protocol-counterexample.md) | FR | Specified: the protocol counterexample and its replay through `ProtocolSystem`, with lasso fairness over scheduler constraints and the deadlock check with recomputed blocked threads (ADR-027 PX-1, PX-2); not yet implemented -- TC-662 planned |
+| [FR-218](functional/FR-218-check-every-protocol-control-construct-at-s3.md) | FR | Specified: S3 checks of `parallel` and its join policy, `choice`, `repeat`, `await`, `check`, channel and event nodes, captures, compensation templates, replicated roles and activation, with the edge relation, binder readers and role regions in a `CheckedProtocolClause` (ADR-027 DS-1); not yet implemented -- TC-663 planned |
+| [FR-308](functional/FR-308-build-the-complete-protocol-forms-at-s2.md) | FR | Specified: S2 forms for the complete protocol productions (roles, channels, `parallel` join policies, `repeat` with optional maximum and loop proof, `await`, compensation, `terminal`, `scheduling`, `activation on each`), citing QSpec's shared grammar; not yet implemented -- TC-887 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -697,3 +747,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, deadlocks reported by default with intended terminal states (§10), interval operators inside infinite-trace formulas with their automaton cost and limit (§11), and the QSL sequencing |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
+| [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR | Proposed; compiler requirements FR-205 to FR-218; the protocol transition system for `parallel`: protocol subjects and states keyed canonically, step kinds with folded structural moves and atomic attempts, causal interleavings, the memory-model seam, fit with ADR-018's behaviours, deadlocks and fairness, `ProtocolSystem` on FR-101, footprints for partial-order reduction, protocol steps in refinement, compensation, replicated roles and activation on each; owner rulings RU-1 to RU-5 |

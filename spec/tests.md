@@ -353,6 +353,21 @@ names different artifacts in each.
 | TC-883 | Malformed, colliding, cyclic and unselected extensions refuse with the definitions involved | Unit | P1 | FR-354-AC-3, FR-354-AC-4 | 🚧 Planned |
 | TC-884 | An extension changes no other unit's identity, backends change no admission, and a reader without it refuses | Unit | P1 | FR-354-AC-5 | 🚧 Planned |
 | TC-885 | Formatting keeps the checked package identity of every complete-V1 fixture unit | Integration | P1 | FR-003-AC-9 | 🚧 Planned |
+| TC-650 | The protocol subject builds, refuses bad bindings and keys states canonically | Unit | P1 | FR-205-AC-1, FR-205-AC-2, FR-205-AC-3, FR-205-AC-4 | 🚧 Planned |
+| TC-651 | The protocol system takes each step kind with structural moves folded | Integration | P1 | FR-206-AC-1, FR-206-AC-2, FR-206-AC-3, FR-206-AC-4, FR-206-AC-5, FR-206-AC-6 | 🚧 Planned |
+| TC-652 | Compensations register, activate, attempt, close and end with their recovery status | Integration | P1 | FR-207-AC-1, FR-207-AC-2, FR-207-AC-3, FR-207-AC-4 | 🚧 Planned |
+| TC-653 | Replicated role instances spawn under max, act, retire by lifetime and key by object | Integration | P1 | FR-208-AC-1, FR-208-AC-2, FR-208-AC-3 | 🚧 Planned |
+| TC-654 | Activation on each starts instances under max_live_instances and states the budget used | Integration | P1 | FR-209-AC-1, FR-209-AC-2, FR-209-AC-3, FR-209-AC-4 | 🚧 Planned |
+| TC-655 | The protocol system admits exactly the causal interleavings | Integration | P1 | FR-210-AC-1, FR-210-AC-2, FR-210-AC-3, FR-210-AC-4 | 🚧 Planned |
+| TC-656 | Protocol terminal declarations check and protocol deadlocks are reported with blocked threads | Integration | P1 | FR-211-AC-1, FR-211-AC-2, FR-211-AC-3, FR-211-AC-4 | 🚧 Planned |
+| TC-657 | Scheduler fairness is derived per thread and turned off by scheduling adversarial | Integration | P1 | FR-212-AC-1, FR-212-AC-2, FR-212-AC-3, FR-212-AC-4 | 🚧 Planned |
+| TC-658 | Interval operators over a protocol measure distance in counted steps | Integration | P1 | FR-213-AC-1, FR-213-AC-2, FR-213-AC-3 | 🚧 Planned |
+| TC-659 | Every protocol step class needs an explicit refinement row | Unit | P1 | FR-214-AC-1, FR-214-AC-2, FR-214-AC-3, FR-214-AC-4 | 🚧 Planned |
+| TC-660 | ProtocolSystem implements TransitionSystem with canonical identities and the shared application rule | Integration | P1 | FR-215-AC-1, FR-215-AC-2, FR-215-AC-3, FR-215-AC-4 | 🚧 Planned |
+| TC-661 | Protocol steps carry static footprints, enabling footprints and visibility | Unit | P1 | FR-216-AC-1, FR-216-AC-2, FR-216-AC-3, FR-216-AC-4, FR-216-AC-5 | 🚧 Planned |
+| TC-662 | The replay facade replays a protocol counterexample through ProtocolSystem | Integration | P1 | FR-217-AC-1, FR-217-AC-2, FR-217-AC-3, FR-217-AC-4 | 🚧 Planned |
+| TC-663 | S3 checks every protocol control construct and records scopes | Unit | P1 | FR-218-AC-1, FR-218-AC-2, FR-218-AC-3, FR-218-AC-4, FR-218-AC-5, FR-218-AC-6, FR-218-AC-7 | 🚧 Planned |
+| TC-887 | S2 builds the complete protocol forms with their members and spans | Unit | P1 | FR-308-AC-1, FR-308-AC-2, FR-308-AC-3, FR-308-AC-4, FR-308-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
