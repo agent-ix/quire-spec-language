@@ -812,7 +812,7 @@ impl<'ast> Visit<'ast> for EnclosingFunction {
 
 /// Resolve a 1-based `line` to its innermost enclosing function's name (see
 /// [`EnclosingFunction`]). Empty when no function's span contains `line`.
-fn enclosing_function(parsed: &syn::File, line: usize) -> String {
+pub(crate) fn enclosing_function(parsed: &syn::File, line: usize) -> String {
     let mut visitor = EnclosingFunction {
         target_line: line,
         current_impl_self: None,

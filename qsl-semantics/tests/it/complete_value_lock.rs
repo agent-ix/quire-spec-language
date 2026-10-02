@@ -13,7 +13,7 @@ use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-fn lock() -> &'static DefinitionLock {
+fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
 
@@ -63,7 +63,7 @@ fn the_catalog_covers_every_role_exactly_once() {
 fn the_compiled_in_lock_reads() {
     let read = DefinitionLock::read(quire_specification::COMPLETE_VALUE_LOCK)
         .expect("QSpec's complete-value-lock.json reads");
-    assert_eq!(&read, lock());
+    assert_eq!(read, lock());
     let document = document();
     assert_eq!(read.revision(), document["revision"]);
     let rows = document["qualification_catalog"].as_array().unwrap();

@@ -16,7 +16,7 @@ struct Expected {
     definition: RegisteredDefinition,
     identity: &'static str,
     /// `None`: the revision is QSpec's own document header, read by
-    /// reference (`native_diagnostics_catalog`).
+    /// reference (`native_diagnostics_identity`).
     revision: Option<&'static str>,
     file: &'static str,
     requirements: &'static [RegisteredDefinition],
@@ -141,12 +141,9 @@ fn exact_definition_identities_and_labels_select_distinct_registered_meanings() 
         let definition = row.definition;
         assert_eq!(definition.path(), path);
         assert_eq!(definition.identity(), row.identity);
-        let revision = row.revision.unwrap_or_else(|| {
-            qsl_semantics::value::native_diagnostics_catalog()
-                .revision
-                .value
-                .as_str()
-        });
+        let revision = row
+            .revision
+            .unwrap_or_else(|| qsl_semantics::value::native_diagnostics_identity().1);
         assert_eq!(definition.revision(), revision);
         assert_eq!(definition.authority(), "agent-ix");
         assert_eq!(definition.requirements(), row.requirements);

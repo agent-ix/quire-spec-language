@@ -136,7 +136,7 @@ fn record_types() -> TypeEnvironment {
 /// The lock evidence of these packages: the catalog's text-profile
 /// definition, which the emitted lock selects.
 fn lock_evidence() -> qsl_semantics::check::LockEvidence {
-    let entry = DefinitionLock::pinned()
+    let entry = *DefinitionLock::pinned()
         .entry(CatalogRole::TextProfile)
         .expect("the catalog names a text profile");
     qsl_semantics::check::LockEvidence::default().with_text_profile(

@@ -327,10 +327,10 @@ impl RegisteredDefinition {
             // header, read by reference, so this entry and the emitter's
             // `diagnostics.catalog` name one revision.
             Self::Diagnostics => {
-                let catalog = qsl_semantics::value::native_diagnostics_catalog();
+                let (identity, revision) = qsl_semantics::value::native_diagnostics_identity();
                 RegisteredSource {
-                    identity: catalog.identity.as_str(),
-                    revision: catalog.revision.value.as_str(),
+                    identity,
+                    revision,
                     ..definition!("native-diagnostics", "", "", [], [
                         rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs"),
                         rule!("https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md"),

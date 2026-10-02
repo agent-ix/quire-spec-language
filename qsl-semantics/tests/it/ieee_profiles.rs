@@ -748,7 +748,7 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
     roles.push("ieee_profile");
     assert!(lock.admit_selection(&["ieee_operation"], &roles).is_ok());
 
-    let reference = ieee_reference(lock);
+    let reference = ieee_reference(&lock);
     assert_eq!(reference.identity, IEEE_DEFINITION);
     let admitted = lock
         .admit_ieee_profile(std::slice::from_ref(&reference), &["acme::fma"])

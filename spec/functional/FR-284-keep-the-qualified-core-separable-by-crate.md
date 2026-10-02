@@ -86,29 +86,22 @@ dependency) pair.
 ## Status
 
 The direction check and the ambient-input scan (FR-284-AC-4) are implemented
-as `arch-lint qualified-core` (make target `arch-lint-qualified-core`). The
-same run applies FR-280-AC-3's CG, RT and driver rule to every QSL workspace
-member. The target is not in `make ci` yet, because main has four known
-violations:
+as `arch-lint qualified-core` (make target `arch-lint-qualified-core`), and
+the target is part of `make ci`. The same run applies FR-280-AC-3's CG, RT
+and driver rule to every QSL workspace member.
 
-- `agent-ix-extraction-frontend` always depends on `clap`, which only its
-  binary uses, so `qsl-semantics` and every core crate above it reach an
-  argument parser. Fix: put `clap` behind a feature in filament-core-data and
-  update the pinned version in `qsl-semantics`.
-- `qsl-semantics` `model::intake::lift_document` (`intake.rs:223`) creates a
-  `tempfile` scratch directory, because filament-core-data's `lift` writes
-  its document only to an output path. Fix: a `lift` in filament-core-data
-  that returns the document bytes.
-- `qsl-semantics` `value::definition::DefinitionLock::pinned`
-  (`definition.rs:396`) keeps a function-local `static OnceLock` that caches
-  the lock parsed from the compiled-in QSpec bytes, so it returns `&'static`.
-- `qsl-semantics` `value::diagnostics_catalog::native_diagnostics_catalog`
-  (`diagnostics_catalog.rs:26`) keeps a function-local `static OnceLock` that
-  caches the catalog reference built from the compiled-in QSpec bytes, so it
-  returns `&'static`.
+The check does not follow one dependency edge and does not report one source
+site. Both come from filament-core-data, not QSL:
 
-The two `OnceLock` caches read no ambient input. Removing them changes the
-`&'static` return types their `qsl-semantics` callers use.
+- `agent-ix-extraction-frontend` depends on `clap` for its own binary. The
+  direction check skips the path `qsl-semantics` →
+  `agent-ix-extraction-frontend` → `clap`. Any other path from a core crate
+  to `clap` fails.
+- filament-core-data's `lift` writes its document only to an output path, so
+  `qsl-semantics` `model::intake::lift_document` creates a `tempfile` scratch
+  directory for it. The ambient-input scan skips filesystem access inside
+  that one function. Any other ambient access in it, or filesystem access
+  elsewhere in the file, fails.
 
 The runtime half of FR-284-AC-2 and AC-3 (TC-768's child-process run) waits
 on FR-275's typed lifecycle API.

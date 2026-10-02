@@ -222,7 +222,7 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl
+ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl arch-lint-qualified-core
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
@@ -373,7 +373,7 @@ arch-lint-canonical-encoder:
 # FR-284 (ADR-029 CB-2, CB-3): no QSL core crate depends on a crate above
 # the core, a CG or RT crate, or a frontend crate, and no core crate's
 # shipped source reads ambient input or writes to the process. Needs only
-# this repository. It joins `ci:` once it passes on main.
+# this repository and passes on it, so it is part of `ci:`.
 arch-lint-qualified-core:
 	cargo run --locked -p arch-lint -- qualified-core --qsl .
 

@@ -32,7 +32,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
     result_units: u64::MAX,
 };
 
-fn lock() -> &'static DefinitionLock {
+fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
 
@@ -49,7 +49,7 @@ fn role(profile: DivisionProfile) -> CatalogRole {
 /// the catalog holds none, so this uses a placeholder that admission never
 /// inspects.
 fn reference(role: CatalogRole) -> DefinitionReference {
-    let entry = lock().entry(role).unwrap();
+    let entry = *lock().entry(role).unwrap();
     DefinitionReference {
         authority: entry.authority.to_owned(),
         identity: entry.identity.to_owned(),

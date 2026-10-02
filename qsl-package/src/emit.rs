@@ -107,7 +107,7 @@ const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 /// by, written at `diagnostics.catalog`: QSpec's `quire.native.diagnostics/v1`
 /// document, its digest the raw-byte SHA-256 of that document's bytes.
 fn diagnostics_catalog() -> CheckedArtifactRef {
-    artifact(native_diagnostics_catalog())
+    artifact(&native_diagnostics_catalog())
 }
 
 /// Why the v2 emitter writes no bytes for `package` at all. A node that
@@ -699,28 +699,30 @@ fn source_artifact(source: &RawSourceRef) -> CheckedArtifactRef {
 
 /// The catalog's row for `role`. The closed catalog has a row for every
 /// role (`the_catalog_covers_every_role_exactly_once`).
-fn catalog_entry(role: CatalogRole) -> &'static CatalogEntry {
-    DefinitionLock::pinned()
-        .entry(role)
+fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
+    lock.entry(role)
         .expect("the closed catalog has a row for every role")
 }
 
 /// The lock's `edition` and `definition_selections`: the catalog's edition,
 /// then its other always-selected roles in catalog order, then each law
 /// definition the bodies name that is not already selected.
-fn catalog_selections(laws: &[DefinitionReference]) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
+fn catalog_selections(
+    lock: &DefinitionLock,
+    laws: &[DefinitionReference],
+) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // Each digest is the catalog row's raw-byte SHA-256. A law's digest is
     // also part of its `DefinitionRef`, so it feeds the application-node keys
     // that name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
-        definition: artifact(&catalog_entry(CatalogRole::Edition).reference()),
+        definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
     };
-    let mut definitions: Vec<CheckedArtifactRef> = DefinitionLock::pinned()
+    let mut definitions: Vec<CheckedArtifactRef> = lock
         .always_roles()
         .iter()
         .filter(|role| **role != CatalogRole::Edition)
-        .map(|role| artifact(&catalog_entry(*role).reference()))
+        .map(|role| artifact(&catalog_entry(lock, *role).reference()))
         .collect();
     for law in laws {
         let law = artifact(law);
@@ -945,7 +947,8 @@ fn emit_package_inner(
         .flat_map(|candidate| candidate.laws.iter().cloned())
         .collect();
 
-    let (edition, definition_selections) = catalog_selections(&laws);
+    let catalog = DefinitionLock::pinned();
+    let (edition, definition_selections) = catalog_selections(&catalog, &laws);
     let model_selections: Vec<CheckedDomainPackageRef> = graph
         .model_selections()
         .iter()
@@ -956,7 +959,7 @@ fn emit_package_inner(
             digest: hex(&selection.digest).into(),
         })
         .collect();
-    let root = catalog_entry(CatalogRole::Root).identity;
+    let root = catalog_entry(&catalog, CatalogRole::Root).identity;
     let lock = CheckedPackageLockV2 {
         sources: sources.into_iter().collect(),
         edition: edition.clone(),
