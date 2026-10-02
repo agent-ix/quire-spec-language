@@ -90,6 +90,23 @@ FR-383 and FR-013 on QSpec #169 at 39268af.
 | FND-009 | high | The read rules POR-1 summarises, and QSpec FR-383 "Read footprint" now owns, give no rule for an operation's `result`. FR-120 ranges a result over the result type's domain in the post-state, so a postcondition such as `result.v = 1` with `result: Reference<Cell>` makes enabledness depend on `AnyField{Cell, v}` and `AnyMembership{cells}`. Neither is derived: `result` is not `self`, a parameter, a navigation, a quantified variable, a binder or a collection element. Vector V4 (`porsim/sr368/round1.py`): `pick()` frames `modifies self.alarm`, has pre `self.armed` and post `self.alarm and result.v = 1`; `disarm()` clears `armed`; `set()` sets `a.v` to 1. Unreduced: refuted by `set, pick` over 6 states. Reduced with the result read underived: `A = {disarm}`, and the run reports `proved` over 3 states. With the result read as `AnyField{Cell, v}` plus `AnyMembership{cells}`, both runs refute. The fix lands in QSpec FR-383, with a matching clause in POR-1's summary and an FR-155 AC. | spec/decisions/ADR-021-state-space-reduction.md:186; spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:77-82 |
 | FND-010 | medium | SC-2 and FR-158 now settle an undefined constraint `refuted`, `UndefinedEvaluation`, with "a counterexample ending there that replays". Three things in the record still contradict that. SC-3 says "a constraint never changes what a verdict means". RV-8 and FR-158-AC-4 keep the constraint out of the obligation identity, so two requests with one identity can settle `refuted` and `proved` for a claim that holds. EI-7 replays through ADR-018 CX-3, which re-evaluates the claim, not the constraint, so the prefix does not reproduce a violation. Either amend SC-3, EI-7 and RV-8 to say the constraint is part of what is refuted and replayed (QSpec FR-383 has the same rule), or settle an undefined constraint as SC-2 settles a refused one (V-7), naming `UndefinedEvaluation{where, cause}`. | spec/decisions/ADR-021-state-space-reduction.md:203-204, :352; spec/functional/FR-158-cut-the-search-with-a-state-constraint.md:67-78 |
 
+## New findings (disposition pass 2)
+
+Round 2 reviewed `git diff origin/spec/366-temporal-properties...e45da098` at
+e45da098 (stacked on #562 at ce4f463c), against QSpec FR-383, FR-385 and
+FR-013 on QSpec #169 at 725f3ce. The eight-step POR-11 proof and POR-8 were
+checked step by step and hold under the stated footprints; the findings
+below are a footprint rule gap and two citation or coverage gaps in the
+proof text. Simulator: `porsim/sr368/round2.py` (V5); 9,000 more
+symmetry-plus-POR and 12,000 POR-plus-fairness random systems found no
+mismatch.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | high | The read rules give no rule for a call. QSpec FR-146 admits pure functions whose bodies `deref` a reference argument, and FR-146 adds FR-151 dispatch edges from a clause to every candidate's effective precondition, so a precondition such as `self.armed and hot(self.cell)` with `function hot(c: Reference<Cell>): Bool = deref(c).v = 1` reads `AnyField{Cell, v}`. FR-383 "A clause expression reads locations by these rules", which POR-1 and FR-155 cite, lists field reads, navigation, `reaches`, quantified variables, populations and `result`, and nothing for a call or a dispatched call. Vector V5 (`porsim/sr368/round2.py`): `disarm()` clears `g.armed`; `set()` sets `a.v` to 1; `boom()` has the precondition above and writes `g.alarm`. Unreduced: refuted by `set, boom` over 6 states. Reduced with the call body's reads underived: `A = {disarm}`, `proved` over 3 states. With `AnyField{Cell, v}` derived from the body, both refute. If the FR-155 read enforcement covers function bodies, the same model settles `failed` instead, so every model that calls a state-reading function in a clause cannot be checked under POR. Fix in QSpec FR-383: a call reads the locations of its arguments and the reads of the callee's body, transitively, with each reference parameter read as `AnyField` of its type (or the argument's location when it is `self` or an operation parameter); a dispatched call reads every candidate's effective-precondition reads. Add an FR-155 AC and a §7.6 vector. | spec/decisions/ADR-021-state-space-reduction.md:187; spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:81-89 |
+| FND-012 | low | POR-11 step (4) says what to do when `A(v)` has a step of `η` or an extra, but not when `E(v)` is empty. A fair accepting behaviour can end in a stutter-extended terminal state (ADR-018 SM-4), and then the construction must take no step. The argument holds: an extra taken at `v` is independent of all of the finite `η`, so it would stay enabled at `σ`'s terminal state, so no extra exists and `σ'` ends at the same terminal state. The proof should state this case. | spec/decisions/ADR-021-state-space-reduction.md:197 |
+| FND-013 | low | POR-11 step 5(d) and §2 cite Peled and Wilke 1997 for "the infinite-trace forms PT-2 admits under POR are invariant under stuttering". Peled and Wilke prove the converse: every stutter-invariant LTL property is expressible without next. The direction step 5(d) needs (next-free LTL is stutter-invariant) is the older, easy one, and Peled and Wilke cover future operators only. The grammar also has `since` and `triggered`, whose stutter invariance is QS-8 and is tested by QSpec TC-328 (FR-161-AC-12). Cite FR-161 / TC-328 for the past operators and state the direction used. | spec/decisions/ADR-021-state-space-reduction.md:197, :265-270, :971-974 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -102,3 +119,15 @@ FR-383 and FR-013 on QSpec #169 at 39268af.
 | FND-006 | fixed | 2ae3a808 |
 | FND-007 | fixed | 2ae3a808 |
 | FND-008 | fixed | 2ae3a808 |
+| FND-009 | fixed | b7960b89 |
+| FND-010 | fixed | b7960b89 |
+
+Round 2, reviewed at 38add39a2862c34c28f7a0ae8aa38363fe6ba56a.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | 2b7d4c7e: POR-1 cites QSpec FR-383's read footprint, which reads `AnyField` and `AnyMembership` through `result`. |
+| FND-010 | fixed | 2b7d4c7e: SC-3 carves out the undefined-constraint refutation; EI-7 re-evaluates the constraint on replay. |
+| FND-011 | fixed | 2b7d4c7e: Resolved by citation: POR-1 cites QSpec FR-383, whose call rule QSpec #169 adds at da0f8347; merge #169 first. |
+| FND-012 | still-open | POR-11 step (4) still says nothing about a reduced state with `E(v)` empty, where the construction must take no step and `σ'` ends at the same terminal state. |
+| FND-013 | still-open | POR-11 5(d) still cites Peled and Wilke for "the infinite-trace forms PT-2 admits under POR are invariant under stuttering"; that needs the easy converse direction, and `since` and `triggered` need QS-8. |
