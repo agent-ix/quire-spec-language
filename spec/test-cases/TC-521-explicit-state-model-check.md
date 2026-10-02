@@ -36,9 +36,10 @@ universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
    3, with `max_states` 2, with `max_transitions` 3, and with a poll that
    returns `true`; `Counter` with an evaluation meter budget of zero.
 6. The `eventually[0,100]` formula over `Restless` with
-   `max_automaton_states` 50 and with the default; a subject with an
-   undecided contract conjunction; a subject with an unbounded population
-   root.
+   `max_automaton_states` 50 and with the default; a subject whose
+   contract conjunction is refused, with no clause false and none
+   undefined; `always holds(true)` over FR-120-AC-9's `test/tallies` subject
+   from `t1`; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
@@ -64,5 +65,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 - Step 6: `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an
   automaton-state count of 50 and no counterexample, then `Violated` with
   at least 101 consecutive unhealthy positions;
-  `Undecided(UndecidedSuccessor)`; `RequiresBound` with no state explored.
+  `Undecided(UndecidedSuccessor)`; `Violated` with the empty prefix at
+  `t1`, `kind: UndefinedEvaluation`, cause `SumOutOfDomain`, at position 0;
+  `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.

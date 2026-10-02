@@ -44,8 +44,8 @@ Tag the tests `#[trace("TC-537", "FR-125-AC-6")]` and
   `division-by-zero`.
 - Step 2: `true`, with only positions 0 and 1 read.
 - Step 3: `Violated`, prefix `0 -inc-> 1 -inc-> 2`, `kind:
-  UndefinedEvaluation{where: 2, cause: division-by-zero}`; the same
+  UndefinedEvaluation{where: position 2, cause: division-by-zero}`; the same
   counterexample for the TP-4 claim, not the terminal stutter lasso;
   `Violated`, `kind: Formula`, prefix `0 -inc-> 1`; `Holds{Exhaustive}`.
 - Step 4: `Violated`, prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, `kind:
-  UndefinedEvaluation{where: 3, cause: division-by-zero}`.
+  UndefinedEvaluation{where: position 3, cause: division-by-zero}`.

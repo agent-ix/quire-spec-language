@@ -29,5 +29,5 @@ Tag the test `#[trace("TC-538", "FR-127-AC-6")]`.
 
 - Step 1: `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted`,
   category violation; the record's counterexample has `kind:
-  UndefinedEvaluation{where: 2, cause: division-by-zero}`.
+  UndefinedEvaluation{where: position 2, cause: division-by-zero}`.
 - Step 2: `inconclusive`, `unsettled`, `Inconclusive(ReplayParity)`.

@@ -60,15 +60,15 @@ AC-14).
   checked node that carries it.
 - The package's `TypeEnvironment` (`qsl_semantics`) and the extent walk's
   `position_limit: u64`, both passed to `classify_extent`.
-- For exploration: `Limits{max_states, max_depth, max_transitions}` and a
-  cancellation poll `impl FnMut() -> bool`. `max_states` and
-  `max_transitions` are caller-raisable resource budgets (ADR-014 B-5).
-  `max_depth` is the search horizon `k`, a method parameter and not a
-  limit: states at depth `>= max_depth` are not expanded, and a run that
-  expands every reachable state below the horizon returns
-  `Outcome::BoundReached` stating the horizon it used.
-  `Limits::default()` publishes `max_states` 10,000,000, `max_transitions`
-  100,000,000 and `max_depth` `usize::MAX`, which sets no horizon. A run that
+- For exploration: `Limits{max_states, max_transitions}`, the horizon
+  `max_depth: Option<usize>` and a cancellation poll `impl FnMut() -> bool`.
+  `max_states` and `max_transitions` are caller-raisable resource budgets
+  (ADR-014 B-5). `max_depth` is the search horizon `k`, a method parameter
+  beside `Limits` and never a member of it: with `Some(k)`, states at depth
+  `>= k` are not expanded, and a run that expands every reachable state
+  below the horizon returns `Outcome::BoundReached` stating the horizon it
+  used; `None` sets no horizon. `Limits::default()` publishes `max_states`
+  10,000,000 and `max_transitions` 100,000,000. A run that
   reaches `max_states` or `max_transitions` names it and its value in
   `Outcome::Bounded`, and the caller raises it by setting that `Limits`
   member.
@@ -137,6 +137,7 @@ pub fn explore_request<S: TransitionSystem>(
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
+    max_depth: Option<usize>,
     poll: impl FnMut() -> bool,
 ) -> Result<Exploration<S::Finding>, NotSimulated>;
 
@@ -253,8 +254,7 @@ generator. `sample_request` first compares the supplied `DefinitionRef`'s
 identity with `quire.simulation.sampler/v1`, and refuses any other with
 `NotSimulated::GeneratorMismatch`, before any draw. A step of
 `sample_request` makes one uniform choice over its enabled successors, with
-choice index `c = 0` (QSpec FR-181); the further choices a workload adds
-are FR-188's.
+choice index `c = 0` (QSpec FR-181).
 Draw `d` of choice `c` at trace `t`, step `s` under seed `k` is SHA-256 of
 the JCS object `{"choice":"c","draw":"d","seed":"k","step":"s","trace":"t"}`,
 each member a decimal string, encoded through `quire-canonical`; this is
@@ -274,7 +274,7 @@ order, with no draw. This is QSL's choice.
 Provenance records the seed, the trace index and the sampler identity
 (ADR-014 TR-1). `CounterSampler` is removed.
 
-**Horizon.** With `max_depth = k`, a run whose frontier holds only states
+**Horizon.** With `max_depth = Some(k)`, a run whose frontier holds only states
 at depth `k` once every state below depth `k` is expanded returns
 `BoundReached{stats, depth: k, frontier}`: it completed its method to the
 horizon, `frontier` is those depth-`k` states in next-expansion order, and
@@ -352,7 +352,7 @@ repository (this repository's TC-210 is a witness-envelope case).
 | FR-101-AC-12 | On a test system `0 → {1, 2}`, `1 → 3`, whose expansion of `1` returns `ExpansionStop` with `resource_exhausted`/`insufficient-next-charge`, exploration returns `Outcome::Stopped` with that cause, frontier `[<1>, <2>]` (the stopped state, then the queue), category incomplete; with `runtime_invariant`/`established-invariant-broken` it returns `Stopped`, category internal failure. | Test (TC-474) |
 | FR-101-AC-13 | On a test system whose expansion of state `s` returns finding `f`, `Exploration.findings` holds one `StateFindings` for `s` with its digest, its depth and `[f]`, in expansion order; a system whose `s` sits in a `Bounded` frontier has no entry for it; the stopped state of AC-12 has no entry. | Test (TC-474) |
 | FR-101-AC-14 | Sampling the chain `0 → 1`, whose expansion of `1` stops with `resource_exhausted`/`insufficient-next-charge`, ends with `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 1, and that trace replays successfully. The same trace replayed against a system whose expansion of `1` does not stop refuses `ReplayError::Stopped{step: 1, recorded: Some(<cause>), replayed: None}`; against one that stops with `runtime_invariant`, `recorded` and `replayed` name the two causes; a trace sampled with `max_steps` 1 from a chain whose `1` does not stop ends `StepLimit` at `1`, and replayed against the stopping chain it refuses with `recorded: None`. A trace whose recorded findings differ from the recomputed ones refuses `ReplayError::FindingMismatch` at that step. | Test (TC-474) |
-| FR-101-AC-15 | `Limits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000 and `max_depth` `usize::MAX`. A chain of 3 states explored with `Limits::default()` returns `Exhaustive`; with `max_states` set to 2 and the other members at their defaults it returns `Outcome::Bounded` at `Limit::States` with value 2. | Test (TC-536) |
+| FR-101-AC-15 | `Limits::default()` is `max_states` 10,000,000 and `max_transitions` 100,000,000, and `Limits` has no depth member; `max_depth: None` sets no horizon. A chain of 3 states explored with `Limits::default()` returns `Exhaustive`; with `max_states` set to 2 and the other members at their defaults it returns `Outcome::Bounded` at `Limit::States` with value 2. | Test (TC-536) |
 
 ## Dependencies
 

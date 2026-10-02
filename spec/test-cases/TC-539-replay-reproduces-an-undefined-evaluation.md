@@ -28,14 +28,19 @@ source in the byte provision and universe `{c}` in the request.
 4. Replay TC-537 step 4's deadlock-freedom counterexample (`terminal when
    6 / (3 - c.value) = 0`, prefix to value 3).
 5. Replay that prefix with `kind: Deadlock`.
+6. Replay FR-126-AC-6's empty-prefix counterexample over `test/tallies` at
+   `t1`.
 
 Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
 ## Expected Results
 
 - Step 1: `reproduced-with-evaluated-witness`, `trace_position` 2, value
-  `UndefinedEvaluation{where: 2, cause: division-by-zero}`.
+  `UndefinedEvaluation{where: position 2, cause: division-by-zero}`.
 - Steps 2 and 3: `inconclusive`, `Verdicts`.
 - Step 4: `reproduced-with-evaluated-witness`, `trace_position` 3, value
-  `UndefinedEvaluation{where: 3, cause: division-by-zero}`.
-- Step 5: `inconclusive`, `Verdicts`.
+  `UndefinedEvaluation{where: position 3, cause: division-by-zero}`.
+- Step 5: `reproduced-with-evaluated-witness`, value
+  `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`.
+- Step 6: `reproduced-with-evaluated-witness`, value `Undefined` with cause
+  `SumOutOfDomain` at position 0.

@@ -47,15 +47,13 @@ it, and a model that halts reads the same way in every engine.
 QSpec owns the model subject, behaviours, positions and their anchors, the
 terminal-state readings, the `over` binding and the meaning of interval
 operators over an infinite trace (ADR-018 QS-1, QS-2, QS-5, QS-13;
-References). The Behavior section restates those rules informatively, as
-ADR-018 §2 states them, so that the QSL requirements below have their
-terms; QSpec's text is the authority where the two differ. QSL specifies
-normatively how it builds the subject from FR-120, how its evaluator reads
-a lasso, what it charges and what it reports.
+References), in QSpec FR-361. QSL specifies how it builds the subject from
+FR-120, how its evaluator reads a lasso, what it charges and what it
+reports.
 
 ## Inputs
 
-- `ModelSubject` (`qsl_eval::model_check`): the S4 `CheckedPackage`; FR-120's
+- `ModelSubject` (`qsl_eval::model_subject`, ADR-018 LA-2): the S4 `CheckedPackage`; FR-120's
   package input, snapshot provision and limits; `initial: Vec<DocumentRef>`,
   a list of FR-106 initial snapshots; `universes:
   Vec<PopulationUniverse>`; and any `ProofBound`s (ADR-014 B-4).
@@ -72,30 +70,12 @@ a lasso, what it charges and what it reports.
 
 ## Behavior
 
-### QSpec model-subject rules (informative restatement)
+### QSpec model-subject rules
 
-- **Subject.** The checked package, its initial states as FR-120 admits
-  them, its universes and its `ProofBound`s. The subject is part of every
+- QSL SHALL read the subject, its behaviours, their positions and anchors,
+  terminal states, the `over` binding and the model verdict as QSpec FR-361
+  states them (ADR-018 SM-2 to SM-5); the subject is part of every
   obligation identity over it (ADR-013 O-09).
-- **Behaviour.** A maximal path of the successor relation from an initial
-  state: infinite, or ending at a terminal state (FR-124).
-- **Positions.** Position 0 is the initial state with an `initialization`
-  anchor; position `i > 0` is the post-state of the behaviour's `i`-th
-  transition with that transition's operation anchor. The step sequence is
-  the event-position sequence authority of both admitted profiles.
-- **Terminal states.** Under a bounded profile a behaviour that ends at a
-  terminal state is a closed finite execution, read with the profile's
-  closed-boundary rule. Under infinite-trace it is extended by a terminal
-  stutter step that repeats the terminal state forever, has its own
-  transition identity, enables no operation and belongs to no fairness
-  constraint. Intended and deadlocked terminal states read the same way
-  (ADR-018 DL-6).
-- **`over` binding.** One clause instance per object of the `over`
-  parameter's population universe.
-- **Model verdict.** A formula holds for a subject exactly when the
-  evaluator returns `true` on every admitted behaviour, for every `over`
-  binding: every behaviour under a bounded profile; every behaviour fair
-  under the clause's fairness set under infinite-trace.
 
 ### Building the subject
 

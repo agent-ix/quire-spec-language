@@ -14,8 +14,8 @@ Verify `replay_model_trace`: lassos, prefixes, stutter loops and deadlock
 counterexamples reproduce; the recorded digest selects among several
 post-states of one transition identity; an engine disagreement settles
 `inconclusive`; a loop that does not close, an unfair lasso, a digest that
-no successor has, a disabled step, a bad initial index and a misplaced
-stutter marker refuse.
+no successor has, a disabled step, a bad initial state and a misplaced
+`terminal-stutter` step refuse.
 
 Scope: FR-128-AC-1 to FR-128-AC-4.
 
@@ -42,11 +42,10 @@ Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness` three times, the lasso with
   `trace_position` 0; the `Branch` prefix reproduces with `trace_position`
-  1; the other refuses `stale_dependency`/`revision-mismatch` naming the
+  1; the other refuses `stale_dependency`/`content-mismatch` naming the
   step and the recorded digest.
 - Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`;
   `inconclusive`, `Verdicts`.
-- Step 3: each refuses as FR-128-AC-3 states, with no result, the
-  `Observed` envelope before recompiling.
+- Step 3: each refuses as FR-128-AC-3 states, with no result.
 - Step 4: `inconclusive`, `Verdicts`; FR-098's stale `package_id` refusal;
-  `stale_dependency`/`revision-mismatch`; equal results.
+  `stale_dependency`/`content-mismatch`; equal results.

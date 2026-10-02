@@ -15,7 +15,7 @@ Verify the map from EN-1's outcomes and their replay results to
 category of every `ProofBasis` and new inconclusive cause; each replay
 refusal path; a faulting replay; and the named limit of a stopped run.
 
-Scope: FR-127-AC-1 to FR-127-AC-5.
+Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
 
 ## Test Procedure
 
@@ -30,6 +30,18 @@ Scope: FR-127-AC-1 to FR-127-AC-5.
 4. Settle FR-126-AC-6's `max_automaton_states` run and FR-126-AC-5's
    `max_depth` 2 and evaluation-meter runs.
 5. Settle FR-126-AC-3's deadlock-freedom violation with its replay.
+6. Closure certificates (FR-127-AC-7): check and settle the TP-1 proof
+   over ADR-018 §6's subject with its certificate; with the product state
+   for model state `(1, 0)` removed; and a closure of every reachable
+   `Counter` state offered for the deadlock-freedom item with no
+   `terminal` member.
+7. Component certificates (FR-127-AC-8): check FR-126-AC-1's weak `each`
+   proof with its certificate; with the witness of `{(*, 0, q1)}` naming
+   `upd(a)`; with the two accepting components listed first.
+8. Settle a Kani `Proved{Checks{3}}`, an SMT `Proved{BoundedComplete{depth:
+   5}}` and an SMT `Proved{Inductive{depth: 2}}`; read the category of
+   `Inconclusive(CertificateRejected)`.
+9. Settle a replay result with cause `Verdicts`.
 
 Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 
@@ -39,7 +51,7 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `explicit-state` on V-5; the stopped record names `max_states`, value 2.
 - Step 2: inconclusive `KaniVacuousProof`; success four times; inconclusive
   four times.
-- Step 3: `proved`, `closed-scope`, `Proved{Exhaustive}`, success;
+- Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
   `refuted`, `decisive-counterexample`, violation; `inconclusive`,
   `ReplayRefused` three times; `inconclusive`, `ReplayParity`; `failed`,
   category failed.
@@ -49,3 +61,10 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `pending`; a stopped record naming `EvaluationMeter`, value 0.
 - Step 5: `refuted` with a counterexample of `kind: Deadlock`, and an
   obligation identity distinct from the authored claims'.
+- Step 6: accepted, `Proved{Exhaustive, Certified}`; rejected
+  `SuccessorMissing` at `(1, 0)`, `inconclusive`, `CertificateRejected`;
+  rejected `BadState` at value 3.
+- Step 7: accepted; rejected `WitnessFails` at `{(*, 0, q1)}`'s first
+  state; rejected `BackwardEdge`.
+- Step 8: `proved`, `Uncertified`, success, three times; inconclusive.
+- Step 9: `inconclusive`, `ReplayParity`, written `replay-parity`.
