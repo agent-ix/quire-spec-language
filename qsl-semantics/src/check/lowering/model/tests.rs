@@ -1067,7 +1067,12 @@ mod quantities {
     /// refuses a stale key, so the keys are QSpec's vector keys FR-094
     /// names).
     fn units() -> UnitTable {
-        let graph = admit_unit_graph(
+        UnitTable::declared(&unit_graph())
+    }
+
+    /// The admitted graph [`units`] reads.
+    fn unit_graph() -> quire_semantic_value::unit::UnitGraph {
+        admit_unit_graph(
             [
                 (dimension("Length"), node_key(LENGTH)),
                 (dimension("Time"), node_key(TIME)),
@@ -1081,8 +1086,7 @@ mod quantities {
                 identity: "example-model".into(),
             })]),
         )
-        .expect("the QSpec unit vectors admit");
-        UnitTable::declared(&graph)
+        .expect("the QSpec unit vectors admit")
     }
 
     fn quantity(hex: &str) -> ValueType {
@@ -1286,6 +1290,32 @@ mod quantities {
                 cause: CheckCause::InternalFault(fault),
                 ..
             }) if *fault == KeyFault::UnheldUnit(unheld)
+        ));
+        assert_eq!(graph.nodes().count(), 0);
+    }
+
+    /// FR-094-AC-7: a table built from the graph's units through the public
+    /// `FromIterator`, not `UnitTable::declared`, holds the declared `metre`
+    /// unit but no admitted node to build it from. Keying a `metre`
+    /// quantity is an internal fault naming the unit's key, with no key and
+    /// no node.
+    #[trace("FR-094-AC-7", "TC-419")]
+    #[test]
+    fn a_declared_unit_with_no_admitted_node_is_an_internal_fault() {
+        let table: UnitTable = unit_graph()
+            .units()
+            .map(|unit| QuantityUnit::Declared(Box::new(unit.clone())))
+            .collect();
+        assert!(table.get(UnitId::declared(node_key(METRE))).is_some());
+        let (result, graph) = lower(&[], table, |lowering| {
+            lowering.type_node(&quantity(METRE), &generated_location())
+        });
+        assert!(matches!(
+            result,
+            Err(CheckRefusal {
+                cause: CheckCause::InternalFault(fault),
+                ..
+            }) if *fault == KeyFault::UnheldNominal(node_key(METRE))
         ));
         assert_eq!(graph.nodes().count(), 0);
     }

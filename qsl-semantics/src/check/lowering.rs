@@ -415,7 +415,8 @@ pub(crate) struct Lowered {
 /// group by FR-092's group order.
 pub(crate) struct Lowering<'a> {
     scope: &'a Scope,
-    owner: Owner,
+    /// The checked unit's own source: the owner of every node it declares.
+    owner: SourceOwner,
     models: &'a [AdmittedModel],
     /// The package's units and every compound unit the check stage formed.
     units: UnitTable,
@@ -1219,7 +1220,7 @@ impl<'a> Lowering<'a> {
     ) -> Self {
         Self {
             scope,
-            owner: Owner::Source(owner.clone()),
+            owner: owner.clone(),
             models,
             units,
             correspondence: ModelCorrespondence::default(),
@@ -1376,7 +1377,9 @@ impl<'a> Lowering<'a> {
         declaration: Option<Vec<Identifier>>,
         body: SemanticTerm,
     ) -> Result<NodeKey, CheckRefusal> {
-        let owner = declaration.as_ref().map(|_| self.owner.clone());
+        let owner = declaration
+            .as_ref()
+            .map(|_| Owner::Source(self.owner.clone()));
         self.insert_node(
             location,
             NodeContent {

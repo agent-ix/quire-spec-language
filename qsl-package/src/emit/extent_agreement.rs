@@ -387,6 +387,160 @@ fn tc_440_a_quantity_record_is_emitted_and_reaches_ir() {
     );
 }
 
+/// A source-declared unit graph past roots over base dimensions: the base
+/// dimensions `Length` and `Time`, the derived dimension `Velocity = Length
+/// / Time`, the root units `metre`, `second` and `mps` (of `Velocity`), and
+/// `km = 1000 × metre`, a non-root unit. Each node is owned by the fixture
+/// unit's own source. Returns the table and the keys by name.
+fn velocity_units() -> (
+    quire_semantic_value::quantity::UnitTable,
+    std::collections::BTreeMap<&'static str, NodeKey>,
+) {
+    use qsl_semantics::value::{
+        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+        UnitPreimage,
+    };
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
+    let id =
+        |key: NodeKey| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": key.to_string()});
+    let mut keys = std::collections::BTreeMap::new();
+    let dimension = |name: &str, terms: Value| {
+        let preimage = DimensionPreimage::from_json(json!({
+            "version": "quire.dimension-node/v1",
+            "owner": owner,
+            "qualified_declaration": [name],
+            "terms": terms,
+        }))
+        .expect("a dimension");
+        let key = NodeKey::from_digest(preimage.digest().expect("the dimension digests"));
+        (preimage, key)
+    };
+    let length = dimension("Length", json!([]));
+    let time = dimension("Time", json!([]));
+    let mut velocity_terms = vec![
+        json!({"dimension_node_id": id(length.1), "exponent": "1"}),
+        json!({"dimension_node_id": id(time.1), "exponent": "-1"}),
+    ];
+    velocity_terms.sort_by_key(|term| term["dimension_node_id"]["digest"].to_string());
+    let velocity = dimension("Velocity", Value::Array(velocity_terms));
+    let unit = |name: &str, dimension: NodeKey, target: Option<NodeKey>, scale: &str| {
+        let preimage = UnitPreimage::from_json(json!({
+            "version": "quire.unit-node/v1",
+            "owner": owner,
+            "qualified_declaration": [name],
+            "dimension_node_id": id(dimension),
+            "target_unit_node_id": target.map(id),
+            "scale": {"numerator": scale, "denominator": "1"},
+            "offset": {"numerator": "0", "denominator": "1"},
+        }))
+        .expect("a unit");
+        let key = NodeKey::from_digest(preimage.digest().expect("the unit digests"));
+        (preimage, key)
+    };
+    let metre = unit("metre", length.1, None, "1");
+    let km = unit("km", length.1, Some(metre.1), "1000");
+    let second = unit("second", time.1, None, "1");
+    let mps = unit("mps", velocity.1, None, "1");
+    for (name, key) in [
+        ("Length", length.1),
+        ("Time", time.1),
+        ("Velocity", velocity.1),
+        ("metre", metre.1),
+        ("km", km.1),
+        ("second", second.1),
+        ("mps", mps.1),
+    ] {
+        keys.insert(name, key);
+    }
+    let selection: NodeOwner = serde_json::from_value(owner.clone()).expect("an owner");
+    let graph = admit_unit_graph(
+        [length, time, velocity],
+        [metre, km, second, mps],
+        &OwnerSelection::new([selection]),
+    )
+    .expect("the unit graph admits");
+    (
+        quire_semantic_value::quantity::UnitTable::declared(&graph),
+        keys,
+    )
+}
+
+/// FR-094-AC-8 (TC-419 step 5): `Trip{d: km, v: mps}`, over a non-root
+/// unit and a unit of a derived dimension, is emitted with nothing omitted.
+/// Lowering's walk follows `km`'s target to `metre` and `Velocity`'s terms
+/// to `Length` and `Time`; the emitter lists those as the nodes'
+/// dependencies and writes each node's own preimage; IR's v2 reader admits
+/// the package (the emit-and-read path TC-440 uses) and lowers `Trip`.
+#[trace("FR-094-AC-8", "TC-419")]
+#[test]
+fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
+    let (units, keys) = velocity_units();
+    let quantity = |name: &str| ValueType::Quantity(quire_exact::UnitId::declared(keys[name]));
+    let trip = record(
+        12,
+        "Trip",
+        vec![("d", quantity("km")), ("v", quantity("mps"))],
+    );
+    let types = TypeEnvironment::new([trip], [])
+        .expect("FR-143 admits Trip")
+        .with_units(units);
+    let (wire, package, omitted) = emit_and_read(types);
+    assert!(omitted.is_empty(), "{omitted:?}");
+    let node = |name: &str| {
+        let digest = keys[name].to_string();
+        nodes(&wire)
+            .iter()
+            .find(|node| node["node_id"]["digest"] == json!(digest))
+            .unwrap_or_else(|| panic!("the {name} node is written"))
+            .clone()
+    };
+    let ids = |names: &[&str]| {
+        let mut ids: Vec<Value> = names
+            .iter()
+            .map(|name| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": keys[name].to_string()}))
+            .collect();
+        ids.sort_by_key(|id| id["digest"].to_string());
+        Value::Array(ids)
+    };
+    let km = node("km");
+    assert_eq!(km["semantic_form"], json!("unit"));
+    assert_eq!(km["dependencies"], ids(&["Length", "metre"]));
+    let km_preimage = &km["nominal_identity_preimage"];
+    assert_eq!(
+        km_preimage["target_unit_node_id"]["digest"],
+        json!(keys["metre"].to_string())
+    );
+    assert_eq!(
+        km_preimage["scale"],
+        json!({"numerator": "1000", "denominator": "1"})
+    );
+    assert_eq!(node("metre")["dependencies"], ids(&["Length"]));
+    let velocity = node("Velocity");
+    assert_eq!(velocity["semantic_form"], json!("dimension"));
+    assert_eq!(velocity["dependencies"], ids(&["Length", "Time"]));
+    let terms = velocity["nominal_identity_preimage"]["terms"]
+        .as_array()
+        .expect("Velocity's terms");
+    assert_eq!(terms.len(), 2);
+    assert_eq!(
+        node("mps")["semantic_type"]["digest"],
+        json!(keys["Velocity"].to_string())
+    );
+    for base in ["Length", "Time"] {
+        assert_eq!(node(base)["dependencies"], json!([]));
+    }
+    let (ir_id, _) = declared(&wire, "Trip");
+    let lowering = ir_lowering(&package, &ir_id);
+    assert!(
+        matches!(
+            lowering,
+            CompleteLoweringRecordV2::Lowered { .. }
+                | CompleteLoweringRecordV2::RequiresBound { .. }
+        ),
+        "{lowering:?}"
+    );
+}
+
 /// TC-440: agreement over the quantity record `Measure{len: metre}`. Its
 /// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
 /// unboundable (ADR-014 §4), and IR must require a bound for it.

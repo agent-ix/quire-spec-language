@@ -462,10 +462,7 @@ impl<'a> Lowering<'a> {
     /// is left as it is. The walk is a heap work list, bounded by the unit
     /// table's size.
     fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
-        let owner = match &self.owner {
-            Owner::Source(source) => Some(source.node_owner()),
-            Owner::Model(_) => None,
-        };
+        let owner = self.owner.node_owner();
         let mut pending = vec![unit];
         while let Some(key) = pending.pop() {
             if self.graph.nodes.contains_key(&key) {
@@ -489,29 +486,22 @@ impl<'a> Lowering<'a> {
                 } => {
                     pending.push(dimension);
                     pending.extend(target);
-                    let preimage = owner
-                        .clone()
-                        .and_then(|owner| {
-                            UnitPreimage::new(
-                                owner,
-                                qualified.clone(),
-                                dimension,
-                                target,
-                                &scale,
-                                &offset,
-                            )
-                            .ok()
-                        })
-                        .filter(|preimage| own(preimage.preimage_bytes()));
+                    let preimage = UnitPreimage::new(
+                        owner.clone(),
+                        qualified.clone(),
+                        dimension,
+                        target,
+                        &scale,
+                        &offset,
+                    )
+                    .ok()
+                    .filter(|preimage| own(preimage.preimage_bytes()));
                     ("unit", Some(dimension), NominalNode::Unit(preimage))
                 }
                 NominalUnitForm::Dimension { terms } => {
                     pending.extend(terms.iter().map(|(base, _)| *base));
-                    let preimage = owner
-                        .clone()
-                        .and_then(|owner| {
-                            DimensionPreimage::new(owner, qualified.clone(), terms).ok()
-                        })
+                    let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
+                        .ok()
                         .filter(|preimage| own(preimage.preimage_bytes()));
                     ("dimension", None, NominalNode::Dimension(preimage))
                 }
