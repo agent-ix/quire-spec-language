@@ -22,7 +22,7 @@ relationships:
 
 QSL's layer-5 `model_check` SHALL decide a liveness (TP-4) item whose
 fairness set holds strong constraints by recursive SCC refinement of the
-retained product graph (ADR-019 SR-1 to SR-7). It extends FR-126's second
+retained product graph (ADR-019 FS-1 to FS-7). It extends FR-126's second
 phase: the fairness filter becomes one recursive function over a set of
 product states and the fairness set, with a rule per `FairnessKind`. With
 weak constraints only it is FR-126's single pass. The first phase, the
@@ -55,7 +55,7 @@ constraint.
 - When the first phase expands a model state, the engine SHALL record the
   set of transition identities enabled there, which are the labels of the
   state's FR-120 transitions, at no extra contract evaluation (ADR-019
-  SR-1).
+  FS-1).
 - The engine SHALL read whether a constraint is enabled at a product state
   from its model state's enabled set, never from the product's edges, for
   weak and strong constraints alike, so an identity the automaton gives no
@@ -72,7 +72,7 @@ constraint.
   (a) a state of every acceptance set of the automaton, (b) for every weak
   constraint, an edge in `S` that takes it or a state of `S` where it is
   disabled, and (c) for every strong constraint, an edge in `S` that takes
-  it, or no state of `S` where it is enabled (ADR-019 SR-2).
+  it, or no state of `S` where it is enabled (ADR-019 FS-2).
 - When `S` meets (a), (b) and (c), the engine SHALL pass it.
 - When `S` fails (a) or (b), the engine SHALL reject it.
 - When `S` meets (a) and (b) and fails (c) for a set of strong constraints
@@ -81,7 +81,7 @@ constraint.
 - The engine SHALL run the second phase as `fair` over every retained
   product state, and SHALL take as the passing component the first passing
   SCC in discovery order, depth-first through the refinement (ADR-019
-  SR-6).
+  FS-6).
 - The engine SHALL consult the poll before each SCC decomposition of the
   second phase, and SHALL return `Stopped{cause: Cancelled, limit: None}`
   when it returns `true`.
@@ -95,7 +95,7 @@ constraint.
   component `P` from its entry state, in which a strong constraint enabled
   at some state of `P` has an obligation discharged only by an edge of `P`
   that takes it, and a strong constraint enabled at no state of `P` has
-  none (ADR-019 SR-7).
+  none (ADR-019 FS-7).
 - The engine SHALL return `Violated` with that lasso when a component
   passes, and FR-126's `Holds{basis: Exhaustive}` or `BoundReached` when
   none does.
@@ -110,7 +110,7 @@ constraint.
 
 ## Dependencies
 
-- ADR-019 §2 SF-2 to SF-4, §3 SR-1 to SR-7, AM-1 and AM-2; ADR-018 §3 EN-1,
+- ADR-019 §2 SF-2 to SF-4, §3 FS-1 to FS-7, AM-1 and AM-2; ADR-018 §3 EN-1,
   §4 FA-4, FA-5, §5 CX-5.
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (the engine it extends), [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)

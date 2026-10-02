@@ -116,8 +116,8 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
 | V-6 | `Undecided(UndecidedSuccessor)` (a refused contract conjunction) or `Undecided(NoInitialState)` | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
-| V-6 | `Violated` whose replay refuses it as an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
-| V-6 | `Violated` whose replay refuses with any other refusal except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
+| V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
+| V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |
 | — | `Violated` whose replay refuses with `InternalFault` | `failed` | `unavailable` | `Failed` | failed (ADR-013 O-16 internal failure) |
 | V-7 | `Stopped{cause: ResourceExhausted, limit: Some(ReachedLimit{limit, value})}`, a limit reached | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` | incomplete |
 | V-7 | `Stopped{cause: Cancelled, limit: None}` | `incomplete` | `unavailable` | `Incomplete(Cancelled)`, written `cancelled` | incomplete |

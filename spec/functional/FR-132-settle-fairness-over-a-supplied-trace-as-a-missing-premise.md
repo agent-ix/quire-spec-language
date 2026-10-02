@@ -57,7 +57,8 @@ TemporalTrace evaluator and replay settle it.
 - When a clause whose fairness set is not empty is evaluated over a
   supplied trace, the evaluator SHALL return
   `Unsupported(MissingFairnessPremise{constraint})` naming the first
-  constraint of the checked fairness set, and SHALL evaluate no formula.
+  constraint of the checked fairness set, which holds the constraints in
+  source order of first occurrence (FR-123), and SHALL evaluate no formula.
 - When the clause's fairness set is empty, the evaluator SHALL evaluate the
   clause over the supplied trace as ADR-014 A-4 states.
 - `TerminalValue::category` SHALL map `Unsupported(MissingFairnessPremise

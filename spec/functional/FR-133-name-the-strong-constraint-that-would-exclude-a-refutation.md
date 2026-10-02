@@ -71,9 +71,13 @@ computes it and what it writes.
   the named operation, or for `Each` the named identity, is enabled.
 - When the clause's fairness set already holds the named constraint, the
   executor SHALL emit no hint for that operation.
-- `model_check` SHALL write the hints on the item's terminal record beside
-  the counterexample, and SHALL leave the counterexample, its replay
-  identity, the obligation identity and the verdict unchanged.
+- The executor SHALL return the hints in the replay result. The writer of
+  the item's terminal record SHALL write them on it beside the
+  counterexample: `model_check`'s settlement (FR-127) for an EN-1
+  refutation, and the orchestrating driver (ADR-011 T-13) for a refutation
+  from the SMT backend settled through CG's map (ADR-018 DS-2).
+- The writer of the terminal record SHALL leave the counterexample, its
+  replay identity, the obligation identity and the verdict unchanged.
 - The executor SHALL emit no hint for a safety, bounded or deadlock-freedom
   item, nor for a lasso whose loop is the terminal stutter step, at which
   no operation is enabled.

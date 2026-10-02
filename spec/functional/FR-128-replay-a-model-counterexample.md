@@ -136,8 +136,9 @@ member of its own.
     `invalid_runtime_input`/`invalid-value`.
 - For `kind: Formula` the executor SHALL check the lasso against the
   fairness set, reading enabledness from `ModelSystem` at every loop state,
-  and refuse an unfair lasso with `invalid_runtime_input`/`invalid-value`
-  (ADR-014 A-4). It SHALL then evaluate the formula over the replayed trace
+  and refuse an unfair lasso with `ReplayRefusal::UnfairLasso{constraint}`,
+  naming the first failing constraint (FR-131), whose catalog code is
+  `invalid_runtime_input`/`invalid-value` (ADR-014 A-4). It SHALL then evaluate the formula over the replayed trace
   by FR-125 under the `over` binding.
   - `false` SHALL settle `reproduced-with-evaluated-witness`.
   - `true`, or no value, SHALL settle `inconclusive`, `ReplayParity` or
