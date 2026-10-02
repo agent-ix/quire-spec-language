@@ -1020,10 +1020,10 @@ mod tests {
             variants: SumVariants::new(vec![closed, active], true).unwrap(),
         };
 
-        let ValueType::Enum(declared_shape) = to_kernel_value_type(&declared) else {
+        let ValueType::Enum(ref declared_shape) = to_kernel_value_type(&declared) else {
             panic!("sum form must convert to ValueType::Enum");
         };
-        let ValueType::Enum(reversed_shape) = to_kernel_value_type(&reversed) else {
+        let ValueType::Enum(ref reversed_shape) = to_kernel_value_type(&reversed) else {
             panic!("sum form must convert to ValueType::Enum");
         };
 
@@ -1098,10 +1098,10 @@ mod tests {
             node: renamed_node,
             variants: variants(),
         };
-        let ValueType::Enum(original_shape) = to_kernel_value_type(&original) else {
+        let ValueType::Enum(ref original_shape) = to_kernel_value_type(&original) else {
             panic!("sum form must convert to ValueType::Enum");
         };
-        let ValueType::Enum(renamed_shape) = to_kernel_value_type(&renamed) else {
+        let ValueType::Enum(ref renamed_shape) = to_kernel_value_type(&renamed) else {
             panic!("sum form must convert to ValueType::Enum");
         };
 

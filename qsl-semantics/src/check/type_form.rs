@@ -448,7 +448,7 @@ mod tests {
             &["0", "100", "0", "2", "nearest-even"],
         ))
         .expect("nearest-even is a grammar rounding mode");
-        let ValueType::Decimal(decimal) = decimal else {
+        let ValueType::Decimal(ref decimal) = decimal else {
             panic!("a decimal type, not {decimal:?}");
         };
         assert_eq!(decimal.rounding(), RoundingMode::NearestEven);

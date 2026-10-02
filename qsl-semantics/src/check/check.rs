@@ -2143,9 +2143,10 @@ impl<'a> Typer<'a> {
         binder: &str,
         location: &Location,
     ) -> Result<(Slot, Box<CollectionType>), CheckRefusal> {
-        let ValueType::Collection(source_type) = source.value_type.clone() else {
+        let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };
+        let source_type = source_type.clone();
         let slot = self.bind(
             binder,
             source_type.element().clone(),
@@ -2296,9 +2297,10 @@ impl<'a> Typer<'a> {
         source: &Node,
         location: &Location,
     ) -> Result<(Slot, Slot, Box<CollectionType>), CheckRefusal> {
-        let ValueType::Collection(source_type) = source.value_type.clone() else {
+        let ValueType::Collection(source_type) = &source.value_type else {
             return Err(mismatch(location));
         };
+        let source_type = source_type.clone();
         match (form, identity) {
             (Accumulation::Fold, false) | (Accumulation::Reduce, true) => {
                 return Err(mismatch(location))

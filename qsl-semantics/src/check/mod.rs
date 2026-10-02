@@ -2227,7 +2227,7 @@ mod tests {
         );
         assert_eq!(graph.checked_type_node(declaration_key), Some(nodes[0]));
 
-        let quire_exact::ValueType::Enum(shape) = to_kernel_value_type(nodes[0]) else {
+        let quire_exact::ValueType::Enum(ref shape) = to_kernel_value_type(nodes[0]) else {
             panic!("the sum form must convert to ValueType::Enum");
         };
         for case in ["Active", "Closed"] {
