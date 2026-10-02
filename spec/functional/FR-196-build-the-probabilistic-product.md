@@ -45,6 +45,22 @@ pub struct ExactProbRequest<'a> {
     pub claim: &'a CheckedProbabilisticClaim,     // FR-195
     pub limits: ExactProbLimits,                  // FR-203
 }
+
+// EN-5's entry, in `qsl-analyze` (ADR-028 SP-2)
+pub fn check_exact_probabilistic(
+    request: ExactProbRequest<'_>,
+    cancel: &Cancel,                              // FR-276
+) -> Result<ExactOutcome, ExactProbRefusal>;
+
+// In `qsl-replay`, read by the settlement map (FR-203)
+pub enum ExactOutcome {
+    Holds { entries: Vec<ExactEntry>, certificate: ProbabilityCertificate },   // FR-201
+    Violated { counterexample: ProbabilisticCounterexample },                  // FR-202
+    Straddles { lower: Rational, upper: Rational },                            // PrecisionBudget
+    Stopped { limit: ExactProbLimit, value: u64, setting: SettingName },       // LimitReached
+}
+pub enum ExactProbRefusal { Admission(AdmissionFailure), NotMarkov(NotMarkov), ZeroWeightComponent, Timed(TimedRefusal) } // TimedRefusal: FR-204
+
 ```
 
 ## Outputs
@@ -55,8 +71,9 @@ pub struct ProbProduct {
     pub kind: ProductKind,                        // Dtmc or Mdp
     pub edges: Vec<ProbEdge>,
     pub initial: Vec<(u32, Option<Binding>, ProductStateId)>,
-    pub decided: Vec<(ProductStateId, Verdict)>,  // accepting or rejecting monitor states
+        pub decided: Vec<(ProductStateId, MonitorVerdict)>, // MonitorVerdict { Accept, Reject }: the monitor's decided states
 }
+// ProductKey lives in `qsl-replay` with the certificate types, so the checker reads it
 pub struct ProductKey { pub model: StateKey, pub monitor: Option<u32>, pub accumulator: Option<Accumulator>, pub pending: Option<(ScheduledIdentity, Vec<Value>)> }
 pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIdentity>, pub draw: Option<Vec<Value>>, pub to: ProductStateId, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
 ```

@@ -75,8 +75,14 @@ pub fn replay_probabilistic_witness(
   under a `>= θ` bound or `Pr(E)` under `<= θ`, with value past the bound,
   or an `Upper` certificate on `Pr(E)` below `θ`. Long-run and
   expected-reward refutations SHALL use certificate evidence.
-- For a quantile claim, the paths SHALL witness XF-2's transform: their
-  activated, violating mass SHALL exceed `1 − q`.
+- For a quantile claim, replay SHALL classify each path as violating or
+  not activated, sum their exact probabilities into `V` and `N`, and apply
+  QSpec FR-413's two-mass rule: `quantile q of M <= c` refutes when
+  `V > (1 − q) · (1 − N)`; `quantile q of M >= c` refutes when `V > 0` and
+  `V >= q · (1 − N)`. A path set that fails the rule SHALL settle
+  `inconclusive`, `ReplayParity`. Subsystem evidence for a quantile claim
+  SHALL carry a `Lower` certificate for `V` and one for `N`, and the same
+  rule SHALL apply to their values.
 - The witness scheduler SHALL be defined on the evidence's states only:
   memoryless and deterministic, or memoryless and randomized for a claim
   with a fairness set (FR-200).
@@ -127,6 +133,7 @@ pub fn replay_probabilistic_witness(
 | FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; with a post-state digest altered it refuses `stale_dependency`/`content-mismatch`; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
 | FR-202-AC-3 | §15.3's per-window claim is refuted with subsystem evidence: a dyadic `Lower` certificate for `Pr(not E)` with value above `1/100`, which replay accepts through FR-201's checker. FR-200-AC-2's `Coin2` witness replays `refuted` and passes the fairness check; the same witness with the scheduler taking `wait` at the live state forever fails the fairness check and settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
 | FR-202-AC-4 | With `max_witness_paths` 0, §15.4's refutation carries subsystem evidence instead of a path set and still replays `refuted`. Replaying one envelope twice gives equal outcomes. | Test (TC-637) |
+| FR-202-AC-6 | Over the two-point model (`M` 1 or 3, probability 1/2 each), the path to `M = 1` (`V = 1/2`, `N = 0`) replays `refuted` for `quantile 1/2 of M >= 3` (equality refutes), and settles `inconclusive`, `ReplayParity` for `quantile 9/10 of M >= 3`, which holds. Over its variant that activates with probability 1/2 (`M` 1 or 3 with probability 1/4 each), the path set of the `M = 1` path and the not-activated path (`V = 1/4`, `N = 1/2`) replays `refuted` for `quantile 1/2 of M >= 3`, and the `M = 1` path alone settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
 | FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
 
 ## Dependencies

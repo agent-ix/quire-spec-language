@@ -25,11 +25,10 @@ relationships:
 S3 SHALL extend FR-186's probabilistic claim check with the forms that only
 exact evidence decides (ADR-028 XF-4, XF-5), with fairness sets on claims
 `under every scheduler` (FS-1), and with claims that state no confidence
-parameters (SP-4). CG's `probabilistic-satisfaction` arm SHALL route an
-item naming `exact` evidence to EN-5 and SHALL settle an item naming
-`statistical` evidence for an exact-only claim `unsupported` at negotiation
-(XF-7). EN-5's provider manifest SHALL advertise
-(`probabilistic-satisfaction`, `exact`).
+parameters (SP-4). EN-5's provider manifest SHALL advertise (`probabilistic-satisfaction`,
+`exact`), and S3 SHALL mark each exact-only claim so EN-4 refuses it
+(ADR-024 SV-5, XF-7). Routing by evidence kind is QSpec FR-290's
+negotiation rule, which QSL does not restate.
 
 ## Use case
 
@@ -86,18 +85,14 @@ impl CheckedProbabilisticClaim { pub fn exact_only(&self) -> bool; }
   claim `under every scheduler`, and for a claim that states no confidence
   parameters.
 
-### Negotiation
+### Capability
 
-- The `probabilistic-satisfaction` arm SHALL route an item naming `exact` to
-  a candidate advertising (`probabilistic-satisfaction`, `exact`), and never
-  to EN-4.
-- An item naming `statistical` evidence for a claim with `exact_only` true
-  SHALL settle `unsupported` at negotiation, with cause `ExactOnlyForm`,
-  `EveryScheduler` or `MissingConfidence` (FR-192), and no engine runs.
-- One claim requested with both evidence kinds SHALL give two items with two
-  terminal records.
 - The EN-5 provider manifest SHALL advertise (`probabilistic-satisfaction`,
-  `exact`) and register through FR-075.
+  `exact`) only, and register through FR-075.
+- When `check_statistical` receives a claim whose `exact_only` is true, EN-4
+  SHALL refuse it with `ExactOnlyForm`, `EveryScheduler` or
+  `MissingConfidence` (FR-189), and the map SHALL settle it `unsupported`
+  (FR-192).
 
 ## Acceptance Criteria
 
@@ -106,7 +101,7 @@ impl CheckedProbabilisticClaim { pub fn exact_only(&self) -> bool; }
 | FR-195-AC-1 | §15.6's `Terminates` and `FairTerminates` check as `Reach{AtLeast(99/100), Eventually(p.done)}` under `Every`, the second with fairness `[strong flip]`; their obligation identities differ. `probability >= 0.95 [holds(not m.delivered) until holds(m.delivered)]` over `Link` checks as `Until`. `probability >= 0.9 [eventually eventually holds(p.done)]` is refused. | Test (TC-630) |
 | FR-195-AC-2 | `expected accumulate cost until holds(m.delivered or m.attempts = 2) <= 6/5` over `Link` with a `cost` reward of 1 on both sends checks as `ExpectedReward`; §15.5's `MeanTime` checks with `RewardRef::Elapsed` and threshold `3 ms`; `expected elapsed until …` over an untimed subject is refused. | Test (TC-630) |
 | FR-195-AC-3 | `exact_only` is true for each claim of AC-1 and AC-2 and for `P95` with no confidence parameters, and false for `P95` under `Steady` with its confidence parameters. | Test (TC-630) |
-| FR-195-AC-4 | With EN-4 and EN-5 registered: `FairTerminates` naming `exact` routes to EN-5; naming `statistical` settles `unsupported`, `EveryScheduler`, with no engine run; `P95` with confidence parameters requested with both kinds gives two items, one routed to EN-4 and one to EN-5; the `Link` expected-reward claim under a workload naming `statistical` settles `unsupported`, `ExactOnlyForm`. | Test (TC-630) |
+| FR-195-AC-4 | EN-5's manifest lists exactly (`probabilistic-satisfaction`, `exact`). `check_statistical` given `FairTerminates` refuses `EveryScheduler`, and given the `Link` expected-reward claim under a workload refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-630) |
 
 ## Dependencies
 

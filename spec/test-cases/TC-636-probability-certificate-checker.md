@@ -31,5 +31,5 @@ Tag the tests `#[trace("TC-636", "FR-201-AC-n")]`.
 - Step 1: accepted, side `AtLeast`; rejected naming the first failing state, item `inconclusive`, `CertificateRejected`.
 - Step 2: accepted; rejected; accepted with side `AtLeast`.
 - Step 3: rejected; refused before re-enumeration; accepted, then rejected.
-- Step 4: `proved`; `Incomplete(ResourceExhausted)` naming `max_states`.
+- Step 4: `proved`; `Incomplete(LimitReached{…})` naming `max_states`.
 - Step 5: accepted with side `AtLeast`, only `skip` tight; rejected, naming the activated state after `go`.

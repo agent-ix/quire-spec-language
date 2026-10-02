@@ -1,12 +1,12 @@
 ---
 id: TC-630
-title: "S3 checks exact-only forms and fairness sets, and negotiation routes exact evidence"
+title: "S3 checks exact-only forms and fairness sets, and EN-5 advertises exact evidence"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-195
     type: verifies
 ---
-# TC-630: S3 checks exact-only forms and fairness sets, and negotiation routes exact evidence
+# TC-630: S3 checks exact-only forms and fairness sets, and EN-5 advertises exact evidence
 
 ## Description
 
@@ -21,7 +21,7 @@ Fixtures: §15.6's `Coin` claims; `Link` with a `cost` reward of 1 on both sends
 1. Check `Terminates`, `FairTerminates`, the `Link` until claim and the nested-eventually claim.
 2. Check the `Link` expected-cost claim, `MeanTime`, and `expected elapsed` over an untimed subject.
 3. Read `exact_only` for each claim of steps 1 and 2 and for `P95` with and without confidence.
-4. Negotiate `FairTerminates` with each kind, `P95` with both kinds, and the `Link` expected-cost claim under a workload with `statistical`.
+4. Read EN-5's manifest; call `check_statistical` with `FairTerminates` and with the `Link` expected-cost claim under a workload.
 
 Tag the tests `#[trace("TC-630", "FR-195-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-630", "FR-195-AC-n")]`.
 - Step 1: `Reach` forms with the fairness set recorded and distinct identities; the nested claim refused.
 - Step 2: `ExpectedReward` with `Named(cost)` and with `Elapsed`; refused.
 - Step 3: true for all but `P95` with confidence.
-- Step 4: EN-5; `EveryScheduler`; two items routed to EN-4 and EN-5; `ExactOnlyForm`; no engine run for the refusals.
+- Step 4: exactly (`probabilistic-satisfaction`, `exact`); `EveryScheduler`; `ExactOnlyForm`; no sample drawn for either.

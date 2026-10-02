@@ -77,7 +77,10 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 - The checker SHALL refuse a certificate whose identity differs from the
   item's.
 - It SHALL recompile the package (FR-098), re-admit the subject, and
-  re-enumerate the product through `ModelSystem` and the monitor: every
+  re-enumerate the product through `ModelSystem` and the monitor, using
+  `qsl-eval`'s property-automaton translation and enabledness (ADR-018
+  LA-5) and its own product enumeration and graph algorithms, and no
+  `qsl-analyze` code: every
   reachable product state for an `Upper`, `Exact` or `LongRun` certificate,
   and the states the certificate names and their successors for a `Lower`
   one, an unexplored successor counting as value 0.
@@ -111,8 +114,8 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 
 ### Verdict path
 
-- The driver SHALL run the checker on the certificate that left S6c over
-  E11 and settle `proved` only on `Accepted`; `Rejected` SHALL settle
+- QSL's settlement map in `qsl-replay` SHALL run the checker on the
+  certificate that left S6c over E11 and settle `proved` only on `Accepted`; `Rejected` SHALL settle
   `inconclusive`, `CertificateRejected`; `Stopped` SHALL settle V-7.
 - The checker's arithmetic and graph algorithms SHALL be code separate from
   EN-5's iterative and linear-algebra methods.
@@ -124,7 +127,7 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 | FR-201-AC-1 | §15.4 at threshold 0.95: the `Exact` certificate with values `24/25`, `4/5`, 1 at delivered states and 0 at the two-loss state is accepted with side `AtLeast`. The same certificate with `4/5` replaced by `9/10` is rejected, naming the first state in canonical order where the minimum over actions differs from the certified value; the item settles `inconclusive`, `CertificateRejected`. | Test (TC-636) |
 | FR-201-AC-2 | §15.3's `LongRun` certificate (component value `1800/1801`, reward `[up] − 1800/1801`, gain 0, bias 0 at `up` and `−2000/1801` at `down`) is accepted; with the bias at `down` changed to `−2001/1801` it is rejected. §15.1's dyadic `Lower` certificate at 64 bits, ranked by remaining horizon, is accepted with side `AtLeast`. | Test (TC-636) |
 | FR-201-AC-3 | A `Lower` certificate for §15.4 with its ranking omitted is rejected; one whose identity names a different claim is refused before any re-enumeration; §15.6's `FairTerminates` `Exact` certificate is accepted only after the checker recomputes that no fair end component exists, and the same certificate with its fairness set removed is rejected. | Test (TC-636) |
-| FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(ResourceExhausted)` naming `max_states`. | Test (TC-636) |
+| FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(LimitReached{…})` naming `max_states`. | Test (TC-636) |
 | FR-201-AC-5 | An `Opt` model whose initial state has the actions `go`, which activates and then sets `M` to 1 with probability `1/4` and to 3 with `3/4`, and `skip`, which never activates. For `quantile 1/2 of M >= 3` over every scheduler, the `Upper` certificate with `y = 0` at the initial state and `−1/4` after `go` is accepted with side `AtLeast`: only `skip` is tight, and no activated state is reachable through it. The same claim over a variant whose `go` sets `M` to 1 and 3 with `1/2` each, with `y = 0` at both states, is rejected, naming the activated state after `go`, since `go` is tight. | Test (TC-636) |
 
 ## Dependencies

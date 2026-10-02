@@ -66,9 +66,9 @@ pub enum ExactProbLimit { MaxStates, MaxTransitions, MaxAutomatonStates, MaxIter
 //   ValueBounds { lower: Rational, upper: Rational, method: BoundsMethod, reductions: Vec<AppliedReduction> },
 pub enum BoundsMethod { BackwardInduction { precision_bits: u32 }, IntervalIteration { precision_bits: u32, sweeps: u64 } }
 // IncompleteCause gains: PrecisionBudget { lower: Rational, upper: Rational }
-// InconclusiveCause gains: CertificateRejected
+
 // UnsupportedCause gains: ZeroWeightComponent, StrictClockConstraint, DelayDistribution,
-//   ZeroDelayCycle, TimedFormShape, ExactOnlyForm
+//   ZeroDelayCycle, TimedFormShape
 pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub value: ExactOrBounds, pub extremum: Option<Extremum> } // Extremum: Min or Max
 ```
 
@@ -87,8 +87,8 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 - Reaching a budget before the method completes SHALL settle V-7:
   `Incomplete(PrecisionBudget{lower, upper})` when an interval still
   straddles the threshold at `max_precision_bits`, and
-  `Incomplete(ResourceExhausted)` naming the budget, its value and the
-  request member otherwise, unless partial evidence already settles the
+  `Incomplete(LimitReached{limit, value, setting})` naming the budget, its
+  value and its setting otherwise, unless partial evidence already settles the
   item (FR-202).
 
 ### Settlement
@@ -102,10 +102,11 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 | Sound interval on the claim's side, certificate accepted | `proved` | `closed-scope` | `Proved{basis: ValueBounds{…}}` | success |
 | Bound fails, witness replays | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | Undefined evaluation at a state of positive probability, `Undefined` path replays | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
-| Interval straddles at the budget | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(PrecisionBudget{…})` | incomplete |
-| Another budget reached | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(ResourceExhausted)` | incomplete |
-| Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected)`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
-| `NotMarkov`, `ZeroWeightComponent`, a timed cause (FR-204), `ExactOnlyForm` at negotiation | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
+| Interval straddles at the budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(PrecisionBudget{…})` | incomplete |
+| Another limit reached | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| Cancelled through the `Cancel` handle | `incomplete`, `cancelled` | `unavailable` | `Incomplete(Cancelled)` (ADR-018 V-7) | incomplete |
+| Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, state})`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
+| `NotMarkov`, `ZeroWeightComponent`, a timed cause (FR-204) | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
 - `TerminalValue::category` SHALL map both new `ProofBasis` members to
   success, and proof accounting SHALL count them as proof.
