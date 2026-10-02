@@ -122,15 +122,26 @@ impl DirectionReport {
     }
 }
 
+/// The QSL crate that holds the layer-6 `replay` facade, the one QSL crate
+/// CG may take a normal dependency on (ADR-011 FB-05).
+const REPLAY_FACADE_CRATE: &str = "qsl-replay";
+
 /// ADR-011 §3 FB-05: no backend (IR, RT, CG) depends on QSL, normal or dev,
-/// except CG's normal dependency on QSL (the layer-6 `replay` facade's crate;
-/// this check is crate-level only -- FR-060's API-surface check is what
-/// verifies the dependency is used through `replay` alone).
+/// except CG's normal dependency on the layer-6 `replay` facade's crate,
+/// [`REPLAY_FACADE_CRATE`]. A CG edge to any other QSL crate, such as
+/// `qsl-semantics`, is a finding. This check is crate-level only -- FR-060's
+/// API-surface check is what verifies the dependency is used through
+/// `replay` alone. Edges into FB-05's shared leaves never reach this check
+/// (`metadata::edge_repo`).
 fn fb05_violations(edges: &[Edge]) -> Vec<Fb05Violation> {
     edges
         .iter()
         .filter(|edge| edge.to == Repo::Qsl && edge.from != Repo::Qsl)
-        .filter(|edge| !(edge.from == Repo::Cg && edge.kind == EdgeKind::Normal))
+        .filter(|edge| {
+            !(edge.from == Repo::Cg
+                && edge.kind == EdgeKind::Normal
+                && edge.via_crate == REPLAY_FACADE_CRATE)
+        })
         .cloned()
         .map(|edge| Fb05Violation { edge })
         .collect()
@@ -235,7 +246,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_direction_001_clean_graph_reports_nothing() {
         let edges = vec![
-            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "quire-spec-language"),
+            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "qsl-replay"),
             edge(Repo::Cg, Repo::Ir, EdgeKind::Normal, "quire-contract-ir"),
             edge(Repo::Cg, Repo::Rt, EdgeKind::Dev, "quire-contract-runtime"),
         ];
@@ -277,19 +288,25 @@ mod tests {
         assert_eq!(report.fb05[0].edge.kind, EdgeKind::Dev);
     }
 
-    /// tc_arch_lint_direction_004: CG's normal dependency on QSL is the one
-    /// stated exception and is not reported.
-    #[trace("TC-156", "FR-059-AC-1")]
+    /// tc_arch_lint_direction_004: CG's normal dependency on the replay
+    /// facade's crate is the one stated exception and is not reported; its
+    /// normal dependency on any other QSL crate, the layer-3
+    /// `qsl-semantics` or the root crate, is reported.
+    #[trace("TC-156", "FR-059-AC-1", "TC-898", "FR-356-AC-1")]
     #[test]
     fn tc_arch_lint_direction_004_cg_normal_edge_is_the_named_exception() {
-        let edges = vec![edge(
-            Repo::Cg,
-            Repo::Qsl,
-            EdgeKind::Normal,
-            "quire-spec-language",
-        )];
-        let report = check(&edges);
-        assert!(report.fb05.is_empty());
+        let report = check(&[edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "qsl-replay")]);
+        assert!(report.fb05.is_empty(), "{report:?}");
+        let edges = vec![
+            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "qsl-semantics"),
+            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "quire-spec-language"),
+        ];
+        let flagged: Vec<_> = check(&edges)
+            .fb05
+            .into_iter()
+            .map(|violation| violation.edge.via_crate)
+            .collect();
+        assert_eq!(flagged, ["qsl-semantics", "quire-spec-language"]);
     }
 
     /// tc_arch_lint_direction_005 (negative control): CG's *dev* dependency
@@ -381,7 +398,7 @@ mod tests {
                 EdgeKind::Normal,
                 "quire-contract-runtime",
             ),
-            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "quire-spec-language"),
+            edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "qsl-replay"),
         ];
         let report = check(&edges);
         assert!(report.fb11.is_empty());

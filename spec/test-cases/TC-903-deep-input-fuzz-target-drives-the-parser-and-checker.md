@@ -30,4 +30,4 @@ Scope: FR-356-AC-7.
 
 ## Status
 
-🚧 Planned.
+Implemented. The target is `fuzz/fuzz_targets/deep_input.rs`; run `make fuzz-deep-input`.

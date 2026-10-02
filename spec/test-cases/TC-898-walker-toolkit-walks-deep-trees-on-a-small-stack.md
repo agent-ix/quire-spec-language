@@ -45,4 +45,4 @@ Run steps 2 to 5 on a thread spawned with a 512 KiB stack.
 
 ## Status
 
-🚧 Planned.
+Implemented. Step 1 is backed by `make quire-walk-no-std`, `tests/it/quire_walk_leaf.rs` and `tools/arch-lint`'s `tc_arch_lint_metadata_009` and `tc_arch_lint_direction_004`; steps 2 to 5 by `quire-walk/tests/it/deep.rs`.

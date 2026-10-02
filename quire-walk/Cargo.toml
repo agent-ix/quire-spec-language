@@ -1,0 +1,25 @@
+[package]
+name = "quire-walk"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer W: the shared no_std walker toolkit -- an explicit heap stack of typed frames with enter and exit callbacks, and an arena that stores each node after its children."
+
+# Layer W is a shared leaf (ADR-011 FB-05): no dependency beyond `core` and
+# `alloc`, and no features, so feature unification can bring neither `std`
+# nor `stacker` into it.
+[dependencies]
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+# `cargo kani` sets `--cfg kani` for the proof harnesses in `src/proofs.rs`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
+[lints.clippy]
+all = "deny"

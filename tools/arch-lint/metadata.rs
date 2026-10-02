@@ -11,11 +11,13 @@ use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Edge, EdgeKind, Repo};
 
 /// The package names of ADR-011 FB-05's shared `no_std` leaf crates,
-/// published from the QSL repository and depended on by RT and CG (ADR-011
-/// §7.1): the kernel K (`quire-exact`) and the semantic-value leaf SV
+/// published from the QSL repository and depended on by the backends
+/// (ADR-011 §7.1): the kernel K (`quire-exact`), the semantic-value leaf SV
 /// (`quire-semantic-value`, which depends on K and ADR-013's one RFC 8785
-/// encoder `quire-canonical`, and on no QSL layer).
-const SHARED_LEAVES: [&str; 2] = ["quire-exact", "quire-semantic-value"];
+/// encoder `quire-canonical`, and on no QSL layer), and the walker toolkit
+/// W (`quire-walk`, which depends on `core` and `alloc` only, and which IR,
+/// RT and CG all use). `qsl-walk-grow` (layer WG) is not one.
+const SHARED_LEAVES: [&str; 3] = ["quire-exact", "quire-semantic-value", "quire-walk"];
 
 /// The ecosystem repository a resolved package contributes to the FR-059
 /// edge graph: `classify`'s answer, except that a shared leaf in
@@ -451,6 +453,65 @@ mod tests {
             .collect();
         assert_eq!(flagged, ["qsl-eval", "qsl-semantics"], "{report:?}");
         assert!(report.fb11.is_empty(), "{report:?}");
+    }
+
+    /// tc_arch_lint_metadata_009: the walker toolkit `quire-walk`,
+    /// git-sourced from the QSL repository, is a shared leaf: IR, RT and CG
+    /// may each depend on it with no edge and no finding. CG's dependency
+    /// on `qsl-semantics`, from the same QSL git source, is still a CG ->
+    /// QSL edge, and the direction check refuses it, since only the replay
+    /// facade's crate is CG's exception.
+    #[trace("TC-898", "FR-356-AC-1")]
+    #[test]
+    fn tc_arch_lint_metadata_009_walker_leaf_is_exempt_for_every_backend() {
+        let qsl_git = "git+https://github.com/agent-ix/quire-spec-language?branch=main";
+        let normal = json!([{"kind": null, "target": null}]);
+        let document = json!({
+            "packages": [
+                {"id": "ir 0.1.0", "name": "quire-contract-ir", "source": null},
+                {"id": "rt 0.1.0", "name": "quire-contract-runtime", "source": null},
+                {"id": "cg 0.1.0", "name": "quire-contract-codegen", "source": null},
+                {"id": "walk 0.1.0", "name": "quire-walk", "source": qsl_git},
+                {"id": "sem 0.1.0", "name": "qsl-semantics", "source": qsl_git},
+            ],
+            "resolve": {
+                "nodes": [
+                    {"id": "ir 0.1.0", "deps": [
+                        {"name": "quire_walk", "pkg": "walk 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "rt 0.1.0", "deps": [
+                        {"name": "quire_walk", "pkg": "walk 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "cg 0.1.0", "deps": [
+                        {"name": "quire_walk", "pkg": "walk 0.1.0", "dep_kinds": normal}
+                    ]},
+                    {"id": "walk 0.1.0", "deps": []},
+                    {"id": "sem 0.1.0", "deps": [
+                        {"name": "quire_walk", "pkg": "walk 0.1.0", "dep_kinds": normal}
+                    ]}
+                ]
+            }
+        });
+        let edges = parse_edges(&document).unwrap();
+        assert!(edges.is_empty(), "{edges:?}");
+        assert!(crate::graph::check(&edges).is_clean());
+
+        let mut document = document;
+        document["resolve"]["nodes"][2]["deps"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name": "qsl_semantics", "pkg": "sem 0.1.0", "dep_kinds": normal}));
+        let edges = parse_edges(&document).unwrap();
+        let expected = Edge {
+            from: Repo::Cg,
+            to: Repo::Qsl,
+            kind: EdgeKind::Normal,
+            via_crate: "qsl-semantics".to_owned(),
+        };
+        assert_eq!(edges, vec![expected.clone()]);
+        let report = crate::graph::check(&edges);
+        assert_eq!(report.fb05.len(), 1, "{report:?}");
+        assert_eq!(report.fb05[0].edge, expected);
     }
 
     /// tc_arch_lint_metadata_003: a dependency on a crate outside the four

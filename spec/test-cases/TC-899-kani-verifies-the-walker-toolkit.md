@@ -30,4 +30,4 @@ Scope: FR-356-AC-4.
 
 ## Status
 
-🚧 Planned.
+Implemented. The harnesses are in `quire-walk/src/proofs.rs`; run `cargo kani -p quire-walk`.

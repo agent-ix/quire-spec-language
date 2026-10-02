@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -197,6 +197,22 @@ quire-exact-no-std:
 # it for the same bare-metal target, so a `std` dependency fails the gate.
 quire-semantic-value-no-std:
 	cargo build --locked -p quire-semantic-value --target thumbv7em-none-eabi
+
+# `quire-walk` (ADR-011 layer W) is the shared `#![no_std]` walker toolkit
+# every stage and backend walks on; it depends on `core` and `alloc` only,
+# so it builds for a bare-metal target.
+quire-walk-no-std:
+	cargo build --locked -p quire-walk --target thumbv7em-none-eabi
+
+# The deep-input fuzz target (FR-356-AC-7, TC-903) over the S1 parser and
+# the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
+# It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
+# gitignored). Needs a nightly toolchain and `cargo install cargo-fuzz`. Not
+# part of `ci:`.
+FUZZ_RUNS ?= 10000
+fuzz-deep-input:
+	cp Cargo.lock fuzz/Cargo.lock
+	cd fuzz && cargo +nightly fuzz run deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
 ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 

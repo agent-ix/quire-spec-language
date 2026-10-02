@@ -1,0 +1,26 @@
+[package]
+name = "qsl-walk-grow"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer WG: the one maybe_grow wrapper, which grows the native stack on demand for a recursive walk outside the qualified core."
+
+# Layer WG depends on `stacker` only, and only outside `cfg(kani)`, where
+# `maybe_grow` is a plain call. No crate of the qualified core and no
+# backend depends on this crate (ADR-030 D-1 item 6, ADR-011 FB-05).
+[target.'cfg(not(kani))'.dependencies]
+stacker = "0.1.15"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+# `cargo kani` sets `--cfg kani`.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
+[lints.clippy]
+all = "deny"

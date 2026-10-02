@@ -1,0 +1,37 @@
+[package]
+name = "qsl-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "cargo-fuzz targets: deeply nested QSL sources through the S1 parser and the S3 checker (FR-356-AC-7)."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+qsl-cst = { path = "../qsl-cst" }
+qsl-forms = { path = "../qsl-forms" }
+qsl-foundation = { path = "../qsl-foundation" }
+qsl-replay = { path = "../qsl-replay" }
+quire-semantic-value = { path = "../quire-semantic-value" }
+
+# Its own workspace: cargo-fuzz builds on nightly with sanitizer flags, so
+# this crate stays out of the main workspace (`exclude = ["fuzz"]`).
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "deep_input"
+path = "fuzz_targets/deep_input.rs"
+test = false
+doc = false
+bench = false
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"
