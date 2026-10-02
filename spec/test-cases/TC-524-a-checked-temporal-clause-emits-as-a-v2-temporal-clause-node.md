@@ -28,7 +28,8 @@ Use ADR-018 §6's ConfigVersion example unit.
    `eventually[0,5]` in place of `eventually`; compare fairness bytes, node
    keys and `package_id`s.
 3. Compile `eventually[0,5] holds(c.versionNumber = 2)` under
-   event-position false-extension, and a clause with strong previous.
+   event-position false-extension, a clause with strong previous, and
+   `eventually[3,*] holds(c.versionNumber = 2)` under infinite-trace.
 4. Feed the I2 reader step 1's node with its arguments reordered; with a
    `null` interval under a bounded profile; with a fairness member naming
    `Absent`; with a `quire.op.temporal.fair` application inside the
@@ -44,7 +45,8 @@ Tag the tests `#[trace("TC-524", "FR-337-AC-n")]`.
   different node key and `package_id`.
 - Step 3: `quire.op.temporal.eventually` with `{lower: "0", upper: "5"}` and
   an empty fairness argument; `quire.op.temporal.once` with `{lower: "1",
-  upper: "1"}`.
+  upper: "1"}`; `quire.op.temporal.eventually` with `{lower: "3", upper:
+  null}`.
 - Step 4: a schema failure; `invalid_package`/`operation-member-mismatch`;
   `missing_declaration`/`missing-name`; `ill_typed`/`operator-ineligible`;
   each at FR-370's locus.
