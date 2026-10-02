@@ -77,5 +77,5 @@ mod walker;
 #[cfg(kani)]
 mod proofs;
 
-pub use arena::{Arena, Id};
+pub use arena::{Arena, Id, Results};
 pub use walker::{walk, Children, Walk};

@@ -14,8 +14,9 @@ libfuzzer-sys = "0.4"
 # The generator and the S1-to-S4 driver, built and tested by `make ci`.
 qsl-bench = { path = "../qsl-bench" }
 
-# Its own workspace: cargo-fuzz builds on nightly with sanitizer flags, so
-# this crate stays out of the main workspace (`exclude = ["fuzz"]`).
+# Its own workspace (`exclude = ["fuzz"]` in the root): the target is a
+# `no_main` libFuzzer binary, which cannot build or link under the main
+# workspace's `cargo build/test --workspace --all-targets`.
 [workspace]
 members = ["."]
 

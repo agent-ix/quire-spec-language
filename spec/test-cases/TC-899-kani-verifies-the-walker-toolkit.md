@@ -27,6 +27,13 @@ Scope: FR-356-AC-4.
   exit receives the frame its enter pushed; exits come in reverse enter
   order along each path; a stop ends the walk at once; and no traversal
   panics.
+- The bound is every tree of at most 4 nodes, enumerated by parent array
+  (node 0 is the root, and each other node's parent comes before it): 10
+  harnesses, one per parent array. Each harness runs the complete walk, a
+  stop on entering and on exiting each node, and the arena's bottom-up
+  computation, with a symbolic (`kani::any`) payload in every frame. The
+  tree shape is not symbolic, since CBMC does not finish on a symbolic
+  shape.
 
 ## Status
 

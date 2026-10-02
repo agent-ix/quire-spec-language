@@ -26,7 +26,7 @@
 
 use core::ops::ControlFlow;
 
-use crate::{walk, Arena, Children, Walk};
+use crate::{walk, Arena, Children, Id, Walk};
 
 /// The largest tree the harnesses range over.
 const MAX_NODES: u8 = 4;
@@ -218,35 +218,54 @@ fn check_stops(tree: Tree) {
     }
 }
 
+/// One arena node: the ids of its children, by tree index.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Node {
+    children: [Option<Id<Node>>; SLOTS],
+}
+
 /// `Arena::bottom_up` over `tree`, stored children first, computes each
-/// node's subtree size in one forward loop: every child is computed before
-/// its parent, and the root's size is the node count.
+/// node's subtree size in one forward loop: every child's result is there
+/// when its parent is computed, the node's own id is not yet computed, and
+/// the root's size is the node count.
 fn check_arena(tree: Tree) {
     let nodes = tree.nodes;
-    // Node `i` of `tree` goes in arena slot `nodes - 1 - i`, since every
-    // child has a larger index than its parent.
-    let mut arena: Arena<[bool; SLOTS]> = Arena::new();
+    // Tree nodes are pushed from the last to the first, since every child
+    // has a larger index than its parent; `ids[i]` is tree node `i`'s id.
+    let mut arena: Arena<Node> = Arena::new();
+    let mut ids: [Option<Id<Node>>; SLOTS] = [None; SLOTS];
     for slot in 0..MAX_NODES {
         if slot >= nodes {
             continue;
         }
         let node = nodes - 1 - slot;
-        let mut children = [false; SLOTS];
+        let mut children = [None; SLOTS];
         for child in 1..MAX_NODES {
             if tree.is_child(node, child) {
-                children[usize::from(nodes - 1 - child)] = true;
+                children[usize::from(child)] = ids[usize::from(child)];
             }
         }
-        let id = arena.push(children);
+        let id = arena.push(Node { children });
         assert!(id.index() == usize::from(slot));
-        assert!(arena.get(id) == Some(&children));
+        assert!(arena.get(id) == Some(&Node { children }));
+        ids[usize::from(node)] = Some(id);
     }
-    let sizes = arena.bottom_up(|children, done: &[u8]| {
+    let sizes = arena.bottom_up(|node, done| {
+        for slot in 0..SLOTS {
+            if let Some(id) = ids[slot] {
+                assert!(
+                    done.get(id).is_some() == (id.index() < done.len()),
+                    "exactly the nodes before this one have a result"
+                );
+            }
+        }
         let mut size = 1;
         for slot in 0..SLOTS {
-            if children[slot] {
-                assert!(slot < done.len(), "a child is computed before its parent");
-                size += done[slot];
+            if let Some(child) = node.children[slot] {
+                let Some(result) = done.get(child) else {
+                    panic!("a child is computed before its parent");
+                };
+                size += result;
             }
         }
         size

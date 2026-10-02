@@ -31,3 +31,7 @@ Scope: FR-356-AC-7.
 ## Status
 
 Implemented. The target is `fuzz/fuzz_targets/deep_input.rs`; run `make fuzz-deep-input`.
+It raises every size and work limit to fit each input. Until ADR-030 slice 1
+deletes the S2 forms and S3 checker depth caps, an input nested deeper than
+either cap ends in that cap's limit outcome and does not yet reach the walks
+past it.

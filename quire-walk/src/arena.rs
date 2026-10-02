@@ -12,6 +12,12 @@ use core::marker::PhantomData;
 ///
 /// An `Id` is only made by [`Arena::push`], so a node built from the ids
 /// its arena has already returned names only nodes stored before it.
+///
+/// **Same-arena precondition.** An `Id` carries its position, not its
+/// arena. Use it only with the arena that returned it. An id from another
+/// arena is not refused: [`Arena::get`] and [`Results::get`] answer `None`
+/// when its position is past the end, but an id whose position is in range
+/// names whatever node sits there.
 pub struct Id<T> {
     index: usize,
     node: PhantomData<fn() -> T>,
@@ -19,8 +25,7 @@ pub struct Id<T> {
 
 impl<T> Id<T> {
     /// The node's position in its arena: the number of nodes pushed before
-    /// it. A bottom-up result for the node is at this index of the slice
-    /// [`Arena::bottom_up`] passes.
+    /// it.
     pub fn index(self) -> usize {
         self.index
     }
@@ -132,17 +137,52 @@ impl<T> Arena<T> {
 
     /// Compute one result per node, bottom up, in one forward loop.
     ///
-    /// `compute` receives each node, in push order, with the results of
-    /// every node before it. A child's result is at its [`Id::index`] in
-    /// that slice, which always holds it, since a child is stored before
-    /// its parent. The returned vector holds each node's result at its
-    /// index.
-    pub fn bottom_up<R>(&self, mut compute: impl FnMut(&T, &[R]) -> R) -> Vec<R> {
+    /// `compute` receives each node, in push order, with the [`Results`] of
+    /// every node before it. For an id of this arena (see [`Id`]'s
+    /// same-arena precondition), [`Results::get`] returns a child's result,
+    /// which is always there since a child is stored before its parent; it
+    /// returns `None` for the node itself, a later node, or an id past the
+    /// end. The returned vector holds each node's result at its
+    /// [`Id::index`].
+    pub fn bottom_up<R>(&self, mut compute: impl FnMut(&T, &Results<'_, T, R>) -> R) -> Vec<R> {
         let mut results = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
-            let result = compute(node, &results);
+            let result = compute(
+                node,
+                &Results {
+                    done: &results,
+                    node: PhantomData,
+                },
+            );
             results.push(result);
         }
         results
+    }
+}
+
+/// The results [`Arena::bottom_up`] has computed so far: one for each node
+/// stored before the node being computed.
+pub struct Results<'a, T, R> {
+    done: &'a [R],
+    node: PhantomData<fn() -> T>,
+}
+
+impl<'a, T, R> Results<'a, T, R> {
+    /// The result for `id`, or `None` when `id` is not yet computed: the
+    /// node being computed, a later one, or a position past the arena's
+    /// end. Subject to [`Id`]'s same-arena precondition.
+    pub fn get(&self, id: Id<T>) -> Option<&'a R> {
+        self.done.get(id.index)
+    }
+
+    /// The number of results computed so far, which is the index of the
+    /// node being computed.
+    pub fn len(&self) -> usize {
+        self.done.len()
+    }
+
+    /// Whether no result is computed yet, which holds for the first node.
+    pub fn is_empty(&self) -> bool {
+        self.done.is_empty()
     }
 }

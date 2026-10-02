@@ -7,7 +7,7 @@
 use core::ops::ControlFlow;
 
 use ix_trace_rs::trace;
-use quire_walk::{walk, Arena, Children, Id, Walk};
+use quire_walk::{walk, Arena, Children, Id, Results, Walk};
 
 const DEPTH: usize = 100_000;
 
@@ -266,10 +266,8 @@ fn tc_898_a_100k_node_arena_computes_subtree_sizes_in_one_forward_loop() {
     on_small_stack(|| {
         let arena = deep_sum();
         assert_eq!(arena.len(), DEPTH);
-        let size_of = |id: Id<Term>, done: &[usize]| {
-            *done
-                .get(id.index())
-                .expect("a child is computed before its parent")
+        let size_of = |id: Id<Term>, done: &Results<'_, Term, usize>| {
+            *done.get(id).expect("a child is computed before its parent")
         };
         let sizes = arena.bottom_up(|term, done| match term {
             Term::Literal(_) => 1,
@@ -288,4 +286,37 @@ fn tc_898_a_100k_node_arena_computes_subtree_sizes_in_one_forward_loop() {
         drop(copy);
         drop(arena);
     });
+}
+
+/// An id from another, longer arena of the same node type, whose position
+/// is not yet computed in this one, reads as `None` from the results view
+/// and from `Arena::get`, never as a panic or a result.
+#[trace("TC-898", "FR-356-AC-3")]
+#[test]
+fn tc_898_a_foreign_id_past_the_computed_results_reads_as_none() {
+    let mut other: Arena<Term> = Arena::new();
+    let mut foreign = other.push(Term::Literal(0));
+    for value in 1..10 {
+        foreign = other.push(Term::Literal(value));
+    }
+    let mut arena = Arena::new();
+    let literal = arena.push(Term::Literal(1));
+    arena.push(Term::Negate(literal));
+    assert_eq!(arena.get(foreign), None);
+    let mut seen = Vec::new();
+    let sizes = arena.bottom_up(|term, done| {
+        seen.push((
+            done.len(),
+            done.get(foreign).copied(),
+            done.get(literal).copied(),
+        ));
+        match term {
+            Term::Negate(operand) => 1 + done.get(*operand).copied().unwrap_or(0),
+            Term::Literal(_) | Term::Add(..) => 1,
+        }
+    });
+    assert_eq!(sizes, [1, 2]);
+    // The first node sees no result, not even its own; the second sees the
+    // literal's. The foreign id is never answered.
+    assert_eq!(seen, [(0, None, None), (1, None, Some(1))]);
 }
