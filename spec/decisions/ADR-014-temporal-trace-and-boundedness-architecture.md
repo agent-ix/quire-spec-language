@@ -70,8 +70,8 @@ quire-contract-codegen (CG) `main` at `e2a5671`.
   FR-347 and FR-348 (V1-EXPR-027 to 029): unbounded quantification, induction
   and composition are negotiated per item and settle `unsupported` with a
   warning when no capable backend is registered. The root definitions
-  `quire.value.complete/v1` and `quire.model.complete/v1` are at `1-draft.2`,
-  because the collection-type identity preimage changed.
+  `quire.value.complete/v1` and `quire.model.complete/v1` state the
+  collection-type identity preimage (N-1).
 - **QSpec, infinite traces** (QSpec#112, on `main`). QSpec FR-090-AC-7:
   selecting `quire.temporal.infinite-trace/v1` admits the unbounded temporal
   operator forms, and no other profile does. QSpec FR-090, FR-250-AC-6 and
@@ -92,7 +92,7 @@ quire-contract-codegen (CG) `main` at `e2a5671`.
   available, and `unsupported`/`unbounded-extent` when none is. CG reads that
   availability as `ExtentClassification.finite_bound_available` and computes
   none of it (CG `src/capability.rs:150-163`): it belongs to #222.
-- **QSpec, diagnostics** (`quire.native.diagnostics/v1` `1-draft.7`).
+- **QSpec, diagnostics** (`quire.native.diagnostics/v1`).
   `stage_limit_exceeded` covers the limits of S1 to S4, the I2 reader, a
   family `check`, `replay` and `route`. `resource_exhausted` is the caller's
   work-budget meter, and "a semantic maximum is not a caller work budget".
@@ -113,7 +113,7 @@ quire-contract-codegen (CG) `main` at `e2a5671`.
   `WitnessEnvelope<P: FamilyPayload>` with an opaque `TracePosition`, a
   `proof_bounds: ScalarLimits` member and `DeclaredDomain{parameter, domain:
   String}`. Simulation: `explore::Outcome{Exhaustive, Bounded{frontier,
-  limit}, Cancelled}` and `SampleProvenance{seed, sampler_version, stopped}`.
+  limit}, Cancelled}` and `SampleProvenance{seed, trace, sampler}` (TR-1).
   The bounded temporal evaluator (`src/temporal`) and the native-v1 ceilings
   are SEAM code that retires in ADR-011 M-6c. No infinite-trace code exists.
 
@@ -180,7 +180,7 @@ invalid. No bound in QSL is "unspecified".
 
 | ID | Concept | Owner and type | Rule |
 | --- | --- | --- | --- |
-| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef`; FR-101 replaces `sampler_version: String` with it |
+| TR-1 | Trace identity | No new identity or digest domain. A counterexample trace is identified by its packet (obligation identity O-09, occurrence key O-07) and compared lexically over its canonical encoding, as O-25 compares a transcript. A sampled trace is identified by `SampleProvenance{seed, trace, sampler}`: its seed, its trace index and the sampler's `DefinitionRef` (FR-101). An observation trace handed to S6a is an input value, not an identity | A trace never takes its identity from arrival order or storage position (ADR-013 R-05). QSpec FR-181 names the sampler by `DefinitionRef` |
 | TR-2 | Trace position | Layer-5 TemporalTrace evaluator: `TemporalPosition(u64)`, the zero-based index into the represented trace, prefix first, then loop. It crosses replay in `qsl_replay::TracePosition` as decimal ASCII with no leading zero (`0` is position zero). Replay stores it and does not read it (O-25) | Only the TemporalTrace evaluate hook decodes it. A position outside the represented trace refuses at reconstruction, `invalid_runtime_input`/`invalid-value` |
 | TR-3 | Interval | Layer-3 TemporalTrace `check`: `TemporalInterval{lower: u64, upper: TemporalUpper}`, `TemporalUpper::{Finite(u64), Open}`, one validated constructor. It exists under a bounded profile and, amended by ADR-018 IV-1, on an interval operator under infinite-trace. Its key is QSpec FR-255's (`lower`, `upper`, profile identity, clock binding), and it is identified by the checked node id of the operator that carries it (O-04). A checked operator holds `Option<TemporalInterval>`: `Some` under a bounded profile; under infinite-trace `Some` for an interval operator and `None` for an unbounded one | `lower > upper`, a missing interval under a bounded profile, and `[a,*]` under a bounded profile each refuse as QSpec FR-091, FR-092 and FR-090 state. Under infinite-trace a closed interval and an `[a,*]` interval are admitted (amended by ADR-018 IV-1), and the key carries the infinite-trace profile identity. Bounded-profile and infinite-trace operators never share a representation |
 | TR-4 | Horizon | Derived, not stored. The TemporalTrace `check` computes the greatest reach of a bounded-profile formula's intervals with checked arithmetic. Overflow past `u64` refuses as a TemporalTrace `check` stage limit, `LimitExceeded` with limit kind work budget (`stage_limit_exceeded`), at the operator. An infinite-trace formula has no horizon | A horizon is a B-1 consequence, never a budget |
@@ -392,10 +392,10 @@ layer 5).
 
 | ID | Effect |
 | --- | --- |
-| N-1 | The collection-type identity preimage is QSpec's root definitions at `1-draft.2`. QSL selects exactly that revision and refuses any other (ADR-013 R-08, O-22). QSL-42 (V1-A12) is the ticket in which QSL adopts the `1-draft.2` collection identity preimage. QSL references the definitions by revision and digest and copies none of them. |
-| N-2 | Every package with a collection type gets new node ids and a new `package_id` under `1-draft.2`, because the preimage changed. Bounded corpora keep their source spelling and meaning. Their expected identities are regenerated, not migrated. |
+| N-1 | The collection-type identity preimage is the one QSpec's root definitions state (QSpec FR-144, FR-153). QSL implements it in its own code and copies none of the definitions. |
+| N-2 | Every package with a collection type gets new node ids and a new `package_id` under the N-1 preimage, because the preimage changed. Bounded corpora keep their source spelling and meaning. Their expected identities are regenerated, not migrated. |
 | N-3 | The kernel change is a field shape, not a new type: `CollectionType.bound` becomes `Option<CardinalityBound>` and `ValueType::Population` carries `Option<u64>`. AD-016's kernel row keeps its type list, and ADR-011 §6.1's "`ValueType::Population` carries its count only" still holds. Under the bounded profiles the interval stays mandatory, as today. The v2 contract stays `quire.checked-package/v2`; while it is prerelease, QSpec revises its node and operation set in place (ADR-013 QC-19). |
-| N-4 | Compatibility: none is needed. This is pre-release with no users. There is one rule for absent bounds (§2) and no second spelling. There is no reader for `1-draft.1`, no bounded-by-default reading of `K<T>`, and no adapter. |
+| N-4 | Compatibility: none is needed. This is pre-release with no users. There is one rule for absent bounds (§2) and no second spelling. There is no bounded-by-default reading of `K<T>` and no adapter. |
 
 A claim over an `Int` argument with no range has extent `Unbounded` (§4).
 That is the existing AD-016 rule (a value outside a declared domain is
@@ -421,8 +421,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    settles `supported` and reaches a `proved` or `refuted` verdict at S6c.
 2. **Unbounded collection declaration with bounded native evaluation.**
    `Set<Account>` parses (QSL-42's grammar change). S3 builds
-   `CollectionType{bound: None}`. S4 emits it under the `1-draft.2` preimage
-   (N-1). S6a evaluates a concrete set of any size: construction never refuses
+   `CollectionType{bound: None}`. S4 emits it under the N-1 preimage. S6a evaluates a concrete set of any size: construction never refuses
    for cardinality, it charges `collection.bound`, and it stops only with
    `Incomplete`/`resource_exhausted` when the caller's meter runs out (B-2). A
    claim over the declared type has extent `Unbounded`, and evaluating it on
@@ -497,7 +496,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
 - the optional collection bound at the grammar
   (`qsl-cst/src/grammar.rs:419-429`), in `qsl-forms/src/value.rs` and in
   `check/type_form.rs`, and `Population(None)`;
-- the `1-draft.2` preimage (N-1);
+- the N-1 preimage;
 - `requirements()` for each claim form it touches, with the §4 extent rule;
 - its exit tests on a bounded-only test descriptor (§6 step 5).
 
@@ -575,7 +574,7 @@ There is no open STD-12 dependency: QSpec#113 is fully on QSpec `main`.
 - `resource_exhausted` and `stage_limit_exceeded` separate by one rule: the
   limits type. Only the type-environment ceilings change code.
 - Bounded corpora keep their meaning. Their expected identities change once,
-  under `1-draft.2`. Claims over unranged `Int` settle `requires-bound` on
+  under the N-1 preimage. Claims over unranged `Int` settle `requires-bound` on
   Kani, as C-22 already requires.
 - The QSL-42 and QSL-43 ticket bodies still describe the native-v1 seam
   (`NativeModelProfile`, `src/temporal`, "re-vendor") and name IR-89
