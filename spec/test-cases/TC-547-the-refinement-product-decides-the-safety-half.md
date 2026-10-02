@@ -30,8 +30,8 @@ Fixtures: `CasRefinesCounter`, the lost-update model and its `any` variant
 4. Check `RegisterHistory`, its broken update and its `writes` variant.
 5. Check `Coin` with `side` hidden and with `side = self.face`.
 6. Check `RingIsQueue`, the broken `take` and FR-140-AC-3's `only`.
-7. Check `CasRefinesCounter` with `max_states` 5, `max_depth` 2 and a `true`
-   poll; run step 2's two requests twice.
+7. Check `CasRefinesCounter` with `max_states` 5, `max_depth` 2 and an
+   already-cancelled `Cancel` handle; run step 2's two requests twice.
 
 Tag the tests `#[trace("TC-547", "FR-142-AC-n")]`.
 
