@@ -288,21 +288,35 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-135
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-136
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-137
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-138
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-139
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-140
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-141
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-142
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-143
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-144
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-145
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-146
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-147
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-148
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-018
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-163
