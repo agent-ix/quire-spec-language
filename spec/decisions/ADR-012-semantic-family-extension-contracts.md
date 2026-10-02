@@ -1831,8 +1831,7 @@ disposition: none"; ADR-013 R-08 and §5).
   retires under M-6c. There is no per-feature edition gate.
 - **Profiles.** QSpec FR-143 "Value profile" admits a union under the
   value-profile selections that admit records and tuples (SC-G7), and QSL
-  uses exactly those selections, with the same profile identity and profile
-  version.
+  uses exactly those selections, with the same profile identity.
 - **Catalog.** `unproved-exhaustiveness` is in the catalog.
 
 ### 16.10 QSpec rules §16 relies on

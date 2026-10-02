@@ -73,6 +73,14 @@ Delta reviewed: 6643a381..c9c549c2 (1d6c4bde FR-324 positive profile rule; c9c54
 | FND-010 | medium | Pin and version-tracking wording remains in §16. The §16.4 S4 row says a node "the pinned IR cannot decode" is omitted, and §16.9's Catalog bullet compares revision `1-draft.4` with "the revision QSL claims (`1-draft.8`)" and concludes "No catalog re-pin is needed". c9c549c2 removed "the pinned IR" from §16.8's Identity row and §16.10 but left these two. Write the S4 row as "a node whose (tag, form) the IR cannot decode", as §16.10's closing paragraph does, and delete the re-pin comparison (the catalog code exists; state that, if anything). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1564, 1822-1824 |
 | FND-011 | low | The rewritten §16.10 table's "QSpec rule" column restates each QSpec rule (FR-440's tag and form spellings and `member: null`, FR-441's preimage fields and domain, FR-143's `composite.result-retain` charge and order, FR-144's union key composition, FR-146's result-type rule) instead of citing it. The owner rule is that QSL cites QSpec and restates none of it; FR-318 to FR-324 already cite these FRs. Reduce each cell to the citation (QSpec FR and section name). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1833-1839 |
 
+## New findings (disposition pass 3)
+
+Delta reviewed: c9c549c2..b1c1f749 (b1c1f749 fixes FND-009 to FND-011). QSpec FR-440 and FR-441 are on QSpec main (`spec/objects/interfaces/FR-440-checked-package-union-and-case-nodes.md`, `FR-441-union-member-key.md`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | ADR-012 §16.9's Profiles bullet still says QSL uses the value-profile selections "with the same profile identity and profile version". A header profile is selected by identity only (QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`), so there is no profile version to match, and the phrase is the version wording FND-010 removed elsewhere in §16. End the sentence at "the same profile identity". | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1818-1821 |
+
 ## Dispositions
 
 Round 1, reviewed at 6643a381 (fix commit 6643a381).
@@ -93,3 +101,11 @@ Round 2, reviewed at c9c549c2 (fix commit 1d6c4bde).
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-005 | fixed | 1d6c4bde |
+
+Round 3, reviewed at b1c1f749cb486594edd6ac03ff3e687e1813c758.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-009 | fixed | b1c1f749: §16.3 and the §16.4 S3 lowering row cite QSpec FR-440 and FR-441, with no proposal wording. |
+| FND-010 | fixed | b1c1f749: The S4 row says "the IR cannot decode"; the Catalog bullet reads "`unproved-exhaustiveness` is in the catalog". |
+| FND-011 | fixed | b1c1f749: §16.10 cites each QSpec requirement by number and title. |
