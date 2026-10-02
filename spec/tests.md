@@ -468,7 +468,7 @@ names different artifacts in each.
 | TC-695 | Timed liveness under time divergence and fairness, and time-lock search, on the symbolic graph | Integration | P1 | FR-240-AC-1, FR-240-AC-2, FR-240-AC-3, FR-240-AC-4 | 🚧 Planned |
 | TC-696 | Symbolic counterexamples concretize canonically to exact rational delays | Unit | P1 | FR-241-AC-1, FR-241-AC-2, FR-241-AC-3, FR-241-AC-4 | 🚧 Planned |
 | TC-697 | Timed formulas translate to claim automata that agree with the evaluator | Unit | P1 | FR-242-AC-1, FR-242-AC-2, FR-242-AC-3 | 🚧 Planned |
-| TC-698 | Closed timed subjects digitize to explicit-state checking with exhaustive proofs | Integration | P1 | FR-243-AC-1, FR-243-AC-2, FR-243-AC-3 | 🚧 Planned |
+| TC-698 | Closed timed subjects digitize on the digital-clock route with exhaustive proofs | Integration | P1 | FR-243-AC-1, FR-243-AC-2, FR-243-AC-3 | 🚧 Planned |
 | TC-699 | Every zone-engine proof carries a canonical zone certificate | Unit | P1 | FR-244-AC-1, FR-244-AC-2, FR-244-AC-3 | 🚧 Planned |
 | TC-700 | The in-core checker accepts valid zone certificates and rejects every tampering | Integration | P1 | FR-245-AC-1, FR-245-AC-2, FR-245-AC-3, FR-245-AC-4 | 🚧 Planned |
 | TC-701 | S3 checks task sets and routes schedulability claims to EN-7 | Unit | P1 | FR-246-AC-1, FR-246-AC-2 | 🚧 Planned |

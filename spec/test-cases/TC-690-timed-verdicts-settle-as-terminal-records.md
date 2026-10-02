@@ -19,7 +19,7 @@ Scope: FR-235-AC-1 to FR-235-AC-4.
 Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c}`; the strict-guard variant; the `Stall` model; FR-234-AC-3's punctual claim.
 
 1. Map one input of each table row.
-2. Settle `Settles` (`T = 4 ms`) from the zone search, with its certificate intact and with one node removed; settle `NoLateReply` from digitization.
+2. Settle `Settles` (`T = 4 ms`) from the zone search, with its certificate intact and with one node removed; settle `NoLateReply` requested with `exact` evidence from the digital-clock route.
 3. Settle `NoLateReply` (`T = 3 ms`) after replay, and with the `timeout` delay changed to `5/2`; settle the strict-guard time-lock-freedom item.
 4. Settle the `Stall` claim, the punctual claim and a zone search stopped by `max_symbolic_states`.
 

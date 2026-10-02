@@ -85,7 +85,10 @@ pub struct CertificateCheckLimits {
   - every edge respects the component numbering, and each component's
     stated reason holds;
   - for the time-lock-freedom item, each node's divergence path exists in
-    the certificate and ends at a divergent target.
+    the certificate and ends at a divergent target;
+  - the `admitted` path starts at the initial node, follows certificate
+    edges, and ends at a quiescent node or at a node of a component with a
+    cycle of positive total delay (ADR-026 TD-6).
 - The first failure in node order SHALL return `Rejected` naming it.
 - The checker SHALL run under `CertificateCheckLimits` and `poll`; reaching
   a limit SHALL return `Stopped` naming the limit and its value.
@@ -105,13 +108,13 @@ pub struct CertificateCheckLimits {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-245-AC-1 | FR-244-AC-1, AC-2 and AC-3's certificates are each `Accepted`. | Test (TC-700) |
-| FR-245-AC-2 | Each tampering is `Rejected`, naming the failing part: one node removed; one target zone shrunk so it no longer covers its successor; one LU bound lowered below the computed bound; one edge pointing to a node of smaller component index; one component reason naming a fairness constraint that an edge inside it takes; one node replaced by a bad node. | Test (TC-700) |
+| FR-245-AC-2 | Each tampering is `Rejected`, naming the failing part: one node removed; one target zone shrunk so it no longer covers its successor; one LU bound lowered below the computed bound; one edge pointing to a node of smaller component index; one component reason naming a fairness constraint that an edge inside it takes; one node replaced by a bad node; the `admitted` path cut so it ends at a node that is neither quiescent nor in a component with a positive-delay cycle. | Test (TC-700) |
 | FR-245-AC-3 | AC-1's certificate checked against the identity of another item refuses `stale_dependency`/`revision-mismatch` naming both; after a source edit that changes the package identity it refuses by FR-098's rule. With `max_certificate_edges` 1 it returns `Stopped` naming the limit and the value 1. | Test (TC-700) |
 | FR-245-AC-4 | The Kani harnesses for the checker's `close`, `constrain`, `reset`, `up`, `includes` and aLU test pass for dimension at most 3 with bounds in `[-8, 8]`, proving no overflow and agreement with the reference implementation. | Test (TC-700) |
 
 ## Dependencies
 
-- ADR-026 §8.1 CF-3, CF-4, CF-6; ADR-011 §6.1 (layer 6) and E11; ADR-013
+- ADR-026 §8.1 CF-1, CF-3, CF-4, CF-6, TD-6; ADR-011 §6.1 (layer 6) and E11; ADR-013
   O-09 and O-16; ADR-014 B-5.
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-235](FR-235-settle-a-timed-verdict-as-a-terminal-record.md),

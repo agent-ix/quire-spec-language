@@ -64,7 +64,7 @@ The FR-331 terminal record of the claim.
   it `unsupported`, `unsupported-requested-capability`.
 - The map SHALL be:
 
-| Provider result | QSpec FR-341 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
+| Provider result | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
 | `Unsat` or `EnclosureDisjoint`, with `sound: true` | `proved` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}}` | success |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or any result with `sound: false` | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |

@@ -35,8 +35,9 @@ unsupported.
 
 - A `TimedMonitorPlan` (FR-251), and checked contracts over integer
   timestamp parameters.
-- `TimingObligationLimits { kani_events: u64 }`, the Kani unwinding budget
-  in events, default 8, an ADR-014 B-5 budget.
+- `TimingObligationSettings { kani_events: u64 }`, default 8: the agreement
+  obligation's horizon in events, a method parameter of the request. It
+  defines what the obligation proves, and the obligation states it.
 
 ## Outputs
 
@@ -56,7 +57,8 @@ each timing obligation outside the code model.
 - For each monitor plan QSL SHALL write a `MonitorAgreement` obligation:
   the monitor's step function agrees with the layer-5 reference evaluator
   on every trace of up to `kani_events` events with symbolic integer time
-  stamps.
+  stamps. The obligation SHALL carry `kani_events` as its stated horizon,
+  and a discharged obligation holds for traces up to that length only.
 - For each monitor plan QSL SHALL write a `TickArithmetic` obligation: tick
   arithmetic never panics or overflows, modular differences are correct
   across wraparound, and no buffer exceeds its capacity under the plan's
@@ -73,7 +75,7 @@ each timing obligation outside the code model.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-252-AC-1 | FR-251-AC-1's plan yields a `MonitorAgreement` obligation with `events` 8 and a `TickArithmetic` obligation carrying the counter's width, the plan's buffers and its rate; with `kani_events` 4 the agreement obligation carries 4. | Test (TC-707) |
+| FR-252-AC-1 | FR-251-AC-1's plan yields a `MonitorAgreement` obligation with `events` 8 and a `TickArithmetic` obligation carrying the counter's width, the plan's buffers and its rate; with `kani_events` 4 the agreement obligation carries 4 and states that it covers traces of up to 4 events. | Test (TC-707) |
 | FR-252-AC-2 | A contract `when now - start > d then timed_out` over `u32` parameters yields a `TimestampContract` obligation; a clause `elapsed_wall_time(handler) <= 50 µs` is disposed `unsupported`, `unsupported-requested-capability`, naming elapsed real time; a clause bounding a function's WCET is disposed the same way, naming WCET. | Test (TC-707) |
 
 ## Dependencies

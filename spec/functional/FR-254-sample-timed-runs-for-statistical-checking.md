@@ -70,10 +70,10 @@ server is available. Each estimate comes with its confidence and the grid
   each tie-break SHALL be one more choice with its own choice index.
 - A sample SHALL end when its next position's time stamp passes the
   horizon, or at an idle tail.
-- **Budgets.** A sample that takes more than `max_sample_steps` steps
-  before its horizon SHALL stop the run as the statistical design's budgets
-  state, naming `max_sample_steps`, its value and the request member that
-  raises it; every budget and `q` SHALL be a caller-set value with a
+- **Budgets.** If a sample takes more than `max_sample_steps` steps without
+  passing its horizon, then EN-4 SHALL stop the run as the statistical
+  design's budgets state, naming `max_sample_steps`, its value and the
+  request member that raises it; every budget and `q` SHALL be a caller-set value with a
   published default.
 - **Regeneration.** The regenerative method SHALL cut a run at each return
   to the initial discrete state with every clock 0; a model that never

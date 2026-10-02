@@ -74,7 +74,7 @@ for a clause DF-5 does not admit over a timed subject.
   timed interval `[a, b]`, `(a, b]`, `[a, b)` or `(a, b)` with exact
   rational bounds `0 <= a <= b`.
 - If an interval has `a > b`, or has an open end with `a = b`, then the
-  checker SHALL refuse `invalid_model_binding`/`malformed-declaration` at
+  checker SHALL refuse `invalid_timed_model`/`invalid-interval` at
   the interval's span. An interval `[a,*]` SHALL refuse as ADR-014 TR-3
   states.
 - The checker SHALL mark an interval with `a = b` and both ends closed as
@@ -92,21 +92,17 @@ for a clause DF-5 does not admit over a timed subject.
   engine. A `BoundedWindow` clause SHALL admit punctual intervals.
 - Over a single timed trace every admitted formula SHALL evaluate,
   punctual intervals included.
-- **Pointwise meaning.** The evaluator SHALL read `eventually_I p` at
-  position `i` as true when some `j >= i` has `τ_j − τ_i` in `I` and `p` at
-  `j`; `p until_I q` when some such `j` has `q` and every `k` with
-  `i <= k < j` has `p`; the past operators over `τ_i − τ_j` with `j <= i`;
-  `always` and `release` as duals. Membership of a difference in an
-  interval SHALL respect each end's openness, in exact arithmetic.
-- A timed interval SHALL be invariant under inserting a step that repeats
-  the discrete state at an equal time stamp.
+- **Pointwise meaning.** The layer-5 evaluator SHALL implement QSpec
+  FR-416's pointwise meaning of every timed operator and its stutter
+  invariance, deciding each time-stamp difference's membership in an
+  interval in exact arithmetic with each end's openness.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-234-AC-1 | Over `Rpc`, `Settles` classifies as `TimedSafety`; `always holds(not c.late)` under the timed profile as `TimedInvariant`; `eventually[0 ms, 3 ms] holds(c.phase = Replied)` on origin as `BoundedWindow{horizon: 3}`; `always eventually[0 ms, 5 ms] holds(c.phase = Idle)` as `TimedLiveness`. | Test (TC-689) |
-| FR-234-AC-2 | `[0 ms, 3 ms)` and `(1 ms, 3 ms]` check with their ends' openness recorded and different FR-255 keys from `[0 ms, 3 ms]`; `(2 ms, 2 ms]` and `[3 ms, 2 ms]` refuse `invalid_model_binding`/`malformed-declaration` at the interval's span. | Test (TC-689) |
+| FR-234-AC-2 | `[0 ms, 3 ms)` and `(1 ms, 3 ms]` check with their ends' openness recorded and different FR-255 keys from `[0 ms, 3 ms]`; `(2 ms, 2 ms]` and `[3 ms, 2 ms]` refuse `invalid_timed_model`/`invalid-interval` at the interval's span. | Test (TC-689) |
 | FR-234-AC-3 | `always (holds(p) implies eventually[2 ms, 2 ms] holds(q))` over a timed subject is disposed `Unsupported`, `PunctualInterval`, naming the interval; the bounded `eventually[2 ms, 2 ms] holds(q)` on origin is admitted as `BoundedWindow{horizon: 2}`; the unbounded form evaluates on a supplied timed trace. | Test (TC-689) |
 | FR-234-AC-4 | On the timed trace with stamps `0, 1, 3` and `q` true only at position 2, `eventually[0 ms, 3 ms] holds(q)` at 0 is `true`, `eventually[0 ms, 3 ms) holds(q)` at 0 is `false`, and `once(1 ms, 2 ms] holds(p)` at 2 with `p` only at position 1 is `true`. Inserting a step that repeats position 1's discrete state at stamp 1 leaves each value unchanged. | Test (TC-689) |
 
@@ -115,7 +111,8 @@ for a clause DF-5 does not admit over a timed subject.
 - ADR-026 §6 DF-1 to DF-7; ADR-014 TR-3 and A-4; ADR-018 TP-1 to TP-4.
 - [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md),
   [FR-233](FR-233-bind-a-model-claim-to-model-time-or-model-steps.md).
-- QSpec FR-090 and FR-250 (the profile row), QSpec FR-255 (interval keys
+- QSpec FR-416 (pointwise meaning of timed operators), QSpec FR-090 and
+  FR-250 (the profile row), QSpec FR-255 (interval keys
   with end openness).
 
 ## References

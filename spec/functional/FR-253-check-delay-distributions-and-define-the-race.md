@@ -20,13 +20,12 @@ relationships:
 
 ## Description
 
-QSL SHALL admit delay distributions on the operations of a `time dense`
-model and define the race that turns the model, with a workload, into a
+QSL's S3 checker SHALL admit delay distributions on the operations of a
+`time dense` model, and QSL's layer-5 race SHALL implement QSpec FR-420's
+race in exact arithmetic, which turns the model, with a workload, into a
 probability measure over timed behaviours (ADR-026 SD-1 to SD-5). Windows
-are computed exactly; every identity whose window is non-empty draws its
-given delay conditioned on its window, and the scheduler chooses each free
-delay (an operation with no `delay` member); the smallest delay wins and
-ties are ordered by the workload. States where the race is undefined settle
+are computed exactly, a free delay (an operation with no `delay` member) is
+the scheduler's choice, and states with no defined race settle
 `unsupported`, `NotStochastic`.
 
 ## Use case
@@ -57,39 +56,29 @@ ties at a deadline, so that every sampled run is a behaviour of the model.
 ## Behavior
 
 - The checker SHALL admit `delay ~ D` only on an operation of a `time
-  dense` model, refusing it elsewhere with `unsupported_construct`/
-  `expression-form`.
+  dense` model, refusing it elsewhere with `invalid_probabilistic_model`/
+  `delay-on-untimed-model` at its span (QSpec FR-405).
 - If a distribution parameter is not an exact rational, `λ` is not
   positive, `uniform[a, b]` does not have `0 <= a <= b`, or a `discrete`
   distribution repeats a delay, has a negative delay or has a weight that
   is not positive, then the checker SHALL refuse `invalid_model_binding`/
   `malformed-declaration` at its span.
-- An operation with no `delay` member SHALL have a free delay (`None`): a
-  nondeterministic delay with no distribution implied for it.
-- **Windows.** At `(s, v)`, the window of a scheduled identity SHALL be the
-  set of `d` such that the delay to `v + d` is admissible (FR-231) and the
-  identity's data precondition and guard hold at `v + d`, computed exactly.
-- **Race.** Every scheduled identity with a given delay whose window is
-  non-empty and whose distribution has positive mass in it SHALL draw a
-  delay from its distribution conditioned on the window. Uniform over a set
-  SHALL be uniform in length, and over a set of zero length uniform over its
-  points. After those draws, the scheduler SHALL choose a delay in the
-  window of each scheduled identity with a free delay and a non-empty
-  window. The smallest delay SHALL win: the model delays by it and takes the winner.
-  Identities that tie SHALL be ordered by the workload, without
-  replacement by weight then uniformly within an operation, and taken in
-  that order at the same instant, each only while still enabled at its
-  turn. Every identity SHALL redraw at the new state. With every racing
-  delay given, the subject under the workload SHALL be a Markov chain over
-  timed states; when a free delay races it SHALL be a Markov decision
-  process, and a probabilistic bound SHALL be read on its minimum (`>= θ`)
-  or maximum (`<= θ`) over the free delays' choices (ADR-028 TA-1).
-- **Conditions.** A timed state where an identity with an unbounded window
-  has `Uniform`, or where no identity races and delay is bounded, SHALL be
-  disposed `Unsupported(NotStochastic{state, identity})`. A quiescent state
-  where no identity races SHALL take FR-231's idle tail.
-- ADR-018 claims and timed claims SHALL read a stochastic model as a timed
-  one and ignore distributions.
+- The checker SHALL record an operation with no `delay` member as a free
+  delay (`None`), with no distribution.
+- **Windows.** At `(s, v)`, the layer-5 race SHALL compute each scheduled
+  identity's window as QSpec FR-420 defines it, a finite union of intervals
+  with exact rational ends and openness, from the admissible delays
+  (FR-231) and the identity's data precondition and guard.
+- **Race.** The layer-5 race SHALL implement QSpec FR-420's race in exact
+  arithmetic: the given draws conditioned on their windows, the
+  scheduler's choice of each free delay, the tie order by the workload and
+  the redraw at each new state. It SHALL report whether the subject under
+  the workload is a Markov chain or, when a free delay races, a Markov
+  decision process, so that a bound is read on the minimum or maximum
+  over the free delays' choices (ADR-028 TA-1).
+- **Conditions.** When QSpec FR-420 gives a timed state no defined race,
+  the race SHALL dispose the item `Unsupported(NotStochastic{state,
+  identity})`, naming the state and identity.
 
 ## Acceptance Criteria
 
@@ -97,7 +86,7 @@ ties at a deadline, so that every sampled run is a behaviour of the model.
 |----|----------|--------------|
 | FR-253-AC-1 | ADR-026 §11's stochastic variant checks: `reply` `Discrete[(1, 90), (3, 10)]`, `timeout` `Uniform`, `send` and `reset` `Exponential{1/1000}` per ms. In the state just after `send`, `reply`'s window is `[1, 3]` and `timeout`'s (with `T = 3 ms`) is `[3, 3]`. | Test (TC-708) |
 | FR-253-AC-2 | In that state the race gives `reply` at 1 with probability `9/10`; at 3 it ties with `timeout`, ordered evenly by the workload `Even`, so `reply` then `timeout` and `timeout` then `reply` each have probability `1/20`, and in the second order `reply` is still enabled at its turn. | Test (TC-708) |
-| FR-253-AC-3 | Refusals at the span: `delay ~ exponential(0)`; `discrete { 1 ms: 1, 1 ms: 2 }`; `uniform[3 ms, 1 ms]`; `delay ~ uniform` in an untimed model. A state where an identity with unbounded window and `uniform` races is disposed `Unsupported(NotStochastic)` naming the state and identity. | Test (TC-708) |
+| FR-253-AC-3 | Refusals at the span: `delay ~ exponential(0)`; `discrete { 1 ms: 1, 1 ms: 2 }`; `uniform[3 ms, 1 ms]`; `delay ~ uniform` in an untimed model (`invalid_probabilistic_model`/`delay-on-untimed-model`). A state where an identity with unbounded window and `uniform` races is disposed `Unsupported(NotStochastic)` naming the state and identity. | Test (TC-708) |
 | FR-253-AC-4 | The §11 stochastic variant with no `delay` member on `timeout` checks `timeout` with `None`. In the state just after `send` the race is a Markov decision process: after `reply`'s draw the scheduler chooses `timeout`'s delay in `[3, 3]`, and no distribution is assigned to it. | Test (TC-708) |
 
 ## Dependencies

@@ -20,7 +20,7 @@ Fixtures: the deadline claim of FR-251-AC-1 on a 20-bit 1 MHz counter; `once[0 m
 
 1. Evaluate the deadline claim on the tick traces of FR-251-AC-1 with uncertainty 0 and 2 µs.
 2. Compute the buffer for rate 2 per ms and run a trace with 22 events in one window.
-3. Compute differences across wraparound and feed a backwards reading.
+3. With `max_reading_gap` 100, compute differences across wraparound and feed a backwards reading; plan a 16-bit target with `max_reading_gap` 65,536.
 
 Tag the tests `#[trace("TC-706", "FR-251-AC-n")]`.
 
@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-706", "FR-251-AC-n")]`.
 
 - Step 1: true, false, indeterminate; indeterminate.
 - Step 2: capacity 21; `Incomplete(ResourceExhausted)` naming the rate limit, no event dropped.
-- Step 3: 10 ticks; `Failed`, no verdict.
+- Step 3: 10 ticks; `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}`, no verdict; `GapExceedsWidth`.

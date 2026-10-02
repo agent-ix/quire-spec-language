@@ -19,7 +19,7 @@ Scope: FR-248-AC-1 to FR-248-AC-3.
 Fixtures: the outcomes of TC-702 and their tampered copies.
 
 1. Settle `Ctl` and its WCET-6 variant under both policies.
-2. Settle the outcome with fixpoint 11 and the miss with demand 7 at point 8.
+2. Settle the outcome with fixpoint 11 and the miss with its last iterate 13 replaced by 12.
 3. Settle `Mc` and its `C(HI) = 6` variant.
 
 Tag the tests `#[trace("TC-703", "FR-248-AC-n")]`.

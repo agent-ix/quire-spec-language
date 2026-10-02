@@ -21,7 +21,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 1. Check the response claim of FR-240-AC-1 over `Rpc` and over the Zeno variant.
 2. Check `eventually holds(done)` over `Serve` with and without `fair weak serve`.
 3. Check the time-lock-freedom item over the strict-guard variant, `Rpc` and `Stall`.
-4. Check `always holds(true)` under the timed profile over `Stall`.
+4. Check `always eventually holds(true)` and `always holds(true)` under the timed profile over `Stall`.
 
 Tag the tests `#[trace("TC-695", "FR-240-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-695", "FR-240-AC-n")]`.
 - Step 1: `Holds`; `Holds`, with no Zeno lasso reported.
 - Step 2: `Holds`; `Violated` with an `idle` lasso of positive loop delay.
 - Step 3: `Violated`, `TimeLock`, stem `send` at 0, final delay 3; `Holds`; `Violated`, `TimeLock`, confirmed by fresh exploration.
-- Step 4: `Undecided(NoAdmittedBehaviour)`.
+- Step 4: `Undecided(NoAdmittedBehaviour)` for both.

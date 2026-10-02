@@ -16,27 +16,33 @@ relationships:
 
 Verify that the zone search refutes a timed claim that evaluates undefined,
 with a timed prefix of exact rational delays ending at the undefined
-position, that the counterexample replays, and that the item settles
-`refuted` with cause `UndefinedEvaluation`.
+position on an admitted behaviour, that the counterexample replays, that
+the item settles `refuted` with cause `UndefinedEvaluation`, and that the
+same undefined value reached only through a time-lock does not refute.
 
 Scope: FR-239-AC-5, FR-237-AC-5, FR-235-AC-5.
 
 ## Test Procedure
 
-Fixture: the `Ticker` model and claim of FR-239-AC-5.
+Fixtures: the `Ticker` model and claim of FR-239-AC-5, and its variant with
+the unconditional invariant `x <= 1`.
 
 1. Run the zone search.
 2. Replay the counterexample, then the same counterexample with its last
    step removed.
 3. Settle the outcome with step 2's first replay result.
+4. Run the zone search over the unconditional-invariant variant.
 
 Tag the tests `#[trace("TC-710", "<AC id>")]`.
 
 ## Expected Results
 
 - Step 1: `Violated`, prefix `step` after delay 1 and `step` after delay 1,
-  `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`.
+  `kind: UndefinedEvaluation{where, cause: division-by-zero}`, `where`
+  naming position 2, time stamp 2, the state with `n = 2`, `x = 0` and the
+  expression's locus.
 - Step 2: `reproduced-with-evaluated-witness`; then `inconclusive`,
   `ReplayParity`.
 - Step 3: `refuted`, `decisive-counterexample`, category violation, cause
   `UndefinedEvaluation`.
+- Step 4: `Undecided(NoAdmittedBehaviour)`, no counterexample.

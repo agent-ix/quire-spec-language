@@ -89,7 +89,8 @@ state from which time cannot diverge.
 
 - When the initial symbolic state reaches no fair time-divergent cycle and
   no quiescent state, a proof over the subject SHALL return
-  `Undecided(NoAdmittedBehaviour)`.
+  `Undecided(NoAdmittedBehaviour)`. FR-239 runs the same check before every
+  TT-1, TT-2 and deadlock-freedom proof.
 
 ## Acceptance Criteria
 
@@ -98,7 +99,7 @@ state from which time cannot diverge.
 | FR-240-AC-1 | Over `Rpc` with `T = 4 ms`, `always (holds(c.phase = Waiting) implies eventually holds(c.phase = Replied))` returns `Holds`. Over a variant where `reply` may also loop on itself with guard `x < 1` and no reset, a lasso of `reply` steps in bounded time is not reported; the result is still `Holds`. | Test (TC-695) |
 | FR-240-AC-2 | In the `Serve` model with guard `x >= 1 ms`, `eventually holds(done)` under `fair weak serve` returns `Holds`; with no fairness it returns `Violated` with an `idle` lasso of positive loop delay. | Test (TC-695) |
 | FR-240-AC-3 | The strict-guard `Rpc` variant's time-lock-freedom item returns `Violated`, `kind: TimeLock`, stem `send` at 0 and final delay 3; the unmodified `Rpc` returns `Holds`. The `Stall` model returns `Violated`, `kind: TimeLock`, confirmed by fresh exploration. | Test (TC-695) |
-| FR-240-AC-4 | `always holds(true)` under the timed profile over `Stall` returns `Undecided(NoAdmittedBehaviour)`. | Test (TC-695) |
+| FR-240-AC-4 | The TT-4 claim `always eventually holds(true)` under the timed profile over `Stall` returns `Undecided(NoAdmittedBehaviour)`; the TT-1 claim `always holds(true)` over `Stall` returns the same by FR-239's vacuity check. | Test (TC-695) |
 
 ## Dependencies
 

@@ -33,7 +33,7 @@ premises, which the subject carries.
 ## Use case
 
 An assessor accepts a schedulability proof because the core recomputes
-each fixpoint, or each demand point, from the task set itself, without
+each fixpoint, iterate or demand point from the task set itself, without
 trusting the analysis that produced them.
 
 ## Inputs
@@ -41,9 +41,8 @@ trusting the analysis that produced them.
 ```rust
 pub fn check_closed_form(
     task_set: &TaskSet, claim: &ScheduleClaim,
-    outcome: &ClosedFormOutcome,          // FR-247
-    poll: impl FnMut() -> bool,
-) -> ClosedFormCheck;                      // Agrees | Disagrees(reason) | Stopped(..)
+        outcome: &ClosedFormOutcome,          // FR-247
+) -> ClosedFormCheck;                      // Agrees | Disagrees(reason)
 ```
 
 ## Outputs
@@ -57,20 +56,25 @@ The FR-331 terminal record of the claim.
   and that `R + J_i <= D_i`.
 - For `Schedulable` under EDF, the checker SHALL recompute the utilization,
   the busy-period length and `dbf` at every point of the QPA sequence.
-- For `Miss`, the checker SHALL recompute the demand at every stated point
-  and check it exceeds the point, or recompute the utilization, or
-  `dbf(t) > t`.
+- For a fixed-priority `Miss`, the checker SHALL recompute each stated
+  iterate from the previous one by the recurrence for job `q`,
+  `R = (q + 1) · C_i + B_i + Σ_{j ∈ hp(i)} ⌈(R + J_j) / T_j⌉ · C_j`,
+  starting from `(q + 1) · C_i + B_i`, and check that only the last gives a
+  response time `R + J_i − q · T_i` above `D_i`. For an
+  EDF `Miss`, it SHALL recompute the utilization, or `dbf(t) > t`.
+- The checker's work SHALL be linear in the size of the evidence, which
+  EN-7's `max_demand_points` already bounds, so the check always completes.
 - For `SufficientTestFailed`, the checker SHALL recompute the low-mode
   fixpoints and the failing high-mode criterion.
 - The map SHALL be:
 
-| Input | QSpec FR-341 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
+| Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
 | `Schedulable` that the checker agrees with | `proved` | `closed-scope` | `Proved{basis: ClosedForm{analysis}}` | success |
 | `Miss` that the checker agrees with | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | `SufficientTestFailed` that the checker agrees with | `inconclusive` | `unsettled` | `Inconclusive(SufficientTestFailed)` | inconclusive |
 | any outcome the checker disagrees with | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
-| `Stopped`, or a check a budget stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
+| `Stopped` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 
 - `analysis` SHALL be `FixedPriorityRta`, `EdfQpa` or `AmcRtb`.
 - The record SHALL carry the evidence, and its obligation identity binds
@@ -81,7 +85,7 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-248-AC-1 | `schedulable Ctl under fixed-priority` settles `proved`, `Proved{ClosedForm{FixedPriorityRta}}`, with fixpoints `(1, 3, 12)` in the record; `under edf` settles `Proved{ClosedForm{EdfQpa}}`. With the third WCET 6 both settle `refuted` with their evidence. | Test (TC-703) |
-| FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose stated demand at point 8 is 7 settles `inconclusive`, `ReplayParity`. | Test (TC-703) |
+| FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose last iterate 13 is replaced by 12 settles `inconclusive`, `ReplayParity`. | Test (TC-703) |
 | FR-248-AC-3 | FR-247-AC-3's `C(HI) = 6` result settles `inconclusive`, `SufficientTestFailed`; its base result settles `Proved{ClosedForm{AmcRtb}}`. | Test (TC-703) |
 
 ## Dependencies

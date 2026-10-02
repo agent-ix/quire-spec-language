@@ -26,6 +26,6 @@ Tag the tests `#[trace("TC-688", "FR-233-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: equal bindings and keys; `ModelSteps`; `ModelSteps`; `invalid_model_binding`/`wrong-model-selection` naming `Counter`.
+- Step 1: equal bindings and keys; `ModelSteps`; `ModelSteps`; `invalid_timed_model`/`model-time-on-untimed-model` naming `Counter`.
 - Step 2: equal bounds and keys; `ill_typed`/`type-mismatch`; `ill_typed`/`type-mismatch`.
 - Step 3: different keys in each comparison.

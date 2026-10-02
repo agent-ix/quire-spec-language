@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-689", "FR-234-AC-n")]`.
 ## Expected Results
 
 - Step 1: `TimedSafety`, `TimedInvariant`, `BoundedWindow{horizon: 3}`, `TimedLiveness`.
-- Step 2: openness recorded and keys different from `[0 ms, 3 ms]`; the last two refuse `invalid_model_binding`/`malformed-declaration`.
+- Step 2: openness recorded and keys different from `[0 ms, 3 ms]`; the last two refuse `invalid_timed_model`/`invalid-interval`.
 - Step 3: `Unsupported`, `PunctualInterval`, naming the interval; `BoundedWindow{horizon: 2}`; a value.
 - Step 4: `true`, `false`, `true`; unchanged after the insertion.

@@ -84,13 +84,14 @@ refutation.
   (ADR-018 UE-5). The first undefined evaluation at `where`, with an equal
   cause, SHALL settle `reproduced-with-evaluated-witness`; any other
   result SHALL settle `inconclusive`, `ReplayParity`.
-- **Local time-lock.** For `kind: TimeLock`, after the prefix and its
-  `final_delay`, when no positive delay is admissible at the last timed
-  state, replay SHALL check that no transition identity is enabled there;
-  agreement SHALL settle `reproduced-with-evaluated-witness`, and an
-  enabled identity SHALL settle `inconclusive`, `ReplayParity`.
-- **Non-local time-lock.** When a positive delay is admissible at the last
-  timed state, replay SHALL explore that state's forward closure afresh,
+- **Arm selection.** For `kind: TimeLock`, after the prefix and its
+  `final_delay`, replay SHALL classify the last timed state by ADR-026
+  TD-1: it is a local time-lock when no positive delay is admissible and no
+  transition identity is enabled there, and replay SHALL then settle
+  `reproduced-with-evaluated-witness`. Otherwise, whether a positive delay
+  is admissible or a transition identity is enabled, replay SHALL take the
+  non-local arm.
+- **Non-local time-lock.** On the non-local arm, replay SHALL explore that state's forward closure afresh,
   unreduced, under the request's limits, with the subject's timed
   exploration (FR-101 `explore` for a `Tick` source, the zone successor
   relation of FR-238 from the point zone for a `Dense` source), looking for
@@ -108,8 +109,8 @@ refutation.
 |----|----------|--------------|
 | FR-237-AC-1 | FR-236-AC-1's counterexample replays to `reproduced-with-evaluated-witness`, checking the delay 3 against `x <= 3` and `x <= T` and the guards `x >= 3` and `x >= 1`. `Settles` with `eventually[0 ms, 3 ms)` over `Rpc` with `T = 4 ms` is refuted by `send` at 0 then `reply` after delay 3, and that counterexample reproduces. | Test (TC-692) |
 | FR-237-AC-2 | Refusals settle no result: the `timeout` delay changed to `5/2` (guard `x >= 3` fails); the delay changed to `7/2` (`x <= 3` forbids it); one post-state digest altered (`stale_dependency`/`revision-mismatch`); a lasso whose loop has total delay 0; a lasso whose loop does not return to its entry clock values. | Test (TC-692) |
-| FR-237-AC-3 | The strict-guard variant's local time-lock counterexample reproduces; the same payload replayed against the variant with `reply` guarded by `x >= 3 ms` settles `inconclusive`, `ReplayParity`, since `reply` is enabled at the last state. | Test (TC-692) |
-| FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. Replaying one envelope twice gives equal results. | Test (TC-692) |
+| FR-237-AC-3 | The strict-guard variant's local time-lock counterexample reproduces; the same payload replayed against the variant with `reply` guarded by `x >= 3 ms` settles `inconclusive`, `ReplayParity`, since `reply` is enabled at the last state, so replay takes the non-local arm and its exploration reaches the quiescent `Replied` state. | Test (TC-692) |
+| FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. The `Stall` payload with `final_delay` 1, whose last state `x = 1` admits no positive delay while `ping` is enabled, takes the non-local arm and reproduces. Replaying one envelope twice gives equal results. | Test (TC-692) |
 | FR-237-AC-5 | FR-239-AC-5's counterexample replays to `reproduced-with-evaluated-witness`; with its last step removed it settles `inconclusive`, `ReplayParity`. | Test (TC-710) |
 
 ## Dependencies

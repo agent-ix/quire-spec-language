@@ -26,6 +26,6 @@ Tag the tests `#[trace("TC-699", "FR-244-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: a reachability part only, every coverage holding, the item's identity; accepted.
+- Step 1: a reachability part and no components, every coverage holding, an `admitted` path to `Idle`, the item's identity; accepted.
 - Step 2: components respecting the numbering, each with its reason; `fair weak serve` named for the `idle` component.
 - Step 3: a divergence path to a quiescent node for every node; byte-equal bytes.

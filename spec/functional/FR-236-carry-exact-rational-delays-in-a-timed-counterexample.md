@@ -38,8 +38,8 @@ the reply land just outside a half-open interval.
 
 ## Inputs
 
-- A counterexample produced by the zone engine (FR-241), the digitization
-  path (FR-243), or the statistical sampler (FR-254).
+- A counterexample produced by the zone engine (FR-241), the digital-clock
+  route (FR-243), or the statistical sampler (FR-254).
 
 ## Outputs
 

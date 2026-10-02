@@ -68,7 +68,7 @@ QSpec FR-255 key under that binding.
 - **Explicit.** `clock "model-steps"` SHALL bind `ModelSteps` over any
   model. `clock "model-time"` SHALL bind `ModelTime` over a timed model.
 - If a clause binds `model-time` over a model with no `time` member, then
-  the checker SHALL refuse `invalid_model_binding`/`wrong-model-selection`
+  the checker SHALL refuse `invalid_timed_model`/`model-time-on-untimed-model`
   at the clock clause's span, naming the model.
 - A `ModelTime` clause SHALL select the timed profile (FR-234). A
   `ModelSteps` clause SHALL keep ADR-018's profiles.
@@ -90,7 +90,7 @@ QSpec FR-255 key under that binding.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-233-AC-1 | Over `Rpc`, `Settles` with `clock "model-time"` and the same clause with no clock clause check to equal bindings and equal FR-252 keys; `NoLateReply` with `clock "model-steps"` binds `ModelSteps`. Over the untimed `Counter` model a clause with no clock clause binds `ModelSteps`, and `clock "model-time"` refuses `invalid_model_binding`/`wrong-model-selection` naming `Counter`. | Test (TC-688) |
+| FR-233-AC-1 | Over `Rpc`, `Settles` with `clock "model-time"` and the same clause with no clock clause check to equal bindings and equal FR-252 keys; `NoLateReply` with `clock "model-steps"` binds `ModelSteps`. Over the untimed `Counter` model a clause with no clock clause binds `ModelSteps`, and `clock "model-time"` refuses `invalid_timed_model`/`model-time-on-untimed-model` naming `Counter`. | Test (TC-688) |
 | FR-233-AC-2 | `eventually[0 ms, 3 ms]` under `model-time` over `Rpc` checks with bounds `0` and `3` in `ms`; `eventually[0 s, 3/1000 s]` checks to equal bounds and an equal FR-255 key. `eventually[0, 3]` under `model-time` refuses `ill_typed`/`type-mismatch`, and `eventually[0 ms, 3 ms]` under `model-steps` refuses `ill_typed`/`type-mismatch`. | Test (TC-688) |
 | FR-233-AC-3 | The `Rpc` model with `time dense unit ms` and the same model with `time tick send period 1 ms unit ms` give `model-time` bindings with different FR-252 keys; two tick models that differ only in period give different keys. A `[0,3]` step interval and a `[0 ms, 3 ms]` time interval have different FR-255 keys. | Test (TC-688) |
 

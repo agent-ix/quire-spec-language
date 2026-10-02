@@ -79,8 +79,8 @@ span on refusal.
 ### The `time` member
 
 - The checker SHALL admit at most one `time` member per state model; a
-  second SHALL refuse `conflicting_declaration`/`duplicate-declaration` at
-  its span, naming the first.
+  second SHALL refuse `invalid_timed_model`/`duplicate-time-source` at
+  its span, naming the first (QSpec FR-415).
 - The checker SHALL resolve the unit `u` as a unit of QSpec FR-142's time
   dimension, and SHALL refuse a unit of another dimension with
   `ill_typed`/`type-mismatch` at the unit's span.
@@ -97,11 +97,11 @@ span on refusal.
 
 - The checker SHALL admit a field of type `Clock` only in a model whose
   source is `Dense`, and SHALL refuse it elsewhere with
-  `unsupported_construct`/`expression-form` at the field's span.
+  `invalid_timed_model`/`clock-without-dense-time` at the field's span.
 - A postcondition conjunct `self.x = c` on a clock `x` of the operation's
   frame, with `c` an exact non-negative rational time quantity, SHALL check
   as a reset to `c` converted exactly to `u`. Any other write to a clock
-  SHALL refuse `unsupported_construct`/`expression-form`.
+  SHALL refuse `invalid_timed_model`/`clock-write`.
 - A clock in the frame that the operation does not reset keeps its value;
   the checker records no write for it.
 
@@ -110,11 +110,14 @@ span on refusal.
 - The checker SHALL admit `x ~ c`, with `~` one of `<`, `<=`, `=`, `>=`,
   `>` and `c` an exact non-negative rational time quantity, as an atomic
   clock constraint, converting `c` exactly to `u` (QSpec FR-142, FR-205).
+  A negative constant SHALL refuse `invalid_timed_model`/
+  `negative-clock-constant` at the constant's span.
 - The checker SHALL admit a clock read only as the clock operand of an
-  atomic clock constraint. A clock read anywhere else, including a clock
-  compared with another clock, a clock in arithmetic, or a clock assigned to
-  a data field, SHALL refuse `ill_typed`/`operator-ineligible` at the read's
-  span.
+  atomic clock constraint. A clock compared with another clock SHALL refuse
+  `invalid_timed_model`/`clock-comparison`, and a clock read anywhere else,
+  including a clock in arithmetic or a clock assigned to a data field,
+  SHALL refuse `invalid_timed_model`/`clock-read-outside-constraint`, each
+  at the read's span.
 - An operation's precondition SHALL check as a Boolean combination of data
   predicates and atomic clock constraints. The checker SHALL record the
   guard in disjunctive form over convex clock parts, each part a conjunction
@@ -125,12 +128,13 @@ span on refusal.
 - `time invariant when P { … }` SHALL check `P` as a state predicate
   through the clause checker invariants use (FR-104), and its body as a
   conjunction of atomic clock constraints whose operator is `<` or `<=`.
-  Any other operator in the body SHALL refuse `ill_typed`/
-  `operator-ineligible`.
+  A lower bound or an equality in the body SHALL refuse
+  `invalid_timed_model`/`time-invariant-shape`.
 - `urgent when P` SHALL check `P` as a state predicate (FR-104).
 - `urgent O` SHALL resolve `O` to an operation of the model, and SHALL
-  refuse an `O` whose guard reads a clock with `unsupported_construct`/
-  `expression-form` at the declaration's span, naming the clock read.
+  refuse an `O` whose guard reads a clock with `invalid_timed_model`/
+  `urgent-guard-reads-clock` at the declaration's span, naming the clock
+  read.
 - A time invariant or urgency declaration in a model with no `time` member
   SHALL refuse `missing_declaration`/`missing-name`, naming the missing
   `time` member.
@@ -146,7 +150,7 @@ span on refusal.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-230-AC-1 | ADR-026 §11's `Rpc` unit checks to `TimeSource::Dense{ms}` with one clock field `Call.x`, two time invariants (`inflight` with `x <= 3`, `Waiting` with `x <= T`), `send`'s reset of `x` to 0, and `reply`'s guard with the one convex part `x >= 1`. The same unit with `time dense unit s` checks with `reply`'s bound converted to `1/1000`, and its package identity differs from the `ms` unit's. | Test (TC-685) |
-| FR-230-AC-2 | Refusals, each at its span: a second `time` member (`conflicting_declaration`/`duplicate-declaration`); `time dense unit m` (`ill_typed`/`type-mismatch`); `self.n = self.x` with `n: Int` and `x <= self.y` with both clocks (`ill_typed`/`operator-ineligible`); a `Clock` field under `time tick` (`unsupported_construct`/`expression-form`); `self.x = self.x + 1` (`unsupported_construct`/`expression-form`); a time invariant body `x >= 1` (`ill_typed`/`operator-ineligible`); `urgent reply` where `reply` guards on `x` (`unsupported_construct`/`expression-form`); `urgent when P` in an untimed model (`missing_declaration`/`missing-name`). | Test (TC-685) |
+| FR-230-AC-2 | Refusals, each at its span: a second `time` member (`invalid_timed_model`/`duplicate-time-source`); `time dense unit m` (`ill_typed`/`type-mismatch`); `self.n = self.x` with `n: Int` (`invalid_timed_model`/`clock-read-outside-constraint`); `x <= self.y` with both clocks (`invalid_timed_model`/`clock-comparison`); `x >= -1 ms` (`invalid_timed_model`/`negative-clock-constant`); a `Clock` field under `time tick` (`invalid_timed_model`/`clock-without-dense-time`); `self.x = self.x + 1` (`invalid_timed_model`/`clock-write`); a time invariant body `x >= 1` (`invalid_timed_model`/`time-invariant-shape`); `urgent reply` where `reply` guards on `x` (`invalid_timed_model`/`urgent-guard-reads-clock`); `urgent when P` in an untimed model (`missing_declaration`/`missing-name`). | Test (TC-685) |
 | FR-230-AC-3 | `time tick tick period 1/2 ms unit ms` checks to `TimeSource::Tick` with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/`malformed-declaration`; a tick operation name that resolves to nothing refuses `missing_declaration`/`missing-name`. | Test (TC-685) |
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. | Test (TC-685) |
 

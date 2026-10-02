@@ -21,7 +21,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 1. Replay FR-236-AC-1's counterexample and the `[0 ms, 3 ms)` refutation with `T = 4 ms`.
 2. Replay each tampered payload of FR-237-AC-2.
 3. Replay the local time-lock counterexample against the strict-guard variant and against its `x >= 3 ms` variant.
-4. Replay the `Stall` non-local time-lock payload against `Stall`, against the resetting variant, and with an exploration limit of one state; replay one envelope twice.
+4. Replay the `Stall` non-local time-lock payload against `Stall`, against the resetting variant, and with an exploration limit of one state; replay the `Stall` payload with `final_delay` 1; replay one envelope twice.
 
 Tag the tests `#[trace("TC-692", "FR-237-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-692", "FR-237-AC-n")]`.
 - Step 1: each `reproduced-with-evaluated-witness`.
 - Step 2: each refuses with the code FR-237 names and settles no result.
 - Step 3: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`.
-- Step 4: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`; V-7; equal results.
+- Step 4: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`; V-7; `reproduced-with-evaluated-witness` by the non-local arm; equal results.

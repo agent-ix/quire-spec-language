@@ -23,8 +23,9 @@ built from the retained symbolic graph, which a small checker verifies
 without trusting the search (ADR-026 CF-1, CF-2, CF-5). A safety form
 carries a reachability certificate; a liveness form and the
 time-lock-freedom item add a component numbering with each component's
-reason. The certificate carries the obligation identity of the item it
-proves.
+reason. Every certificate carries a witness that the subject admits a
+time-divergent behaviour (ADR-026 TD-6) and the obligation identity of the
+item it proves.
 
 ## Use case
 
@@ -49,6 +50,7 @@ pub struct ZoneCertificate {
     pub initial: NodeIndex,
     pub components: Option<Vec<CertComponent>>, // CF-2 forms only
     pub divergence: Option<Vec<DivergenceWitness>>, // time-lock-freedom item only
+    pub admitted: DivergenceWitness,            // every proof: TD-6 vacuity witness
 }
 ```
 
@@ -73,6 +75,10 @@ pub struct ZoneCertificate {
 - **Divergence part.** For the time-lock-freedom item, each node SHALL name
   a path in the certificate to a divergent target: a quiescent node, or a
   component that does not fail for want of the divergence set.
+- **Admitted part.** Every certificate SHALL carry `admitted`: a path of
+  certificate edges from the node that covers the initial symbolic state
+  to a quiescent node or to a node of a component with a cycle of positive
+  total delay, so the proof is not vacuous (ADR-026 TD-6, CF-1).
 - The certificate SHALL carry the obligation identity of the item, the
   canonical identity digest that binds it to the exact subject and claim.
 - The certificate SHALL be canonical: nodes in discovery order, edges in
@@ -82,13 +88,13 @@ pub struct ZoneCertificate {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-244-AC-1 | `NoLateReply` over `Rpc` with `T = 4 ms`, run on the zone search, returns a certificate with a reachability part, no components, every edge's target zone covering its successor, and the item's obligation identity; FR-245 accepts it. | Test (TC-699) |
+| FR-244-AC-1 | `NoLateReply` over `Rpc` with `T = 4 ms`, run on the zone search, returns a certificate with a reachability part, no components, every edge's target zone covering its successor, an `admitted` path from the initial node to a quiescent node (`Idle`), and the item's obligation identity; FR-245 accepts it. | Test (TC-699) |
 | FR-244-AC-2 | FR-240-AC-1's liveness proof returns a certificate with components in which every edge respects the numbering and each component names its reason; FR-240-AC-2's fair proof names `fair weak serve` as the reason of the component that holds the `idle` loop. | Test (TC-699) |
 | FR-244-AC-3 | The time-lock-freedom item over the unmodified `Rpc` returns a certificate whose divergence part names, for every node, a path to a quiescent node. Two runs give byte-equal certificates. | Test (TC-699) |
 
 ## Dependencies
 
-- ADR-026 §8.1 CF-1, CF-2, CF-5; ADR-013 O-09.
+- ADR-026 §8.1 CF-1, CF-2, CF-5, TD-6; ADR-013 O-09.
 - [FR-239](FR-239-check-a-timed-claim-by-symbolic-zone-search.md),
   [FR-240](FR-240-decide-timed-liveness-and-time-lock-freedom-on-the-symbolic-graph.md).
 

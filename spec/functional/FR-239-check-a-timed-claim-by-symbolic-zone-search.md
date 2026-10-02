@@ -79,7 +79,7 @@ owns.
 ## Outputs
 
 `ZoneCheckOutcome` is one of `Holds(ZoneCertificate)`,
-`HoldsDigitized` (FR-243), `Violated(TemporalCounterexample)`,
+`Violated(TemporalCounterexample)`,
 `Undecided(InconclusiveCause)` or `Stopped(IncompleteCause,
 ZoneCheckLimit)`, each with the run's statistics: symbolic states, retained
 edges, automaton states and stored zone bytes.
@@ -116,26 +116,43 @@ edges, automaton states and stored zone bytes.
   be retained. Retained edges form the symbolic graph that FR-240 and
   FR-244 read.
 - A `TimedInvariant` or `BoundedWindow` item, or a deadlock-freedom item,
-  SHALL be decided by this search alone; a violation SHALL end the search
-  and be concretized by FR-241.
+  SHALL be decided by this search, with the admitted-behaviour checks
+  below; a violation SHALL end the search and be concretized by FR-241.
+- **Admitted behaviour.** A violating symbolic state SHALL end the search
+  only when some point of its violating set has a time-divergent
+  continuation, which the engine SHALL check on the forward closure of
+  that point by FR-240's test (a quiescent state or a time-divergent SCC is
+  reachable). When no point has one, the violation lies only on
+  time-locked states, holds vacuously (ADR-026 TD-1, TV-1), and the search
+  SHALL continue; the time-lock-freedom item reports the time-lock.
+- EN-6 SHALL decide every item it receives by this search; it SHALL never
+  digitize (ADR-026 EZ-10).
 - **Budgets.** When a count would exceed `max_symbolic_states`,
   `max_transitions`, `max_automaton_states` or `max_zone_bytes`, the engine
   SHALL stop and return `Stopped(ResourceExhausted, limit)` naming the limit
   and its value. When `poll` returns `true`, it SHALL return
   `Stopped(Cancelled, …)`.
 - If an atom of the claim evaluates `Undefined` at a point of a symbolic
-  state the search creates, then the engine SHALL end the search with
-  `Violated` at the first such symbolic state in canonical breadth-first
-  order, concretized by FR-241 to a point where it is undefined, with
-  `kind: UndefinedEvaluation{where, cause}` (ADR-026 TV-1, ADR-018 UE-1). An
+  state the search creates, and that point has a time-divergent
+  continuation, then the engine SHALL end the search with `Violated` at the
+  first such symbolic state in canonical breadth-first order, concretized
+  by FR-241 to such a point, with `kind: UndefinedEvaluation{where,
+  cause}`, `where` naming the position, its time stamp, the discrete state
+  key, the clock valuation and the expression's locus (ADR-026 TV-1,
+  ADR-018 UE-1). An
   undefined position SHALL rank like any other violation.
 - An expansion that stops on an undecided contract conjunction SHALL return
   `Undecided(UndecidedSuccessor)`; a subject with no initial state,
   `Undecided(NoInitialState)`.
 - An unbounded population root SHALL refuse `RequiresBound` before any
   state is explored, as FR-126 states.
-- A run that completes with no violation SHALL return `Holds` with the
-  certificate FR-244 builds from the retained graph.
+- **Vacuity.** Before returning `Holds`, the engine SHALL check that some
+  initial symbolic state reaches, on the retained graph, a quiescent state
+  or a time-divergent SCC (FR-240's test); when none does, it SHALL return
+  `Undecided(NoAdmittedBehaviour)` (ADR-026 TD-6).
+- A run that completes with no violation and passes the vacuity check SHALL
+  return `Holds` with the certificate FR-244 builds from the retained
+  graph, including its `admitted` path.
 
 ### Determinism
 
@@ -150,7 +167,7 @@ edges, automaton states and stored zone bytes.
 | FR-239-AC-2 | ADR-026 §9's retry model (heartbeat while `x < 1`, retry when `x > 1 and y < 1`) returns `Violated` for `always holds(not retried)`, though the same model read over integer clocks has no reachable retry. | Test (TC-694) |
 | FR-239-AC-3 | A model whose clock `x` is compared only with 5 and grows without bound in a loop reaches a finite number of stored symbolic states, and the same model with the constant `10^12` reaches the same number. | Test (TC-694) |
 | FR-239-AC-4 | `Settles` over `Rpc` with `max_symbolic_states` 2 returns `Stopped(ResourceExhausted, MaxSymbolicStates)` naming the value 2; with a poll that returns `true`, `Stopped(Cancelled, …)`; a subject with an unbounded population root refuses `RequiresBound` with no state explored. Two runs of each request give equal outcomes and byte-equal certificates and counterexamples. | Test (TC-694) |
-| FR-239-AC-5 | Over a `Ticker` model (`time dense`; object `t` with `n: Int[0, 2]` and clock `x`; operation `step` with precondition `self.n < 2`, guard `x >= 1`, reset `x` and postcondition `self.n = pre(self.n) + 1`; time invariant `x <= 1`; initial `n = 0`) and `always holds(2 / (2 - t.n) >= 1)` under `model-time`, the search returns `Violated` with the timed prefix `step` after delay 1, `step` after delay 1, and `kind: UndefinedEvaluation{where: 2, cause: division-by-zero}`, the position at time stamp 2. | Test (TC-710) |
+| FR-239-AC-5 | Over a `Ticker` model (`time dense`; object `t` with `n: Int[0, 2]` and clock `x`; operation `step` with precondition `self.n < 2`, guard `x >= 1`, reset `x` and postcondition `self.n = pre(self.n) + 1`; time invariant `when self.n < 2 { x <= 1 }`; initial `n = 0`) and `always holds(2 / (2 - t.n) >= 1)` under `model-time`, the state with `n = 2` is quiescent and diverges by its idle tail, and the search returns `Violated` with the timed prefix `step` after delay 1, `step` after delay 1, and `kind: UndefinedEvaluation{where, cause: division-by-zero}`, `where` naming position 2, time stamp 2, the state with `n = 2`, `x = 0` and the locus of `2 / (2 - t.n)`. With the unconditional invariant `x <= 1`, the `n = 2` state is a local time-lock: the search returns `Undecided(NoAdmittedBehaviour)` for the claim, since no behaviour diverges, and the time-lock-freedom item is refuted. | Test (TC-710) |
 
 ## Dependencies
 

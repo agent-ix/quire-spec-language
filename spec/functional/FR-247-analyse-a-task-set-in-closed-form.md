@@ -24,8 +24,7 @@ returns its evidence for FR-248.
 
 ## Use case
 
-An embedded engineer gets each task's exact worst-case response time, or
-the scheduling points where demand exceeds time, from an analysis that
+An embedded engineer gets each task's exact worst-case response time, or the response-time iterates that prove a miss, from an analysis that
 terminates on its own and needs no iteration cap.
 
 ## Inputs
@@ -44,7 +43,7 @@ pub enum ClosedFormOutcome {
     Stopped(IncompleteCause, ScheduleLimit),
 }
 // ClosedFormEvidence: FixedPoints(Vec<(task, R)>) | Demand { busy_period, qpa_sequence }
-// MissEvidence: FixedPriority { task, points: Vec<(t, demand)> } | Edf(DemandWitness)
+// MissEvidence: FixedPriority { task, job: u64, iterates: Vec<ExactRational> } | Edf(DemandWitness)
 //             | Utilization(ExactRational)
 ```
 
@@ -55,9 +54,12 @@ pub enum ClosedFormOutcome {
   iterated from `C_i + B_i` in exact rationals, with response time
   `R + J_i`. It SHALL stop at the fixpoint, or as soon as `R + J_i` exceeds
   `D_i`. When `D_i > T_i`, it SHALL use the busy-period extension.
-- **Miss evidence.** For a fixed-priority miss, EN-7 SHALL return the task
-  and its scheduling points up to `D_i` (the multiples of higher-priority
-  periods and `D_i`), with the demand at each.
+- **Miss evidence.** For a fixed-priority miss, EN-7 SHALL return the task,
+  the job `q` of its level-`i` busy period that misses (0 when `D_i <= T_i`
+  and the busy period ends with the first job), and that job's RT-4
+  iterates up to the first whose response time `R + J_i − q · T_i` exceeds
+  `D_i`, so the evidence covers jitter, blocking and `D_i > T_i`
+  (ADR-026 RT-4, RT-7).
 - **EDF.** EN-7 SHALL return `Miss(Utilization(U))` when the utilization `U`
   exceeds 1. Otherwise it SHALL check `dbf(t) = Σ_i max(0, ⌊(t − D_i) /
   T_i⌋ + 1) · C_i <= t` at absolute deadlines up to the synchronous
@@ -82,7 +84,7 @@ pub enum ClosedFormOutcome {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-247-AC-1 | `Ctl` under fixed priority returns `Schedulable` with fixpoints `(1, 3, 12)`, the third iterating `5, 9, 12, 12`; under EDF, utilization exactly 1, `Schedulable` with its busy period and QPA sequence. `response Ctl.c <= 12 ms` holds and `<= 11 ms` misses. | Test (TC-702) |
-| FR-247-AC-2 | `Ctl` with the third WCET 6 returns, under fixed priority, `Miss` for the third task with points `4, 6, 8, 12` and demands `9, 10, 12, 13`; under EDF, `Miss(Utilization(13/12))`. | Test (TC-702) |
+| FR-247-AC-2 | `Ctl` with the third WCET 6 returns, under fixed priority, `Miss` for the third task, job 0, iterates `6, 10, 13`. A set of `a` (`C = 1`, `T = D = 4`, priority 1) and `b` (`C = 2`, `T = D = 6`, jitter 1, blocking 3, priority 2) returns `Miss` for `b`, job 0, iterates `5, 7` (response `8 > 6`), and `check_closed_form` accepts that evidence; under EDF, `Miss(Utilization(13/12))`. | Test (TC-702) |
 | FR-247-AC-3 | AMC set `Mc`: `a` `LO`, `C = 1`, `T = D = 4`, priority 1; `b` `HI`, `C(LO) = 1`, `C(HI) = 3`, `T = D = 6`, priority 2. It returns `Schedulable` with low-mode response 2 for `b` and high-mode response 4. With `C(HI) = 6` it returns `SufficientTestFailed`; with `C(LO) = C(HI) = 5` it returns `Miss` in low mode. | Test (TC-702) |
 | FR-247-AC-4 | An EDF set with utilization below 1 whose QPA check sequence under the default limit has more than 3 points, run with `max_demand_points` 3, returns `Stopped(ResourceExhausted, MaxDemandPoints)` naming the value 3. | Test (TC-702) |
 
