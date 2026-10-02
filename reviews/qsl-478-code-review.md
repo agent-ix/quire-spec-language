@@ -54,3 +54,13 @@ defect in the move.
 | FND-001 | low | ADR-016 cites `ObjectEnvironment` as `model/object_environment.rs:88` and `PopulationConflict` as `:156`. This PR rewrites that file, so both line numbers are now stale. Fix: name the symbols instead, `qsl_semantics::model::object_environment::ObjectEnvironment` and `ObjectEnvironment::with_population` / `PopulationConflict`, with no line numbers. | spec/decisions/ADR-016-state-model-finite-execution-mapping.md:127-129 |
 | FND-002 | low | `map_environment_refusal` matches the SV enum `ObjectClosureCause` with a `_ =>` arm that maps every other cause to an internal fault. The enum is now a cross-crate type in a shared leaf (RT and CG depend on SV), so a new cause added in SV would silently become a fault here instead of a compile error. Fix: list `DuplicateObject`, `UnknownObjectType` and `Attribute(_)` explicitly. | qsl-semantics/src/model/observation/document.rs:1473-1484 |
 | FND-003 | low | Two test doc comments still name the methods this PR moved. `ObjectEnvironment::find` is now `ObjectClosure::find`, and `ObjectEnvironment::new` "as a tolerated dangling target" is now `ObjectClosure::new`. Fix: rename both references. | qsl-replay/src/spine/clause/tests.rs:911; qsl-semantics/tests/it/state_clauses.rs:4136 |
+
+## Dispositions
+
+Round 1, reviewed at 62451415f69bea06dbba4d7177527ce68379523b (fix commit 62451415, checked against its own diff; the branch was rebased onto main before it).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 62451415: ADR-016:127-129 now reads "`ObjectEnvironment` records the `PopulationId` → `PopulationBinding` correspondence, and `ObjectEnvironment::with_population` refuses a second, unequal record with `PopulationConflict`." No line numbers. |
+| FND-002 | fixed | 62451415: `map_environment_refusal` lists `ObjectClosureCause::DuplicateObject \| UnknownObjectType \| Attribute(_)` explicitly, with no `_` arm. |
+| FND-003 | fixed | 62451415: clause/tests.rs:911 names `ObjectClosure::find`, and state_clauses.rs:4136 names `ObjectClosure::new`. |
