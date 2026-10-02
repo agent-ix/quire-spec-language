@@ -23,7 +23,7 @@ relationships:
 The qualified core is the check path (S0 to S4), the prove path (E5 to S8,
 with replay through S6a) and the certificate checkers through which
 `analyze` enters it (ADR-029 CB-2, FR-282). Its QSL crates are
-`quire-exact`, `quire-semantic-value`, `qsl-foundation`, `qsl-cst`,
+`quire-exact`, `quire-semantic-value`, `quire-walk`, `qsl-foundation`, `qsl-cst`,
 `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package`, `qsl-eval`,
 `qsl-route` and `qsl-replay`. Outside QSL it also holds the driver library
 `quire-driver` and the CG, IR and RT crates the prove path reaches, under
@@ -51,15 +51,25 @@ dependency) pair.
 
 ## Behavior
 
-- No QSL core crate shall depend, directly or transitively, on an argument
-  parser, a terminal or colour crate, a renderer other than the JSON
-  serialization of its own outcome types, the plugin host, the cache, an
-  execution backend other than the S6a interpreter, or any crate outside the
-  core set.
+- No QSL core crate shall depend, directly or transitively through normal
+  dependencies, on:
+  - a QSL workspace crate outside the core set;
+  - a crate above the core: `qsl-analyze`, `qsl-inspect`, `qsl-jit`, or the
+    driver's `quire-driver`, `quire-plugin-host`, `quire-cache`, `quire-aot`
+    or `quire-cli`;
+  - a CG or RT crate;
+  - an argument parser, a terminal or colour crate, a renderer other than
+    the JSON serialization of its own outcome types, a plugin host, a cache,
+    or an execution backend other than the S6a interpreter.
+- A third-party or first-party library crate outside those categories is
+  allowed, including the IR crates ADR-011 §6.1 sanctions
+  (`quire-contract-model`). Proc-macro crates and build and dev dependencies
+  link nothing into a core crate and are not walked.
 - The direction check shall run over the `cargo tree` of each core crate,
   with ADR-011 T-12's tooling, and fail naming each offending pair.
 - No QSL core crate shall read an environment variable, a configuration
-  file, a search path, a clock or a global registry.
+  file, a search path, a clock or a global registry. A monotonic counter,
+  such as an atomic token counter, is not a global registry.
 - No QSL core crate shall write to stdout or stderr, or end the process.
 - Each QSL core crate shall read the bytes it needs from its request, by
   digest where a digest names them (ADR-013 O-26).
@@ -71,6 +81,37 @@ dependency) pair.
 | FR-284-AC-1 | The direction check passes over the QSL workspace. With a test manifest that adds `qsl-analyze` to `qsl-eval`'s dependencies, and with one that adds an argument-parser crate to `qsl-replay`'s, it fails and names the pair `(qsl-eval, qsl-analyze)` and the pair `(qsl-replay, <that crate>)`. | Test (TC-767) |
 | FR-284-AC-2 | Running FR-275-AC-1's chain and FR-098's replay of a fixture counterexample in a process whose environment holds arbitrary values for every variable the test generates, whose working directory is an empty temporary directory and whose home directory is unset, gives outcomes equal to those of a run in the test's own environment. | Test (TC-768) |
 | FR-284-AC-3 | During AC-2's runs, the bytes written to the process's stdout and stderr by core crates are empty, and the process exits only when the test harness ends it. | Test (TC-768) |
+| FR-284-AC-4 | The ambient-input scan of each QSL core crate's shipped source, `#[cfg(test)]` code excluded, fails naming the file and line of each environment read, clock read, filesystem or search-path access (a path method such as `.exists()` or `.metadata()` included), mutable global (a `static mut`, or a `static` lock, cell, once-cell or lazy value), stdout, stderr or stdin access and process exit, and finds none of them in a comment, a string literal or test code. | Test (TC-768) |
+
+## Status
+
+The direction check and the ambient-input scan (FR-284-AC-4) are implemented
+as `arch-lint qualified-core` (make target `arch-lint-qualified-core`). The
+same run applies FR-280-AC-3's CG, RT and driver rule to every QSL workspace
+member. The target is not in `make ci` yet, because main has four known
+violations:
+
+- `agent-ix-extraction-frontend` always depends on `clap`, which only its
+  binary uses, so `qsl-semantics` and every core crate above it reach an
+  argument parser. Fix: put `clap` behind a feature in filament-core-data and
+  update the pinned version in `qsl-semantics`.
+- `qsl-semantics` `model::intake::lift_document` (`intake.rs:223`) creates a
+  `tempfile` scratch directory, because filament-core-data's `lift` writes
+  its document only to an output path. Fix: a `lift` in filament-core-data
+  that returns the document bytes.
+- `qsl-semantics` `value::definition::DefinitionLock::pinned`
+  (`definition.rs:396`) keeps a function-local `static OnceLock` that caches
+  the lock parsed from the compiled-in QSpec bytes, so it returns `&'static`.
+- `qsl-semantics` `value::diagnostics_catalog::native_diagnostics_catalog`
+  (`diagnostics_catalog.rs:26`) keeps a function-local `static OnceLock` that
+  caches the catalog reference built from the compiled-in QSpec bytes, so it
+  returns `&'static`.
+
+The two `OnceLock` caches read no ambient input. Removing them changes the
+`&'static` return types their `qsl-semantics` callers use.
+
+The runtime half of FR-284-AC-2 and AC-3 (TC-768's child-process run) waits
+on FR-275's typed lifecycle API.
 
 ## Dependencies
 

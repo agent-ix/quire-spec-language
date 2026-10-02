@@ -564,9 +564,14 @@ pub(crate) fn flatten_tokens(stream: proc_macro2::TokenStream, out: &mut Vec<Loc
 
 /// A rule's call pattern compiled to a token sequence: `"NodeKey::from_digest"`
 /// is `NodeKey`, `:`, `:`, `from_digest`; a trailing `(`, as in
-/// `"node_key_of("`, requires an opening parenthesis next.
+/// `"node_key_of("`, requires an opening parenthesis next; a trailing `::`,
+/// as in `"tempfile::"`, matches a path through that segment and not the
+/// bare identifier.
 pub(crate) struct CallPattern {
     tokens: Vec<Token>,
+    /// A token that may not follow the match: `=` after a macro's `!`, so
+    /// the comparison `print != x` is not the invocation `print!`.
+    not_followed_by: Option<Token>,
 }
 
 impl CallPattern {
@@ -575,6 +580,10 @@ impl CallPattern {
             Some(path) => (path, true),
             None => (pattern, false),
         };
+        let (path, prefix) = match path.strip_suffix("::") {
+            Some(path) => (path, true),
+            None => (path, false),
+        };
         let mut tokens = Vec::new();
         for (index, segment) in path.split("::").enumerate() {
             if index > 0 {
@@ -582,10 +591,37 @@ impl CallPattern {
             }
             tokens.push(Token::Ident(segment.to_owned()));
         }
+        if prefix {
+            tokens.extend([Token::Punct(':'), Token::Punct(':')]);
+        }
         if call {
             tokens.push(Token::OpenParen);
         }
-        Self { tokens }
+        Self {
+            tokens,
+            not_followed_by: None,
+        }
+    }
+
+    /// A macro invocation `name!`: `println` followed by `!`, and not by
+    /// `=`.
+    pub(crate) fn macro_invocation(name: &str) -> Self {
+        Self {
+            tokens: vec![Token::Ident(name.to_owned()), Token::Punct('!')],
+            not_followed_by: Some(Token::Punct('=')),
+        }
+    }
+
+    /// A method call `.name(`.
+    pub(crate) fn method_call(name: &str) -> Self {
+        Self {
+            tokens: vec![
+                Token::Punct('.'),
+                Token::Ident(name.to_owned()),
+                Token::OpenParen,
+            ],
+            not_followed_by: None,
+        }
     }
 
     /// Whether the pattern names a plain function (no `::`), whose own
@@ -612,7 +648,10 @@ impl CallPattern {
                 _ => return false,
             }
         }
-        true
+        match (&self.not_followed_by, source.get(position)) {
+            (Some(refused), Some(next)) => next.token != *refused,
+            _ => true,
+        }
     }
 }
 
@@ -640,7 +679,8 @@ pub(crate) fn pattern_match_lines(
 }
 
 /// Every source line inside a `#[cfg(test)]`-gated item (`mod`, `fn`, `impl`,
-/// an `impl` method, `struct`, `enum`, `trait`, `static` or `const`), 1-based
+/// an `impl` method, `struct`, `enum`, `trait`, `static`, `const` or an item
+/// macro such as `thread_local!`), 1-based
 /// and inclusive of the item's own first and last line -- FR-060 Behavior,
 /// "T12-B and T12-C: shipped code and debt lists".
 pub(crate) fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
@@ -694,6 +734,11 @@ pub(crate) fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
             visit_item_const,
             syn::ItemConst,
             syn::visit::visit_item_const
+        );
+        skip_if_cfg_test!(
+            visit_item_macro,
+            syn::ItemMacro,
+            syn::visit::visit_item_macro
         );
     }
     let mut visitor = CfgTestVisitor {

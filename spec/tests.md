@@ -1024,8 +1024,8 @@ union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 | TC-764 | Certificate checkers accept genuine certificates and reject altered or misbound ones in a core-only process | Integration | P1 | FR-282-AC-1, FR-282-AC-2, FR-282-AC-3, FR-282-AC-4, FR-282-AC-5, FR-282-AC-6, FR-282-AC-7, FR-282-AC-8 | 🚧 Planned |
 | TC-765 | monitor reports violations, pending and tested verdicts over finite traces and lassos | Unit | P1 | FR-283-AC-1, FR-283-AC-2, FR-283-AC-5 | 🚧 Planned |
 | TC-766 | monitor refuses inadmissible traces and agrees with replay's trace evaluation | Unit | P1 | FR-283-AC-3, FR-283-AC-4, FR-283-AC-6 | 🚧 Planned |
-| TC-767 | The direction check keeps frontends, analyze, the cache and the plugin host out of the qualified core | Integration | P1 | FR-284-AC-1, FR-280-AC-3 | 🚧 Planned |
-| TC-768 | Core operations read no ambient input and write nothing to the process streams | Integration | P1 | FR-284-AC-2, FR-284-AC-3 | 🚧 Planned |
+| TC-767 | The direction check keeps frontends, analyze, the cache and the plugin host out of the qualified core | Integration | P1 | FR-284-AC-1, FR-280-AC-3 | ✅ Passing locally (`tools/arch-lint` `qualified_core` tests); `arch-lint qualified-core` fails on main with FR-284 Status's four known violations |
+| TC-768 | Core operations read no ambient input and write nothing to the process streams | Integration | P1 | FR-284-AC-2, FR-284-AC-3, FR-284-AC-4 | 🚧 Partial: step 3 (FR-284-AC-4) passes locally (`tools/arch-lint` `qualified_core` tests); steps 1 and 2 wait on FR-275's typed lifecycle API |
 | TC-785 | The compile command is the composition of the front-end operations | Unit | P1 | FR-027-AC-11 | 🚧 Planned |
 | TC-786 | run's exit statuses come from the exit function, with undefined at 10 | Unit | P1 | FR-100-AC-10, FR-100-AC-11 | 🚧 Planned |
 | TC-770 | Library outcomes serialize to one outcome document, with the undefined label on non-proof outcomes only | Unit | P1 | FR-286-AC-1, FR-286-AC-2, FR-286-AC-3, FR-286-AC-4 | 🚧 Planned |
