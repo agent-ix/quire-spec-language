@@ -35,7 +35,7 @@ No failed execution produces a logical value. B owns portable result adaptation.
 [The evaluation contract](../../docs/native-runtime-evaluation.md) fixes exact
 observation capture, immutable values, evaluation order, eligible comparisons,
 checked integer arithmetic, sequence quantification, graph expansion and events.
-It uses the adopted standard at e897f81. Native execution evaluates the source
+It uses the adopted standard. Native execution evaluates the source
 AST, independently of the IR proof view or generated backend code.
 
 The selected accounting version is native-ref-cost/1-draft: one step per entered

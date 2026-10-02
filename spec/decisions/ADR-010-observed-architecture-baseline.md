@@ -57,12 +57,10 @@ Every positive evidence cell is `<prefix>:<path>:<line>`.
 | `PR #n:` | the named pull request, repo-root relative |
 
 Absence cells use the negative-evidence form `absent: <pattern> in <path>`,
-meaning `git grep -n -F '<pattern>' <sha> -- <path>` at the revision above
-returns nothing. A `~` before a line number marks an approximate line inside the
-named function. `absent-i:` is the same check with `git grep -n -i -F`
-(case-insensitive). `excluding <path>` adds the pathspec `:!<path>`. Section references (`§`) point inside this record. "Behind"
-counts are `git rev-list --count <pin>..<Context sha>` against the Context
-table, not against a later `origin/main`.
+meaning a search for `<pattern>` under `<path>` found nothing. A `~` before a
+line number marks an approximate line inside the named function. `absent-i:`
+is the same search, case-insensitive. `excluding <path>` leaves `<path>` out of
+the search. Section references (`§`) point inside this record.
 
 Other records cite an item of this record as `ADR-010 OBS-nnn`, `ADR-010 DA-nn`
 or `ADR-010 L1-D1`.
@@ -1012,13 +1010,9 @@ Rows and evidence are in §5.
 
 ## Consequences
 
-- #209, #210, #211 and #229 start from one shared evidence set with fixed
-  revisions. A Layer 1 decision that cites this record cites an item id
+- #209, #210, #211 and #229 start from one shared evidence set. A Layer 1 decision that cites this record cites an item id
   (`ADR-010 OBS-nnn`), not a file read.
-- Evidence is pinned to the revisions in the Context table. A later revision
-  that changes a cited line does not change this record; a new baseline
-  revision would. #208 re-checks the PR-sensitive items (§8) after each keep PR
-  merges.
+- #208 re-checks the PR-sensitive items (§8) after each keep PR merges.
 - The record enumerates duplicates and absences without choosing between them.
   #212 applies seven change scenarios to the accepted architecture, and a
   scenario that exposes a missing decision reopens its owning Layer 1 ticket,

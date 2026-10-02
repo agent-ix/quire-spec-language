@@ -89,8 +89,7 @@ selected profile identity and its activation record.
 
 The classifier SHALL use exactly this table, which restates the reviewed
 correspondence disposition in
-`ix://agent-ix/quire-specification/FR-095` at baseline
-`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. The rows are evaluated in order and
+`ix://agent-ix/quire-specification/FR-095`. The rows are evaluated in order and
 the first two are mutually exclusive with the last two, so the table is total:
 
 | Native request | TL target | Disposition |
@@ -110,9 +109,7 @@ The classifier SHALL name every unmatched dimension on an unsupported result,
 rather than a single summary cause.
 
 The classifier SHALL name the TL target identity of a supported classification
-exactly as the table gives it, and SHALL record the source table's baseline
-revision alongside it, so a later revision of that table is a visible change
-rather than silent staleness.
+exactly as the table gives it.
 
 The classifier SHALL retain the native declaration subject, its selected profile
 identity and its activation record on every unsupported result, and SHALL NOT
@@ -137,7 +134,7 @@ encode. Naming them is not discharging them.
 | FR-045-AC-2 | A timestamped-event request and a bounded-past request each return unsupported naming the finite-window and past-operator dimensions respectively, and emit no substitute formula, profile or clock. | Test (TC-125) |
 | FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity and revision, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, and a declaration unmatched on two dimensions names both. | Test (TC-125) |
-| FR-045-AC-5 | A supported classification names its outstanding bridge premises, its TL target identity and the source table's baseline revision, and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
+| FR-045-AC-5 | A supported classification names its outstanding bridge premises, and its TL target identity, and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
 | FR-045-AC-6 | A declaration classified through a strict `/2` package returns the same disposition and retained native subject as through `/1` under both surrounding-execution closures, and additionally retains the authenticated package digest, declaration, definition identity, namespaced revision and definition artifact digest; a `/1` classification retains no authenticated selection, a `/2` request for a declaration outside the package or for a non-temporal declaration is refused, and the classifier refuses a temporal declaration with no binding or a binding that selects a definition other than the declaration's own (Inspection; unreachable after the strict reader). | Test (TC-125); Inspection |
 
 ## Dependencies
@@ -158,14 +155,10 @@ encode. Naming them is not discharging them.
 
 ## Status
 
-The implementation pins the reviewed source by symbol. The `SUPPORT_TABLE`
-constant in `src/temporal/mapping.rs` names
-`ix://agent-ix/quire-specification/FR-095` at the same baseline
-(`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`) this requirement's Behavior
-section cites, and `classify` retains that constant on every supported
-classification, so a disposition always reports the exact source revision it
-was read against. The classifier evaluates the Behavior section's rows, which
-restate that source; the constant carries the pin, not the rows.
-The baseline stays pinned to that revision until
-`ix://agent-ix/quire-specification#112` lands a reviewed revision of the
-source table; only a landed revision moves this pin.
+The classifier evaluates the Behavior section's rows, which restate QSpec
+FR-095's disposition.
+
+Remaining work (implementation): the `SUPPORT_TABLE` constant in
+`src/temporal/mapping.rs` still names FR-095 with a pinned revision, and
+`classify` still retains it on every supported classification; the revision
+and its retention are deleted.

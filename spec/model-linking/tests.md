@@ -6,8 +6,8 @@ type: TestMatrix
 
 ## Overview
 
-LC02 verification after the owner's internal adoption of specification PR8 at
-e897f81. Ten linking cases, TC-020–024 and TC-030–034, now execute through the
+LC02 verification after the owner's internal adoption of specification PR8.
+Ten linking cases, TC-020–024 and TC-030–034, now execute through the
 public formal linker API. Their eleven FR-005/013 criteria are backed by the
 Rust tests in tests/linking.rs. The five FR-006 typing cases now execute through
 the native checker. Model/checker qualification covers the earlier adopted definition; executable projection

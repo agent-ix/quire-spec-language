@@ -24,8 +24,7 @@ identical incomplete-closure view. Attempt to reach evaluation from raw bytes
 and a freely constructed wire package at compile time.
 
 Build the positive inputs only by translating declaration keys from an admitted
-domain package and selections from the F observation contract revision
-`782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`. Substitute the domain package digest,
+domain package and selections from the F observation contract. Substitute the domain package digest,
 the observation revision and one owned identity independently; do not replace
 either authority with a local mock that invents it.
 

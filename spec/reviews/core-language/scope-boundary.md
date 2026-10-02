@@ -67,7 +67,7 @@ resolved before this verdict:
 ```mermaid
 flowchart LR
   Author[Native source author] --> A["A: Quire compiler\nFR-046–050, NFR-009"]
-  Standard["Immutable native-v1 baseline\n782c1ce"] --> A
+  Standard["Immutable native-v1 baseline"] --> A
   D["D: model/config producer\nexports and static correspondence"] --> A
   A --> Artifact["quire.compiled-protocol/1 or /2\ncanonical subject"]
   A --> State["A state evaluator\nqueries and finite graph"]
