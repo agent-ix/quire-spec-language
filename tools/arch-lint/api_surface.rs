@@ -588,6 +588,13 @@ impl CallPattern {
         Self { tokens }
     }
 
+    /// A macro invocation `name!`: `println` followed by `!`.
+    pub(crate) fn macro_invocation(name: &str) -> Self {
+        Self {
+            tokens: vec![Token::Ident(name.to_owned()), Token::Punct('!')],
+        }
+    }
+
     /// Whether the pattern names a plain function (no `::`), whose own
     /// `fn name(` definition is not a call of it.
     fn is_bare_function(&self) -> bool {
@@ -640,7 +647,8 @@ pub(crate) fn pattern_match_lines(
 }
 
 /// Every source line inside a `#[cfg(test)]`-gated item (`mod`, `fn`, `impl`,
-/// an `impl` method, `struct`, `enum`, `trait`, `static` or `const`), 1-based
+/// an `impl` method, `struct`, `enum`, `trait`, `static`, `const` or an item
+/// macro such as `thread_local!`), 1-based
 /// and inclusive of the item's own first and last line -- FR-060 Behavior,
 /// "T12-B and T12-C: shipped code and debt lists".
 pub(crate) fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
@@ -694,6 +702,11 @@ pub(crate) fn cfg_test_lines(parsed: &syn::File) -> BTreeSet<usize> {
             visit_item_const,
             syn::ItemConst,
             syn::visit::visit_item_const
+        );
+        skip_if_cfg_test!(
+            visit_item_macro,
+            syn::ItemMacro,
+            syn::visit::visit_item_macro
         );
     }
     let mut visitor = CfgTestVisitor {

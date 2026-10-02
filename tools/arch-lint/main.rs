@@ -9,6 +9,9 @@
 //! `arch-lint canonical-encoder` is ADR-013 §2's one-RFC-8785-encoder rule
 //! (ADR-013:113): no second canonical encoder beside
 //! `quire-canonical`.
+//! `arch-lint qualified-core` is FR-284 (ADR-029 CB-2, CB-3): no core crate
+//! depends on a crate above the core or a frontend, and no core crate reads
+//! ambient input or writes to the process.
 #![forbid(unsafe_code)]
 
 mod api_surface;
@@ -17,6 +20,7 @@ mod duplicate_revisions;
 mod error;
 mod graph;
 mod metadata;
+mod qualified_core;
 
 use std::{
     ffi::OsString,
@@ -33,7 +37,8 @@ fn usage() -> Error {
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path> [--offline]\n\
          arch-lint api-surface --qsl <path> [--cg <path> | --qsl-only]\n\
          arch-lint duplicate-revisions --lockfile <path>\n\
-         arch-lint canonical-encoder --qsl <path>",
+         arch-lint canonical-encoder --qsl <path>\n\
+         arch-lint qualified-core --qsl <path>",
     )
 }
 
@@ -356,6 +361,16 @@ fn run_canonical_encoder(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((canonical_encoder::report(&outcome), outcome.passed()))
 }
 
+fn run_qualified_core(mut args: Vec<String>) -> Result<(String, bool)> {
+    let qsl = require(&mut args, "--qsl")?;
+    if !args.is_empty() {
+        return Err(usage());
+    }
+    let direction = qualified_core::check_direction(&qualified_core::workspace_graph(&qsl)?)?;
+    let ambient = qualified_core::scan_ambient(&qsl)?;
+    Ok(qualified_core::report(&qsl, &direction, &ambient))
+}
+
 fn run(arguments: &[OsString]) -> Result<(String, bool)> {
     let mut args: Vec<String> = arguments
         .iter()
@@ -371,6 +386,7 @@ fn run(arguments: &[OsString]) -> Result<(String, bool)> {
         "api-surface" => run_api_surface(args),
         "duplicate-revisions" => run_duplicate_revisions(args),
         "canonical-encoder" => run_canonical_encoder(args),
+        "qualified-core" => run_qualified_core(args),
         _ => Err(usage()),
     }
 }

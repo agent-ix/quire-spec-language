@@ -339,7 +339,7 @@ IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder arch-lint-qualified-core
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -363,6 +363,13 @@ arch-lint-duplicate-revisions:
 # repository and passes on it, so it is part of `ci:`.
 arch-lint-canonical-encoder:
 	cargo run --locked -p arch-lint -- canonical-encoder --qsl .
+
+# FR-284 (ADR-029 CB-2, CB-3): no QSL core crate depends on a crate above
+# the core, a CG or RT crate, or a frontend crate, and no core crate's
+# shipped source reads ambient input or writes to the process. Needs only
+# this repository. It joins `ci:` once it passes on main.
+arch-lint-qualified-core:
+	cargo run --locked -p arch-lint -- qualified-core --qsl .
 
 # Runs the three checks that need only this repository.
 # `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
