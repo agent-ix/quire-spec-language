@@ -45,3 +45,23 @@ Trace:
 ## Verdict
 
 Changes requested: FND-001 is medium, FND-002 is low.
+
+## Dispositions
+
+Round 1, reviewed at `712e03a544b862b0d407f620f896b28265f7bcc0`.
+
+On the team-leader ruling, FR-284's Status states the two `OnceLock` caches
+accurately:
+- The lines are right (`definition.rs:396`, `diagnostics_catalog.rs:26`).
+- Both caches really are built from compiled-in QSpec bytes and read no
+  ambient input.
+- Removing them really does change `&'static` returns.
+- The count of four matches the live run.
+
+The spec.md FR-284 row ("four known violations") and the TC-767/TC-768 rows
+in tests.md match.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2af9dba63b955ff41b3d94c4385972834ae062d5 |
+| FND-002 | fixed | 2af9dba63b955ff41b3d94c4385972834ae062d5 |

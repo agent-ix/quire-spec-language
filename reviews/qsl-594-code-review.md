@@ -67,3 +67,25 @@ Changes requested: one medium finding and two low.
 | FND-001 | medium | Two ambient reads FR-284 names slip past the scan. (1) Filesystem and search-path reads through `Path`/`PathBuf` methods (`.exists()`, `.is_file()`, `.is_dir()`, `.canonicalize()`, `.read_dir()`, `.metadata()`, `.read_link()`) match no pattern, because only `std::fs`, `fs::…(` and `File::…` are listed. (2) A global registry held in a `static` of `OnceLock`, `OnceCell` or `LazyLock` over a map or vector, set or filled at run time, is not a `MUTABLE_STATIC_TYPES` type unless it also names `Mutex`/`RwLock`/`Cell`. Add method patterns for (1). For (2), either flag `static … OnceLock`/`OnceCell` (a compile-time `LazyLock` table can stay allowed), or state both as limitations in the module doc beside the existing ones. | tools/arch-lint/qualified_core.rs:521-538; tools/arch-lint/qualified_core.rs:568-570; tools/arch-lint/qualified_core.rs:33-40 |
 | FND-002 | low | `Path("dirs")` and `Path("tempfile")` compile to a single identifier token, so any identifier `dirs` or `tempfile` matches, such as a local `let dirs = …`, a field, or a function. Macro patterns also match a comparison like `print != x`, because `!=` lexes as `!` then `=`. Today's core has no such false positive, but the first `dirs` variable will fail the gate. Spell them `dirs::` and `tempfile::` (a path prefix), and require the macro's `!` not to be followed by `=`. | tools/arch-lint/qualified_core.rs:535-536; tools/arch-lint/api_surface.rs:591-596 |
 | FND-003 | low | `--filter-platform <host>` drops every dependency gated on a non-host target. A core crate adding `[target.'cfg(windows)'.dependencies] clap = …` passes on a Linux run, and the module doc names only `cfg(loom)` as what the filter drops. Also, `clap_derive` (a proc macro) is listed in `FRONTEND` but can never be reported, since proc macros are skipped first. Either walk the union over the targets QSL ships for (host plus the no_std `thumbv7em-none-eabi`), or state the host-only limitation; and drop the unreachable `clap_derive` entry. | tools/arch-lint/qualified_core.rs:342-360; tools/arch-lint/qualified_core.rs:117-125 |
+
+## Dispositions
+
+Round 1, reviewed at `712e03a544b862b0d407f620f896b28265f7bcc0`. The fix commits sit directly on the reviewed
+head b4388c03, with no rebase: 2af9dba6 holds the code and spec fixes, and
+712e03a5 holds the FR-284 Status. The committed `reviews/qsl-594-*.md` are
+byte-identical to the reviewer's copies. Nothing is over-deleted:
+`ABOVE_CORE` is split into `QSL_ABOVE_CORE` and `DRIVER` with every name
+kept, and only the unreachable `clap_derive` is removed.
+
+Checks run on the head:
+- arch-lint has 100 tests, all passing, and clippy `-D warnings` is clean.
+- The live `arch-lint qualified-core` run accepts both `--filter-platform`
+  targets. It reports exactly FR-284 Status's four violations: `clap` via
+  agent-ix-extraction-frontend, `intake.rs:223`, `definition.rs:396` and
+  `diagnostics_catalog.rs:26`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2af9dba63b955ff41b3d94c4385972834ae062d5 |
+| FND-002 | fixed | 2af9dba63b955ff41b3d94c4385972834ae062d5 |
+| FND-003 | fixed | 2af9dba63b955ff41b3d94c4385972834ae062d5 |
