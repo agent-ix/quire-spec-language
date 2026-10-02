@@ -11,11 +11,11 @@ use super::*;
 use crate::spine::OperationName;
 use crate::{
     replay_frame, ClaimedChange, DisagreementCause, FamilyPayload, FrameCounterexample,
-    FrameIdentityMismatch, FrameOperation, FrameReplayResult, ProfileSelection, ProofCategory,
-    ReplayRefusal, ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource,
-    StageLimits, StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket,
-    WitnessSettlement,
+    FrameIdentityMismatch, FrameOperation, FrameReplayResult, ProfileSelection, ReplayRefusal,
+    ReplayRequestRefusal, ReplayRequestWire, ReplayResult, ReplaySource, StageLimits,
+    StateEnvironment, Verdict, Witness, WitnessEnvelope, WitnessPacket, WitnessSettlement,
 };
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::library::PackageId;
@@ -465,7 +465,7 @@ fn a_frame_counterexample_reproduces_and_keeps_its_identities() {
         arm.settlement(),
         WitnessSettlement::ReproducedWithEvaluatedWitness
     );
-    assert_eq!(arm.category(), ProofCategory::Violation);
+    assert_eq!(arm.category(), Category::Violation);
     assert_eq!(arm.disagreement(), None);
     assert_eq!(result.source().digest(), source_digest(&unit_bytes));
     assert_eq!(result.source().identity(), IDENTITY);
@@ -498,8 +498,8 @@ fn a_frame_respecting_invocation_is_inconclusive_by_verdicts() {
     assert_eq!(
         arm.disagreement(),
         Some(&DisagreementCause::Verdicts {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Success),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
         })
     );
     assert!(arm.record().is_none());
@@ -548,8 +548,8 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
     assert_eq!(
         arm.disagreement(),
         Some(&DisagreementCause::NoValue {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Refusal),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Refusal),
         })
     );
     assert_eq!(arm.value(), None);

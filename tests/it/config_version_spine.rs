@@ -61,7 +61,7 @@ fn expected(case: Case) -> Expected {
 
 /// FR-108-AC-1: `report.disposition` against `expected(case)` -- stage,
 /// category, truth and exit code, all through the disposition's own typed
-/// accessors (`report.exit_code()`'s "one total match, no `_` arm").
+/// accessors (`report.disposition.category().exit_code()`'s "one total match, no `_` arm").
 fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
     let disposition = &report.disposition;
     match expected(case) {
@@ -74,7 +74,12 @@ fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
             );
             assert_eq!(disposition.category(), Category::Success, "{}", case.id());
             assert_eq!(disposition.truth(), Some(true), "{}", case.id());
-            assert_eq!(report.exit_code(), 0, "{}", case.id());
+            assert_eq!(
+                report.disposition.category().exit_code(),
+                0,
+                "{}",
+                case.id()
+            );
         }
         Expected::Violation => {
             assert_eq!(
@@ -85,13 +90,23 @@ fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
             );
             assert_eq!(disposition.category(), Category::Violation, "{}", case.id());
             assert_eq!(disposition.truth(), Some(false), "{}", case.id());
-            assert_eq!(report.exit_code(), 10, "{}", case.id());
+            assert_eq!(
+                report.disposition.category().exit_code(),
+                10,
+                "{}",
+                case.id()
+            );
         }
         Expected::Refused { stage, code } => {
             assert_eq!(disposition.stage(), stage, "{}", case.id());
             assert_eq!(disposition.category(), Category::Refusal, "{}", case.id());
             assert_eq!(disposition_code(disposition), Some(code), "{}", case.id());
-            assert_eq!(report.exit_code(), code.exit_code(), "{}", case.id());
+            assert_eq!(
+                report.disposition.category().exit_code(),
+                code.category().exit_code(),
+                "{}",
+                case.id()
+            );
         }
         Expected::IncompletePopulation => {
             assert_eq!(disposition.stage(), ClauseRunStage::Admit, "{}", case.id());
@@ -107,7 +122,12 @@ fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
                 "{}",
                 case.id()
             );
-            assert_eq!(report.exit_code(), 22, "{}", case.id());
+            assert_eq!(
+                report.disposition.category().exit_code(),
+                22,
+                "{}",
+                case.id()
+            );
         }
         Expected::ExhaustedWork => {
             assert_eq!(
@@ -131,7 +151,12 @@ fn assert_expected(case: Case, report: &qsl_replay::spine::ClauseRunReport) {
                     case.id()
                 ),
             }
-            assert_eq!(report.exit_code(), 22, "{}", case.id());
+            assert_eq!(
+                report.disposition.category().exit_code(),
+                22,
+                "{}",
+                case.id()
+            );
         }
     }
 }
@@ -330,7 +355,7 @@ fn tc_469_step_2_and_3_native_and_spine_agree_and_name_the_boundary_locus() {
         let native = run_native(&path);
         assert_eq!(
             native.exit,
-            spine_report.exit_code() as i32,
+            spine_report.disposition.category().exit_code() as i32,
             "{}: native {} spine {:?}",
             case.id(),
             native.value,
@@ -534,7 +559,12 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
         // The full report: exit code, disposition (stage/category/truth/
         // code via the same summary step 2 uses), source digest, package_id
         // and usage all agree between the two runs.
-        assert_eq!(report_a.exit_code(), report_b.exit_code(), "{}", case.id());
+        assert_eq!(
+            report_a.disposition.category().exit_code(),
+            report_b.disposition.category().exit_code(),
+            "{}",
+            case.id()
+        );
         assert_eq!(
             (
                 report_a.disposition.stage(),
@@ -656,8 +686,8 @@ fn tc_469_step_4_generation_and_reports_are_deterministic() {
             pinned_request.expected_package_id = Some(package_id);
             let pinned_report = run_clause(pinned_request).unwrap();
             assert_eq!(
-                pinned_report.exit_code(),
-                report_a.exit_code(),
+                pinned_report.disposition.category().exit_code(),
+                report_a.disposition.category().exit_code(),
                 "{}",
                 case.id()
             );
@@ -752,8 +782,8 @@ mod extraction {
             let extracted_report = run_clause(extracted_request).unwrap();
 
             assert_eq!(
-                extracted_report.exit_code(),
-                direct_report.exit_code(),
+                extracted_report.disposition.category().exit_code(),
+                direct_report.disposition.category().exit_code(),
                 "{}",
                 case.id()
             );

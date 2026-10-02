@@ -778,15 +778,16 @@ fn tc_452_step_4_outcome_mapping_covers_every_category() {
 /// "sum-out-of-domain" }`. `q` holding `4` completes with integer `4`
 /// (TC-452 step 5's own third case).
 ///
-/// Composes with `undefined_kernel_reasons_render_and_exit_20`
+/// Each undefined outcome's FR-285 exit code is 10 and the completion's 0.
+/// Composes with `undefined_kernel_reasons_render_and_exit_10`
 /// (`src/command/output.rs`), which proves every `CallOutcome::Undefined {
 /// reason: "sum-out-of-domain" }` renders `{"kind": "undefined", "reason":
-/// "sum-out-of-domain"}` and exits 20 -- the root crate names no
+/// "sum-out-of-domain"}` and exits 10 -- the root crate names no
 /// `qsl_eval` path (FR-100-AC-8, TC-452 step 2/3), so a real `Evaluation`
 /// can only be produced here, never there.
-#[trace("TC-452", "FR-100-AC-10")]
+#[trace("TC-786", "FR-100-AC-10")]
 #[test]
-fn tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes() {
+fn tc_786_sum_over_pos_is_sum_out_of_domain_exit_10_or_completes_exit_0() {
     use qsl_eval::value::CheckedPackageEvaluation;
     use qsl_forms::Expression;
     use qsl_semantics::check::PackageDeclarations;
@@ -872,13 +873,17 @@ fn tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes() {
             Some(&sum_node),
             "{elements:?}: located at the sum node"
         );
-        match convert_outcome(evaluation, package.graph(), &[]).unwrap() {
+        let outcome = convert_outcome(evaluation, package.graph(), &[]).unwrap();
+        assert_eq!(outcome.category().exit_code(), 10, "{elements:?}");
+        match outcome {
             CallOutcome::Undefined { reason } => assert_eq!(reason, "sum-out-of-domain"),
             other => panic!("{elements:?}: {other:?}"),
         }
     }
 
-    match convert_outcome(evaluate(q(vec![4])), package.graph(), &[]).unwrap() {
+    let completed = convert_outcome(evaluate(q(vec![4])), package.graph(), &[]).unwrap();
+    assert_eq!(completed.category().exit_code(), 0);
+    match completed {
         CallOutcome::Completed(CallValue::Integer(value)) => assert_eq!(value.to_string(), "4"),
         other => panic!("{other:?}"),
     }

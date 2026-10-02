@@ -140,13 +140,14 @@ selection, admission or evaluation result is a report.
   entry SHALL report stage `evaluate`, category `internal-failure`, with the
   `InternalFault` FR-100's internal-failure section names, and FR-100's
   internal-failure exit status.
-- `ClauseRunReport::exit_code()` SHALL be one total match over the stage and
-  category with no `_` arm: 0 and 10 as above, an undefined evaluation
-  included; FR-100's exit status for an `evaluate` refusal or incomplete; FR-100's internal-failure
-  exit status for `evaluate` `internal-failure`; and
-  `qsl_foundation::diagnostic::Code::exit_code` of the record's code for a
-  `compile`, `select` or `admit` result (20, 21 for an unsupported code, 22
-  for an incomplete code).
+- The clause run's exit code SHALL be FR-285's exit code
+  (`Category::exit_code`) of the disposition's category: 0 and 10 as above,
+  an undefined evaluation included; FR-100's exit status for an `evaluate`
+  refusal or incomplete; FR-100's internal-failure exit status for
+  `evaluate` `internal-failure`; the category of the refusal's code for a
+  `compile` refusal or an `admit` argument refusal (20, 21 for an
+  unsupported code, 22 for an incomplete code); and FR-106's own split for
+  an `admit` failure (refused 20, incomplete 22).
 - Each call SHALL build fresh admission and evaluation meters from the
   request's limits. The entry SHALL read no path, environment variable,
   clock or search location: every byte arrives in the request.

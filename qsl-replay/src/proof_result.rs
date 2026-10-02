@@ -3,53 +3,14 @@
 //! `quire.backend-provider/v1` terminal record into exactly one of the
 //! seven ADR-013 O-16 outcome categories the proof column produces.
 //!
-//! `undefined` is not a variant of [`ProofCategory`] at all (as distinct
-//! from being a variant no arm maps into): the O-16 category table marks it
-//! "not produced" for the proof column, so no FR-331 result value can ever
-//! select it. A future arm attempting to map some FR-331 value to
-//! `undefined` is a compile error here, not merely untested dead code.
+//! The category is the one `qsl_foundation` [`Category`] (FR-285). The
+//! proof column never produces `undefined`: an undefined claim evaluation
+//! settles `refuted`, category violation.
 
 use crate::bounds::{BoundExceeded, MAX_ENCODED_BYTES};
 use crate::identity::Backend;
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::ManifestDigest;
-
-/// One of the seven ADR-013 O-16 categories an FR-331 proof column can
-/// produce (ADR-013 O-16 category table; FR-069). `Category` in
-/// `crate::diagnostic` has an eighth, `Undefined`, that this type omits by
-/// construction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum ProofCategory {
-    /// A completed, non-vacuous positive result.
-    Success,
-    /// A false predicate: the property does not hold.
-    Violation,
-    /// The operation is defined but the request itself is not admitted.
-    Refusal,
-    /// A named, catalogued capability this build, backend or solver does not
-    /// supply.
-    Unsupported,
-    /// A named charge point was unavailable and no partial value exists.
-    Incomplete,
-    /// No decisive result: a vacuous proof, or (outside this type) a
-    /// settlement disagreement.
-    Inconclusive,
-    /// The tool itself failed, not the property under test.
-    InternalFailure,
-}
-
-impl ProofCategory {
-    /// Every value, in the ADR-013 O-16 category table's row order (skipping
-    /// the `undefined` row, which the proof column never produces).
-    pub const ALL: [Self; 7] = [
-        Self::Success,
-        Self::Violation,
-        Self::Refusal,
-        Self::Unsupported,
-        Self::Incomplete,
-        Self::Inconclusive,
-        Self::InternalFailure,
-    ];
-}
 
 /// QSpec FR-243's settlement basis: the closed vocabulary every truth
 /// result carries exactly one of (ADR-031 SW-3, SW-10). Compared by its
@@ -186,15 +147,15 @@ impl TerminalValue {
     /// arm; a ninth `TerminalValue` variant fails this match to compile
     /// rather than silently falling into an existing row (FR-069's
     /// Behavior: "one exhaustive function with no `_` fallback arm").
-    pub fn category(self) -> ProofCategory {
+    pub fn category(self) -> Category {
         match self {
-            Self::Proved { success_checks: 0 } => ProofCategory::Inconclusive,
-            Self::Proved { .. } | Self::Tested => ProofCategory::Success,
-            Self::Refuted => ProofCategory::Violation,
-            Self::Declined(_) => ProofCategory::Refusal,
-            Self::Unsupported(_) => ProofCategory::Unsupported,
-            Self::Incomplete(_) => ProofCategory::Incomplete,
-            Self::Failed => ProofCategory::InternalFailure,
+            Self::Proved { success_checks: 0 } => Category::Inconclusive,
+            Self::Proved { .. } | Self::Tested => Category::Success,
+            Self::Refuted => Category::Violation,
+            Self::Declined(_) => Category::Refusal,
+            Self::Unsupported(_) => Category::Unsupported,
+            Self::Incomplete(_) => Category::Incomplete,
+            Self::Failed => Category::InternalFailure,
         }
     }
 
@@ -245,7 +206,7 @@ impl TerminalRecord {
 /// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofResultEnvelope {
-    category: ProofCategory,
+    category: Category,
     record: TerminalRecord,
     backend: Backend,
     inconclusive_cause: Option<InconclusiveCause>,
@@ -253,7 +214,7 @@ pub struct ProofResultEnvelope {
 
 impl ProofResultEnvelope {
     /// The item's ADR-013 O-16 category.
-    pub fn category(&self) -> ProofCategory {
+    pub fn category(&self) -> Category {
         self.category
     }
 
@@ -401,31 +362,31 @@ mod tests {
         let cases = [
             (
                 TerminalValue::Proved { success_checks: 1 },
-                ProofCategory::Success,
+                Category::Success,
             ),
             (
                 TerminalValue::Proved { success_checks: 0 },
-                ProofCategory::Inconclusive,
+                Category::Inconclusive,
             ),
-            (TerminalValue::Tested, ProofCategory::Success),
-            (TerminalValue::Refuted, ProofCategory::Violation),
+            (TerminalValue::Tested, Category::Success),
+            (TerminalValue::Refuted, Category::Violation),
             (
                 TerminalValue::Declined(ProofRefusalCause::Refused),
-                ProofCategory::Refusal,
+                Category::Refusal,
             ),
             (
                 TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
-                ProofCategory::Unsupported,
+                Category::Unsupported,
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::TimedOut),
-                ProofCategory::Incomplete,
+                Category::Incomplete,
             ),
             (
                 TerminalValue::Incomplete(IncompleteCause::Cancelled),
-                ProofCategory::Incomplete,
+                Category::Incomplete,
             ),
-            (TerminalValue::Failed, ProofCategory::InternalFailure),
+            (TerminalValue::Failed, Category::InternalFailure),
         ];
         let items: Vec<TerminalRecord> = cases
             .iter()
@@ -468,28 +429,31 @@ mod tests {
         }
     }
 
-    /// B4: [`ProofCategory::ALL`] names exactly the set of categories every
-    /// [`TerminalValue`] case actually produces -- a real caller and test
-    /// for an array that previously had neither.
+    /// FR-285-AC-1 (TC-769 step 1): a `refuted` terminal record reports
+    /// its category as the one `Category::Violation`, which the exit
+    /// function maps to 10; no FR-331 value is undefined.
+    #[trace("TC-769", "FR-285-AC-1")]
     #[test]
-    fn all_categories_are_exactly_the_ones_terminal_value_produces() {
-        let mut produced: Vec<ProofCategory> = vec![
-            TerminalValue::Proved { success_checks: 1 }.category(),
-            TerminalValue::Proved { success_checks: 0 }.category(),
-            TerminalValue::Tested.category(),
-            TerminalValue::Refuted.category(),
-            TerminalValue::Declined(ProofRefusalCause::Refused).category(),
-            TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent).category(),
-            TerminalValue::Incomplete(IncompleteCause::TimedOut).category(),
-            TerminalValue::Failed.category(),
-        ];
-        produced.sort_by_key(|c| format!("{c:?}"));
-        produced.dedup();
-
-        let mut all: Vec<ProofCategory> = ProofCategory::ALL.to_vec();
-        all.sort_by_key(|c| format!("{c:?}"));
-
-        assert_eq!(produced, all);
+    fn tc_769_refuted_terminal_record_is_violation_exit_10() {
+        let envelopes = read_backend_provider_envelope(&source(vec![TerminalRecord::new(
+            "claim",
+            TerminalValue::Refuted,
+        )]))
+        .unwrap();
+        assert_eq!(envelopes[0].category(), Category::Violation);
+        assert_eq!(envelopes[0].category().exit_code(), 10);
+        for value in [
+            TerminalValue::Proved { success_checks: 1 },
+            TerminalValue::Proved { success_checks: 0 },
+            TerminalValue::Tested,
+            TerminalValue::Refuted,
+            TerminalValue::Declined(ProofRefusalCause::Refused),
+            TerminalValue::Unsupported(UnavailabilityCause::SolverAbsent),
+            TerminalValue::Incomplete(IncompleteCause::TimedOut),
+            TerminalValue::Failed,
+        ] {
+            assert_ne!(value.category(), Category::Undefined, "{value:?}");
+        }
     }
 
     /// FR-069-AC-4 (TC-178): an oversized encoding refuses before any item

@@ -2,6 +2,7 @@
 //! FR-098 (TC-444): the replay executor over real complete-V1 source,
 //! recompiled through the spine.
 
+use qsl_foundation::diagnostic::Category;
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
@@ -204,7 +205,7 @@ fn tc_444_an_input_counterexample_replays_and_agrees() {
         result.settlement(),
         InputSettlement::ReproducedWithoutWitness
     );
-    assert_eq!(result.category(), ProofCategory::Violation);
+    assert_eq!(result.category(), Category::Violation);
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.disagreement(), None);
     assert!(result.charges().work_units > 0);
@@ -282,8 +283,8 @@ fn tc_444_a_disagreement_settles_inconclusive() {
     assert_eq!(
         holds.disagreement(),
         Some(&crate::DisagreementCause::Verdicts {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Success),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
         })
     );
     assert_eq!(holds.value(), Some(EvaluatedValue::Boolean(true)));
@@ -301,7 +302,7 @@ fn tc_444_a_disagreement_settles_inconclusive() {
         incomplete
             .disagreement()
             .map(crate::DisagreementCause::replayed),
-        Some(Verdict::from_category(ProofCategory::Incomplete))
+        Some(Verdict::from_category(Category::Incomplete))
     );
     assert_eq!(incomplete.value(), None);
 }
@@ -326,7 +327,7 @@ fn tc_444_a_nested_function_call_replays_and_agrees() {
         result.settlement(),
         InputSettlement::ReproducedWithoutWitness
     );
-    assert_eq!(result.category(), ProofCategory::Violation);
+    assert_eq!(result.category(), Category::Violation);
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
     assert_eq!(result.disagreement(), None);
 }
@@ -346,8 +347,8 @@ fn tc_444_a_nested_function_call_disagreement_settles_inconclusive() {
     assert_eq!(
         result.disagreement(),
         Some(&crate::DisagreementCause::Verdicts {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Success),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
         })
     );
     assert_eq!(result.value(), Some(EvaluatedValue::Boolean(true)));
@@ -1468,7 +1469,7 @@ fn tc_444_dependency_entries_refuse_by_the_d4_rules() {
 /// mapping `replay`'s own `package.call` site applies, turns a
 /// `CallFailure::Fault` -- which is what a kernel `Refusal::CheckedInvariant`
 /// becomes at the S6a seam, never an `Ok` `Refused` outcome -- into
-/// `ReplayRefusal::Fault`, never a settled `ProofCategory::Refusal` result.
+/// `ReplayRefusal::Fault`, never a settled `Category::Refusal` result.
 #[test]
 fn a_call_fault_settles_as_a_replay_fault_not_a_refusal() {
     let fault = InternalFault::new("S6a", "checked-program-invariant");

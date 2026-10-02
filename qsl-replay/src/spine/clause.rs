@@ -323,30 +323,29 @@ impl ClauseDisposition {
     /// category row, which the catalog spells `Refusal` for every code but
     /// `cancelled`/`runtime_invariant` -- FR-106's Incomplete/Refused split
     /// is a QSL-specific distinction this method preserves, never
-    /// `category_of`'s catalog-wide default).
+    /// `category_of`'s catalog-wide default). A compile or argument refusal
+    /// takes its code's category. The run's exit code is this category's
+    /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
+    /// (FR-285).
     pub fn category(&self) -> qsl_foundation::diagnostic::Category {
         use qsl_foundation::diagnostic::Category;
         match self {
-            Self::Compile(_)
-            | Self::UnknownLanguage { .. }
+            Self::Compile(refusal) => refusal.code().category(),
+            Self::ArgumentRefusal(refusal) => refusal.category(),
+            Self::UnknownLanguage { .. }
             | Self::StalePackage { .. }
             | Self::MissingName { .. }
-            | Self::NotAPredicate { .. }
-            | Self::ArgumentRefusal(_) => Category::Refusal,
+            | Self::NotAPredicate { .. } => Category::Refusal,
             Self::Admit(AdmissionFailure::Refused(_)) => Category::Refusal,
             Self::Admit(AdmissionFailure::Incomplete(_)) => Category::Incomplete,
             Self::Admit(AdmissionFailure::Fault(_)) | Self::EvaluateFault(_) => {
                 Category::InternalFailure
             }
             Self::FrameViolation(_) => Category::Violation,
-            Self::Evaluate(outcome) => match outcome {
-                CallOutcome::Completed(CallValue::Boolean(true)) => Category::Success,
-                CallOutcome::Completed(CallValue::Boolean(false)) => Category::Violation,
-                CallOutcome::Completed(CallValue::Integer(_)) => Category::Success,
-                CallOutcome::Refused(_) => Category::Refusal,
-                CallOutcome::Undefined { .. } => Category::Undefined,
-                CallOutcome::Incomplete { .. } => Category::Incomplete,
-            },
+            Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
+                Category::Violation
+            }
+            Self::Evaluate(outcome) => outcome.category(),
         }
     }
 
@@ -510,48 +509,6 @@ fn admitted_documents(
                 .map(|observation| observation.identity.clone()),
         )
         .collect()
-}
-
-impl ClauseRunReport {
-    /// FR-109: one total match over the stage and category, no `_` arm.
-    pub fn exit_code(&self) -> u8 {
-        use qsl_foundation::diagnostic::Code;
-        match &self.disposition {
-            ClauseDisposition::Compile(refusal) => refusal.code().exit_code(),
-            ClauseDisposition::UnknownLanguage { .. } => Code::UnknownLanguage.exit_code(),
-            ClauseDisposition::StalePackage { .. } => Code::StaleDependency.exit_code(),
-            ClauseDisposition::MissingName { .. } => Code::MissingDeclaration.exit_code(),
-            ClauseDisposition::NotAPredicate { .. } => Code::IllTyped.exit_code(),
-            ClauseDisposition::Admit(AdmissionFailure::Fault(_)) => 30,
-            ClauseDisposition::Admit(
-                AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
-            ) => record.code.exit_code(),
-            ClauseDisposition::ArgumentRefusal(refusal) => match refusal.as_ref() {
-                RunRefusal::Fault(_) => 30,
-                other => other.code().exit_code(),
-            },
-            ClauseDisposition::Evaluate(outcome) => evaluate_exit_code(outcome),
-            ClauseDisposition::FrameViolation(_) => 10,
-            ClauseDisposition::EvaluateFault(_) => 30,
-        }
-    }
-}
-
-fn evaluate_exit_code(outcome: &CallOutcome) -> u8 {
-    use qsl_foundation::diagnostic::Code;
-    match outcome {
-        CallOutcome::Completed(CallValue::Boolean(true)) => 0,
-        CallOutcome::Completed(CallValue::Boolean(false)) => 10,
-        CallOutcome::Completed(CallValue::Integer(_)) => 0,
-        CallOutcome::Refused(super::call::CallRefusal::Record { code, .. }) => {
-            Code::from_code(code.code()).map_or(20, |c| c.exit_code())
-        }
-        CallOutcome::Refused(super::call::CallRefusal::Family { code, .. }) => {
-            Code::from_code(code.code()).map_or(20, |c| c.exit_code())
-        }
-        CallOutcome::Undefined { .. } => 20,
-        CallOutcome::Incomplete { .. } => 22,
-    }
 }
 
 /// What every report of one [`run_clause`] call carries about its unit:

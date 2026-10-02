@@ -67,7 +67,7 @@ package and dependency inputs.
   ClauseRunRequestRefusal>`.
 - The `run` command and the driver write the report as one
   `native-run-result/2` clause-run document (FR-267) on stdout and exit with
-  `ClauseRunReport::exit_code()` (FR-109, QSpec FR-301).
+  FR-285's exit code of the disposition's category (FR-109, QSpec FR-301).
 
 ## Behavior
 

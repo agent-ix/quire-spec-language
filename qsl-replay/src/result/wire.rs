@@ -27,7 +27,7 @@ use super::{
     WitnessFailure,
 };
 use crate::identity::TracePosition;
-use crate::proof_result::ProofCategory;
+use qsl_foundation::diagnostic::Category;
 
 mod value;
 use value::{reference_of, Keys, ValueWire};
@@ -197,6 +197,7 @@ impl CauseWire {
 enum VerdictWire {
     Success,
     Violation,
+    Undefined,
     Refusal,
     Unsupported,
     Incomplete,
@@ -207,25 +208,27 @@ enum VerdictWire {
 impl VerdictWire {
     fn of(verdict: Verdict) -> Self {
         match verdict.category() {
-            ProofCategory::Success => Self::Success,
-            ProofCategory::Violation => Self::Violation,
-            ProofCategory::Refusal => Self::Refusal,
-            ProofCategory::Unsupported => Self::Unsupported,
-            ProofCategory::Incomplete => Self::Incomplete,
-            ProofCategory::Inconclusive => Self::Inconclusive,
-            ProofCategory::InternalFailure => Self::InternalFailure,
+            Category::Success => Self::Success,
+            Category::Violation => Self::Violation,
+            Category::Undefined => Self::Undefined,
+            Category::Refusal => Self::Refusal,
+            Category::Unsupported => Self::Unsupported,
+            Category::Incomplete => Self::Incomplete,
+            Category::Inconclusive => Self::Inconclusive,
+            Category::InternalFailure => Self::InternalFailure,
         }
     }
 
     fn read(self) -> Verdict {
         Verdict::from_category(match self {
-            Self::Success => ProofCategory::Success,
-            Self::Violation => ProofCategory::Violation,
-            Self::Refusal => ProofCategory::Refusal,
-            Self::Unsupported => ProofCategory::Unsupported,
-            Self::Incomplete => ProofCategory::Incomplete,
-            Self::Inconclusive => ProofCategory::Inconclusive,
-            Self::InternalFailure => ProofCategory::InternalFailure,
+            Self::Success => Category::Success,
+            Self::Violation => Category::Violation,
+            Self::Undefined => Category::Undefined,
+            Self::Refusal => Category::Refusal,
+            Self::Unsupported => Category::Unsupported,
+            Self::Incomplete => Category::Incomplete,
+            Self::Inconclusive => Category::Inconclusive,
+            Self::InternalFailure => Category::InternalFailure,
         })
     }
 }

@@ -105,8 +105,8 @@ requirement.
   `diagnostic::LimitExceeded`/`LimitKind` (T-4), kernel
   `Meter`/`Incomplete`/`quire_exact::LimitKind`. Capability: `Capability`,
   `qsl_route::Mode`, `BackendDescriptor`, `Registry::candidates`,
-  `routing::Disposition`. Outcomes: `qsl_replay::proof_result::{ProofCategory,
-  IncompleteCause, UnavailabilityCause, InconclusiveCause}`. Replay:
+  `routing::Disposition`. Outcomes: `qsl_foundation::diagnostic::Category`,
+  `qsl_replay::proof_result::{IncompleteCause, UnavailabilityCause, InconclusiveCause}`. Replay:
   `WitnessEnvelope<P: FamilyPayload>` with an opaque `TracePosition`, a
   `proof_bounds: ScalarLimits` member and `DeclaredDomain{parameter, domain:
   String}`. Simulation: `explore::Outcome{Exhaustive, Bounded{frontier,

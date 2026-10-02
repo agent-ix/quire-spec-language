@@ -118,6 +118,4 @@ One exit code.
 - QSL-390 (ARCH-50): ruling RU-1, recorded on the ticket, and the
   team-leader decision ADR-029's References records, which reconciles RU-1
   with the QSL-366 ruling for proof items.
-- Implementation follow-up: fold `qsl_replay::proof_result::ProofCategory`
-  into `Category`; this record changes the specification only.
 - QSpec FR-301-AC-2 (STD-141): the QSpec half.

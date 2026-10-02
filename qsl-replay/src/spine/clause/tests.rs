@@ -753,7 +753,7 @@ fn run_clause_evaluates_a_clause_selection() {
         qsl_foundation::diagnostic::Category::Success
     );
     assert_eq!(report.disposition.truth(), Some(true));
-    assert_eq!(report.exit_code(), 0);
+    assert_eq!(report.disposition.category().exit_code(), 0);
 
     // Provenance: source digest, package_id, model selection, selection and
     // the one snapshot's identity and digest.
@@ -794,7 +794,7 @@ fn run_clause_reports_a_violation_over_a_cyclic_chain() {
         qsl_foundation::diagnostic::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
-    assert_eq!(report.exit_code(), 10);
+    assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
 /// TC-468 (FR-109-AC-5): running one request twice gives equal reports,
@@ -817,7 +817,10 @@ fn running_the_same_request_twice_gives_equal_reports_including_usage() {
         report_one.disposition.category(),
         report_two.disposition.category()
     );
-    assert_eq!(report_one.exit_code(), report_two.exit_code());
+    assert_eq!(
+        report_one.disposition.category().exit_code(),
+        report_two.disposition.category().exit_code()
+    );
     assert_eq!(
         report_one.provenance.documents,
         report_two.provenance.documents
@@ -867,7 +870,7 @@ fn run_clause_reports_missing_name_for_an_unknown_clause() {
         ClauseDisposition::MissingName { .. }
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// TC-468 (FR-109-AC-3): a `Function` selection over an `Integer` argument
@@ -1054,7 +1057,7 @@ fn run_clause_reports_a_stale_package() {
         ClauseDisposition::StalePackage { .. }
     ));
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// [`ClauseRunRefusal::EmptySource`]: an empty unit refuses before any
@@ -1125,7 +1128,7 @@ fn run_clause_reports_missing_import_when_no_package_bytes_are_supplied() {
         other => panic!("expected Compile(Intake(..)), got {other:?}"),
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
     assert!(
         report.provenance.documents.is_empty(),
         "a compile-stage failure never read a document"
@@ -1918,7 +1921,7 @@ fn run_clause_reports_a_stale_package_naming_another_units_package_id() {
         other => panic!("expected StalePackage {{ .. }}, got {other:?}"),
     }
     assert_eq!(report.disposition.stage(), ClauseRunStage::Compile);
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// TC-468 step 3 (FR-109-AC-2): a dangling `parent` reference (naming a key
@@ -1975,7 +1978,7 @@ fn run_clause_refuses_a_dangling_parent_reference() {
         }
         other => panic!("expected Admit(Refused(dangling_reference)), got {other:?}"),
     }
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// TC-468 step 3 (FR-109-AC-2): an incomplete population (`complete:
@@ -2036,7 +2039,7 @@ fn run_clause_reports_incomplete_for_an_incomplete_population() {
         report.disposition.category(),
         qsl_foundation::diagnostic::Category::Incomplete
     );
-    assert_eq!(report.exit_code(), 22);
+    assert_eq!(report.disposition.category().exit_code(), 22);
 }
 
 /// TC-468 step 3 (FR-109-AC-2): a `work_units` budget of 0 exhausts before
@@ -2068,7 +2071,7 @@ fn run_clause_reports_incomplete_when_work_units_are_exhausted() {
         qsl_foundation::diagnostic::Category::Incomplete
     );
     assert_eq!(report.disposition.truth(), None);
-    assert_eq!(report.exit_code(), 22);
+    assert_eq!(report.disposition.category().exit_code(), 22);
 }
 
 /// TC-468 step 4 (FR-109-AC-4): the `sameIdentity` family over
@@ -2285,7 +2288,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
         qsl_foundation::diagnostic::Category::InternalFailure
     );
     assert_eq!(disposition.truth(), None);
-    assert_eq!(report_for(disposition).exit_code(), 30);
+    assert_eq!(disposition.category().exit_code(), 30);
 
     // A `CallFailure::Fault` reaches `run_clause`'s own `EvaluateFault` arm
     // the same way (`clause.rs:523-524`), with the same reported shape --
@@ -2326,7 +2329,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
         qsl_foundation::diagnostic::Category::InternalFailure
     );
     assert_eq!(disposition_from_call_failure.truth(), None);
-    assert_eq!(report_for(disposition_from_call_failure).exit_code(), 30);
+    assert_eq!(disposition_from_call_failure.category().exit_code(), 30);
 }
 
 /// SR-751 FND-005 round 2: the internal-failure comparison above covers
@@ -2367,7 +2370,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
         qsl_foundation::diagnostic::Category::Success
     );
     assert_eq!(disposition.truth(), Some(true));
-    assert_eq!(report_for(disposition).exit_code(), 0);
+    assert_eq!(disposition.category().exit_code(), 0);
 
     // Completed(false): violation, exit 10.
     let mapped = super::super::call::convert_outcome(
@@ -2384,9 +2387,9 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
         qsl_foundation::diagnostic::Category::Violation
     );
     assert_eq!(disposition.truth(), Some(false));
-    assert_eq!(report_for(disposition).exit_code(), 10);
+    assert_eq!(disposition.category().exit_code(), 10);
 
-    // A kernel `Undefined`: undefined, exit 20.
+    // A kernel `Undefined`: undefined, exit 10 (FR-285).
     let mapped = super::super::call::convert_outcome(
         evaluation(FamilyOutcome::Evaluated(quire_exact::Outcome::Undefined(
             quire_exact::Undefined::DivisionByZero,
@@ -2401,7 +2404,7 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
         qsl_foundation::diagnostic::Category::Undefined
     );
     assert_eq!(disposition.truth(), None);
-    assert_eq!(report_for(disposition).exit_code(), 20);
+    assert_eq!(disposition.category().exit_code(), 10);
 
     // A kernel `Incomplete`: incomplete, exit 22.
     let mapped = super::super::call::convert_outcome(
@@ -2424,56 +2427,27 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
         qsl_foundation::diagnostic::Category::Incomplete
     );
     assert_eq!(disposition.truth(), None);
-    assert_eq!(report_for(disposition).exit_code(), 22);
+    assert_eq!(disposition.category().exit_code(), 22);
 }
 
-/// SR-750 FND-011 round 3: `AdmissionRecord.code` is a typed `Code`, so
-/// `exit_code`'s `Admit(Refused | Incomplete)` arm maps every catalog code
-/// to that code's own exit status, with no string lookup and no panic path.
+/// FR-285: an admission failure exits by its FR-106 category, whatever
+/// typed `Code` its record carries: refused 20, incomplete 22.
 #[test]
-fn exit_code_maps_every_admission_record_code_to_its_own_exit_status() {
+fn admission_failure_exits_by_its_category() {
+    use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord};
     for code in qsl_foundation::diagnostic::Code::all() {
-        for failure in [
-            qsl_semantics::model::observation::AdmissionFailure::Refused as fn(_) -> _,
-            qsl_semantics::model::observation::AdmissionFailure::Incomplete,
+        for (failure, exit) in [
+            (AdmissionFailure::Refused as fn(_) -> _, 20),
+            (AdmissionFailure::Incomplete, 22),
         ] {
-            let record = qsl_semantics::model::observation::AdmissionRecord {
+            let record = AdmissionRecord {
                 code: *code,
                 cause: "any-cause",
                 fields: BTreeMap::new(),
             };
             let disposition = ClauseDisposition::Admit(failure(record));
-            assert_eq!(
-                report_for(disposition).exit_code(),
-                code.exit_code(),
-                "{code}"
-            );
+            assert_eq!(disposition.category().exit_code(), exit, "{code}");
         }
-    }
-}
-
-/// Wraps a bare [`ClauseDisposition`] in a minimal [`ClauseRunReport`], for
-/// `exit_code` (an inherent method of the report, not the disposition).
-fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
-    super::ClauseRunReport {
-        source_digest: String::new(),
-        package_id: None,
-        disposition,
-        provenance: super::ClauseRunProvenance {
-            source: source(),
-            extraction: None,
-            model_selections: Vec::new(),
-            selection: ClauseRunSelection::Function {
-                name: String::new(),
-                arguments: Vec::new(),
-                snapshot: config_version_document_ref("unused"),
-            },
-            documents: Vec::new(),
-            frame: None,
-        },
-        usage: super::ClauseRunUsage::default(),
-        basis: crate::SettlementBasis::Unavailable,
-        witness: None,
     }
 }
 
@@ -3547,7 +3521,7 @@ mod extracted {
 
         assert_eq!(report.disposition.stage(), ClauseRunStage::Evaluate);
         assert_eq!(report.disposition.truth(), Some(true));
-        assert_eq!(report.exit_code(), 0);
+        assert_eq!(report.disposition.category().exit_code(), 0);
         assert_eq!(report.source_digest, body_digest.to_string());
         assert_eq!(report.provenance.source, body_identity());
         assert_eq!(report.provenance.extraction, Some(expected_origin()));
@@ -3574,7 +3548,7 @@ mod extracted {
         violating.source = ClauseRunSource::Extracted(extracted());
         let report = run_clause(violating).expect("a well-formed request always reports");
         assert_eq!(report.disposition.truth(), Some(false));
-        assert_eq!(report.exit_code(), 10);
+        assert_eq!(report.disposition.category().exit_code(), 10);
         assert_eq!(report.provenance.extraction, Some(expected_origin()));
 
         let (mut missing, _) = no_cycle_request(&[("a", None)]);
@@ -3615,10 +3589,12 @@ fn run_clause_refuses_an_extracted_fence_that_is_not_ix_native() {
     );
     assert_eq!(report.disposition.truth(), None);
     assert_eq!(
-        report.exit_code(),
-        qsl_foundation::diagnostic::Code::UnknownLanguage.exit_code()
+        report.disposition.category().exit_code(),
+        qsl_foundation::diagnostic::Code::UnknownLanguage
+            .category()
+            .exit_code()
     );
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
     assert_eq!(report.package_id, None);
     assert_eq!(report.provenance.source, body_identity());
     assert_eq!(

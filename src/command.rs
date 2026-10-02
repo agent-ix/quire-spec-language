@@ -108,8 +108,8 @@ impl std::fmt::Display for LimitKind {
 /// JSON result of the local command, distinct from a portable evidence envelope.
 #[derive(Debug)]
 pub struct RunResult {
-    /// FR-301's contract: 0 completed true, 10 completed false (logical
-    /// violation), 20 refused, or 22 incomplete.
+    /// FR-285's exit code of the outcome's category, or the most severe
+    /// item code of a multi-item outcome.
     pub exit_code: u8,
     /// Structured native-run-result/1 observations.
     pub value: NativeResult,
@@ -353,23 +353,16 @@ impl RunCause {
         self.code().is_incomplete()
     }
 
-    /// Native command exit status, on FR-301's six-code contract: writing
-    /// the outcome out is a tool failure (30); every other disposition
-    /// resolves through `Code::exit_code()`, the one place the
-    /// unsupported(21)/incomplete(22)/invalid(20) ladder is written down.
-    pub fn exit_code(&self) -> u8 {
+    /// The cause's ADR-013 O-16 category, whose
+    /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
+    /// is the command's exit status (FR-285): writing the outcome out is an
+    /// internal failure, as is a broken S6a invariant (FR-100 "Internal
+    /// failure at S6a"); every other cause takes its code's category.
+    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
         match self {
-            Self::Output(_) => 30,
-            // FR-100 "Internal failure at S6a": a checked-program invariant
-            // failing is a tool failure, so this path exits 30 directly and
-            // never through `Code::exit_code` (which would give 20 for
-            // `Code::RuntimeInvariant`).
-            Self::SpineRun(refusal)
-                if matches!(**refusal, qsl_replay::spine::RunRefusal::Fault(_)) =>
-            {
-                30
-            }
-            _ => self.code().exit_code(),
+            Self::Output(_) => qsl_foundation::diagnostic::Category::InternalFailure,
+            Self::SpineRun(refusal) => refusal.category(),
+            _ => self.code().category(),
         }
     }
 }
@@ -386,9 +379,9 @@ pub struct RunError {
 }
 
 impl RunError {
-    /// FR-301's six-code exit contract, derived from the cause.
-    pub fn exit_code(&self) -> u8 {
-        self.cause.exit_code()
+    /// The cause's ADR-013 O-16 category (FR-285).
+    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
+        self.cause.category()
     }
 
     /// JSON error with original stage/code and available source/reference details.
@@ -1058,13 +1051,12 @@ mod tests {
     /// FR-100 "Internal failure at S6a" (FND-013): the `CheckedInvariant`
     /// kernel refusal's own fault envelope -- stage `call`, code
     /// `runtime_invariant`, `details {stage, invariant}` naming
-    /// `S6a`/`checked-program-invariant`, exit 30 (never through
-    /// `Code::exit_code`, which would give 20 for `Code::RuntimeInvariant`).
+    /// `S6a`/`checked-program-invariant`, exit 30.
     #[test]
     #[trace("TC-452", "FR-100-AC-9")]
     fn checked_invariant_fault_envelope_exits_30() {
         let error = fault_error("S6a", "checked-program-invariant");
-        assert_eq!(error.exit_code(), 30);
+        assert_eq!(error.category().exit_code(), 30);
         let value = error.value().unwrap();
         assert_eq!(value["stage"], "call");
         assert_eq!(value["code"], "runtime_invariant");
@@ -1079,10 +1071,10 @@ mod tests {
     /// stage/invariant the S6a caller named, still stage `call`, code
     /// `runtime_invariant`, exit 30.
     #[test]
-    #[trace("TC-452", "FR-100-AC-9")]
+    #[trace("TC-452", "FR-100-AC-9", "TC-786", "FR-100-AC-11")]
     fn call_failure_fault_envelope_exits_30() {
         let error = fault_error("call", "spine-run-supplies-admitted-name-and-arity");
-        assert_eq!(error.exit_code(), 30);
+        assert_eq!(error.category().exit_code(), 30);
         let value = error.value().unwrap();
         assert_eq!(value["stage"], "call");
         assert_eq!(value["code"], "runtime_invariant");
