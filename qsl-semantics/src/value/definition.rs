@@ -21,7 +21,6 @@
 //! lock's edition and definition selections ([`CatalogEntry::reference`]).
 
 use std::collections::BTreeSet;
-use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -385,19 +384,17 @@ fn role(code: &str) -> Result<CatalogRole, LockReadError> {
 }
 
 impl DefinitionLock {
-    /// QSpec's lock, read once from the compiled-in
-    /// `quire_specification::COMPLETE_VALUE_LOCK` bytes.
+    /// QSpec's lock, read from the compiled-in
+    /// `quire_specification::COMPLETE_VALUE_LOCK` bytes on each call. A
+    /// caller that needs it more than once reads it once and passes it down.
     ///
     /// # Panics
     ///
     /// If those compiled-in bytes do not read ([`DefinitionLock::read`]);
     /// `the_compiled_in_lock_reads` holds them to it.
-    pub fn pinned() -> &'static Self {
-        static LOCK: OnceLock<DefinitionLock> = OnceLock::new();
-        LOCK.get_or_init(|| {
-            Self::read(quire_specification::COMPLETE_VALUE_LOCK)
-                .unwrap_or_else(|error| panic!("QSpec's complete-value-lock.json: {error}"))
-        })
+    pub fn pinned() -> Self {
+        Self::read(quire_specification::COMPLETE_VALUE_LOCK)
+            .unwrap_or_else(|error| panic!("QSpec's complete-value-lock.json: {error}"))
     }
 
     /// Read a `quire.value.definition-lock/v1` document, borrowing its

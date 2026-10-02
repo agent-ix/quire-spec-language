@@ -2531,8 +2531,9 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // its operations' parameters and result) move `byte_work` by their
             // length. The typed `clock_name` field on each
             // `temporal_bindings` entry moves `entries`, `byte_work`
-            // and `output_bytes` but not `references`.
-            (4_825, 2_581, 1_173_402, 85_462)
+            // and `output_bytes` but not `references`. The native-diagnostics
+            // definition's rule paths move every figure but `entries`.
+            (4_825, 2_580, 1_167_910, 85_289)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

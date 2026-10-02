@@ -24,8 +24,13 @@
 //! proc-macro crate: build scripts, build dependencies and proc macros run
 //! in the compiler and link nothing into the core crate. It stops at an
 //! offending dependency, so each pair names the crate the core reaches, not
-//! that crate's own dependencies. Metadata is resolved with
-//! `--all-features`, so an optional dependency any feature turns on counts,
+//! that crate's own dependencies. One edge is not followed, temporarily:
+//! [`FCD_LIFT_CLAP`], FCD's `agent-ix-extraction-frontend` depending on
+//! `clap`. Under a core crate, only `qsl-semantics` may depend on that
+//! frontend; an edge into it from any other crate fails
+//! ([`Offence::FcdFrontend`]), so `clap` reached any way other than
+//! `qsl-semantics -> agent-ix-extraction-frontend -> clap` fails. Metadata
+//! is resolved with `--all-features`, so an optional dependency any feature turns on counts,
 //! over the targets QSL builds for (the host and [`NO_STD_TARGET`]), so a dependency gated on either target counts and
 //! one behind a `cfg` neither sets (`cfg(loom)`) does not.
 //!
@@ -35,6 +40,11 @@
 //! FR-060 uses ([`crate::api_surface`]) -- for an environment read, a clock
 //! read, a filesystem or temp-directory access, a mutable global, a write to
 //! stdout or stderr, or a process exit ([`AMBIENT`]).
+//!
+//! One site is not reported, temporarily: [`FCD_LIFT_SCRATCH`], the scratch
+//! directory `lift_document` hands FCD's `lift`, which writes its document
+//! only to an output path. Any other ambient access in that file or function
+//! still fails.
 //!
 //! **Stated limitations.** The scan matches paths, so a function imported
 //! by name (`use std::env::var; var(..)`) is caught at its `use` line, not
@@ -56,8 +66,8 @@ use serde_json::Value;
 use syn::visit::Visit;
 
 use crate::api_surface::{
-    cfg_test_lines, cfg_test_module_declarations, flatten_tokens, module_path_of,
-    pattern_match_lines, walk_rs_files, CallPattern,
+    cfg_test_lines, cfg_test_module_declarations, enclosing_function, flatten_tokens,
+    module_path_of, pattern_match_lines, walk_rs_files, CallPattern,
 };
 use crate::error::{Code, Error, Result};
 use crate::graph::{classify, Repo};
@@ -98,6 +108,29 @@ pub(crate) const DRIVER: &[&str] = &[
     "quire-aot",
     "quire-cli",
 ];
+
+/// The one dependency path the direction check does not follow:
+/// `qsl-semantics` depends on FCD's `agent-ix-extraction-frontend` for
+/// `lift`, and that crate depends on `clap` for its own command line. The
+/// edge belongs to FCD. Only `qsl-semantics` may depend on the frontend, so
+/// any other path from a core crate to `clap` fails.
+///
+/// Temporary: when FCD's extraction frontend puts `clap` behind a
+/// non-default feature, this const and its tests are deleted.
+pub(crate) const FCD_LIFT_CLAP: [&str; 3] =
+    ["qsl-semantics", "agent-ix-extraction-frontend", "clap"];
+
+/// The one ambient site the scan does not report, as (file under the QSL
+/// root, enclosing function, category): FCD's `lift` writes its document
+/// only to an output path, so `lift_document` gives it a scratch directory.
+///
+/// Temporary: when FCD offers a `lift` that returns the document bytes,
+/// this const and its tests are deleted.
+const FCD_LIFT_SCRATCH: (&str, &str, Ambient) = (
+    "qsl-semantics/src/model/intake.rs",
+    "lift_document",
+    Ambient::Filesystem,
+);
 
 /// The `no_std` target QSL builds its shared leaves for, besides the host.
 const NO_STD_TARGET: &str = "thumbv7em-none-eabi";
@@ -235,6 +268,9 @@ pub(crate) enum Offence {
     /// A CG or RT crate.
     Backend(Repo),
     Frontend(Frontend),
+    /// An edge into FCD's `agent-ix-extraction-frontend` from a crate other
+    /// than `qsl-semantics` ([`FCD_LIFT_CLAP`]).
+    FcdFrontend,
 }
 
 impl fmt::Display for Offence {
@@ -244,6 +280,7 @@ impl fmt::Display for Offence {
             Self::Driver => f.write_str("driver crate"),
             Self::Backend(repo) => write!(f, "{repo} crate"),
             Self::Frontend(category) => f.write_str(category.as_str()),
+            Self::FcdFrontend => f.write_str("FCD frontend outside qsl-semantics"),
         }
     }
 }
@@ -314,12 +351,58 @@ fn core_offence(package: &Package) -> Option<Offence> {
         .map(|(category, _)| Offence::Frontend(*category))
 }
 
+/// What [`FCD_LIFT_CLAP`] makes of the edge `current -> next` under a core
+/// crate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FcdEdge {
+    /// Not an edge the const names.
+    Other,
+    /// `agent-ix-extraction-frontend -> clap`: not followed.
+    Skip,
+    /// An edge into `agent-ix-extraction-frontend` from a crate other than
+    /// `qsl-semantics`: refused.
+    Refuse,
+}
+
+fn fcd_edge(graph: &DepGraph, current: usize, next: usize) -> FcdEdge {
+    let [semantics, frontend, clap] = FCD_LIFT_CLAP;
+    let (from, to) = (&graph.packages[current].name, &graph.packages[next].name);
+    if to == frontend && from != semantics {
+        FcdEdge::Refuse
+    } else if from == frontend && to == clap {
+        FcdEdge::Skip
+    } else {
+        FcdEdge::Other
+    }
+}
+
+/// The crates between `start` and `current`, `current` included unless it
+/// is `start`.
+fn chain(
+    graph: &DepGraph,
+    previous: &BTreeMap<usize, usize>,
+    start: usize,
+    current: usize,
+) -> Vec<String> {
+    let mut via = Vec::new();
+    let mut cursor = current;
+    while cursor != start {
+        via.push(graph.packages[cursor].name.clone());
+        cursor = previous[&cursor];
+    }
+    via.reverse();
+    via
+}
+
 /// Walk `start`'s closure breadth-first, stopping at each package `rule`
-/// refuses and recording it, with the chain it was reached through.
+/// refuses and recording it, with the chain it was reached through. With
+/// `fcd`, [`FCD_LIFT_CLAP`]'s edges are applied before any package is
+/// marked seen, so they hold whatever order the walk finds them in.
 fn walk(
     graph: &DepGraph,
     start: usize,
     rule: fn(&Package) -> Option<Offence>,
+    fcd: bool,
     findings: &mut BTreeSet<DirectionFinding>,
 ) {
     let mut previous: BTreeMap<usize, usize> = BTreeMap::new();
@@ -328,26 +411,29 @@ fn walk(
     while let Some(current) = queue.pop_front() {
         for &next in &graph.deps[current] {
             let package = &graph.packages[next];
-            if package.proc_macro || !seen.insert(next) {
+            if package.proc_macro {
                 continue;
             }
-            previous.insert(next, current);
-            let Some(offence) = rule(package) else {
+            let offence = match fcd.then(|| fcd_edge(graph, current, next)) {
+                Some(FcdEdge::Skip) => continue,
+                Some(FcdEdge::Refuse) => Some(Offence::FcdFrontend),
+                Some(FcdEdge::Other) | None => {
+                    if !seen.insert(next) {
+                        continue;
+                    }
+                    previous.insert(next, current);
+                    rule(package)
+                }
+            };
+            let Some(offence) = offence else {
                 queue.push_back(next);
                 continue;
             };
-            let mut via = Vec::new();
-            let mut cursor = current;
-            while cursor != start {
-                via.push(graph.packages[cursor].name.clone());
-                cursor = previous[&cursor];
-            }
-            via.reverse();
             findings.insert(DirectionFinding {
                 core: graph.packages[start].name.clone(),
                 dependency: package.name.clone(),
                 offence,
-                via,
+                via: chain(graph, &previous, start, current),
             });
         }
     }
@@ -366,11 +452,11 @@ pub(crate) fn check_direction(graph: &DepGraph) -> Result<Vec<DirectionFinding>>
                 format!("core crate {core} is not a member of the --qsl workspace"),
             )
         })?;
-        walk(graph, start, core_offence, &mut findings);
+        walk(graph, start, core_offence, true, &mut findings);
     }
     for (start, package) in graph.packages.iter().enumerate() {
         if package.workspace_member && !CORE_CRATES.contains(&package.name.as_str()) {
-            walk(graph, start, backend_or_driver, &mut findings);
+            walk(graph, start, backend_or_driver, false, &mut findings);
         }
     }
     Ok(findings.into_iter().collect())
@@ -678,7 +764,13 @@ fn mutable_static_lines(parsed: &syn::File) -> BTreeSet<usize> {
     visitor.0
 }
 
-fn scan_file(path: &Path, compiled: &[(Ambient, Vec<CallPattern>)]) -> Result<Vec<AmbientFinding>> {
+/// Scan one file. `exempt` names a function whose findings of one category
+/// are not reported ([`FCD_LIFT_SCRATCH`]).
+fn scan_file(
+    path: &Path,
+    compiled: &[(Ambient, Vec<CallPattern>)],
+    exempt: Option<(&str, Ambient)>,
+) -> Result<Vec<AmbientFinding>> {
     let text = fs::read_to_string(path).map_err(|error| Error::io(path, error))?;
     let parsed = syn::parse_file(&text).map_err(|source| Error::source_parse(path, source))?;
     let stream: proc_macro2::TokenStream = text
@@ -699,6 +791,11 @@ fn scan_file(path: &Path, compiled: &[(Ambient, Vec<CallPattern>)]) -> Result<Ve
     Ok(by_line
         .into_iter()
         .filter(|(line, _)| !excluded.contains(line))
+        .filter(|(line, ambient)| {
+            exempt.is_none_or(|(function, category)| {
+                *ambient != category || enclosing_function(&parsed, *line) != function
+            })
+        })
         .map(|(line, ambient)| AmbientFinding {
             file: path.to_path_buf(),
             line,
@@ -755,7 +852,10 @@ pub(crate) fn scan_ambient(qsl_root: &Path) -> Result<Vec<AmbientFinding>> {
                 .iter()
                 .any(|ancestor| module == ancestor || module.starts_with(&format!("{ancestor}::")));
             if !under_test {
-                findings.extend(scan_file(file, &compiled)?);
+                let (scratch_file, function, category) = FCD_LIFT_SCRATCH;
+                let exempt = (file.strip_prefix(qsl_root) == Ok(Path::new(scratch_file)))
+                    .then_some((function, category));
+                findings.extend(scan_file(file, &compiled, exempt)?);
             }
         }
     }
@@ -1045,6 +1145,99 @@ mod tests {
         assert_eq!(fixture.pairs(), Vec::<(String, String)>::new());
     }
 
+    /// The clean fixture plus FCD's `agent-ix-extraction-frontend` under
+    /// `qsl-semantics`, with its `clap` dependency.
+    fn with_fcd_frontend() -> Fixture {
+        let mut fixture = Fixture::clean();
+        fixture.add(
+            "agent-ix-extraction-frontend",
+            Some("git+https://github.com/agent-ix/filament-core-data?rev=1#1"),
+            false,
+            false,
+        );
+        fixture.add(
+            "clap",
+            Some("registry+https://github.com/rust-lang/crates.io-index"),
+            false,
+            false,
+        );
+        fixture.edge("qsl-semantics", "agent-ix-extraction-frontend");
+        fixture.edge("agent-ix-extraction-frontend", "clap");
+        fixture
+    }
+
+    /// The core crates that reach `qsl-semantics`, and so its `clap`.
+    const ABOVE_SEMANTICS: [&str; 5] = [
+        "qsl-eval",
+        "qsl-package",
+        "qsl-replay",
+        "qsl-route",
+        "qsl-semantics",
+    ];
+
+    /// The one FCD edge, `qsl-semantics -> agent-ix-extraction-frontend ->
+    /// clap`, is not followed; `qsl-semantics` reaching `clap` directly or
+    /// through another crate still fails for it and every core crate above
+    /// it, and any edge into the frontend from a crate other than
+    /// `qsl-semantics` fails.
+    #[trace("TC-767", "FR-284-AC-1")]
+    #[test]
+    fn tc_767_only_the_fcd_frontend_clap_edge_is_skipped() {
+        assert_eq!(with_fcd_frontend().pairs(), Vec::<(String, String)>::new());
+
+        let every_core_above_semantics: Vec<(String, String)> = ABOVE_SEMANTICS
+            .iter()
+            .map(|core| pair(core, "clap"))
+            .collect();
+
+        let mut direct = with_fcd_frontend();
+        direct.edge("qsl-semantics", "clap");
+        assert_eq!(direct.pairs(), every_core_above_semantics);
+
+        let mut other = with_fcd_frontend();
+        other.add("some-frontend", None, false, false);
+        other.edge("some-frontend", "clap");
+        other.edge("qsl-semantics", "some-frontend");
+        assert_eq!(other.pairs(), every_core_above_semantics);
+        let semantics = check_direction(&other.graph)
+            .unwrap()
+            .into_iter()
+            .find(|finding| finding.core == "qsl-semantics")
+            .unwrap();
+        assert_eq!(semantics.via, ["some-frontend"]);
+
+        let frontend = "agent-ix-extraction-frontend";
+        let mut eval = with_fcd_frontend();
+        eval.edge("qsl-eval", frontend);
+        assert_eq!(
+            eval.pairs(),
+            [pair("qsl-eval", frontend), pair("qsl-replay", frontend)]
+        );
+        let findings = check_direction(&eval.graph).unwrap();
+        assert!(findings
+            .iter()
+            .all(|finding| finding.offence == Offence::FcdFrontend));
+
+        // A second route into the frontend beside the sanctioned one fails
+        // whichever route the walk discovers first.
+        let mut second = with_fcd_frontend();
+        second.add("y", None, false, false);
+        second.edge("qsl-semantics", "y");
+        second.edge("y", frontend);
+        let every_core_reaching_the_frontend: Vec<(String, String)> = ABOVE_SEMANTICS
+            .iter()
+            .map(|core| pair(core, frontend))
+            .collect();
+        assert_eq!(second.pairs(), every_core_reaching_the_frontend);
+        let semantics = check_direction(&second.graph)
+            .unwrap()
+            .into_iter()
+            .find(|finding| finding.core == "qsl-semantics")
+            .unwrap();
+        assert_eq!(semantics.via, ["y"]);
+        assert_eq!(semantics.offence, Offence::FcdFrontend);
+    }
+
     /// A core crate missing from the graph is an error, never a pass.
     #[trace("TC-767", "FR-284-AC-1")]
     #[test]
@@ -1163,6 +1356,42 @@ mod tests {
                 (file.clone(), 14, Ambient::Filesystem),
                 (file.clone(), 15, Ambient::GlobalState),
                 (file, 16, Ambient::GlobalState),
+            ]
+        );
+    }
+
+    /// The scratch directory `lift_document` hands FCD's `lift` is the one
+    /// site not reported. Filesystem access in another function of that
+    /// file, any other category inside `lift_document`, and a same-named
+    /// function in another file all still fail.
+    #[trace("TC-768", "FR-284-AC-4")]
+    #[test]
+    fn tc_768_only_the_fcd_lift_scratch_directory_is_skipped() {
+        let dir = core_tree(&[
+            (
+                "qsl-semantics/src/model/intake.rs",
+                "pub fn lift_document() {\n\
+                 let _ = tempfile::tempdir();\n\
+                 let _ = std::env::var(\"X\");\n\
+                 }\n\
+                 fn other() { let _ = tempfile::tempdir(); }\n",
+            ),
+            (
+                "qsl-semantics/src/model/other.rs",
+                "pub fn lift_document() { let _ = tempfile::tempdir(); }\n",
+            ),
+        ]);
+        let intake = "qsl-semantics/src/model/intake.rs".to_owned();
+        assert_eq!(
+            found(&dir),
+            [
+                (intake.clone(), 3, Ambient::Environment),
+                (intake, 5, Ambient::Filesystem),
+                (
+                    "qsl-semantics/src/model/other.rs".to_owned(),
+                    1,
+                    Ambient::Filesystem
+                ),
             ]
         );
     }

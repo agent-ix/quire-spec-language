@@ -25,7 +25,7 @@ fn text_definition() -> DefinitionReference {
 
 /// The pinned lock's IEEE profile definition.
 fn ieee_definition() -> DefinitionReference {
-    let entry = DefinitionLock::pinned()
+    let entry = *DefinitionLock::pinned()
         .entry(CatalogRole::IeeeProfile)
         .expect("the pinned lock names an IEEE profile");
     DefinitionReference {

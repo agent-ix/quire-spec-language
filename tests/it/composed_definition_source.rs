@@ -16,7 +16,7 @@ struct Expected {
     definition: RegisteredDefinition,
     identity: &'static str,
     /// `None`: the revision is QSpec's own document header, read by
-    /// reference (`native_diagnostics_catalog`).
+    /// reference (`native_diagnostics_identity`).
     revision: Option<&'static str>,
     file: &'static str,
     requirements: &'static [RegisteredDefinition],
@@ -141,12 +141,9 @@ fn exact_definition_identities_and_labels_select_distinct_registered_meanings() 
         let definition = row.definition;
         assert_eq!(definition.path(), path);
         assert_eq!(definition.identity(), row.identity);
-        let revision = row.revision.unwrap_or_else(|| {
-            qsl_semantics::value::native_diagnostics_catalog()
-                .revision
-                .value
-                .as_str()
-        });
+        let revision = row
+            .revision
+            .unwrap_or_else(|| qsl_semantics::value::native_diagnostics_identity().1);
         assert_eq!(definition.revision(), revision);
         assert_eq!(definition.authority(), "agent-ix");
         assert_eq!(definition.requirements(), row.requirements);
@@ -158,90 +155,123 @@ fn exact_definition_identities_and_labels_select_distinct_registered_meanings() 
 #[trace("TC-114", "FR-036-AC-1")]
 fn direct_rules_retain_the_selected_file_inventory_as_forward_references() {
     let expected: &[(RegisteredDefinition, &[&str])] = &[
-        (Edition, &[
-            "proposals/quire-v1/shared-grammar.md",
-            "proposals/quire-v1/package-contract.md",
-            "spec/functional/FR-030-bind-composed-definitions.md",
-            "spec/functional/FR-031-report-requested-capabilities.md",
-            "spec/functional/FR-032-preserve-language-evolution.md",
-            "spec/functional/FR-035-bind-ecosystem-subjects.md",
-            "spec/functional/FR-036-retain-lexical-source-locations.md",
-            "spec/functional/FR-037-parse-shared-native-expressions.md",
-            "spec/functional/FR-038-resolve-predicate-scopes.md",
-            "spec/functional/FR-040-admit-explicit-state-extensions.md",
-            "spec/functional/FR-047-emit-typed-located-causes.md",
-            "spec/non-functional/NFR-010-bound-composed-processing.md",
-        ]),
-        (StateCore, &[
-            "proposals/quire-v1/state-contract.md",
-            "spec/functional/FR-039-normalize-exact-rational-literals.md",
-            "spec/functional/FR-044-check-composed-numeric-definedness.md",
-            "spec/functional/FR-045-preserve-control-and-presence-facts.md",
-            "spec/functional/FR-046-validate-state-invocation-inputs.md",
-        ]),
-        (StateQueries, &[
-            "spec/functional/FR-033-admit-reusable-predicates.md",
-            "spec/functional/FR-034-bind-cross-family-predicates.md",
-            "spec/functional/FR-041-evaluate-ordered-queries.md",
-            "spec/functional/FR-042-select-pre-state-reads.md",
-        ]),
-        (StateGraph, &["spec/functional/FR-043-evaluate-finite-graph-relations.md"]),
-        (TemporalFacet, &[
-            "spec/functional/FR-048-bind-native-temporal-syntax.md",
-            "spec/functional/FR-090-select-temporal-profile-and-clock.md",
-            "spec/functional/FR-091-evaluate-bounded-future.md",
-            "spec/functional/FR-092-evaluate-bounded-past.md",
-            "spec/functional/FR-093-bind-temporal-activation-and-captures.md",
-            "spec/functional/FR-094-interpret-progress-history-and-closure.md",
-            "spec/functional/FR-095-preserve-native-tl-correspondence.md",
-            "spec/non-functional/NFR-040-bound-temporal-state.md",
-            "spec/functional/FR-061-report-orthogonal-results.md",
-        ]),
+        (
+            Edition,
+            &[
+                "proposals/quire-v1/shared-grammar.md",
+                "proposals/quire-v1/package-contract.md",
+                "spec/functional/FR-030-bind-composed-definitions.md",
+                "spec/functional/FR-031-report-requested-capabilities.md",
+                "spec/functional/FR-032-preserve-language-evolution.md",
+                "spec/functional/FR-035-bind-ecosystem-subjects.md",
+                "spec/functional/FR-036-retain-lexical-source-locations.md",
+                "spec/functional/FR-037-parse-shared-native-expressions.md",
+                "spec/functional/FR-038-resolve-predicate-scopes.md",
+                "spec/functional/FR-040-admit-explicit-state-extensions.md",
+                "spec/functional/FR-047-emit-typed-located-causes.md",
+                "spec/non-functional/NFR-010-bound-composed-processing.md",
+            ],
+        ),
+        (
+            StateCore,
+            &[
+                "proposals/quire-v1/state-contract.md",
+                "spec/functional/FR-039-normalize-exact-rational-literals.md",
+                "spec/functional/FR-044-check-composed-numeric-definedness.md",
+                "spec/functional/FR-045-preserve-control-and-presence-facts.md",
+                "spec/functional/FR-046-validate-state-invocation-inputs.md",
+            ],
+        ),
+        (
+            StateQueries,
+            &[
+                "spec/functional/FR-033-admit-reusable-predicates.md",
+                "spec/functional/FR-034-bind-cross-family-predicates.md",
+                "spec/functional/FR-041-evaluate-ordered-queries.md",
+                "spec/functional/FR-042-select-pre-state-reads.md",
+            ],
+        ),
+        (
+            StateGraph,
+            &["spec/functional/FR-043-evaluate-finite-graph-relations.md"],
+        ),
+        (
+            TemporalFacet,
+            &[
+                "spec/functional/FR-048-bind-native-temporal-syntax.md",
+                "spec/functional/FR-090-select-temporal-profile-and-clock.md",
+                "spec/functional/FR-091-evaluate-bounded-future.md",
+                "spec/functional/FR-092-evaluate-bounded-past.md",
+                "spec/functional/FR-093-bind-temporal-activation-and-captures.md",
+                "spec/functional/FR-094-interpret-progress-history-and-closure.md",
+                "spec/functional/FR-095-preserve-native-tl-correspondence.md",
+                "spec/non-functional/NFR-040-bound-temporal-state.md",
+                "spec/functional/FR-061-report-orthogonal-results.md",
+            ],
+        ),
         (EventPosition, &[]),
         (FixedSample, &[]),
         (TimestampedWindow, &[]),
-        (Protocol, &[
-            "spec/functional/FR-049-bind-native-choreography-syntax.md",
-            "spec/functional/FR-050-bind-protocol-instances.md",
-            "spec/functional/FR-051-preserve-communication-identities.md",
-            "spec/functional/FR-052-represent-bounded-control.md",
-            "spec/functional/FR-053-enforce-choice-visibility.md",
-            "spec/functional/FR-054-bind-channel-premises.md",
-            "spec/functional/FR-055-activate-protocol-obligations.md",
-            "spec/functional/FR-056-register-compensation.md",
-            "spec/functional/FR-057-enforce-commit-recovery.md",
-            "spec/functional/FR-058-preserve-retry-and-partial-recovery.md",
-            "spec/functional/FR-059-assess-finite-global-conformance.md",
-            "spec/functional/FR-060-separate-protocol-claims.md",
-            "spec/functional/FR-061-report-orthogonal-results.md",
-            "spec/non-functional/NFR-020-bound-protocol-processing.md",
-            "spec/non-functional/NFR-021-reproduce-protocol-results.md",
-            "proposals/quire-v1/choreography-surface.md",
-            "proposals/quire-v1/protocol-contract.md",
-        ]),
-        (ObservationBinding, &[
-            "proposals/quire-v1/observation-contract.md",
-            "spec/functional/FR-061-report-orthogonal-results.md",
-            "spec/functional/FR-115-report-activation-participation-and-adequacy.md",
-            "spec/functional/FR-116-map-observation-results-to-consumers.md",
-            "proposals/quire-v1/observation-output-mapping-contract.md",
-        ]),
-        (Progress, &[
-            "proposals/quire-v1/observation-contract.md",
-            "spec/functional/FR-061-report-orthogonal-results.md",
-        ]),
-        (Range, &[
-            "proposals/quire-v1/observation-contract.md",
-            "spec/functional/FR-090-select-temporal-profile-and-clock.md",
-        ]),
-        (Package, &[
-            "proposals/shared-reference-2-draft/schema.json",
-            "proposals/shared-reference-2-draft/README.md",
-        ]),
-        (Diagnostics, &[
-            "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/src/diagnostic.rs",
-            "https://github.com/agent-ix/quire-spec-language/blob/f444d03c06539a6cd0ada6be4ae099b54466d9d9/docs/native-error-codes.md",
-        ]),
+        (
+            Protocol,
+            &[
+                "spec/functional/FR-049-bind-native-choreography-syntax.md",
+                "spec/functional/FR-050-bind-protocol-instances.md",
+                "spec/functional/FR-051-preserve-communication-identities.md",
+                "spec/functional/FR-052-represent-bounded-control.md",
+                "spec/functional/FR-053-enforce-choice-visibility.md",
+                "spec/functional/FR-054-bind-channel-premises.md",
+                "spec/functional/FR-055-activate-protocol-obligations.md",
+                "spec/functional/FR-056-register-compensation.md",
+                "spec/functional/FR-057-enforce-commit-recovery.md",
+                "spec/functional/FR-058-preserve-retry-and-partial-recovery.md",
+                "spec/functional/FR-059-assess-finite-global-conformance.md",
+                "spec/functional/FR-060-separate-protocol-claims.md",
+                "spec/functional/FR-061-report-orthogonal-results.md",
+                "spec/non-functional/NFR-020-bound-protocol-processing.md",
+                "spec/non-functional/NFR-021-reproduce-protocol-results.md",
+                "proposals/quire-v1/choreography-surface.md",
+                "proposals/quire-v1/protocol-contract.md",
+            ],
+        ),
+        (
+            ObservationBinding,
+            &[
+                "proposals/quire-v1/observation-contract.md",
+                "spec/functional/FR-061-report-orthogonal-results.md",
+                "spec/functional/FR-115-report-activation-participation-and-adequacy.md",
+                "spec/functional/FR-116-map-observation-results-to-consumers.md",
+                "proposals/quire-v1/observation-output-mapping-contract.md",
+            ],
+        ),
+        (
+            Progress,
+            &[
+                "proposals/quire-v1/observation-contract.md",
+                "spec/functional/FR-061-report-orthogonal-results.md",
+            ],
+        ),
+        (
+            Range,
+            &[
+                "proposals/quire-v1/observation-contract.md",
+                "spec/functional/FR-090-select-temporal-profile-and-clock.md",
+            ],
+        ),
+        (
+            Package,
+            &[
+                "proposals/shared-reference-2-draft/schema.json",
+                "proposals/shared-reference-2-draft/README.md",
+            ],
+        ),
+        (
+            Diagnostics,
+            &[
+                "qsl-foundation/src/diagnostic.rs",
+                "docs/native-error-codes.md",
+            ],
+        ),
     ];
     assert_eq!(
         expected.iter().map(|row| row.0).collect::<Vec<_>>(),

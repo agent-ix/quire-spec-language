@@ -73,42 +73,46 @@ dependency) pair.
 - No QSL core crate shall write to stdout or stderr, or end the process.
 - Each QSL core crate shall read the bytes it needs from its request, by
   digest where a digest names them (ADR-013 O-26).
+- Two temporary exemptions cover filament-core-data code that QSL cannot
+  change:
+  - The direction check shall not follow the edge from
+    `agent-ix-extraction-frontend` to `clap`, which that crate uses only for
+    its own binary. Only `qsl-semantics` may depend on
+    `agent-ix-extraction-frontend`; an edge into it from any other crate
+    under a core crate fails, so every other path from a core crate to
+    `clap` fails. The exemption ends when the extraction frontend puts
+    `clap` behind a non-default feature.
+  - The ambient-input scan shall not report filesystem access inside
+    `qsl-semantics` `model::intake::lift_document`, which creates a scratch
+    directory because filament-core-data's `lift` writes its document only
+    to an output path. Any other ambient access in that function, and
+    filesystem access anywhere else, fails. The exemption ends when
+    filament-core-data offers a `lift` that returns the document bytes.
+
+  When an exemption ends, the check's code for it and its tests are
+  deleted.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-284-AC-1 | The direction check passes over the QSL workspace. With a test manifest that adds `qsl-analyze` to `qsl-eval`'s dependencies, and with one that adds an argument-parser crate to `qsl-replay`'s, it fails and names the pair `(qsl-eval, qsl-analyze)` and the pair `(qsl-replay, <that crate>)`. | Test (TC-767) |
+| FR-284-AC-1 | The direction check passes over the QSL workspace. With a test manifest that adds `qsl-analyze` to `qsl-eval`'s dependencies, and with one that adds an argument-parser crate to `qsl-replay`'s, it fails and names the pair `(qsl-eval, qsl-analyze)` and the pair `(qsl-replay, <that crate>)`. It skips only Behavior's `agent-ix-extraction-frontend` → `clap` exemption: `qsl-semantics` reaching `clap` any other way, or any other crate depending on `agent-ix-extraction-frontend`, fails. | Test (TC-767) |
 | FR-284-AC-2 | Running FR-275-AC-1's chain and FR-098's replay of a fixture counterexample in a process whose environment holds arbitrary values for every variable the test generates, whose working directory is an empty temporary directory and whose home directory is unset, gives outcomes equal to those of a run in the test's own environment. | Test (TC-768) |
 | FR-284-AC-3 | During AC-2's runs, the bytes written to the process's stdout and stderr by core crates are empty, and the process exits only when the test harness ends it. | Test (TC-768) |
-| FR-284-AC-4 | The ambient-input scan of each QSL core crate's shipped source, `#[cfg(test)]` code excluded, fails naming the file and line of each environment read, clock read, filesystem or search-path access (a path method such as `.exists()` or `.metadata()` included), mutable global (a `static mut`, or a `static` lock, cell, once-cell or lazy value), stdout, stderr or stdin access and process exit, and finds none of them in a comment, a string literal or test code. | Test (TC-768) |
+| FR-284-AC-4 | The ambient-input scan of each QSL core crate's shipped source, `#[cfg(test)]` code excluded, fails naming the file and line of each environment read, clock read, filesystem or search-path access (a path method such as `.exists()` or `.metadata()` included), mutable global (a `static mut`, or a `static` lock, cell, once-cell or lazy value), stdout, stderr or stdin access and process exit, and finds none of them in a comment, a string literal or test code. It skips only Behavior's `lift_document` filesystem exemption. | Test (TC-768) |
 
 ## Status
 
 The direction check and the ambient-input scan (FR-284-AC-4) are implemented
-as `arch-lint qualified-core` (make target `arch-lint-qualified-core`). The
-same run applies FR-280-AC-3's CG, RT and driver rule to every QSL workspace
-member. The target is not in `make ci` yet, because main has four known
-violations:
+as `arch-lint qualified-core` (make target `arch-lint-qualified-core`), and
+the target is part of `make ci`. The same run applies FR-280-AC-3's CG, RT
+and driver rule to every QSL workspace member.
 
-- `agent-ix-extraction-frontend` always depends on `clap`, which only its
-  binary uses, so `qsl-semantics` and every core crate above it reach an
-  argument parser. Fix: put `clap` behind a feature in filament-core-data and
-  update the pinned version in `qsl-semantics`.
-- `qsl-semantics` `model::intake::lift_document` (`intake.rs:223`) creates a
-  `tempfile` scratch directory, because filament-core-data's `lift` writes
-  its document only to an output path. Fix: a `lift` in filament-core-data
-  that returns the document bytes.
-- `qsl-semantics` `value::definition::DefinitionLock::pinned`
-  (`definition.rs:396`) keeps a function-local `static OnceLock` that caches
-  the lock parsed from the compiled-in QSpec bytes, so it returns `&'static`.
-- `qsl-semantics` `value::diagnostics_catalog::native_diagnostics_catalog`
-  (`diagnostics_catalog.rs:26`) keeps a function-local `static OnceLock` that
-  caches the catalog reference built from the compiled-in QSpec bytes, so it
-  returns `&'static`.
-
-The two `OnceLock` caches read no ambient input. Removing them changes the
-`&'static` return types their `qsl-semantics` callers use.
+The check applies Behavior's two temporary filament-core-data exemptions.
+The `clap` exemption ends when the extraction frontend puts `clap` behind a
+non-default feature. The scratch-directory exemption ends when
+filament-core-data offers a `lift` that returns the document bytes. Either
+way, the exemption's code and tests are deleted then.
 
 The runtime half of FR-284-AC-2 and AC-3 (TC-768's child-process run) waits
 on FR-275's typed lifecycle API.
