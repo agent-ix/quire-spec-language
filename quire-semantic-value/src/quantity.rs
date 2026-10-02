@@ -172,7 +172,7 @@ impl UnitTable {
 
     /// Every unit id in this table, ascending.
     pub fn ids(&self) -> impl Iterator<Item = UnitId> + '_ {
-        self.0.keys().copied()
+        self.units.keys().copied()
     }
 
     /// `quantity` with its unit resolved, or `None` when this table has no
