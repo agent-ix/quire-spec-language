@@ -1554,9 +1554,9 @@ acceptance criterion with a test.
 | SC-R4 | The `VariantId` computed at check time (C-26) and the one computed at argument admission for the same member are equal. A `VariantId` of another union, or of an enum, never selects an arm (C-30 extended). |
 | SC-R5 | Two constructions of the same member with equal payloads are equal values. The same member name and payload shape under two different unions give values that are not equal (FR-143-AC-12). |
 
-SC-R1, and SC-R3's wire round trip, need the QSpec spellings in SC-G1 and
-SC-G2. SC-R3's admission refusals, SC-R2, SC-R4 and SC-R5 can be tested in
-process before those spellings land.
+SC-R1 and SC-R3's wire round trip read the union spelling of QSpec FR-440
+and the member key of QSpec FR-441 (SC-G1 to SC-G3). SC-R3's admission
+refusals, SC-R2, SC-R4 and SC-R5 are tested in process.
 
 ### 16.4 Stage table
 
@@ -1574,8 +1574,8 @@ they have an arm.
 | S3 checked nodes | `NodeKind` (`qsl-semantics/src/check/ir.rs:294-547`) gains a union-construction variant and a `Case` variant. The compiler forces one arm at each existing match over `NodeKind`. `Pre` forced the same sites: `check/check/typing.rs`, `check/lowering.rs` (`Lowering::lower_node`, `:2739`), `check/claims.rs`, `check/facts.rs`, `check/observation.rs`, `ir.rs` children (`:590`) and the evaluator's `Machine::apply` (`qsl-eval/src/value/expression/evaluate.rs:929`). Each forced arm walks children or makes one call into `sum_case`. | `check` core; each listed site | S3 | none |
 | S3 collection element types | a set, bag or ordered set whose element type contains a union is admitted at S3 and keyed by QSpec FR-144's union row (FR-323): sets and bags in key order, ordered sets in first-occurrence order. The kernel's key arm for a union value produces exactly that key and invents no other order. A union whose payload contains a type with no FR-144 key (an IEEE-bearing type) makes a set, bag or ordered set of it refuse `ill_typed`/`operator-ineligible`, on the same path as an IEEE-bearing element type (`quire_semantic_value::declaration::TypeEnvironment::type_refusal`, beside `contains_ieee`). A `Sequence<U>` needs no key and is admitted. | `quire_semantic_value::declaration`; `quire-exact` `key.rs` | none | QSpec FR-144 (SC-G5) |
 | S3 requirements | none new. A clause containing `case` records the clause's own kind, `value-validity`, through that clause's family. A scalar operation application in an arm body is a `Value` claim site found by the existing walk (`check/claims.rs`), which only gains the forced child-walk arm. `SumCaseFamily::requirements()` returns no claim (FR-057; recipe "A note on `requirements()`"). | none | none | none |
-| S3 lowering | FR-093 lowering of the union type node, a union construction and a `case` expression to v2 nodes. This needs the wire vocabulary `NodeTag`, `SemanticTerm` and `Operator` (`qsl-semantics/src/check/node_key/mod.rs:288`, `:324`, `:631`), and a member variant (`qsl-semantics/src/value/member.rs:96` region), each with QSpec's spelling. | `check::lowering`, `check::node_key`, `value::member` | S3, S5 wire totality | spelling proposed with SC-G1 to SC-G3 (§16.10) |
-| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the pinned IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
+| S3 lowering | FR-093 lowering of the union type node, a union construction and a `case` expression to v2 nodes. This needs the wire vocabulary `NodeTag`, `SemanticTerm` and `Operator` (`qsl-semantics/src/check/node_key/mod.rs:288`, `:324`, `:631`), and a member variant (`qsl-semantics/src/value/member.rs:96` region), each with QSpec FR-440's spelling and QSpec FR-441's member key. | `check::lowering`, `check::node_key`, `value::member` | S3, S5 wire totality | QSpec FR-440, FR-441 (SC-G1 to SC-G3, §16.10) |
+| S4 | the emitter's `BodyNames::of` arm for each new body term (`qsl-package/src/emit.rs:279`; the `SemanticTerm::Frame` arm at `:319-330` is the precedent). `emit_checked` (`:780`) is otherwise generic. A node whose (tag, form) the IR cannot decode is omitted with `UnsupportedForm` (`:194`, `:393`), together with every node that names it (§2 "Packaging"). | `package` | S3 | SC-G1 |
 | I2 | none. `library` exposes exported declarations as data and classifies no node kind (ADR-013 T-2, QC-19). | none | none | none |
 | S6a | `case` arm selection and construction. `Machine::apply` gets one arm per new `NodeKind` variant, each making one call into `value::expression::sum_case`. Selection evaluates the scrutinee, selects the arm whose member identity equals the value's active member, binds the payload positionally and evaluates the body (FR-146-AC-11). A scrutinee outcome other than `Completed` propagates unchanged. Argument admission refuses every ill-formed supplied union value before S6a, per SC-R3 (`InputRefusal`, T-4). A checked `case` is exhaustive, so a value that reaches S6a and matches no arm can only come from a QSL defect. That is `Err(InternalFault)`, an S6a invariant break (O-16), and never a refusal. There is no `S6aFamilyKind` variant (§16.6). | new `qsl-eval/src/value/expression/sum_case.rs`; `evaluate.rs`; argument admission in `qsl-eval/src/value/expression/mod.rs` | S3 | charge points: SC-G4 |
 | Route, E7 | none in QSL. No `SumCase` claim requests a kind. For a `value-validity` item whose function body contains `case`, IR decodes the new tag and form at v2 intake and returns an explicit `unsupported` lower arm until an IR form exists. CG `negotiate_*` settles it `unsupported` with a catalog code (§12.1 IR and CG rows, unchanged). | IR, CG | S6 | IR, CG tickets |
@@ -1833,24 +1833,22 @@ disposition: none"; ADR-013 R-08 and §5).
   value-profile selections that admit records and tuples (SC-G7), and QSL
   uses exactly those selections, with the same profile identity and profile
   version.
-- **Catalog.** `unproved-exhaustiveness` is in revision `1-draft.4`, which is
-  earlier than the revision QSL claims (`1-draft.8`). No catalog re-pin is
-  needed.
+- **Catalog.** `unproved-exhaustiveness` is in the catalog.
 
 ### 16.10 QSpec rules §16 relies on
 
 QSpec owns the wire and the language text (ADR-013 R-02). §16 relies on
-these QSpec rules; FR-315 to FR-324 cite them.
+these QSpec requirements, and FR-315 to FR-324 cite them.
 
-| ID | QSpec rule | Used by |
+| ID | QSpec requirement | Used by |
 | --- | --- | --- |
-| SC-G1 | QSpec FR-440 spells the union type node (`composite_type`/`union`), the union construction (`value`/`union_value`) and the `case` expression (`expression`/`case`) in `quire.checked-semantic-graph/v2`. | S3 lowering, S4 emission, SC-R1, a downstream `case` item settling `unsupported` |
-| SC-G2 | QSpec FR-440 carries a union value as a `union_value` node naming its active member; the `case` application's operation has `member: null`. | the union member on the wire, C-18 for unions, SC-R3 |
-| SC-G3 | QSpec FR-441 keys a union member by the `quire.union-member-node/v1` preimage over the union declaration's node id and the member identifier, in domain `quire.checked-semantic-node/v1`. | the kernel carrier of member identity, a retyped `VariantId` (SC-R4) |
-| SC-G4 | QSpec FR-143 charges one `composite.result-retain` for a union construction after its payload arguments; QSpec FR-146 makes `case` selection and payload binding charge nothing. | the exact S6a meter charges for construction and `case` |
-| SC-G5 | QSpec FR-144's canonical-key table has a union row: the active member's identifier, then the payload keys in position order. | union values as set, bag or ordered-set elements (FR-323, §16.4) |
-| SC-G6 | QSpec FR-146 "Case result type" decides a `case`'s result type: the expected type its position supplies, or the type inferred from its arm bodies. | the `case` result type (FR-318, §16.5) |
-| SC-G7 | QSpec FR-143 "Value profile" admits unions under the value-profile selections that admit records and tuples. | union admission under the value profile (FR-324, §16.9) |
+| SC-G1 | QSpec FR-440 (union, union construction and `case` nodes) | S3 lowering, S4 emission, SC-R1, a downstream `case` item settling `unsupported` |
+| SC-G2 | QSpec FR-440 (`union_value` nodes; the `case` application) | the union member on the wire, C-18 for unions, SC-R3 |
+| SC-G3 | QSpec FR-441 (union member key) | the kernel carrier of member identity, a retyped `VariantId` (SC-R4) |
+| SC-G4 | QSpec FR-143 (construction accounting) and FR-146 (`case` accounting) | the exact S6a meter charges for construction and `case` |
+| SC-G5 | QSpec FR-144 (union canonical key) | union values as set, bag or ordered-set elements (FR-323, §16.4) |
+| SC-G6 | QSpec FR-146 "Case result type" | the `case` result type (FR-318, §16.5) |
+| SC-G7 | QSpec FR-143 "Value profile" | union admission under the value profile (FR-324, §16.9) |
 
 Where the IR cannot decode the QSpec FR-440 spelling, S4 omits each union
 node with `UnsupportedForm`, together with every node that names it (§2

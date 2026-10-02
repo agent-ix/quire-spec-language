@@ -63,6 +63,16 @@ FR-318.
 | FND-007 | low | TC-821's file name still says "applies-the-if-rule-to" while its title and FR-318 use QSpec FR-146 "Case result type". | spec/test-cases/TC-821-s3-checks-a-case-types-its-binders-per-arm-and-applies-the-if-rule-to.md |
 | FND-008 | low | ADR-012 §16.10 SC-G2 row (rewritten here) and §16.3 SC-R3 say "FR-323 typed values" meaning QSpec FR-323, now ambiguous with this PR's QSL FR-323 (collections). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1539, 1840 |
 
+## New findings (disposition pass 2)
+
+Delta reviewed: 6643a381..c9c549c2 (1d6c4bde FR-324 positive profile rule; c9c549c2 ADR-012 §16.10 rewritten as the QSpec rules §16 relies on).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | ADR-012 §16.3's closing paragraph says SC-R3's admission refusals, SC-R2, SC-R4 and SC-R5 "can be tested in process before those spellings land", and the §16.4 "S3 lowering" row's dependency cell reads "spelling proposed with SC-G1 to SC-G3 (§16.10)". c9c549c2 rewrote §16.10 to state QSpec FR-440 and FR-441 as the rules §16 relies on, with no proposal, so both still describe a QSpec proposal that has not landed and point at a section that no longer has one. State the dependency as QSpec FR-440/FR-441 and drop "before those spellings land". | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1543-1545, 1563 |
+| FND-010 | medium | Pin and version-tracking wording remains in §16. The §16.4 S4 row says a node "the pinned IR cannot decode" is omitted, and §16.9's Catalog bullet compares revision `1-draft.4` with "the revision QSL claims (`1-draft.8`)" and concludes "No catalog re-pin is needed". c9c549c2 removed "the pinned IR" from §16.8's Identity row and §16.10 but left these two. Write the S4 row as "a node whose (tag, form) the IR cannot decode", as §16.10's closing paragraph does, and delete the re-pin comparison (the catalog code exists; state that, if anything). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1564, 1822-1824 |
+| FND-011 | low | The rewritten §16.10 table's "QSpec rule" column restates each QSpec rule (FR-440's tag and form spellings and `member: null`, FR-441's preimage fields and domain, FR-143's `composite.result-retain` charge and order, FR-144's union key composition, FR-146's result-type rule) instead of citing it. The owner rule is that QSL cites QSpec and restates none of it; FR-318 to FR-324 already cite these FRs. Reduce each cell to the citation (QSpec FR and section name). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1833-1839 |
+
 ## Dispositions
 
 Round 1, reviewed at 6643a381 (fix commit 6643a381).
@@ -77,3 +87,9 @@ Round 1, reviewed at 6643a381 (fix commit 6643a381).
 | FND-006 | fixed | 6643a381 |
 | FND-007 | fixed | 6643a381 |
 | FND-008 | fixed | 6643a381 |
+
+Round 2, reviewed at c9c549c2 (fix commit 1d6c4bde).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 1d6c4bde |
