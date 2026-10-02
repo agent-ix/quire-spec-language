@@ -36,3 +36,11 @@ an alternative which does not exist.
 
 EARS conformance is good across all twelve FRs. The three low findings are
 wording only. Fixing them makes no change to behaviour.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 539b8e9e |
+| FND-002 | fixed | 539b8e9e |
+| FND-003 | fixed | 539b8e9e |

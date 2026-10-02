@@ -24,8 +24,8 @@ false-extension.
 2. Evaluate `always[0,0] holds(c.value <= 1)` with activation `on each`.
 3. Decode `0`, `2`, `02`, `-1`, the empty string and
    `18446744073709551616`; reconstruct position 3; encode position 12.
-4. Evaluate `eventually[0,2] holds(c.value = 2)` with a meter of 2 work
-   units, then unlimited, counting visits.
+4. Evaluate `eventually[0,2] holds(c.value = 2)` `on origin` with a meter
+   of 3 work units, then with a meter of 4, counting visits.
 
 Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
 
@@ -35,5 +35,7 @@ Tag the tests `#[trace("TC-837", "FR-327-AC-n")]`.
 - Step 2: `false` at position 2.
 - Step 3: positions 0 and 2; four `invalid_runtime_input`/`invalid-value`
   refusals; position 3 refuses the same way; `12`.
-- Step 4: `Incomplete` at `WorkUnits` with no truth value; then the work
-  charged equals the visit count.
+- Step 4: 4 visits (the `eventually` node at position 0 and the `holds`
+  atom at positions 0, 1 and 2); with 3 units, `Incomplete` at the
+  `WorkUnits` charge point and no truth value; with 4 units,
+  `Completed(true)` charging 4.

@@ -76,3 +76,30 @@ These parts are sound:
 
 The PR is not mergeable as it stands. FND-001 makes an AC impossible to
 test. FND-002 to FND-006 should be fixed in the same round.
+
+## New findings (disposition pass 1)
+
+Reviewed at 2120f55561c50e370f540db8a983acc1f0c4fde3 (`git diff 0ecfb9e9...2120f555`).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | medium | TC-837 was not updated for the new FR-327-AC-4. Step 4 still runs "a meter of 2 work units, then unlimited", and its expected result still reads "then the work charged equals the visit count". AC-4 now expects 4 visits: a meter of 3 gives `Incomplete`, and a meter of 4 gives `Completed(true)` charging 4. A test written from TC-837 would check the old criterion. | spec/test-cases/TC-837-s6a-evaluates-a-temporal-clause-over-a-finite-trace.md:27-28,38-39 |
+| FND-013 | low | Some new text states what is absent instead of what is. FR-330 Outputs: "with no provenance record of the source, the selection or the observations read". ADR-014 §10: "neither keeps a provenance record of its inputs". FR-331 Description: "It is not the QSpec FR-364 counterexample wire". The positive statements beside each one already say what the report and the result hold. Delete the negations. | spec/functional/FR-330-run-a-temporal-clause-through-the-spine.md:60-62; spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md:482-483; spec/functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md:46-49 |
+| FND-014 | low | Follow-up work is recorded as prose in the spec instead of as a ticket. FR-331's Description and References, and ADR-014 §10, say "a QSpec wire form ... is a follow-up against FR-364", with no ticket. That puts roadmap text in normative sections. FR-331's Status records a code deletion that belongs to FR-109, and FR-109's Status points to it. File Linear tickets (the QSpec wire form; deleting `ClauseRunProvenance` and `source_digest`), cite them in References, and remove the follow-up sentences from the Description and the ADR. | spec/functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md:46-49,137-143,148-150; spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md:466-469; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:173-177 |
+| FND-015 | low | TC-468 step 6 still expects a `compile`, `missing_import`/`missing-selection` result for the extracted missing-model run. The rewritten FR-109-AC-6 has no clause for that case. Add the clause to AC-6, or drop the expectation. | spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md:69-70; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:159 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 539b8e9e |
+| FND-002 | fixed | 539b8e9e |
+| FND-003 | fixed | 539b8e9e |
+| FND-004 | fixed | 539b8e9e |
+| FND-005 | fixed | 539b8e9e |
+| FND-006 | fixed | 539b8e9e |
+| FND-007 | fixed | 539b8e9e |
+| FND-008 | fixed | 539b8e9e |
+| FND-009 | fixed | 539b8e9e |
+| FND-010 | fixed | 539b8e9e |
+| FND-011 | fixed | 539b8e9e |
