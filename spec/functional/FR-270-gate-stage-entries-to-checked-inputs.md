@@ -53,16 +53,26 @@ and only a stage constructor produces one. The gate is a prerequisite of
   - every type defined in `quire-contract-model`.
 - The gate SHALL treat a fieldless enum from `qsl-source`, `qsl-cst` or
   `qsl-forms` (such as `StateClauseKind`) as closed vocabulary that S3
-  carries forward, and a configuration type no pre-check stage returns
-  (such as `qsl_cst::Limits`) as configuration; both are outside the set.
+  carries forward; it is outside the set.
+- The gate SHALL treat as configuration, outside the set, a type that a
+  `pub` free function of `qsl-source`, `qsl-cst` or `qsl-forms` takes as a
+  parameter and that no such function's return type names, even when a
+  stage output holds it (such as `qsl_cst::Limits`, which `ParsedSource`
+  keeps as its effective limits).
 - If a stage entry's receiver or parameter type mentions a pre-check
   representation at any depth, seen through `use … as` renames and `type`
-  aliases as `typestate_scan` sees them, then the gate SHALL report a
-  `signature` finding.
+  aliases as `typestate_scan` sees them, and through the `pub use`
+  re-exports of the workspace crates the stage crates depend on, then the
+  gate SHALL report a `signature` finding.
 - If a shipped function in `qsl-eval`, `qsl-route`, or `qsl-replay` outside
   `spine` names a `pub` function of `qsl-source`, `qsl-cst` or `qsl-forms`,
-  or the S3 stage constructor, then the gate SHALL report a
-  `reconstruction` finding, whatever the function's own signature.
+  or the S3 stage constructor (also as `<PackageDeclarations>::check`),
+  then the gate SHALL report a `reconstruction` finding, whatever the
+  function's own signature.
+- If such a function calls a method named like the S3 stage constructor
+  (`.check(..)`), then the gate SHALL report a `reconstruction` finding,
+  whatever the receiver's type, since a `pub` function can hand back the S3
+  input without its type being named.
 - The gate SHALL report every finding it meets before it exits.
 - The gate SHALL derive both sets from the rules above applied to the
   scanned code.
@@ -71,10 +81,10 @@ and only a stage constructor produces one. The gate is a prerequisite of
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-270-AC-1 | Planted signatures fail the gate: over a copy of the workspace's scanned trees with one planted item each, a `pub fn` in `qsl-eval` taking `&qsl_forms::Expression`; the same through `use qsl_forms::Expression as Expr`; the same through a `type` alias of a CST node; a `pub` method in `qsl-route` taking `Option<Vec<&PackageDeclarations>>`; and a `pub fn` in `qsl-replay` outside `spine` taking a `quire-contract-model` package, each make the gate exit non-zero with one `signature` finding naming the planted file and line, the entry and the type. | Test (TC-745) |
-| FR-270-AC-2 | Planted reconstruction fails the gate: a private function in `qsl-eval` with a checked-only signature that calls a `qsl-cst` parse function, and one in `qsl-route` that calls `PackageDeclarations::check`, each give one `reconstruction` finding naming the file, line, function and the called stage function. The same parse call planted in `qsl-replay`'s `spine` module gives no finding. | Test (TC-745) |
-| FR-270-AC-3 | No false findings: a `pub fn` in `qsl-eval` taking `StateClauseKind`, a function in `qsl-replay` outside `spine` that constructs `qsl_cst::Limits`, and a `#[cfg(test)]` module in `qsl-eval` that takes a `qsl_forms::Expression`, give no finding. Two planted signatures in one run give two findings. | Test (TC-745) |
-| FR-270-AC-4 | Over the QSL workspace as it is, `cargo xtask checked-input` reports nothing and exits 0. With one FR-270-AC-1 signature planted in `qsl-eval`'s shipped code, the `checked-input` make target that `make ci` runs exits non-zero. | Test (TC-745) |
+| FR-270-AC-1 | Planted signatures fail the gate: over a copy of the workspace's scanned trees with one planted item each, a `pub fn` in `qsl-eval` taking `&qsl_forms::Expression`; the same through `use qsl_forms::Expression as Expr`; the same through a `type` alias of a CST node; the same through a `pub use` of `qsl_forms::Expression` in `qsl-semantics`; a `pub` method in `qsl-route` taking `Option<Vec<&PackageDeclarations>>`; and a `pub fn` in `qsl-replay` outside `spine` taking a `quire-contract-model` package, each make the gate exit non-zero with one `signature` finding naming the planted file and line, the entry and the type. | Test (TC-745) |
+| FR-270-AC-2 | Planted reconstruction fails the gate: a private function in `qsl-eval` with a checked-only signature that calls a `qsl-cst` parse function, one in `qsl-route` that calls `PackageDeclarations::check`, one there that calls `<PackageDeclarations>::check`, and one in `qsl-eval` that calls `.check(..)` on the result of `checked_dispatch_operation(..)?`, each give one `reconstruction` finding naming the file, line, function and the called stage function. The same parse call planted in `qsl-replay`'s `spine` module gives no finding. | Test (TC-745) |
+| FR-270-AC-3 | No false findings: a `pub fn` in `qsl-eval` taking `StateClauseKind`, a function in `qsl-replay` outside `spine` that constructs `qsl_cst::Limits`, a `pub fn` in `qsl-eval` taking `qsl_cst::Limits`, and a `#[cfg(test)]` module in `qsl-eval` that takes a `qsl_forms::Expression`, give no finding. Two planted signatures in one run give two findings. | Test (TC-745) |
+| FR-270-AC-4 | Over the QSL workspace as it is, `cargo xtask checked-input` reports nothing and exits 0, and with one FR-270-AC-1 signature planted in a copy of `qsl-eval`'s shipped code the command fails with a finding exit status. The `Makefile`'s `ci:` prerequisites include `checked-input`, whose recipe runs `cargo xtask checked-input`. | Test (TC-745); Inspection (the `ci:` wiring) |
 
 ## Dependencies
 

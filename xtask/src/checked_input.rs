@@ -32,7 +32,12 @@
 //! crates (outside `spine`) whose signature or body names a `pub` function
 //! or `pub` inherent method of `qsl-source`, `qsl-cst` or `qsl-forms`, or
 //! the S3 stage constructor, is a `reconstruction` finding, whatever its own
-//! signature. Paths inside a macro are read when the macro's tokens parse as
+//! signature. A qualified-self path (`<PackageDeclarations>::check`) names its
+//! self type as the owner. A method call named like the S3 stage constructor
+//! (`.check(..)`) is a finding too, whatever the receiver's type, since the
+//! receiver can come from a `pub` function that returns the S3 input
+//! (`checked_dispatch_operation(..)?.check(..)`) without its type being
+//! named. Paths inside a macro are read when the macro's tokens parse as
 //! comma-separated expressions (`vec![...]`, `format!(...)`).
 //!
 //! **Resolution.** A path's first segment is resolved through the `use`
@@ -41,14 +46,13 @@
 //! `use qsl_forms::Expression as Expr;` and `type Node = qsl_cst::Token;`
 //! are seen through. As in `typestate_scan`, the `use` table is per file,
 //! not per scope, and the alias table is global, which over-approximates.
+//! A `pub use` in a crate the stage crates depend on ([`REEXPORTING_CRATES`])
+//! that names a pre-check crate is followed: `qsl_semantics::X`, where
+//! `qsl-semantics` holds `pub use qsl_forms::X;`, resolves to
+//! `qsl_forms::X`, at whatever module the re-export sits.
 //!
-//! **Known limits.** A method call written with method syntax
-//! (`declarations.check(limits)`) names no path and is not seen; a value of
-//! the receiver type has to be named to be called that way, and its type in
-//! a stage entry's signature is the `signature` rule's finding. A pre-check
-//! type re-exported by another workspace crate (none is today) is seen only
-//! by its defining crate's path, and a glob import from `quire-contract-model`
-//! is not expanded.
+//! **Known limits.** A glob import or glob re-export from
+//! `quire-contract-model` or a re-exporting crate is not expanded.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -76,6 +80,15 @@ const CONTRACT_MODEL: &str = "quire_contract_model";
 /// The stage-entry crates: layer 5 `qsl-eval`, layer R `qsl-route` and the
 /// layer-6 `replay` facade `qsl-replay` (minus [`SPINE`]).
 const STAGE_CRATES: [&str; 3] = ["qsl-eval/src", "qsl-route/src", "qsl-replay/src"];
+
+/// The workspace crates the stage crates depend on whose `pub use` items are
+/// followed: source directory and the crate name as a path spells it.
+const REEXPORTING_CRATES: [(&str, &str); 4] = [
+    ("qsl-foundation/src", "qsl_foundation"),
+    ("qsl-semantics/src", "qsl_semantics"),
+    ("qsl-package/src", "qsl_package"),
+    ("qsl-eval/src", "qsl_eval"),
+];
 
 /// The `spine` module of `qsl-replay`: its file and its directory.
 const SPINE: [&str; 2] = ["qsl-replay/src/spine.rs", "qsl-replay/src/spine/"];
@@ -399,6 +412,8 @@ struct UseTable {
     bindings: BTreeMap<String, Vec<Vec<String>>>,
     /// Every glob import's prefix.
     globs: Vec<Vec<String>>,
+    /// Whether only `pub use` items are read (a re-export table).
+    public_only: bool,
 }
 
 impl UseTable {
@@ -458,7 +473,8 @@ impl<'ast> Visit<'ast> for UseTable {
     }
 
     fn visit_item_use(&mut self, node: &'ast syn::ItemUse) {
-        if !has_cfg_test(&node.attrs) {
+        let public = matches!(node.vis, syn::Visibility::Public(_));
+        if !has_cfg_test(&node.attrs) && (public || !self.public_only) {
             self.add(&node.tree, &mut Vec::new());
         }
     }
@@ -471,7 +487,13 @@ struct Resolver<'a> {
     uses: Vec<UseTable>,
     /// Alias name -> every (file index, target) it is declared with.
     aliases: BTreeMap<String, Vec<(usize, &'a syn::Type)>>,
+    /// The re-exports followed into pre-check crates.
+    reexports: Reexports,
 }
+
+/// (re-exporting crate, name) -> every pre-check path a `pub use` of that
+/// crate binds the name to.
+type Reexports = BTreeMap<(String, String), Vec<Vec<String>>>;
 
 /// A name that roots a path in the current crate.
 #[qsl_attrs::string_edge]
@@ -488,22 +510,46 @@ impl Resolver<'_> {
             return Vec::new();
         };
         let table = &self.uses[file];
-        if let Some(bound) = table.bindings.get(first) {
-            return bound
+        let mut expanded = match table.bindings.get(first) {
+            Some(bound) => bound
                 .iter()
                 .map(|path| path.iter().chain(rest).cloned().collect())
-                .collect();
-        }
-        let mut expanded = vec![segments.to_vec()];
-        if rest.is_empty() {
-            expanded.extend(table.globs.iter().map(|glob| {
-                glob.iter()
-                    .cloned()
-                    .chain(std::iter::once(first.clone()))
-                    .collect()
-            }));
-        }
+                .collect(),
+            None => {
+                let mut expanded = vec![segments.to_vec()];
+                if rest.is_empty() {
+                    expanded.extend(table.globs.iter().map(|glob| {
+                        glob.iter()
+                            .cloned()
+                            .chain(std::iter::once(first.clone()))
+                            .collect()
+                    }));
+                }
+                expanded
+            }
+        };
+        let followed: Vec<Vec<String>> = expanded
+            .iter()
+            .flat_map(|candidate| self.follow_reexports(candidate))
+            .collect();
+        expanded.extend(followed);
         expanded
+    }
+
+    /// `candidate` with a re-exported segment replaced by the pre-check path
+    /// the re-export names: `qsl_semantics::m::X::f` -> `qsl_forms::X::f`.
+    fn follow_reexports(&self, candidate: &[String]) -> Vec<Vec<String>> {
+        let Some((first, rest)) = candidate.split_first() else {
+            return Vec::new();
+        };
+        let mut followed = Vec::new();
+        for (index, segment) in rest.iter().enumerate() {
+            let key = (first.clone(), segment.clone());
+            for target in self.reexports.get(&key).into_iter().flatten() {
+                followed.push(target.iter().chain(&rest[index + 1..]).cloned().collect());
+            }
+        }
+        followed
     }
 
     /// The `type` alias a resolved path names, if it is local (rooted in
@@ -624,18 +670,18 @@ impl StageScanner<'_, '_> {
         }
     }
 
-    fn reconstruction(&mut self, path: &syn::Path) {
+    fn reconstruction(&mut self, segments: &[String], line: usize) {
         let Some(function) = &self.function else {
             return;
         };
-        for resolved in
-            self.resolver
-                .value_paths(self.file_index, &path_segments(path), &mut BTreeSet::new())
+        for resolved in self
+            .resolver
+            .value_paths(self.file_index, segments, &mut BTreeSet::new())
         {
             if self.resolver.pre_check.is_stage_function(&resolved) {
                 self.findings.insert(Finding {
                     file: self.file.to_owned(),
-                    line: path.span().start().line,
+                    line,
                     rule: Rule::Reconstruction,
                     function: function.clone(),
                     named: resolved.join("::"),
@@ -726,8 +772,42 @@ impl<'ast> Visit<'ast> for StageScanner<'_, '_> {
     }
 
     fn visit_path(&mut self, node: &'ast syn::Path) {
-        self.reconstruction(node);
+        self.reconstruction(&path_segments(node), node.span().start().line);
         syn::visit::visit_path(self, node);
+    }
+
+    fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+        // `<Owner>::f` and `<Owner as Trait>::f`: the self type is the owner.
+        if let Some(qself) = &node.qself {
+            if let syn::Type::Path(owner) = &*qself.ty {
+                let mut segments = path_segments(&owner.path);
+                segments.extend(
+                    node.path
+                        .segments
+                        .iter()
+                        .skip(qself.position)
+                        .map(|segment| segment.ident.to_string()),
+                );
+                self.reconstruction(&segments, node.span().start().line);
+            }
+        }
+        syn::visit::visit_expr_path(self, node);
+    }
+
+    #[qsl_attrs::string_edge]
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if let Some(function) = &self.function {
+            if node.method == S3_CONSTRUCTOR.name {
+                self.findings.insert(Finding {
+                    file: self.file.to_owned(),
+                    line: node.method.span().start().line,
+                    rule: Rule::Reconstruction,
+                    function: function.clone(),
+                    named: format!("{}::{}", S3_CONSTRUCTOR.receiver, S3_CONSTRUCTOR.name),
+                });
+            }
+        }
+        syn::visit::visit_expr_method_call(self, node);
     }
 
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
@@ -769,6 +849,7 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
         pre_check: &pre_check,
         uses,
         aliases,
+        reexports: reexports(root)?,
     };
     let mut findings = BTreeSet::new();
     for (index, (file, ast)) in files.iter().enumerate() {
@@ -784,6 +865,38 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
         .visit_file(ast);
     }
     Ok(findings.into_iter().collect())
+}
+
+/// Whether a resolved path is rooted at a pre-check crate or at
+/// `quire-contract-model`.
+#[qsl_attrs::string_edge]
+fn is_pre_check_rooted(path: &[String]) -> bool {
+    path.first()
+        .is_some_and(|first| first == CONTRACT_MODEL || PreCheck::crate_named(first).is_some())
+}
+
+/// Every `pub use` of [`REEXPORTING_CRATES`] that binds a name to a path in
+/// a pre-check crate or `quire-contract-model`.
+fn reexports(root: &Path) -> Result<Reexports> {
+    let mut reexports = Reexports::new();
+    for (dir, name) in REEXPORTING_CRATES {
+        for (_, ast) in shipped_files(root, &[dir])? {
+            let mut table = UseTable {
+                public_only: true,
+                ..UseTable::default()
+            };
+            table.visit_file(&ast);
+            for (bound, paths) in table.bindings {
+                for path in paths.into_iter().filter(|path| is_pre_check_rooted(path)) {
+                    reexports
+                        .entry((name.to_owned(), bound.clone()))
+                        .or_default()
+                        .push(path);
+                }
+            }
+        }
+    }
+    Ok(reexports)
 }
 
 /// Every shipped module-level `type` alias in a file.
@@ -864,6 +977,7 @@ mod tests {
         let root = workspace_root();
         let dirs = PRE_CHECK_CRATES
             .iter()
+            .chain(&REEXPORTING_CRATES)
             .map(|(dir, _)| *dir)
             .chain(STAGE_CRATES);
         for dir in dirs {
@@ -944,6 +1058,27 @@ mod tests {
         for (file, source, expected) in cases {
             assert_eq!(scan_planted(&[(file, source)]), vec![expected], "{source}");
         }
+        // ADR-032 CK-2: a pre-check type that `qsl-semantics` re-exports is
+        // still caught under the re-exporting path.
+        assert_eq!(
+            scan_planted(&[
+                (
+                    "qsl-semantics/src/plant.rs",
+                    "pub use qsl_forms::Expression;\n"
+                ),
+                (
+                    EVAL_PLANT,
+                    "pub fn plant(e: &qsl_semantics::plant::Expression) {}\n"
+                ),
+            ]),
+            vec![finding(
+                EVAL_PLANT,
+                1,
+                Rule::Signature,
+                "plant",
+                "qsl_forms::Expression"
+            )]
+        );
     }
 
     /// TC-745 step 2: a stage-crate function that calls a pre-check stage
@@ -976,6 +1111,32 @@ mod tests {
                 "PackageDeclarations::check"
             )]
         );
+        let qualified = "fn plant(limits: CheckingLimits) {\n    \
+                         let _ = <PackageDeclarations>::check(declarations, limits);\n}\n";
+        assert_eq!(
+            scan_planted(&[(ROUTE_PLANT, qualified)]),
+            vec![finding(
+                ROUTE_PLANT,
+                2,
+                Rule::Reconstruction,
+                "plant",
+                "PackageDeclarations::check"
+            )]
+        );
+        // The S3 input from a `pub` function, never named, then checked.
+        let method = "fn plant(view: &View) -> Result<CheckedGraph, Refusal> {\n    \
+                      checked_dispatch_operation(view, root, clauses, source, meter)?\n        \
+                      .check(limits)\n}\n";
+        assert_eq!(
+            scan_planted(&[(EVAL_PLANT, method)]),
+            vec![finding(
+                EVAL_PLANT,
+                3,
+                Rule::Reconstruction,
+                "plant",
+                "PackageDeclarations::check"
+            )]
+        );
         assert_eq!(
             scan_planted(&[("qsl-replay/src/spine/plant.rs", parse)]),
             vec![]
@@ -1001,6 +1162,8 @@ mod tests {
                 EVAL_PLANT,
                 "#[cfg(test)]\nmod t {\n    pub fn t(e: qsl_forms::Expression) {}\n}\n",
             ),
+            // Configuration: a stage takes it and none returns it.
+            (EVAL_PLANT, "pub fn plant(l: qsl_cst::Limits) {}\n"),
         ];
         for (file, source) in look_alikes {
             assert_eq!(scan_planted(&[(file, source)]), vec![], "{source}");
