@@ -253,7 +253,6 @@ fn classify_selected(
             subject,
             name: selected.declaration.name.clone(),
             profile: selected.profile,
-            profile_revision: selected.revision.clone(),
             activation: selected.activation.clone(),
         },
         authenticated,
@@ -313,7 +312,6 @@ struct Selected<'a> {
     body: &'a w::Body,
     activation: &'a w::Activation,
     profile: Profile,
-    revision: String,
 }
 
 fn select(
@@ -345,7 +343,6 @@ fn select(
         body: &entry.body,
         activation,
         profile,
-        revision: definition.revision.value.clone(),
     })
 }
 
@@ -412,7 +409,6 @@ fn run(
     };
     let premises = Premises {
         profile: selected.profile,
-        profile_revision: selected.revision.clone(),
         clock: trace.clock.name.clone(),
         clock_parameters: trace.clock.parameters.clone(),
         watermark,

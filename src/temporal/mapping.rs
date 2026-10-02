@@ -96,8 +96,6 @@ pub struct Retained {
     pub name: String,
     /// The selected profile, retained by its registered identity.
     pub profile: Profile,
-    /// The exact admitted profile revision, distinct from the language edition.
-    pub profile_revision: String,
     /// The declaration's admitted activation record.
     pub activation: w::Activation,
 }

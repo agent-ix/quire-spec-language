@@ -72,7 +72,7 @@ through either version.
 
 ## Inputs
 
-An admitted temporal declaration: its selected profile identity and revision, and
+An admitted temporal declaration: its selected profile identity, and
 the operator kinds reachable from its root. From the request: the
 surrounding-execution closure the mapping is asked for. Decision-scope closure is
 a separate axis under
@@ -132,7 +132,7 @@ encode. Naming them is not discharging them.
 |----|----------|--------------|
 | FR-045-AC-1 | Every row of the support table is reachable and is exercised by an admitted declaration that matches it and no other, returning that row's disposition and TL target; the classification is derived only from the selected profile, the reachable operator kinds and the requested surrounding-execution closure, with no backend capability report, installed version, syntax match or decision-scope closure consulted. | Test (TC-125); Inspection |
 | FR-045-AC-2 | A timestamped-event request and a bounded-past request each return unsupported naming the finite-window and past-operator dimensions respectively, and emit no substitute formula, profile or clock. | Test (TC-125) |
-| FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity and revision, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
+| FR-045-AC-3 | An unsupported result retains the native declaration subject, its selected profile identity, and its activation record; a source-valid declaration is unchanged by the classification. | Test (TC-125) |
 | FR-045-AC-4 | An unsupported result names every unmatched dimension rather than one summary cause, and a declaration unmatched on two dimensions names both. | Test (TC-125) |
 | FR-045-AC-5 | A supported classification names its outstanding bridge premises, and its TL target identity, and asserts no correspondence; two declarations with equal temporal formula bytes but different selected profiles do not receive the same classification. | Test (TC-125) |
 | FR-045-AC-6 | A declaration classified through a strict `/2` package returns the same disposition and retained native subject as through `/1` under both surrounding-execution closures, and additionally retains the authenticated package digest, declaration, definition identity, namespaced revision and definition artifact digest; a `/1` classification retains no authenticated selection, a `/2` request for a declaration outside the package or for a non-temporal declaration is refused, and the classifier refuses a temporal declaration with no binding or a binding that selects a definition other than the declaration's own (Inspection; unreachable after the strict reader). | Test (TC-125); Inspection |
@@ -157,8 +157,3 @@ encode. Naming them is not discharging them.
 
 The classifier evaluates the Behavior section's rows, which restate QSpec
 FR-095's disposition.
-
-Remaining work (implementation): the `SUPPORT_TABLE` constant in
-`src/temporal/mapping.rs` still names FR-095 with a pinned revision, and
-`classify` still retains it on every supported classification; the revision
-and its retention are deleted.

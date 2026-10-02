@@ -123,9 +123,9 @@ profiles compiles one declaration per profile from identical clause text.
 
 ## Expected Results
 
-Every truth is tied to its declaration, selected profile identity and revision,
-clock binding and trace premises. `true`, `false`, `pending`, incomplete and
-refused remain five distinct outcomes, and `closed-scope`, `decisive-witness`,
+Every truth is tied to its declaration, selected profile identity, clock
+binding and trace premises. `true`, `false`, `pending`, incomplete and refused
+remain five distinct outcomes, and `closed-scope`, `decisive-witness`,
 `decisive-counterexample`, `unsettled` and `unavailable` remain five distinct
 bases; no missing observation, closed boundary, contradiction or resource stop
 collapses into a Boolean. The three profile interpretations remain three meanings

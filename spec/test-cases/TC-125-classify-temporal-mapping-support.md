@@ -43,7 +43,7 @@ selector.
    substitute formula, profile or clock, and require no index conversion to appear
    for the timestamped request.
 3. Inspect each unsupported result and require it to retain the native declaration
-   subject, the selected profile identity and revision, and the activation record.
+   subject, the selected profile identity, and the activation record.
    Re-read the source declaration after classification and require it unchanged.
 4. Compile a declaration unmatched on two dimensions at once — a bounded past
    operator under the timestamped-event profile — and require both the

@@ -78,7 +78,7 @@ Native-to-TL mapping support is classified by
 The emitted temporal body — current-input binder, clock binding index,
 activation, ordered captures and the closed temporal operation graph — together
 with the declaration's admitted definition entry, which carries the selected
-profile identity and revision.
+profile identity.
 
 One caller-constructed observation trace supplying:
 

@@ -112,8 +112,6 @@ pub enum Activation {
 pub struct Premises {
     /// Selected temporal profile, retained by identity.
     pub profile: Profile,
-    /// Exact admitted profile revision, distinct from the language edition.
-    pub profile_revision: String,
     /// Exact clock binding name the declaration selected.
     pub clock: String,
     /// Declared clock parameters the trace asserted. The emitted body carries
