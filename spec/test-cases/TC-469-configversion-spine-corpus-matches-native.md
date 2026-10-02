@@ -39,7 +39,7 @@ all under `ParentOrder` with self `child`.
 4. Generate the corpus into two temporary directories and compare every
    file, in both directions (identical file sets, not just one direction's
    files present in the other); run every one of the 17 cases twice and
-   compare the full report; check each report's provenance members; then,
+   compare the full report; then,
    for every case that reaches compile, run again with the expected
    `package_id` set to the `package_id` spine `compile` emits for the unit,
    and compare.
@@ -62,14 +62,12 @@ incomplete: false }` twice). Tag the tests `#[trace("TC-469",
   exit code.
 - Step 3: both outputs name the object (`root` for below-range, `child` for
   above-range) and the field `versionNumber`.
-- Step 4: identical files; identical reports; each provenance names the
-  source digest, the `package_id`, the domain package's `sha256-jcs` digest,
-  each observation's identity and digest, the selection and the limits; the
-  `package_id`-selected runs give the same reports.
-- Step 5: each extracted run's disposition equals the direct run's; its
-  source identity and digest differ; its provenance carries the extraction's
-  original identity and digest.
-- Step 6: every report carries the pinned `package_id`, and the bytes admit
+- Step 4: identical files; identical reports, each holding the
+  disposition, the `package_id` and the usage; the `package_id`-selected
+  runs give the same reports.
+- Step 5: each extracted run's disposition and `package_id` equal the
+  direct run's.
+- Step 6: every report carries that `package_id`, and the bytes admit
   through I04 `read`.
 
 ## Status

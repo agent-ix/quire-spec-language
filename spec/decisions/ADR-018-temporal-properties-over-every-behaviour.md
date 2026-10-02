@@ -250,7 +250,12 @@ never hash-map iteration (ADR-016 ND-4).
 subject (FR-120 `domains()` under the request's universes). An unbounded root
 returns `requires-bound`, which the caller answers with a universe for a
 population root or a `bounded_domain` in the model for a parameter, result or
-field root, as ADR-016 §2 states for simulation.
+field root, as ADR-016 §2 states for simulation. A `ProofBound` in the
+subject (SM-2) makes no root finite here: it qualifies the item through its
+obligation identity (ADR-014 B-4) and is read only by a bounded-mode backend
+reached by negotiation. A universe is never converted into a `ProofBound`
+and never changes the item's requirement record, which ADR-014 §4 computes
+from checked types alone (FR-336).
 
 **Explicit-state limits.** EN-1 runs under FR-101's `Limits`
 (`max_states`, `max_transitions`) and takes `max_depth`, its horizon, as a

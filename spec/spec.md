@@ -252,6 +252,32 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-015
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-325
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-326
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-327
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-328
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-329
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-330
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-331
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-332
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-333
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-334
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-335
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-336
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -435,6 +461,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-014](usecase/US-014-compile-value-source-through-the-forms-stage.md) | US | Draft |
 | [US-028](usecase/US-028-trust-one-definition-per-canonical-type.md) | US | Draft |
 | [US-015](usecase/US-015-check-a-temporal-property-over-every-behaviour-of-a-model.md) | US | Draft |
+| [US-033](usecase/US-033-write-unbounded-temporal-claims-and-unbounded-declarations.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -586,6 +613,18 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-315](functional/FR-315-encode-the-smt-lib-transition-relation.md) | FR | Specified: QSL's one SMT-LIB transition-relation encoding (`qsl-eval`, through the `qsl-replay` facade) for unrolling and k-induction queries, with its canonical printing; CG's SMT backend and FR-314 both use it; not yet implemented -- TC-900 planned |
 | [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR | Specified: `replay_model_trace` replays a `TemporalCounterexample` over a model subject through `ModelSystem`: loop closure, fairness, enabledness, the post-state digest as successor selector, formula evaluation, the deadlock check or the reproduced undefined evaluation (ADR-018 CX-3, DL-5, UE-5); not yet implemented -- TC-523, TC-539 planned |
 | [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR | Specified: the S4 emitter writes each checked temporal clause as QSpec FR-370's `temporal`/`temporal_clause` node (`quire.op.temporal.clause` body, per-operator identities, intervals, resolved fairness) and the I2 reader reads it back; not yet implemented -- TC-524 planned |
+| [FR-325](functional/FR-325-parse-temporal-operators-with-an-optional-interval.md) | FR | Specified: S1/S2 parse every temporal operator with a closed, open or absent interval into TemporalTrace forms, independent of profile (ADR-014 A-1); not yet implemented -- TC-835 planned |
+| [FR-326](functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md) | FR | Specified: S3 admits temporal operators by the unit's one temporal profile: mandatory closed intervals and the horizon under bounded profiles, bare operators under infinite-trace, the requirement record (ADR-014 A-2, A-3, TR-3, TR-4); not yet implemented -- TC-836 planned |
+| [FR-327](functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md) | FR | Specified: layer-5 TemporalTrace evaluator over a closed finite trace under a bounded profile, `TemporalPosition` encoding and decoding, TR-5 work metering (ADR-014 TR-2, TR-5; ADR-018 SM-1); an undefined letter failing the clause (ADR-018 UE-1); not yet implemented -- TC-837, TC-847 planned |
+| [FR-328](functional/FR-328-evaluate-an-infinite-trace-clause-over-a-finite-prefix.md) | FR | Specified: three-valued infinite-trace evaluation over a finite prefix: violation only for a bad prefix of a safety-fragment formula, interval operators included, pending otherwise (ADR-014 A-4; ADR-018 IV-2, IV-4); an undefined letter failing the clause (ADR-018 UE-1); a non-empty fairness set as a missing fairness premise (QSpec FR-362); not yet implemented -- TC-838, TC-847, TC-848 planned |
+| [FR-329](functional/FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md) | FR | Specified: exact infinite-trace evaluation over a fair lasso by ADR-018 SM-8, with the fairness check on model-step lassos and the refusals of malformed and unfair model-step lassos (ADR-014 A-4); a non-empty fairness set over an observed lasso as a missing fairness premise (QSpec FR-362); an undefined letter failing the clause (ADR-018 UE-1); not yet implemented -- TC-839, TC-847, TC-848 planned |
+| [FR-330](functional/FR-330-run-a-temporal-clause-through-the-spine.md) | FR | Specified: `run_clause`'s `Temporal` selection: a temporal clause over a supplied finite trace or lasso through the spine, with categories, exit codes and provenance; an undefined letter failing the clause with the violation exit (ADR-018 UE-1); a missing fairness premise as `unsupported`, exit 21; not yet implemented -- TC-840, TC-847, TC-848 planned |
+| [FR-331](functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md) | FR | Specified: replay of a `TemporalCounterexample` over an observed trace through the replay facade: identity refusals, malformed lassos, agreement or `ReplayParity` (ADR-014 §10 scenario 5); an undefined letter failing the clause (ADR-018 UE-1); not yet implemented -- TC-841, TC-847 planned |
+| [FR-332](functional/FR-332-settle-an-infinite-trace-item-through-negotiation.md) | FR | Specified: an infinite-trace item settles only through negotiation: `unbounded` with no available finite bound, `unsupported` warned with no liveness backend, the FR-360 to O-16 map (ADR-014 A-5, §6); not yet implemented -- TC-842 planned |
+| [FR-333](functional/FR-333-read-an-optional-collection-bound-and-population-maximum.md) | FR | Specified: optional collection bound and population maximum from grammar through forms to `CollectionType.bound: None` and `Population(None)` (ADR-014 §2, N-3); not yet implemented -- TC-843 planned |
+| [FR-334](functional/FR-334-key-collection-types-by-the-root-definitions-identity-preimage.md) | FR | Specified: collection and population nodes keyed by the root definitions' identity preimage, with bound presence in node identity and `package_id` (ADR-014 N-1, N-2); not yet implemented -- TC-844 planned |
+| [FR-335](functional/FR-335-settle-a-claim-over-an-unbounded-declaration.md) | FR | Specified: end-to-end settlement of a claim over an unbounded declaration: `unsupported` warned, `requires-bound`, a separate bounded item, or `unbounded-extent` (ADR-014 §4, §6, §10); not yet implemented -- TC-845 planned |
+| [FR-336](functional/FR-336-bound-a-model-subject-by-its-universes.md) | FR | Specified: a model subject is finite only by its universes and declared domains, never by a proof bound; universes bind the obligation identity and leave the requirement record unchanged (ADR-018 §1, EN-1 pre-check); not yet implemented -- TC-846 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

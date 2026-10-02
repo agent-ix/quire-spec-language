@@ -303,7 +303,7 @@ driver uses the record's extent for it.
 | A-1 | **Parse.** S1 and S2 parse the bare unbounded operators (no interval) under every profile. Parsing selects no meaning. The spine grammar makes the interval optional on the unary and binary temporal operators (QSL-43). |
 | A-2 | **Admit.** The S3 TemporalTrace `check` admits a bare operator only when the unit's temporal profile selection is `quire.temporal.infinite-trace/v1` (QSpec FR-090-AC-7). Otherwise it refuses `unsupported_construct`/`expression-form`, located at the operator (ADR-012 §3). Under that profile it admits a closed interval or an `[a,*]` interval on any operator (TR-3, amended by ADR-018 IV-1). A unit selects exactly one temporal profile. The profile uses the event-position sequence authority without false-extension closure (QSpec FR-250-AC-6). The clause's authored fairness constraints are checked with it (QSpec FR-161). |
 | A-3 | **Record.** An admitted infinite-trace clause yields `Requirements{kind: temporal-satisfaction, extent: Unbounded{domains}}`, where `domains` names the formula. |
-| A-4 | **Execute.** S6a never settles an infinite-trace claim `proved`. Over a finite trace it uses three-valued finite-prefix evaluation: it returns violation only when the formula is in the safety fragment (negation normal form over atoms, `and`, `or`, `always`, `release`, past operators and, amended by ADR-018 IV-4, every interval operator) and the prefix makes it false for every extension; it returns pending otherwise, O-16 `inconclusive` (QSpec FR-161-AC-2, FR-324-AC-2). This rule is sound and incomplete: it never reports a false violation. Over a lasso (a non-empty prefix or none, then a non-empty loop that re-enters at its first position) it first checks the lasso against the clause's fairness constraints; a lasso that violates them is not an admitted trace and is refused with `invalid_runtime_input`/`invalid-value`, and a clause whose fairness premise is missing yields no verdict: its S6a result is O-16 category unsupported, cause `unsupported_projection`/`missing-fairness-premise` naming the clause's first fairness constraint (QSpec FR-362). A fair lasso is evaluated exactly, with work charged per visit under TR-5. A false result is a violation for that lasso. A true result is `tested`, evidence for that lasso only. This is replay of a given trace, not a liveness solver. Amended by ADR-018 SM-1: this lasso evaluation is the semantics every model-checking engine answers to, and every engine refutation is replayed through it. |
+| A-4 | **Execute.** S6a never settles an infinite-trace claim `proved`. Over a finite trace it uses three-valued finite-prefix evaluation: it returns violation only when the formula is in the safety fragment (negation normal form over atoms, `and`, `or`, `always`, `release`, past operators and, amended by ADR-018 IV-4, every interval operator) and the prefix makes it false for every extension; it returns pending otherwise, O-16 `inconclusive` (QSpec FR-161-AC-2, FR-324-AC-2). This rule is sound and incomplete: it never reports a false violation. Over a lasso (a non-empty prefix or none, then a non-empty loop that re-enters at its first position) it first checks the shape: a lasso with an empty loop is refused with `invalid_runtime_input`/`invalid-value`. A supplied lasso, given as observations, carries no enabledness, so a clause with a non-empty fairness set over it has a missing fairness premise: its S6a result is O-16 category unsupported, cause `unsupported_projection`/`missing-fairness-premise` naming the clause's first fairness constraint, and no formula is evaluated (QSpec FR-362, FR-329). A lasso given as model steps (an initial state and transition identities, re-executed through FR-120 `ModelSystem`) is checked against the fairness set by QSpec FR-362's lasso rule: a constraint is taken at a loop step whose transition identity belongs to it and enabled where ADR-018 FA-2 holds, and an unfair one is refused as FR-329 states. A fair lasso is evaluated exactly, with work charged per visit under TR-5. A false result is a violation for that lasso. A true result is `tested`, evidence for that lasso only. This is replay of a given trace, not a liveness solver. Amended by ADR-018 SM-1: this lasso evaluation is the semantics every model-checking engine answers to, and every engine refutation is replayed through it. |
 | A-5 | **Discharge.** Proof of an infinite-trace claim goes only through negotiation (§6). QSpec FR-360 results map to O-16: `proved` → success, `refuted` → violation, `inconclusive` → inconclusive, `unsupported` → unsupported, `failed` → incomplete when resource-incomplete, otherwise internal failure. |
 
 ### 6. Capability negotiation for liveness and quantifier-capable backends (ticket decision 5)
@@ -452,24 +452,28 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    `refuted` with a lasso. The #231 envelope `WitnessEnvelope<P>` carries the
    obligation identity, occurrence key, `package_id`, profile selections
    (including the temporal profile), `trace_position` (TR-2) and the
-   TemporalTrace `FamilyPayload`, `TemporalCounterexample{prefix, loop,
-   fairness, interval: Option<IntervalKey>}`, defined in `qsl-replay` beside
-   the other family payloads. `IntervalKey{lower, upper, profile:
-   DefinitionRef, clock_binding}` is the wire-level QSpec FR-255 key, defined
-   in F `bound` so `qsl-replay` can name it; the TemporalTrace `check`
-   converts a `TemporalInterval` to it. `interval` is the failing operator's
-   key under a bounded profile and `None` under infinite-trace.
-   `fairness` names the clause's fairness constraint nodes. At ADR-011 E9 the
+   TemporalTrace `FamilyPayload`, `TemporalCounterexample`, defined in
+   `qsl-replay` beside the other family payloads, is QSpec FR-364's
+   counterexample with its two arms: `trace: "observed"`, whose steps are
+   the observed documents by `sha256-jcs` digest, prefix then loop, for a
+   counterexample over a supplied trace (FR-331), and `trace: "model"`,
+   ADR-018 CX-2's model steps, for one over a model subject (FR-128). Its
+   `interval` is FR-364's shape (`{lower, upper}`, `{lower, upper: null}` or
+   `null`) and its `fairness` names the clause's fairness constraints. At
+   ADR-011 E9 the
    layer-6 `replay` facade recompiles from digest-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
-   `stale_dependency`/`content-mismatch`, when the recompiled operator's
-   interval key, the profile selection or the fairness set differs from the
+   `stale_dependency`/`content-mismatch`, when the recompiled clause's
+   interval, the profile selection or the fairness set differs from the
    packet's. It refuses a malformed lasso (empty loop, position out of range)
    with `invalid_runtime_input`/`invalid-value`. The TemporalTrace evaluate
    hook then re-evaluates the formula over the lasso at the decoded
    `TemporalPosition` (A-4). Agreement settles
    `reproduced-with-evaluated-witness`. Disagreement settles `inconclusive`
-   with a typed cause (O-27).
+   with a typed cause (O-27). The replay result holds the decoded position
+   and the evaluated value, and the spine clause-run report (FR-109,
+   FR-330) holds the disposition, the compiled `package_id` and the usage:
+   each carries what replay and the verdict read.
 
 ### 11. Named interfaces for the dependent tickets
 
