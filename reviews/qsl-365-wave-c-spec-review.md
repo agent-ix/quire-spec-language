@@ -73,6 +73,15 @@ Round 1, reviewed at 1d248ff47b3f75cb334d1dd987939cb64f728b5d (stacked on 18a9c2
 
 Round 2, reviewed at 4feb9cbb43f1624f19734def2810148181fe5de9. No finding was open after round 1, so this round adds no row. It adds FND-006 to FND-009 below.
 
+Round 3, reviewed at 7528f9ad115bb1f78834d1a64384fa7c16237bcb (`git diff 1248bdcf...7528f9ad`, stacked on #562's b07f7b10).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | 7528f9ad |
+| FND-007 | still-open | The witness is now `UnfairStrong{constraints, sub}` listing every failing constraint, and FR-130, FR-339, PC-4 and AM-7 agree, but the finding also asked for an AC with two strong constraints failing on one SCC. FR-130-AC-4 lists only `acq(1)`, so the `|B| >= 2` case that was wrong has no vector. |
+| FND-008 | fixed | 7528f9ad |
+| FND-009 | fixed | 7528f9ad |
+
 ## New findings (disposition pass 2)
 
 Reviewed at 4feb9cbb43f1624f19734def2810148181fe5de9 (`git diff origin/spec/366-temporal-properties...4feb9cbb`). First drafted at 4a9f4634, before the rebase onto #562's ed7bcc8b; each finding was re-checked at 4feb9cbb and is unchanged there.

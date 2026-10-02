@@ -15,7 +15,7 @@ strong `whole` fairness, enabledness read from the model state, a
 refinement whose remainder passes, cancellation in the second phase, mixed
 kinds and determinism.
 
-Scope: FR-130-AC-1 to FR-130-AC-4.
+Scope: FR-130-AC-1 to FR-130-AC-5.
 
 ## Test Procedure
 
@@ -30,6 +30,9 @@ variant of FR-130-AC-2, each with `always eventually holds(m.owner = 1)`.
    `strong each` on `acquire`; the requests of steps 1 and 2 twice each.
 4. Check the certificate of step 1's `strong each` proof; then the same
    certificate with `S`'s witness naming `acq(2)`.
+5. Run FR-130-AC-5's three-process claim under `strong each` on `acquire`
+   and check its certificate; then check it with the SCC's entry listing
+   `acq(1)` and `acq(3)`.
 
 Tag the tests `#[trace("TC-531", "FR-130-AC-n")]`.
 
@@ -43,3 +46,5 @@ Tag the tests `#[trace("TC-531", "FR-130-AC-n")]`.
   and byte-equal counterexamples.
 - Step 4: accepted, `UnfairStrong` listing `acq(1)` with `sub` `{(2, q1)}`
   `Trivial`, `Proved{Exhaustive, Certified}`; rejected `WitnessFails`.
+- Step 5: `Holds{Exhaustive}` with one `UnfairStrong` listing `acq(1)` and
+  `acq(2)`, `sub` `{(3, q1)}` `Trivial`, accepted; rejected `WitnessFails`.
