@@ -445,7 +445,7 @@ names different artifacts in each.
 | TC-630 | S3 checks exact-only forms and fairness sets, and negotiation routes exact evidence | Unit | P1 | FR-195-AC-1, FR-195-AC-2, FR-195-AC-3, FR-195-AC-4 | 🚧 Planned |
 | TC-631 | EN-5 builds the DTMC or MDP product with monitors, accumulators and intermediate states | Integration | P1 | FR-196-AC-1, FR-196-AC-2, FR-196-AC-3, FR-196-AC-4 | 🚧 Planned |
 | TC-632 | Backward induction decides finite-horizon forms exactly, or over dyadic intervals with precision doubling | Integration | P1 | FR-197-AC-1, FR-197-AC-2, FR-197-AC-3, FR-197-AC-4 | 🚧 Planned |
-| TC-633 | Unbounded reachability and expected rewards are decided by graph precomputation, interval iteration and exact policy iteration | Integration | P1 | FR-198-AC-1, FR-198-AC-2, FR-198-AC-3, FR-198-AC-4 | 🚧 Planned |
+| TC-633 | Unbounded reachability and expected rewards are decided by graph precomputation, interval iteration and exact policy iteration | Integration | P1 | FR-198-AC-1, FR-198-AC-2, FR-198-AC-3, FR-198-AC-4, FR-198-AC-5 | 🚧 Planned |
 | TC-634 | Long-run fractions are decided exactly by bottom components and maximal end components | Integration | P1 | FR-199-AC-1, FR-199-AC-2, FR-199-AC-3 | 🚧 Planned |
 | TC-635 | Every-scheduler claims with a fairness set are decided over fair schedulers through fair end components | Integration | P1 | FR-200-AC-1, FR-200-AC-2, FR-200-AC-3, FR-200-AC-4 | 🚧 Planned |
 | TC-636 | check_probability_certificate accepts sound certificates and rejects flawed ones in exact rationals | Integration | P1 | FR-201-AC-1, FR-201-AC-2, FR-201-AC-3, FR-201-AC-4 | 🚧 Planned |

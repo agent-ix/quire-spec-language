@@ -91,6 +91,11 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
   interval iteration, the action attaining the bound at each state in the
   final upper iterate (maximum) or lower iterate (minimum), ties broken by
   canonical transition order.
+- For a maximum, EN-5 SHALL choose the policy on UR-2's collapsed MDP and
+  expand it on the product: at each collapsed MEC, the chosen leaving
+  action at the MEC state that owns it, and at every other MEC state the
+  first action, in canonical order, on a shortest path inside the MEC to
+  that state (ADR-028 UR-7).
 - A dyadic interval from interval iteration SHALL yield a `Lower` and an
   `Upper` certificate candidate at once (FR-201).
 
@@ -102,6 +107,7 @@ pub enum ExtRational { Finite(Rational), PlusInfinity }
 | FR-198-AC-2 | `Link`'s `cost` claim (FR-195-AC-2): the target `delivered or attempts = 2` is reached with probability 1 under every scheduler; the minimum is `11/10` (`send_a`) and the maximum `6/5` (`send_b`), exact, and the `<= 6/5` bound is met at equality. `expected accumulate cost until holds(m.delivered) <= 3` has value `+∞` under every scheduler, decided by the graph alone. | Test (TC-633) |
 | FR-198-AC-3 | A `Loop` model whose live state steps to itself, to `goal` and to `fail`, each with probability `1/3`, over every scheduler with one action, has `Pr(eventually holds(goal)) = 1/2`. Interval iteration's lower bound at the live state rises and its upper bound falls at each sweep, each bounding `1/2`; with `max_iterations` 3 and threshold `1/2`, policy iteration decides `1/2` at equality. Under a workload the same value comes from one exact solve. | Test (TC-633) |
 | FR-198-AC-4 | With `max_policy_iterations` 0 and AC-3's equality threshold, the result is `Stopped(MaxPolicyIterations)`. Two runs of one request return equal results and equal policies. | Test (TC-633) |
+| FR-198-AC-5 | A `Mec` model whose live state has the actions `a_stay`, back to itself with probability 1, and `b_exit`, to `goal` or `fail` with `1/2` each: over every scheduler the maximum of `Pr(eventually holds(goal))` is `1/2`, and the witness policy takes `b_exit` at the live state, though `a_stay` comes first in canonical order and attains the same iterate value. `probability <= 1/4` over the same event settles `refuted` on that policy, and its evidence replays. | Test (TC-633) |
 
 ## Dependencies
 

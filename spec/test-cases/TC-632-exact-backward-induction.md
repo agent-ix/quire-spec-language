@@ -16,12 +16,12 @@ Scope: FR-197-AC-1 to FR-197-AC-4.
 
 ## Test Procedure
 
-Fixtures: `Link` and `Deliver`; `P95`; `NoFault`; `Avail` with a mean-of-fraction claim; §15.5's `Deadline` minimum.
+Fixtures: `Link` and `Deliver`; `P95`; `NoFault`; `Avail` with a mean-of-fraction claim; §15.5's `Deadline` minimum; a two-point `M` model (1 or 3 with probability 1/2 each) with `quantile 1/2 of M >= 3`.
 
 1. Compute `Deliver`'s minimum, maximum and workload values and the policy.
 2. Compute `Pr(M <= 5 ms)` and `Pr(M <= 2 ms)` under the workload and by XF-2.
 3. Compute `NoFault` with `max_rational_bits` 23,254 and with 1,024 at 64 bits.
-4. Compute the mean of the fraction; compute `Deadline`'s minimum with `max_rational_bits` 4 and `max_precision_bits` 128.
+4. Compute the mean of the fraction; compute `Deadline`'s minimum with `max_rational_bits` 4 and `max_precision_bits` 128. Decide the two-point quantile claim over every scheduler and under its workload.
 
 Tag the tests `#[trace("TC-632", "FR-197-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-632", "FR-197-AC-n")]`.
 - Step 1: `24/25`, `4/5`, `send_b`; `99/100`; `391/400`, `17/20`.
 - Step 2: `24233/25000` and `4491/5000`; equal verdicts.
 - Step 3: the exact rational with denominator `10^7000`; an interval of width at most `2 · 1001 · 2^-64` above `999/1000`.
-- Step 4: the exact expectation of FR-197-AC-4; `PrecisionBudget` with an interval containing `99/100`.
+- Step 4: the exact expectation of FR-197-AC-4; `PrecisionBudget` with an interval containing `99/100`. The two-point claim `refuted` both ways.

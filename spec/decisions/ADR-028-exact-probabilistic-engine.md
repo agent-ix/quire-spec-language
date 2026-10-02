@@ -36,7 +36,7 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. §19 records the owner's and the plan lead's rulings
+Proposed, 2026-10-01. §18 records the owner's and the plan lead's rulings
 on the draft's six questions, folded into the decision. The QSL compiler
 requirements that implement it are FR-195 to FR-204, under US-023. The
 owner ruled that exact
@@ -46,8 +46,7 @@ the rest of the QSL language work and built after EN-1 (ADR-018) and EN-4
 sound-interval bounds with certificates, counterexamples whose witness
 scheduler replays exactly, and probabilistic timed automata through digital
 clocks; it admits no uncertified floating-point result. A later ruling adds
-claims over fair schedulers (§3a). §18 maps the twelve
-spec items of the research ruling onto this record. The owning ticket and
+claims over fair schedulers (§3a). The owning ticket and
 the research are listed under References.
 
 "QSpec FR-nnn" names a quire-specification requirement; a bare FR id is a QSL
@@ -120,7 +119,7 @@ What EN-5 builds on:
 | PR-1 | **Actions.** At a model state `s`, the actions are the enabled scheduled identities (ADR-024 PM-2): (operation, receiver, non-random argument vector) whose effective precondition holds at `s` and that have at least one post-state for some drawn random vector. An action `a` has the **draw distribution** `D(s, a)`: each random argument vector `r` in the product of its parameters' supports with probability the product of their PM-1 probabilities. Preconditions read no random parameter (PM-1), so the action set is decided before any draw. |
 | PR-2 | **The MDP.** A drawn vector `r` of action `a` at `s` leads to the post-states FR-120 gives for `(a, r)`. When there is exactly one, the edge `s → s'` carries probability `D(s, a)(r)`, summed over the vectors that lead to `s'`. When there are several, the choice among them is part of the scheduler's choice (SCH-2). When there are none, the draw loses mass, and the subject settles `unsupported`, `NotMarkov{state, transition, post_states}` (ADR-024 PM-3). The MDP's support graph is ADR-018's state graph (ADR-024 PM-6). |
 | PR-3 | **The DTMC under a workload.** Under `W`, each action is chosen with ADR-024 PM-2's probability, so each edge carries PM-3's step probability. Several post-states for one drawn vector settle `NotMarkov` under a workload, as PM-3 states. |
-| PR-4 | **The product with a monitor.** For a form whose event is a bounded formula or a comparison of a bounded measure (ADR-024 PF-1, PF-2), EN-5 forms the product of the MDP or DTMC with ADR-018 SM-6's deterministic finite monitor for the formula, read at each position (ADR-018 SM-3), with EN-1's closure at terminal model states. A bounded measure adds its accumulator to the product state: the steps or reward accumulated since activation, saturating one step above the threshold `c`, and the activation flag. Rewards are non-negative values from finite supports (ADR-024 PM-5), so the accumulator takes finitely many values. The product state key is (model state key, monitor state index, accumulator); the product edge carries the model edge's action, draw and probability. |
+| PR-4 | **The product with a monitor.** For a form whose event is a bounded formula or a comparison of a bounded measure (ADR-024 PF-1, PF-2), EN-5 forms the product of the MDP or DTMC with ADR-018 SM-6's deterministic finite monitor for the formula, read at each position (ADR-018 SM-3), with EN-1's closure at terminal model states. A bounded measure adds its accumulator to the product state: the steps or reward accumulated since activation, saturating at a single value above the threshold `c` (any value above `c` serves, since only `M <= c` and `M < c` are read), and the activation flag. Rewards are non-negative values from finite supports (ADR-024 PM-5), so the accumulator takes finitely many values. The product state key is (model state key, monitor state index, accumulator); the product edge carries the model edge's action, draw and probability. |
 | PR-5 | **Decided states.** The monitor of a bounded formula counts positions to its horizon `h` (ADR-014 TR-4), so every product path reaches an accepting or a rejecting monitor state within `h + 1` positions, which EN-5 keeps as absorbing **decided** states. The product restricted to undecided states is acyclic. |
 | PR-6 | **Products for unbounded forms.** An unbounded form (XF-4, XF-5, XF-6) needs no monitor: its state predicates label model states and its reward labels edges. Its product is the MDP or DTMC itself, with the target or the long-run predicate as labels. |
 
@@ -163,13 +162,13 @@ checks.
 | ID | Rule |
 | --- | --- |
 | XF-1 | **Probability bounds and quantiles (ADR-024 PF-3, PF-4).** The event is decided on a finite window, so the value is a finite-horizon reachability probability of the rejecting or accepting decided states on PR-4's product (§6). |
-| XF-2 | **Quantile thresholds over every scheduler.** A quantile claim reads a probability conditioned on activation (PF-4). `quantile q of M <= c` holds over every scheduler exactly when `min over σ of E[σ](X) >= 0`, with `X = [activated] · ([M <= c] − q)`, a finite-horizon terminal reward: for a scheduler with `Pr(activated) > 0`, `E(X) >= 0` is `Pr(M <= c | activated) >= q`, and a scheduler that never activates contributes 0. `quantile q of M >= c` uses `X = q · [activated] − [activated] · [M < c]` the same way. Under a workload EN-5 computes the conditional probability directly as the ratio of two finite-horizon probabilities. |
+| XF-2 | **Quantile thresholds over every scheduler.** A quantile claim reads a probability conditioned on activation (PF-4). `quantile q of M <= c` holds over every scheduler exactly when `min over σ of E[σ](X) >= 0`, with `X = [activated] · ([M <= c] − q)`, a finite-horizon terminal reward: for a scheduler with `Pr(activated) > 0`, `E(X) >= 0` is `Pr(M <= c | activated) >= q`, and a scheduler that never activates contributes 0. `quantile q of M >= c` holds exactly when `Pr(M < c | activated) < q` under every scheduler with `Pr(activated) > 0`, a strict bound (ADR-024 PF-4). EN-5 computes `v = max over σ of E[σ](Y)`, `Y = [activated] · ([M < c] − q)`: the claim fails when `v > 0` and holds when `v < 0`; when `v = 0`, EN-5 keeps at each product state only the actions that attain `v` and computes the maximum probability of activation, and the claim fails when it is positive, since a scheduler then meets equality while activating, and holds when it is 0. With `M` equal to 1 or 3 with probability 1/2 each, `q = 1/2` and `c = 3`, `v = 0` is attained with activation probability 1, so the false claim is refuted. Under a workload EN-5 computes the conditional probability directly as the ratio of two finite-horizon probabilities. |
 | XF-3 | **Mean of a fraction (PF-5).** Unweighted, the expectation of `fraction holds(P) over [0, h]` is `1/(h + 1)` times the expected number of positions in `[0, h]` where `P` holds, a finite-horizon expected reward with reward 1 at each such position. Weighted by `R`, the fraction is a ratio of two sums, so the product accumulates both sums (PR-4) and the value is a finite-horizon expected terminal reward. |
 | XF-4 | **Unbounded reachability.** Under the infinite-trace profile, `probability >= θ` or `<= θ` over `[eventually holds(P)]`, `[holds(A) until holds(B)]` or `[always holds(P)]`, with `P`, `A` and `B` state predicates and `0 < θ < 1`. `always holds(P)` reads as `1 − Pr(eventually holds(not P))`, with minimum and maximum exchanged. The form is decided by §7. |
 | XF-5 | **Expected reward to a target.** `expected accumulate R until holds(B) <= c` or `>= c`, for a reward `R` (ADR-024 PM-5) and a threshold `c` of its type, from position 0. On a behaviour that reaches `B`, the value is `R` summed over the steps up to the first position where `B` holds; under a scheduler whose probability of reaching `B` is below 1, the expectation is `+∞`, so a `<= c` bound fails and a `>= c` bound holds there. Over a timed subject, `expected elapsed until holds(B)` reads the time stamp of that position (ADR-026 SS-1). The form is decided by §7, with exact evidence only (XF-7, RU-1): only the exact engine detects the `+∞` cases. |
 | XF-6 | **Long-run fractions (PF-6).** `long-run fraction holds(P)`, unweighted or weighted by `R`, decided by bottom components (§8). With exact evidence the result is a proof or a refutation, not ADR-024 ST-7's `Asymptotic` measurement. |
 | XF-7 | **Exact evidence only.** XF-4 and XF-5, and every form `under every scheduler`, have no finite-window sample or no sampling route, so they are checked with exact evidence; an item that names `statistical` evidence for one settles `unsupported`, `ExactOnlyForm` (or `EveryScheduler`), at negotiation (ADR-024 SV-5). |
-| XF-8 | **Thresholds and units.** Thresholds stay strictly between 0 and 1 for probabilities and fractions, and qualitative claims stay ADR-018 claims (ADR-024 PF-8). A threshold of a reward or time has the reward's dimension and converts by QSpec FR-142 (ADR-024 PF-7). For a `>= θ` bound the value meets the claim when it is at least `θ`, and for `<= θ` when it is at most `θ`: equality meets a non-strict bound. |
+| XF-8 | **Thresholds and units.** Thresholds stay strictly between 0 and 1 for probabilities and fractions, and qualitative claims stay ADR-018 claims (ADR-024 PF-8). A threshold of a reward or time has the reward's dimension and converts by QSpec FR-142 (ADR-024 PF-7). For a `>= θ` bound the value meets the claim when it is at least `θ`, and for `<= θ` when it is at most `θ`: equality meets a non-strict bound. The `>=` quantile form reduces to a strict bound (XF-2), which equality does not meet. |
 
 ### 5. Exact arithmetic
 
@@ -199,7 +198,7 @@ checks.
 | UR-4 | **Exact policy iteration.** When the interval still contains the threshold after `max_iterations` sweeps or at `max_precision_bits`, EN-5 runs policy iteration in exact rationals: it fixes a memoryless deterministic scheduler, evaluates it by an exact sparse linear solve (fraction-free elimination, Bareiss), improves it action by action, and stops at a scheduler no action improves. The value is exact, so a value equal to the threshold is decided, which no interval method decides. Under a workload it is one exact linear solve. |
 | UR-5 | **Expected rewards.** For XF-5, the qualitative step finds the states that reach `B` with probability 1 under every scheduler (for a maximum) or under some scheduler (for a minimum); elsewhere the value is `+∞`, decided by the graph alone. On the rest, interval iteration needs an upper starting vector, which EN-5 obtains as in sound value iteration (Quatmann and Katoen), and end components of zero reward are collapsed as in UR-2. Exact policy iteration is the fallback, as in UR-4. |
 | UR-6 | **Cost.** Qualitative precomputation is linear in the product for a DTMC and `O(|S| · |E|)` for an MDP; MEC decomposition is `O(|S| · |E|)`. Each interval sweep costs `O(|E|)` operations at `p` bits; the number of sweeps depends on how fast the model mixes, and `max_iterations` bounds it. Each policy evaluation costs a sparse elimination whose integers stay within the Hadamard bound, polynomial in the states and the bit length of the step probabilities; policy iteration ends after finitely many improvements, exponentially many in the worst case (Fearnley) and few in practice, and `max_policy_iterations` bounds them. |
-| UR-7 | **Canonical result.** The witness scheduler is the final policy of UR-4 or, from interval iteration, the action that attains the bound at each state in the final upper (for a maximum) or lower (for a minimum) iterate, ties broken by canonical transition order. |
+| UR-7 | **Canonical result.** The witness scheduler is the final policy of UR-4 or, from interval iteration, the action that attains the bound at each state in the final upper (for a maximum) or lower (for a minimum) iterate, ties broken by canonical transition order. For a maximum, the policy is chosen on UR-2's collapsed MDP and expanded on the product: at each collapsed MEC, the chosen leaving action at the MEC state that owns it, and at every other state of the MEC the first action, in canonical order, on a shortest path inside the MEC to that state. An action that stays inside a MEC attains the same iterate value as the leaving action, so choosing per state would let the induced chain stay in the MEC forever; the expansion leaves it and attains the maximum. |
 
 ### 8. Long-run fractions
 
@@ -260,10 +259,10 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 | CE-1 | **`ProbabilityCertificate`.** `{identity, objective, kind, values, ranking, policy, components}`: the item's obligation identity (ADR-013 O-09, as ADR-026 CF-5); the objective (the target or decided states, the reward, minimum, maximum or workload, and the fairness set, FS-9); the kind `Lower`, `Upper`, `Exact` or `LongRun`; a value per product state, each an exact rational (a dyadic value from interval iteration is an exact rational); for `Lower` and `Exact`, a natural-number ranking per state; for a lower bound on a maximum, or an upper bound on a minimum, a memoryless deterministic policy; and for `LongRun`, per component its value and a gain–bias pair. States are named by product state key (PR-4). The certificate names its states; it carries no qualitative sets, which the checker recomputes. |
 | CE-2 | **The checker re-enumerates.** `qsl_replay::check_probability_certificate`, a layer-6 facade entry, recompiles the package, re-admits the subject and re-enumerates the product through `ModelSystem` and the monitor: every reachable product state for an `Upper`, `Exact` or `LongRun` certificate, the support and its successors for a `Lower` one. It recomputes the decided states, the `Prob0`/`Prob1` sets, the components and, with a fairness set, the maximal fair end components (FS-4) by graph algorithms, and checks the conditions of CE-3 in exact rationals. It solves no equation and runs no iteration. |
 | CE-3 | **Conditions.** With `F` the one-step operator of the objective (the workload's average, the minimum or maximum over actions, or the policy's action) and values fixed at decided, target and `Prob0` states: **Upper**: `F(y) <= y` at every state, so the least fixed point, which is the value, is at most `y` (Knaster–Tarski). **Lower**: `x <= F(x)` at every state of the support, and every non-target state with `x > 0` has, under the workload, under the policy, or for a minimum under every action, a successor with positive probability, `x > 0` and a smaller rank; then no end component inside the support avoids the target, and `x` is at most the value. **Exact**: both, with equality, so `x` is the value. On a finite-horizon product the ranking is the remaining horizon, which the checker reads from the monitor state. **Expected reward**: the same conditions with the reward added to `F`, and the `+∞` states recomputed by the graph check. **LongRun**: per component, the gain–bias pair satisfies Puterman's multichain optimality equations for the reward `R · ([P] − ρ_C)` with gain 0, as equalities under the component's policy (a value attained) and as inequalities over every action (a value no scheduler exceeds), plus an `Exact`, `Lower` or `Upper` certificate for LR-3's expected component value. |
-| CE-4 | **The bound follows.** The checker accepts a certificate that meets its conditions and puts the initial state's value on the claim's side of the threshold: `Lower` for a proof of `>= θ` or a refutation of `<= θ`; `Upper` for a proof of `<= θ`, or for a refutation of `>= θ` by an upper bound on `Pr(E)` below `θ`; `Exact` for either. A dyadic interval from interval iteration yields a `Lower` and an `Upper` certificate at once (UR-3). |
+| CE-4 | **The bound follows.** The checker accepts a certificate that meets its conditions and puts the initial state's value on the claim's side of the threshold: `Lower` for a proof of `>= θ` or a refutation of `<= θ`; `Upper` for a proof of `<= θ`, or for a refutation of `>= θ` by an upper bound on `Pr(E)` below `θ`; `Exact` for either. For the `>=` quantile form (XF-2) the side is strict: an `Upper` certificate proves it when it bounds `v` below 0; at `v = 0` the proof adds an `Upper` certificate bounding by 0 the maximum activation probability over the actions that attain `v`. A dyadic interval from interval iteration yields a `Lower` and an `Upper` certificate at once (UR-3). |
 | CE-5 | **Verdict path.** EN-5 checks its own certificate before emitting it (AR-4). The driver then runs `check_probability_certificate` on the certificate that left S6c over E11 and settles `proved` only when it accepts; a rejection settles `inconclusive`, `CertificateRejected`; a checker stopped by a budget settles V-7. The checker refuses a certificate whose identity differs from the item's (ADR-026 CF-5). |
 | CE-6 | **Size and cost.** A certificate holds one value per state it names, plus a rank and a policy choice where CE-3 needs them. The checker's cost is the re-enumeration plus one pass over the edges in exact rationals, linear in the product. It runs under the request's B-5 budgets. |
-| CE-7 | **A small trusted base.** The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
+| CE-7 | **A small trusted base.** The checker lives in the qualified core, as the owner ruled for certificate checkers (ADR-029, References). The checker's arithmetic and its graph algorithms are separate code from EN-5's iterative and linear-algebra methods and are kept small. The product construction is shared with EN-1, whose translations already answer to SM-1 (ADR-018 SM-7). |
 
 ### 12. Limits
 
@@ -324,7 +323,7 @@ over every scheduler coincide.
   `ValueBounds{…, BackwardInduction{64}}`. The certificate is the dyadic lower
   vector, whose ranking is the remaining horizon.
 - One pass over about 2,000 product edges replaces ADR-024's 9,210,341
-  Okamoto samples or about 5,065 SPRT samples of 1,001 positions each, and
+  Okamoto samples or about 5,168 SPRT samples of 1,001 positions each, and
   the claim's `α`, `β` and `ι` are not read (SP-4).
 
 #### 15.2 Quantile: p95 latency under 5 ms (ADR-024 §7.2)
@@ -349,11 +348,12 @@ accumulates `duration` from 0, saturating above the threshold.
 - **Long-run.** The chain has one BSCC, `{up, down}`. Its stationary
   distribution is `π = (1,800/1,801, 1/1,801)`: `π_up · 1,999/2,000 + π_down ·
   9/10 = π_up`. The long-run availability is `1,800/1,801 ≈ 0.99944475`, at
-  least 0.999: `proved`, `ExactValue{1800/1801}`. The `LongRun` certificate
-  is the gain–bias pair for the reward `[up]`, gain `1,800/1,801` at both
-  states, bias 0 at `up` and `−2,000/1,801` at `down`; the checker verifies
-  `g + b(up) = 1 + (1,999/2,000) · b(up) + (1/2,000) · b(down)` and `g +
-  b(down) = (9/10) · b(up) + (1/10) · b(down)` exactly. ADR-024 measured this
+  least 0.999: `proved`, `ExactValue{1800/1801}`. The `LongRun` certificate is in CE-3's form: component value
+  `ρ_C = 1,800/1,801`, the reward `[up] − ρ_C` (`1/1,801` at `up`,
+  `−1,800/1,801` at `down`), gain 0, bias 0 at `up` and `−2,000/1,801` at
+  `down`; the checker verifies `b(up) = 1/1,801 + (1,999/2,000) · b(up) +
+  (1/2,000) · b(down)` and `b(down) = −1,800/1,801 + (9/10) · b(up) +
+  (1/10) · b(down)` exactly. ADR-024 measured this
   with `Asymptotic` coverage after 91,624 regeneration cycles.
 - **Per window.** The product carries the position and the count of down
   positions, saturating at 11, so at most 240,024 product states. The event
@@ -516,24 +516,7 @@ follows v1.
 | QS-9 | Conformance vectors, each with its exact value, verdict and evidence that must check (the exact witness is not compared, since engines may return different valid ones): (a) §15.1, the exact rational and a dyadic `ValueBounds` proof; (b) §15.2, `24233/25000` proved at 5 ms and `4491/5000` refuted at 2 ms with a one-path set; (c) §15.3, `1800/1801` proved with its gain–bias certificate, and the per-window claim refuted with a subsystem certificate; (d) §15.4, minimum `24/25`, maximum `99/100`, workload `391/400`, the refutation with its witness scheduler, and the proof with its `Exact` certificate; (e) §15.5, `99/100` proved at equality, `20/9 ms`, the refutation at 0.995, and the strict variant `unsupported`; (f) checker refusals: a certificate that violates one inequality (`CertificateRejected`), a missing rank on a lower certificate, a path set that is not prefix-free, a witness step that departs from its scheduler, a drawn value outside its support; (g) `NotMarkov` under a workload, a delay distribution and a zero-delay cycle on the timed route; (h) a `PrecisionBudget` stop | QSpec TC-360 to TC-365 and TC-374, beside TC-200 and TC-210 |
 | QS-10 | Fair schedulers: the fairness set on every-scheduler claims, fair schedulers as probability-1 fairness, fair end components, the infimum and supremum per form, the randomized witness scheduler and its fairness check, and a vector for §15.6 (FS-1 to FS-9) | QSpec FR-406, FR-411, FR-413 |
 
-### 18. The twelve spec items of the research ruling
-
-| Item | Content | Where in this record |
-| --- | --- | --- |
-| 1 | An ADR for EN-5: scope, placement in S6c, the evidence kind `exact` | §1, SP-1 to SP-6 |
-| 2 | The MDP and DTMC product with the bounded and safety monitors, step probabilities on EN-1 edges | §2, PR-1 to PR-6 |
-| 3 | `under every scheduler`: minimum or maximum over schedulers, and why memoryless deterministic schedulers suffice on the product | §3, SCH-1 to SCH-5; fair schedulers §3a, FS-1 to FS-9 |
-| 4 | Finite-horizon exact backward induction for PF-1 to PF-5, under a workload and over every scheduler | §4 XF-1 to XF-3; §6, FH-1 to FH-4 |
-| 5 | Unbounded reachability: `Prob0`/`Prob1`, end-component collapse, interval iteration with outward rounding, the exact policy-iteration fallback | §4 XF-4, XF-5; §5; §7, UR-1 to UR-7 |
-| 6 | Exact long-run fractions by bottom components, replacing `Asymptotic` coverage with exact evidence | §4 XF-6; §8, LR-1 to LR-5 |
-| 7 | `ProofBasis` members, the new causes, the verdict table | §9, XV-1 to XV-7 |
-| 8 | The witness-scheduler wire and its replay entry | §10, WS-1 to WS-6 |
-| 9 | The certificate wire and a checker in exact rationals | §11, CE-1 to CE-7 |
-| 10 | `ExactProbLimits` as caller-set B-5 budgets | §12, LM-1 to LM-3 |
-| 11 | PTA by digitization: the closed condition, admitted forms, the unsupported causes | §13, TA-1 to TA-7 |
-| 12 | QSpec overlap: result content, witness and certificate wires, conformance vectors | §17, QS-1 to QS-9; §15 |
-
-### 19. Rulings on the draft's questions
+### 18. Rulings on the draft's questions
 
 Ruled on 2026-10-01: RU-2 and RU-3 by the owner, the others by the plan
 lead, consistent with the owner's earlier rulings.
@@ -654,11 +637,12 @@ Each amended text carries an "Amended by ADR-028" note.
 
 ## References
 
-- Owning ticket: Linear QSL-371, which records the rulings of §19. QSpec
+- Owning ticket: Linear QSL-371, which records the rulings of §18. QSpec
   half: Linear STD-137 (QSpec FR-405 to FR-414) and, for the digital
   route, Linear STD-139 (QSpec FR-421). Research and the owner's ruling that EN-5
-  is a native engine specified now, with the twelve spec items mapped in
-  §18: Linear RES-53. Zone-based timed analysis: Linear RES-54.
+  is a native engine specified now: Linear RES-53. Zone-based timed analysis: Linear RES-54.
+- ADR-029, the qualified core and its certificate checkers (RU-2, CB-2):
+  Linear QSL-390, on its own draft branch.
 - Team-leader decision of 2026-10-01 on ADR-026 SD-1: an operation with no
   `delay` member has a nondeterministic delay, resolved by its minimum or
   maximum under a workload (RU-6), never an implied distribution.

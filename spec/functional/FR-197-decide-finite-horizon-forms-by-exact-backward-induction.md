@@ -51,8 +51,8 @@ pub struct Dyadic { pub mantissa: BigInt, pub exponent: u32 }   // mantissa · 2
 
 - A decided state SHALL take its terminal value: 1 or 0 for an event; for a
   quantile over every scheduler, XF-2's terminal reward
-  `[activated] · ([M <= c] − q)` (or `q · [activated] − [activated] ·
-  [M < c]` for `>= c`); for a mean of a fraction, the fraction computed from
+  `[activated] · ([M <= c] − q)`, or `[activated] · ([M < c] − q)` for
+  `>= c`, maximized; for a mean of a fraction, the fraction computed from
   the accumulated sums.
 - EN-5 SHALL visit undecided states in reverse topological order and give
   each the probability-weighted sum over its successors under a workload, or
@@ -61,7 +61,12 @@ pub struct Dyadic { pub mantissa: BigInt, pub exponent: u32 }   // mantissa · 2
   take the minimum or maximum over its post-states.
 - Under a workload, EN-5 SHALL decide a quantile claim as the ratio of two
   finite-horizon probabilities, `Pr(M <= c and activated) / Pr(activated)`.
-  Over every scheduler EN-5 SHALL decide it by the sign of XF-2's minimum.
+  Over every scheduler EN-5 SHALL decide `<= c` by the sign of XF-2's
+  minimum, and `>= c` by XF-2's strict rule: fail when the maximum `v` is
+  positive, hold when it is negative, and when `v = 0` fail exactly when
+  the maximum activation probability over the actions attaining `v` is
+  positive. Under a workload, `>= c` SHALL hold only when
+  `Pr(M < c and activated) / Pr(activated) < q`.
 - EN-5 SHALL compute in exact rationals in lowest terms. When a value's
   numerator or denominator exceeds `max_rational_bits` bits, it SHALL rerun
   over dyadic intervals at `precision_bits`, rounding each lower end down and
@@ -71,6 +76,8 @@ pub struct Dyadic { pub mantissa: BigInt, pub exponent: u32 }   // mantissa · 2
   contains it there SHALL return `PrecisionBudget` with that interval.
 - A value equal to the threshold SHALL meet a non-strict bound; only the
   exact pass decides it.
+- A value equal to the threshold SHALL fail the strict bound of the `>=`
+  quantile form.
 - Over every scheduler, EN-5 SHALL record the action attaining the minimum
   or maximum at each state, ties broken by canonical transition order, as
   the memoryless deterministic policy (FH-4).
@@ -83,7 +90,7 @@ pub struct Dyadic { pub mantissa: BigInt, pub exponent: u32 }   // mantissa · 2
 | FR-197-AC-1 | §15.4: over every scheduler the value is `24/25` at the start and `4/5` after one loss, with `send_b` chosen at both live states; the maximum is `99/100`; under `Even` the value is `391/400` at the start and `17/20` after one loss. | Test (TC-632) |
 | FR-197-AC-2 | §15.2: `Pr(M <= 5 ms) = 24233/25000` and `Pr(M <= 2 ms) = 4491/5000`, exact; the XF-2 transform over every scheduler gives the same verdicts as the ratio under `Steady`, since only one operation is enabled at each state. | Test (TC-632) |
 | FR-197-AC-3 | §15.1 with `max_rational_bits` at least 23,254 returns `Exact` with `(9999999/10000000)^1000`, whose denominator is `10^7000`. With `max_rational_bits` 1,024 and `precision_bits` 64 it returns `Bounds` whose interval has width at most `2 · 1001 · 2^-64` and contains the exact value, and lies above `999/1000`. | Test (TC-632) |
-| FR-197-AC-4 | A mean-of-fraction claim `mean of fraction holds(v.up) over [0, 2] >= 0.9` over ADR-024 §7.3's `Avail` under `Steady` gives the exact expectation `(1 + 1999/2000 + (1999/2000)^2 + (1/2000) · 9/10) / 3` of the fraction. With `max_rational_bits` 4 and `max_precision_bits` 128, §15.5's minimum `99/100` against threshold `99/100` returns `PrecisionBudget` with an interval containing `99/100`. | Test (TC-632) |
+| FR-197-AC-4 | A mean-of-fraction claim `mean of fraction holds(v.up) over [0, 2] >= 0.9` over ADR-024 §7.3's `Avail` under `Steady` gives the exact expectation `(1 + 1999/2000 + (1999/2000)^2 + (1/2000) · 9/10) / 3` of the fraction. With `max_rational_bits` 4 and `max_precision_bits` 128, §15.5's minimum `99/100` against threshold `99/100` returns `PrecisionBudget` with an interval containing `99/100`. `quantile 1/2 of M >= 3` over a model whose `M` is 1 or 3 with probability 1/2 each settles `refuted`, over every scheduler (`v = 0` attained with activation probability 1) and under its workload (ratio exactly `1/2`, not below it). | Test (TC-632) |
 
 ## Dependencies
 

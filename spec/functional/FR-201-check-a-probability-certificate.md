@@ -26,7 +26,7 @@ verify the certificate in exact rationals with no engine present: it recompiles 
 package, re-enumerates the product, recomputes every qualitative set by
 graph algorithms, and checks the certificate's fixed-point, ranking and
 gain–bias conditions (CE-2 to CE-4). It solves no equation and runs no
-iteration. The checker is part of the qualified core (ADR-029 RU-2): an
+iteration. The checker is part of the qualified core (ADR-028 CE-7): an
 EN-5 `proved` SHALL count only after this checker accepts its certificate.
 
 ## Use case
@@ -114,14 +114,14 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-201-AC-1 | §15.4 at threshold 0.95: the `Exact` certificate with values `24/25`, `4/5`, 1 at delivered states and 0 at the two-loss state is accepted with side `AtLeast`. The same certificate with `4/5` replaced by `9/10` is rejected, naming the first state in canonical order where the minimum over actions differs from the certified value; the item settles `inconclusive`, `CertificateRejected`. | Test (TC-636) |
-| FR-201-AC-2 | §15.3's `LongRun` certificate (gain `1800/1801`, bias 0 and `−2000/1801`) is accepted; with the bias at `down` changed to `−2001/1801` it is rejected. §15.1's dyadic `Lower` certificate at 64 bits, ranked by remaining horizon, is accepted with side `AtLeast`. | Test (TC-636) |
+| FR-201-AC-2 | §15.3's `LongRun` certificate (component value `1800/1801`, reward `[up] − 1800/1801`, gain 0, bias 0 at `up` and `−2000/1801` at `down`) is accepted; with the bias at `down` changed to `−2001/1801` it is rejected. §15.1's dyadic `Lower` certificate at 64 bits, ranked by remaining horizon, is accepted with side `AtLeast`. | Test (TC-636) |
 | FR-201-AC-3 | A `Lower` certificate for §15.4 with its ranking omitted is rejected; one whose identity names a different claim is refused before any re-enumeration; §15.6's `FairTerminates` `Exact` certificate is accepted only after the checker recomputes that no fair end component exists, and the same certificate with its fairness set removed is rejected. | Test (TC-636) |
 | FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(ResourceExhausted)` naming `max_states`. | Test (TC-636) |
 
 ## Dependencies
 
-- ADR-028 SP-5, AR-4, CE-1 to CE-7, FS-9; ADR-029 RU-2, CB-2 (the qualified
-  core); ADR-013 O-09.
+- ADR-028 SP-5, AR-4, CE-1 to CE-7 (CE-7 records the qualified-core
+  placement), FS-9; ADR-013 O-09.
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-196](FR-196-build-the-probabilistic-product.md),
   [FR-200](FR-200-decide-every-scheduler-claims-over-fair-schedulers.md).

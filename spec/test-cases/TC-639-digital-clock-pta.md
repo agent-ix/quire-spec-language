@@ -29,5 +29,5 @@ Tag the tests `#[trace("TC-639", "FR-204-AC-n")]`.
 
 - Step 1: clock ranges 0 to 2 and 0 to 5; `ExactValue{99/100}`; `refuted` with probability `1/100`, replay checking the 4 ms horizon.
 - Step 2: `ExactValue{20/9 ms}`; `StrictClockConstraint` naming the guard.
-- Step 3: `ExactValue{158509/160000}`; `DelayDistribution` naming `send`; `DelayDistribution`.
+- Step 3: `ExactValue{159129/160000}`; `DelayDistribution` naming `send`; `DelayDistribution`.
 - Step 4: `ZeroDelayCycle` naming the cycle; `TimedFormShape`.

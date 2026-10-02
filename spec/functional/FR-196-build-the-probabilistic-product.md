@@ -79,8 +79,8 @@ pub struct ProbEdge { pub from: ProductStateId, pub action: Option<ScheduledIden
   terminal model states. Accepting and rejecting monitor states SHALL be
   absorbing decided states.
 - For a bounded measure, the product key SHALL add the activation flag and
-  the accumulated reward or step count since activation, saturating one
-  unit above the threshold `c`; for a weighted fraction, both sums,
+  the accumulated reward or step count since activation, saturating at a single value above the threshold `c`, since only
+  `M <= c` and `M < c` are read; for a weighted fraction, both sums,
   saturating where the comparison is decided.
 - For a `Reach`, `ExpectedReward` or `LongRunFraction` form, EN-5 SHALL use
   the MDP or DTMC itself as the product, with the predicates as state labels and
