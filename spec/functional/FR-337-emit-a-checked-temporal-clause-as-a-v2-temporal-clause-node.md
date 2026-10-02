@@ -69,8 +69,9 @@ reader returns.
   application with its own `quire.op.temporal.*` identity, and each `holds`
   atom's Boolean operand as FR-093 lowers a Boolean expression.
 - The emitter SHALL write an interval operator's member as
-  `temporal_interval` with `{lower, upper}` as decimal strings, and an
-  unbounded operator's interval as `null`.
+  `temporal_interval` with `{lower, upper}` as decimal strings, an `[a,*]`
+  operator's open upper bound in the form QSpec FR-370 states for it, and
+  an unbounded operator's interval as `null`.
 - The emitter SHALL write one `quire.op.temporal.fair` application per
   member of the resolved fairness set, in fairness-set order, each with the
   resolved `fairness_kind` and `granularity`, so an unmarked constraint and

@@ -150,8 +150,9 @@ automaton states and the depth reached.
   lower bound 0 over an operand with no interval operator the occurrence
   keeps one counter with `b + 1` values; a past interval operator with
   lower bound 0 keeps one counter of positions since its operand last held,
-  saturating at `b + 1`; any other occurrence keeps a set of offsets in
-  `[0, b]`.
+  saturating at `b + 1`; an `[a,*]` occurrence keeps a shift counter with
+  `a + 1` values, then the unbounded operator's states; any other
+  occurrence keeps a set of offsets in `[0, b]`.
 - The engine SHALL materialize automaton states as the product exploration
   reaches them, counting distinct automaton states with checked arithmetic.
   If the count would exceed `max_automaton_states`, then the engine SHALL

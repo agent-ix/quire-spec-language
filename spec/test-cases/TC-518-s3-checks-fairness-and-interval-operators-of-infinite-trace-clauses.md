@@ -30,7 +30,8 @@ Use ADR-018 §6's ConfigVersion example unit (post clause `Cycles`) and the
    twice.
 3. Under infinite-trace, check the recovery-stability formula over
    `Health`, `eventually[3,*] holds(p)` and `eventually[5,3] holds(p)`;
-   compare the `[0,2]` interval's key with `[0,2]` under event-position.
+   check `eventually[3,*] holds(p)` under event-position; compare the
+   `[0,2]` interval's key with `[0,2]` under event-position.
 4. Check the five clauses of FR-123-AC-4 and read their property forms and
    requirement records; check a clause over the ConfigVersion subject under
    the fixed-sample profile.
@@ -46,8 +47,9 @@ Tag the tests `#[trace("TC-518", "FR-123-AC-n")]`.
   `unsupported_construct`/`expression-form` at the constraint; a one-member
   fairness set.
 - Step 3: the formula checks with `Some([0,2])` on the inner `always` and
-  `None` on the outer operators; both malformed intervals refuse at their
-  spans; the two `[0,2]` keys differ.
+  `None` on the outer operators; `eventually[3,*]` checks with
+  `Some([3,Open])`; `eventually[5,3]` refuses at its span; `eventually[3,*]`
+  under event-position refuses at its span; the two `[0,2]` keys differ.
 - Step 4: `ReachableInvariant`, `BoundedMltl`, `Safety`, `Liveness`,
   `Liveness`; each infinite-trace clause records (`temporal-satisfaction`,
   `Unbounded`); the fixed-sample clause has no property form and keeps its

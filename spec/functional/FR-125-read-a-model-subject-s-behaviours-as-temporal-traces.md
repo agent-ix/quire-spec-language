@@ -111,7 +111,8 @@ reports.
   0, QSpec FR-092's complete-history rule.
 - Under infinite-trace the evaluator SHALL give an interval operator QSpec
   FR-091's (future) or FR-092's (past) offset meaning, with no
-  closed-boundary rule (ADR-018 IV-2).
+  closed-boundary rule, and an `[a,*]` operator the meaning of its
+  unbounded operator shifted by `a` (ADR-018 IV-2).
 
 ### Undefined evaluation
 
