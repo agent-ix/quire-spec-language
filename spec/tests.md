@@ -553,7 +553,7 @@ names different artifacts in each.
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 Planned |
-| TC-897 | Text is the native text name and an undeclared native name is refused | Unit | P1 | FR-056-AC-11 | 🚧 Planned |
+| TC-897 | A Text scalar type is admitted with its QSpec profile | Unit | P1 | FR-056-AC-11 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

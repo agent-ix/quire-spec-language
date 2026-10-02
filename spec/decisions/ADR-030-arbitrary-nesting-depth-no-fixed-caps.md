@@ -129,9 +129,12 @@ wire format.
    S4 checker, the prove path and the certificate checkers; ADR-029 CB-2) no
    walk grows or switches the native stack. Outside the core, a walk whose
    conversion to the toolkit is awkward may grow the stack on demand as a
-   justified exception, only through QSL's one `maybe_grow` wrapper, which
-   is a plain call under `cfg(kani)` and in a `no_std` build. Each use has a
-   test at 100,000 depth on a thread with a small fixed stack.
+   justified exception, only through QSL's one `maybe_grow` wrapper. The
+   wrapper is the std-only crate `qsl-walk-grow` (ADR-011 layer WG), outside
+   the core, which no core crate depends on; `quire-walk` stays `no_std`
+   with no features, so no feature unification can bring `stacker` into the
+   core. The wrapper is a plain call under `cfg(kani)`. Each use has a test
+   at 100,000 depth on a thread with a small fixed stack.
 7. **Every public core entry point is tested deep.** Each public entry point
    of the qualified core has a test that drives a 100,000-deep input through
    it on a thread with a small fixed stack, so leftover or hidden recursion
@@ -472,7 +475,8 @@ QSL's own work lands in four slices. Each names only the other lane's work
 it waits on.
 
 - **Slice 1. Waits on nothing outside QSL.**
-  - The walker toolkit and the `maybe_grow` wrapper (FR-356), landing first,
+  - The walker toolkit `quire-walk` and the `maybe_grow` wrapper crate
+    `qsl-walk-grow` (FR-356), landing first,
     since the walks below run on it.
   - Forms arena and iterative `control_anchors` (D-4.2).
   - Checked `Node` arena, and `LeafWalk` and the remaining checker walks on

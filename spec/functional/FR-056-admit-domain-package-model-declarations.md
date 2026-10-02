@@ -238,7 +238,8 @@ package in the package's type environment as `M::<artifact id>`, with its
 declared supertypes and fields, and SHALL resolve `M::<artifact id>` and
 `Reference<M::<artifact id>>` to that object type. A field is named by its
 member name. A native `Boolean` or `Integer` value type, an object type (as
-`Reference`) and a scalar type (as its `Int[lower, upper]`) are its value type.
+`Reference`) and a scalar type (as its `Int[lower, upper]` or its
+`Text[min, max; profile]`) are its value type.
 Multiplicity `[1, 1]` gives the value type outright, and any other
 multiplicity gives the collection its `ordered` and `unique` flags name,
 bounded by it unless the lower bound is `0` and the upper is unbounded, in
@@ -255,14 +256,23 @@ A `typeRef` under `ix://quire/native/` names one of QSL's closed native
 value types, spelled as QSpec's shared grammar spells it: `Boolean`,
 `Integer`, `Rational`, `Decimal`, `Float32`, `Float64` and `Text`. Text is
 `Text`, the QSpec grammar's `Text[min, max; profile]` and the native name
-QSpec's checked-package vectors write. If a `typeRef` names any other native
-name, then intake SHALL refuse it with
+QSpec's checked-package vectors write. A scalar type bound to `Text` with
+bounds `min <= max` and a profile gives the value type
+`Text[min, max; profile]`. The profile is one of the six QSpec FR-141 defines
+(`unicode-scalars`, `nfc`, `nfd`, `nfkc`, `nfkd` and `binary-utf8`), and it
+selects how the text is compared, measured and bounded, as FR-141's "Text and
+enumeration profiles" states. If a scalar type names any other profile, then
+intake SHALL refuse it with `unsupported_construct`/`declaration-form` at the
+scalar type, naming the profile. A member whose `typeRef` is
+`ix://quire/native/Text` itself carries no bounds or profile, which QSpec's
+`Text[min, max; profile]` requires, so intake SHALL refuse it with
+`unsupported_construct`/`declaration-form` at the member, naming `profile`.
+If a `typeRef` names any other native name, then intake SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration` at the member, naming the
-`typeRef`. If it names a native type with a required parameter that the
-semantic-IR constraint vocabulary cannot carry (`Text`'s `profile`,
-`Rational`'s and `Decimal`'s `dmin` and `dmax`), then intake SHALL refuse it
-with `unsupported_construct`/`declaration-form` at the member, naming the
-parameter.
+`typeRef`. If it names `Rational` or `Decimal`, whose required `dmin` and
+`dmax` the semantic-IR constraint vocabulary cannot carry, then intake SHALL
+refuse it with `unsupported_construct`/`declaration-form` at the member,
+naming the parameter.
 
 If an admitted package declares a record the type environment does not
 represent (a record value type, a systems part, port or allocation, or a
@@ -303,7 +313,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-7 | The same selection, package input, definition and limits yield byte-identical results from the intake seam and from the bundle entry point, and a domain package digest offered in a raw-byte or compiled-artifact digest slot refuses. | Test (TC-145, TC-147) |
 | FR-056-AC-9 | A `1-draft` unit selecting a domain package by its `sha256-jcs` digest assembles with each of the package's object types declared as `M::<artifact id>` with its declared supertypes and fields, a subtype conforming to its declared supertype, and checks with functions over `M::T` and `Reference<M::T>`; inherited field access checks (`deref(g).code` over a `Gadget` whose supertype `Widget` declares `code`), and `deref(g).nope` and `g = r` over an unrelated `Rock` refuse `ill_typed` at check. A `model` declaration with no admitted package refuses at the assembler as `missing_import`. `Reference<M::Nope>` refuses at the assembler as `missing_declaration` at `M::Nope`; with no package supplied the declaration refuses at intake as `missing_import`, and a `sha256:` digest refuses at intake as `invalid_model_binding`, each at the `model` declaration. Past the I2 read, a package holding the field access resolves the model member through the lock-selected domain package (IR-285, QSpec STD-100) and returns Verified exporting `code`; one holding `g = w` over conforming references returns Verified exporting `same`, admitted by IR-285's QVC checked-operation catalog (STD-101/102) for `quire.op.reference.eq`; TC-442 verifies both. | Test (TC-442) |
 | FR-056-AC-10 | A field's multiplicity `[1, 1]` gives its declared value type outright; any other multiplicity gives the `ordered`/`unique`-selected collection (`Set`, `Bag`, `Sequence` or `OrderedSet`) bounded by it, unbounded only at a lower bound of `0`, and an unbounded upper bound with a lower bound above `0` has no kernel type (QSpec FR-322's "Model-owned members" step 4). The field's own declared `presence` -- never a multiplicity lower bound of `0` -- decides whether it is optional (QSpec's `model-complete.md` Presence row): `required`/`optional` map to the assembled declaration's own presence one to one, and any other value refuses `invalid_model_binding`/`malformed-declaration` at intake, naming the offending value. | Test (TC-443) |
-| FR-056-AC-11 | A domain package whose field `label` has `typeRef` `ix://quire/native/String` refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/String`; with `typeRef` `ix://quire/native/Text` it refuses `unsupported_construct`/`declaration-form` at `label`, naming the parameter `profile`; the same two refusals arise for an operation parameter and an operation result of each `typeRef`. | Test (TC-897) |
+| FR-056-AC-11 | A domain package whose field `label` is typed by a scalar type `Label` bound to `Text` with bounds `0` and `64` and profile `nfc` is admitted, and `label`'s value type is `Text[0, 64; nfc]`; each of the other five QSpec FR-141 profiles is admitted the same way. With `Label`'s profile `nfx`, intake refuses `unsupported_construct`/`declaration-form` at `Label`, naming `nfx`. With `label`'s `typeRef` `ix://quire/native/Text`, it refuses `unsupported_construct`/`declaration-form` at `label`, naming `profile`; with `ix://quire/native/String`, it refuses `invalid_model_binding`/`malformed-declaration` at `label`, naming `ix://quire/native/String`. The same outcomes hold for an operation parameter and an operation result. | Test (TC-897) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148, IT-012) |
 
 ## Open Questions
@@ -331,4 +341,5 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 
 ## References
 
-- Linear QSL-290 (AC-11: `Text` is the native text name).
+- Linear QSL-290 (AC-11: a `Text` scalar type is admitted with its QSpec FR-141 profile).
+- QSpec FR-141, "Text and enumeration profiles": the six text profiles.

@@ -58,6 +58,16 @@ Reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15. Delta 9d240032..76e47d3a (
 | FND-008 | medium | FR-259 item 3 and ADR-030 D-4.4 keep `IDENTITY_LIMITS` as a fixed byte ceiling ("keeps its byte ceiling"; "SHALL carry a byte limit only"; a site may only pass a "tighter" budget). It has no FR-255 setting and no way to raise it, so it is the fixed cap the no-caps ruling removes everywhere else in this PR. Give it a setting and published default, or have every caller pass its stage's own input-bytes limit. | spec/functional/FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md:52-54; spec/decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md:264 |
 | FND-009 | low | FR-040's edited Behavior line still says the compiler exposes "a versioned checking-accounting contract". Version wording on a contract is the tracking language this PR removes elsewhere. Drop "versioned". | spec/functional/FR-040-check-composed-values.md:116 |
 
+## New findings (disposition pass 3)
+
+Reviewed at 4c79ab4f6ac98d895ea3de29a835de9e32d1386c (rebased onto main 2ece5712), limited to the delta since 25dff5cd.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | medium | FR-356 item 5 and AC-5 say "no crate in the core SHALL depend on `stacker` or on the `maybe_grow` wrapper". But item 3 puts `maybe_grow` in `quire-walk`, and 6e5bbc8d adds `quire-walk` to ADR-029 CB-2's qualified-core crate set ("without its `std` feature"), so a core crate defines the wrapper and optionally depends on `stacker`. AC-5 as written fails against the design. The "without its `std` feature" guard also does not hold in a workspace build: Cargo unifies features, so any non-core crate that enables `quire-walk/std` turns `stacker` on for the core's `quire-walk` in the same build. Either move `maybe_grow` to its own non-core crate, so the core's crate set never contains it, or restate item 5 and AC-5 as testable facts: no core crate calls `maybe_grow`, and the core's crates built on their own resolve `quire-walk` without `std`. | spec/functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md:55-75,95; spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:200 |
+| FND-011 | medium | FR-056 makes `Text` the native text name (QSL-290), but the same paragraph and AC-11 then refuse every `ix://quire/native/Text` `typeRef` with `unsupported_construct`/`declaration-form`, because the semantic-IR constraint vocabulary cannot carry `Text`'s `profile`. So a domain-package field, parameter or result of type `Text` still cannot pass through intake. That is the dead-arm gap QSL-290 reports, now refused by design rather than fixed. Text fields are a common need. Define how intake reads a `Text` member's `profile` (for example, the model's selected value profile, or a constraint-vocabulary entry the semantic IR gains), or record the refusal as a temporary gap with its owning ticket. Do not specify the refusal as the meaning. | spec/functional/FR-056-admit-domain-package-model-declarations.md:256-266,306 |
+| FND-012 | low | FR-031:29 says the decoded native/formal pair "performs no revision conversion". That states an absence, not a behaviour, and with STD-150 merged in QSpec, source revisions are no longer part of source identity at all. Delete the clause. (QSL FR-001 still lists four source labels, including `revision_namespace` and `revision`. Aligning FR-001 with STD-150 is outside this diff.) | spec/functional/FR-031-run-extracted-native-source.md:29 |
+
 ## Dispositions
 
 Round 1, reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15.
@@ -71,3 +81,12 @@ Round 1, reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15.
 | FND-005 | fixed | 16a9154f: NFR-007 no longer clamps. |
 | FND-006 | fixed | 16a9154f: FR-025 limits are caller-configured with published defaults. |
 | FND-007 | fixed | 16a9154f: FR-255 cites QSpec FR-461 for the naming rule. |
+
+Round 2, reviewed at 25dff5cd4dcd490169c3666748f7e695996ac181.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 5554c06c: `IDENTITY_LIMITS` is the published default of the caller's `identity.input_bytes` limit, with an FR-255 row; ADR-030 matches. |
+| FND-009 | fixed | 5554c06c: FR-040 drops 'versioned'. |
+
+Round 3, reviewed at 4c79ab4f6ac98d895ea3de29a835de9e32d1386c. No finding had a still-open or missing outcome before this round.

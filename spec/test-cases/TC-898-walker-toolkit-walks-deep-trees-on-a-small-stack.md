@@ -20,8 +20,8 @@ Scope: FR-356-AC-1, FR-356-AC-2, FR-356-AC-3.
 
 Run steps 2 to 5 on a thread spawned with a 512 KiB stack.
 
-1. Build `quire-walk` for `thumbv7em-none-eabihf` without its `std` feature
-   and list its dependency tree. Run arch-lint's direction check over a
+1. Build `quire-walk` for `thumbv7em-none-eabihf`, and list its features
+   and its dependency tree. Run arch-lint's direction check over a
    manifest set where IR, RT and CG each depend on `quire-walk`, then over
    one where CG depends on `qsl-semantics`.
 2. Walk a 100,000-deep chain, recording each enter and exit with the depth
@@ -35,7 +35,8 @@ Run steps 2 to 5 on a thread spawned with a 512 KiB stack.
 
 ## Expected Results
 
-- Step 1: the build succeeds, the tree holds only `core` and `alloc`, the
+- Step 1: the build succeeds, it has no features, the tree holds only
+  `core` and `alloc`, the
   check admits the `quire-walk` edges and refuses the `qsl-semantics` one.
 - Steps 2 and 3: every node is entered once in pre-order and exited once in
   post-order, and each exit's frame equals its enter's frame.
