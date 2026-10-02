@@ -10,11 +10,10 @@ up to you!” This followed the explicit proposal of `AGPL-3.0-only`.
 Relicense, 2026-09-13: the owner decided that every agent-ix repository licensed
 `AGPL-3.0-only` becomes `AGPL-3.0-or-later`, matching the organization policy
 (#100). This supersedes the version-3-only selection above for this repository.
-Frozen digest-bound data keeps its original `AGPL-3.0-only` bytes because the
-notice is part of pinned identities: published `schemas/` (SCHEMA_SHA256
-constants), authored model sources and `.native` inputs under `examples/` and
-`tests/fixtures/` and the Filament producer checkpoint. Their next deliberate
-regeneration adopts `AGPL-3.0-or-later`.
+Published `schemas/`, authored model sources and `.native` inputs under
+`examples/` and `tests/fixtures/`, and the Filament producer checkpoint keep
+their existing `AGPL-3.0-only` notices; each adopts `AGPL-3.0-or-later` when it
+is next regenerated.
 
 The committed `artifacts/compiled-protocol-v1/` and `artifacts/compiled-protocol-v2/`
 handoffs were generated after the relicense by the Rust producer under

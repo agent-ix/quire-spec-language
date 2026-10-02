@@ -43,7 +43,7 @@ result::read(bytes, &ValidatedRequest, Relation, Limits)
   -> Report<ValidatedResult>
 ```
 
-Both modules publish immutable `CONTRACT`, `SCHEMA_BYTES` and `SCHEMA_SHA256`.
+Both modules publish immutable `CONTRACT` and `SCHEMA_BYTES`.
 `ValidatedRequest` and `ValidatedResult` have no public constructors. `Relation`
 is original, superseding or invalidating and accepts a complete validated direct
 predecessor rather than a free-form predecessor reference.

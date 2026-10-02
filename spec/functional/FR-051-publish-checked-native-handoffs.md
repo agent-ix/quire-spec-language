@@ -23,17 +23,17 @@ relationships:
 
 ## Contract set and public API (RETIRED M-6d)
 
-**RETIRED (M-6d), for the same reason as Description above.** This section specified the owner-published immutable schema bytes and lowercase SHA-256 digests for both contracts, and the Rust API surface below; both modules are deleted, and there is no successor for this section to describe. The block below is retained only as a historical record of the deleted API's shape.
+**RETIRED (M-6d), for the same reason as Description above.** This section specified the owner-published immutable schema bytes for both contracts, and the Rust API surface below; both modules are deleted, and there is no successor for this section to describe. The block below is retained only as a historical record of the deleted API's shape.
 
-The owner SHALL publish immutable schema bytes and lowercase SHA-256 digests for
-both contracts. The Rust API SHALL expose:
+The owner SHALL publish immutable schema bytes for both contracts. The Rust
+API SHALL expose:
 
 ```text
-protocol_artifact::checked_predicate::{SCHEMA_BYTES, SCHEMA_SHA256, Limits,
+protocol_artifact::checked_predicate::{SCHEMA_BYTES, Limits,
   derive(&v2::AdmittedPackage, ClauseSelection, Limits) -> Report<Document>,
   read(bytes, &v2::AdmittedPackage, ClauseSelection, Limits)
     -> Report<ValidatedCheckedPredicate>}
-protocol_artifact::temporal_subject::{SCHEMA_BYTES, SCHEMA_SHA256, Limits,
+protocol_artifact::temporal_subject::{SCHEMA_BYTES, Limits,
   derive(&v2::AdmittedPackage, DeclarationSelection, Limits) -> Report<Document>,
   read(bytes, &v2::AdmittedPackage, DeclarationSelection, Limits)
     -> Report<ValidatedTemporalSubject>}
