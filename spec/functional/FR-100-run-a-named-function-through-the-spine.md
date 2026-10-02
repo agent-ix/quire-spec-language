@@ -49,11 +49,10 @@ call's outcome. The root crate reaches it through `qsl_replay` and names
 A native-run/1 request (FR-026's closed envelope and shared limits). For a
 `1-draft` program the request carries:
 
-- `program`: the program's source selection (file, `sha256:` source digest,
-  the four [FR-001](FR-001-read-exact-source.md) labels, `document` and
+- `program`: the program's source selection (file and the four [FR-001](FR-001-read-exact-source.md) labels, `document` and
   `formal_revision`), with no `clauses` and no `extraction`.
 - `models`: zero or more `semantic-ir/2.0.0` domain package documents, each
-  read under its source digest and handed to spine `compile` as FR-056's
+  read and handed to spine `compile` as FR-056's
   package input, exactly as FR-027 does for compile.
 - `libraries`: zero or more `{identity, version, source}` objects, read and
   handed to spine `compile` as its dependency input, exactly as FR-027 does
@@ -85,7 +84,6 @@ For a call that reaches S6a, stdout is one `spine-run-result/1` JSON
 document, newline-terminated, and nothing else. Its members are:
 
 - `format`: `"spine-run-result/1"`.
-- `request_digest`: the `sha256:` digest of the request file's bytes.
 - `package_id`: the compiled package's `package_id`, lowercase hex, equal
   to the one `qsl_replay::spine::compile` computes for the same source and
   inputs.
@@ -130,8 +128,8 @@ The refused outcome's members:
 | Family, no record: a family cause for which FR-096 builds no record (it has no FR-096 key-table row) | `code` and `cause`, the cause's `catalog_code()`; no `fields` member; `location`, when `Evaluation.location` is present |
 
 - `locus` renders the record's `Locus::Region` (the only locus S6a builds,
-  FR-096): `{"source_digest": "<sha256: source digest of the region's
-  source>", "span": S}`, where `S` is the region's span in the
+  FR-096): `{"file": "<authored path of the region's source>", "span":
+  S}`, where `S` is the region's span in the
   native-run-result/1 span form (`start` and `end`, each `byte`, `line` and
   `column`). The byte offsets are the region's. The line and column are
   computed over the bytes of the `Source` whose reference equals the
@@ -216,8 +214,9 @@ A call whose outcome is the kernel `Refusal::CheckedInvariant`, for which
 `CheckedPackage::call` returns `CallFailure::Fault(fault)`, or whose
 record's locus names a region no supplied source's reference equals, writes
 nothing
-to stdout. It writes FR-026's native-run-result/1 command-error envelope to
-stderr with stage `call`, code `runtime_invariant` and `details`
+to stdout. It writes the command-error envelope (FR-026's
+`native-run-result/1` until the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), FR-267's `native-run-result/2` from it)
+to stderr with stage `call`, code `runtime_invariant` and `details`
 `{"stage": "<fault stage>", "invariant": "<fault invariant>"}`, the
 `InternalFault`'s stable identifiers. For `CheckedInvariant` they are stage
 `S6a` and invariant `checked-program-invariant`; for `CallFailure::Fault`,
@@ -231,9 +230,10 @@ path exits 30 directly and does not take its exit status from
 
 ### Refusals before S6a
 
-Every refusal before S6a writes nothing to stdout. It writes FR-026's
-native-run-result/1 command-error envelope to stderr, carrying the request
-digest, a stage, a catalog code, a `message` and a `details` object, and
+Every refusal before S6a writes nothing to stdout. It writes the
+command-error envelope (FR-026's `native-run-result/1` until the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`),
+FR-267's `native-run-result/2` from it) to stderr, carrying a stage, a
+catalog code, a `message` and a `details` object, and
 exits with that code's exit status:
 
 | Refusal | Stage | Code | `details` | Exit |
@@ -261,7 +261,7 @@ exit 30.
 ## Behavior
 
 - The run command shall read the program source's declared edition once,
-  from its header, after the source's digest check and before any model or
+  from its header, before any model or
   library source is read, with FR-027's edition reader. Each program source
   goes to exactly one runner.
 - If the program declares an edition other than `0-draft` or `1-draft`,
@@ -270,8 +270,16 @@ exit 30.
 - If the program declares `0-draft` or no edition, then the run command shall run the program through FR-026's native run.
 - If the program declares `0-draft` or no edition and the request carries `call` or `libraries`, then the run command shall refuse the request with `invalid-request`.
 - If the program declares `1-draft`, then the run command shall refuse a
-  request carrying a member the refusal table names, or carrying no `call`,
-  with `invalid-request` before it reads any model or library file.
+  request carrying a member the refusal table names, or carrying neither
+  `call` nor `clause`, with `invalid-request` before it reads any model or
+  library file.
+- From the change that lands FR-100's clause runner (FR-312's reader plus
+  `run_clause`, ADR-031 R-1), if the program declares `1-draft` and the
+  request carries `clause`, then the run command shall run it as a clause
+  run ([FR-312](FR-312-read-a-clause-run-request-and-run-it.md)).
+- Until that change, if the program declares `1-draft` and the request
+  carries `clause`, then the run command shall refuse it with
+  `invalid-request` at stage `request`, naming `clause`.
 - If a `call` member, an argument `value` or `work_units` is outside the
   shape Inputs states, then the run command shall refuse with
   `invalid-request` at stage `request`.
@@ -332,9 +340,9 @@ exit 30.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `request_digest` is the `sha256:` digest of the request file's bytes, whose `package_id` equals the one `qsl_replay::spine::compile` computes for the same source, whose `source` names the request's four labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
+| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one `qsl_replay::spine::compile` computes for the same source, whose `source` names the request's four labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
 | FR-100-AC-2 | A `0-draft` native-run/1 request writes the stdout bytes and exit status TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, empty stdout, with a `message` naming the file and the edition. | Test (TC-450) |
-| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request with no `call` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A `work_units` of `18446744073709551616`, `-1` or `1.5` refuses the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test (TC-450) |
+| FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A `work_units` of `18446744073709551616`, `-1` or `1.5` refuses the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test (TC-450) |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, empty stdout, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test (TC-451) |
 | FR-100-AC-5 | `function` `nope`, `module.seven`, `""`, `seven.`, and `7x` each refuse `missing_declaration` at stage `call`, exit 20, empty stdout, with `details` `{"function": <that string>}`. A function whose declared result is a record refuses `unsupported_construct` at stage `call`, exit 21, before any call. A `1-draft` source with a syntax error refuses at stage `source` (`invalid_syntax`), and one declaring `inv(x: Int[0, 9]): Boolean { 1 / x > 0 }` refuses at stage `check` with `ill_typed` (integer `/` with no `Rational` expected type); each exits 20 with empty stdout (FR-027-AC-8). | Test (TC-451) |
 | FR-100-AC-6 | `seven` with `work_units` 0 writes outcome `{"kind": "incomplete", "limit": "work_units"}`, exit 22. | Test (TC-451) |
@@ -369,6 +377,11 @@ exit 30.
   located undefined outcome.
 
 ## Status
+
+Remaining work (implementation, with the native-run deletion change, FR-312):
+the code still requires a `sha256:` source digest on each source selection
+and checks the file against it; both go, and the command reads each named
+file's bytes as they are.
 
 Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,

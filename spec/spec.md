@@ -180,6 +180,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-017
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-031
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-018
@@ -243,6 +245,18 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-122
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-265
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-266
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-267
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-268
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-269
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-312
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-270
     type: contains
@@ -936,6 +950,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-120](functional/FR-120-simulate-a-checked-package-s-state-family.md) | FR | Specified: `ModelSystem`, the model-level `TransitionSystem` over a checked package's state family (QSpec FR-181's successor relation over FR-013 frames, through FR-114 and FR-115), invariant-violating successors recorded rather than pruned (FR-181-AC-4), and effects and results as typed trace data with ambient reads refused at S3 (FR-181-AC-6); runs over the S4 package; fixtures use FR-056's bound scalar reader, on main; not yet implemented -- TC-471 to TC-473 planned |
 | [FR-121](functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md) | FR | Implemented: `qsl_replay::call_site`, a second layer-6 facade entry beside `replay`, compiling against supplied domain packages and dependencies and locating a function's parameters, an operation's anchor, frame and clause identities, or a state clause's identities by declared identity, returning the compiled package's bytes beside its `package_id`, sharing its node-key derivation with `replay` -- TC-516 passed locally |
 | [FR-122](functional/FR-122-replay-a-state-clause-counterexample.md) | FR | Specified: replay of a `WitnessEnvelope<StateClauseCounterexample>` through the replay facade, checking the envelope's clause node and `claim` occurrence against the recompile before admission, admitting by FR-106 and evaluating by FR-107; a clause that evaluates `false` reproduces, one that holds settles `inconclusive`; not yet implemented -- TC-517 planned |
+| [FR-265](functional/FR-265-derive-a-state-clause-separating-witness.md) | FR | Specified (ADR-031 SW-1 to SW-6, SW-9): S6a stop reports and the decision-path walk derive a state clause's settlement basis and its one QSpec FR-351 record (deciding quantifier, element, index, value path); not yet implemented -- TC-740 planned |
 | [FR-270](functional/FR-270-gate-stage-entries-to-checked-inputs.md) | FR | Specified (ADR-032 CK-1 to CK-5): `cargo xtask checked-input` fails on a stage entry in `qsl-eval`, `qsl-route` or the replay facade that names a pre-check representation, or on a call to a pre-check stage there; a `make ci` prerequisite; not yet implemented -- TC-745 planned |
 | [FR-271](functional/FR-271-tag-canonical-types-at-their-definition.md) | FR | Specified (ADR-032 DT-1): each ADR-013 owner-row public type carries the `/// quire:canonical` doc tag, and the tags are the canonical set; misplaced or duplicate tags fail; not yet implemented -- TC-746 planned |
 | [FR-272](functional/FR-272-fail-on-a-second-definition-of-a-canonical-type.md) | FR | Specified (ADR-032 DT-2 to DT-6): `cargo xtask canonical-types` fails on a workspace namesake, a non-owner re-export, or a same-name, same-member copy in an ecosystem dependency, in QSL and in backend workspaces; not yet implemented -- TC-747 planned |
@@ -1129,6 +1144,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (#220) |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR | Proposed; protocol/frame, refinement and abstraction-relation boundary mapping: identities, entry selection, frame replay identity checks, spec-versioning and profile-layering gate comparison, abstraction relation keys, export and unbound refusal (#223) |
+| [ADR-031](decisions/ADR-031-state-forall-separating-witness.md) | ADR | Proposed; the separating witness for a state `forall` on `native-run-result/2`: when a clause has a decisive occurrence and which basis it settles, the QSpec FR-351 record's components for a state clause, its place in FR-122's payload and on `/2`, and replay's re-derivation and separation check |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, deadlocks reported by default with intended terminal states (§10), interval operators inside infinite-trace formulas with their automaton cost and limit (§11), and the QSL sequencing |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
@@ -1141,3 +1157,9 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
 | [ADR-026](decisions/ADR-026-dense-time.md) | ADR | Proposed; dense time: real-valued clocks with strict and non-strict constraints, time invariants and urgency, timed-automata semantics over ADR-018's positions with time stamps, time divergence and the time-lock-freedom item, the `model-time` and `model-steps` clock bindings with their defaults, timed MITL forms and their decidability boundary, timed counterexamples with exact rational delays, stochastic delay distributions with statistical checking, the native zone engine EN-6 with checkable zone certificates, task sets with native closed-form schedulability (EN-7), hybrid dynamics through QSpec FR-193's solvers, tick-based embedded monitors and Kani obligations |
 | [ADR-021](decisions/ADR-021-state-space-reduction.md) | ADR | Proposed; state-space reduction for explicit-state model checking: checked symmetry over population universes, partial-order reduction from enforced read and write footprints, state constraints, the normative preservation table, concrete counterexamples, and reduced proofs as their own technique |
+
+| [FR-312](functional/FR-312-read-a-clause-run-request-and-run-it.md) | FR | Specified (plan slice E19-CLI): `read_clause_run_request` reads a `1-draft` request carrying `clause` into FR-109's `ClauseRunRequest`; `run` and the driver run it through `run_clause` and write the `/2` document; lands with the deletion of native `run` -- TC-891 planned |
+| [FR-266](functional/FR-266-report-a-clause-run-s-witness-and-settlement-basis.md) | FR | Specified (ADR-031 SW-3, SW-10): `ClauseRunReport` carries a QSpec FR-243 `basis` on every disposition and the QSpec FR-351 `witness` exactly when the basis is decisive; not yet implemented -- TC-741 planned |
+| [FR-267](functional/FR-267-write-run-results-as-native-run-result-2.md) | FR | Specified (ADR-031 SW-10, SW-11): the library writes `run_clause`'s report as `native-run-result/2` with `basis` and `witness`, and `run` its command-error envelopes, landing with FR-100's clause runner (ADR-031 R-1); the strict reader refuses malformed records and `/1`; not yet implemented -- TC-742 planned |
+| [FR-268](functional/FR-268-check-a-state-clause-witness-on-replay.md) | FR | Specified (ADR-031 SW-8, SW-12 to SW-14): `StateClauseCounterexample` carries the witness; replay re-derives it, compares componentwise and runs the separation check; not yet implemented -- TC-743 planned |
+| [FR-269](functional/FR-269-settle-a-witness-disagreement-as-a-typed-cause.md) | FR | Specified (ADR-031 SW-12, SW-13): `DisagreementCause::Witness` carries both verdicts, both records and a `Mismatch` or `Separation(step)` failure; not yet implemented -- TC-744 planned |

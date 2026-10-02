@@ -107,10 +107,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
   - `CardinalityOutOfBound`: `code` `cardinality_out_of_bound`, `cause`
     `above-maximum`, `fields` exactly
     `{"collection": "set", "bound": "[1, 3]", "count": "4"}`, and `locus`
-    exactly `{"source_digest":
-    "sha256:3cb8ab70e4d3187dae8621768491c4d2eb0c8c0b82d330d4f2fba72883f6e77c",
-    "span": {"start": {"byte": 233, "line": 3, "column": 54}, "end":
-    {"byte": 234, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
+    exactly `{"file": "<the unit's authored path>",
+    "span": {"start": {"byte": 132, "line": 3, "column": 54}, "end":
+    {"byte": 133, "line": 3, "column": 55}}}`; then `cause` `below-minimum`, `count`
     `"0"`; exit 20.
   - `ForeignReference`: `code` `foreign_reference`, `cause`
     `foreign-universe`, `fields` exactly `{"required": R, "supplied": S}`,

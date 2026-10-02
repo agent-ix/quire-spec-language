@@ -71,7 +71,9 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
       `DocumentRef` of a `quire.state.snapshot/v1` document whose
       `observation` is `current`, the initialization or handler anchor
       (`{kind, name}`) it was taken at, and the self object
-      (`{population, key}`).
+      (`{population, key}`);
+  - `witness`: the clause's QSpec FR-351 record, present exactly when the
+    producing run's basis was decisive (FR-268).
 - The envelope's members for a state-clause packet, which carry the
   clause's identity: its `clause_node` is the checked node identity
   (`WireNodeId`) of the clause's `state`/`state_clause` node (FR-105), its
@@ -105,14 +107,11 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   the identity and digest of every document admission read, for a
   `PreCall` observation its self object and parameter values, the
   evaluated value when there is one, and the evaluation charges.
-- A `Witness`-arm result that reproduces (`false`) carries the QSpec FR-351
-  record FR-098 gives a Boolean verdict (FR-072, FR-098-AC-2): the
-  evaluated Boolean as its deciding element, index 0, an empty value path
-  and no trace position. A result that settles `inconclusive`, `Verdicts`
-  (`true`) carries the evaluated value and no QSpec FR-351 record, since its
-  settlement basis is not decisive (FR-072). An `Input`-arm result carries
-  the evaluated value and no QSpec FR-351 record. A result with no value carries
-  neither (FR-072).
+- A result that reproduces (`false`) carries the QSpec FR-351 record FR-268
+  re-derives exactly when the clause's settlement basis is decisive
+  (FR-265), and no record otherwise. A result that settles `inconclusive`
+  carries no QSpec FR-351 record (FR-072, FR-269). A result with no value
+  carries neither a value nor a record (FR-072).
 
 ## Behavior
 
@@ -158,7 +157,8 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   fresh evaluation meter built from the request's
   `quire.value.accounting/v1` limits, and compare verdicts as FR-072 does. The counterexample refuted the clause, so the
   proved verdict is `violation`.
-  - If the evaluation completes `false`, then the executor SHALL settle the
+  - If the evaluation completes `false` and FR-268's witness comparison and
+    separation check pass, then the executor SHALL settle the
     agreement of the envelope's arm: `reproduced-with-evaluated-witness` on
     the `Witness` arm, `reproduced-without-witness` on the `Input` arm. The
     agreement is between the proved verdict and the clause's evaluation
@@ -185,7 +185,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-122-AC-1 | Over FR-108's ConfigVersion unit, an envelope for `VersionUnchanged` whose observation is the changed-version invocation settles `reproduced-with-evaluated-witness`, and the same payload on an `Input`-arm envelope settles `reproduced-without-witness`. An envelope for `ParentOrder` whose observation is violating-parent's current snapshot (anchor `handler validate`, self `child`) settles `reproduced-with-evaluated-witness`. Each result holds the source digest, the `package_id`, the payload's `clause`, the envelope's `clause_node` and `occurrence_key`, and the identity and digest of every document admission read: the invocation and both snapshots, or the one current snapshot. Each `Witness`-arm result's QSpec FR-351 record holds `false` as its deciding element, index 0, an empty value path and no trace position; the `Input`-arm result holds `false` and no QSpec FR-351 record. | Test (TC-517) |
+| FR-122-AC-1 | Over FR-108's ConfigVersion unit, an envelope for `VersionUnchanged` whose observation is the changed-version invocation settles `reproduced-with-evaluated-witness`, and the same payload on an `Input`-arm envelope settles `reproduced-without-witness`. An envelope for `ParentOrder` whose observation is violating-parent's current snapshot (anchor `handler validate`, self `child`) settles `reproduced-with-evaluated-witness`. Each result holds the source digest, the `package_id`, the payload's `clause`, the envelope's `clause_node` and `occurrence_key`, and the identity and digest of every document admission read: the invocation and both snapshots, or the one current snapshot. Neither clause reaches a decisive occurrence (FR-265), so each payload carries no `witness` and no result carries an QSpec FR-351 record; each result holds the evaluated `false`. | Test (TC-517) |
 | FR-122-AC-2 | The `VersionUnchanged` envelope over the unchanged-version invocation, and the `ParentOrder` envelope over healthy-parent's snapshot, each settle `inconclusive`, `Verdicts`, holding `violation` and `success`, the evaluated `true` and no QSpec FR-351 record. The `ParentOrder` violating-parent envelope replayed with the request's `quire.value.accounting/v1` evaluation budget at zero settles `inconclusive`, `NoValue`. | Test (TC-517) |
 | FR-122-AC-3 | Stale identity: the changed-version `VersionUnchanged` envelope whose `clause_node` names `ParentOrder`'s node refuses `stale_dependency`/`content-mismatch` naming the envelope's and the recompiled node identity, and names the nodes the same way when its `occurrence_key` is also at ordinal 1; with only its `occurrence_key` at ordinal 1 it refuses the same way naming both occurrences; none admits a document (its invocation absent from the byte provision changes none of these refusals). A source edit that changes the `package_id` refuses by FR-098's stale `package_id` rule. A `clause` naming `Absent`, and one naming the function `sameIdentity`, each refuse `missing_declaration`/`missing-name`. | Test (TC-517) |
 | FR-122-AC-4 | Precondition: over TC-466 step 3's `probe` unit (precondition `ReachesTarget`, `reaches(self, target, parent)`, over the chain `a -> b -> c`), an envelope whose observation is `PreCall` over the chain's pre snapshot with `self` `a` and `target` `a` settles `reproduced-with-evaluated-witness`, holding that one snapshot's identity and digest and no post snapshot; with `target` `c` it settles `inconclusive`, `Verdicts`. The result holds `self` `a` and `target` `a` as the values it reproduced. Form mismatches refuse `wrong_snapshot`/`wrong-observation` with no admission (the observation's documents absent from the byte provision change none of these refusals): `ReachesTarget` with an `Invocation` observation over the `probe` invocation, `VersionUnchanged` with a `PreCall` observation, and `VersionUnchanged` with a `Current` observation over healthy-parent's snapshot. | Test (TC-517) |
@@ -212,5 +212,7 @@ the FR-070 envelope: `StateClauseCounterexample`, which implements
   the envelope carries the clause's, and the payload does not repeat it).
 - FR-107-AC-3's `probe` unit
   (TC-466 step 3) is the precondition fixture.
+- [FR-268](FR-268-check-a-state-clause-witness-on-replay.md) (the
+  payload's `witness`, its re-derivation and separation check).
 - The analogue for a frame counterexample is
   [FR-116](FR-116-replay-a-frame-counterexample.md).

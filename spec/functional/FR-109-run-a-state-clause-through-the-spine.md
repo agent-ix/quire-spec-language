@@ -163,7 +163,7 @@ selection, admission or evaluation result is a report.
 | FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no `package_id`; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test (TC-468) |
 | FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test (TC-468) |
 | FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test (TC-468) |
-| FR-109-AC-5 | Running one request twice gives equal reports, including usage; a request whose snapshot bytes change after the selection digest was taken reports stage `admit`, `stale_dependency`/`byte-digest-mismatch`. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
+| FR-109-AC-5 | Running one request twice gives equal reports, including usage. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
 | FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; missing-model over the same source reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test (TC-468) |
 | FR-109-AC-7 | The step 1 unit with the clause `invariant Ratio using v on Config::ConfigVersion at current { 6 / (self.versionNumber - self.versionNumber) >= 0 }` added, run over healthy-parent selecting `Ratio`, reports stage `evaluate`, category `violation`, `UndefinedEvaluation{cause: division-by-zero}`, no `truth`, exit 10. | Test (TC-468) |
 
@@ -175,9 +175,14 @@ selection, admission or evaluation result is a report.
   boundary).
 - QSpec FR-301 (exit codes); ADR-018 RU-5 (an undefined claim is
   refuted).
-- The CLI request form for a clause run is not specified here: FR-100's
-  native-run/1 `1-draft` route refuses `selection`, `snapshots` and
-  `invocations` today, and the CLI form is a follow-up.
+- The clause-run result document is the library's serialization of
+  `run_clause`'s `ClauseRunReport` as `native-run-result/2`
+  ([FR-267](FR-267-write-run-results-as-native-run-result-2.md)).
+- The request file form is
+  [FR-312](FR-312-read-a-clause-run-request-and-run-it.md)'s: `run` and the
+  driver read it with `read_clause_run_request` and call `run_clause`. It
+  lands in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with the deletion of native `run`
+  ([FR-026](FR-026-run-standalone-native-workflow.md), ADR-031 R-1).
 
 ## Status
 

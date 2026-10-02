@@ -81,15 +81,15 @@ exemplar.
   A result with no value SHALL settle `inconclusive` with a `NoValue`
   cause whatever the two verdicts are; a result with a value settles
   `inconclusive` with a `Verdicts` cause when the verdicts differ. The
-  evaluated value is a Boolean, a stand-in for the kernel `Value`, which
-  has no structural equality. **Amended** (FR-098): the value and
-  record used to be required, so a replay that completed no value could
-  not be represented. **Amended** (FR-128): on the `ModelTrace` arm, an
-  undefined evaluation reproduced at the counterexample's `where` is a
-  completed value, `ModelTraceValue::Undefined`, not the no-value case.
+  evaluated value is the kernel `Value`, compared under ADR-013 O-13
+  semantic equality (ADR-031 SW-5, SW-7). **Amended** (FR-128): on the
+  `ModelTrace` arm, an undefined evaluation reproduced at the
+  counterexample's `where` is a completed value,
+  `ModelTraceValue::Undefined`, not the no-value case.
 - A construct → serialize → read round trip of a decisive `Witness`-arm
-  result SHALL preserve the nested QSpec FR-351 record's deciding element, index,
-  value path and trace position exactly.
+  result SHALL preserve the nested QSpec FR-351 record's deciding quantifier,
+  deciding element, index, value path and trace position exactly (ADR-031
+  SW-5).
 - A comparison of two results for agreement SHALL read only the typed
   QSpec FR-351 fields, never a transcript's rendered text or a diagnostic message
   string.
@@ -105,7 +105,7 @@ exemplar.
 
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
-| FR-072-CON-1 | The `native-run-result/2` wire this result type's serializer targets is QSpec's own contract (QSpec FR-352); this requirement's Rust type accepts and refuses versions exactly as QSpec FR-352-AC-2 requires, and adds no separate version vector of its own. `native-run-result/2`'s wire serializer itself is #186's (ADR-013 §5). | Design | Inspection |
+| FR-072-CON-1 | The wire this result type's serializer targets is QSpec FR-323's result envelope (ADR-013 O-27, OQ-2), QSpec's own contract; this requirement's Rust type refuses any `contract_version` other than FR-323's. | Design | Inspection |
 
 ## Acceptance Criteria
 
@@ -113,7 +113,7 @@ exemplar.
 |----|----------|--------------|
 | FR-072-AC-1 | Given a `Witness`-arm agreement and an `Input`-arm agreement, each settles its own distinct value (`reproduced-with-evaluated-witness` and `reproduced-without-witness` respectively); the `Witness`-arm and `Input`-arm result types are distinct with no `From`, `TryFrom`, `Into` or blanket conversion between them, so no `Input`-arm result can satisfy a call site typed for a `Witness`-arm result (the only input CG's sealed backend-evidence-verdict type, AD-016, admits). | Test (TC-189) |
 | FR-072-AC-2 | Given a proved verdict and a replayed verdict for the same item that differ under the fixed O-16-category-to-verdict map, the result settles `inconclusive` with a typed cause, and no public constructor, setter or `From`/`TryFrom` conversion on the result type can produce an agreement result from those disagreeing verdicts. | Test (TC-190) |
-| FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested QSpec FR-351 record's deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
+| FR-072-AC-3 | A positive `Witness`-arm result's construct → serialize → read round trip preserves the nested QSpec FR-351 record's deciding quantifier, deciding element, index, value path and trace position exactly, and a subsequent equality/agreement comparison between two results reads only those typed fields, never a rendered transcript or message string. | Test (TC-191) |
 | FR-072-AC-4 | #217's function-application exemplar constructs and compares a replay result using only this type together with FR-070's witness envelope and FR-071's request type, with no new witness or replay type defined in #217's repository scope. | Test (TC-192) |
 | FR-072-AC-5 | A result whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated result is returned. | Test (TC-191) |
 
@@ -123,12 +123,8 @@ exemplar.
   [FR-071](FR-071-implement-typed-replay-request.md); ADR-013 O-27, O-16
   (category-to-verdict map); QSpec
   [QSpec FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)
-  (separating-witness record) and
-  [QSpec FR-352](https://github.com/agent-ix/quire-specification/blob/main/spec/functional/foundation/FR-352-mint-native-run-result-witness-wire.md)
-  (`native-run-result/2` wire; both QSpec status **Draft** as of this
-  writing — fully specified with acceptance criteria and cited here as the
-  normative record shape this result type carries and the version-refusal
-  rule FR-072-CON-1 delegates to). QSpec AD-016's Replay-ownership table
+  (separating-witness record, the normative record shape this result type
+  carries) and FR-323 (the result envelope FR-072-CON-1 targets). QSpec AD-016's Replay-ownership table
   (`spec/assurance/AD-016-semantic-family-extension-path.md`) assigns the
   "Replay result" row to QSL (#231, this requirement) and the separate
   "Backend-evidence verdict" row to the CG parity comparator; this
@@ -140,6 +136,6 @@ exemplar.
   either.
 - **Downstream**: [#217](https://github.com/agent-ix/quire-spec-language/issues/217)'s
   function-application exemplar; [#186](https://github.com/agent-ix/quire-spec-language/issues/186)'s
-  `native-run-result/2` serializer and state-specific payload; the CG
+  state-specific payload; the CG
   parity comparator, which builds the sealed backend-evidence-verdict type
   (AD-016) from this requirement's `Witness`-arm result.

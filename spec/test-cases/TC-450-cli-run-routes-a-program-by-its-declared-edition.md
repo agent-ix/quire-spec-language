@@ -50,8 +50,7 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 ## Expected Results
 
 - Step 1: exit 0 and empty stderr; stdout is one newline-terminated document
-  whose `format` is `spine-run-result/1`, whose `request_digest` is the
-  request file's `sha256:` digest, whose `package_id` equals the compiled
+  whose `format` is `spine-run-result/1`, whose `package_id` equals the compiled
   package's, whose `source` names the request's four labels, source digest
   and authored path, whose `function` is `seven`, and whose `outcome` is
   `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`.

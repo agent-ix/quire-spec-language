@@ -19,7 +19,8 @@ Scope: FR-102-AC-1, FR-102-AC-2, FR-102-AC-3.
 
 Every unit starts with the header
 `language "ix:native" edition "1-draft";`, one `profile v = ...;` and
-`model Config = "example/config-version" version "1" digest "sha256-jcs:<64 hex>";`.
+`model Config = "example/config-version" digest "sha256-jcs:<64 hex>";`,
+QSpec's shared-grammar `model` production.
 Parse each through S1 and build through `qsl_forms::build_unit`.
 
 1. Declare `invariant ParentOrder using v on Config::ConfigVersion at current

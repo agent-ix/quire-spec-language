@@ -27,10 +27,10 @@ schema and the golden vectors carry them.
 A closed format/request JSON envelope. The request contains only models,
 program and, for a `1-draft` program, `libraries`, using the same source selections and complete authored clause bindings
 as native-run/1. It contains no runtime artifacts or execution selection.
-The command shares FR-026's request/file/count/aggregate limits, relative-path
-resolution, source digest checks and existing model/compiler stage defaults.
-Preflight receives explicit program/model/snapshot/invocation counts and retains
-the exceeded category, requested count, remaining slots and total ceiling.
+The command shares FR-026's `request_bytes` and `dependent_bytes` intake
+limits, relative-path resolution, source digest checks and existing
+model/compiler stage defaults. A refusal at an intake limit names the limit,
+its configured value and the CLI option that raises it.
 
 ## Outputs
 
@@ -43,17 +43,17 @@ program's `program` carries no `clauses` key at all -- any presence,
 including an empty array, refuses with `invalid-request` (FR-027-AC-7),
 consistent with FR-100's `1-draft` request. Each model a `1-draft` request
 selects is a domain package
-document in format `semantic-ir/2.0.0`, read under its source digest and handed
+document in format `semantic-ir/2.0.0`, read and handed
 to spine `compile` as FR-056's package input; the program's `model`
 declarations select from it by `sha256-jcs` digest, and the v2 lock's
 `model_selections` names each selected package by identity, version and that
 digest. A `1-draft` request may carry `libraries`: one
 `{identity, source}` object per supplied library, where `source` is
-the same source selection a model or the program uses (file, `sha256:` source
-digest and the FR-001 labels), read under its source digest. The command hands
+the same source selection a model or the program uses (file and the FR-001
+labels). The command hands
 them to spine `compile` as its dependency input (FR-099, ADR-015 D-1). A
 request with no `libraries` supplies none. Each library source counts toward
-FR-026's file-count and aggregate-byte limits. A `0-draft` request that
+FR-026's `dependent_bytes` limit. A `0-draft` request that
 carries a library, and a library with an empty identity or version, refuse
 with `invalid-request`. A `1-draft` compile validates the
 program selection's `document` and `formal_revision` but does not record them:
@@ -98,7 +98,7 @@ typed failure without a successful artifact.
 | --- | --- | --- |
 | FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test |
 | FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test |
-| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; file-count exhaustion identifies its category; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
+| FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
 | FR-027-AC-4 | A native-compile/1 request whose program source names `authority` `agent-ix`, `identity` `p`, `revision_namespace` `git` and `revision` `1` emits package bytes whose `source` names those four labels, and the package validates against the native-linked-package/1 schema. The same request without `revision_namespace` refuses with `invalid-request` and exits 20. | Test (TC-430) |
 | FR-027-AC-5 | A native-compile/1 request whose program source declares `edition "1-draft"` and holds a record, an Integer function and a function with parameters writes exactly the bytes `qsl_replay::spine::compile` returns for that source, and QSL's I2 reader reads those bytes back Verified with no node omitted. Two such requests that differ only in the program's `document` and `formal_revision` write identical bytes. | Test (TC-435) |
 | FR-027-AC-6 | A program source declaring `edition "0-draft"` compiles through native compile, and its bytes equal the native static pipeline's (FR-027-AC-1). | Test (TC-435) |
@@ -120,4 +120,5 @@ typed failure without a successful artifact.
 
 FR-027-AC-4 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430.
 FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
-FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward the request's `programs` file limit; FR-027 names no separate category (QSL-265).
+FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
+Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.

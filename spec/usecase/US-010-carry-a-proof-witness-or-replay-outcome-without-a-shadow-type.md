@@ -126,3 +126,8 @@ system.
   replay result and record carrier.
 - [FR-073](../functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) —
   redacted, safe diagnostic rendering for all four envelopes.
+- [FR-265](../functional/FR-265-derive-a-state-clause-separating-witness.md)
+  to [FR-269](../functional/FR-269-settle-a-witness-disagreement-as-a-typed-cause.md) —
+  the state-clause separating witness: derivation, the clause run's basis
+  and witness, `native-run-result/2`, replay's separation check and the
+  `Witness` disagreement cause.
