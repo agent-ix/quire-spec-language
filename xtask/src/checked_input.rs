@@ -46,7 +46,7 @@
 //! `use qsl_forms::Expression as Expr;` and `type Node = qsl_cst::Token;`
 //! are seen through. As in `typestate_scan`, the `use` table is per file,
 //! not per scope, and the alias table is global, which over-approximates.
-//! A `pub use` in a crate the stage crates depend on ([`REEXPORTING_CRATES`])
+//! A `pub use` in a crate the stage crates depend on (`REEXPORTING_CRATES`)
 //! that names a pre-check crate is followed: `qsl_semantics::X`, where
 //! `qsl-semantics` holds `pub use qsl_forms::X;`, resolves to
 //! `qsl_forms::X`, at whatever module the re-export sits.
