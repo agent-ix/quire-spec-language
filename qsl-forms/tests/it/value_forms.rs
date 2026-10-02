@@ -551,6 +551,9 @@ fn deep_not_chains_build_with_no_s2_limit() {
 /// below the unit's node count refuses naming the node ceiling at the
 /// region its diagnostic names; S2 over the same body, parsed at the
 /// default S1 limits, builds its form.
+///
+/// Partial for FR-096-AC-3: the count reached, the setting `s1.nodes` and
+/// the region under `RawSourceRef` are slice B5's, with FR-255.
 #[trace("FR-096-AC-3", "TC-427")]
 #[test]
 fn s1_bounds_the_body_and_s2_builds_it() {

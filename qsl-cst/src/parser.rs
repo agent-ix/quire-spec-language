@@ -1032,7 +1032,7 @@ enum Step<'g> {
 /// production that matched, so such a re-read costs one step per production
 /// it reuses and work stays linear in bracket depth
 /// (`tests::nested_trailing_comma_work_is_linear_in_depth`).
-const WORK_PER_TOKEN: usize = 256;
+pub(crate) const DEFAULT_WORK_UNITS: usize = 256;
 
 /// A bounded interpreter for the declarative grammar table.
 ///
@@ -1060,7 +1060,8 @@ const WORK_PER_TOKEN: usize = 256;
 /// ≤ steps, the store takes at most 40 bytes per step of the budget, plus 16
 /// bytes per token for the memo heads. At the default ceilings
 /// (100,000 tokens, so 25,600,256 steps) that is about 1 GiB in the worst
-/// case. The measured inputs at [`WORK_PER_TOKEN`] store at most 0.17
+/// case. The measured inputs at the default
+/// [`Limits::work_units`] store at most 0.17
 /// matches and 0.17 links per step, about 14 bytes per step.
 struct Engine<'a> {
     grammar: &'a Grammar,
@@ -1085,12 +1086,15 @@ struct Engine<'a> {
     /// is [`Outcome::No`]: a successful parse never reports it, so this
     /// never changes what a valid input produces.
     farthest_failure: Option<Failure>,
+    /// The longest `frames` and `pending` grew, for the stack-charge test.
+    #[cfg(test)]
+    peak: (usize, usize),
 }
 
 impl<'a> Engine<'a> {
-    /// The work budget is [`WORK_PER_TOKEN`] steps per significant token,
-    /// plus one token's worth for the end of input, so parsing work is
-    /// linear in the input.
+    /// The work budget is [`Limits::work_units`] steps per significant
+    /// token, plus one token's worth for the end of input, so parsing work
+    /// is linear in the input.
     fn new(grammar: &'a Grammar, tokens: &'a [Significant], limits: Limits) -> Self {
         Self {
             grammar,
@@ -1106,9 +1110,11 @@ impl<'a> Engine<'a> {
             maximum_steps: tokens
                 .len()
                 .saturating_add(1)
-                .saturating_mul(WORK_PER_TOKEN),
+                .saturating_mul(limits.work_units),
             farthest: 0,
             farthest_failure: None,
+            #[cfg(test)]
+            peak: (0, 0),
         }
     }
 
@@ -1197,6 +1203,13 @@ impl<'a> Engine<'a> {
         self.farthest_failure = None;
         let mut step = Step::Production(production, position);
         loop {
+            #[cfg(test)]
+            {
+                self.peak = (
+                    self.peak.0.max(self.frames.len()),
+                    self.peak.1.max(self.pending.len()),
+                );
+            }
             step = match step {
                 Step::Production(production, position) => {
                     self.enter_production(production, position)
@@ -1655,7 +1668,50 @@ mod tests {
         (engine.steps, significant.len())
     }
 
-    // Re-measures the table recorded at `WORK_PER_TOKEN`.
+    /// The parser's `frames` and `pending` stacks grow by at most a
+    /// constant per significant token, which `limits.tokens` charges: on
+    /// 100,000-deep brackets, a `not` chain and a `let` chain, each stack's
+    /// peak stays within 16 entries per token.
+    #[ix_trace_rs::trace("TC-722", "FR-256-AC-1")]
+    #[test]
+    fn the_parser_stacks_grow_by_a_constant_per_charged_token() {
+        const DEPTH: usize = 100_000;
+        let unlimited = Limits::default()
+            .with_source_bytes(usize::MAX)
+            .with_tokens(usize::MAX)
+            .with_nodes(usize::MAX);
+        for text in [
+            function(&format!("{}x{}", "(".repeat(DEPTH), ")".repeat(DEPTH))),
+            function(&format!("{}true", "not ".repeat(DEPTH))),
+            function(&format!("{}x", "let v = x in ".repeat(DEPTH))),
+        ] {
+            let source = Source::read(
+                SourceIdentity::new("test", "test:engine", "test", "1"),
+                "engine.native",
+                text.as_bytes(),
+                usize::MAX,
+            )
+            .expect("test source");
+            let grammar = grammar::complete_v1();
+            let compounds = grammar::complete_compound_spellings(&grammar);
+            let (_, significant, diagnostics, _) =
+                scan(&source, unlimited, &compounds).expect("scan");
+            assert!(diagnostics.is_empty(), "{diagnostics:?}");
+            let mut engine = Engine::new(&grammar, &significant, unlimited);
+            let outcome = engine.production(Production::CompleteUnit, 0);
+            assert!(matches!(outcome, Outcome::Match(_)), "{outcome:?}");
+            let tokens = significant.len();
+            let (frames, pending) = engine.peak;
+            assert!(frames >= DEPTH, "the frames stack holds the nest: {frames}");
+            assert!(frames <= 16 * tokens, "{frames} frames for {tokens} tokens");
+            assert!(
+                pending <= 16 * tokens,
+                "{pending} pending for {tokens} tokens"
+            );
+        }
+    }
+
+    // Re-measures the table recorded at `DEFAULT_WORK_UNITS`.
     #[test]
     fn measured_work_leaves_headroom_under_the_budget() {
         let temporal = |formula: String| {
@@ -1688,7 +1744,7 @@ mod tests {
         ];
         for text in inputs {
             let (steps, tokens) = work(&text);
-            let budget_third = (tokens + 1) * WORK_PER_TOKEN / 3;
+            let budget_third = (tokens + 1) * DEFAULT_WORK_UNITS / 3;
             assert!(
                 steps <= budget_third,
                 "{steps} steps for {tokens} tokens exceeds a third of the budget: {}",

@@ -18,14 +18,17 @@
 //! assembler's own table of the unit's declarations while it is still
 //! building the package.
 
+use std::marker::PhantomData;
+use std::ops::ControlFlow;
+
 use super::check::Scope;
 use super::refusal::{CheckCause, CheckRefusal};
 use qsl_forms::{BuiltinType, TypeForm, TypeFormHead};
 use qsl_foundation::Span;
 use quire_exact::{
-    CardinalityBound, CollectionType, DecimalType, EffectiveId, FloatType, IeeeWidth,
-    IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile, TextType,
-    ValueType,
+    CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, FloatType,
+    IeeeWidth, IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile,
+    TextType, ValueType,
 };
 use quire_semantic_value::location::Location;
 
@@ -217,12 +220,31 @@ fn float_type(form: &TypeForm, width: IeeeWidth) -> Result<ValueType, TypeFormEr
     Ok(ValueType::Float(FloatType::new(width, rounding)))
 }
 
-fn resolve_builtin(
+/// What one type form needs before its own type can be built: nothing (a
+/// leaf, resolved already), or the type of its one argument.
+enum Step<'f> {
+    /// A form with no type argument, already resolved.
+    Leaf(ValueType),
+    /// `Option<T>`: wraps its argument's type.
+    Option {
+        form: &'f TypeForm,
+        argument: &'f TypeForm,
+    },
+    /// A collection: builds its element's type into a collection type with
+    /// this form's cardinality bounds.
+    Collection {
+        kind: CollectionKind,
+        form: &'f TypeForm,
+        argument: &'f TypeForm,
+    },
+}
+
+fn resolve_builtin<'f>(
     names: &impl TypeNames,
     builtin: BuiltinType,
-    form: &TypeForm,
-) -> Result<ValueType, TypeFormError> {
-    match builtin {
+    form: &'f TypeForm,
+) -> Result<Step<'f>, TypeFormError> {
+    let leaf = match builtin {
         BuiltinType::Boolean => Ok(ValueType::Boolean),
         BuiltinType::Integer => Ok(ValueType::Integer),
         BuiltinType::Int => interval(form, 0).map(ValueType::Int),
@@ -255,7 +277,12 @@ fn resolve_builtin(
                 .map(ValueType::Text)
                 .map_err(|_| fault(form, TypeFormFault::EmptyTextBounds))
         }
-        BuiltinType::Option => resolve_form(names, only_argument(form)?).map(ValueType::option),
+        BuiltinType::Option => {
+            return Ok(Step::Option {
+                form,
+                argument: only_argument(form)?,
+            })
+        }
         BuiltinType::Reference => {
             let target = only_argument(form)?;
             let TypeFormHead::Name(name) = &target.head else {
@@ -266,7 +293,8 @@ fn resolve_builtin(
                 .map(ValueType::Reference)
                 .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
         }
-    }
+    };
+    leaf.map(Step::Leaf)
 }
 
 /// The object type `T` of a `Population<T>[N]` form, by its effective
@@ -303,22 +331,114 @@ pub(crate) fn resolve_form(
     names: &impl TypeNames,
     form: &TypeForm,
 ) -> Result<ValueType, TypeFormError> {
+    let mut resolver = Resolver {
+        names,
+        resolved: Vec::new(),
+        forms: PhantomData,
+        #[cfg(test)]
+        gauge: crate::stack_peak::Gauge::new("resolve_form"),
+    };
+    match quire_walk::walk(&mut resolver, form) {
+        ControlFlow::Continue(()) => resolver.resolved.pop().ok_or_else(|| malformed(form)),
+        ControlFlow::Break(error) => Err(error),
+    }
+}
+
+/// One type form's head: a leaf resolves at once; `Option` and a
+/// collection wait for their argument.
+fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'f>, TypeFormError> {
     match &form.head {
         TypeFormHead::Builtin(builtin) => resolve_builtin(names, *builtin, form),
-        TypeFormHead::Collection(kind) => {
-            let element = resolve_form(names, only_argument(form)?)?;
-            let minimum = bound_u64(form, 0)?;
-            let maximum = bound_u64(form, 1)?;
-            let bound = CardinalityBound::new(minimum, maximum)
-                .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?;
-            Ok(ValueType::collection(CollectionType::new(
-                *kind,
-                element,
-                Some(bound),
-            )))
+        TypeFormHead::Collection(kind) => Ok(Step::Collection {
+            kind: *kind,
+            form,
+            argument: only_argument(form)?,
+        }),
+        TypeFormHead::Population => {
+            Ok(Step::Leaf(ValueType::Population(Some(bound_u64(form, 0)?))))
         }
-        TypeFormHead::Population => Ok(ValueType::Population(Some(bound_u64(form, 0)?))),
-        TypeFormHead::Name(name) => named_type(names, name, form),
+        TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
+    }
+}
+
+/// [`resolve_form`]'s walk (ADR-030): each form's exit builds its type from
+/// its argument's, which the argument's own exit left on `resolved`, so a
+/// type nested to any depth resolves on a constant native stack. The heap
+/// stack grows by one frame per type form, which S1 charged as a node.
+struct Resolver<'n, 'f, N> {
+    names: &'n N,
+    resolved: Vec<ValueType>,
+    forms: PhantomData<&'f TypeForm>,
+    #[cfg(test)]
+    gauge: crate::stack_peak::Gauge,
+}
+
+impl<'f, N: TypeNames> quire_walk::Walk for Resolver<'_, 'f, N> {
+    type Node = &'f TypeForm;
+    type Frame = Step<'f>;
+    type Stop = TypeFormError;
+
+    fn enter(
+        &mut self,
+        form: &'f TypeForm,
+        children: &mut quire_walk::Children<'_, &'f TypeForm>,
+    ) -> ControlFlow<TypeFormError, Step<'f>> {
+        let step = match resolve_head(self.names, form) {
+            Ok(step) => step,
+            Err(error) => return ControlFlow::Break(error),
+        };
+        match &step {
+            Step::Leaf(_) => {
+                #[cfg(test)]
+                self.gauge.enter(0);
+            }
+            Step::Option { argument, .. } | Step::Collection { argument, .. } => {
+                #[cfg(test)]
+                self.gauge.enter(1);
+                children.push(argument);
+            }
+        }
+        ControlFlow::Continue(step)
+    }
+
+    fn exit(&mut self, step: Step<'f>) -> ControlFlow<TypeFormError> {
+        #[cfg(test)]
+        {
+            self.gauge.exit();
+            crate::stack_peak::note("resolve_form_built", self.resolved.len());
+        }
+        match self.build(step) {
+            Ok(resolved) => {
+                self.resolved.push(resolved);
+                ControlFlow::Continue(())
+            }
+            Err(error) => ControlFlow::Break(error),
+        }
+    }
+}
+
+impl<N: TypeNames> Resolver<'_, '_, N> {
+    /// The type `step` names, its argument's type taken from `resolved`.
+    fn build(&mut self, step: Step<'_>) -> Result<ValueType, TypeFormError> {
+        match step {
+            Step::Leaf(resolved) => Ok(resolved),
+            Step::Option { form, .. } => {
+                let inner = self.resolved.pop().ok_or_else(|| malformed(form))?;
+                Ok(ValueType::option(inner))
+            }
+            Step::Collection { kind, form, .. } => {
+                let element = self.resolved.pop().ok_or_else(|| malformed(form))?;
+                let minimum = bound_u64(form, 0)?;
+                let maximum = bound_u64(form, 1)?;
+                let bound = CardinalityBound::new(minimum, maximum)
+                    .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?;
+                Ok(ValueType::collection(CollectionType::new(
+                    kind,
+                    element,
+                    Some(bound),
+                )))
+            }
+        }
     }
 }
 
@@ -364,17 +484,43 @@ mod tests {
             .items
             .iter()
             .find_map(|item| match item {
-                syn::Item::Fn(function) if function.sig.ident == "resolve_form" => Some(function),
+                syn::Item::Fn(function) if function.sig.ident == "resolve_head" => Some(function),
                 _ => None,
             })
-            .expect("fn resolve_form exists");
+            .expect("fn resolve_head exists");
         let mut finder = Finder(Vec::new());
         finder.visit_item_fn(function);
         assert!(
             finder.0.is_empty(),
-            "resolve_form has a catch-all arm at lines {:?}",
+            "resolve_head has a catch-all arm at lines {:?}",
             finder.0
         );
+    }
+
+    /// `resolve_form`'s task stack and its result stack each grow by at
+    /// most one entry per type form, and S1 charged at least one CST node
+    /// per type form: a 1,000-deep `Option` and a 1,000-deep `Sequence`
+    /// peak within the form count.
+    #[ix_trace_rs::trace("TC-724", "FR-257-AC-1")]
+    #[test]
+    fn resolve_form_stacks_grow_within_the_form_count() {
+        const DEPTH: usize = 1_000;
+        let mut option = builtin(BuiltinType::Integer, &[]);
+        let mut sequence = builtin(BuiltinType::Integer, &[]);
+        for _ in 0..DEPTH {
+            option = TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![option]);
+            sequence = TypeForm::new(TypeFormHead::Collection(CollectionKind::Sequence), SPAN)
+                .with_arguments(vec![sequence])
+                .with_bounds(vec!["0".to_owned(), "1".to_owned()]);
+        }
+        for form in [option, sequence] {
+            resolve(&form).expect("a deep type resolves");
+            for stack in ["resolve_form", "resolve_form_built"] {
+                let peak = crate::stack_peak::take(stack);
+                assert!(peak > 0, "{stack} was not used");
+                assert!(peak <= DEPTH + 1, "{stack} peaked at {peak}");
+            }
+        }
     }
 
     fn builtin(builtin: BuiltinType, bounds: &[&str]) -> TypeForm {

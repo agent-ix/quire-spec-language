@@ -450,6 +450,8 @@ pub(crate) fn type_form(cst: &LosslessCst, root: &CstNode) -> Result<TypeForm, F
                 let arguments = type_arguments(cst, node);
                 frames.push(Frame::Exit(node, arguments.len()));
                 frames.extend(arguments.into_iter().rev().map(Frame::Enter));
+                #[cfg(test)]
+                crate::syntax::stack_peak::note("type_form", frames.len() + built.len());
             }
             Frame::Exit(node, count) => {
                 let split = built
@@ -850,6 +852,8 @@ pub(crate) fn expression(
     };
     while let Some(task) = mapping.work.pop() {
         mapping.map(task)?;
+        #[cfg(test)]
+        crate::syntax::stack_peak::note("expression", mapping.work.len());
     }
     mapping.finish(root)
 }
@@ -1565,7 +1569,7 @@ impl<'c> Mapping<'c> {
                 *slot = Some(id);
             }
         }
-        let expression = builder.build().ok_or_else(|| unexpected(root))?;
+        let expression = builder.build().map_err(|_| unexpected(root))?;
         Ok((expression, spans))
     }
 }

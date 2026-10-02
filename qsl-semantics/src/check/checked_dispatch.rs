@@ -741,6 +741,8 @@ struct Renaming<'t, 'r, 's> {
     /// The rewritten spelling of each binder, by node index and binder
     /// slot.
     binders: Vec<Vec<String>>,
+    #[cfg(test)]
+    gauge: crate::stack_peak::Gauge,
 }
 
 impl quire_walk::Walk for Renaming<'_, '_, '_> {
@@ -755,10 +757,28 @@ impl quire_walk::Walk for Renaming<'_, '_, '_> {
         step: Rewrite,
         children: &mut quire_walk::Children<'_, Rewrite>,
     ) -> ControlFlow<std::convert::Infallible> {
+        let mut named = Vec::new();
+        self.step(step, &mut named);
+        #[cfg(test)]
+        self.gauge.enter(named.len());
+        children.extend(named);
+        ControlFlow::Continue(())
+    }
+
+    fn exit(&mut self, (): ()) -> ControlFlow<std::convert::Infallible> {
+        #[cfg(test)]
+        self.gauge.exit();
+        ControlFlow::Continue(())
+    }
+}
+
+impl Renaming<'_, '_, '_> {
+    /// Take one step of the rename, naming the steps under it in `children`.
+    fn step(&mut self, step: Rewrite, children: &mut Vec<Rewrite>) {
         match step {
             Rewrite::Node(id) => {
                 let Some(node) = self.tree.get(id) else {
-                    return ControlFlow::Continue(());
+                    return;
                 };
                 match node.node() {
                     ExprNode::Name(name) => {
@@ -804,11 +824,6 @@ impl quire_walk::Walk for Renaming<'_, '_, '_> {
             }
             Rewrite::Unbind => self.scope.unbind(),
         }
-        ControlFlow::Continue(())
-    }
-
-    fn exit(&mut self, (): ()) -> ControlFlow<std::convert::Infallible> {
-        ControlFlow::Continue(())
     }
 }
 
@@ -816,7 +831,7 @@ impl quire_walk::Walk for Renaming<'_, '_, '_> {
 /// each of its `binders` bound, then `body` under them, then each binder
 /// unbound.
 fn scoped(
-    children: &mut quire_walk::Children<'_, Rewrite>,
+    children: &mut Vec<Rewrite>,
     node: ExprId,
     outer: &[ExprId],
     binders: usize,
@@ -846,42 +861,47 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
         scope: Scope::new(&to_names),
         names: vec![None; expression.len()],
         binders: vec![Vec::new(); expression.len()],
+        #[cfg(test)]
+        gauge: crate::stack_peak::Gauge::new("rename"),
     };
     let ControlFlow::Continue(()) =
         quire_walk::walk(&mut renaming, Rewrite::Node(expression.root_id()));
     let Renaming { names, binders, .. } = renaming;
-    expression.respelled(|node, copy| {
-        let index = node.id().index();
-        let mut used = binders.get(index).into_iter().flatten().cloned();
-        match copy {
-            ExprNode::Name(name) => {
-                if let Some(Some(renamed)) = names.get(index) {
-                    name.clone_from(renamed);
+    expression
+        .respelled(|node, copy| {
+            let index = node.id().index();
+            let mut used = binders.get(index).into_iter().flatten().cloned();
+            match copy {
+                ExprNode::Name(name) => {
+                    if let Some(Some(renamed)) = names.get(index) {
+                        name.clone_from(renamed);
+                    }
                 }
+                ExprNode::Let { name: binder, .. }
+                | ExprNode::Query { binder, .. }
+                | ExprNode::Count { binder, .. }
+                | ExprNode::Sum { binder, .. } => {
+                    if let Some(renamed) = used.next() {
+                        *binder = renamed;
+                    }
+                }
+                ExprNode::Accumulate {
+                    accumulator,
+                    binder,
+                    ..
+                } => {
+                    if let Some(renamed) = used.next() {
+                        *accumulator = renamed;
+                    }
+                    if let Some(renamed) = used.next() {
+                        *binder = renamed;
+                    }
+                }
+                _ => {}
             }
-            ExprNode::Let { name: binder, .. }
-            | ExprNode::Query { binder, .. }
-            | ExprNode::Count { binder, .. }
-            | ExprNode::Sum { binder, .. } => {
-                if let Some(renamed) = used.next() {
-                    *binder = renamed;
-                }
-            }
-            ExprNode::Accumulate {
-                accumulator,
-                binder,
-                ..
-            } => {
-                if let Some(renamed) = used.next() {
-                    *accumulator = renamed;
-                }
-                if let Some(renamed) = used.next() {
-                    *binder = renamed;
-                }
-            }
-            _ => {}
-        }
-    })
+        })
+        // The rewrite above sets names and binders only, never a child id.
+        .expect("a renaming keeps every node's children")
 }
 
 /// Types every linked candidate's effective precondition and body for one
@@ -1548,7 +1568,7 @@ mod tests {
                         })
                         .unwrap();
                 }
-                let clause = builder.build().unwrap();
+                let clause = builder.build().expect("one tree");
                 let renamed = rename_parameters(
                     &clause.clone(),
                     &[("x".to_owned(), ValueType::Boolean)],
@@ -1752,6 +1772,27 @@ mod tests {
 
     /// The rename walk, with nothing to rename, rewrites every form into
     /// exactly itself: each operand, binder and attribute in its own place.
+    /// The rename walk's task stack grows by at most a constant per
+    /// expression node, each charged by S1 as a CST node: a 10,000-deep
+    /// chain of `let` binders peaks within four tasks per node.
+    #[trace("TC-724", "FR-257-AC-1")]
+    #[test]
+    fn the_rename_stack_grows_within_the_node_charge() {
+        let mut clause = Expression::name("x");
+        for _ in 0..10_000 {
+            clause = Expression::let_in("v".to_owned(), Expression::name("x"), clause);
+        }
+        let nodes = clause.len();
+        rename_parameters(
+            &clause,
+            &[("x".to_owned(), ValueType::Boolean)],
+            &[("y".to_owned(), ValueType::Boolean)],
+        );
+        let peak = crate::stack_peak::take("rename");
+        assert!(peak > 0, "the rename walk ran");
+        assert!(peak <= 4 * nodes, "{peak} tasks for {nodes} nodes");
+    }
+
     /// The forms [`one_of_each_form`] builds are exactly [`FORM_NAMES`], so
     /// a name added there without an expression here fails the test.
     #[trace("QSpec-FR-151-AC-7")]

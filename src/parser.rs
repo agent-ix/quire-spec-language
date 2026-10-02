@@ -49,6 +49,9 @@ fn lexer_limits(limits: Limits) -> lexer::Limits {
         source_bytes: limits.source_bytes,
         tokens: limits.tokens,
         nodes: limits.nodes,
+        // This SEAM parses with its own parser; the complete-V1 parser's
+        // work budget does not apply to it.
+        work_units: lexer::Limits::default().work_units,
     }
 }
 

@@ -633,11 +633,14 @@ fn ring(k: usize) -> Vec<FunctionDeclaration> {
             let mut function = recursive(&format!("r{at}"), &format!("r{}", (at + 1) % k));
             if at + 1 == k {
                 // The body's one Boolean literal is its `else`.
-                function.body = function.body.respelled(|_, node| {
-                    if let ExprNode::Boolean(value) = node {
-                        *value = false;
-                    }
-                });
+                function.body = function
+                    .body
+                    .respelled(|_, node| {
+                        if let ExprNode::Boolean(value) = node {
+                            *value = false;
+                        }
+                    })
+                    .expect("a literal rewrite keeps the shape");
             }
             function
         })

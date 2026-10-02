@@ -273,90 +273,106 @@ fn encode_quantity_unit(out: &mut DeclarationMeter, unit: UnitId) {
 // second, parallel integer serialization where one canonical, tested one
 // already exists and is already trusted for identity purposes -- so they
 // are left on `Integer::to_string()` deliberately, not as an oversight.
+///
+/// An `option` or collection writes its own tag, then its inner type, then
+/// (a collection) its bound: a loop down the chain writes each tag, and the
+/// bounds are written innermost first after the leaf, so a type of any
+/// depth encodes on a constant native stack (ADR-030).
 fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
-    match value_type {
-        ValueType::Boolean => out.write_str("boolean"),
-        ValueType::Integer => out.write_str("integer"),
-        ValueType::Int(interval) => {
-            out.write_str("int");
-            out.write_str(&interval.lower().to_string());
-            out.write_str(&interval.upper().to_string());
-        }
-        ValueType::Rational(domain) => {
-            out.write_str("rational");
-            out.write_str(&domain.numerator().lower().to_string());
-            out.write_str(&domain.numerator().upper().to_string());
-            out.write_str(&domain.denominator().lower().to_string());
-            out.write_str(&domain.denominator().upper().to_string());
-        }
-        ValueType::Decimal(decimal) => {
-            out.write_str("decimal");
-            out.write_str(&decimal.lower().to_string());
-            out.write_str(&decimal.upper().to_string());
-            out.write_u64(u64::from(decimal.min_scale()));
-            out.write_u64(u64::from(decimal.max_scale()));
-            out.write_str(rounding_mode_tag(decimal.rounding()));
-        }
-        ValueType::Float(float) => {
-            out.write_str("float");
-            out.write_str(match float.width() {
-                IeeeWidth::Binary32 => "binary32",
-                IeeeWidth::Binary64 => "binary64",
-            });
-            out.write_str(rounding_mode_tag(float.rounding()));
-        }
-        ValueType::Quantity(unit) => {
-            out.write_str("quantity");
-            encode_quantity_unit(out, *unit);
-        }
-        ValueType::Text(text_type) => {
-            out.write_str("text");
-            out.write_u64(text_type.min());
-            out.write_u64(text_type.max());
-            out.write_str(text_profile_tag(text_type.profile()));
-        }
-        ValueType::Enum(shape) => {
-            out.write_str("enum");
-            out.write_bool(shape.is_ordered());
-            for variant in shape.variants() {
-                out.write_str(&variant.to_string());
+    // Each enclosing collection's bound, outermost first.
+    let mut bounds = Vec::new();
+    let mut current = value_type;
+    loop {
+        match current {
+            ValueType::Boolean => out.write_str("boolean"),
+            ValueType::Integer => out.write_str("integer"),
+            ValueType::Int(interval) => {
+                out.write_str("int");
+                out.write_str(&interval.lower().to_string());
+                out.write_str(&interval.upper().to_string());
             }
-        }
-        ValueType::Option(payload) => {
-            out.write_str("option");
-            encode_value_type(out, payload);
-        }
-        ValueType::Composite(key) => {
-            out.write_str("composite");
-            out.write_str(&key.to_string());
-        }
-        ValueType::Collection(collection_type) => {
-            out.write_str("collection");
-            out.write_str(collection_kind_tag(collection_type.kind()));
-            encode_value_type(out, collection_type.element());
-            // Bound presence is part of the type (ADR-014 N-3).
-            match collection_type.bound() {
-                Some(bound) => {
-                    out.write_str("bounded");
-                    out.write_u64(bound.minimum());
-                    out.write_u64(bound.maximum());
+            ValueType::Rational(domain) => {
+                out.write_str("rational");
+                out.write_str(&domain.numerator().lower().to_string());
+                out.write_str(&domain.numerator().upper().to_string());
+                out.write_str(&domain.denominator().lower().to_string());
+                out.write_str(&domain.denominator().upper().to_string());
+            }
+            ValueType::Decimal(decimal) => {
+                out.write_str("decimal");
+                out.write_str(&decimal.lower().to_string());
+                out.write_str(&decimal.upper().to_string());
+                out.write_u64(u64::from(decimal.min_scale()));
+                out.write_u64(u64::from(decimal.max_scale()));
+                out.write_str(rounding_mode_tag(decimal.rounding()));
+            }
+            ValueType::Float(float) => {
+                out.write_str("float");
+                out.write_str(match float.width() {
+                    IeeeWidth::Binary32 => "binary32",
+                    IeeeWidth::Binary64 => "binary64",
+                });
+                out.write_str(rounding_mode_tag(float.rounding()));
+            }
+            ValueType::Quantity(unit) => {
+                out.write_str("quantity");
+                encode_quantity_unit(out, *unit);
+            }
+            ValueType::Text(text_type) => {
+                out.write_str("text");
+                out.write_u64(text_type.min());
+                out.write_u64(text_type.max());
+                out.write_str(text_profile_tag(text_type.profile()));
+            }
+            ValueType::Enum(shape) => {
+                out.write_str("enum");
+                out.write_bool(shape.is_ordered());
+                for variant in shape.variants() {
+                    out.write_str(&variant.to_string());
                 }
-                None => out.write_str("unbounded"),
             }
-        }
-        ValueType::Reference(key) => {
-            out.write_str("reference");
-            out.write_str(&key.to_string());
-        }
-        ValueType::Population(maximum) => {
-            out.write_str("population");
-            match maximum {
-                Some(maximum) => {
-                    out.write_str("bounded");
-                    out.write_u64(*maximum);
+            ValueType::Option(payload) => {
+                out.write_str("option");
+                current = payload;
+                continue;
+            }
+            ValueType::Composite(key) => {
+                out.write_str("composite");
+                out.write_str(&key.to_string());
+            }
+            ValueType::Collection(collection_type) => {
+                out.write_str("collection");
+                out.write_str(collection_kind_tag(collection_type.kind()));
+                bounds.push(collection_type.bound());
+                current = collection_type.element();
+                continue;
+            }
+            ValueType::Reference(key) => {
+                out.write_str("reference");
+                out.write_str(&key.to_string());
+            }
+            ValueType::Population(maximum) => {
+                out.write_str("population");
+                match maximum {
+                    Some(maximum) => {
+                        out.write_str("bounded");
+                        out.write_u64(*maximum);
+                    }
+                    None => out.write_str("unbounded"),
                 }
-                None => out.write_str("unbounded"),
             }
+        }
+        break;
+    }
+    // Bound presence is part of the type (ADR-014 N-3).
+    for bound in bounds.into_iter().rev() {
+        match bound {
+            Some(bound) => {
+                out.write_str("bounded");
+                out.write_u64(bound.minimum());
+                out.write_u64(bound.maximum());
+            }
+            None => out.write_str("unbounded"),
         }
     }
 }
@@ -771,21 +787,26 @@ pub(crate) enum Application<'a> {
 /// is; a type naming a declaration (a record, a tuple, an enum, a declared
 /// unit) or a model owner (a reference, a population) is not.
 fn is_package_independent(value_type: &ValueType) -> bool {
-    match value_type {
-        ValueType::Boolean
-        | ValueType::Integer
-        | ValueType::Int(_)
-        | ValueType::Rational(_)
-        | ValueType::Decimal(_)
-        | ValueType::Float(_)
-        | ValueType::Text(_) => true,
-        ValueType::Option(payload) => is_package_independent(payload),
-        ValueType::Collection(collection) => is_package_independent(collection.element()),
-        ValueType::Quantity(_)
-        | ValueType::Enum(_)
-        | ValueType::Composite(_)
-        | ValueType::Reference(_)
-        | ValueType::Population(_) => false,
+    // An option or collection is independent when its inner type is: a
+    // loop down the chain, so any depth runs on a constant stack.
+    let mut current = value_type;
+    loop {
+        match current {
+            ValueType::Boolean
+            | ValueType::Integer
+            | ValueType::Int(_)
+            | ValueType::Rational(_)
+            | ValueType::Decimal(_)
+            | ValueType::Float(_)
+            | ValueType::Text(_) => return true,
+            ValueType::Option(payload) => current = payload,
+            ValueType::Collection(collection) => current = collection.element(),
+            ValueType::Quantity(_)
+            | ValueType::Enum(_)
+            | ValueType::Composite(_)
+            | ValueType::Reference(_)
+            | ValueType::Population(_) => return false,
+        }
     }
 }
 

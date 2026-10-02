@@ -484,6 +484,8 @@ struct ControlWalk<'c, 'k, 'a> {
     /// The innermost named control enclosing the node being entered.
     scope: Option<ScopeId>,
     collector: &'k mut Collector<'a>,
+    #[cfg(test)]
+    gauge: crate::syntax::stack_peak::Gauge,
 }
 
 impl<'c> quire_walk::Walk for ControlWalk<'c, '_, '_> {
@@ -498,13 +500,19 @@ impl<'c> quire_walk::Walk for ControlWalk<'c, '_, '_> {
         children: &mut quire_walk::Children<'_, ControlNode<'c>>,
     ) -> ControlFlow<FormsRefusal, Option<ScopeId>> {
         let entry = self.scope;
-        match self.visit(node, children) {
-            Ok(()) => ControlFlow::Continue(entry),
-            Err(failure) => ControlFlow::Break(failure),
+        let mut named = Vec::new();
+        if let Err(failure) = self.visit(node, &mut named) {
+            return ControlFlow::Break(failure);
         }
+        #[cfg(test)]
+        self.gauge.enter(named.len());
+        children.extend(named);
+        ControlFlow::Continue(entry)
     }
 
     fn exit(&mut self, entry: Option<ScopeId>) -> ControlFlow<FormsRefusal> {
+        #[cfg(test)]
+        self.gauge.exit();
         self.scope = entry;
         ControlFlow::Continue(())
     }
@@ -527,7 +535,7 @@ impl<'c> ControlWalk<'c, '_, '_> {
     fn visit(
         &mut self,
         node: ControlNode<'c>,
-        children: &mut quire_walk::Children<'_, ControlNode<'c>>,
+        children: &mut Vec<ControlNode<'c>>,
     ) -> Result<(), FormsRefusal> {
         let cst = self.cst;
         let (enclosing, kind) = match node {
@@ -553,7 +561,7 @@ impl<'c> ControlWalk<'c, '_, '_> {
     fn control(
         &mut self,
         control: &'c CstNode,
-        children: &mut quire_walk::Children<'_, ControlNode<'c>>,
+        children: &mut Vec<ControlNode<'c>>,
     ) -> Result<(), FormsRefusal> {
         let cst = self.cst;
         let matched = items(cst, control)
@@ -652,7 +660,7 @@ impl<'c> ControlWalk<'c, '_, '_> {
         &mut self,
         node: &'c CstNode,
         await_items: &[Item<'c>],
-        children: &mut quire_walk::Children<'_, ControlNode<'c>>,
+        children: &mut Vec<ControlNode<'c>>,
     ) -> Result<(), FormsRefusal> {
         let cst = self.cst;
         let after_reference = only(await_items, Production::NodeReference, node)?;
@@ -693,6 +701,8 @@ fn control_anchors(
         cst,
         scope: None,
         collector,
+        #[cfg(test)]
+        gauge: crate::syntax::stack_peak::Gauge::new("control_anchors"),
     };
     match quire_walk::walk(&mut walk, ControlNode::Control(control)) {
         ControlFlow::Continue(()) => Ok(()),

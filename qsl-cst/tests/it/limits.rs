@@ -35,6 +35,7 @@ fn unbounded() -> Limits {
         source_bytes: usize::MAX,
         tokens: usize::MAX,
         nodes: usize::MAX,
+        work_units: usize::MAX,
     }
 }
 

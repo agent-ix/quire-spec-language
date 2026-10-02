@@ -104,6 +104,8 @@ pub struct TypeForm {
 struct CloneTypes<'t> {
     built: Vec<TypeForm>,
     source: PhantomData<&'t TypeForm>,
+    #[cfg(test)]
+    gauge: crate::syntax::stack_peak::Gauge,
 }
 
 impl<'t> quire_walk::Walk for CloneTypes<'t> {
@@ -116,11 +118,18 @@ impl<'t> quire_walk::Walk for CloneTypes<'t> {
         node: &'t TypeForm,
         children: &mut quire_walk::Children<'_, &'t TypeForm>,
     ) -> ControlFlow<Infallible, &'t TypeForm> {
+        #[cfg(test)]
+        self.gauge.enter(node.arguments.len());
         children.extend(&node.arguments);
         ControlFlow::Continue(node)
     }
 
     fn exit(&mut self, node: &'t TypeForm) -> ControlFlow<Infallible> {
+        #[cfg(test)]
+        {
+            self.gauge.exit();
+            crate::syntax::stack_peak::note("type_form_clone_built", self.built.len());
+        }
         let arguments = self
             .built
             .split_off(self.built.len() - node.arguments.len());
@@ -139,6 +148,8 @@ impl Clone for TypeForm {
         let mut clone = CloneTypes {
             built: Vec::new(),
             source: PhantomData,
+            #[cfg(test)]
+            gauge: crate::syntax::stack_peak::Gauge::new("type_form_clone"),
         };
         match quire_walk::walk(&mut clone, self) {
             ControlFlow::Continue(()) => {}
@@ -150,7 +161,11 @@ impl Clone for TypeForm {
 
 /// Compares two [`TypeForm`]s node by node, stopping at the first pair
 /// that differs.
-struct CompareTypes<'t>(PhantomData<&'t TypeForm>);
+struct CompareTypes<'t> {
+    forms: PhantomData<&'t TypeForm>,
+    #[cfg(test)]
+    gauge: crate::syntax::stack_peak::Gauge,
+}
 
 impl<'t> quire_walk::Walk for CompareTypes<'t> {
     type Node = (&'t TypeForm, &'t TypeForm);
@@ -169,18 +184,30 @@ impl<'t> quire_walk::Walk for CompareTypes<'t> {
         {
             return ControlFlow::Break(());
         }
+        #[cfg(test)]
+        self.gauge.enter(left.arguments.len());
         children.extend(left.arguments.iter().zip(&right.arguments));
         ControlFlow::Continue(())
     }
 
     fn exit(&mut self, (): ()) -> ControlFlow<()> {
+        #[cfg(test)]
+        self.gauge.exit();
         ControlFlow::Continue(())
     }
 }
 
 impl PartialEq for TypeForm {
     fn eq(&self, other: &Self) -> bool {
-        quire_walk::walk(&mut CompareTypes(PhantomData), (self, other)).is_continue()
+        quire_walk::walk(
+            &mut CompareTypes {
+                forms: PhantomData,
+                #[cfg(test)]
+                gauge: crate::syntax::stack_peak::Gauge::new("type_form_compare"),
+            },
+            (self, other),
+        )
+        .is_continue()
     }
 }
 
@@ -191,6 +218,8 @@ impl Eq for TypeForm {}
 struct FormatTypes<'f, 'g, 't> {
     out: &'f mut fmt::Formatter<'g>,
     source: PhantomData<&'t TypeForm>,
+    #[cfg(test)]
+    gauge: crate::syntax::stack_peak::Gauge,
 }
 
 impl<'t> quire_walk::Walk for FormatTypes<'_, '_, 't> {
@@ -213,6 +242,8 @@ impl<'t> quire_walk::Walk for FormatTypes<'_, '_, 't> {
         if let Err(error) = written {
             return ControlFlow::Break(error);
         }
+        #[cfg(test)]
+        self.gauge.enter(node.arguments.len());
         children.extend(
             node.arguments
                 .iter()
@@ -223,6 +254,8 @@ impl<'t> quire_walk::Walk for FormatTypes<'_, '_, 't> {
     }
 
     fn exit(&mut self, node: &'t TypeForm) -> ControlFlow<fmt::Error> {
+        #[cfg(test)]
+        self.gauge.exit();
         match write!(
             self.out,
             "], bounds: {:?}, span: {:?} }}",
@@ -240,6 +273,8 @@ impl fmt::Debug for TypeForm {
             &mut FormatTypes {
                 out,
                 source: PhantomData,
+                #[cfg(test)]
+                gauge: crate::syntax::stack_peak::Gauge::new("type_form_format"),
             },
             (self, false),
         ) {
@@ -1283,22 +1318,25 @@ impl Expression {
     /// A copy of this tree with each node's payload rewritten by `respell`,
     /// which is handed each node (children first) and a copy of its payload
     /// to change in place: a name, a binder, an operator. The tree's shape
-    /// never changes: a rewrite that names other children than the node
-    /// did is discarded, and the node is copied as it was.
-    pub fn respelled(&self, mut respell: impl FnMut(ExprRef<'_>, &mut ExprNode)) -> Self {
+    /// never changes: a rewrite that names other children than the node did
+    /// refuses the whole copy with [`ShapeChanged`], naming that node.
+    pub fn respelled(
+        &self,
+        mut respell: impl FnMut(ExprRef<'_>, &mut ExprNode),
+    ) -> Result<Self, ShapeChanged> {
         let nodes = self
             .iter()
             .map(|node| {
                 let mut copy = node.node().clone();
                 respell(node, &mut copy);
                 if copy.children() == node.node().children() {
-                    copy
+                    Ok(copy)
                 } else {
-                    node.node().clone()
+                    Err(ShapeChanged(node.id()))
                 }
             })
-            .collect();
-        Self { nodes }
+            .collect::<Result<_, _>>()?;
+        Ok(Self { nodes })
     }
 
     /// Every node with its id, each after its children, the root last.
@@ -1335,6 +1373,8 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
     struct Render<'t, 'f, 'g> {
         tree: &'t Expression,
         f: &'f mut fmt::Formatter<'g>,
+        #[cfg(test)]
+        gauge: crate::syntax::stack_peak::Gauge,
     }
     impl quire_walk::Walk for Render<'_, '_, '_> {
         /// A node to render, and whether it is its parent's first child.
@@ -1364,6 +1404,8 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
             if opened {
                 write(self.f.write_str(" ["))?;
             }
+            #[cfg(test)]
+            self.gauge.enter(ids.len());
             children.extend(
                 ids.into_iter()
                     .enumerate()
@@ -1373,6 +1415,8 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
         }
 
         fn exit(&mut self, opened: bool) -> ControlFlow<fmt::Error> {
+            #[cfg(test)]
+            self.gauge.exit();
             if opened {
                 if let Err(error) = self.f.write_str("]") {
                     return ControlFlow::Break(error);
@@ -1381,34 +1425,81 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
             ControlFlow::Continue(())
         }
     }
-    match quire_walk::walk(&mut Render { tree, f }, (root, true)) {
+    let mut render = Render {
+        tree,
+        f,
+        #[cfg(test)]
+        gauge: crate::syntax::stack_peak::Gauge::new("expression_debug"),
+    };
+    match quire_walk::walk(&mut render, (root, true)) {
         ControlFlow::Continue(()) => Ok(()),
         ControlFlow::Break(error) => Err(error),
     }
 }
 
-/// Builds an [`Expression`] node by node, children first.
-#[derive(Clone, Debug, Default)]
-pub struct ExpressionBuilder {
-    nodes: Vec<ExprNode>,
-}
-
-/// A node pushed onto an [`ExpressionBuilder`] named a child the builder
-/// has not stored.
+/// [`Expression::respelled`]'s rewrite of this node named other children
+/// than the node has.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UnknownChild(pub ExprId);
+pub struct ShapeChanged(pub ExprId);
 
-impl fmt::Display for UnknownChild {
+impl fmt::Display for ShapeChanged {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "expression node {} names a child not yet built",
+            "a respelling changed the children of expression node {}",
             self.0.index()
         )
     }
 }
 
-impl std::error::Error for UnknownChild {}
+impl std::error::Error for ShapeChanged {}
+
+/// Builds an [`Expression`] node by node, children first. Every node but
+/// the root is the child of exactly one later node, so what it builds is a
+/// tree.
+#[derive(Clone, Debug, Default)]
+pub struct ExpressionBuilder {
+    nodes: Vec<ExprNode>,
+    /// Whether each stored node is already some later node's child.
+    claimed: Vec<bool>,
+}
+
+/// Why an [`ExpressionBuilder`] refused a node or a build.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TreeRefusal {
+    /// A pushed node named a child the builder has not stored.
+    UnknownChild(ExprId),
+    /// A pushed node named a child that another node, or this node
+    /// already, names.
+    ClaimedTwice(ExprId),
+    /// The build found this node, not the last, with no parent.
+    Unclaimed(ExprId),
+    /// The build found no node to be the root.
+    Empty,
+}
+
+impl fmt::Display for TreeRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnknownChild(id) => {
+                write!(f, "expression node {} is not built yet", id.index())
+            }
+            Self::ClaimedTwice(id) => {
+                write!(f, "expression node {} already has a parent", id.index())
+            }
+            Self::Unclaimed(id) => {
+                write!(
+                    f,
+                    "expression node {} has no parent and is not the root",
+                    id.index()
+                )
+            }
+            Self::Empty => f.write_str("an expression needs at least its root"),
+        }
+    }
+}
+
+impl std::error::Error for TreeRefusal {}
 
 impl ExpressionBuilder {
     /// An empty builder.
@@ -1417,26 +1508,50 @@ impl ExpressionBuilder {
     }
 
     /// Store `node` after every node already stored and return its id.
-    /// Refused when `node` names a child this builder has not stored.
-    pub fn push(&mut self, node: ExprNode) -> Result<ExprId, UnknownChild> {
-        let next = self.nodes.len();
-        if let Some(child) = node.children().into_iter().find(|child| child.0 >= next) {
-            return Err(UnknownChild(child));
+    /// Refused when `node` names a child this builder has not stored, or
+    /// one that already has a parent.
+    pub fn push(&mut self, node: ExprNode) -> Result<ExprId, TreeRefusal> {
+        let children = node.children();
+        for (position, child) in children.iter().enumerate() {
+            match self.claimed.get(child.0) {
+                None => return Err(TreeRefusal::UnknownChild(*child)),
+                Some(true) => return Err(TreeRefusal::ClaimedTwice(*child)),
+                Some(false) if children[..position].contains(child) => {
+                    return Err(TreeRefusal::ClaimedTwice(*child))
+                }
+                Some(false) => {}
+            }
         }
+        for child in &children {
+            self.claimed[child.0] = true;
+        }
+        let next = self.nodes.len();
         self.nodes.push(node);
+        self.claimed.push(false);
         Ok(ExprId(next))
     }
 
     /// Copy every node of `tree` in, after every node already stored, and
-    /// return the id of its root.
+    /// return the id of its root, which has no parent yet.
     pub fn graft(&mut self, tree: Expression) -> ExprId {
-        append(&mut self.nodes, tree)
+        let root = append(&mut self.nodes, tree);
+        self.claimed.resize(self.nodes.len(), true);
+        if let Some(last) = self.claimed.last_mut() {
+            *last = false;
+        }
+        root
     }
 
-    /// The expression whose root is the last node stored, or `None` when
-    /// none is.
-    pub fn build(self) -> Option<Expression> {
-        (!self.nodes.is_empty()).then_some(Expression { nodes: self.nodes })
+    /// The expression whose root is the last node stored. Refused when no
+    /// node is stored, or when a node other than the last has no parent.
+    pub fn build(self) -> Result<Expression, TreeRefusal> {
+        let Some((_, rest)) = self.claimed.split_last() else {
+            return Err(TreeRefusal::Empty);
+        };
+        if let Some(orphan) = rest.iter().position(|claimed| !claimed) {
+            return Err(TreeRefusal::Unclaimed(ExprId(orphan)));
+        }
+        Ok(Expression { nodes: self.nodes })
     }
 }
 
@@ -2276,243 +2391,63 @@ pub enum DeclarationForm {
     Protocol(ProtocolDeclarationForm),
 }
 
+/// The longest each explicit heap stack grew in this thread, by name, so a
+/// test can show each stack grows by a constant per CST node S1 charged.
+#[cfg(test)]
+pub(crate) mod stack_peak {
+    use std::cell::RefCell;
+    use std::collections::BTreeMap;
+
+    thread_local! {
+        static PEAKS: RefCell<BTreeMap<&'static str, usize>> =
+            const { RefCell::new(BTreeMap::new()) };
+    }
+
+    /// Record that `stack` holds `len` entries.
+    pub(crate) fn note(stack: &'static str, len: usize) {
+        PEAKS.with(|peaks| {
+            let mut peaks = peaks.borrow_mut();
+            let peak = peaks.entry(stack).or_insert(0);
+            *peak = (*peak).max(len);
+        });
+    }
+
+    /// Counts a `quire_walk` walk's task stack from the walker's side:
+    /// entering a node trades its enter task for its frame and adds one
+    /// task per child, and exiting drops the frame.
+    pub(crate) struct Gauge {
+        stack: &'static str,
+        live: usize,
+    }
+
+    impl Gauge {
+        /// A gauge for a walk that starts with its root's enter task.
+        pub(crate) fn new(stack: &'static str) -> Self {
+            Self { stack, live: 1 }
+        }
+
+        /// A node was entered and named `children` children.
+        pub(crate) fn enter(&mut self, children: usize) {
+            self.live += children;
+            note(self.stack, self.live);
+        }
+
+        /// A node was exited.
+        pub(crate) fn exit(&mut self) {
+            self.live -= 1;
+        }
+    }
+
+    /// The longest `stack` grew since the last call, which resets it.
+    pub(crate) fn take(stack: &'static str) -> usize {
+        PEAKS.with(|peaks| peaks.borrow_mut().remove(stack).unwrap_or(0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
-
-    /// TC-169 / FR-067-AC-9 / FR-067-CON-3: every variant, field and
-    /// method of the parsed-form types is the fixed set below. An exhaustive match with every field named
-    /// (no `..`) fails to compile the moment a variant or a field is added,
-    /// removed or renamed — E0004 (non-exhaustive match) for a variant,
-    /// E0026/E0027 (unknown/missing field) for a field — so this test is
-    /// itself the shape check, not just evidence run under it.
-    ///
-    /// Two residual limits, both covered in practice by the root crate's
-    /// live callers rather than by this test: binding a field with `_`
-    /// names it but does not check its *type* (TC-169 step 4's stated
-    /// scope), and `FunctionDeclaration::clause` is never called here.
-    /// `check::checked_dispatch`'s `checked_dispatch_operation` exercises
-    /// both, at its own `FunctionDeclaration::clause` call sites — a
-    /// type-shape change on a bound-`_` field, or a `clause` signature
-    /// change, still fails to compile there.
-    #[trace("TC-169", "FR-067-AC-9", "FR-067-CON-3")]
-    #[test]
-    fn every_variant_and_field_of_the_moved_types_is_unchanged() {
-        fn binary_operator(value: BinaryOperator) -> &'static str {
-            match value {
-                BinaryOperator::Add => "Add",
-                BinaryOperator::Subtract => "Subtract",
-                BinaryOperator::Multiply => "Multiply",
-                BinaryOperator::Divide => "Divide",
-                BinaryOperator::Equal => "Equal",
-                BinaryOperator::NotEqual => "NotEqual",
-                BinaryOperator::Less => "Less",
-                BinaryOperator::LessOrEqual => "LessOrEqual",
-                BinaryOperator::Greater => "Greater",
-                BinaryOperator::GreaterOrEqual => "GreaterOrEqual",
-                BinaryOperator::And => "And",
-                BinaryOperator::Or => "Or",
-                BinaryOperator::Implies => "Implies",
-            }
-        }
-        assert_eq!(binary_operator(BinaryOperator::Add), "Add");
-
-        fn binder_query(value: BinderQuery) -> &'static str {
-            match value {
-                BinderQuery::Map => "Map",
-                BinderQuery::Filter => "Filter",
-                BinderQuery::FlatMap => "FlatMap",
-                BinderQuery::Forall => "Forall",
-                BinderQuery::Exists => "Exists",
-            }
-        }
-        assert_eq!(binder_query(BinderQuery::Map), "Map");
-
-        fn accumulation(value: Accumulation) -> &'static str {
-            match value {
-                Accumulation::Fold => "Fold",
-                Accumulation::Reduce => "Reduce",
-            }
-        }
-        assert_eq!(accumulation(Accumulation::Fold), "Fold");
-
-        fn clause_kind(value: ClauseKind) -> &'static str {
-            match value {
-                ClauseKind::Invariant => "Invariant",
-                ClauseKind::Precondition => "Precondition",
-                ClauseKind::Postcondition => "Postcondition",
-                ClauseKind::Body => "Body",
-            }
-        }
-        assert_eq!(clause_kind(ClauseKind::Body), "Body");
-
-        fn declared_clause_kind(value: DeclaredClauseKind) -> &'static str {
-            match value {
-                DeclaredClauseKind::Invariant => "Invariant",
-                DeclaredClauseKind::Precondition => "Precondition",
-                DeclaredClauseKind::Body => "Body",
-            }
-        }
-        assert_eq!(declared_clause_kind(DeclaredClauseKind::Body), "Body");
-        assert_eq!(
-            ClauseKind::from(DeclaredClauseKind::Precondition),
-            ClauseKind::Precondition
-        );
-
-        fn field_initializer(value: &FieldInitializer) -> &'static str {
-            match value {
-                FieldInitializer::Value(_) => "Value",
-                FieldInitializer::Null => "Null",
-            }
-        }
-        assert_eq!(
-            field_initializer(&FieldInitializer::Value(
-                Expression::boolean(true).root_id()
-            )),
-            "Value"
-        );
-        assert_eq!(field_initializer(&FieldInitializer::Null), "Null");
-
-        fn function_declaration_fields(value: &FunctionDeclaration) -> &'static str {
-            let FunctionDeclaration {
-                name: _,
-                parameters: _,
-                result: _,
-                measure: _,
-                body: _,
-                clause_kind: _,
-                kind: _,
-                callable_by_name: _,
-                spans: _,
-                using: _,
-            } = value;
-            "FunctionDeclaration"
-        }
-        let declaration = FunctionDeclaration::new(
-            "f",
-            Vec::new(),
-            TypeForm::builtin(crate::BuiltinType::Boolean, Span { start: 0, end: 0 }),
-            None,
-            Expression::boolean(true),
-        );
-        assert_eq!(
-            function_declaration_fields(&declaration),
-            "FunctionDeclaration"
-        );
-
-        fn expression(value: &ExprNode) -> &'static str {
-            match value {
-                ExprNode::Boolean(_) => "Boolean",
-                ExprNode::Integer(_) => "Integer",
-                ExprNode::Rational(_, _) => "Rational",
-                ExprNode::Name(_) => "Name",
-                ExprNode::Let {
-                    name: _,
-                    value: _,
-                    body: _,
-                } => "Let",
-                ExprNode::If {
-                    condition: _,
-                    then: _,
-                    otherwise: _,
-                } => "If",
-                ExprNode::Binary {
-                    operator: _,
-                    left: _,
-                    right: _,
-                } => "Binary",
-                ExprNode::Negate(_) => "Negate",
-                ExprNode::Not(_) => "Not",
-                ExprNode::Field {
-                    operand: _,
-                    field: _,
-                } => "Field",
-                ExprNode::Present(_) => "Present",
-                ExprNode::Value(_) => "Value",
-                ExprNode::Deref(_) => "Deref",
-                ExprNode::Call {
-                    name: _,
-                    arguments: _,
-                } => "Call",
-                ExprNode::Record { name: _, fields: _ } => "Record",
-                ExprNode::Collection {
-                    kind: _,
-                    elements: _,
-                } => "Collection",
-                ExprNode::Convert {
-                    target: _,
-                    operand: _,
-                } => "Convert",
-                ExprNode::Query {
-                    query: _,
-                    binder: _,
-                    source: _,
-                    body: _,
-                } => "Query",
-                ExprNode::Flatten(_) => "Flatten",
-                ExprNode::Accumulate {
-                    form: _,
-                    accumulator_type: _,
-                    accumulator_type_span: _,
-                    accumulator: _,
-                    binder: _,
-                    source: _,
-                    step: _,
-                    identity: _,
-                } => "Accumulate",
-                ExprNode::Count {
-                    result_type: _,
-                    result_type_span: _,
-                    binder: _,
-                    source: _,
-                    predicate: _,
-                } => "Count",
-                ExprNode::Sum {
-                    result_type: _,
-                    result_type_span: _,
-                    binder: _,
-                    source: _,
-                    summand: _,
-                } => "Sum",
-                ExprNode::Size(_) => "Size",
-                ExprNode::Contains {
-                    collection: _,
-                    item: _,
-                } => "Contains",
-                ExprNode::AllInstances {
-                    target: _,
-                    population: _,
-                } => "AllInstances",
-                ExprNode::Lookup {
-                    target: _,
-                    population: _,
-                    reference: _,
-                    absence: _,
-                } => "Lookup",
-                ExprNode::Dispatch {
-                    receiver: _,
-                    member: _,
-                    arguments: _,
-                } => "Dispatch",
-                ExprNode::Pre(_) => "Pre",
-                ExprNode::SelfRef => "SelfRef",
-                ExprNode::Result => "Result",
-                ExprNode::Reaches {
-                    source: _,
-                    target: _,
-                    edge: _,
-                    edge_span: _,
-                } => "Reaches",
-            }
-        }
-        assert_eq!(expression(&ExprNode::Boolean(true)), "Boolean");
-        assert_eq!(expression(declaration.body.root_node()), "Boolean");
-
-        // `ExprNode::children` walks direct subexpressions.
-        let nested = Expression::logical_not(Expression::boolean(false));
-        assert_eq!(nested.root_node().children().len(), 1);
-    }
 
     /// Nesting depth for the deep-arena tests (ADR-030 D-6).
     const LEVELS: usize = 100_000;
@@ -2554,22 +2489,22 @@ mod tests {
             let mut builder = ExpressionBuilder::new();
             let mut inner = builder.push(ExprNode::Name("bottom".to_owned())).unwrap();
             for level in 1..LEVELS {
-                let leaf = builder.push(ExprNode::Name("x".to_owned())).unwrap();
+                let mut leaf = || builder.push(ExprNode::Name("x".to_owned())).unwrap();
                 let node = match level % 5 {
                     0 => ExprNode::Not(inner),
                     1 => ExprNode::Binary {
                         operator: BinaryOperator::Add,
                         left: inner,
-                        right: leaf,
+                        right: leaf(),
                     },
                     2 => ExprNode::Let {
                         name: "v".to_owned(),
-                        value: leaf,
+                        value: leaf(),
                         body: inner,
                     },
                     3 => ExprNode::Call {
                         name: "f".to_owned(),
-                        arguments: vec![leaf, inner],
+                        arguments: vec![leaf(), inner],
                     },
                     _ => ExprNode::Record {
                         name: "R".to_owned(),
@@ -2581,7 +2516,7 @@ mod tests {
                 };
                 inner = builder.push(node).unwrap();
             }
-            let tree = builder.build().expect("the builder holds the root");
+            let tree = builder.build().expect("the builder holds one tree");
             assert_eq!(depth(&tree), LEVELS);
             let copy = tree.clone();
             assert_eq!(copy, tree);
@@ -2647,14 +2582,39 @@ mod tests {
         let mut builder = ExpressionBuilder::new();
         assert_eq!(
             builder.push(ExprNode::Not(foreign)),
-            Err(UnknownChild(foreign))
+            Err(TreeRefusal::UnknownChild(foreign))
         );
-        assert!(builder.build().is_none());
+        assert_eq!(builder.build(), Err(TreeRefusal::Empty));
+    }
+
+    /// A builder refuses a child named by two parents, or twice by one, and
+    /// a build that would leave a node other than the root with no parent:
+    /// what it builds is always one tree.
+    #[trace("TC-724", "FR-257-AC-1")]
+    #[test]
+    fn a_builder_builds_only_one_tree() {
+        let mut builder = ExpressionBuilder::new();
+        let x = builder.push(ExprNode::Name("x".to_owned())).unwrap();
+        builder.push(ExprNode::Not(x)).unwrap();
+        assert_eq!(
+            builder.push(ExprNode::Negate(x)),
+            Err(TreeRefusal::ClaimedTwice(x))
+        );
+        let y = builder.push(ExprNode::Name("y".to_owned())).unwrap();
+        assert_eq!(
+            builder.push(ExprNode::Binary {
+                operator: BinaryOperator::Add,
+                left: y,
+                right: y,
+            }),
+            Err(TreeRefusal::ClaimedTwice(y))
+        );
+        assert_eq!(builder.build(), Err(TreeRefusal::Unclaimed(ExprId(1))));
     }
 
     /// `respelled` rewrites each node's payload in place and keeps the
     /// tree's shape: a rewrite that renames a name lands, and one that
-    /// points a node at another child is discarded.
+    /// points a node at another child refuses the copy.
     #[trace("TC-724", "FR-257-AC-1")]
     #[test]
     fn respelled_rewrites_payloads_and_keeps_the_shape() {
@@ -2663,11 +2623,13 @@ mod tests {
             Expression::name("x"),
             Expression::name("y"),
         );
-        let renamed = tree.respelled(|_, node| {
-            if let ExprNode::Name(name) = node {
-                name.push('1');
-            }
-        });
+        let renamed = tree
+            .respelled(|_, node| {
+                if let ExprNode::Name(name) = node {
+                    name.push('1');
+                }
+            })
+            .expect("a rename keeps the shape");
         assert_eq!(
             renamed,
             Expression::binary(
@@ -2681,6 +2643,6 @@ mod tests {
                 std::mem::swap(left, right);
             }
         });
-        assert_eq!(rewired, tree);
+        assert_eq!(rewired, Err(ShapeChanged(tree.root_id())));
     }
 }

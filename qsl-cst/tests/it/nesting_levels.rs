@@ -187,23 +187,37 @@ fn deepest_options(limits: Limits) -> usize {
     low
 }
 
-/// `qsl_cst::Limits` holds source bytes, tokens and nodes, each set
-/// through its builder method, and brackets nested 10,000 deep parse at the
-/// default limits.
+/// `qsl_cst::Limits` holds source bytes, tokens, nodes and parser work
+/// units, each set through its builder method; the work units bound the
+/// parse; and brackets nested 10,000 deep parse at the default limits.
 #[trace("TC-723", "FR-256-AC-3")]
 #[test]
 fn ten_thousand_nested_brackets_parse_at_the_default_limits() {
     let limits = Limits::default()
         .with_source_bytes(7)
         .with_tokens(8)
-        .with_nodes(9);
+        .with_nodes(9)
+        .with_work_units(10);
     assert_eq!(
         limits,
         Limits {
             source_bytes: 7,
             tokens: 8,
             nodes: 9,
+            work_units: 10,
         }
+    );
+    let text = nested_options(3);
+    let starved = qsl_cst::parse(
+        identity("options"),
+        "options.native",
+        text.as_bytes(),
+        Limits::default().with_work_units(1),
+    )
+    .expect_err("one work unit per token is too few to parse");
+    assert!(
+        matches!(refused_limit(&starved), SyntaxLimit::Work { .. }),
+        "{starved:?}"
     );
     on_bounded_stack(|| {
         admitted(&nested_options(10_000));
@@ -213,6 +227,10 @@ fn ten_thousand_nested_brackets_parse_at_the_default_limits() {
 /// With the node ceiling at 200,000 and every other limit at its default,
 /// brackets nested to the depth the default token ceiling admits parse, and
 /// one pair deeper is refused naming the token ceiling and its bound.
+///
+/// Partial for FR-256-AC-2: the setting name (`s1.tokens`), the count
+/// reached and raising the setting through FR-255's settings operation are
+/// slice B5's, with FR-255.
 #[trace("TC-723", "FR-256-AC-2")]
 #[test]
 fn brackets_nest_to_the_default_token_ceiling() {
@@ -356,8 +374,12 @@ fn exhausting_the_token_ceiling_names_the_token_ceiling() {
     assert_eq!(error.phase, Phase::Lex);
 }
 
-// The longest chain of each shape the default ceilings admit parses, and
-// one element more names the ceiling it hits.
+/// The longest chain of each shape the default ceilings admit parses, and
+/// one element more names the ceiling it hits.
+///
+/// Partial for FR-256-AC-2: the setting name, the count reached and
+/// raising the setting through FR-255's settings operation are slice B5's,
+/// with FR-255.
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3", "TC-723", "FR-256-AC-2")]
 #[test]
 fn longest_chains_parse_and_one_longer_names_a_ceiling() {
