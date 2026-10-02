@@ -7,28 +7,33 @@
 //! structurally identical nodes.
 //!
 //! Minting rule (ADR-011 §6.1, ADR-013 O-04, T-6): the kernel `NodeKey` has
-//! exactly one public constructor, [`NodeKey::from_digest`], which takes an
+//! one minting constructor, [`NodeKey::from_digest`], which takes an
 //! already-computed digest. It does not hash: the preimage schema, RFC 8785
 //! JCS canonicalization and the SHA-256 computation over that canonical form
 //! all stay in QSL, which computes the digest and passes the finished 32
-//! bytes in. Only QSL's `check` module is meant to call this constructor in
-//! production; this crate's own tests call it freely to exercise the type.
+//! bytes in. Only QSL's `check` module calls it in production; this crate's
+//! own tests call it freely to exercise the type.
 //!
-//! A wire-read node id becomes a `NodeKey` only by lookup in a checked
-//! package (ADR-013 O-04), never by parsing a digest string directly:
-//! parsing a wire digest stays QSL's own concern
-//! (`qsl_foundation::digest::WireNodeId`), not this constructor's. Bridging
-//! another digest type's bytes into a `NodeKey` has no canonical role
-//! either (ADR-013 O-05, OBS-018).
+//! Decoding rule (ADR-011 T-12, "Decoding an admitted key"): a key `check`
+//! already minted, read back out of an admitted package's bytes, is decoded
+//! with [`NodeKey::decode_admitted`], not minted. Its caller runs only after
+//! the admitted-package identity check has bound the key bytes, and a
+//! decoded key carries that check's provenance, not a fresh `check` mint.
 //!
-//! QSL call sites built on `from_digest` that do not conform to the minting
-//! rule above are named debt (FR-060 T12-B's named-debt list), not this
-//! design's sanctioned path.
+//! A wire-read node id otherwise becomes a `NodeKey` only by lookup in a
+//! checked package (ADR-013 O-04), never by parsing a digest string
+//! directly: parsing a wire digest stays QSL's own concern
+//! (`qsl_foundation::digest::WireNodeId`). Bridging another digest type's
+//! bytes into a `NodeKey` has no canonical role either (ADR-013 O-05,
+//! OBS-018).
 //!
-//! `arch-lint api-surface`'s T12-B rule (`tools/arch-lint/api_surface.rs`)
-//! scans for the kernel constructor and reports every call site outside
-//! T12-B's own allow-list (`tools/arch-lint/api_surface.rs`). `arch-lint` is not part of `make ci` (Makefile), so
-//! it is advisory, not gating, today.
+//! Like `from_digest`, `decode_admitted` accepts any 32 bytes: the guarantee
+//! is the call-site allow-list plus the verified binding, not the type.
+//! `arch-lint api-surface` holds both allow-lists
+//! (`tools/arch-lint/api_surface.rs`): T12-B reports every
+//! `from_digest` call outside `check`, and T12-F every `decode_admitted`
+//! call in QSL, which has no decode site; a backend's own admitted-package
+//! reader is the intended caller.
 
 use alloc::string::String;
 use core::fmt;
@@ -82,11 +87,26 @@ impl Identifier {
 pub struct NodeKey([u8; 32]);
 
 impl NodeKey {
-    /// The one public constructor: wrap an already-computed
+    /// The minting constructor: wrap an already-computed
     /// `quire.checked-semantic-node/v1` digest. The caller (QSL `check`)
     /// computes the digest over the canonical preimage; this type performs
     /// no hashing and holds no preimage knowledge.
     pub fn from_digest(digest: [u8; 32]) -> Self {
+        Self(digest)
+    }
+
+    /// Decode a key `check` minted and an admitted package carries
+    /// (ADR-011 T-12, "Decoding an admitted key"). It hashes nothing and
+    /// takes no preimage: it re-reads `digest`, the key's own bytes.
+    ///
+    /// Precondition: call it only on the bytes of a package that already
+    /// passed the admitted-package identity check (ADR-011 §4's verified
+    /// binding), so a forged package is refused before any of its keys is
+    /// decoded. The decoded key carries that check's provenance; it never
+    /// feeds a constructor that asserts `check` produced it. The guarantee
+    /// is the call-site allow-list (`arch-lint api-surface` T12-F) plus the
+    /// verified binding, not this type.
+    pub fn decode_admitted(digest: [u8; 32]) -> Self {
         Self(digest)
     }
 
@@ -137,6 +157,21 @@ mod tests {
         assert_eq!(a.cmp(&b), core::cmp::Ordering::Equal);
         assert_eq!(HashSet::from([a, b, c]).len(), 2);
         assert!(a < c);
+    }
+
+    /// ADR-011 T-12: a key decoded from an admitted package's bytes is the
+    /// key `check` minted from the same digest -- equal, hashing equal and
+    /// ordering equal -- so a lookup by the decoded key finds the minted one.
+    #[test]
+    fn a_decoded_admitted_key_is_the_key_check_minted() {
+        use std::collections::HashSet;
+
+        let minted = NodeKey::from_digest(digest(7));
+        let decoded = NodeKey::decode_admitted(*minted.as_bytes());
+        assert_eq!(decoded, minted);
+        assert_eq!(decoded.cmp(&minted), core::cmp::Ordering::Equal);
+        assert!(HashSet::from([minted]).contains(&decoded));
+        assert_ne!(NodeKey::decode_admitted(digest(8)), minted);
     }
 
     /// `Display` renders exactly 64 lowercase hex digits, the wire

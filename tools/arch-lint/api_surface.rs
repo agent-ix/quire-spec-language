@@ -192,8 +192,8 @@ pub(crate) struct Rule {
     pub(crate) debt_list: &'static [DebtEntry],
 }
 
-/// today's five T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21,
-/// T-1).
+/// today's six T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
+/// O-13/QC-21, T-1).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
@@ -366,6 +366,34 @@ pub(crate) const RULES: &[Rule] = &[
              the one direct call in `read_checked_package_v2`'s `AdmittedV2` arm, across every \
              workspace crate's `src/`; the allowed caller is `qsl-package`'s `checked_v2` \
              since X-7",
+        ),
+        shipped_only: true,
+        debt_list: &[],
+    },
+    Rule {
+        id: "T12-F",
+        description: "no QSL module decodes an admitted `NodeKey` (ADR-011 T-12, \
+                      \"Decoding an admitted key\"; FR-087-AC-6, AC-11)",
+        role: Role::Qsl,
+        // `quire_exact::NodeKey::decode_admitted` re-reads a key `check`
+        // minted from the bytes of a package that already passed the
+        // admitted-package identity check. Its intended caller is a
+        // backend's own admitted-package reader, named in that backend's own
+        // run of the check. QSL has no decode site: a wire-read node id
+        // becomes a `NodeKey` only by lookup (FR-087-AC-6), so any QSL call
+        // fails this rule. The bare path matches it called or passed as a
+        // function value (`.map(NodeKey::decode_admitted)`);
+        // `Self::decode_admitted` inside `impl NodeKey` is quire-exact's own,
+        // which this scan excludes.
+        call_patterns: &["NodeKey::decode_admitted"],
+        forbidden_patterns: &[],
+        forbidden_modules: &[],
+        allowed_callers: &[],
+        requires_path: None,
+        pending_reason: "",
+        scope_note: Some(
+            "scoped to QSL's own tree, where no module is an allowed caller; a backend names \
+             its own admitted-package reader in its own run of the check",
         ),
         shipped_only: true,
         debt_list: &[],
@@ -2646,6 +2674,89 @@ mod tests {
             .unwrap();
         assert_is_qsl_root(&qsl_root).unwrap();
         let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
+        let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_027 (T12-F, TC-157, FR-060-AC-3; ADR-011
+    /// T-12; FR-087-AC-6): T12-F has no QSL allowed caller, so a
+    /// `NodeKey::decode_admitted` call from any QSL module -- including
+    /// `qsl-package`'s `checked_v2` reader and `read_import_view`'s E4 path,
+    /// `library` and another `qsl-package` module -- is a violation, called
+    /// or passed as a value. It is not a T12-B mint, while a `from_digest`
+    /// mint outside `check` still fails T12-B.
+    #[trace("TC-157", "FR-060-AC-3", "FR-087-AC-6")]
+    #[test]
+    fn tc_arch_lint_api_surface_027_decode_admitted_has_no_qsl_caller() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "qsl-package/src/checked_v2.rs",
+            "fn read_import_view(bytes: [u8; 32]) {\n    let _ = NodeKey::decode_admitted(bytes);\n}\n\
+             fn mint(bytes: [u8; 32]) {\n    let _ = NodeKey::from_digest(bytes);\n}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-package/src/emit.rs",
+            "fn emit() {\n    let decode = NodeKey::decode_admitted;\n}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-semantics/src/library/mod.rs",
+            "fn resolve(bytes: [u8; 32]) {\n    let _ = quire_exact::NodeKey::decode_admitted(bytes);\n}\n",
+        );
+        let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
+        assert!(rule.allowed_callers.is_empty());
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        let found: Vec<(&str, usize, &str)> = outcome
+            .violations
+            .iter()
+            .map(|site| (site.module.as_str(), site.line, site.function.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                ("checked_v2", 2, "read_import_view"),
+                ("emit", 2, "emit"),
+                ("library", 2, "resolve"),
+            ],
+            "{:?}",
+            outcome.violations
+        );
+        assert!(!outcome.passed());
+
+        let t12b = RULES.iter().find(|rule| rule.id == "T12-B").unwrap();
+        let minted = evaluate(t12b, dir.path(), Some(dir.path())).unwrap();
+        let mints: Vec<(&str, usize, &str)> = minted
+            .violations
+            .iter()
+            .map(|site| (site.module.as_str(), site.line, site.function.as_str()))
+            .collect();
+        assert_eq!(
+            mints,
+            vec![("checked_v2", 5, "mint")],
+            "{:?}",
+            minted.violations
+        );
+    }
+
+    /// tc_arch_lint_api_surface_028 (T12-F on this repository's own tree,
+    /// FR-087-AC-6): no shipped QSL module calls `NodeKey::decode_admitted`.
+    /// This is the CI gate for the rule: it runs in `cargo test --workspace`
+    /// (`make ci`).
+    #[trace("TC-157", "FR-060-AC-2", "FR-087-AC-6")]
+    #[test]
+    fn tc_arch_lint_api_surface_028_decode_admitted_live_tree_has_no_qsl_caller() {
+        let qsl_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        assert_is_qsl_root(&qsl_root).unwrap();
+        let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
         let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
