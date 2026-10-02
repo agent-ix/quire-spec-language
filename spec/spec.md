@@ -286,21 +286,37 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-163
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-171
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-172
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-173
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-174
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-175
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-176
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-177
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-178
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-179
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-180
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-181
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-182
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-183
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-184
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-021
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-165
