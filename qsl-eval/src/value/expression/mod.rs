@@ -467,11 +467,11 @@ impl<'a> ClauseSetup<'a> {
             bindings.push(value);
         }
         let trail = s6a::separation::Trail::new(
-            ObservationIdentity::from(&current.identity),
+            s6a::separation::observation_identity(&current.identity),
             observations
                 .pre
                 .as_ref()
-                .map(|observation| ObservationIdentity::from(&observation.identity)),
+                .map(|observation| s6a::separation::observation_identity(&observation.identity)),
         );
         Ok(Self {
             declaration,

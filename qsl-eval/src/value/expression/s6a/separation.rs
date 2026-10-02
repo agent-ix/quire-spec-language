@@ -20,6 +20,9 @@ use std::sync::Arc;
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+pub use qsl_foundation::witness::{
+    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
 use qsl_semantics::check::{CheckedGraph, Operator, SemanticTerm};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{CollectionValue, ObjectReference, Value};
@@ -27,62 +30,14 @@ use quire_semantic_value::location::Location;
 
 use super::super::evaluate::Evaluation;
 
-/// QSpec FR-207's selected observation identity: the authority-qualified
-/// identity and revision of the snapshot a value is read under.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ObservationIdentity {
-    /// The `authority` label.
-    pub authority: String,
-    /// The `identity` label.
-    pub identity: String,
-    /// The `revision_namespace` label.
-    pub revision_namespace: String,
-    /// The `revision` label.
-    pub revision: String,
-}
-
-impl From<&DocumentRef> for ObservationIdentity {
-    fn from(document: &DocumentRef) -> Self {
-        Self {
-            authority: document.authority.clone(),
-            identity: document.identity.clone(),
-            revision_namespace: document.revision_namespace.clone(),
-            revision: document.revision.clone(),
-        }
+/// QSpec FR-207's selected observation identity of `document`.
+pub(crate) fn observation_identity(document: &DocumentRef) -> ObservationIdentity {
+    ObservationIdentity {
+        authority: document.authority.clone(),
+        identity: document.identity.clone(),
+        revision_namespace: document.revision_namespace.clone(),
+        revision: document.revision.clone(),
     }
-}
-
-/// QSpec FR-207's root subject, for the subjects a state clause's domain
-/// collection can have.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValuePathSubject {
-    /// A declared object identity (QSpec FR-204): a collection stored in a
-    /// member of that object.
-    Object(ObjectReference),
-    /// A built collection: the occurrence key of the expression that builds
-    /// the collection inside the evaluated claim (QSpec FR-207-AC-9).
-    Built(OccurrenceKey),
-}
-
-/// QSpec FR-207's traversal steps a state clause's domain path uses.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ValuePathStep {
-    /// A declared model member, by its exact spelling.
-    Member(String),
-    /// The element at this zero-based position of a collection.
-    Index(u64),
-}
-
-/// QSpec FR-207's runtime value path: a root (the observation and the
-/// subject) and an ordered sequence of traversal steps.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeValuePath {
-    /// The observation the value is read under.
-    pub observation: ObservationIdentity,
-    /// The root subject.
-    pub subject: ValuePathSubject,
-    /// The traversal from the subject.
-    pub steps: Vec<ValuePathStep>,
 }
 
 /// FR-265 (ADR-031 SW-1, SW-9): one quantifier occurrence on the claim's
@@ -130,21 +85,6 @@ impl ClauseEvaluation {
     pub fn stop(&self, at: &Location) -> Option<&StopReport> {
         self.trail.stops.get(at)
     }
-}
-
-/// FR-268's separation-check steps (ADR-031 SW-13).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SeparationStep {
-    /// Step 1: the deciding quantifier is a `forall` or `exists`
-    /// occurrence on the clause's claim.
-    Quantifier,
-    /// Step 2: the quantifier's domain evaluates.
-    Domain,
-    /// Step 3: the element at the index is at the value path and equals
-    /// the deciding element.
-    Element,
-    /// Step 4: the body, bound to the element, separates.
-    Body,
 }
 
 /// FR-268: the claimed witness the separation check reads.

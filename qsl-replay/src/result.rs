@@ -11,10 +11,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::value::{
-    RuntimeValuePath, SeparationStep, StopReport, ValuePathStep, ValuePathSubject,
-};
+use qsl_eval::value::StopReport;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::witness::{RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject};
 use quire_exact::{compare_keys, ScalarLimits, Value};
 use quire_semantic_value::location::Location;
 

@@ -111,7 +111,7 @@ pub use result::{
 // FR-265 and FR-268: the separation-check step and the QSpec FR-207 value
 // path a separating witness record carries, re-exported so CG names them
 // through this crate (ADR-011 FB-05).
-pub use qsl_eval::value::{
+pub use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
 pub use witness::{

@@ -11,11 +11,11 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::value::{
-    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
-};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::witness::{
+    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
 use quire_exact::{
     EffectiveId, Integer, ObjectId, ObjectReference, Origin, Role, UniverseId, Value,
 };
