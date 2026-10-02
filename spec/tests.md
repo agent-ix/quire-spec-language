@@ -533,7 +533,7 @@ names different artifacts in each.
 | TC-725 | Deep expressions check, lower and emit on a small stack | Unit | P1 | FR-258-AC-1, FR-258-AC-5 | 🚧 Planned |
 | TC-726 | Deep types key and lower their text leaves on a small stack | Unit | P1 | FR-258-AC-2 | 🚧 Planned |
 | TC-727 | Checker defaults admit any depth that fits, and its limit outcomes name the setting | Unit | P1 | FR-258-AC-3, FR-258-AC-4 | 🚧 Planned |
-| TC-728 | A deep package's identities do not depend on the stack, and byte limits report as limits | Unit | P1 | FR-259-AC-1, FR-259-AC-2 | 🚧 Planned |
+| TC-728 | A deep package's identities do not depend on the stack, and byte limits report as limits | Unit | P1 | FR-259-AC-1, FR-259-AC-2, FR-259-AC-4 | 🚧 Planned (step 5 implemented) |
 | TC-729 | QSL identities, digests and malformed-input mapping over quire-canonical at any depth | Unit | P1 | FR-259-AC-3 | 🚧 Planned |
 | TC-730 | Intake judges a deep package document on its content | Integration | P1 | FR-260-AC-1, FR-260-AC-2 | 🚧 Planned |
 | TC-731 | Intake reports composite cycles of any length | Integration | P1 | FR-260-AC-3 | 🚧 Planned |

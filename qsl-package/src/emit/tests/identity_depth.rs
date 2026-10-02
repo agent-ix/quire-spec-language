@@ -3,7 +3,8 @@
 //! the emitted v2 package's identity preimage, and every node it projects,
 //! has a depth fixed by its schema, never one that follows the source's
 //! expression depth. A deep body emits as many nodes, each naming its
-//! operands by reference, so its wire is no deeper than a shallow body's.
+//! operands by reference, so its identity preimage is no deeper than a
+//! shallow body's.
 
 use super::*;
 use qsl_semantics::check::json_depth;
@@ -20,15 +21,20 @@ fn deep(levels: usize, step: Step) -> FunctionDeclaration {
     )
 }
 
-/// The deepest JSON nesting of the v2 wire emitted for `function`, which
-/// holds the package's identity preimage and every node it projects.
-fn wire_depth(function: FunctionDeclaration) -> usize {
-    json_depth(emit(&package(vec![function])).package.bytes())
+/// The deepest JSON nesting of the `identity_preimage` member of the v2 wire
+/// emitted for `function`, which projects every node of the package.
+fn identity_preimage_depth(function: FunctionDeclaration) -> usize {
+    let preimage = &wire(&emit(&package(vec![function])))["identity_preimage"];
+    assert!(
+        preimage.is_object(),
+        "the wire carries an identity preimage"
+    );
+    json_depth(&serde_json::to_vec(preimage).expect("a JSON value encodes"))
 }
 
-/// A 100-level `and` chain, `else if` chain and `let` chain each emit a
-/// wire no deeper than the same form at 4 levels.
-#[trace("TC-725", "FR-258-AC-5")]
+/// A 100-level `and` chain, `else if` chain and `let` chain each emit an
+/// identity preimage no deeper than the same form at 4 levels.
+#[trace("TC-728", "FR-259-AC-4")]
 #[test]
 fn a_deep_bodys_package_identity_preimage_has_a_fixed_depth() {
     let and = |_, body| Expression::Binary {
@@ -49,9 +55,9 @@ fn a_deep_bodys_package_identity_preimage_has_a_fixed_depth() {
     let steps: [(&str, Step); 3] = [("and", and), ("else if", else_if), ("let", nested_let)];
     for (label, step) in steps {
         assert_eq!(
-            wire_depth(deep(4, step)),
-            wire_depth(deep(100, step)),
-            "{label}: the emitted wire's depth follows the source depth"
+            identity_preimage_depth(deep(4, step)),
+            identity_preimage_depth(deep(100, step)),
+            "{label}: the identity preimage's depth follows the source depth"
         );
     }
 }

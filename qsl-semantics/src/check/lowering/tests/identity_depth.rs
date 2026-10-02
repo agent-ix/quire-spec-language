@@ -43,7 +43,7 @@ fn json_depth_counts_nesting_outside_strings() {
 
 /// Every nested expression form keys every node of its package with a
 /// preimage no deeper at 63 levels than at 4.
-#[trace("TC-725", "FR-258-AC-5")]
+#[trace("TC-728", "FR-259-AC-4")]
 #[test]
 fn every_expression_forms_identity_preimages_have_a_fixed_depth() {
     for form in FORMS {
@@ -67,7 +67,7 @@ fn every_expression_forms_identity_preimages_have_a_fixed_depth() {
 
 /// A parameter typed with nested `Option`s keys each type node with a
 /// preimage no deeper at 100 levels than at 4.
-#[trace("TC-725", "FR-258-AC-5")]
+#[trace("TC-728", "FR-259-AC-4")]
 #[test]
 fn a_nested_option_types_identity_preimages_have_a_fixed_depth() {
     let checked = |levels: usize| {
@@ -95,7 +95,7 @@ fn a_nested_option_types_identity_preimages_have_a_fixed_depth() {
 
 /// A chain of records, each holding the next in an optional field, keys
 /// each record with a preimage no deeper at 30 records than at 4.
-#[trace("TC-725", "FR-258-AC-5")]
+#[trace("TC-728", "FR-259-AC-4")]
 #[test]
 fn a_record_chains_identity_preimages_have_a_fixed_depth() {
     let checked = |length| {
