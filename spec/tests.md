@@ -295,7 +295,7 @@ names different artifacts in each.
 | TC-805 | The abstraction relation changes no requirement record, route result or clause run | Integration | P1 | FR-306-AC-3, FR-306-AC-4 | 🚧 Planned |
 | TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 Planned |
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 Planned |
-| TC-808 | The driver sends CG only the items the export bound | Integration | P1 | FR-307-AC-6 | 🚧 Planned |
+| TC-808 | The export partitions an emission's items into bound results and refusals | Integration | P1 | FR-307-AC-6 | 🚧 Planned |
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 Planned |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 Planned |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 Planned |
