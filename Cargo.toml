@@ -1,6 +1,8 @@
 [workspace]
-members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
+members = [".", "xtask", "tools/arch-lint", "quire-exact", "quire-semantic-value", "quire-walk", "qsl-walk-grow", "qsl-attrs", "qsl-foundation", "qsl-cst", "qsl-replay", "qsl-source", "qsl-forms", "qsl-semantics", "qsl-package", "qsl-route", "qsl-eval", "qsl-analyze", "qsl-bench"]
 resolver = "2"
+# A cargo-fuzz crate with its own workspace; fuzz/Cargo.toml says why.
+exclude = ["fuzz"]
 
 [workspace.dependencies]
 # `default-features = false`: the encoder builds `no_std` + `alloc`, so the

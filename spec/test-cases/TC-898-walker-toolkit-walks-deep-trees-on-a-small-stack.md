@@ -20,7 +20,7 @@ Scope: FR-356-AC-1, FR-356-AC-2, FR-356-AC-3.
 
 Run steps 2 to 5 on a thread spawned with a 512 KiB stack.
 
-1. Build `quire-walk` for `thumbv7em-none-eabihf`, and list its features
+1. Build `quire-walk` for `thumbv7em-none-eabi`, and list its features
    and its dependency tree. Run arch-lint's direction check over a
    manifest set where IR, RT and CG each depend on `quire-walk`, then over
    one where CG depends on `qsl-semantics`.
@@ -45,4 +45,4 @@ Run steps 2 to 5 on a thread spawned with a 512 KiB stack.
 
 ## Status
 
-🚧 Planned.
+Implemented. Step 1 is backed by `make quire-walk-no-std`, `tests/it/quire_walk_leaf.rs` and `tools/arch-lint`'s `tc_arch_lint_metadata_009` and `tc_arch_lint_direction_004`; steps 2 to 5 by `quire-walk/tests/it/deep.rs`.

@@ -31,7 +31,7 @@ fn usage() -> Error {
     Error::new(
         Code::Usage,
         "arch-lint direction --qsl <path> --ir <path> --rt <path> --cg <path> [--offline]\n\
-         arch-lint api-surface --qsl <path> [--cg <path>]\n\
+         arch-lint api-surface --qsl <path> [--cg <path> | --qsl-only]\n\
          arch-lint duplicate-revisions --lockfile <path>\n\
          arch-lint canonical-encoder --qsl <path>",
     )
@@ -176,10 +176,15 @@ fn run_direction(mut args: Vec<String>) -> Result<(String, bool)> {
     Ok((summary, report.is_clean()))
 }
 
+/// `--qsl-only` runs every rule whose scan root is QSL's own tree (T12-B
+/// to T12-E and FR-100-AC-8) and skips the rules that scan the CG tree
+/// (T12-A), reporting each as skipped, so `make ci` can gate the QSL rules
+/// without a CG checkout. Without it, a missing `--cg` is a usage error.
 fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
     let qsl = require(&mut args, "--qsl")?;
     let cg = take_flag(&mut args, "--cg")?.map(PathBuf::from);
-    if !args.is_empty() {
+    let qsl_only = take_bool(&mut args, "--qsl-only");
+    if !args.is_empty() || (qsl_only && cg.is_some()) {
         return Err(usage());
     }
     api_surface::assert_is_qsl_root(&qsl)?;
@@ -205,6 +210,13 @@ fn run_api_surface(mut args: Vec<String>) -> Result<(String, bool)> {
             api_surface::Role::Cg => cg.as_deref(),
         };
         let outcome = api_surface::evaluate(rule, &qsl, scan_root)?;
+        if qsl_only && rule.role == api_surface::Role::Cg {
+            summary.push_str(&format!(
+                "  {} [{}]: SKIPPED -- --qsl-only runs the rules over QSL's own tree only\n",
+                outcome.rule_id, rule.description
+            ));
+            continue;
+        }
         let passed = outcome.passed();
         all_passed &= passed;
         match &outcome.status {
@@ -468,5 +480,34 @@ mod tests {
         assert!(report.contains("model_query.rs:2 (module value::model_query, fn f)"));
         assert!(report.contains("model_query.rs:3 (module value::model_query, fn f)"));
         assert!(report.ends_with("missing input: pass --cg to evaluate every rule"));
+
+        // `--qsl-only`: the same tree is no usage error. T12-A is skipped,
+        // and the QSL rules still run and fail the check.
+        let arguments: Vec<OsString> = ["api-surface", "--qsl-only", "--qsl"]
+            .into_iter()
+            .map(OsString::from)
+            .chain([root.as_os_str().to_owned()])
+            .collect();
+        let (report, passed) = run(&arguments).unwrap();
+        assert!(!passed, "{report}");
+        let line_of = |id: &str| {
+            report
+                .lines()
+                .find(|line| line.trim_start().starts_with(&format!("{id} [")))
+                .unwrap_or_else(|| panic!("no {id} line in report:\n{report}"))
+                .to_owned()
+        };
+        assert!(line_of("T12-A").contains(": SKIPPED"), "{report}");
+        assert!(line_of("T12-B").ends_with(": FAIL"), "{report}");
+        assert!(line_of("T12-C").ends_with(": FAIL"), "{report}");
+        assert!(line_of("T12-D").ends_with(": PASS"), "{report}");
+
+        // `--qsl-only` with `--cg` is a usage error.
+        let arguments: Vec<OsString> = ["api-surface", "--qsl-only", "--cg", "x", "--qsl"]
+            .into_iter()
+            .map(OsString::from)
+            .chain([root.as_os_str().to_owned()])
+            .collect();
+        assert_eq!(run(&arguments).unwrap_err().code, Code::Usage);
     }
 }

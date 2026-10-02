@@ -19,6 +19,8 @@ qsl-forms = { path = "../qsl-forms" }
 qsl-semantics = { path = "../qsl-semantics" }
 qsl-package = { path = "../qsl-package" }
 qsl-eval = { path = "../qsl-eval" }
+# `deep_input`: the S1-to-S4 spine compile the deep-input fuzz target drives.
+qsl-replay = { path = "../qsl-replay" }
 quire-exact = { path = "../quire-exact" }
 quire-semantic-value = { path = "../quire-semantic-value" }
 # The package document's bytes are its RFC 8785 encoding (ADR-013:113).

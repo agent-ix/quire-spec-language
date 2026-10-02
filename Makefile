@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -198,7 +198,25 @@ quire-exact-no-std:
 quire-semantic-value-no-std:
 	cargo build --locked -p quire-semantic-value --target thumbv7em-none-eabi
 
-ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
+# `quire-walk` (ADR-011 layer W) is the shared `#![no_std]` walker toolkit
+# every stage and backend walks on; it depends on `core` and `alloc` only,
+# so it builds for a bare-metal target.
+quire-walk-no-std:
+	cargo build --locked -p quire-walk --target thumbv7em-none-eabi
+
+# The deep-input fuzz target (FR-356-AC-7, TC-903) over the S1 parser and
+# the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
+# Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
+# It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
+# gitignored), and builds on the pinned stable toolchain with no sanitizer:
+# QSL's crates forbid `unsafe`, so the run checks panics, aborts
+# and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
+FUZZ_RUNS ?= 10000
+fuzz-deep-input:
+	cp Cargo.lock fuzz/Cargo.lock
+	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
+
+ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
@@ -310,6 +328,8 @@ conformance:
 # MEDIUM-4): it scans CG_CLONE for calls into the `qsl-replay` facade crate.
 # Without CG_CLONE, T12-A reports NOT EVALUATED, T12-B, T12-C and T12-D still
 # run and report, and the target exits 2 (usage) for the missing input.
+# `arch-lint-api-surface-qsl` passes `--qsl-only`, which skips T12-A, so the
+# QSL-tree rules gate `ci:` without CG_CLONE.
 #
 # `arch-lint` runs this repo's own checks: api-surface, duplicate-revisions on
 # QSL's own root lock and canonical-encoder.
@@ -319,7 +339,7 @@ IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -327,6 +347,12 @@ arch-lint-direction:
 
 arch-lint-api-surface:
 	cargo run --locked -p arch-lint -- api-surface --qsl . $(if $(CG_CLONE),--cg $(CG_CLONE))
+
+# The API-surface rules over QSL's own tree only (T12-B to T12-E and
+# FR-100-AC-8), with T12-A, which scans CG_CLONE, skipped. Needs only this
+# repository, so it is part of `ci:`.
+arch-lint-api-surface-qsl:
+	cargo run --locked -p arch-lint -- api-surface --qsl . --qsl-only
 
 arch-lint-duplicate-revisions:
 	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock

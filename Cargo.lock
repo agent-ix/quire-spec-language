@@ -1383,6 +1383,7 @@ dependencies = [
  "qsl-forms",
  "qsl-foundation",
  "qsl-package",
+ "qsl-replay",
  "qsl-semantics",
  "quire-canonical",
  "quire-exact",
@@ -1539,6 +1540,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-walk-grow"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "stacker",
+]
+
+[[package]]
 name = "quire-canonical"
 version = "0.3.0"
 source = "git+https://github.com/agent-ix/quire-canonical?branch=main#9572a21687058279bc1b729a4830a28f26ef7173"
@@ -1660,6 +1669,13 @@ dependencies = [
  "sha2",
  "thiserror",
  "typify",
+]
+
+[[package]]
+name = "quire-walk"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
 ]
 
 [[package]]

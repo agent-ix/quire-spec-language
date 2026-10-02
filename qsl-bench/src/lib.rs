@@ -10,6 +10,9 @@
 //!   -- N nested parentheses, or N one-line functions.
 //! - [`check`]: `PackageDeclarations` for the S3 checker -- an N-function
 //!   call chain, or N independent functions.
+//! - [`deep_input`]: complete-V1 units nested 1 to 100,000 levels deep,
+//!   built from fuzzer bytes and compiled through S1 to S4, for the
+//!   `fuzz/` deep-input target (FR-356-AC-7).
 //! - [`model`]: a Semantic IR 2.0.0 document with N object types and a
 //!   population, carried through model intake (`admit` -> `read_records` ->
 //!   `DomainPackage::new`), then normalization and population admission.
@@ -33,6 +36,7 @@ pub fn widen(count: usize) -> u64 {
 }
 
 pub mod check;
+pub mod deep_input;
 pub mod model;
 pub mod parse;
 pub mod recursion;

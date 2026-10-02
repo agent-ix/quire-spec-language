@@ -93,13 +93,22 @@ a hand-written stack in each walk.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-356-AC-1 | `quire-walk` builds for `thumbv7em-none-eabihf` with `#![no_std]`, and it has no features and a dependency tree of only `core` and `alloc`. arch-lint's `SHARED_LEAVES` holds `quire-walk`, and its direction check admits an IR, RT or CG edge to `quire-walk` and refuses one to any `qsl-*` crate. | Test (TC-898) |
+| FR-356-AC-1 | `quire-walk` builds for `thumbv7em-none-eabi` with `#![no_std]`, and it has no features and a dependency tree of only `core` and `alloc`. arch-lint's `SHARED_LEAVES` holds `quire-walk`, and its direction check admits an IR, RT or CG edge to `quire-walk` and refuses one to any `qsl-*` crate other than CG's normal edge to `qsl-replay` (FB-05). | Test (TC-898) |
 | FR-356-AC-2 | On a thread with a 512 KiB stack, a toolkit walk over a 100,000-deep chain enters every node once in pre-order and exits every node once in post-order, each exit receiving the frame its enter pushed. A mutually recursive walk over a 100,000-level chain that alternates an expression node and a type node does the same, each level's frame of its own type. An enter callback that stops at depth 50,000 returns its value, and no callback runs after it. | Test (TC-898) |
 | FR-356-AC-3 | A bottom-up computation over a 100,000-node arena (the node count of a 100,000-term sum's checked body) is one forward loop over the arena and completes on a thread with a 512 KiB stack. | Test (TC-898) |
 | FR-356-AC-4 | `cargo kani` on the toolkit crate verifies every harness: each node entered and exited exactly once, each exit receiving its enter's frame, exits in reverse enter order along each path, a stop ending the walk at once, and no panic, for every tree within the harness bound. | Kani proof (TC-899) |
 | FR-356-AC-5 | Each public entry point of the qualified core (the S0 to S4 checker, the prove path and the certificate checkers) has a test that runs a 100,000-deep input through it on a thread with a 512 KiB stack, under limits raised to fit, and returns its result. No crate in the core depends on `stacker` or on `qsl-walk-grow`, either in its own `cargo tree` or in the resolved workspace build, and arch-lint's direction check refuses a core crate's edge to `qsl-walk-grow`. | Test (TC-902) |
 | FR-356-AC-6 | `qsl-walk-grow`'s `maybe_grow` called on a 100,000-deep native recursion completes on a thread with a 512 KiB stack, and is a plain call of its closure under `cfg(kani)`. Each call site of `maybe_grow` outside the core has a test driving a 100,000-deep recursion through it on a thread with a 512 KiB stack, and no code outside `maybe_grow` calls `stacker`. | Test (TC-902) |
 | FR-356-AC-7 | The deep-input fuzz target generates sources nested from 1 to 100,000 levels deep and drives each through the S1 parser and the S3 checker. A run of 10,000 inputs ends with every input returning a result or a stated limit outcome, and no panic, abort or stack overflow. | Test (TC-903) |
+
+## Status
+
+Partly implemented. `quire-walk` and `qsl-walk-grow` land with their tests,
+Kani harnesses (TC-898, TC-899) and the deep-input fuzz target (TC-903).
+Until ADR-030 slice 1 deletes the S2 forms and S3 checker depth caps, a
+fuzz input nested deeper than either cap ends in that cap's limit outcome,
+so it does not yet reach the walks past it. AC-5 and the call-site half of
+AC-6 (TC-902) wait on the walks that later slices move onto the toolkit.
 
 ## Dependencies
 
