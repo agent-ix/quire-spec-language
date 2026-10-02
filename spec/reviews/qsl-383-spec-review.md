@@ -62,3 +62,18 @@ FR-318.
 | FND-006 | low | FR-318-AC-4 omits QSpec FR-146-AC-14's `arm-arity` arm whose body uses an unbound identifier (reports only `arm-arity`); only the `unknown-member` half of "body not checked" is tested. | spec/functional/FR-318-check-case-expressions-and-exhaustiveness.md:121 |
 | FND-007 | low | TC-821's file name still says "applies-the-if-rule-to" while its title and FR-318 use QSpec FR-146 "Case result type". | spec/test-cases/TC-821-s3-checks-a-case-types-its-binders-per-arm-and-applies-the-if-rule-to.md |
 | FND-008 | low | ADR-012 §16.10 SC-G2 row (rewritten here) and §16.3 SC-R3 say "FR-323 typed values" meaning QSpec FR-323, now ambiguous with this PR's QSL FR-323 (collections). | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1539, 1840 |
+
+## Dispositions
+
+Round 1, reviewed at 6643a381 (fix commit 6643a381).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6643a381 |
+| FND-002 | fixed | 6643a381 |
+| FND-003 | fixed | 6643a381 |
+| FND-004 | fixed | 6643a381 |
+| FND-005 | still-open | The hedge is gone and QSpec FR-143 "Value profile" is cited, but the description still says the compiler "SHALL add no profile identity, profile version or per-feature edition gate", which names what is not; QSpec FR-143 and FR-324's own Behavior state the positive rule (the same profile and definition selections as for records and tuples). |
+| FND-006 | fixed | 6643a381 |
+| FND-007 | fixed | 6643a381 |
+| FND-008 | fixed | 6643a381 |

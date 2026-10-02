@@ -23,9 +23,9 @@ relationships:
 When a declaration's `using` alias selects a value profile that admits
 records and tuples (`quire.value.complete/v1`), the compiler SHALL admit
 union declarations, union constructions and `case` in that declaration on
-the same basis, and SHALL add no profile identity, profile version or
-per-feature edition gate for them, as QSpec FR-143 "Value profile" defines
-(QSpec AD-015; ADR-012 §16.9 "Profiles").
+the same basis, under exactly the profile and definition selections it
+uses for records and tuples, as QSpec FR-143 "Value profile" defines (QSpec
+AD-015; ADR-012 §16.9 "Profiles").
 
 ## Inputs
 
