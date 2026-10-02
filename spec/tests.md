@@ -311,7 +311,7 @@ names different artifacts in each.
 | TC-900 | The SMT-LIB transition-relation encoding is canonical and refuses unencodable constructs | Unit | P1 | FR-315-AC-1, FR-315-AC-2, FR-315-AC-3, FR-315-AC-4, FR-315-AC-5 | 🚧 Planned |
 | TC-900 | The SMT-LIB transition-relation encoding is canonical and refuses unencodable constructs | Unit | P1 | FR-315-AC-1, FR-315-AC-2, FR-315-AC-3 | 🚧 Planned |
 | TC-530 | S3 checks strong fairness constraints and the unmarked fairness kind | Unit | P1 | FR-129-AC-1, FR-129-AC-2 | 🚧 Planned |
-| TC-531 | The explicit-state model checker decides strong fairness by SCC refinement | Integration | P1 | FR-130-AC-1, FR-130-AC-2, FR-130-AC-3 | 🚧 Planned |
+| TC-531 | The explicit-state model checker decides strong fairness by SCC refinement | Integration | P1 | FR-130-AC-1, FR-130-AC-2, FR-130-AC-3, FR-130-AC-4 | 🚧 Planned |
 | TC-532 | Replay checks strong fairness on a model counterexample | Integration | P1 | FR-131-AC-1, FR-131-AC-2, FR-131-AC-3 | 🚧 Planned |
 | TC-533 | A fairness constraint over a supplied trace settles as a missing premise | Unit | P1 | FR-132-AC-1, FR-132-AC-2 | 🚧 Planned |
 | TC-534 | A refuted liveness record names the strong constraint that would exclude its lasso | Integration | P1 | FR-133-AC-1, FR-133-AC-2, FR-133-AC-3 | 🚧 Planned |

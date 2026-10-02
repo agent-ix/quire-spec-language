@@ -20,7 +20,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL decide a liveness (TP-4) item whose
+The `model_check` module of `qsl-analyze` (ADR-018 LA-1) SHALL decide a liveness (TP-4) item whose
 fairness set holds strong constraints by recursive SCC refinement of the
 retained product graph (ADR-019 FS-1 to FS-7). It extends FR-126's second
 phase: the fairness filter becomes one recursive function over a set of
@@ -99,6 +99,11 @@ constraint.
 - The engine SHALL return `Violated` with that lasso when a component
   passes, and FR-126's `Holds{basis: Exhaustive}` or `BoundReached` when
   none does.
+- With `Holds`, the engine SHALL return FR-126's `ComponentCertificate`,
+  whose component rejected by a strong constraint carries
+  `UnfairStrong{constraint, sub}`: that constraint and the refinement's
+  sub-components of the states where it is not enabled, each with its own
+  witness (ADR-019 AM-7), which FR-339's core checker verifies.
 
 ## Acceptance Criteria
 
@@ -107,6 +112,7 @@ constraint.
 | FR-130-AC-1 | ADR-019 §6's mutex (universe `{m}`, owner 0), `always eventually holds(m.owner = 1)`: under `weak each` on `acquire` it returns `Violated` with an empty stem and the loop `0 -acq(2)-> 2 -rel-> 0`; under `strong each` it returns `Holds{Exhaustive}` over 5 product states, although the product has no `acq(1)` edge out of `(0, q1)`; under `strong` with no granularity it returns `Violated` with the same loop as under `weak each`. | Test (TC-531) |
 | FR-130-AC-2 | The `Handoff` mutex (owner `Int[0, 3]`, `acquire(p: Int[1, 3])` with precondition `self.owner = 0`, `release` with precondition `self.owner != 0`, and `pass` with precondition `self.owner = 2 or self.owner = 3` setting `owner` to `5 - pre(self.owner)`), same claim under `strong each` on `acquire`: the accepting SCC `{(0, q1), (2, q1), (3, q1)}` fails (c) for `acq(1)`, its refinement removes `(0, q1)`, and the remainder `{(2, q1), (3, q1)}` passes, so the engine returns `Violated` with the stem `0 -acq(2)-> 2` and the loop `2 -pass-> 3 -pass-> 2`. | Test (TC-531) |
 | FR-130-AC-3 | Over the mutex under `strong each` on `acquire`, a poll that returns `true` from the first call the second phase makes returns `Stopped{Cancelled, None}`. The same claim with the fairness set `weak each` on `acquire` and `strong each` on `acquire` returns the `strong each` verdict, `Holds{Exhaustive}`. Each AC-1 and AC-2 request run twice gives equal outcomes and byte-equal counterexamples. | Test (TC-531) |
+| FR-130-AC-4 | The mutex `strong each` proof returns a `ComponentCertificate` in which `S = {(0, q1), (2, q1)}` carries `UnfairStrong` naming `acq(1)`, with `sub` the one component `{(2, q1)}` witnessed `Trivial`, and `{(0, q0), (1, q0), (2, q0)}` carries `MissingAcceptance`; FR-339's `check_components` accepts it and the item settles `Proved{Exhaustive, Certified}`. The same certificate with `S`'s witness naming `acq(2)`, which `S`'s edge `0 -acq(2)-> 2` takes, is rejected with `WitnessFails`. | Test (TC-531) |
 
 ## Dependencies
 

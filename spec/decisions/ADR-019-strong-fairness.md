@@ -304,6 +304,9 @@ ADR-019" note.
   `unsupported`, `MissingFairnessPremise`.
   ADR-014's `TemporalCounterexample.fairness` names each constraint with its
   kind.
+- **AM-7, ADR-018 PC-4:** the component certificate's witnesses gain
+  `UnfairStrong{constraint, sub}`: a strong constraint of the clause's resolved constraints taken by no edge with both ends in the component, and `sub`, the component's states at which that constraint is not enabled, partitioned into sub-components in topological order among themselves, each with its own witness. A cycle fair under that constraint takes it or avoids every state where it is enabled, so it lies inside one sub-component. FS-2's refinement is the certificate's recursion, and EN-1
+  emits it for every component that a strong constraint rejects.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered

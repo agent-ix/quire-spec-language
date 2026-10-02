@@ -75,7 +75,7 @@ its settlement.
   under every strong constraint, since no operation is enabled at a
   terminal state.
 - When a `Violated` outcome of EN-1 is refused by replay with
-  `ReplayRefusal::UnfairLasso`, `model_check` SHALL settle it
+  `ReplayRefusal::UnfairLasso`, the settlement map (FR-127) SHALL settle it
   `inconclusive`, `ReplayParity` (ADR-019 SV-4); every other replay
   refusal settles by FR-127.
 
@@ -85,7 +85,7 @@ its settlement.
 |----|----------|--------------|
 | FR-131-AC-1 | ADR-019 §6's mutex: the lasso `0 -acq(2)-> 2 -rel-> 0` reproduces in an envelope for the `weak each` clause and for the `strong` (whole) clause; in an envelope for the `strong each` clause, carrying that clause's identities and fairness set, it refuses `ReplayRefusal::UnfairLasso{constraint: {Strong, acquire, Each}}`, catalog code `invalid_runtime_input`/`invalid-value`, with no result. The same lasso with its last step removed refuses with FR-128's loop-closure refusal, which is not `UnfairLasso`. | Test (TC-532) |
 | FR-131-AC-2 | FR-130-AC-2's `Handoff` lasso reproduces under its `strong each` clause, since `acquire` is enabled at no loop state. FR-126-AC-3's terminal stutter lasso over `Counter` reproduces in an envelope for the same claim with `strong` on `inc` added. | Test (TC-532) |
-| FR-131-AC-3 | A `Violated` outcome given to `model_check`'s settlement as EN-1's, carrying AC-1's lasso for the `strong each` clause, whose replay refuses it with `UnfairLasso`, settles `inconclusive`, `ReplayParity`, category inconclusive; the AC-1 loop-closure refusal of an EN-1 outcome settles `inconclusive`, `ReplayRefused`. | Test (TC-532) |
+| FR-131-AC-3 | A `Violated` outcome given to the settlement map as EN-1's, carrying AC-1's lasso for the `strong each` clause, whose replay refuses it with `UnfairLasso`, settles `inconclusive`, `ReplayParity`, category inconclusive; the AC-1 loop-closure refusal of an EN-1 outcome settles `inconclusive`, `ReplayRefused`. | Test (TC-532) |
 
 ## Dependencies
 

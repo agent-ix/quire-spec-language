@@ -15,7 +15,7 @@ strong `whole` fairness, enabledness read from the model state, a
 refinement whose remainder passes, cancellation in the second phase, mixed
 kinds and determinism.
 
-Scope: FR-130-AC-1 to FR-130-AC-3.
+Scope: FR-130-AC-1 to FR-130-AC-4.
 
 ## Test Procedure
 
@@ -28,6 +28,8 @@ variant of FR-130-AC-2, each with `always eventually holds(m.owner = 1)`.
 3. The mutex `strong each` claim with a poll that returns `true` from the
    first call the second phase makes; the mutex claim with `weak each` and
    `strong each` on `acquire`; the requests of steps 1 and 2 twice each.
+4. Check the certificate of step 1's `strong each` proof; then the same
+   certificate with `S`'s witness naming `acq(2)`.
 
 Tag the tests `#[trace("TC-531", "FR-130-AC-n")]`.
 
@@ -39,3 +41,5 @@ Tag the tests `#[trace("TC-531", "FR-130-AC-n")]`.
   -pass-> 2`.
 - Step 3: `Stopped{Cancelled, None}`; `Holds{Exhaustive}`; equal outcomes
   and byte-equal counterexamples.
+- Step 4: accepted, `UnfairStrong` naming `acq(1)` with `sub` `{(2, q1)}`
+  `Trivial`, `Proved{Exhaustive, Certified}`; rejected `WitnessFails`.

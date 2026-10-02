@@ -48,6 +48,7 @@ pub enum ComponentWitness {
     Trivial,
     MissingAcceptance { set: u32 },
     UnfairWeak { constraint: u32 },           // index into the resolved constraints
+    UnfairStrong { constraint: u32, sub: Vec<Component> },
 }
 pub enum ProofCertificate {
     Closure(ClosureCertificate),
@@ -82,7 +83,12 @@ constraint, in FR-123's order.
   `MissingAcceptance{set}` needs no state of the component in that
   acceptance set; `UnfairWeak{constraint}` needs that weak constraint
   enabled, by FR-120's enabled set of the model state, at every state of
-  the component and taken by no edge with both ends in it.
+  the component and taken by no edge with both ends in it;
+  `UnfairStrong{constraint, sub}` needs that strong constraint taken by no
+  edge with both ends in the component, and `sub` to partition exactly the
+  component's states at which it is not enabled, with every edge between
+  two of them going to the same or a later sub-component and every
+  sub-component's witness holding (ADR-019 AM-7).
 - The checker SHALL accept otherwise.
 
 ## Acceptance Criteria
@@ -94,7 +100,7 @@ constraint, in FR-123's order.
 
 ## Dependencies
 
-- ADR-018 PC-4, PC-5, FA-2, FA-4, LA-3.
+- ADR-018 PC-4, PC-5, FA-2, FA-4, LA-3; ADR-019 AM-7 (`UnfairStrong`).
 - [FR-338](FR-338-check-an-en-1-closure-certificate.md) (the closure check
   and the rejection type), [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (the certificate's producer), [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
