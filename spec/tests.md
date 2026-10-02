@@ -481,6 +481,34 @@ names different artifacts in each.
 | TC-708 | Delay distributions check, windows are exact and the race resolves ties by the workload | Unit | P1 | FR-253-AC-1, FR-253-AC-2, FR-253-AC-3, FR-253-AC-4 | 🚧 Planned |
 | TC-709 | Timed runs sample with exact rational delays, measure timed events and replay | Integration | P1 | FR-254-AC-1, FR-254-AC-2, FR-254-AC-3, FR-254-AC-4 | 🚧 Planned |
 | TC-710 | An undefined timed claim evaluation refutes with a timed prefix and replays | Integration | P1 | FR-239-AC-5, FR-237-AC-5, FR-235-AC-5 | 🚧 Planned |
+| TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5 | 🚧 Planned |
+| TC-565 | S3 carries the symmetric annotation and refuses a fold over its references | Unit | P1 | FR-150-AC-1, FR-150-AC-2 | 🚧 Planned |
+| TC-566 | Every identity-observing form is refused in every clause kind, and transparent forms check | Unit | P1 | FR-150-AC-3, FR-150-AC-4 | 🚧 Planned |
+| TC-567 | Symmetry declarations admit on an annotated population and refuse malformed forms | Unit | P1 | FR-151-AC-1, FR-151-AC-2 | 🚧 Planned |
+| TC-568 | Initial states not closed under the generators settle SymmetryBroken; a finer class admits | Unit | P1 | FR-151-AC-3, FR-151-AC-4 | 🚧 Planned |
+| TC-569 | The sort canonicaliser maps each state into its orbit and coalesces orbits | Unit | P1 | FR-152-AC-1, FR-152-AC-2, FR-152-AC-3, FR-152-AC-4 | 🚧 Planned |
+| TC-570 | Weak each fairness is decided on the annotated quotient | Integration | P1 | FR-153-AC-1, FR-153-AC-2 | 🚧 Planned |
+| TC-571 | Strong each fairness refines on the quotient, and every verdict equals the unreduced verdict | Integration | P1 | FR-153-AC-3, FR-153-AC-4 | 🚧 Planned |
+| TC-572 | A receiver-scoped modifies entry limits candidates and check_frame to the receiver | Integration | P1 | FR-154-AC-1, FR-154-AC-2, FR-154-AC-5 | 🚧 Planned |
+| TC-573 | The receiver scope holds in the Frame run and admission, and in the emitted frame node | Integration | P1 | FR-154-AC-3, FR-154-AC-4 | 🚧 Planned |
+| TC-574 | Read, write and enabling footprints derive from clauses and frames, and decide independence | Unit | P1 | FR-155-AC-1, FR-155-AC-2 | 🚧 Planned |
+| TC-575 | Footprints are enforced: a read outside the footprint is an internal fault, a write outside the frame a violation | Integration | P1 | FR-155-AC-3, FR-155-AC-4 | 🚧 Planned |
+| TC-576 | Ample sets reduce ADR-021 §7.2 to one interleaving and keep the deadlock | Integration | P1 | FR-156-AC-1, FR-156-AC-2 | 🚧 Planned |
+| TC-577 | The breadth-first proviso prevents ignoring, the closure reaches through disabled members, and choice is deterministic | Integration | P1 | FR-156-AC-3, FR-156-AC-4 | 🚧 Planned |
+| TC-578 | Fairness visibility keeps a fair violation that C0 to C3 alone would discard | Integration | P1 | FR-157-AC-1, FR-157-AC-2 | 🚧 Planned |
+| TC-579 | Fairness visibility applies only under a non-empty fairness set, at either granularity, and over protocols | Integration | P1 | FR-157-AC-3, FR-157-AC-4 | 🚧 Planned |
+| TC-580 | A state constraint stores boundary states, reports real violations and never proves | Integration | P1 | FR-158-AC-1, FR-158-AC-2 | 🚧 Planned |
+| TC-581 | Undefined, absent and initially-false constraints, bounds, identity and determinism | Integration | P1 | FR-158-AC-3, FR-158-AC-4 | 🚧 Planned |
+| TC-582 | The preservation table admits or settles each selected reduction before expansion | Unit | P1 | FR-159-AC-1, FR-159-AC-2 | 🚧 Planned |
+| TC-583 | Reductions route only to advertising candidates, need footprints, and enter the obligation identity | Integration | P1 | FR-159-AC-3, FR-159-AC-4 | 🚧 Planned |
+| TC-584 | Reduced proofs, reduction causes, depth and refutations settle through the one map | Unit | P1 | FR-160-AC-1, FR-160-AC-2, FR-160-AC-3, FR-160-AC-4, FR-160-AC-7 | 🚧 Planned |
+| TC-585 | Symmetry counterexamples concretise to subject traces, closing a loop in one or more passes | Integration | P1 | FR-161-AC-1, FR-161-AC-2 | 🚧 Planned |
+| TC-586 | Each-fairness loops take every identity, and every reduced counterexample is one ordinary trace kind | Integration | P1 | FR-161-AC-3, FR-161-AC-4 | 🚧 Planned |
+| TC-587 | TransitionSystem hooks offer reductions, the product delegates them, and simulation stays unreduced | Integration | P1 | FR-162-AC-1, FR-162-AC-2, FR-162-AC-3, FR-162-AC-4 | 🚧 Planned |
+| TC-588 | An undefined claim evaluation found on a reduced run refutes with a concrete prefix | Integration | P1 | FR-160-AC-5 | 🚧 Planned |
+| TC-589 | Complete enabling footprints and membership locations keep safety violations under partial-order reduction | Integration | P1 | FR-155-AC-5, FR-155-AC-6, FR-156-AC-5, FR-156-AC-6 | 🚧 Planned |
+| TC-617 | Complete enabling footprints and membership keep fair violations under partial-order reduction | Integration | P1 | FR-157-AC-5, FR-157-AC-6 | 🚧 Planned |
+| TC-886 | Reduced and unreduced runs agree over the model-check corpus | Integration | P1 | FR-160-AC-6 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -843,6 +871,22 @@ a completed `max_depth` horizon (AC-7). The simulation tests in
 `qsl-eval/tests/it/finite_simulation.rs` trace to these ids, not to QSpec's
 TC-210 and FR-181-AC-* ids; this repository's TC-210 is a different case.
 TC-439 keeps FR-097-AC-5's `Outcome::category()` map.
+
+## State-space reduction (FR-150 to FR-162) coverage
+
+FR-150 to FR-162 carry ADR-021: the `symmetric` annotation and its S3
+refusals (FR-150), symmetry admission and instance orbits (FR-151), the sort
+canonicaliser (FR-152), `each` fairness on the annotated quotient (FR-153),
+receiver-scoped frames (FR-154), footprints and their enforcement (FR-155),
+ample sets and the breadth-first proviso (FR-156), fairness visibility
+(FR-157), state constraints (FR-158), the preservation-table pre-check
+(FR-159), reduced verdicts and causes (FR-160), counterexample
+concretisation (FR-161) and the `TransitionSystem` hooks (FR-162). TC-565 to
+TC-589, TC-617 and TC-886 back every AC, all `🚧 Planned`. TC-886 is the
+reduced-versus-unreduced differential test over the corpus. TC-578 is the vector where fairness
+visibility changes the ample set and keeps a fair violation that C0 to C3
+alone would discard. TC-579's protocol step needs ADR-027's
+`ProtocolSystem`.
 
 ## Model simulation (FR-120) coverage
 
