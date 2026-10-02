@@ -118,7 +118,7 @@ pub struct RetainedEdge {
 ## Dependencies
 
 - ADR-021 RD-2, EI-2 to EI-5, §2 "Combining reductions"; ADR-014 TR-7.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (the trait and engine), [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`, `explore_model`), [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (the product and its phases), [FR-152](FR-152-canonicalise-a-model-state-by-sorting-its-symmetry-classes.md),

@@ -97,7 +97,7 @@ It has `compose`, `inverse` and `identity`.
 ## Dependencies
 
 - ADR-021 SYM-7, RU-2, EI-2, EI-3.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (state key, coalescing), [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (state-key record and reference encoding), [FR-151](FR-151-admit-a-request-s-symmetry-declarations.md)
   (the group).

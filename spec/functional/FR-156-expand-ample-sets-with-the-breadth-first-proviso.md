@@ -105,7 +105,7 @@ proves the claim (US-019).
 ## Dependencies
 
 - ADR-021 POR-5 to POR-9, PT-2 (POR column), §2 "POR and deadlocks".
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (canonical transition order), [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
   (atoms), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
   (`deadlocked`), [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
