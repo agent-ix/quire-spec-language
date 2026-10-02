@@ -48,7 +48,7 @@ pub enum ComponentWitness {
     Trivial,
     MissingAcceptance { set: u32 },
     UnfairWeak { constraint: u32 },           // index into the resolved constraints
-    UnfairStrong { constraint: u32, sub: Vec<Component> },
+    UnfairStrong { constraints: Vec<u32>, sub: Vec<Component> },  // every failing strong constraint
 }
 pub enum ProofCertificate {
     Closure(ClosureCertificate),
@@ -84,11 +84,11 @@ constraint, in FR-123's order.
   acceptance set; `UnfairWeak{constraint}` needs that weak constraint
   enabled, by FR-120's enabled set of the model state, at every state of
   the component and taken by no edge with both ends in it;
-  `UnfairStrong{constraint, sub}` needs that strong constraint taken by no
-  edge with both ends in the component, and `sub` to partition exactly the
-  component's states at which it is not enabled, with every edge between
-  two of them going to the same or a later sub-component and every
-  sub-component's witness holding (ADR-019 AM-7).
+  `UnfairStrong{constraints, sub}` needs every listed strong constraint
+  taken by no edge with both ends in the component, and `sub` to partition
+  exactly the component's states at which none of them is enabled, with
+  every edge between two of them going to the same or a later
+  sub-component and every sub-component's witness holding (ADR-019 AM-7).
 - The checker SHALL accept otherwise.
 
 ## Acceptance Criteria

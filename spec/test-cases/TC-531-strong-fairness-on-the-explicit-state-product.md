@@ -41,5 +41,5 @@ Tag the tests `#[trace("TC-531", "FR-130-AC-n")]`.
   -pass-> 2`.
 - Step 3: `Stopped{Cancelled, None}`; `Holds{Exhaustive}`; equal outcomes
   and byte-equal counterexamples.
-- Step 4: accepted, `UnfairStrong` naming `acq(1)` with `sub` `{(2, q1)}`
+- Step 4: accepted, `UnfairStrong` listing `acq(1)` with `sub` `{(2, q1)}`
   `Trivial`, `Proved{Exhaustive, Certified}`; rejected `WitnessFails`.

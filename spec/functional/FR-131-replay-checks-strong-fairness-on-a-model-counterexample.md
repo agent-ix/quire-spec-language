@@ -23,8 +23,8 @@ relationships:
 `qsl_replay::replay_model_trace` (FR-128) SHALL check every constraint of a
 model counterexample's fairness set against its loop, weak and strong, with
 enabledness recomputed from the model, and refuse a lasso that fails a
-strong constraint as an unfair lasso (ADR-019 FS-8, SF-4). The settlement
-in `model_check` SHALL settle an EN-1 counterexample that replay refuses as
+strong constraint as an unfair lasso (ADR-019 FS-8, SF-4). The
+`qsl-replay` settlement map (FR-127) SHALL settle an EN-1 counterexample that replay refuses as
 unfair `inconclusive`, `ReplayParity`, since EN-1 builds only fair lassos
 (ADR-019 SV-4).
 

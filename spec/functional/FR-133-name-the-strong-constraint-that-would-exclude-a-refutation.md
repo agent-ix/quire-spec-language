@@ -73,7 +73,7 @@ computes it and what it writes.
   executor SHALL emit no hint for that operation.
 - The executor SHALL return the hints in the replay result. The writer of
   the item's terminal record SHALL write them on it beside the
-  counterexample: `model_check`'s settlement (FR-127) for an EN-1
+  counterexample: the `qsl-replay` settlement map (FR-127) for an EN-1
   refutation, and the orchestrating driver (ADR-011 T-13) for a refutation
   from the SMT backend settled through CG's map (ADR-018 DS-2).
 - The writer of the terminal record SHALL leave the counterexample, its
