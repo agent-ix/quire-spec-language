@@ -61,7 +61,7 @@ the outcome's ADR-013 O-16 category.
 A native-run/1 request (FR-026's closed envelope and shared limits). For a
 `1-draft` program the request carries:
 
-- `program`: the program's source selection (file and the four [FR-001](FR-001-read-exact-source.md) labels, `document` and
+- `program`: the program's source selection (file and the two [FR-001](FR-001-read-exact-source.md) labels, `document` and
   `formal_revision`), with no `clauses` and no `extraction`.
 - `models`: zero or more `semantic-ir/2.0.0` domain package documents, each
   read and handed to spine `compile` as FR-056's
@@ -99,7 +99,7 @@ document, newline-terminated, and nothing else. Its members are:
 - `package_id`: the compiled package's `package_id`, lowercase hex, equal
   to the one `qsl_replay::spine::compile` computes for the same source and
   inputs.
-- `source`: the program source as native-run-result/1 renders one: its four
+- `source`: the program source as native-run-result/1 renders one: its two
   FR-001 labels, its `sha256:` source digest and its authored path.
 - `function`: the `function` string of the request.
 - `outcome`: exactly one of
@@ -351,7 +351,7 @@ exit 30.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one `qsl_replay::spine::compile` computes for the same source, whose `source` names the request's four labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
+| FR-100-AC-1 | A native-run/1 request selecting `tests/fixtures/spine-compile.native` (`edition "1-draft"`) with `call` `{"function": "seven", "arguments": []}` exits 0, with empty stderr, and writes one newline-terminated document whose `format` is `spine-run-result/1`, whose `package_id` equals the one `qsl_replay::spine::compile` computes for the same source, whose `source` names the request's two labels, source digest and authored path, whose `function` is `seven`, and whose `outcome` is `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`. | Test (TC-450) |
 | FR-100-AC-2 | A `0-draft` native-run/1 request writes the stdout bytes and exit status TC-103 and TC-104 fix for it. A program declaring `edition "7-draft"` refuses `unknown_edition` at stage `profile`, exit 20, empty stdout, with a `message` naming the file and the edition. | Test (TC-450) |
 | FR-100-AC-3 | A `1-draft` request carrying each member the refusal table names refuses `invalid-request` at stage `request`, exit 20, empty stdout, whatever state its model files are in; a `1-draft` request carrying neither `call` nor `clause` refuses the same way; until the change that lands FR-100's clause runner, a `1-draft` request carrying `clause` refuses the same way; a `0-draft` request carrying `call` or `libraries` refuses the same way. A `work_units` of `18446744073709551616`, `-1` or `1.5` refuses the same way. A `1-draft` request whose `libraries` supplies an imported library and whose `models` supplies a domain package the program selects runs, exit 0. | Test (TC-450) |
 | FR-100-AC-4 | For a unit declaring `lt(a: Int[0, 9], b: Int[0, 9]): Boolean { a < b }`, `flag(b: Boolean): Boolean { b }`, `id(x: Int[0, 9]): Int[0, 9] { x }` and `px(p: Point): Digit`: `lt` with `b = 3` given before `a = 5` completes `false`, exit 0; `flag(1)` completes `true`; `id(4)` completes integer `"4"`. `flag(2)`, `id(12)` and `px(1)` each refuse `invalid_runtime_input` at stage `call`, exit 20, empty stdout, with `details` `{"position": 0}`. An argument naming `y`, `x` bound twice, and no argument each refuse `invalid_runtime_input` at stage `call`, with `details` `{"parameter": "y"}`, `{"parameter": "x"}` and `{"parameter": "x"}`. A `value` of `true`, `"7"`, `1.5` or `9223372036854775808` refuses `invalid-request` at stage `request`, exit 20. | Test (TC-451) |
@@ -373,7 +373,7 @@ exit 30.
   integer argument rule.
 - [FR-099](FR-099-compile-against-supplied-libraries.md): the dependency
   input.
-- [FR-001](FR-001-read-exact-source.md): the four source labels.
+- [FR-001](FR-001-read-exact-source.md): the two source labels.
 - [FR-038](FR-038-encode-exact-protocol-numbers.md): the integer decimal
   spelling.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
@@ -418,3 +418,7 @@ derivation of every exit status from FR-285 (ADR-029 CB-4, ruling RU-1) are
 specified and not yet implemented -- TC-786 planned. TC-452 is planned
 again: its code test still asserts exit 20 for an undefined outcome and
 needs updating to exit 10.
+
+Remaining work (implementation): the program selection and the `source`
+member still carry the revision namespace and revision; they carry the two
+FR-001 labels (QSpec STD-150).

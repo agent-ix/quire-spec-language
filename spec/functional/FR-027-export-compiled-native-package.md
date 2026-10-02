@@ -22,11 +22,11 @@ relationships:
 
 When an author invokes quire-spec compile with a native-compile/1 request file, the command shall compile the selected program source by the edition its header declares. A `1-draft` source compiles through the spine (S1 to S4, ADR-011 §7.3 M-6a) into `quire.checked-package/v2` bytes. A `0-draft` source compiles into the exact native linked package bytes produced from the selected model and program sources. Native compile is deleted with M-6c (ADR-011, owner ruling 2026-09-24).
 
-Each selected source carries the four source labels of
+Each selected source carries the two source labels of
 [FR-001](FR-001-read-exact-source.md) under the request identity
 [FR-026](FR-026-run-standalone-native-workflow.md) defines, and the
-native-linked-package/1 `source` renders all four. The package bytes, the
-schema and the golden vectors carry them.
+native-linked-package/1 `source` renders both with the source digest. The
+package bytes, the schema and the golden vectors carry them.
 
 The request handling is the QSL library operation `command`, which the
 driver's `quire compile` reaches (FR-287). A `1-draft` native-compile/1
@@ -111,7 +111,7 @@ typed failure without a successful artifact.
 | FR-027-AC-1 | CLI output matches the existing public static pipeline byte-for-byte and is accepted by the existing verified package reader with explicit bindings. | Test |
 | FR-027-AC-2 | A directory containing only selected sources and its compile request produces the package; native-run/1 and unexpected runtime fields refuse at the command boundary. | Test |
 | FR-027-AC-3 | Stale source and malformed syntax return original codes with empty stdout; a request past `dependent_bytes` names the limit, its configured value and its CLI option, and the same request with the limit raised to its size compiles; compile arity errors precede I/O and exit 20; output failures exit 30; existing run and parse/format tests still pass. | Test |
-| FR-027-AC-4 | A native-compile/1 request whose program source names `authority` `agent-ix`, `identity` `p`, `revision_namespace` `git` and `revision` `1` emits package bytes whose `source` names those four labels, and the package validates against the native-linked-package/1 schema. The same request without `revision_namespace` refuses with `invalid-request` and exits 20. | Test (TC-430) |
+| FR-027-AC-4 | A native-compile/1 request whose program source names `authority` `agent-ix` and `identity` `p` emits package bytes whose `source` names those two labels and the source digest, and no other identity member, and the package validates against the native-linked-package/1 schema. The same request without `identity` refuses with `invalid-request` and exits 20. | Test (TC-430) |
 | FR-027-AC-5 | A native-compile/1 request whose program source declares `edition "1-draft"` and holds a record, an Integer function and a function with parameters writes exactly the bytes `qsl_replay::spine::compile` returns for that source, and QSL's I2 reader reads those bytes back Verified with no node omitted. Two such requests that differ only in the program's `document` and `formal_revision` write identical bytes. | Test (TC-435) |
 | FR-027-AC-6 | A program source declaring `edition "0-draft"` compiles through native compile, and its bytes equal the native static pipeline's (FR-027-AC-1). | Test (TC-435) |
 | FR-027-AC-7 | A program source declaring any other edition refuses with `unknown_edition`, exit 20, empty stdout, and a message naming the file and the edition. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit 20, whatever state the model files are in. | Test (TC-435) |
@@ -134,7 +134,7 @@ typed failure without a successful artifact.
 
 ## Status
 
-FR-027-AC-4 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430.
+FR-027-AC-4 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation): the request identity and the package `source` drop `revision_namespace` and `revision` (QSpec STD-150).
 FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
 FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
 Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.

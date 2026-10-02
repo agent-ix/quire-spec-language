@@ -26,23 +26,23 @@ JSON parse/diagnostic output or formatted source plus a documented exit code.
 
 Current parse reports parsed only. [FR-301](ix://agent-ix/quire-specification/FR-301) states the native CLI's exit status contract; this command carries it. A successful parse completes without violation and exits 0. A refused syntax request, an invalid command invocation and invalid OS encoding in commands or labels are invalid or refused input and exit 20. A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, names a real capability this build lacks and exits 21. An exhausted parser request is incomplete and exits 22. A failure to write the command's own output — the parsed/formatted result on stdout or a diagnostic on stderr — is a tool failure, not a request-level disposition, and exits 30, FR-301's code for tool failure. Source diagnostics preserve original byte and scalar coordinates. Future link/evaluate outcomes cannot be inferred from parse success.
 
-`parse` and `format` take the source reference's four labels before the file
+`parse` and `format` take the source reference's two labels before the file
 ([FR-001](FR-001-read-exact-source.md)):
 
 ```text
-quire-spec <parse|format> <source-authority> <source-id> <revision-namespace> <revision> <file>
+quire-spec <parse|format> <source-authority> <source-id> <file>
 ```
 
-The CLI reads OS arguments without assuming UTF-8. The command and the four
+The CLI reads OS arguments without assuming UTF-8. The command and the two
 labels must be UTF-8; invalid label/command encoding is a usage error
 before opening the path. An empty or whitespace-only UTF-8 label refuses as
 `invalid_source_identity`/`blank-label`, naming the first blank label (FR-001), before the file is opened. The file operand remains an OS path for actual I/O, including Unix
 non-UTF-8 paths. JSON path text is display-only and may contain replacement
 characters; it cannot serve as portable source authority. The exact source
-labels and digest remain distinct. Collect at most seven arguments so extra
+labels and digest remain distinct. Collect at most five arguments so extra
 arguments refuse without unbounded argument allocation. A successful parse
-reports the source as its `RawSourceRef`: the authority, the identity, the
-revision's namespace and value, and the `quire.source.bytes/v1` digest.
+reports the source as its `RawSourceRef`: the authority, the identity and
+the `quire.source.bytes/v1` digest (QSpec STD-150).
 
 Native Diagnostic implements standard Display and Error,
 retaining its structured phase/code/source/path/span/message fields and existing
@@ -73,7 +73,7 @@ a second error envelope or alter the audit target's derived errors.
 | FR-010-AC-8 | A native Diagnostic propagates through a standard Error-based caller; every stable code round-trips through its catalog lookup. | Test |
 | FR-010-AC-9 | A construct the parser recognizes but the admitted profile does not support, or a command invocation naming a lowering target outside the published catalog, exits 21, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for unsupported. | Test |
 | FR-010-AC-10 | A failure writing the command's own output exits 30, [FR-301](ix://agent-ix/quire-specification/FR-301)'s code for tool failure. | Test |
-| FR-010-AC-11 | `parse agent-ix specs/a.quire git 3f2a <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and the file's `quire.source.bytes/v1` digest. `parse` with the four labels and no file, or with one extra operand, exits 20. `parse agent-ix specs/a.quire "" 3f2a <missing-file>` exits 20 with `invalid_source_identity`, cause `blank-label`, `label` `revision_namespace`, not a file error. `format` takes the same four labels: `format agent-ix specs/a.quire git 3f2a <file>` over admissible complete-V1 source exits 0, and with one extra operand exits 20. | Test (TC-425) |
+| FR-010-AC-11 | `parse agent-ix specs/a.quire <file>` over an admissible file reports its source with authority `agent-ix`, identity `specs/a.quire` and the file's `quire.source.bytes/v1` digest, and no other source member. `parse` with the two labels and no file, or with one extra operand, exits 20. `parse agent-ix "" <missing-file>` exits 20 with `invalid_source_identity`, cause `blank-label`, `label` `identity`, not a file error. `format` takes the same two labels: `format agent-ix specs/a.quire <file>` over admissible complete-V1 source exits 0, and with one extra operand exits 20. | Test (TC-425) |
 
 ## Dependencies
 
@@ -83,6 +83,6 @@ a second error envelope or alter the audit target's derived errors.
 ## Status
 
 Draft. FR-010-AC-11 is implemented (ADR-013 §7 slice S-4b):
-`src/cli.rs` takes the four labels before the file, and TC-425 backs it. The `refused` line carries `cause` `blank-label` and `label` for a blank label (FR-001), backed by TC-425. The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
+`src/cli.rs` takes the four-label grammar (with the revision namespace and revision) before the file today, and TC-425 backs that form. Remaining work (implementation): the CLI takes the two labels AC-11 states. The `refused` line carries `cause` `blank-label` and `label` for a blank label (FR-001), backed by TC-425. The refusal line's keys are in one fixed order, the field order of the CLI's refusal record: `status`, `phase`, `code`, `source`, `path`, `span`, `message`, then `cause` and `label` when present; `source`'s own keys read `authority`, `identity`, `revision_namespace`, `revision`.
 
 Specification review and prerequisite acceptance remain distinct from existing code/tests. No acceptance criterion is claimed satisfied solely because this artifact has been authored.

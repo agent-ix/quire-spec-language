@@ -76,11 +76,10 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   another domain, refuses at decode. Every source reference of every entry
   is a `RawSourceRef` the byte provision SHALL cover, as the proved
   package's are.
-- Each package-reference source entry SHALL carry FR-001's four source labels
-  (authority, identity, revision namespace, revision) and its digest, so
-  the executor (FR-098) recompiles a source under exactly the labels the
-  proving run used (ADR-013 §7 S-4b). **Amended**: the entry used
-  to carry one revision string and no namespace.
+- Each package-reference source entry SHALL carry FR-001's two source labels
+  (authority and identity) and its digest (QSpec STD-150), so the executor
+  (FR-098) recompiles a source under exactly the labels the proving run
+  used (ADR-013 §7 S-4b).
 - A byte-provision entry SHALL be verified under its declared domain: a
   raw-byte-addressed domain (source and definition documents) against the
   SHA-256 of its bytes, and `sha256-jcs` (a domain package document)
@@ -151,3 +150,7 @@ members, checks them, traces the deleted FR-071-AC-4, FR-071-AC-8, TC-188 and
 TC-445, and names the identity member `originating_counterexample_identity`.
 The members, their checks and those traces are deleted, and the member is
 renamed `obligation_identity` (FR-098, ADR-013 O-26).
+
+Remaining work (implementation): each package-reference source entry still
+carries the revision namespace and revision; it carries the two labels and
+the digest (QSpec STD-150).

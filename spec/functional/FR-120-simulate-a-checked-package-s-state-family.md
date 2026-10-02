@@ -281,8 +281,7 @@ impl StateModel {
   maps each population to `true` (complete).
 - A synthesized state's `DocumentRef` has labels `authority` `quire`,
   `identity` `quire.simulation.state/<state-key digest, 64 lowercase hex>`,
-  `revision_namespace` `quire.simulation.state-key/v1` and `revision` `1`,
-  and its digest is the state-key digest.
+  and its digest is the state-key digest (QSpec STD-150).
 - `ModelSystem` builds each clause evaluation's `AdmittedObservations`
   directly, since its fields are public (`qsl-semantics/src/model/
   observation.rs:309-335`): `usage` is `AdmissionUsage::default()`; `clause`

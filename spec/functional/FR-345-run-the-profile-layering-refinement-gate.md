@@ -43,8 +43,7 @@ is the negotiation of each layer's witness item.
 - `entry.json`, a JSON object with exactly these members:
   - `kind`: `case`, `witness` or `distinguishing`;
   - for `case` and `distinguishing`: `parent` and `child`, each `{path,
-    authority, identity, revision_namespace, revision}`, a unit source and
-    its four FR-001 labels; for `witness`: `unit`, of the same shape, and
+    authority, identity}`, a unit source and its two FR-001 labels; for `witness`: `unit`, of the same shape, and
     `layer`, the layer identity the unit's header names;
   - `packages` and `dependencies`: the FR-056 package files and FR-099
     dependency input files the entry's units use;

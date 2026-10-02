@@ -65,7 +65,7 @@ A compile takes a **dependency input**: a set of **supplied libraries**
 (QSpec FR-307), at most one per library identity. A supplied library is
 `{identity, source}`, where `identity` is a `LibraryName` (D-3) and
 `source` a source unit: its
-FR-001 `SourceIdentity` (four labels), a display path and its bytes. It
+FR-001 `SourceIdentity` (two labels), a display path and its bytes. It
 carries no `package_id`: a library's `package_id` is the one its own
 compile yields (ADR-013 O-02). Building the input refuses, naming both
 offending libraries or the empty field:
@@ -85,7 +85,7 @@ sources:
 - the CLI's `1-draft` native-compile/1 request carries it in a `libraries`
   member, one `{identity, source}` object per library, where
   `source` is the same source selection a model or the program uses
-  (file, `sha256:` source digest and the four labels) (FR-027);
+  (file, `sha256:` source digest and the two labels) (FR-027);
 - `replay` builds it from the request's package reference (D-4).
 
 The **S4 source resolution** is the spine step between S2 and E3 that turns
@@ -205,7 +205,7 @@ run before the recompile:
    one `quire.source.bytes/v1` source, else the existing `NotASource` or
    `SourceCount`.
 3. `replay` builds the dependency input from the entries: the identity from
-   the entry, the four labels from its source reference, the
+   the entry, the two labels from its source reference, the
    reference's identity as the path, and the bytes from the byte
    provision, as FR-001 states for the proved source. The FR-071 reader
    bound bounds the number of entries. A dependency-input refusal, such as

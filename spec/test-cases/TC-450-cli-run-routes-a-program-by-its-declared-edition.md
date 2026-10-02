@@ -51,7 +51,7 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 
 - Step 1: exit 0 and empty stderr; stdout is one newline-terminated document
   whose `format` is `spine-run-result/1`, whose `package_id` equals the compiled
-  package's, whose `source` names the request's four labels, source digest
+  package's, whose `source` names the request's two labels, source digest
   and authored path, whose `function` is `seven`, and whose `outcome` is
   `{"kind": "completed", "value": {"kind": "integer", "decimal": "7"}}`.
 - Step 2: stdout and exit status equal the TC-103 and TC-104 assertions.
@@ -65,4 +65,5 @@ Tag the tests `#[trace("TC-450", "FR-100-AC-1")]` (step 1),
 
 ## Status
 
-Passed locally.
+Passed locally with the four-label `source`; step 1's two-label `source`
+waits on FR-001's reader change.

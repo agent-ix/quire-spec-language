@@ -52,9 +52,8 @@ never settles `proved` for any claim.
 - `<corpus>`: one directory. Each immediate subdirectory is one pair,
   holding a `pair.json` file and the files it names.
 - `pair.json`, a JSON object with exactly these members:
-  - `prior` and `superseding`: each `{path, authority, identity,
-    revision_namespace, revision}`, a unit source and its four FR-001
-    labels;
+  - `prior` and `superseding`: each `{path, authority, identity}`, a unit
+    source and its two FR-001 labels;
   - `packages`: the domain package files the pair's units select (FR-056's
     package input), shared by both revisions;
   - `dependencies`: the FR-099 dependency input files, shared by both

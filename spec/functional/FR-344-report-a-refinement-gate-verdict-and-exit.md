@@ -65,7 +65,7 @@ their exits.
   (FR-345), edge results (FR-345).
 - Within a group the report SHALL order results by name, comparing the name
   members in this order, each as the bytes of its UTF-8 encoding:
-  - a case: its two `RawSourceRef`s, each by its four labels in FR-001
+  - a case: its two `RawSourceRef`s, each by its two labels in FR-001
     order, then its selection (versioning) or its edge's parent and child
     layer identities (layering);
   - a pair-level tool failure: its `pair.json` path relative to the corpus;

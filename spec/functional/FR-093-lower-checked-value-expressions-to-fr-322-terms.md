@@ -347,11 +347,8 @@ writes them in ordinal order, so FR-322's ordinal, which a reader derives
 from graph order, equals the ordinal each member's key hashes.
 
 The emission writes `diagnostics.catalog` as QSpec's native diagnostics
-catalog, read by reference from QSpec's `native-diagnostics.md`: authority
-`agent-ix`, identity `quire.native.diagnostics/v1`, revision namespace
-`quire-draft` with the value that document's header declares, digest domain
-`quire.definition.bytes/v1`, and the SHA-256 of the document's bytes as its
-digest.
+catalog, a QSpec `DefinitionRef` naming QSpec's `native-diagnostics.md`:
+authority `agent-ix` and identity `quire.native.diagnostics/v1`.
 
 ### Node dependencies
 
@@ -709,7 +706,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-14 | On a thread with a 512 KiB stack, at the default limits, a function body of the longest nested `a and (…)` chain the default S1 limits admit checks with no outcome naming a depth. Each nested form TC-415 step 10 lists, nested 1,000 deep with S1 and S3 limits raised to fit it, checks or refuses on its own unproved obligation, the same way it does nested 2 deep. A postcondition `pre(…)` over 1,000 nested `a and (…)` refuses as a forbidden pre-read. | Test (TC-415) |
 | FR-093-AC-15 | With the alias `Total = Integer` and parameters `x: Int[0, 9]` and `s: Sequence<Int[0, 9]>[0, 5]`, reading `v` after `let v = x in v`, `count<Total>(v in s: v < 5)`, `sum<Total>(v in s: v)`, `forall(v in s: v < 5)` or `fold<Total>(acc, v in s: acc + v, identity: 0)` refuses with `missing_declaration`/`missing-name` naming `v`, and reading `acc` after that `fold` refuses naming `acc`. Each of those forms beside a copy of itself that binds the same name checks. After `f`'s four parameters, `let v = x in ((let w = x in w) + (let u = x in v + u))` lowers `v` at level 4 and both `w` and `u` at level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. `if a then value(o) else 0` and `if a then 0 else value(o)`, over `o: Option<Int[0, 9]>`, each refuse with `undefined_expression`/`unproved-presence` alone. `if present(o) then value(o) else 0` checks. | Test (TC-415) |
 | FR-093-AC-16 | The v2 emission arm writes `CheckedPackage::dependency_selections` as FR-322 `dependency_selections`: one `{identity, version, package_id}` entry per library identity, `package_id` in the `quire.package.semantic/v2` domain, in ascending UTF-8 byte order of `identity` (`test/\u{FF61}` before `test/\u{1F600}`, the reverse of UTF-16 order), identical in the lock and the identity preimage. A package linked with two imports reads back Verified through QSL's I2 read with exactly those entries in both members, and its `package_id` differs from the same graph linked with none. QSL's I2 read over QSpec's `dependency-selection-vectors.json` recomputes the recorded `package_id`, refuses each authored entry mutation at the mutated entry, and gives each order vector its recorded outcome at its last recorded locus, since IR's refusal carries one path (`make conformance`). | Test (TC-416) |
-| FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix`, identity `quire.native.diagnostics/v1`, revision namespace `quire-draft` and the value QSpec's `native-diagnostics.md` header declares, digest domain `quire.definition.bytes/v1`, and the SHA-256 of that document's bytes as its digest, and IR's v2 reader admits the package. | Test (TC-416) |
+| FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix` and identity `quire.native.diagnostics/v1`, and no other member, and IR's v2 reader admits the package. | Test (TC-416) |
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`, with two exceptions. The emission writes an equality over a recursive compared type, and IR's reader refuses the package at that equality node (STD-129). The emission omits a `scalar_type`/`compound_unit` node over a declared unit, and every node that names it, because lowering names the declared unit node and does not build it; IR never reads that node (QSL-247, IR-450). | Test (TC-416) |
 
@@ -792,3 +789,7 @@ body (`ieee.numeric_equal`, `integer.div`, `integer.rem`, `collection.sum.decima
 the lowering and the keys; the M-4 emitter serializes the lowered nodes
 and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.
+
+Remaining work (implementation): the emitter still writes `diagnostics.catalog`
+with a revision, digest domain and digest (`qsl-package/src/emit/tests.rs`);
+it writes the identity-only `DefinitionRef` AC-17 states.

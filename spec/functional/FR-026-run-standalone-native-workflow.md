@@ -33,17 +33,15 @@ contract below apply to `0-draft` programs.
 A JSON object with format and request fields. The closed request names model
 sources with explicit native-rule-model/1 format, program source with complete
 authored clause bindings, snapshot/invocation file selections and an execution
-selection. Each source selects file, the four source labels of
-[FR-001](FR-001-read-exact-source.md) (`authority`, `identity`,
-`revision_namespace` and `revision`), SHA-256 digest and formal
-document/revision. Every label is a required member. A request whose source
-identity lacks one, such as a request written with only `identity` and
-`revision`, refuses at the request stage with the native code
+selection. Each source selects file, the two source labels of
+[FR-001](FR-001-read-exact-source.md) (`authority` and `identity`), SHA-256
+digest and formal document/revision. Both labels are required members. A
+request whose source identity lacks one, such as a request written with only
+`identity`, refuses at the request stage with the native code
 `invalid-request` and exits 20; the catalog keeps that code as a retained
 host code with its broad meaning, malformed command
-(`quire.native.diagnostics/v1`, "Other retained host/source codes"). The
-wire is prerelease and carries no version change for this: a two-label
-request is simply malformed. Runtime selections use the existing typed references.
+(`quire.native.diagnostics/v1`, "Other retained host/source codes").
+Runtime selections use the existing typed references.
 Relative paths resolve against the request's directory; absolute paths remain
 valid local file operands. Source display paths retain the authored file string.
 Parent-relative components are also admitted local operands; the command does
@@ -59,7 +57,7 @@ uses the existing verified reader; omission retains source compilation.
 
 One native-run-result/1 JSON result on stdout with request digest, compiled
 package byte/static identities, original source/model/runtime identities
-(each source and runtime artifact rendered with all four labels),
+(each source and runtime artifact rendered with both labels and its digest),
 selected authored clause, actual stage status, diagnostics, work counters and
 ordered implication events. Only completed execution has Boolean truth.
 On FR-301's six-code contract, for a `0-draft` program, exit 0 means completed
@@ -113,7 +111,7 @@ including incomplete native, model, package and runtime input failures.
 | FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
 | FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
 | FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
-| FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix`, their own `identity`, `revision_namespace` `git` and `revision` `1` runs, and its result renders each with those four labels. The same request without the program source's `authority`, and again without the snapshot selection's `revision_namespace`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
+| FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix` and their own `identity` runs, and its result renders each with those two labels and its digest, and no other identity member. The same request without the program source's `authority`, and again without the snapshot selection's `identity`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
 ## Dependencies
 
@@ -127,4 +125,4 @@ Remaining work (implementation): the code applies fixed 1 MiB, 64-file and
 8 MiB ceilings; they become the configurable `request_bytes` and
 `dependent_bytes` limits above (FR-026-AC-4).
 
-FR-026-AC-6 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".
+FR-026-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation): the request and result identities drop `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".
