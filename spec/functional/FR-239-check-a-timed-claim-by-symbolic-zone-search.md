@@ -32,7 +32,8 @@ relationships:
 
 ## Description
 
-QSL's native zone engine EN-6, module `zone_check`, SHALL decide a timed
+QSL's native zone engine EN-6, module `zone_check` in layer A, crate
+`qsl-analyze` (ADR-026 EZ-1), SHALL decide a timed
 item over a timed subject by a passed/waiting search of symbolic states
 `(s, q, Z)` (discrete state, claim-automaton state, zone), with
 coverage by the aLU simulation, under caller-set budgets (ADR-026 EZ-1,
@@ -62,7 +63,7 @@ pub struct ZoneCheckRequest<'a> {
 
 pub struct ZoneCheckLimits {
     pub max_symbolic_states: u64,   // default 1_048_576 (2^20)
-    pub max_transitions: u64,       // default 16_777_216 (2^24)
+        pub max_symbolic_transitions: u64, // retained symbolic edges; default 16_777_216 (2^24)
     pub max_automaton_states: u64,  // default 1_048_576 (2^20)
     pub max_zone_bytes: u64,        // default 1_073_741_824 (2^30)
 }
@@ -128,7 +129,7 @@ edges, automaton states and stored zone bytes.
 - EN-6 SHALL decide every item it receives by this search; it SHALL never
   digitize (ADR-026 EZ-10).
 - **Budgets.** When a count would exceed `max_symbolic_states`,
-  `max_transitions`, `max_automaton_states` or `max_zone_bytes`, the engine
+  `max_symbolic_transitions`, `max_automaton_states` or `max_zone_bytes`, the engine
   SHALL stop and return `Stopped(ResourceExhausted, limit)` naming the limit
   and its value. When `poll` returns `true`, it SHALL return
   `Stopped(Cancelled, …)`.
@@ -183,7 +184,7 @@ edges, automaton states and stored zone bytes.
 
 ## References
 
-- Engine placement relative to the qualified core: ADR-029 CB-2 and RU-2
-  (draft).
+- Engine placement (layer A, `qsl-analyze`) relative to the qualified
+  core: ADR-029 CB-2, CB-3 and RU-2, Linear QSL-390.
 - G. Behrmann, P. Bouyer, K. G. Larsen and R. Pelánek, 2006; F. Herbreteau,
   B. Srivathsan and I. Walukiewicz, 2012 (ADR-026 References).

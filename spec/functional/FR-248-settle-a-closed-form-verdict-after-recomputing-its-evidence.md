@@ -60,7 +60,12 @@ The FR-331 terminal record of the claim.
   iterate from the previous one by the recurrence for job `q`,
   `R = (q + 1) · C_i + B_i + Σ_{j ∈ hp(i)} ⌈(R + J_j) / T_j⌉ · C_j`,
   starting from `(q + 1) · C_i + B_i`, and check that only the last gives a
-  response time `R + J_i − q · T_i` above `D_i`. For an
+  response time `R + J_i − q · T_i` above `D_i`. For `q > 0` it SHALL also
+  compute each earlier job's completion `w_p`, the fixpoint of the same
+  recurrence for job `p`, and check that every job `p < q` keeps the level-`i`
+  busy period open, `w_p > (p + 1) · T_i − J_i`; otherwise job `q` lies past
+  the busy period, its recurrence overstates its completion, and the
+  checker SHALL disagree, naming the first job `p` that closes it. For an
   EDF `Miss`, it SHALL recompute the utilization, or `dbf(t) > t`.
 - The checker's work SHALL be linear in the size of the evidence, which
   EN-7's `max_demand_points` already bounds, so the check always completes.
@@ -85,7 +90,7 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-248-AC-1 | `schedulable Ctl under fixed-priority` settles `proved`, `Proved{ClosedForm{FixedPriorityRta}}`, with fixpoints `(1, 3, 12)` in the record; `under edf` settles `Proved{ClosedForm{EdfQpa}}`. With the third WCET 6 both settle `refuted` with their evidence. | Test (TC-703) |
-| FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose last iterate 13 is replaced by 12 settles `inconclusive`, `ReplayParity`. | Test (TC-703) |
+| FR-248-AC-2 | An outcome with the fixpoint 12 replaced by 11 settles `inconclusive`, `ReplayParity`; a miss whose last iterate 13 is replaced by 12 settles `inconclusive`, `ReplayParity`. For `a` (`C = 1`, `T = D = 2`, priority 1) and `b` (`C = 1`, `T = 3`, `D = 1`, blocking 1, priority 2), evidence naming `b`'s job 2 with iterates `4, 6, 7, 8` settles `inconclusive`, `ReplayParity`, naming job 1, whose completion 6 does not exceed `2 · 3`; the evidence naming job 0 with the iterate `2` settles `refuted`. | Test (TC-703) |
 | FR-248-AC-3 | FR-247-AC-3's `C(HI) = 6` result settles `inconclusive`, `SufficientTestFailed`; its base result settles `Proved{ClosedForm{AmcRtb}}`. | Test (TC-703) |
 
 ## Dependencies
@@ -98,6 +103,7 @@ The FR-331 terminal record of the claim.
 
 ## References
 
-- The checker as an in-core entry beside `replay`: ADR-029 CB-2 (draft).
+- The checker as an in-core entry beside `replay`, in `qsl-replay`:
+  ADR-029 CB-2, Linear QSL-390.
 - QSpec half: QSpec FR-419 (Linear STD-139) owns the closed-form evidence
   wire (ADR-026 OV-10).

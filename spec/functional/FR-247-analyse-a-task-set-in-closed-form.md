@@ -49,25 +49,20 @@ pub enum ClosedFormOutcome {
 
 ## Behavior
 
-- **Fixed priority.** EN-7 SHALL compute each task's response time as the
-  least fixpoint of `R = C_i + B_i + Σ_{j ∈ hp(i)} ⌈(R + J_j) / T_j⌉ · C_j`,
-  iterated from `C_i + B_i` in exact rationals, with response time
-  `R + J_i`. It SHALL stop at the fixpoint, or as soon as `R + J_i` exceeds
-  `D_i`. When `D_i > T_i`, it SHALL use the busy-period extension.
+- **Analyses.** EN-7 SHALL implement QSpec FR-419's fixed-priority
+  response-time analysis with the busy-period extension, its EDF
+  processor-demand test with Quick Processor-demand Analysis, and its
+  AMC-rtb test, in exact rationals. A fixed-priority iteration SHALL stop
+  at its fixpoint or as soon as the response time exceeds the deadline.
 - **Miss evidence.** For a fixed-priority miss, EN-7 SHALL return the task,
   the job `q` of its level-`i` busy period that misses (0 when `D_i <= T_i`
   and the busy period ends with the first job), and that job's RT-4
   iterates up to the first whose response time `R + J_i − q · T_i` exceeds
   `D_i`, so the evidence covers jitter, blocking and `D_i > T_i`
   (ADR-026 RT-4, RT-7).
-- **EDF.** EN-7 SHALL return `Miss(Utilization(U))` when the utilization `U`
-  exceeds 1. Otherwise it SHALL check `dbf(t) = Σ_i max(0, ⌊(t − D_i) /
-  T_i⌋ + 1) · C_i <= t` at absolute deadlines up to the synchronous
-  busy-period length, by Quick Processor-demand Analysis, and return the
-  busy period and QPA's check sequence, or a `t` with `dbf(t) > t`.
-- **AMC.** EN-7 SHALL run AMC-rtb: low-mode response times with `C(LO)`,
-  high-mode response times with `C(HI)` over higher-priority `HI` tasks
-  plus higher-priority `LO` tasks charged up to the low-mode response time.
+- **EDF evidence.** EN-7 SHALL return `Miss(Utilization(U))` when the
+  utilization exceeds 1, a `t` with `dbf(t) > t` for a demand miss, and
+  otherwise the busy period and QPA's check sequence.
 - EN-7 SHALL return `Miss` on a low-mode miss, and `SufficientTestFailed`
   when a high-mode criterion fails.
 - **Response claims.** For a `response S.τ <= d` claim, EN-7 SHALL compare
@@ -90,7 +85,7 @@ pub enum ClosedFormOutcome {
 
 ## Dependencies
 
-- ADR-026 §12 RT-4 to RT-6; ADR-014 B-5.
+- ADR-026 §12 RT-4 to RT-6; ADR-014 B-5; QSpec FR-419 (the analyses).
 - [FR-246](FR-246-check-task-sets-and-schedulability-claims.md).
 
 ## References

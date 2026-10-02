@@ -66,11 +66,13 @@ The FR-331 terminal record of the claim.
 
 | Provider result | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- |
-| `Unsat` or `EnclosureDisjoint`, with `sound: true` | `proved` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}}` | success |
+| `Unsat` or `EnclosureDisjoint`, with `sound: true` | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}}` | success |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or any result with `sound: false` | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
 | `Stopped(limit)` | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(ResourceExhausted)` | incomplete |
 
 - No provider result SHALL settle `refuted`.
+- A `BoundedSolver` proof SHALL carry the label `uncertified`, since no core
+  checker recomputes a solver result (ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
   jump bound, and the record SHALL carry both.
 - A further hybrid engine SHALL be one more negotiated backend whose
@@ -81,7 +83,7 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
-| FR-250-AC-2 | Fixture results map as the table states: `Unsat` sound with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` with `sound: false` settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `failed`, `resource-incomplete`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-2 | Fixture results map as the table states: `Unsat` sound with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}}`, labelled `uncertified`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` with `sound: false` settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `failed`, `resource-incomplete`. No fixture result settles `refuted`. | Test (TC-705) |
 
 ## Dependencies
 

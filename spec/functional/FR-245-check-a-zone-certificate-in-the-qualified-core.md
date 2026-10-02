@@ -123,8 +123,8 @@ pub struct CertificateCheckLimits {
 
 ## References
 
-- The qualified core and its certificate checkers: ADR-029 CB-2 and RU-2
-  (draft).
+- The qualified core and its certificate checkers: ADR-029 CB-2 and RU-2,
+  Linear QSL-390.
 - QSpec half: QSpec FR-418 (Linear STD-139) owns the certificate wire
   (ADR-026 OV-12).
 - Muntac, a verified certificate checker for timed automata, 2025 (ADR-026

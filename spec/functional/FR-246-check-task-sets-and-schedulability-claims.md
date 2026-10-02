@@ -24,7 +24,8 @@ relationships:
 
 QSL's S3 checker SHALL admit a package's task sets for one preemptive
 uniprocessor and the schedulability and response claims over them, and
-route each claim to the closed-form engine EN-7, module `schedulability`,
+route each claim to the closed-form engine EN-7, module `schedulability`
+in layer A, crate `qsl-analyze`,
 under the QSpec FR-290 capability kind `schedulability` (ADR-026 RT-1 to
 RT-3). WCETs, blocking terms and jitter are stated premises of the claim:
 they are part of the task set, so part of the subject and its obligation

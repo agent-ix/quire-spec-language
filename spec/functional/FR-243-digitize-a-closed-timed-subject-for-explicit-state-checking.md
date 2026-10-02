@@ -1,6 +1,6 @@
 ---
 id: FR-243
-title: "Digitize a closed timed subject on the digital-clock route"
+title: "Route timed items to the zone engine or the digital-clock route"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-026
@@ -16,67 +16,52 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-239
     type: depends_on
 ---
-# FR-243: Digitize a closed timed subject on the digital-clock route
+# FR-243: Route timed items to the zone engine or the digital-clock route
 
 ## Description
 
-The request writer SHALL send a timed item to the digital-clock route only
-when the request names `exact` evidence for it; the route admits a subject
-and claim whose clock constraints, time invariants and timed intervals are
-all closed. The request writer SHALL send every other timed item, TT-1
-included, to EN-6's zone search (FR-239), which returns `Holds` with a CF-1
-certificate (ADR-026 EZ-10).
-When an item runs on the digital-clock route, EN-5's digital reading
-(ADR-028 TA-1 to TA-3) SHALL scale the constants to integers, explore
-integer-valued clocks, give the dense verdict for a TT-1 claim over the
-discrete state and for the deadlock-freedom item, report counterexamples
-with integer delays, which are valid dense delays, and report proofs as
-`HoldsDigitized`, basis `Exhaustive`.
+The request writer SHALL route every non-probabilistic timed item (TT-1 to
+TT-4, the deadlock-freedom item and the time-lock-freedom item) to EN-6's
+zone search (FR-239), so a timed invariant is proved by `Holds` with a CF-1
+certificate (ADR-026 EZ-10). Only a probabilistic claim over a timed
+subject that names `exact` evidence takes the digital-clock route, EN-5's
+reading of a closed subject through integer-valued clocks (ADR-028 TA-1 to
+TA-3, FR-204), whose results settle by FR-203.
 
 ## Use case
 
 A verification operator's model has only non-strict guards and deadlines.
-Requested with ordinary evidence, its timed invariant is proved by the zone
-engine with a certificate. Requested with `exact` evidence, the same item
-runs on the digital-clock route, and the proof says it is exhaustive over
-integer clocks, which is exact for closed constraints.
+Its timed invariant is proved by the zone engine with a certificate. A
+probabilistic deadline claim over the same model with `exact` evidence is
+decided on the digital-clock route with an exact value.
 
 ## Inputs
 
-- A timed item, its requested evidence kind, and the timed subject (FR-231).
+- A timed item, its capability kind and, for a probabilistic claim, its
+  requested evidence kind.
 
 ## Outputs
 
-- `DigitalOutcome::HoldsDigitized`, or `Violated` with a counterexample
-  whose delays are integers in scaled units, or an FR-204 unsupported cause.
+- The routed engine for the item: EN-6 or EN-5's digital-clock route.
 
 ## Behavior
 
-- When a timed item names `exact` evidence, the request writer SHALL route
-  it to EN-5's digital-clock route; otherwise it SHALL route it to EN-6.
-  The route SHALL be a function of the requested evidence kind alone.
-- When an item runs on the digital-clock route, if any atomic clock constraint in a guard,
-  time invariant or timed interval of the claim is strict, then EN-5 SHALL
-  settle `Unsupported(StrictClockConstraint{locus})` (ADR-028 TA-2).
-- When an item runs on the digital-clock route, EN-5 SHALL scale constants by FR-238's scale
-  factor, give each clock the integer values from 0 to one above its largest
-  scaled constant, advance time by unit delays, and explore the digital
-  subject exhaustively (ADR-028 TA-3).
-- A TT-1 item over the discrete state or a deadlock-freedom item that holds
-  at every reachable digital state SHALL return `HoldsDigitized`, which
-  FR-235 settles `Proved{basis: Exhaustive}` with method
-  `digitized-explicit-state`.
-- EN-5 SHALL carry each delay of a counterexample on that route as its scaled
-  integer divided by the scale factor, an exact rational in the model's
-  unit.
+- When a timed item's capability kind is `temporal-satisfaction`, the
+  request writer SHALL route it to EN-6, whatever its constraints.
+- When a `probabilistic-satisfaction` item over a timed subject names
+  `exact` evidence, the request writer SHALL route it to EN-5's
+  digital-clock route (FR-204); when it names `statistical` evidence, to
+  EN-4 (FR-254).
+- The route SHALL be a function of the capability kind and the requested
+  evidence kind alone.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-243-AC-1 | `NoLateReply` over `Rpc` with `T = 4 ms` (all closed) requested with `exact` evidence runs on the digital-clock route and returns `HoldsDigitized`, and so does the deadlock-freedom item requested the same way. Requested without `exact` evidence, the same two items run on EN-6 and return `Holds` with a certificate (FR-239-AC-1). | Test (TC-698) |
-| FR-243-AC-2 | `NoLateReply` with `T = 3 ms` requested with `exact` evidence returns a counterexample with integer delays `0, 3, 0` that replays (FR-237). | Test (TC-698) |
-| FR-243-AC-3 | The strict-guard `Rpc` variant requested with `exact` evidence settles `Unsupported(StrictClockConstraint)` naming the guard; ADR-026 §9's retry model requested without `exact` evidence runs on EN-6 and is refuted (FR-239-AC-2). | Test (TC-698) |
+| FR-243-AC-1 | `NoLateReply` over `Rpc` with `T = 4 ms` (all closed) and the deadlock-freedom item over the same subject route to EN-6 and return `Holds` with a certificate (FR-239-AC-1). | Test (TC-698) |
+| FR-243-AC-2 | ADR-028 §15.5's `Deadline` over `Retx` with `exact` evidence routes to EN-5's digital-clock route and settles `proved`, `ExactValue{99/100}` (FR-204-AC-1); with `statistical` evidence it routes to EN-4. | Test (TC-698) |
+| FR-243-AC-3 | ADR-026 §9's retry model, with strict constraints, routes `always holds(not retried)` to EN-6 and is refuted (FR-239-AC-2); the all-closed `Rpc` routes the same claim kind to EN-6 too. | Test (TC-698) |
 
 ## Dependencies
 
