@@ -55,8 +55,10 @@ weak model corresponds to real accesses.
   `ordering: Option<Ordering>`.
 - A checked `fence` control with its ordering.
 - The S3 refusals `ill_typed`/`operator-ineligible` for an ordering and
-  `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{site, transition, shape:
-  MultiLocation{locations}}`.
+  `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{site, transition, shape}`,
+  with `shape` one of QSpec FR-439's two shapes: `MultiLocation{locations}`
+  (`multi-location`) for an attempt of FR-220's shape, and `JoinPolicy`
+  (`join-policy`) for a weak `parallel` that joins `any` (FR-219).
 
 ## Behavior
 
@@ -105,6 +107,7 @@ weak model corresponds to real accesses.
 | FR-220-AC-2 | A load with `ordering release`, a store with `ordering acquire`, an RMW with no ordering, a local attempt with `ordering relaxed` and `fence F ordering relaxed;` each refuse `ill_typed`/`operator-ineligible`, naming the attempt or fence. A fence with each of `acquire`, `release`, `acq_rel` and `seq_cst` checks. | Test (TC-665) |
 | FR-220-AC-3 | An attempt whose operation writes two shared fields of its receiver, in a `parallel` declaring `memory tso`, refuses `unsupported_construct`/`declaration-form`, naming both locations; in a `parallel` with source default `sc` it checks, and a request selecting `tso` for that `parallel` settles V-8 `WeakAccessShape` with shape `MultiLocation` naming both locations. | Test (TC-665) |
 | FR-220-AC-4 | `SB` under `sc` with every ordering `relaxed`, and again with every ordering `seq_cst`, reaches the same 16 states and settles `proved` both times. | Test (TC-665) |
+| FR-220-AC-5 | The pre-check's `WeakAccessShape.shape` takes exactly QSpec FR-439's two shapes: AC-3's two-field attempt with a request selecting `tso` settles V-8 with `MultiLocation{locations}` naming both locations, written `{"type":"multi-location","locations":[…]}`; FR-219-AC-4's `parallel` that joins `any`, with a request selecting `tso`, settles V-8 with `JoinPolicy`, written `{"type":"join-policy"}`. | Test (TC-665) |
 
 ## Dependencies
 
@@ -116,4 +119,5 @@ weak model corresponds to real accesses.
 
 ## References
 
-- Owning ticket: Linear QSL-372. QSpec half: QSpec FR-435 (Linear STD-138).
+- Owning ticket: Linear QSL-372. QSpec half: QSpec FR-435 (Linear STD-138),
+  and QSpec FR-439 for the `weak-access-shape` cause and its two shapes.
