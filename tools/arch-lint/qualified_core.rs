@@ -8,22 +8,26 @@
 //! `(core crate, dependency)` pair. A dependency offends when it is
 //!
 //! - a QSL workspace member outside the core (the root crate, `qsl-analyze`,
-//!   `qsl-walk-grow`, `qsl-bench`, the tools), or a named crate above the
-//!   core ([`ABOVE_CORE`]: `qsl-inspect`, `qsl-jit` and the driver's
-//!   `quire-driver`, `quire-plugin-host`, `quire-cache`, `quire-aot`,
-//!   `quire-cli`);
+//!   `qsl-walk-grow`, `qsl-bench`, the tools), or a named QSL crate above
+//!   the core ([`QSL_ABOVE_CORE`]: `qsl-inspect`, `qsl-jit`);
+//! - a driver crate ([`DRIVER`]);
 //! - a CG or RT crate ([`crate::graph::classify`]). An IR crate is not: QSL
 //!   depends on the IR model (ADR-011 §7.1) and the prove path's IR crates
 //!   are inside the core (CB-2);
 //! - an argument parser, a terminal or colour crate, a non-JSON renderer, a
 //!   plugin-host or cache crate, or an execution backend ([`FRONTEND`]).
 //!
+//! Every other QSL workspace member gets the CG, RT and driver part of that
+//! rule (FR-280-AC-3): no QSL crate depends on a CG, RT or driver crate.
+//!
 //! The walk follows normal dependency edges only and does not enter a
 //! proc-macro crate: build scripts, build dependencies and proc macros run
 //! in the compiler and link nothing into the core crate. It stops at an
 //! offending dependency, so each pair names the crate the core reaches, not
 //! that crate's own dependencies. Metadata is resolved with
-//! `--all-features`, so an optional dependency any feature turns on counts.
+//! `--all-features`, so an optional dependency any feature turns on counts,
+//! over the targets QSL builds for (the host and [`NO_STD_TARGET`]), so a dependency gated on either target counts and
+//! one behind a `cfg` neither sets (`cfg(loom)`) does not.
 //!
 //! **The ambient-input scan** (CB-3 item 2) token-scans the shipped source
 //! of each core crate -- `#[cfg(test)]` items and `#[cfg(test)] mod` files
@@ -38,6 +42,8 @@
 //! caught. Compile-time `env!` and `option_env!` are not reads of the
 //! process environment and are not matched. A dependency's own ambient
 //! reads are not scanned; the direction check is what governs dependencies.
+//! A path method (`.exists()`, `.metadata()`) is matched by name, so a
+//! same-named method on another type matches too; it is renamed.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -73,20 +79,28 @@ pub(crate) const CORE_CRATES: [&str; 12] = [
     "qsl-replay",
 ];
 
-/// Crates above the core (ADR-029 CB-3 item 3) that may not be QSL
-/// workspace members, plus the driver library: the driver depends on QSL,
-/// so a QSL core crate depending on it inverts the direction.
-pub(crate) const ABOVE_CORE: &[&str] = &[
+/// QSL crates above the core (ADR-029 CB-3 item 3), refused under a core
+/// crate even when they are not members of the scanned workspace.
+pub(crate) const QSL_ABOVE_CORE: &[&str] = &[
     "quire-spec-language",
     "qsl-analyze",
     "qsl-inspect",
     "qsl-jit",
+];
+
+/// The driver repository's crates: the driver library and the crates above
+/// the core it holds (CB-3 item 3). The driver depends on QSL, so no QSL
+/// crate depends on any of them.
+pub(crate) const DRIVER: &[&str] = &[
     "quire-driver",
     "quire-plugin-host",
     "quire-cache",
     "quire-aot",
     "quire-cli",
 ];
+
+/// The `no_std` target QSL builds its shared leaves for, besides the host.
+const NO_STD_TARGET: &str = "thumbv7em-none-eabi";
 
 /// One frontend category CB-3 item 1 keeps out of the core.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -119,7 +133,6 @@ pub(crate) const FRONTEND: &[(Frontend, &[&str])] = &[
         &[
             "clap",
             "clap_builder",
-            "clap_derive",
             "clap_lex",
             "structopt",
             "argh",
@@ -214,8 +227,11 @@ pub(crate) const FRONTEND: &[(Frontend, &[&str])] = &[
 /// Why a dependency may not sit in a core crate's closure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum Offence {
-    /// A QSL workspace member outside the core, or an [`ABOVE_CORE`] crate.
+    /// A QSL workspace member outside the core, or a [`QSL_ABOVE_CORE`]
+    /// crate.
     AboveCore,
+    /// A [`DRIVER`] crate.
+    Driver,
     /// A CG or RT crate.
     Backend(Repo),
     Frontend(Frontend),
@@ -225,6 +241,7 @@ impl fmt::Display for Offence {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AboveCore => f.write_str("crate above the core"),
+            Self::Driver => f.write_str("driver crate"),
             Self::Backend(repo) => write!(f, "{repo} crate"),
             Self::Frontend(category) => f.write_str(category.as_str()),
         }
@@ -256,8 +273,9 @@ impl DepGraph {
     }
 }
 
-/// One direction finding: `core` reaches `dependency` through `via`, the
-/// chain of crates between them (empty for a direct dependency).
+/// One direction finding: the QSL crate `core` (a core crate, or for the
+/// CG/RT/driver rule any workspace member) reaches `dependency` through
+/// `via`, the chain of crates between them (empty for a direct dependency).
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct DirectionFinding {
     pub(crate) core: String,
@@ -266,16 +284,29 @@ pub(crate) struct DirectionFinding {
     pub(crate) via: Vec<String>,
 }
 
-fn offence(package: &Package) -> Option<Offence> {
+/// The CG, RT and driver rule every QSL crate obeys (FR-280-AC-3).
+fn backend_or_driver(package: &Package) -> Option<Offence> {
+    let name = package.name.as_str();
+    if DRIVER.contains(&name) {
+        return Some(Offence::Driver);
+    }
+    match classify(name, package.source.as_deref()) {
+        Some(repo @ (Repo::Cg | Repo::Rt)) => Some(Offence::Backend(repo)),
+        _ => None,
+    }
+}
+
+/// The full rule under a core crate (FR-284).
+fn core_offence(package: &Package) -> Option<Offence> {
     let name = package.name.as_str();
     if CORE_CRATES.contains(&name) && package.workspace_member {
         return None;
     }
-    if package.workspace_member || ABOVE_CORE.contains(&name) {
-        return Some(Offence::AboveCore);
+    if let Some(offence) = backend_or_driver(package) {
+        return Some(offence);
     }
-    if let Some(repo @ (Repo::Cg | Repo::Rt)) = classify(name, package.source.as_deref()) {
-        return Some(Offence::Backend(repo));
+    if package.workspace_member || QSL_ABOVE_CORE.contains(&name) {
+        return Some(Offence::AboveCore);
     }
     FRONTEND
         .iter()
@@ -283,9 +314,49 @@ fn offence(package: &Package) -> Option<Offence> {
         .map(|(category, _)| Offence::Frontend(*category))
 }
 
-/// FR-284's direction check over `graph`. A core crate absent from the
-/// graph is a usage error: the check never passes over a tree it did not
-/// see.
+/// Walk `start`'s closure breadth-first, stopping at each package `rule`
+/// refuses and recording it, with the chain it was reached through.
+fn walk(
+    graph: &DepGraph,
+    start: usize,
+    rule: fn(&Package) -> Option<Offence>,
+    findings: &mut BTreeSet<DirectionFinding>,
+) {
+    let mut previous: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut seen = BTreeSet::from([start]);
+    let mut queue = std::collections::VecDeque::from([start]);
+    while let Some(current) = queue.pop_front() {
+        for &next in &graph.deps[current] {
+            let package = &graph.packages[next];
+            if package.proc_macro || !seen.insert(next) {
+                continue;
+            }
+            previous.insert(next, current);
+            let Some(offence) = rule(package) else {
+                queue.push_back(next);
+                continue;
+            };
+            let mut via = Vec::new();
+            let mut cursor = current;
+            while cursor != start {
+                via.push(graph.packages[cursor].name.clone());
+                cursor = previous[&cursor];
+            }
+            via.reverse();
+            findings.insert(DirectionFinding {
+                core: graph.packages[start].name.clone(),
+                dependency: package.name.clone(),
+                offence,
+                via,
+            });
+        }
+    }
+}
+
+/// FR-284's direction check over `graph`: the full rule under each core
+/// crate, and the CG, RT and driver rule under every other workspace
+/// member (FR-280-AC-3). A core crate absent from the graph is a usage
+/// error: the check never passes over a tree it did not see.
 pub(crate) fn check_direction(graph: &DepGraph) -> Result<Vec<DirectionFinding>> {
     let mut findings = BTreeSet::new();
     for core in CORE_CRATES {
@@ -295,36 +366,11 @@ pub(crate) fn check_direction(graph: &DepGraph) -> Result<Vec<DirectionFinding>>
                 format!("core crate {core} is not a member of the --qsl workspace"),
             )
         })?;
-        // Breadth-first, remembering each crate's predecessor so a finding
-        // names the chain it was reached through.
-        let mut previous: BTreeMap<usize, usize> = BTreeMap::new();
-        let mut seen = BTreeSet::from([start]);
-        let mut queue = std::collections::VecDeque::from([start]);
-        while let Some(current) = queue.pop_front() {
-            for &next in &graph.deps[current] {
-                let package = &graph.packages[next];
-                if package.proc_macro || !seen.insert(next) {
-                    continue;
-                }
-                previous.insert(next, current);
-                if let Some(offence) = offence(package) {
-                    let mut via = Vec::new();
-                    let mut cursor = current;
-                    while cursor != start {
-                        via.push(graph.packages[cursor].name.clone());
-                        cursor = previous[&cursor];
-                    }
-                    via.reverse();
-                    findings.insert(DirectionFinding {
-                        core: core.to_owned(),
-                        dependency: package.name.clone(),
-                        offence,
-                        via,
-                    });
-                } else {
-                    queue.push_back(next);
-                }
-            }
+        walk(graph, start, core_offence, &mut findings);
+    }
+    for (start, package) in graph.packages.iter().enumerate() {
+        if package.workspace_member && !CORE_CRATES.contains(&package.name.as_str()) {
+            walk(graph, start, backend_or_driver, &mut findings);
         }
     }
     Ok(findings.into_iter().collect())
@@ -344,8 +390,9 @@ fn host_triple() -> Result<String> {
 }
 
 /// `cargo metadata` over the workspace at `qsl_root`, every feature on and
-/// filtered to the host platform, so a dependency behind a `cfg` the host
-/// build never sets (`cfg(loom)`) is not in the graph.
+/// filtered to the host and [`NO_STD_TARGET`], so a dependency gated on
+/// either counts and one behind a `cfg` neither sets (`cfg(loom)`) does
+/// not.
 pub(crate) fn workspace_graph(qsl_root: &Path) -> Result<DepGraph> {
     let manifest = qsl_root.join("Cargo.toml");
     let output = Command::new("cargo")
@@ -357,6 +404,7 @@ pub(crate) fn workspace_graph(qsl_root: &Path) -> Result<DepGraph> {
         ])
         .arg("--filter-platform")
         .arg(host_triple()?)
+        .args(["--filter-platform", NO_STD_TARGET])
         .arg("--manifest-path")
         .arg(&manifest)
         .output()
@@ -487,11 +535,13 @@ impl Ambient {
 enum Spelling {
     Path(&'static str),
     Macro(&'static str),
+    /// A method call `.name(`.
+    Method(&'static str),
 }
 
 /// The ambient-input patterns, by category.
 const AMBIENT: &[(Ambient, &[Spelling])] = {
-    use Spelling::{Macro, Path};
+    use Spelling::{Macro, Method, Path};
     &[
         (
             Ambient::Environment,
@@ -532,8 +582,16 @@ const AMBIENT: &[(Ambient, &[Spelling])] = {
                 Path("File::open("),
                 Path("File::create("),
                 Path("OpenOptions"),
-                Path("tempfile"),
-                Path("dirs"),
+                Path("tempfile::"),
+                Path("dirs::"),
+                Method("exists"),
+                Method("try_exists"),
+                Method("is_file"),
+                Method("is_dir"),
+                Method("canonicalize"),
+                Method("read_dir"),
+                Method("metadata"),
+                Method("read_link"),
             ],
         ),
         (
@@ -565,9 +623,21 @@ const AMBIENT: &[(Ambient, &[Spelling])] = {
     ]
 };
 
-/// Type names whose `static` is a mutable global that can hold a registry.
-/// An atomic counter is not one: it holds a number, not entries.
-const MUTABLE_STATIC_TYPES: &[&str] = &["Mutex", "RwLock", "Cell", "RefCell", "UnsafeCell"];
+/// Type names whose `static` is a mutable global that can hold a registry:
+/// a lock or cell, or a once-cell or lazy value filled at run time. An
+/// atomic counter is not one: it holds a number, not entries.
+const MUTABLE_STATIC_TYPES: &[&str] = &[
+    "OnceLock",
+    "OnceCell",
+    "LazyLock",
+    "LazyCell",
+    "Lazy",
+    "Mutex",
+    "RwLock",
+    "Cell",
+    "RefCell",
+    "UnsafeCell",
+];
 
 /// One ambient-input finding in a core crate's shipped source.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -648,6 +718,7 @@ pub(crate) fn scan_ambient(qsl_root: &Path) -> Result<Vec<AmbientFinding>> {
                 .map(|spelling| match spelling {
                     Spelling::Path(path) => CallPattern::compile(path),
                     Spelling::Macro(name) => CallPattern::macro_invocation(name),
+                    Spelling::Method(name) => CallPattern::method_call(name),
                 })
                 .collect();
             (*ambient, patterns)
@@ -923,6 +994,46 @@ mod tests {
         assert_eq!(fixture.pairs(), [pair("qsl-route", "quire-cli")]);
     }
 
+    /// FR-280-AC-3: every QSL workspace member outside the core gets the
+    /// CG, RT and driver rule, and only that rule: `qsl-analyze` depending
+    /// on a CG crate fails, and so does the root crate through it, while its
+    /// argument parser is not refused.
+    #[trace("TC-767", "FR-280-AC-3")]
+    #[test]
+    fn tc_767_cg_crate_in_a_non_core_member_fails() {
+        let mut fixture = Fixture::clean();
+        fixture.add(
+            "quire-contract-codegen",
+            Some("git+https://github.com/agent-ix/quire-contract-codegen?branch=main#1"),
+            false,
+            false,
+        );
+        fixture.add("clap", None, false, false);
+        fixture.edge("qsl-analyze", "quire-contract-codegen");
+        fixture.edge("qsl-analyze", "clap");
+        assert_eq!(
+            fixture.pairs(),
+            [
+                pair("qsl-analyze", "quire-contract-codegen"),
+                pair("quire-spec-language", "quire-contract-codegen"),
+            ]
+        );
+        let root = check_direction(&fixture.graph)
+            .unwrap()
+            .into_iter()
+            .find(|finding| finding.core == "quire-spec-language")
+            .unwrap();
+        assert_eq!(root.via, ["qsl-analyze"]);
+
+        let mut fixture = Fixture::clean();
+        fixture.add("quire-driver", None, false, false);
+        fixture.edge("quire-spec-language", "quire-driver");
+        assert_eq!(
+            fixture.pairs(),
+            [pair("quire-spec-language", "quire-driver")]
+        );
+    }
+
     /// A proc macro is not entered: its own dependencies link nothing into
     /// the core crate.
     #[trace("TC-767", "FR-284-AC-1")]
@@ -1010,7 +1121,7 @@ mod tests {
     }
 
     /// The ambient-input scan finds each category in shipped core source.
-    #[trace("TC-768", "FR-284-AC-2", "FR-284-AC-3")]
+    #[trace("TC-768", "FR-284-AC-4")]
     #[test]
     fn tc_768_ambient_reads_and_process_writes_in_core_source_fail() {
         let dir = core_tree(&[(
@@ -1023,7 +1134,14 @@ mod tests {
              fn e() { std::process::exit(1); }\n\
              fn f() { let _ = tempfile::tempdir(); }\n\
              static mut COUNT: u8 = 0;\n\
-             fn g() { let _ = env::current_dir(); }\n",
+             fn g() { let _ = env::current_dir(); }\n\
+             fn h(p: &Path) -> bool { p.exists() }\n\
+             fn i(p: &Path) -> bool { p.is_file() }\n\
+             fn j(p: &Path) { let _ = p.canonicalize(); }\n\
+             fn k(p: &Path) { let _ = p.read_dir(); }\n\
+             fn l(p: &Path) { let _ = p.metadata(); }\n\
+             static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();\n\
+             static TABLE: LazyLock<BTreeMap<u8, u8>> = LazyLock::new(BTreeMap::new);\n",
         )]);
         let file = "qsl-eval/src/lib.rs".to_owned();
         assert_eq!(
@@ -1037,16 +1155,24 @@ mod tests {
                 (file.clone(), 6, Ambient::ProcessExit),
                 (file.clone(), 7, Ambient::Filesystem),
                 (file.clone(), 8, Ambient::GlobalState),
-                (file, 9, Ambient::Environment),
+                (file.clone(), 9, Ambient::Environment),
+                (file.clone(), 10, Ambient::Filesystem),
+                (file.clone(), 11, Ambient::Filesystem),
+                (file.clone(), 12, Ambient::Filesystem),
+                (file.clone(), 13, Ambient::Filesystem),
+                (file.clone(), 14, Ambient::Filesystem),
+                (file.clone(), 15, Ambient::GlobalState),
+                (file, 16, Ambient::GlobalState),
             ]
         );
     }
 
     /// Test code (a `#[cfg(test)]` item macro included), comments, string
-    /// literals, compile-time `env!`, an immutable `static` and an atomic
-    /// counter do not match, and a crate outside the core is not
+    /// literals, compile-time `env!`, an immutable `static`, an atomic
+    /// counter, locals named `dirs` and `tempfile` and the comparison
+    /// `print != x` do not match, and a crate outside the core is not
     /// scanned.
-    #[trace("TC-768", "FR-284-AC-2", "FR-284-AC-3")]
+    #[trace("TC-768", "FR-284-AC-4")]
     #[test]
     fn tc_768_test_code_comments_and_constants_pass() {
         let dir = core_tree(&[
@@ -1062,7 +1188,8 @@ mod tests {
                  mod golden;\n\
                  #[cfg(test)]\n\
                  thread_local! { static CALLS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }\n\
-                 static NEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);\n",
+                 static NEXT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);\n\
+                 fn m(x: bool, print: bool) -> bool { let dirs = 1; let tempfile = dirs; print != x && tempfile > 0 }\n",
             ),
             (
                 "qsl-replay/src/golden.rs",

@@ -81,11 +81,14 @@ dependency) pair.
 | FR-284-AC-1 | The direction check passes over the QSL workspace. With a test manifest that adds `qsl-analyze` to `qsl-eval`'s dependencies, and with one that adds an argument-parser crate to `qsl-replay`'s, it fails and names the pair `(qsl-eval, qsl-analyze)` and the pair `(qsl-replay, <that crate>)`. | Test (TC-767) |
 | FR-284-AC-2 | Running FR-275-AC-1's chain and FR-098's replay of a fixture counterexample in a process whose environment holds arbitrary values for every variable the test generates, whose working directory is an empty temporary directory and whose home directory is unset, gives outcomes equal to those of a run in the test's own environment. | Test (TC-768) |
 | FR-284-AC-3 | During AC-2's runs, the bytes written to the process's stdout and stderr by core crates are empty, and the process exits only when the test harness ends it. | Test (TC-768) |
+| FR-284-AC-4 | The ambient-input scan of each QSL core crate's shipped source, `#[cfg(test)]` code excluded, fails naming the file and line of each environment read, clock read, filesystem or search-path access (a path method such as `.exists()` or `.metadata()` included), mutable global (a `static mut`, or a `static` lock, cell, once-cell or lazy value), stdout, stderr or stdin access and process exit, and finds none of them in a comment, a string literal or test code. | Test (TC-768) |
 
 ## Status
 
-The direction check and the ambient-input scan are implemented as `arch-lint
-qualified-core` (make target `arch-lint-qualified-core`). The target is not
+The direction check and the ambient-input scan (FR-284-AC-4) are implemented
+as `arch-lint qualified-core` (make target `arch-lint-qualified-core`). The
+same run applies FR-280-AC-3's CG, RT and driver rule to every QSL workspace
+member. The target is not
 in `make ci` yet, because main has two known violations. Both are fixed in
 filament-core-data:
 
