@@ -68,3 +68,21 @@ change are correct.
 | FND-001 | high | An admission refusal now exits by the `AdmissionFailure` variant, not the record's code. A set, bag or ordered-set field (`unknown_required_feature`/`unsupported-feature`, FR-106 check 6.2) exited 21 on main and exits 20 here. Compile and argument refusals with the same code still exit 21. This goes against FR-285's unsupported row (21) and QSpec FR-301. FR-109's new wording, "FR-106's own split ... (refused 20, incomplete 22)", writes the change into the spec, but FR-106 assigns no exit or category. Fix: map `Admit(Refused(record))` to `record.code.category()` and keep `Admit(Incomplete(_))` as `Incomplete`. Reword FR-109 to say so. Change `admission_failure_exits_by_its_category` to expect 21 for `unknown_required_feature`. | qsl-replay/src/spine/clause.rs:339; qsl-replay/src/spine/clause/tests.rs (admission_failure_exits_by_its_category); spec/functional/FR-109-run-a-state-clause-through-the-spine.md:143-150 |
 | FND-002 | medium | Two functions now map a catalog code to a `Category`, and they disagree. `Code::category` is documented as "this code's ADR-013 O-16 category" and gives `Unsupported` for `unsupported_construct`, `unknown_required_feature` and `unsupported_projection`, and `Incomplete` for `resource_exhausted`, `incomplete_population` and `unavailable_observation`. `catalog_category`/`category_of` give `Refusal` for all six. The `CATALOG_CATEGORIES` doc still says `is_incomplete`/`is_unsupported` are "the native-v1 exit-code ladder (FR-301), not the O-16 category". This conflicts with FR-285's "one category". Fix: reconcile the two maps, or say which map is the category and which is only the exit category, and update the `CATALOG_CATEGORIES` doc to match. | qsl-foundation/src/diagnostic.rs:306-320; qsl-foundation/src/diagnostic.rs:857-869 |
 | FND-003 | low | `VerdictWire` restates `Category`'s kebab-case labels (a duplicate of `Category::as_str`). It now reads `undefined` into a proof or replay `Verdict`, which no writer produces and which FR-285 says no proof item carries. The new variant has no test. Fix: refuse `undefined` when reading a verdict, or derive the wire from `Category::as_str` and add a round-trip test. | qsl-replay/src/result/wire.rs:194-234 |
+
+## New findings (disposition pass 1)
+
+Found at e4f2770ceef6ddfaed0c9b087f4028723026a5b9.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | `ClauseDisposition::category` now returns `Unsupported` for a compile, argument, admission or evaluate refusal whose code is unsupported. `unknown_required_feature` at admission is the FND-001 case. On main every one of these reported `refusal`. FR-109 still lists the disposition categories as "`success`, `violation`, `refusal`, `incomplete` or `internal-failure`", and its evaluate bullet still says "category `refusal` or `incomplete`". So the code reports a category that FR-109 rules out. The exits are correct (21). Fix: add `unsupported` to both lists in FR-109. This is a spec-only edit. | qsl-replay/src/spine/clause.rs:331-346; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:74-76, 133-136 |
+
+## Dispositions
+
+Round 1, reviewed at e4f2770ceef6ddfaed0c9b087f4028723026a5b9 (fix commits bc464d1d6 and e4f2770ce).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bc464d1d6: `Admit(AdmissionFailure::Refused(record)) => record.code.category()`, so `unknown_required_feature` exits 21 again. `admission_failure_exits_by_its_record_code_category` asserts 21, 20, the code's own category for every `Code`, and 22 for every `Incomplete`. It passes at this head. FR-109's exit bullet now says the admit refusal record takes the category of its code. |
+| FND-002 | fixed | bc464d1d6: the `Code::category` doc names it as the only code-to-category map an exit comes from. The `CATALOG_CATEGORIES`/`category_of` docs call that table the refusal-record map, never an exit source, and name the six codes where the two differ. No exit path in the repo reads `category_of`; its only production caller is `explore::Outcome::category`, and nothing takes an exit from that. |
+| FND-003 | fixed | bc464d1d6: `VerdictWire(Category)` writes `Category::as_str` and refuses `undefined` and unknown labels on read. `verdict_labels_round_trip_and_undefined_is_refused` passes at this head. |

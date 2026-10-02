@@ -306,11 +306,11 @@ impl Code {
     /// This code's ADR-013 O-16 category, on QSpec FR-301's single-code
     /// ladder: `runtime_invariant` (an internal fault, ADR-013 T-4) is an
     /// internal failure; then unsupported before incomplete before invalid
-    /// or refused input. This is the only code-to-category map an exit
-    /// code is derived from (FR-285): every exit path reads
-    /// `code.category().exit_code()`. It is not [`category_of`], the
-    /// refusal-record map, which gives `Refusal` for the unsupported and
-    /// incomplete codes this ladder separates.
+    /// or refused input. Exit codes come from a category
+    /// ([`Category::exit_code`], FR-285), and this is the code-to-category
+    /// map an exit derived from a `Code` uses. It is not [`category_of`],
+    /// the refusal-record map, which gives `Refusal` for the unsupported
+    /// and incomplete codes this ladder separates.
     pub fn category(self) -> Category {
         if self == Self::RuntimeInvariant {
             Category::InternalFailure
@@ -868,8 +868,9 @@ impl InternalFault {
 /// codes are refusals too: the catalog has no category column, and O-16's
 /// evaluation column rules `unsupported` out of an evaluation outcome.
 /// This table is only the category a refusal record reports (ADR-013
-/// O-17). No exit code is derived from it: exits come from
-/// [`Code::category`], the O-16 category, which separates the unsupported
+/// O-17). No exit code is derived from it: exits come from the O-16
+/// category ([`Category::exit_code`]), which for a native code is
+/// [`Code::category`]. That map separates the unsupported
 /// codes (`unsupported_construct`, `unknown_required_feature`,
 /// `unsupported_projection`) and the incomplete ones (`resource_exhausted`,
 /// `incomplete_population`, `unavailable_observation`) that this table
@@ -928,7 +929,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 48] = [
 /// FR-090-AC-5: the category a refusal record carrying this catalog code
 /// reports, read from the code alone (`CATALOG_CATEGORIES`, the ADR-013
 /// O-17 refusal-record map). Never an exit code's source: exits come from
-/// [`Code::category`]. `None` for a code the catalog does not define: an
+/// the O-16 category ([`Category::exit_code`]). `None` for a code the catalog does not define: an
 /// unknown code has no category, and this map never guesses one.
 pub fn category_of(code: &CatalogCode) -> Option<Category> {
     catalog_category(code.code())

@@ -58,3 +58,13 @@ Changes requested: two medium findings and one low finding.
 | FND-001 | medium | The TC-769 row in tests.md says "steps 1, 2 and 4 pass locally". Step 1 also needs an inconclusive `analyze` item with cause `CertificateRejected` and FR-283-AC-1's pending clause, and neither is built. The test maps bare `Category` values only. FR-285's own spec.md row admits that analyze and the monitor are not built. Fix: mark step 1 partial in the TC-769 row and name the two missing items. | spec/tests.md:1031 |
 | FND-002 | medium | The FR-285-AC-3 deferral has no owner. The spec.md and tests.md rows say that `StageFailure::Cancelled`/`Fault` and `CallFailure::Cancelled` "do not exist yet" but name no ticket. QSL-489 (LC1) covers `StageFailure::Cancelled` only. No ticket covers `StageFailure::Fault`, `CallFailure::Cancelled` or finishing TC-769 step 3. Fix: add these to QSL-489 (or the LC3 ticket), and cite that ticket in both rows. | spec/spec.md:1280; spec/tests.md:1031 |
 | FND-003 | low | FR-109's reworded exit bullet covers compile refusals, argument refusals, admit failures and evaluate outcomes. It drops the select-stage dispositions (`MissingName`, `NotAPredicate`), which the old "compile, select or admit result" wording covered. They still exit 20 in code. Fix: name the select stage (refusal, 20) in the bullet. | spec/functional/FR-109-run-a-state-clause-through-the-spine.md:143-150 |
+
+## Dispositions
+
+Round 1, reviewed at e4f2770ceef6ddfaed0c9b087f4028723026a5b9 (fix commit bc464d1d6).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bc464d1d6: the TC-769 row now says that step 1 passes for the bare categories and the `refuted` record only, and names the missing `analyze` item and FR-283 pending clause. |
+| FND-002 | fixed | bc464d1d6: the spec.md FR-285 row and the TC-769 row both name slice LC1 as owner of `StageFailure::Cancelled`/`Fault`, `CallFailure::Cancelled` and the rest of step 3. This matches plan v2's type table, which assigns both enums to LC1. QSL-489's body still names only `StageFailure::Cancelled`, so its scope should be widened in Linear. I could not check Linear because the keyring is locked. |
+| FND-003 | fixed | bc464d1d6: FR-109's exit bullet names "refusal (20) for a `select` result (`missing_declaration`, `ill_typed`)". |
