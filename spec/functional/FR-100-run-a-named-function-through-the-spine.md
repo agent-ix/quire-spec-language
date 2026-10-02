@@ -21,6 +21,12 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-279
+    type: references
+  - target: ix://agent-ix/quire-spec-language/FR-285
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-287
+    type: references
   - target: "ix://agent-ix/quire-specification/FR-301"
     type: depends_on
 ---
@@ -43,6 +49,12 @@ The spine run entry is `qsl_replay::spine::run`. It compiles the source with
 compiled package, binds the arguments, calls the function and returns the
 call's outcome. The root crate reaches it through `qsl_replay` and names
 `qsl-eval` in none of its dependency tables (TC-390).
+
+The request handling is the QSL library operation `command`, which the
+driver's `quire run` reaches (FR-287). A `1-draft` native-run/1 request is
+the command encoding of the `execute` operation with a function selection
+(FR-279). Every exit status this requirement states is FR-285's exit code of
+the outcome's ADR-013 O-16 category.
 
 ## Inputs
 
@@ -116,8 +128,8 @@ O-16 lists as a refusal and which is an internal failure by
 | `FamilyResult::Refused(c)` for which FR-096 builds a record, or `Outcome::Refused(r)` other than `CheckedInvariant` | `refused`, as the refusal table's record row | the record code's exit status (below) |
 | `FamilyResult::Refused(c)`, for which FR-096 builds no record | `refused`, as the refusal table's family row | `c`'s code's exit status (below) |
 | `Outcome::Refused(Refusal::CheckedInvariant)`, or `CheckedPackage::call` returning `CallFailure::Fault` | none: an internal failure (below) | the internal-failure exit status (below) |
-| `Outcome::Undefined(u)`, kernel reason `u` | `undefined`, `reason` from the undefined table below | 20 |
-| `FamilyResult::Undefined(u)` | `undefined`, `reason` the catalog's `UndefinedReason` spelling (`precondition-false`, `absent-key`) | 20 |
+| `Outcome::Undefined(u)`, kernel reason `u` | `undefined`, `reason` from the undefined table below | 10 |
+| `FamilyResult::Undefined(u)` | `undefined`, `reason` the catalog's `UndefinedReason` spelling (`precondition-false`, `absent-key`) | 10 |
 | `Outcome::Incomplete(i)` | `incomplete`, `limit` `i`'s counter | 22 |
 
 The refused outcome's members:
@@ -142,9 +154,9 @@ The refused outcome's members:
   `{"kind": "measure", "function": "<name>", "index": <declaration
   index>}`, `{"kind": "expression"}` or `{"kind": "type-declaration",
   "name": "<name>"}`.
-- A record's or cause's exit status is `Code::exit_code` of the `Code` its
-  code string names, found by `Code::from_code` (the `Code::all()` entry
-  whose `as_str` equals it). A code string no `Code` names exits 20.
+- A record's or cause's exit status is FR-285's exit code of the O-16
+  category of the record's or cause's typed code: 20 for a refusal, 21 for a
+  profile-gated unsupported construct and 22 for an exhausted resource.
 
 In the catalog (QSpec `native-diagnostics.md`,
 `quire.native.diagnostics/v1`), `kernel_refusal_record` builds a record for
@@ -225,8 +237,7 @@ and invariant `locus-source-supplied`. It exits 30, the tool-failure status of Q
 contract (`0` completed without violation, `10` logical violation, `20`
 invalid/refused input, `21` unsupported, `22` incomplete and `30` tool
 failure). A checked-program invariant failing is a tool failure, so this
-path exits 30 directly and does not take its exit status from
-`Code::exit_code`.
+path exits 30, FR-285's exit code for internal failure.
 
 ### Refusals before S6a
 
@@ -349,7 +360,8 @@ exit 30.
 | FR-100-AC-7 | `qsl_replay::spine::run` called directly over each AC-1, AC-4, AC-5 and AC-6 input returns the same `package_id`, outcome category, value, code, reason, counter, and parameter name or position the CLI renders. The root crate names `qsl-eval` in no dependency table (TC-390). | Test (TC-452) |
 | FR-100-AC-8 | No public item of `qsl_replay::spine`, and no `qsl_replay` re-export, names a `qsl_eval` path; a `pub use` of a `qsl_eval` item from `qsl_replay`, or a `qsl_eval` type in `spine::run`'s signature, fails the check. | Test (TC-452) |
 | FR-100-AC-9 | The outcome mapping converts a constructed `Outcome::Completed` of each value kind, `Outcome::Refused` of each of the thirteen kernel refusals, `Outcome::Undefined` of each of the five kernel reasons, `Outcome::Incomplete`, `FamilyResult::Refused` with and without an FR-096 key-table row, `FamilyResult::Undefined` of each family reason, and a `CallFailure::Fault` into the `outcome` member and exit status the mapping tables state: each of the twelve kernel refusals other than `CheckedInvariant` renders its record's code, cause, fields (JSON strings) and locus, as the kernel-record table states, exit 20; a family cause with a record renders the same members; a family cause without a record renders its `catalog_code()` with no `fields`, exiting by that code (`AncestorSteps`, `resource_exhausted`, exits 22); and `CheckedInvariant` and `CallFailure::Fault` are `runtime_invariant` command errors with their stage and invariant in `details`, at the internal-failure exit status. | Test (TC-452) |
-| FR-100-AC-10 | With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Pos>(x in q: x)` for an empty `q` of `Sequence<Int[1, 9]>[0, 2]` returns `Outcome::Undefined(Undefined::SumOutOfDomain)` located at the `sum` node, and the outcome mapping renders it `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 20. The same `sum` for `q` holding `4` completes with `4`. | Test (TC-452) |
+| FR-100-AC-10 | With `type Pos = Int[1, 9]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Pos>(x in q: x)` for an empty `q` of `Sequence<Int[1, 9]>[0, 2]` returns `Outcome::Undefined(Undefined::SumOutOfDomain)` located at the `sum` node, and the outcome mapping renders it `{"kind": "undefined", "reason": "sum-out-of-domain"}`, exit 10. The same `sum` for `q` holding `4` completes with `4`. | Test (TC-786) |
+| FR-100-AC-11 | Every exit status `run` returns equals FR-285's exit code of the outcome's O-16 category: FR-100-AC-10's `sum-out-of-domain` outcome and a `FamilyResult::Undefined` with reason `precondition-false` each write outcome kind `undefined` and exit 10; FR-100-AC-4's `invalid_runtime_input` refusals exit 20; FR-100-AC-5's record-result function exits 21; FR-100-AC-6 exits 22; a `CallFailure::Fault` exits 30. The `execute` operation (FR-279) over each of these inputs returns an outcome whose FR-285 exit code equals the command's. | Test (TC-786) |
 
 ## Dependencies
 
@@ -371,6 +383,11 @@ exit 30.
   the refusal record a refused outcome renders, and `CheckedInvariant` as an
   `InternalFault`.
 - QSpec FR-301: the six exit codes.
+- [FR-285](FR-285-map-every-outcome-category-to-one-exit-code.md): the exit
+  function, with undefined at 10 (ADR-029 CB-4).
+- [FR-279](FR-279-execute-a-checked-entry-as-a-library-operation.md),
+  [FR-287](FR-287-reach-qsl-through-the-driver-cli.md): `execute` and the
+  driver CLI.
 - QSpec `native-diagnostics.md`, `quire.native.diagnostics/v1` revision
   `1-draft.8`: the kernel refusal codes, causes and fields.
 - QSpec FR-145: a `sum` seed or running total outside `N`'s domain is a
@@ -395,3 +412,9 @@ Every kernel refusal but `CheckedInvariant` renders its record (`code`,
 The conversion of `CheckedInvariant` to an `InternalFault` is
 `qsl_replay::spine::run`'s, since the evaluator still returns it as a
 refusal (FR-096 Status).
+
+The undefined exit status of 10 (FR-100-AC-10, FR-100-AC-11) and the
+derivation of every exit status from FR-285 (ADR-029 CB-4, ruling RU-1) are
+specified and not yet implemented -- TC-786 planned. TC-452 is planned
+again: its code test still asserts exit 20 for an undefined outcome and
+needs updating to exit 10.
