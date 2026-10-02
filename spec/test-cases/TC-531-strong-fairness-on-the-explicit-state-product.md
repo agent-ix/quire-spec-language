@@ -25,8 +25,8 @@ variant of FR-130-AC-2, each with `always eventually holds(m.owner = 1)`.
 1. The mutex claim under `weak each`, `strong each` and `strong` (no
    granularity) on `acquire`.
 2. The `Handoff` claim under `strong each` on `acquire`.
-3. The mutex `strong each` claim with a poll that returns `true` from the
-   first call the second phase makes; the mutex claim with `weak each` and
+3. The mutex `strong each` claim with a `Cancel` handle cancelled when the
+   second phase first checks it; the mutex claim with `weak each` and
    `strong each` on `acquire`; the requests of steps 1 and 2 twice each.
 4. Check the certificate of step 1's `strong each` proof; then the same
    certificate with `S`'s witness naming `acq(2)`.
