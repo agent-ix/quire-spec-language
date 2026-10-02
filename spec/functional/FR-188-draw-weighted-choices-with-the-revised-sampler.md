@@ -104,7 +104,7 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled(
 ## Dependencies
 
 - ADR-024 ST-2, RP-1, QS-8; ADR-014 TR-1, TR-6.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (generator, uniform selection, replay),
   [FR-187](FR-187-give-model-transitions-step-probabilities-and-rewards.md).
 

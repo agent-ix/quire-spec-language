@@ -56,7 +56,7 @@ pub struct AggregateTerm {
 }
 pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Quantity } }
 // Atom evaluation: Value::Bool, or Undefined(InsufficientData{count, min_count}),
-// or a run stop Incomplete(MaxWindowValues{value})
+// or a run stop Incomplete(LimitReached{limit, value, setting}) (ADR-018 V-7)
 ```
 
 ## Behavior
@@ -94,8 +94,9 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   evaluate to `Undefined` with cause `InsufficientData{count, min_count}`,
   and the clause at that position is O-16 undefined.
 - When a window would hold more than `max_window_values` values, evaluation
-  SHALL stop and the result SHALL be `Incomplete`, naming
-  `max_window_values`, its value and the run setting that raises it. The
+  SHALL stop and the result SHALL be `Incomplete(LimitReached{limit, value,
+  setting})` (ADR-018 V-7), naming `max_window_values`, its value and
+  `monitor.max_window_values`. The
   limit SHALL have a published default of 1,048,576 (2^20), which QSL
   publishes, and the setting name `monitor.max_window_values` (FR-255's
   convention).
@@ -115,7 +116,7 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 |----|----------|--------------|
 | FR-194-AC-1 | Over a timestamped trace of 20 responses with latencies `1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 6, 7` ms in one 300 s window, `quantile 0.95 of e.latency where holds(e is Response) over past[0, 300 s] <= 5 ms` is false at the last position (the 19th smallest is 6 ms); with `quantile 0.9` it is true (the 18th smallest is 1 ms). The threshold `0.005 s` gives the same results. | Test (TC-629) |
 | FR-194-AC-2 | Under event-position, `count where holds(e is Error) over past[0, 9] <= 2` at position 4 reads positions 0 to 4 only; at position 15 it reads positions 6 to 15. `fraction holds(e.ok) over past[0, 3]` over `ok` values `true, false, true, true` is `3/4` at position 3. `sum`, `min` and `max` of `1, 4, 2` are 7, 1 and 4. | Test (TC-629) |
-| FR-194-AC-3 | With `min_count 5` and three responses in the window, the atom is `Undefined(InsufficientData{count: 3, min_count: 5})` and the clause is undefined at that position. With `max_window_values` 10 and 20 values in the window, the run stops `Incomplete` naming `max_window_values` and 10. The run's work meter counts 20 for one evaluation over 20 values. | Test (TC-629) |
+| FR-194-AC-3 | With `min_count 5` and three responses in the window, the atom is `Undefined(InsufficientData{count: 3, min_count: 5})` and the clause is undefined at that position. With `max_window_values` 10 and 20 values in the window, the run stops `Incomplete(LimitReached{…})` naming `max_window_values` and 10. The run's work meter counts 20 for one evaluation over 20 values. | Test (TC-629) |
 | FR-194-AC-4 | S3 refuses an aggregate term in a claim over a model subject, `past[0, 300 s]` under event-position, `quantile 1`, `min_count 0`, and a threshold of length against a time value. AC-1's clause has the same horizon with and without its aggregate atom; its tl-mltl input is the derived Boolean signal; a holding result is `tested` with evidence `Observed`. | Test (TC-629) |
 
 ## Dependencies
