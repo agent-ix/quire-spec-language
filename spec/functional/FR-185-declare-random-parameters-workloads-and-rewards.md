@@ -94,9 +94,10 @@ integers in lowest terms.
   refuse it, naming the reward and the read.
 - When a reward's value type is neither an integer nor a quantity type, S3
   SHALL refuse it.
-- Two rewards of one name on an operation SHALL be refused.
-- Non-negativity is checked over the parameters' finite domains when the
-  model is admitted (FR-187).
+- When an operation declares two rewards of one name, S3 SHALL refuse the
+  second, naming the operation and the reward.
+- S3 SHALL leave the non-negativity check to model admission, which runs
+  it over the parameters' finite domains (FR-187).
 
 ## Acceptance Criteria
 

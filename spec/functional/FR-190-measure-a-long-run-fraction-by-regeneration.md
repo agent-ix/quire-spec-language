@@ -53,7 +53,7 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
   the step that leaves it.
 - After each closed cycle, with `n` cycles closed and `n >= min_cycles`,
   EN-4 SHALL compute the estimate `Â = Σ Y_k / Σ L_k` and the half-width
-  `z · S / (L̄ · √n)`, with `S` the sample standard deviation of
+  `z · √(S² + 1/n) / (L̄ · √n)`, with `S` the sample standard deviation of
   `Y_k − Â · L_k`, `L̄` the mean cycle weight and `z` the one-sided
   `1 − min(α', β')` normal quantile. The square root and the quantile SHALL
   be QSpec's rational bounds, rounded so the half-width rounds up.
@@ -74,7 +74,7 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-190-AC-1 | `LongRun` (ADR-024 §7.3) with `Regenerative{min_cycles: 100}` settles `Completed` Accepted with an estimate within `1/5000` of `1800/1801`, an interval of half-width at most `1/5000` whose lower end is at least `999/1000`, a cycle count of the order of 91,624, and `coverage: Asymptotic`. Two runs with the same seed give equal outcomes. | Test (TC-625) |
+| FR-190-AC-1 | `LongRun` (ADR-024 §7.3) with `Regenerative{min_cycles: 100}` settles `Completed` Accepted with an estimate within `1/5000` of `1800/1801`, an interval of half-width at most `1/5000` whose lower end is at least `999/1000`, a cycle count equal to the first `n >= 100` at which the half-width recomputed from the recorded cycles is at most `1/5000`, and `coverage: Asymptotic`. `long-run fraction holds(v.up) <= 0.9995` with the same parameters settles `Completed` Undecided, `IndifferenceRegion`, and a run whose first 100 cycles have no failure does not stop at 100 cycles. Two runs with the same seed give equal outcomes. | Test (TC-625) |
 | FR-190-AC-2 | A variant of `Avail` whose initial state is a start state that no step re-enters settles `Completed` Undecided with cause `NoRegeneration` naming `max_cycle_steps`, its value and `limits.max_cycle_steps`. With `min_cycles` above the number of cycles the half-width rule would need, the run closes exactly `min_cycles` cycles before deciding. | Test (TC-625) |
 | FR-190-AC-3 | A `weighted by duration` long-run claim over a variant of `Avail` with a `duration` reward of 1 on `tick` and 3 on `repair` reads each position's weight from the step that leaves it, so a down position counts 3 in `L_k`. `Regenerative` for `P95` and `Okamoto` for `LongRun` are refused `NotStatistical`. | Test (TC-625) |
 

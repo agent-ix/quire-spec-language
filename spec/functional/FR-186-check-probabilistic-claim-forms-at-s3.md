@@ -101,8 +101,8 @@ pub struct Confidence { pub alpha: Rational, pub beta: Rational, pub indifferenc
   operator SHALL be refused, with a diagnostic stating that a probabilistic
   event needs a finite window.
 - `accumulate R from holds(A) until holds(B) within h` SHALL name a reward
-  `R` of every operation of the model that can take a step; an operation
-  without `R` contributes 0. `steps …` and `fraction holds(P) over [0, h]`
+  `R` declared by at least one operation of the model; a step of an
+  operation that declares no `R` contributes 0. `steps …` and `fraction holds(P) over [0, h]`
   SHALL be admitted with `h` a natural number, and `weighted by R` SHALL
   name a reward.
 - A comparison `M <= c` or `M >= c` SHALL have a threshold `c` of `M`'s

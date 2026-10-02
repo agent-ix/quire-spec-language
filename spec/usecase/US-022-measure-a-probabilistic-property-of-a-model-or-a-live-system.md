@@ -92,7 +92,7 @@ verdict and aggregate atoms.
 Priority: High. Latency and availability requirements are the most common
 non-functional requirements, and neither is a Boolean property of a
 behaviour. Risk: probabilities near 1 need many samples; the sequential
-method and the exact engine (ADR-028) reduce that cost.
+method reduces that cost.
 
 ## Traceability (Informative)
 

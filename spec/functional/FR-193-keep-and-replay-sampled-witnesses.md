@@ -22,9 +22,8 @@ relationships:
 
 ## Description
 
-EN-4 SHALL keep, up to `max_witnesses`, the samples on which the event is
-false or the measure passes its threshold, as **sampled witnesses** (ADR-024
-SV-6), the first in trace-index order. The layer-6 replay facade SHALL
+EN-4 SHALL keep, up to `max_witnesses`, the samples on the violating side
+of the claim's bound as **sampled witnesses** (ADR-024 SV-6), the first in trace-index order. The layer-6 replay facade SHALL
 replay a sampled witness through FR-128's model-trace replay plus two
 checks: each drawn value is in its support, and each draw recomputed from
 the seed selects the recorded choice (SV-8). A sampled witness never changes
@@ -69,9 +68,11 @@ pub fn replay_sampled_witness(
 ### Keeping witnesses
 
 - EN-4 SHALL record a sample as a witness when its event evaluates false
-  (a `>= θ` bound) or true (a `<= θ` bound), or when a quantile claim's
-  activated sample has its measure on the violating side of `c`, a censored
-  sample included.
+  (a `>= θ` bound) or true (a `<= θ` bound), when a quantile claim's
+  activated sample is on the violating side of its PF-4 event, a censored
+  sample included, or when a mean-of-fraction sample's fraction lies below
+  `θ` (a `>= θ` bound) or above it (a `<= θ` bound). A long-run fraction
+  run SHALL keep no witness other than an undefined one.
 - EN-4 SHALL record a sample on which the claim evaluates undefined as a
   witness with value `Undefined(UndefinedEvaluation)`, and SHALL keep it
   whatever `max_witnesses` is (ADR-024 SV-11).
@@ -106,9 +107,12 @@ pub fn replay_sampled_witness(
 ### The qualitative claim
 
 - A sampled witness SHALL convert to an ADR-018 `TemporalCounterexample`
-  over the same subject (its initial state index, steps and binding) for the
-  TP-2 claim that the event holds on every behaviour, and FR-128 SHALL replay
-  it as one.
+  over the same subject (its initial state index, steps and binding) for
+  the TP-2 claim of its bound direction (ADR-024 SV-7): "`E` on every
+  behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a
+  `<= θ` bound, the PF-4 event's form for a quantile, and the fraction
+  comparison on every behaviour for a mean of a fraction. FR-128 SHALL
+  replay it as one.
 
 ## Acceptance Criteria
 
@@ -116,7 +120,7 @@ pub fn replay_sampled_witness(
 |----|----------|--------------|
 | FR-193-AC-1 | The `2 ms` claim of ADR-024 §7.2 with seed 7 and `max_witnesses` 3 keeps three witnesses in increasing trace-index order, each with latency above `2 ms` and a path probability equal to the product of its steps' FR-187 probabilities. In a witness whose first attempt drew `d = 3 ms`, `outcome = Ok`, the `request` step has probability 1 and that `attempt` step `343/5000`. | Test (TC-628) |
 | FR-193-AC-2 | Each kept witness replays `Reproduced`. The same witness with `d` changed to `2 ms` (outside the support) refuses `invalid_runtime_input`/`invalid-value`; with the seed changed so a recomputed draw selects `1 ms` it settles `Inconclusive(ReplayParity)`; with its path probability changed it settles `Inconclusive(ReplayParity)`. The item's record stays `measured`, `rejected` in each case. | Test (TC-628) |
-| FR-193-AC-3 | A witness converted to a `TemporalCounterexample` for the TP-2 claim "`M <= 2 ms` on every activated behaviour" replays through FR-128 and settles that claim `refuted`. | Test (TC-628) |
+| FR-193-AC-3 | A witness converted to a `TemporalCounterexample` for the TP-2 claim "`M <= 2 ms` on every activated behaviour" replays through FR-128 and settles that claim `refuted`. For `probability <= 1/100 [eventually[0,1000] holds(not n.healthy)]` with `alpha 0.01, beta 0.01, indifference 0.005` over `Health` under `Steady` (ADR-024 §7.1), a witness is a sample with a fault; it converts to a counterexample for "not `eventually[0,1000] holds(not n.healthy)` on every behaviour" and settles that claim `refuted`. `LongRun` keeps no witness. | Test (TC-628) |
 | FR-193-AC-4 | FR-189-AC-6's undefined sample is kept as a witness with value `Undefined(UndefinedEvaluation)` and replays `Reproduced`; the same witness with its cause changed to `precondition-false` settles `Inconclusive(ReplayParity)`. | Test (TC-640) |
 
 ## Dependencies

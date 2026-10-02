@@ -16,7 +16,7 @@ Scope: FR-187-AC-1 to FR-187-AC-4.
 
 ## Test Procedure
 
-Fixtures: `Service` (ADR-024 §7.2); `Link` (ADR-028 §15.4's model text) with workload `Even`; the two `Health` variants of FR-187-AC-3; the `refund` model of FR-187-AC-4.
+Fixtures: `Service` (ADR-024 §7.2); the `Link` model and workload `Even` of FR-187-AC-2; the two `Health` variants of FR-187-AC-3; the `refund` model of FR-187-AC-4.
 
 1. `weighted_steps` on `Service` at `Busy, attempts = 0` and at `Idle` under `Steady`.
 2. `weighted_steps` and `actions` on `Link` at its initial state under `Even`, and at a delivered state.

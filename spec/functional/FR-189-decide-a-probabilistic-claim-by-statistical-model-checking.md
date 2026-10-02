@@ -114,8 +114,9 @@ the claim's form does not admit (FR-190, SPRT below).
   not counted: it advances the trace index and counts toward `max_draws`,
   never toward the sample count or the SPRT sum. A quantile claim SHALL be
   decided as the probability bound of ADR-024 PF-4: `quantile q of M <= c`
-  as `Pr(M <= c | activated) >= q`, and `quantile q of M >= c` as
-  `Pr(M < c | activated) <= q`.
+  as `Pr(M <= c | activated) >= q`, and `quantile q of M >= c` as the strict bound
+  `Pr(M < c | activated) < q`. The tests SHALL decide the strict bound as
+  `<= q`, whose boundary lies inside the indifference region.
 
 - If the event, the measure or its comparison evaluates `Undefined` on a
   sample, then EN-4 SHALL decide that test Rejected at once, draw no
@@ -141,9 +142,12 @@ the claim's form does not admit (FR-190, SPRT below).
   add `ln(p1/p0)` when the event holds and `ln((1 − p1)/(1 − p0))` when it
   fails; the test SHALL decide Rejected when the sum reaches `ln(1/α')` and
   Accepted when it reaches `ln(β')`. A `<= θ` bound swaps the roles.
-- Each logarithm SHALL be a rational bound by QSpec's method, with the
-  thresholds rounded away from zero and each increment rounded so the test
-  never decides earlier than with the true values.
+- Each logarithm SHALL be a rational bound by QSpec FR-408's method, with
+  the thresholds rounded away from zero. EN-4 SHALL keep two sums: a lower
+  sum of the increments rounded down and an upper sum of the increments
+  rounded up. It SHALL decide Rejected only when the lower sum reaches
+  `ln(1/α')` and Accepted only when the upper sum reaches `ln(β')`, so the
+  test never decides earlier than with the true values.
 - A mean of a fraction SHALL be decided by Okamoto only; a request naming
   SPRT for it SHALL be refused as `NotStatistical`.
 
@@ -169,7 +173,7 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-1 | `P95` (ADR-024 §7.2) with Okamoto runs one test of `N = 23,026` samples, each of at most 11 positions, and settles `Completed` Accepted with an interval of half-width `1/100` whose lower end is at least `19/20`; the same claim at `<= 2 ms` settles Rejected with an interval whose upper end is below `19/20`. With SPRT, at `5 ms` it settles Accepted and at `2 ms` Rejected, each with a sample count below 23,026. | Test (TC-624) |
 | FR-189-AC-2 | The Okamoto sample count is computed exactly with conservative rounding: `N = 23,026` for `α = β = 1/100`, `ι = 1/100`, `m = 1`, and `N = 26,492` for `m = 2`. The SPRT thresholds for `α' = β' = 1/100` are rationals `T+ >= ln 100` and `T- <= -ln 100` within QSpec's stated precision of them. Two runs with the same request give equal outcomes. | Test (TC-624) |
 | FR-189-AC-3 | A two-initial-state variant of `Service` runs `m = 2` tests, each with `α' = β' = 1/200`, sample `i` of test `j` at trace index `2i + j`. A variant with two symmetric servers under an admitted symmetry declaration and an invariant workload runs `m = 1`; with a workload that weights one server's operations differently it runs `m = 2`. | Test (TC-624) |
-| FR-189-AC-4 | A quantile claim over a variant of `Service` whose `request` sets `phase = Busy` with probability `1/2` (a random parameter) and otherwise stays `Idle` counts only activated samples: with Okamoto the result has `samples = 23,026` and `draws > samples`. A censored sample (no `Done` within the window) counts as exceeding the threshold. | Test (TC-624) |
+| FR-189-AC-4 | A quantile claim over a variant of `Service` whose `request` sets `phase = Busy` with probability `1/2` (a random parameter) and otherwise stays `Idle` counts only activated samples: with Okamoto the result has `samples = 23,026` and `draws > samples`. A censored sample (no `Done` within the window) counts as exceeding the threshold. `quantile 1/2 of M >= 3` reduces to the event `M < 3` with the strict bound `< 1/2`; over a variant where `M` is 1 or 3 with probability 1/2 each, `Pr(M < 3) = 1/2`, so the reduced bound is false, as the claim is (its 1/2-quantile is 1). | Test (TC-624) |
 | FR-189-AC-5 | The ADR-024 §7.1 `NoFault` claim with Okamoto at `indifference 0.0005` computes `N = 9,210,341`. A `Health` variant with a non-unique post-state returns `Unsupported(NotMarkov)`; a variant with an undecided contract conjunction settles that test Undecided, `UndecidedSuccessor`; a `mean of` claim with SPRT is refused `NotStatistical`. | Test (TC-624) |
 | FR-189-AC-6 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(random b: Int[0, 1] ~ {0: 1, 1: 1})` with postcondition `self.v = b`; workload weight `flip` 1) and the claim `probability >= 1/2 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` with `α = β = 1/100`, `ι = 1/10`, Okamoto and seed 7, the test decides Rejected at the first sample in trace-index order that reaches `v = 1`, draws no further sample, and carries `UndefinedEvaluation` naming that sample's test index 0, its trace index and the first position with `v = 1`, cause `division-by-zero`; the claim settles `Completed` Rejected. | Test (TC-640) |
 

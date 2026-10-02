@@ -28,9 +28,10 @@ exactly (ADR-024 RP-1 to RP-3).
 
 ## Use case
 
-An operator's `NoFault` run stops at the default `max_samples` before
-Okamoto's nine million samples. The result says `max_samples` was reached at
-its value and that `limits.max_samples` raises it. The operator raises it
+An operator runs `NoFault` with `max_samples` set to 1,000,000, below
+Okamoto's 9,210,341 samples, and the run stops there. The result says
+`max_samples` was reached at 1,000,000 and that `limits.max_samples` raises
+it. The operator raises it
 and reruns with the same seed, and the rerun reproduces every sample the
 first run drew.
 

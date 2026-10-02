@@ -27,7 +27,7 @@ action's draw distribution, and under a workload the exact step probability
 of each transition (PM-3), together with each transition's reward values
 (PM-5). A scheduled identity and drawn vector with no post-state, or with
 several under a workload, `ModelSystem` SHALL report as `NotMarkov` (PM-3). Both
-EN-4 (FR-189) and EN-5 read this structure; neither computes it itself.
+EN-4 (FR-189) reads this structure and does not compute it itself.
 
 ## Use case
 
@@ -109,7 +109,7 @@ impl ModelSystem {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-187-AC-1 | `Service` (ADR-024 §7.2) at the state `phase = Busy, attempts = 0` under `Steady`: `weighted_steps` returns six steps of `attempt`, with probabilities `441/500` (`1 ms`, `Ok`), `9/500` (`1 ms`, `Fail`), `343/5000`, `7/5000`, `147/5000`, `3/5000`, summing to 1; the `duration` reward is the drawn `d`. At `phase = Idle` the only step is `request` with probability 1 and `duration` 0. | Test (TC-622) |
-| FR-187-AC-2 | The `Link` model (ADR-028 §15.4's model text) under the workload `Even` at its initial state: `send_a` with `lost = false` has probability `9/20`, `send_a` lost `1/20`, `send_b` delivered `2/5`, `send_b` lost `1/10`. `actions` at the same state returns two actions in canonical order, each with draws summing to 1. At a delivered state the only step is the stutter step with probability 1. | Test (TC-622) |
+| FR-187-AC-2 | The `Link` model (object `m: Msg { delivered: Bool, attempts: Int[0, 2] }`, initially undelivered with 0 attempts; operations `send_a(random lost: Bool ~ { true: 1, false: 9 })` and `send_b(random lost: Bool ~ { true: 1, false: 4 })`, each with precondition `not self.delivered and self.attempts < 2` and postcondition `self.attempts = pre(self.attempts) + 1 and self.delivered = not lost`; `terminal when self.delivered or self.attempts = 2`) under the workload `Even` (weight 1 on each operation) at its initial state: `send_a` with `lost = false` has probability `9/20`, `send_a` lost `1/20`, `send_b` delivered `2/5`, `send_b` lost `1/10`. `actions` at the same state returns two actions in canonical order, each with draws summing to 1. At a delivered state the only step is the stutter step with probability 1. | Test (TC-622) |
 | FR-187-AC-3 | A variant of `Health` (ADR-024 §7.1) whose `tick` postcondition leaves a second Boolean field unconstrained: `weighted_steps` at the initial state returns `NotMarkov` naming the state key, `tick`, the drawn `fault` value and 2 post-states; `actions` returns one action whose draws each carry two successors. A variant whose postcondition is unsatisfiable for `fault = true` returns `NotMarkov` with 0 post-states from both. | Test (TC-622) |
 | FR-187-AC-4 | A reward `refund = n - 3` on an operation with parameter `n: Int[0, 5]` refuses admission with `NegativeReward` naming `n = 0`. Over every state of `Service`, the set of transitions with positive probability under `Steady` equals FR-120's successor set. | Test (TC-622) |
 
