@@ -34,7 +34,7 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 ## Expected Results
 
 - Step 1: eight records (one `Initial`, seven `Step`) with empty hypotheses;
-  seven, none for `commitB`.
+  none with `commitB -> any`.
 - Step 2: no `StepSimulationRecord`; one refinement record each.
 - Step 3: every record lists `CasInv`; `CasInv`'s own record is present; the
   `Initial` identity differs from step 1's.

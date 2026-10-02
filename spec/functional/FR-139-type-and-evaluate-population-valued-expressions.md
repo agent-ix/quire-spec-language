@@ -76,8 +76,9 @@ one mapping row.
   FE-3, FR-107) over the state's observation, charging one work unit per
   object visited and per `seq` element.
 - `only` SHALL evaluate to `e` for the one object satisfying `c`; when no
-  object or more than one satisfies it, the form SHALL be undefined, and the
-  mapping that contains it is undetermined (FR-140).
+  object or more than one satisfies it, the form SHALL evaluate undefined,
+  so the row that contains it evaluates undefined and the refinement settles
+  `refuted` with `UndefinedEvaluation` (FR-140, FR-142; QSpec FR-376).
 - `seq(i in lo .. hi: e)` SHALL evaluate to the sequence of `e` for each
   integer from `lo` to `hi` in ascending order, empty when `hi < lo`.
 

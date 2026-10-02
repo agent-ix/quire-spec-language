@@ -26,13 +26,14 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` module SHALL compute `map(s, h)`, the abstract
+QSL's layer-6 crate `qsl-replay` SHALL compute `map(s, h)`, the abstract
 state that a concrete state `s` with history values `h` maps to (ADR-020
 RM-7). It builds each abstract population as the key-preserving image of
 its source population (RM-2), gives each image object the abstract type
 mapped from its concrete most-specific type (RM-3), and evaluates each
-visible field row through the one clause evaluator. A row that does not
-evaluate makes the mapping undetermined at that state.
+visible field row through the one clause evaluator. A row that evaluates
+undefined refutes the refinement at that state; a row that is refused or
+incomplete makes the mapping undetermined there (QSpec FR-377).
 
 ## Use case
 
@@ -92,8 +93,8 @@ pub struct MappingUndetermined {
 - If a row's evaluation is `Undefined`, then `map_state` SHALL return
   `MappingFailure::Undefined` naming the row, the object and the
   evaluator's undefined cause, and no partial state (ADR-020 RE-5).
-- If a row's evaluation is refused or incomplete, or its value lies outside
-  the abstract field's declared type, then `map_state` SHALL return
+- If a row's evaluation is refused or incomplete, then `map_state` SHALL
+  return
   `MappingFailure::Undetermined(MappingUndetermined)` naming the row and the
   object, and no partial state.
 - When the refinement has no hidden field, `map_state` SHALL return a
@@ -114,6 +115,7 @@ pub struct MappingUndetermined {
 | FR-140-AC-2 | Over `RingIsQueue` (FR-139's fixture) at `head = 1`, `size = 2`, `s0.value = 0`, `s1.value = 1`, the mapped state holds one `Queue` with key `r` and `items = [1, 0]`, and no object for `s0` or `s1`. | Test (TC-545) |
 | FR-140-AC-3 | `RingIsQueue` with the `items` row's `only` condition changed to `s.ring = self` returns `MappingFailure::Undefined` naming the `items` row, object `r` and the evaluator's undefined cause, at every state with `size >= 1`. | Test (TC-545) |
 | FR-140-AC-4 | Over `RegisterHistory` (FR-138's fixture), the concrete state `value = 1` with `last = 0` maps to `value = 1`, `prev = 0`. With the `prev` row removed, the same state maps to `visible` with `value = 1` and `hidden = [(r, prev)]`. | Test (TC-545) |
+| FR-140-AC-5 | `RingIsQueue` (FR-139's fixture) at `head = 1`, `size = 2`, evaluated with a per-evaluation meter budget of zero: the `items` row evaluates `Incomplete`, and `map_state` returns `MappingFailure::Undetermined(MappingUndetermined)` naming the `items` row and object `r`, with no partial state. | Test (TC-555) |
 
 ## Dependencies
 

@@ -25,7 +25,7 @@ relationships:
 ## Description
 
 When the abstract fairness set `F_A` is non-empty and the safety half
-holds, QSL's layer-5 `model_check` module SHALL decide the liveness half of
+holds, QSL's layer-A crate `qsl-analyze`, module `model_check`, SHALL decide the liveness half of
 a refinement in EN-1's second phase (ADR-020 RS-7, RS-10, RS-13, CO-2,
 RE-1): every behaviour of the concrete subject that is fair under `F_C`
 satisfies `F_A` on its mapped behaviour. It decomposes FR-142's retained

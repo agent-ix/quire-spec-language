@@ -94,8 +94,8 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
   libraries. An alias that resolves to neither SHALL refuse
   `missing_declaration`/`missing-name` at the alias's span.
 - The checker SHALL refuse a refinement whose unit does not select the
-  infinite-trace profile with `unsupported_construct`/`expression-form` at
-  the profile's span.
+  infinite-trace profile with `unknown_profile`/`wrong-selection-role` at
+  the alias, as QSpec FR-375 states.
 - The abstract subject's contract clauses SHALL be read from the declaring
   package when the abstract alias is local, and from the dependency's
   checked package otherwise.
@@ -155,7 +155,7 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-135-AC-1 | ADR-020 §8's `CasRefinesCounter`, with `Spec` and `Impl` both local, checks to a `CheckedRefinement` with one population row (`counters` from `counters`), one object row with the field row `value = self.value` and no hidden field. The same declaration with `Spec` supplied as a dependency package checks with `AbstractSide::Dependency` carrying that package's `package_id`. | Test (TC-540) |
-| FR-135-AC-2 | Refusals, each at its span with no `CheckedRefinement`: the abstract alias `Nope`, resolving to no model (`missing_declaration`/`missing-name`); the `population` row removed (`missing_declaration`/`missing-name` naming `Spec::counters`); the row written twice (`invalid_model_binding`/`conflicting-binding`); the row reversed as `population Impl::counters from Spec::counters` (`invalid_model_binding`/`malformed-declaration`); the `object` row removed (`missing_declaration`/`missing-name` naming `Spec::Counter`); `value` mapped twice (`invalid_model_binding`/`conflicting-binding` naming both rows); the declaration in a unit that selects a bounded profile (`unsupported_construct`/`expression-form`). | Test (TC-540) |
+| FR-135-AC-2 | Refusals, each at its span with no `CheckedRefinement`: the abstract alias `Nope`, resolving to no model (`missing_declaration`/`missing-name`); the `population` row removed (`missing_declaration`/`missing-name` naming `Spec::counters`); the row written twice (`invalid_model_binding`/`conflicting-binding`); the row reversed as `population Impl::counters from Spec::counters` (`invalid_model_binding`/`malformed-declaration`); the `object` row removed (`missing_declaration`/`missing-name` naming `Spec::Counter`); `value` mapped twice (`invalid_model_binding`/`conflicting-binding` naming both rows); the declaration in a unit that selects a bounded profile (`unknown_profile`/`wrong-selection-role` at the alias). | Test (TC-540) |
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
 

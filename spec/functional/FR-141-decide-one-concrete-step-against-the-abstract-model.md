@@ -26,10 +26,11 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` module SHALL hold one function that decides
+QSL's layer-6 crate `qsl-replay` SHALL hold one function that decides
 each concrete step of a refinement, `check_step`, and one that decides each
 concrete initial state, `check_initial` (ADR-020 RS-1 to RS-6, AX-2). The
-explicit-state product (FR-142, FR-143) and replay (FR-145) call these and
+explicit-state product (FR-142, FR-143), replay (FR-145) and the simulation
+certificate checker (FR-149) call these and
 no other step rule, as every temporal engine answers to the trace evaluator
 (ADR-018 SM-1). The initial-state and step rules they decide are QSpec
 FR-377's, and the hidden-field candidate set is QSpec FR-378's (ADR-020
@@ -82,8 +83,9 @@ pub enum Taken { Stutter, Abstract(Vec<ModelTransition>) }  // abstract identiti
 `RefinementFailure` is ADR-020 RC-1's: `InitialNotAbstract{initial}`,
 `StutterChanged{position}`, `AbstractStepRejected{position, transition,
 cause}` with cause `Precondition{clause}`, `Frame{code}` or
-`Postcondition`, `NoAbstractMatch{position}`, and the liveness kinds of
-FR-143.
+`Postcondition`, `NoAbstractMatch{position}`, the liveness kinds of
+FR-143, and `Undefined{position, row}`, QSpec FR-379's seventh kind, which
+the engine writes from a `StepVerdict::Undefined` (FR-142).
 
 ## Behavior
 
@@ -170,6 +172,7 @@ how it evaluates them and what it reports:
 | FR-141-AC-4 | Fixture `Coin`: abstract `Spec::Coin` with `tossed: Boolean`, `side: Int[0, 1]`, `shown: Boolean`, `face: Int[0, 1]`, operation `toss()` (precondition `not self.tossed`, frame `modifies [tossed, side]`, postcondition `self.tossed`) and `show()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown and self.face = self.side`), initial all false and 0; concrete `Impl::Coin` with `tossed`, `shown`, `face`, operations `toss()` (precondition `not self.tossed`, frame `modifies [tossed]`, postcondition `self.tossed`) and `reveal()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown`); rows `tossed`, `shown` and `face` mapped by name, `side` hidden, `toss -> Spec::Coin::toss(self)`, `reveal -> Spec::Coin::show(self)`. After concrete `toss` the candidate set holds two states, `side` 0 and `side` 1; after `reveal` to `face = 1` it holds the one with `side` 1. With the row `side = self.face` added, `reveal` to `face = 1` fails `AbstractStepRejected{transition: show(c), cause: Frame{…}}`. | Test (TC-546) |
 | FR-141-AC-5 | Over FR-136-AC-4's protocol subject with branch `A`'s attempt node mapped `-> any` and `incA` mapped `-> Spec::Counter::inc(self)`, a step of that attempt node that leaves `value` unchanged passes RS-5 with `Taken::Stutter`, so the node row was selected; the `fork` step, mapped `-> stutter`, passes RS-3. | Test (TC-546) |
 | FR-141-AC-6 | Over `RegisterHistory` with FR-138's `inv` update, `check_step` on `write(r, 0)` from the initial state returns `Undefined` with `where` position 1, the `inv` update and object `r`, cause `division-by-zero`; with the `writes` update of FR-138-AC-4 instead, the second `write(r, 0)` returns `Undetermined(MappingUndetermined)`. | Test (TC-554) |
+| FR-141-AC-7 | Over `RingIsQueue` with the row `put -> enq(self.ring, 2 / self.size)`, `check_step` on `put(1)` from the empty queue returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with the original row and a per-evaluation meter budget of zero for the argument `self.ring`, it returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
 
 ## Dependencies
 

@@ -56,8 +56,8 @@ relationships:
 
 ## Status
 
-Proposed, 2026-10-01. Draft for plan-lead review of the key decisions; the
-QSL compiler requirements that implement it are FR-135 to FR-148, exercised
+Proposed, 2026-10-01. §11 records the rulings on every question; the
+QSL compiler requirements that implement it are FR-135 to FR-149, exercised
 by US-018. It builds on ADR-018, itself a draft. ADR-027 (the protocol
 transition system) amends RM-5, RM-6, CO-4, MC-1, RC-1 and RC-2 for
 protocol subjects; each amended item says so. The plan lead's rulings on the draft's open questions
@@ -157,6 +157,7 @@ refinement <Name> using <infinite-trace profile> abstract <A> concrete <C> {
 | RM-6 | **Fairness rows.** `assume` rows are the concrete fairness set `F_C` and `ensure` rows the abstract fairness set `F_A`, each an ADR-018 FA-1 constraint over its own model's operations. A row with no granularity is `whole`, as ADR-018 FA-6 reads an unmarked constraint; a row that means `each` spells it. Either set may be empty. **Over a protocol subject** (amended by ADR-027 PA-3) `F_C` also holds the concrete protocol's derived scheduler constraints, one `fair weak whole` per thread target, with their `scheduler` origin, unless the concrete protocol declares `scheduling adversarial`. |
 | RM-7 | **Mapping functions.** For a concrete state `s` with history values `h`, `map(s, h)` is the abstract state built by RM-2 and RM-3 from the visible rows. A row whose evaluation is undefined at a reachable state refutes the refinement there (RE-5); one that is refused or incomplete makes `map` undetermined there (RE-4). Each `e` is evaluated through the one clause evaluator (ADR-016 FE-3) over `s`'s synthesized observation (ADR-016 ID-10) with a fresh meter, as a value-typed body. |
 | RM-8 | **Population-valued expressions (data refinement).** Inside a refinement declaration (mapping rows, step-row arguments and history updates), a concrete population name `<C>::<pop>` denotes the set of that population's objects in the current state, of type `Set<Reference<T>>[0, n]` with `T` the population's member type and `n` its universe size. Rows read it through these forms: `count(x in P where c)`, `sum(x in P where c: e)`, `exists(x in P where c)`, `all(x in P where c)`, `only(x in P where c: e)`, which is `e` for the one object of `P` satisfying `c`, and `seq(i in lo .. hi: e)`, the sequence of `e` for each integer from `lo` to `hi` (empty when `hi < lo`), whose declared maximum length is computed from the bounds of `lo` and `hi`. One abstract object or field value can so be built from a whole concrete population. S3 types each form and checks the result against the abstract field as RM-4 does. An `only` that finds no object or several objects evaluates undefined, which refutes the refinement with `UndefinedEvaluation{where, cause}` at that state (RE-5). State-clause bodies keep ADR-016 FE-4; the forms live in refinement declarations. The spelling is QSpec's (QS-10). |
+| RM-9 | **An abstract protocol side.** The abstract side may name a checked protocol clause of the abstract model, written `abstract <A>::<protocol>`, which makes the abstract subject a protocol subject (MC-1, ADR-027 PS-1). The declaration then carries `internal <A>::<protocol>::<node>` rows, each naming an abstract step class that is internal; every other abstract step is visible with its observation label. A step row may target an abstract protocol node as well as an abstract operation. The spelling is illustrative; QSpec's shared grammar owns it (QS-11). |
 
 The refinement declaration enters the checked package as a node, so its
 identity enters the `package_id` and every obligation identity that cites it
@@ -166,7 +167,7 @@ identity enters the `package_id` and every obligation identity that cites it
 
 | ID | Rule |
 | --- | --- |
-| RS-1 | **The step check is the semantics.** One layer-5 function decides each concrete step: `check_step(refinement, abstract subject, (s, h), t, (s', h')) -> StepVerdict`. EN-1, the SMT encodings and replay answer to it, as every temporal engine answers to the trace evaluator (ADR-018 SM-1, SM-7). |
+| RS-1 | **The step check is the semantics.** One function in layer 6, crate `qsl-replay`, decides each concrete step: `check_step(refinement, abstract subject, (s, h), t, (s', h')) -> StepVerdict`. EN-1 (layer A, crate `qsl-analyze`), the SMT encodings, replay and the simulation certificate checker (CT-1) answer to it, as every temporal engine answers to the trace evaluator (ADR-018 SM-1, SM-7). |
 | RS-2 | **Initial states.** For each initial state `c0` of the concrete subject, with history initial values `h0`, `map(c0, h0)` equals, by state key, one initial state of the abstract subject. The abstract subject's initial states are its own FR-106 snapshots. |
 | RS-3 | **A `stutter` step** passes when `map(s', h') = map(s, h)` by state key. |
 | RS-4 | **An abstract-operation step** passes when the abstract transition identity it names (the abstract operation; the receiver; the arguments evaluated at `(s, h)`, each `_` ranging over its parameter domain) is a transition from `a = map(s, h)` to `a' = map(s', h')` under FR-120: the effective precondition holds at `a`, `StateModel::check_frame` over `(a, a')` returns a delta, and the effective postcondition is true over `(a, a', delta)` with the abstract result bound to the concrete step's result when RM-5 binds it, or with some value of the result domain otherwise. These are the same calls `ModelSystem` makes when it expands `a`, applied to one candidate. |
@@ -252,7 +253,7 @@ set holds both sides, and the concrete `reveal` prunes it to the one shown.
 | ID | Engine | Checks | Verdicts |
 | --- | --- | --- | --- |
 | RE-1 | **EN-1, refinement product.** The product `TransitionSystem` (ADR-018 EN-1) whose state is (concrete state, history values, monitor state), plus the AX-2 set when hidden fields exist; its key adds the history values and the set's sorted abstract state keys. Phase 1 runs `check_step` on each retained edge (CO-1). Phase 2 runs SCC decomposition on the retained graph when `F_A` is non-empty, with the Büchi automaton for the negation of `F_A` read through the mapping (CO-2, carrying RS-7) and the `F_C` filter. | the whole refinement, RS-8 | V-1, V-4, V-5, V-6, V-7; V-8 for AX-5 |
-| RE-2 | **SMT per-step simulation.** One `operation-contract` obligation per `step` row and one for RS-2, as QSpec FR-290's state-model refinement row states. For a step row of operation `o`: the concrete invariants, `o`'s effective precondition, its frame and its postcondition over `(s, s')` imply RS-3 or RS-4 over `(map(s), map(s'))`. The concrete package's invariant clauses are the induction hypothesis; each is its own `operation-contract` record. | safety half, functional mappings, step rows other than `any` | V-3 with `Inductive{depth: 1}` and basis `decisive-witness`; V-6 `InductionNotClosed{depth: 1}` when a step obligation fails from a pre-state that satisfies the invariants |
+| RE-2 | **SMT per-step simulation.** One `operation-contract` obligation per `step` row and one for RS-2, as QSpec FR-290's state-model refinement row states. For a step row of operation `o`: the concrete invariants, `o`'s effective precondition, its frame and its postcondition over `(s, s')` imply RS-3 or RS-4 over `(map(s), map(s'))`. The concrete package's invariant clauses are the induction hypothesis; each is its own `operation-contract` record. | safety half of a declaration with no hidden field, no history field and no `any` row (QSpec FR-377 Engines, FR-377-AC-7) | V-3 with `Inductive{depth: 1}` and basis `decisive-witness`; V-6 `InductionNotClosed{depth: 1}` when a step obligation fails from a pre-state that satisfies the invariants |
 | RE-3 | **SMT unrolling (ADR-018 EN-2)** with the RS-1 edge monitor | safety half refutation, liveness half lasso refutation | V-4, V-5 |
 | RE-4 | **Verdict causes.** `InconclusiveCause` gains `MappingUndetermined`, wire cause `mapping-undetermined`: a mapping row, an argument expression or a history update was refused or incomplete, or a history update left its declared type, at a reachable state. `UndecidedSuccessor` (ADR-018 V-6) covers an undecided contract conjunction of either subject during expansion or `check_step`. | | V-6 |
 | RE-5 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply to the mapping. When a mapping row, an argument expression or a history update evaluates undefined at a reachable state, the refinement settles `refuted`, V-4, with cause `UndefinedEvaluation{where, cause}`. `where` names the position of the step's post-state (0 for an initial state), the row, argument or update, and the object; `cause` is the evaluator's undefined cause. The counterexample is a refinement counterexample (RC-1) ending at that step, its `kind` the `UndefinedEvaluation`, and it ranks like any other failure: the first in canonical breadth-first order. | | V-4 |
@@ -268,8 +269,8 @@ S3 writes every one of these records, as it writes every requirement record
 (ADR-012): the refinement record (FR-144), the RE-2 per-step records
 (FR-146), and the `refinement` record of a refinement whose abstract side is
 a protocol subject (FR-147). RE-2 records are written for a refinement with
-no hidden field and no history field, since `map` is then a function of the
-concrete state alone.
+no hidden field, no history field and no `any` row, since `map` is then a
+function of the concrete state alone and every step row has an obligation.
 
 **Strength.** RE-1's `proved` holds for the concrete subject (its initial
 states and universes) against the abstract subject with the derived
@@ -288,9 +289,24 @@ SMT arm routes RE-2 and RE-3 records after IR admits state nodes and transition 
 
 | ID | Rule |
 | --- | --- |
-| RC-1 | **Content.** A refinement counterexample is ADR-018's `TemporalCounterexample` over the concrete subject (ADR-018 CX-2) with a `RefinementFailure` member: `InitialNotAbstract{initial}` (RS-2); `StutterChanged{position}` (RS-3); `AbstractStepRejected{position, transition, cause}` with cause `Precondition{clause}`, `Frame{code}` or `Postcondition` (RS-4); `NoAbstractMatch{position}` (RS-5, or an empty AX-2 set); `Divergence{constraint}` (RS-7: an `F_A` constraint violated by a lasso whose loop has only `stutter` steps, including the concrete terminal stutter); `AbstractUnfair{constraint}` (an `F_A` constraint violated by a lasso whose loop takes abstract steps). A safety failure is a finite prefix ending at its failing step; a liveness failure is a lasso fair under `F_C`. The counterexample carries concrete steps only; replay recomputes mapped states and history values. Over a concrete protocol subject (amended by ADR-027 PX-1) the steps are protocol transition identities with their post-state digests. An undefined mapping row, argument expression or history update (RE-5) gives a refinement counterexample whose prefix ends at that step and whose `kind` is `UndefinedEvaluation{where, cause}`, in place of a `RefinementFailure`. |
+| RC-1 | **Content.** A refinement counterexample is ADR-018's `TemporalCounterexample` over the concrete subject (ADR-018 CX-2) with a `RefinementFailure` member: `InitialNotAbstract{initial}` (RS-2); `StutterChanged{position}` (RS-3); `AbstractStepRejected{position, transition, cause}` with cause `Precondition{clause}`, `Frame{code}` or `Postcondition` (RS-4); `NoAbstractMatch{position}` (RS-5, or an empty AX-2 set); `Divergence{constraint}` (RS-7: an `F_A` constraint violated by a lasso whose loop has only `stutter` steps, including the concrete terminal stutter); `AbstractUnfair{constraint}` (an `F_A` constraint violated by a lasso whose loop takes abstract steps). A safety failure is a finite prefix ending at its failing step; a liveness failure is a lasso fair under `F_C`. The counterexample carries concrete steps only; replay recomputes mapped states and history values. Over a concrete protocol subject (amended by ADR-027 PX-1) the steps are protocol transition identities with their post-state digests. An undefined mapping row, argument expression or history update (RE-5) gives a refinement counterexample whose prefix ends at that step, whose `RefinementFailure` is the seventh kind, `Undefined{position, row}` (QSpec FR-379), and whose `kind` is `UndefinedEvaluation{where, cause}`. |
 | RC-2 | **Replay.** E9 replay recompiles the concrete package and the abstract subject's package (FR-098, ADR-015), re-executes the concrete steps through the concrete `ModelSystem` as ADR-018 CX-3 does, recomputes history values, `map` and the AX-2 sets along the trace, and reruns `check_step` at the failing position or, for a lasso, checks it fair under `F_C` and evaluates the violated `F_A` constraint over its loop (RS-7). For a lasso, replay recomputes history values and the AX-2 sets over the prefix and one pass of the loop, and refuses `invalid_runtime_input`/`invalid-value` when the history values or the set at the loop's last position differ from those at its entry, as ADR-018 CX-3 refuses a loop that does not close: EN-1's lasso closes in the product state, which holds them. Positions past the recomputed loop are read by ADR-018 SM-8's lasso evaluation; the `F_A` constraints and RS-7 read state only, so their past reach is 0 and one loop pass decides them. Agreement settles `reproduced-with-evaluated-witness` and the item `refuted`. A recomputed failure of a different kind or at a different position settles `inconclusive`, `ReplayParity`. ADR-018 CX-3's refusals apply unchanged. Over a concrete protocol subject (amended by ADR-027 PX-2) replay re-executes the steps through `ProtocolSystem` with ADR-027 PX-2's refusals, and checks a lasso fair under `F_C` over ADR-027 PA-1's classes, scheduler constraints included. An `UndefinedEvaluation` counterexample replays by ADR-018 UE-5 over the recomputed history values and mapped states: the first undefined evaluation along the prefix at `where`, with an equal cause, reproduces it. |
 | RC-3 | **Source arm.** The packet uses ADR-018's `ReplaySource::ModelTrace` with the refinement node's identity, and the arm result names the `RefinementFailure` it reproduced. |
+
+### 6a. The simulation certificate and its checker
+
+A `proved` safety half rests on a simulation relation between the concrete
+subject, with its history values, and the abstract subject. EN-1 hands that
+relation over as a certificate, and a checker in the qualified core accepts
+it with its own code, reading nothing from EN-1's search but the
+certificate (ADR-029 CB-2, RU-2).
+
+| ID | Rule |
+| --- | --- |
+| CT-1 | **Certificate.** A `SimulationCertificate` names the refinement node, the concrete and abstract `package_id`s and the request's obligation identity, and holds the relation: a list of positions, each a concrete state key, the history values (QSpec FR-378's encoding) and the abstract candidate set as sorted abstract state keys; for each concrete initial state, in the subject's order, the index of its position; and for each position, one entry per concrete successor in FR-120's canonical transition order, each the transition identity, the index of the post position and the `Taken` that `check_step` returned. EN-1 writes it from the retained product of a safety half that completed with no failure. |
+| CT-2 | **Check rule.** `check_simulation_certificate`, a layer-6 entry of `qsl-replay` beside `replay`, recompiles both packages (FR-098) and re-admits both subjects from the byte provision. It accepts exactly when: (a) for each concrete initial state, `check_initial` passes with the position the certificate names for it; (b) for each position, the concrete successors that FR-120's `ModelSystem` computes are exactly the listed entries, in order; and (c) for each entry, `check_step` from that position passes with the listed post position and `Taken`. A relation that holds the initial states and is closed under (b) and (c) is a step-wise simulation, so every concrete behaviour passes the step rules: the safety half holds. The checker calls the same `check_step` as EN-1 and replay (RS-1), so it adds no second step semantics. |
+| CT-3 | **Verdict path.** A safety half that EN-1 proves leaves S6c with its certificate over ADR-018's E11, as a refutation leaves with its counterexample, and its `proved` settles only after the checker accepts. A rejection settles `inconclusive`, `CertificateRejected`, naming the first failing position and check. A checker that a caller limit (FR-126's `max_states`, `max_transitions`) stops settles V-7, naming the limit. The checker refuses a certificate whose identities differ from the item's. |
+| CT-4 | **Certified and uncertified proofs.** A `proved` whose every half was accepted by a core certificate checker is certified: its terminal record names the checker. A `proved` that rests on a half with no core checker settles `proved` all the same, labelled `uncertified`, which says it is not qualified evidence (RU-7). This record specifies the checker for the safety half only, so a refinement with a liveness half (`F_A` non-empty) settles `proved`, `uncertified`; the label goes once a liveness certificate checker exists. RE-2 per-step records settle by their own backends' rules (ADR-012). |
 
 ### 7. One mechanism, with the abstraction relation as its code-side premise
 
@@ -305,7 +321,7 @@ obligation shape of RE-2, and it is discharged by CG's backends.
 | | Model-to-model (this record) | Protocol refinement (QSpec FR-177) | Abstraction relation (QSpec FR-353) |
 | --- | --- | --- | --- |
 | Both sides | two checked packages, each a model subject with a `ModelSystem` (FR-120) | two protocol models with an exact correspondence | a model element and a Rust item named by `RustPath` (ADR-017 AR-2) |
-| Who explores the sides | QSL layer 5, EN-1 over both | QSL layer 5, EN-1 over `ProtocolSystem` (ADR-027 TS-1) | neither side; Kani and Verus check the code |
+| Who explores the sides | QSL layer A (`qsl-analyze`), EN-1 over both | QSL layer A (`qsl-analyze`), EN-1 over `ProtocolSystem` (ADR-027 TS-1) | neither side; Kani and Verus check the code |
 | Mapping | `map` from concrete to abstract state, plus the step map | correspondence relation, visible-step matching, internal steps | model key to Rust path; the abstraction function is reading the bound representation |
 | QSL check | S3 typing (RM-4, RM-5); `check_step` at S6c | the same `check_step`, with each concrete step's explicit row giving its observation label or making it internal (ADR-027 PR-2), the abstract control state hidden and tracked by AX-2's set, plus divergence-freedom, refusal-set, terminal-success and assumption checks on the same product | S3 key and syntax checks (ADR-017 AR-3); per-item unbound refusal at export (AR-4) |
 | Claim kind | `temporal-satisfaction` (RE-1); `operation-contract` per step (RE-2) | `refinement` | none; a premise of the `operation-contract` claim it binds |
@@ -500,7 +516,7 @@ mapping-row evaluation is a value-typed use of the FE-3 clause evaluator.
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | S2 form and S3 checks (RM-1 to RM-6, AX-1 typing); the S4 node; layer-5 `check_step`, the refinement product (RE-1), history fields, the AX-2 set, the `F_A` automaton, RM-8's population-valued forms, `MappingUndetermined`; `RefinementFailure` in `TemporalCounterexample`; RC-2 in replay. |
+| DS-1 | QSL | S2 form and S3 checks (RM-1 to RM-6, AX-1 typing); the S4 node; `check_step`, `map_state`, the simulation certificate checker (CT-1) and settlement in `qsl-replay`; the refinement product (RE-1) in `qsl-analyze`; history fields, the AX-2 set, the `F_A` automaton, RM-8's population-valued forms, `MappingUndetermined`; `RefinementFailure` in `TemporalCounterexample`; RC-2 in replay. |
 | DS-2 | CG | The EN-1 arm reads form TP-5 and its halves; the SMT arm routes RE-2 per-step `operation-contract` records and RE-3. |
 | DS-3 | IR | The SMT encoding of RE-2's step obligation (two models' transition relations and the mapping as terms), with ADR-018 DS-3's state-node admission. |
 | DS-4 | Driver | Supplies the abstract subject's package to S6c and to E9 replay. |
@@ -545,16 +561,18 @@ the step map treat keys uniformly, which every RM-2 key-preserving map does.
 | QS-3 | History fields: initial value, per-operation update, receiver-only writes, and the rule that an update never removes a step (AX-1, AX-3) | QSpec FR-378 |
 | QS-4 | The `quire.checked-package/v2` node for a refinement declaration and its place in the obligation identity | QSpec v2 contract, FR-331 |
 | QS-5 | Claim kinds: the whole refinement as `temporal-satisfaction`; the per-step obligations as the existing `operation-contract` row, with the step obligation of RE-2 stated as that row's "implication between the two contracts' clauses"; the `refinement` kind's scope as the `protocol` family only | QSpec FR-290 |
-| QS-6 | Counterexample wire: the `RefinementFailure` member and its six kinds; replay rules of RC-2; the `mapping-undetermined` and `replay-parity` inconclusive causes | QSpec FR-379, FR-331 and the counterexample contract; QSpec FR-360 |
+| QS-6 | Counterexample wire: the `RefinementFailure` member and its seven kinds, `Undefined{position, row}` among them; replay rules of RC-2; the `mapping-undetermined` and `replay-parity` inconclusive causes | QSpec FR-379, FR-331 and the counterexample contract; QSpec FR-360 |
 | QS-7 | Vertical composition: a claim over a concrete subject discharged from an abstract claim and a refinement (CO-3, CO-5); the per-clause transfer rule over the stutter-invariant fragment, under which a clause with an interval operator (bounded or mixed) or a previous operator does not carry (CO-3, CO-4); fairness implication between `F_A` and the claim's fairness set; transfer of liveness clauses from a verdict over the abstract subject's stutter closure (CO-3); the record QSL implements with no interim form of its own (CO-5); its premises, its basis, and whether QSpec FR-348 covers it or a new FR does | QSpec FR-380 |
 | QS-8 | QSpec FR-177's relation stated over the same step rules: internal actions as `stutter`, visible steps as step-map rows with observations, with divergence-freedom, refusal sets, terminal success and assumption weakening as the protocol-only additions (MC-1) | QSpec FR-177 |
 | QS-9 | Conformance vectors, each with expected verdict and, for a refutation, a counterexample that must replay: (a) §8's holding case, lost-update case, divergence case refuted with its `ensure` row, and the same divergence model holding as a safety refinement without it; (b) the lost-update model with both commit rows `-> any`, whose first lost update passes as a stutter and which is refuted `NoAbstractMatch{position: 6}` where a stale commit lowers `value` from 2 to 1 (§8); (c) an initial-state mismatch; (d) a `stutter` step that changes a mapped field; (e) a history-field refinement that holds, and the same refinement with the row for the history-backed abstract field removed, so that field is hidden and, with an `ensure` row, the liveness half settles `unsupported`; (f) a hidden-field safety refinement that holds where every functional mapping fails (the coin of §4); (g) a mapping row that evaluates undefined, settling `refuted` with cause `undefined-evaluation` and a counterexample that replays to the undefined value, and a row that is refused, settling `inconclusive`, `mapping-undetermined`; (h) replay refusals and a `ReplayParity` case; (i) a concrete halt at an abstract-terminal state, with the same refinement verdict under every combination of the two models' `terminal` members, and with the concrete deadlock-freedom item proved under `terminal when` written from the abstract predicate (RS-11); (j) a concrete halt at a state where the abstract model can move, holding with `F_A` empty and refuted `Divergence` when an `F_A` constraint is enabled there, with the same verdicts under every combination of `terminal` members; (k) a mixed clause and a clause using previous, each proved on the abstract subject, that do not transfer, and are checked directly on the concrete subject, with a model where the previous clause's concrete verdict differs; (l) §8's ring-buffer refinement holding, and the broken `take` refuted; (m) an `only` that finds no object, settling `refuted` with cause `undefined-evaluation`; (n) a liveness clause proved over maximal abstract behaviours but refuted over the stutter closure, which does not transfer | QSpec TC-200 neighbourhood and new TCs |
 | QS-10 | Population-valued expressions in refinement declarations (RM-8): a concrete population name as the set of its objects, the `count`, `sum`, `exists`, `all`, `only` and `seq` forms, their typing, the declared maximum length of `seq`, and undefinedness of `only` | QSpec FR-376 |
+| QS-11 | The abstract protocol side of a refinement declaration (RM-9): `abstract <A>::<protocol>`, `internal` rows naming abstract step classes, and step rows targeting abstract protocol nodes, with the relation of QS-8 over them | QSpec FR-375 and FR-177 |
+| QS-12 | The `uncertified` label on a `proved` terminal record, the checker name on a certified one, and the `CertificateRejected` inconclusive cause (CT-3, CT-4) | QSpec FR-379, FR-331 and FR-281 |
 
 ### 11. Rulings on the draft's questions
 
-The plan lead ruled on the draft's five open questions on 2026-10-01. The
-decisions above carry each ruling.
+The plan lead and the owner ruled on the draft's questions on 2026-10-01.
+The decisions above carry each ruling.
 
 | ID | Question | Ruling | Where |
 | --- | --- | --- | --- |
@@ -563,7 +581,8 @@ decisions above carry each ruling.
 | RU-3 | Whether transferred claims wait for QSpec | **They wait for QSpec's record (QS-7).** QSL defines no interim form | CO-5, §9 step 7 |
 | RU-4 | Whether liveness with hidden fields may settle `unsupported` | **`unsupported` in this version**, as an explicit verdict that names its cause | AX-5 |
 | RU-5 | Whether to ask QSpec for population-valued expressions | **Yes, now**, for data refinement such as a queue built from a ring buffer's slots and its head and size | RM-8, §8 data refinement, QS-10 |
-| RU-6 | How an undefined mapping row or history update settles | **Refuted**, cause `UndefinedEvaluation{where, cause}`, with a refinement counterexample ending at that step, which replay reproduces; refused and incomplete stay `MappingUndetermined` | ADR-018 RU-5 applies to every proof engine, and the mapping is part of the refinement claim | RM-7, AX-3, RE-4, RE-5, RC-1, RC-2 |
+| RU-6 | How an undefined mapping row or history update settles | **Refuted**, cause `UndefinedEvaluation{where, cause}`, with a refinement counterexample ending at that step, which replay reproduces; refused and incomplete stay `MappingUndetermined`. ADR-018 RU-5 applies to every proof engine, and the mapping is part of the refinement claim | RM-7, AX-3, RE-4, RE-5, RC-1, RC-2 |
+| RU-7 | How a proof without a core certificate checker settles | **`proved`, labelled `uncertified`** (owner, 2026-10-01). Certificate checkers are specified for every engine where a known certificate exists; for refinement that is the simulation relation of the safety half. The label goes per engine as its checker lands | CT-1 to CT-4 |
 
 ## Consequences
 
@@ -593,22 +612,18 @@ decisions above carry each ruling.
 
 Made in place, each with an "Amended by ADR-020" note: **ADR-011** §1 (the
 S6c row and E10 read the abstract subject's checked package) and §6.1
-(layer 3 `Relation` checker, layer 5 `model_check` with `check_step` and
-the refinement product); **ADR-012** §3 `Relation` row (the refinement
+(layer 3 `Relation` checker, layer A `model_check` with the refinement
+product, layer 6 `replay` with `check_step` and the certificate checker); **ADR-012** §3 `Relation` row (the refinement
 declaration with its `check` and `requirements` hooks); **ADR-017** RF-1
 (QSpec FR-290's state-model refinement row is owned by RE-2; the
 spec-versioning and profile-layering gates stay corpus tests), §3 AR-1 (a
 second `Relation` declaration with `CheckedRefinement`) and §5 PF-7
-(protocol refinement on this record's product over `ProtocolSystem`).
-
-To make on acceptance:
-
-- **ADR-018** §1: property form TP-5 Refinement, settled by EN-1 (both
-  halves), the SMT backend per-step (RE-2) and SMT unrolling (RE-3). V-6:
-  `MappingUndetermined`. §5 CX-2: the optional `RefinementFailure` member.
-  IV-7: its transfer restriction is this record's CO-3 and CO-4, which
-  also exclude previous operators; References: this record as the
-  refinement-mapping record.
+(protocol refinement on this record's product over `ProtocolSystem`);
+**ADR-018** §1 (property form TP-5 Refinement, settled by EN-1 for both
+halves, the SMT backend per step, RE-2, and SMT unrolling, RE-3), V-6
+(`MappingUndetermined`), §5 CX-2 (the optional `RefinementFailure` member)
+and IV-7 (its transfer restriction is this record's CO-3 and CO-4, which
+also exclude previous operators).
 
 ## Alternatives Considered
 

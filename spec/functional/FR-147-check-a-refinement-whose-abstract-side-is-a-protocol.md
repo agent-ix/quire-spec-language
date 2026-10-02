@@ -27,7 +27,7 @@ relationships:
 The refinement checker (FR-135) SHALL admit a refinement declaration whose
 abstract side names a checked protocol clause of the abstract model, which
 makes the abstract subject a protocol subject (ADR-027 PS-1, PR-2; ADR-020
-MC-1). This is QSpec FR-177's protocol refinement. The mapping rows define
+RM-9, MC-1). This is QSpec FR-177's protocol refinement. The mapping rows define
 the abstract model's visible fields; the abstract protocol's rest points,
 binders, queues and instances are hidden. Each concrete step's explicit row
 states its observation, and the declaration's `internal` rows list the
@@ -48,7 +48,8 @@ rows at compile time and requests one protocol refinement claim.
 
 - The parsed refinement form, whose abstract side is written
   `abstract <A>::<protocol>`, with `internal <A>::<protocol>::<node>` rows
-  (spelling QSpec's, ADR-020 QS-1 and QS-8).
+  (ADR-020 RM-9; the spelling is illustrative, and ADR-020 QS-11 asks QSpec
+  FR-375 and FR-177 for these forms).
 - The abstract model's checked protocol clause and its step classes
   (ADR-027 ST-1 to ST-15).
 

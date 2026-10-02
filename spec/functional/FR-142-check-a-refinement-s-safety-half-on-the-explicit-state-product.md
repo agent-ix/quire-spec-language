@@ -28,7 +28,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` module SHALL decide the safety half of a
+QSL's layer-A crate `qsl-analyze`, module `model_check`, SHALL decide the safety half of a
 refinement (ADR-020 RS-2 to RS-6, CO-1) on the explicit-state product
 (ADR-020 RE-1, ADR-018 EN-1) at stage S6c over edge E10. The product's state
 is the concrete state, its history values and, when the refinement has
@@ -118,8 +118,8 @@ pub fn check_refinement(
   `check_step` or `check_initial` returns `Undefined` SHALL end the phase
   with `Violated`. Its counterexample's prefix SHALL be the canonical path
   to that edge's pre-state followed by the edge, or empty for an initial
-  state, with `kind: UndefinedEvaluation{where, cause}` and no
-  `RefinementFailure`. An undefined mapping SHALL rank with a `Fails` edge
+  state, with `RefinementFailure::Undefined{position, row}` (QSpec FR-379)
+  and `kind: UndefinedEvaluation{where, cause}`. An undefined mapping SHALL rank with a `Fails` edge
   by the same order (ADR-020 RE-5).
 - `Undetermined(MappingUndetermined)` or `Undetermined(UndecidedSuccessor)`
   from `check_initial` or `check_step` SHALL return `Undecided` with that
@@ -150,7 +150,7 @@ pub fn check_refinement(
 | FR-142-AC-5 | `Coin` (FR-141-AC-4) with `side` hidden returns `Holds{Exhaustive}`; with the row `side = self.face` it returns `Violated` with prefix `toss`, `reveal` to `face = 1` and `AbstractStepRejected{position: 2, transition: show(c), cause: Frame{…}}`. | Test (TC-547) |
 | FR-142-AC-6 | `RingIsQueue` with universes `rings = {r}`, `slots = {s0, s1}` returns `Holds{Exhaustive}`; with the broken `take` it returns `Violated` with `AbstractStepRejected{…, transition: deq(r), cause: Postcondition}`; with FR-140-AC-3's `only` it returns `Violated` with a prefix ending at the first state with `size >= 1` in canonical order and `kind: UndefinedEvaluation` naming that position, the `items` row and object `r`. | Test (TC-547) |
 | FR-142-AC-7 | `CasRefinesCounter` with `max_states` 5 returns `Stopped{ResourceExhausted, {MaxStates, 5}}`; with `max_depth` 2, `BoundReached{depth: 2}`; with a `true` poll, `Stopped{Cancelled, None}`. Running AC-2's two requests twice gives equal outcomes and byte-equal counterexamples. | Test (TC-547) |
-| FR-142-AC-8 | `RegisterHistory` with FR-138's `inv` update returns `Violated` with prefix `write(r, 0)` and `kind: UndefinedEvaluation{where: (position 1, the inv update, r), cause: division-by-zero}`; FR-142-AC-4's `writes` variant still returns `Undecided(MappingUndetermined)`. | Test (TC-554) |
+| FR-142-AC-8 | `RegisterHistory` with FR-138's `inv` update returns `Violated` with prefix `write(r, 0)`, `RefinementFailure::Undefined{position: 1, row: inv}` and `kind: UndefinedEvaluation{where: (position 1, the inv update, r), cause: division-by-zero}`; FR-142-AC-4's `writes` variant still returns `Undecided(MappingUndetermined)`. | Test (TC-554) |
 
 ## Dependencies
 

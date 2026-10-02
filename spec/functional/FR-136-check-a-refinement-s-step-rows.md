@@ -123,7 +123,8 @@ pub enum StepTarget {
   expression.
 - The argument count SHALL equal the abstract operation's parameter count,
   with `_` for an argument the concrete step leaves open; a different count
-  SHALL refuse `invalid_model_binding`/`malformed-declaration` at the row.
+  SHALL refuse `ill_typed`/`operator-ineligible` at the row, as QSpec FR-375
+  states.
 - When both the concrete step's operation and the abstract operation
   declare a result, the concrete result type SHALL conform to the abstract
   result type after reference lifting, refusing `ill_typed`/`type-mismatch`
@@ -136,7 +137,7 @@ pub enum StepTarget {
 |----|----------|--------------|
 | FR-136-AC-1 | ADR-020 §8's `CasRefinesCounter` checks seven step rows: `commitA` and `commitB` as `Abstract{inc, receiver self, arguments [], binds_result: false}`, and the five others as `Stutter`. `RingIsQueue`'s `put` row checks as `enq(self.ring, x)` and its `take` row as `deq(self.ring)` with `binds_result: true`. | Test (TC-541) |
 | FR-136-AC-2 | Removing the `peek` row refuses `missing_declaration`/`missing-name` naming `Impl::Counter::peek`; writing `peek` twice, once `-> stutter` and once `-> any`, refuses `invalid_model_binding`/`conflicting-binding` naming both rows. A row `step Impl::Counter::nope -> stutter` refuses `missing_declaration`/`missing-name`. | Test (TC-541) |
-| FR-136-AC-3 | `step Impl::Counter::commitA -> Spec::Counter::inc(self, 1)` refuses `invalid_model_binding`/`malformed-declaration` (one argument too many). In `RingIsQueue`, `put -> enq(self.ring, self.index = 0)` refuses `ill_typed`/`type-mismatch` at the argument; `put -> enq(self.ring, _)` checks with `arguments [None]`; `take` mapped to an abstract operation whose result is `Boolean` refuses `ill_typed`/`type-mismatch`. | Test (TC-541) |
+| FR-136-AC-3 | `step Impl::Counter::commitA -> Spec::Counter::inc(self, 1)` refuses `ill_typed`/`operator-ineligible` (one argument too many). In `RingIsQueue`, `put -> enq(self.ring, self.index = 0)` refuses `ill_typed`/`type-mismatch` at the argument; `put -> enq(self.ring, _)` checks with `arguments [None]`; `take` mapped to an abstract operation whose result is `Boolean` refuses `ill_typed`/`type-mismatch`. | Test (TC-541) |
 | FR-136-AC-4 | Over a concrete protocol subject whose model has the two operations `incA` and `incB`, each mapped `-> Spec::Counter::inc(self)`, and whose `run` is a `parallel` with branches `A` and `B` holding one attempt of `incA` and one of `incB`, with rows for both operations and no `fork`, `join` or `finish` row, the checker refuses `missing_declaration`/`missing-name` naming the `fork` node first in source order. With node rows for `fork`, `join` and `finish` written `-> stutter` it checks; a further row naming branch `A`'s attempt node `-> any` checks and takes precedence over `incA`'s row for that node; two rows for the `join` node refuse `invalid_model_binding`/`conflicting-binding`. | Test (TC-541) |
 
 ## Dependencies

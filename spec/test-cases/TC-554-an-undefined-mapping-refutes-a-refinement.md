@@ -18,8 +18,9 @@ relationships:
 
 Verify that a history update that evaluates undefined refutes the
 refinement with an `UndefinedEvaluation` counterexample ending at that
-step, that a refused, incomplete or out-of-type update stays
+step, that an update whose value leaves its declared type stays
 `MappingUndetermined`, and that replay reproduces the undefined value.
+TC-555 covers refused and incomplete rows and arguments.
 
 Scope: FR-138-AC-5, FR-141-AC-6, FR-142-AC-8, FR-145-AC-5.
 
@@ -44,7 +45,7 @@ Tag the tests `#[trace("TC-554", "<AC id>")]`.
   successor.
 - Step 2: `Undefined` at position 1 naming the `inv` update and `r`; then
   `Undetermined(MappingUndetermined)`.
-- Step 3: `Violated`, prefix `write(r, 0)`, `kind: UndefinedEvaluation`;
+- Step 3: `Violated`, prefix `write(r, 0)`, `RefinementFailure::Undefined{position: 1, row: inv}`, `kind: UndefinedEvaluation`;
   `Undecided(MappingUndetermined)` for the `writes` variant.
 - Step 4: `reproduced-with-evaluated-witness`; then `inconclusive`,
   `ReplayParity`.

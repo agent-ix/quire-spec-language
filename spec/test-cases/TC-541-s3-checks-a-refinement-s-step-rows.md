@@ -37,7 +37,7 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 - Step 2: `missing_declaration`/`missing-name` naming `peek`;
   `invalid_model_binding`/`conflicting-binding` naming both rows;
   `missing_declaration`/`missing-name`.
-- Step 3: `invalid_model_binding`/`malformed-declaration`;
+- Step 3: `ill_typed`/`operator-ineligible`;
   `ill_typed`/`type-mismatch` at the argument; `arguments [None]`;
   `ill_typed`/`type-mismatch`.
 - Step 4: `missing_declaration`/`missing-name` naming the `fork` node;

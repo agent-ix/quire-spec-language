@@ -50,6 +50,7 @@ Tag the tests `#[trace("TC-547", "FR-142-AC-n")]`.
   Frame{…}}`.
 - Step 6: `Holds{Exhaustive}`; `AbstractStepRejected{…, deq(r),
   Postcondition}`; `Violated` with a prefix ending at the first state with
-  `size >= 1` and `kind: UndefinedEvaluation` naming `items` and `r`.
+  `size >= 1`, `RefinementFailure::Undefined` naming row `items`, and
+  `kind: UndefinedEvaluation` naming `items` and `r`.
 - Step 7: `Stopped{ResourceExhausted, {MaxStates, 5}}`; `BoundReached{depth: 2}`;
   `Stopped{Cancelled, None}`; equal outcomes and byte-equal counterexamples.

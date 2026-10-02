@@ -21,7 +21,9 @@ relationships:
 ## Description
 
 QSL SHALL check a refinement's `history` rows at S3 and compute history
-values along a concrete behaviour at layer 5 (ADR-020 AX-1, AX-3). A history
+values along a concrete behaviour in layer 6, crate `qsl-replay`, where
+`check_step` and the certificate checker (FR-149) read them (ADR-020 AX-1,
+AX-3). A history
 field belongs to the refinement only: it never enters the concrete package,
 its clauses or its successor relation, and an update never removes a step.
 
@@ -38,7 +40,7 @@ exactly as they were.
 - The parsed `history` rows: `history <C>::<Type>.<field>: <bounded type> =
   <literal> { on <C>::<Type>::<op>: <expression>; … }`, with spans.
 - The concrete model's object types, fields and operations.
-- At layer 5: a concrete state, the history values at it, and a concrete
+- In `qsl-replay`: a concrete state, the history values at it, and a concrete
   step (its transition identity and post-state).
 
 ## Outputs

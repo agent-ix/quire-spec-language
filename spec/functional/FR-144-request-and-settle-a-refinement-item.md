@@ -111,6 +111,14 @@ beside it as a separate item.
   `ReplayRefused`, and a fault `failed`.
 - The record SHALL read neither model's `terminal` member; its value SHALL
   be the same under every combination of them.
+- **Certificate.** A safety half that the product proves SHALL settle
+  `proved` only after FR-149's checker accepts its certificate; a rejection
+  SHALL settle V-6 `CertificateRejected`, and a checker stopped by a limit
+  V-7 naming the limit (ADR-020 CT-3).
+- **Certification label.** A `proved` record SHALL name the simulation
+  certificate checker when every half was certified. A `proved` with a
+  liveness half, which has no core certificate checker, SHALL settle
+  `proved` labelled `uncertified` (ADR-020 CT-4, RU-7).
 
 ## Acceptance Criteria
 
@@ -121,6 +129,8 @@ beside it as a separate item.
 | FR-144-AC-3 | FR-142-AC-4's `writes` variant settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`, category inconclusive; FR-142-AC-6's `only` variant settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. FR-143-AC-4's hidden-field refinement with its `ensure` row settles `unsupported`, `unavailable`, `Unsupported(unsupported-requested-capability)`, with the safety half `Proved{basis: Exhaustive}` on the record. | Test (TC-549) |
 | FR-144-AC-4 | The lost-update refinement whose counterexample is replayed with its recorded failure changed to `AbstractStepRejected{position: 3, …}` settles `inconclusive`, `Inconclusive(ReplayParity)`, never `refuted`; replayed with an `initial` index of 1 over its one-snapshot subject, it settles `inconclusive`, `Inconclusive(ReplayRefused)`. | Test (TC-549) |
 | FR-144-AC-5 | Two `CasRefinesCounter` requests that differ only in the abstract subject's initial snapshots (`value` 0 and `value` 1) have different obligation identities; the second settles `refuted` with `InitialNotAbstract`. | Test (TC-549) |
+| FR-144-AC-6 | FR-140-AC-5's incomplete `items` row settles `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)` (wire cause `mapping-undetermined`), never `refuted`; FR-141-AC-7's undefined argument settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`, after FR-145 replay reproduces it. | Test (TC-555) |
+| FR-144-AC-7 | `CasRefinesCounter` with its `ensure` row removed settles `proved`, `closed-scope`, certified, its record naming the simulation certificate checker, after FR-149 accepts the certificate; with its `ensure` row it settles `proved`, labelled `uncertified`; with the certificate's `Taken` for the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter`, it settles `inconclusive`, `CertificateRejected`. | Test (TC-556) |
 
 ## Dependencies
 

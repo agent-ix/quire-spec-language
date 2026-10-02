@@ -30,8 +30,9 @@ relationships:
 
 QSL's S3 `requirements` hook for a refinement declaration SHALL write, beside
 the refinement record (FR-144), one `operation-contract` requirement record
-for the initial-state condition and one for each step row other than `any`
-(ADR-020 RE-2), and SHALL offer the refinement record to the SMT unrolling
+for the initial-state condition and one for each step row, when the
+declaration has no hidden field, no history field and no `any` row (ADR-020
+RE-2; QSpec FR-377 Engines and FR-377-AC-7), and SHALL offer the refinement record to the SMT unrolling
 candidate as well as to the explicit-state engine (ADR-020 RE-3). QSL writes
 the records and settles them; CG routes them to the SMT backend (ADR-020
 DS-2) and IR encodes the obligations (DS-3). An RE-2 record never settles
@@ -76,12 +77,14 @@ by an occurrence key derived from the refinement node and the obligation.
 
 ### Which records
 
-- When the refinement has no hidden field and no history field, the
-  `requirements` hook SHALL write one `Initial` record and one `Step` record
-  for each step row whose target is `stutter` or an abstract operation.
-- The hook SHALL write no `Step` record for an `any` row.
-- When the refinement has a hidden field or a history field, the hook SHALL
-  write no `StepSimulationRecord`.
+- When the refinement has no hidden field, no history field and no `any`
+  row, the `requirements` hook SHALL write one `Initial` record and one
+  `Step` record for each step row.
+- When the refinement has a hidden field, a history field or an `any` row,
+  the hook SHALL write no `StepSimulationRecord`: an `any` row has no
+  per-step obligation, so the other rows' records would not discharge the
+  safety half, and with history fields `map` is not a function of
+  `(s, s')`.
 - Each record's obligation identity SHALL bind the refinement node, the
   obligation and the hypotheses (ADR-013 O-09).
 
@@ -119,7 +122,7 @@ by an occurrence key derived from the refinement node and the obligation.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the concrete package's invariant clauses (none) as hypotheses. With the `commitB` row changed to `-> any` it writes seven, with no record for `commitB`. | Test (TC-551) |
+| FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the concrete package's invariant clauses (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
 | FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record, and the `Initial` record's obligation identity differs from the one without `CasInv`. | Test (TC-551) |
 | FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}}`; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |

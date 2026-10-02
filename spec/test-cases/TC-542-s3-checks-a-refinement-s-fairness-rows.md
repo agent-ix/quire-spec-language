@@ -33,7 +33,7 @@ Tag the tests `#[trace("TC-542", "FR-137-AC-n")]`.
 
 - Step 1: six `Weak Each` constraints in `F_C` and `[Weak Each inc]` in
   `F_A`; `[Weak Whole inc]` with a different node identity; empty `F_A`.
-- Step 2: `invalid_model_binding`/`malformed-declaration` naming `Spec`; the
+- Step 2: `missing_declaration`/`missing-name` naming `Spec`; the
   same naming `Impl`; `missing_declaration`/`missing-name`; one constraint.
 - Step 3: three `Scheduler` constraints (branch `A`, branch `B`, root);
   those three and the authored one; the authored one only.

@@ -55,12 +55,11 @@ written again.
   rules: the one kind is `weak`, a row with no granularity SHALL check as
   `Whole`, and a row written `whole` or `each` SHALL check as written.
 - An `assume` row's operation SHALL resolve to an operation of the concrete
-  model, and an `ensure` row's to an operation of the abstract model. A row
-  whose operation resolves in neither model SHALL refuse
-  `missing_declaration`/`missing-name`; a row whose operation resolves only
-  in the other model SHALL refuse
-  `invalid_model_binding`/`malformed-declaration`, naming the model it
-  belongs to.
+  model, and an `ensure` row's to an operation of the abstract model. If a row's
+  operation resolves in neither model, or only in the other model, then the
+  checker SHALL refuse it `missing_declaration`/`missing-name`, as QSpec
+  FR-375 states, naming the model the operation belongs to when it
+  resolves in the other model.
 - The checker SHALL record each constraint of each set once, in source
   order, so two equal rows check as one constraint.
 - The checker SHALL accept a declaration whose `F_C` or `F_A` is empty.
@@ -80,7 +79,7 @@ written again.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-137-AC-1 | ADR-020 §8's `CasRefinesCounter` checks `F_C` as six `Weak` `Each` constraints in source order (`beginA`, `beginB`, `commitA`, `commitB`, `retryA`, `retryB`) and `F_A` as `[Weak Each Spec::Counter::inc]`. With the `ensure` row written `ensure fair weak Spec::Counter::inc`, `F_A` is `[Weak Whole inc]` and the node identity differs. With the `ensure` row removed, `F_A` is empty. | Test (TC-542) |
-| FR-137-AC-2 | `assume fair weak Spec::Counter::inc` refuses `invalid_model_binding`/`malformed-declaration` naming `Spec`; `ensure fair weak Impl::Counter::peek` refuses the same naming `Impl`; `assume fair weak Impl::Counter::nope` refuses `missing_declaration`/`missing-name`. `assume fair weak each Impl::Counter::beginA` written twice checks as one constraint. | Test (TC-542) |
+| FR-137-AC-2 | `assume fair weak Spec::Counter::inc` refuses `missing_declaration`/`missing-name` naming `Spec`; `ensure fair weak Impl::Counter::peek` refuses the same naming `Impl`; `assume fair weak Impl::Counter::nope` refuses `missing_declaration`/`missing-name`. `assume fair weak each Impl::Counter::beginA` written twice checks as one constraint. | Test (TC-542) |
 | FR-137-AC-3 | Over FR-136-AC-4's concrete protocol subject with no `assume` row, `F_C` holds three `Weak Whole` constraints with origin `Scheduler`, for branch `A`, branch `B` and the root. With `assume fair weak each incA` added, `F_C` holds those three and the authored constraint. With `scheduling adversarial` on the protocol, `F_C` holds only the authored constraint. | Test (TC-542) |
 
 ## Dependencies
