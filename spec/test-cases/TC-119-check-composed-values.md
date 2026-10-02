@@ -66,7 +66,9 @@ representation, runtime prerequisites or assertions are still unavailable.
    and Total to exclude zero. Add a fold whose final mathematical sum fits but
    an intermediate prefix can exceed the selected total. Verify these proof
    obligations from domains/lengths rather than executing sample observations.
-   Refuse declared model sequence maxima 0 and 10,001 at model admission. Check all
+   Refuse declared model sequence maximum 0 at model admission, and 10,001 at
+   the default `sequence_maximum`, naming that limit; admit 10,001 with the
+   limit raised to fit it. Check all
    eight forms, including sum, at maximum 10,000 with suitable authored element
    and result domains and sufficient effective proof limits. Independently lower
    a proof limit and require typed exhaustion without changing the semantic
@@ -95,8 +97,9 @@ representation, runtime prerequisites or assertions are still unavailable.
    nested queries, type wrappers, guard facts, proof materialization and retained
    runtime-role records. Use fixed input lengths and the public versioned
    traversal/charging contract, never the run's own usage as the expected limit.
-   Test zero, exact, one-step-insufficient and hard-clamped capacities in every
-   dimension, including byte copies, shared visits, arithmetic work and depth.
+   Test zero, exact, one-step-insufficient and raised-above-default capacities in
+   every dimension, including byte copies, shared visits and arithmetic work, and
+   check deeply nested queries under limits raised to fit them.
    Exercise counter overflow through the public accounting boundary. Require
    the first unaffordable operation to remain unperformed and all unfinished
    dependents to remain unadmitted. Retry with sufficient limits and compare

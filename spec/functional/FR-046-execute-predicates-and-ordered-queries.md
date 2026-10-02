@@ -51,7 +51,7 @@ Original native declarations, exact domain-package model declarations
 predicate arguments and immutable capture/anchor environments; checked values
 and their original source correspondence; validated finite sequences or declared
 population views with independently supplied membership/completeness authority;
-and caller-lowered finite checking and execution budgets.
+and caller-configured finite checking and execution budgets.
 
 A typed expression, emitted graph or successful independent wire read is not a
 validated runtime input. Population declarations come from the admitted domain
@@ -127,12 +127,12 @@ requirement, not removal of that case from the selected language.
 
 If a required sequence, population member or completeness premise is unavailable, then the evaluator SHALL return an unavailable/incomplete input disposition without substituting an empty domain or a successful aggregate.
 
-The language pipeline SHALL charge checking, predicate-call expansion, actual traversal and retained output against each stage's finite caller-lowered budgets before performing the corresponding work.
+The language pipeline SHALL charge checking, predicate-call expansion, actual traversal and retained output against each stage's finite caller-configured budgets before performing the corresponding work.
 
 If the next charged operation exceeds the run's admitted budget, then the language pipeline SHALL retain resource incompleteness without returning an unfinished query value as complete.
 
 Checking accounting follows [FR-040](FR-040-check-composed-values.md); runtime
-accounting must expose its own caller-lowered limits and consumed work. A sequence's
+accounting must expose its own caller-configured limits and consumed work. A sequence's
 declared maximum is model meaning: the positive length bound its wrapper
 declares. Runtime sequences and filter results may be empty. Nested finite bounds do not waive total-work bounds.
 The stage does not select a new numerical hard limit by observing current code.

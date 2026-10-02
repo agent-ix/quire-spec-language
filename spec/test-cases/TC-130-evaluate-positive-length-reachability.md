@@ -17,8 +17,9 @@ ordered edge semantics through the public admitted-artifact evaluator.
 Evaluate isolated, direct, self-loop, two-node cycle, diamond, disconnected,
 optional-absent, empty-sequence and duplicate-edge graphs. Use graph shapes for
 which depth-first and breadth-first discovery would consume different work.
-Independently count the expected storage-key expansions, active depth and edge
-occurrences under NFR-009's recursive depth-first, charge-before-work order.
+Independently count the expected storage-key expansions and edge occurrences
+under NFR-009's depth-first, charge-before-work order over an explicit heap
+stack.
 Reverse an authored sibling-edge sequence so a target moves before and after a
 non-target subtree, then substitute a scalar, foreign or heterogeneous edge
 field.

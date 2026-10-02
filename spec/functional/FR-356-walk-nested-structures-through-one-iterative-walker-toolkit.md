@@ -1,0 +1,118 @@
+---
+id: FR-356
+title: "Walk nested structures through one iterative walker toolkit"
+type: FR
+relationships:
+  - target: ix://agent-ix/quire-spec-language/US-027
+    type: implements
+  - target: ix://agent-ix/quire-spec-language/ADR-030
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/ADR-011
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-256
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-258
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-460
+    type: depends_on
+---
+# FR-356: Walk nested structures through one iterative walker toolkit
+
+## Description
+
+QSL SHALL walk every nested structure iteratively, in arena order or on one
+shared `no_std` walker toolkit, so that no walk's native stack use grows
+with the input's depth (ADR-030 D-1 items 2, 6 and 7; QSpec FR-460). The
+qualified core (the S0 to S4 checker, the prove path and the certificate
+checkers; ADR-029 CB-2) is iterative only. Outside the core, growing the
+stack on demand is a justified exception through one wrapper.
+
+## Use case
+
+A specification author writes a 100,000-term sum, or a 100,000-deep `Option`
+type, and compiles it under limits raised to fit (US-027). Every stage that
+walks it, from the parser through the checker to the prove path, runs that
+walk on the toolkit's heap stack, so the compile finishes or stops with a
+limit outcome naming its setting, and never overflows the stack. An
+assessor who qualifies the core reads one Kani-verified traversal instead of
+a hand-written stack in each walk.
+
+## Behavior
+
+1. **Arena order.** A tree stored as an arena SHALL hold each node after its
+   children, and a bottom-up computation over it SHALL be one forward loop
+   over the arena, with no stack.
+2. **The walker toolkit.** A top-down or mutually recursive walk SHALL run on
+   the walker toolkit. The toolkit SHALL keep an explicit heap stack of
+   frames, each frame a value of a type the walk declares, and SHALL call
+   the walk's enter callback when it pushes a node's frame and its exit
+   callback with that frame when it pops it. An enter callback SHALL name
+   the children to push, possibly of another node type, and MAY stop the
+   walk with a value, which the toolkit returns with no further callback.
+   The toolkit SHALL grow its stack by one frame per entered node, so a
+   walk's memory is bounded by the nodes its stage charges (ADR-030 D-1
+   item 3).
+3. **One shared leaf crate.** The toolkit SHALL be the crate `quire-walk`,
+   a `#![no_std]` shared leaf in the QSL workspace that depends only on
+   `core` and `alloc` (ADR-011 §6.1 layer W). It is in FB-05's shared-leaf
+   class beside `quire-exact` and `quire-semantic-value`, and arch-lint's
+   `SHARED_LEAVES` lists it, so QSL, IR, CG and RT each depend on it at
+   `branch = "main"` without depending on any `qsl-*` crate (ADR-011 FB-05).
+   `quire-exact` stays a leaf with no dependency and keeps its hand-written
+   iterative traits (ADR-030 D-4.7).
+4. **Kani-verified.** The toolkit SHALL carry Kani harnesses proving, for
+   every tree within each harness's bound, that every node is entered and
+   exited exactly once, that each exit receives the frame its enter pushed,
+   that exits come in the reverse order of their enters along each path,
+   that a stop ends the walk at once, and that no traversal panics.
+5. **Iterative only in the core.** No walk in the qualified core SHALL grow
+   or switch the native stack, and no crate in the core SHALL depend on
+   `stacker` or on `qsl-walk-grow`, directly or through a feature.
+6. **One `maybe_grow` wrapper outside the core.** Outside the core, a walk
+   whose conversion to the toolkit is awkward MAY recurse natively through
+   the `maybe_grow` wrapper. The wrapper SHALL be the only item of the crate
+   `qsl-walk-grow`, a std-only QSL crate outside the qualified core (ADR-011
+   §6.1 layer WG) that depends only on `stacker`. It grows the stack on
+   demand, and is a plain call of its closure under `cfg(kani)`. It has no
+   `no_std` build, since no `no_std` crate may depend on it. It is not a
+   shared leaf: only QSL's crates outside the core depend on it, and
+   `quire-walk` stays `#![no_std]` with no features. No other code SHALL
+   call `stacker`.
+   Each call site of the wrapper SHALL have a test that drives a 100,000-deep
+   recursion through it on a thread with a 512 KiB stack.
+7. **Deep tests on every public core entry point.** Each public entry point
+   of the qualified core SHALL have a test that runs a 100,000-deep input
+   through it on a thread with a 512 KiB stack, under limits raised to fit
+   the input, so leftover or hidden recursion fails at test time.
+8. **Deep-input fuzz target.** The toolkit's crate set SHALL ship a fuzz
+   target that generates deeply nested QSL sources (nested brackets, sums,
+   `else if` chains, nested `let`s and nested `Option` types) and drives
+   each through the S1 parser and the S3 checker.
+
+## Acceptance Criteria
+
+| ID | Criteria | Verification |
+| --- | --- | --- |
+| FR-356-AC-1 | `quire-walk` builds for `thumbv7em-none-eabihf` with `#![no_std]`, and it has no features and a dependency tree of only `core` and `alloc`. arch-lint's `SHARED_LEAVES` holds `quire-walk`, and its direction check admits an IR, RT or CG edge to `quire-walk` and refuses one to any `qsl-*` crate. | Test (TC-898) |
+| FR-356-AC-2 | On a thread with a 512 KiB stack, a toolkit walk over a 100,000-deep chain enters every node once in pre-order and exits every node once in post-order, each exit receiving the frame its enter pushed. A mutually recursive walk over a 100,000-level chain that alternates an expression node and a type node does the same, each level's frame of its own type. An enter callback that stops at depth 50,000 returns its value, and no callback runs after it. | Test (TC-898) |
+| FR-356-AC-3 | A bottom-up computation over a 100,000-node arena (the node count of a 100,000-term sum's checked body) is one forward loop over the arena and completes on a thread with a 512 KiB stack. | Test (TC-898) |
+| FR-356-AC-4 | `cargo kani` on the toolkit crate verifies every harness: each node entered and exited exactly once, each exit receiving its enter's frame, exits in reverse enter order along each path, a stop ending the walk at once, and no panic, for every tree within the harness bound. | Kani proof (TC-899) |
+| FR-356-AC-5 | Each public entry point of the qualified core (the S0 to S4 checker, the prove path and the certificate checkers) has a test that runs a 100,000-deep input through it on a thread with a 512 KiB stack, under limits raised to fit, and returns its result. No crate in the core depends on `stacker` or on `qsl-walk-grow`, either in its own `cargo tree` or in the resolved workspace build, and arch-lint's direction check refuses a core crate's edge to `qsl-walk-grow`. | Test (TC-902) |
+| FR-356-AC-6 | `qsl-walk-grow`'s `maybe_grow` called on a 100,000-deep native recursion completes on a thread with a 512 KiB stack, and is a plain call of its closure under `cfg(kani)`. Each call site of `maybe_grow` outside the core has a test driving a 100,000-deep recursion through it on a thread with a 512 KiB stack, and no code outside `maybe_grow` calls `stacker`. | Test (TC-902) |
+| FR-356-AC-7 | The deep-input fuzz target generates sources nested from 1 to 100,000 levels deep and drives each through the S1 parser and the S3 checker. A run of 10,000 inputs ends with every input returning a result or a stated limit outcome, and no panic, abort or stack overflow. | Test (TC-903) |
+
+## Dependencies
+
+- [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)
+  D-1 items 2, 3, 6 and 7, and D-6.
+- [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
+  §6.1 layer W and FB-05's shared-leaf class.
+- [FR-256](FR-256-parse-source-at-any-nesting-depth.md) and
+  [FR-258](FR-258-check-and-lower-expressions-at-any-depth.md): the parser
+  and the checker whose walks run on the toolkit.
+
+## References
+
+- QSpec FR-460, the ecosystem depth rule.
+- The qualified core: ADR-029 CB-2, Linear QSL-390.
+- Linear QSL-381.

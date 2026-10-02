@@ -208,6 +208,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-026
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-030
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -690,6 +692,30 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-324
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-255
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-256
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-257
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-258
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-259
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-260
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-261
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-262
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-263
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-264
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-356
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-027
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -877,6 +903,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-034](usecase/US-034-catch-a-refinement-regression-across-revisions-and-profiles.md) | US | Draft |
 | [US-035](usecase/US-035-qualify-qsl-against-the-complete-v1-conformance-corpus.md) | US | Draft |
 | [US-036](usecase/US-036-check-the-quire-clauses-in-spec-artifacts.md) | US | Draft |
+| [US-027](usecase/US-027-compile-check-and-run-deeply-nested-specifications.md) | US | Draft |
 | [US-016](usecase/US-016-prove-liveness-of-a-contended-model-under-strong-fairness.md) | US | Draft |
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
@@ -920,7 +947,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-030](functional/FR-030-consume-quire-extraction.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix; FR-031-AC-5 (four source labels on the body record, TC-430) implemented (ADR-013 §7 S-4b) |
+| [FR-031](functional/FR-031-run-extracted-native-source.md) | FR | Implemented; tested in the native-workflow test matrix; FR-031-AC-5 (the body record as document identity plus content digest, TC-430) specified, not yet implemented: the code still emits the old revision fields (QSL-381) |
 | [FR-032](functional/FR-032-realize-config-version-workflow.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-033](functional/FR-033-lower-bounded-integer-ir.md) | FR | Implemented; tested in the native-lowering test matrix |
 | [FR-034](functional/FR-034-project-state-scalars.md) | FR | Implemented; tested in the native-lowering test matrix |
@@ -990,7 +1017,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Partly implemented (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci) -- AC-2 to AC-17 pass locally (TC-427 to TC-429, TC-378, TC-470, TC-500): each of the ten kernel value refusals carries its target domain or width, `Refusal::code()`/`cause()` return the key table's code and cause for all twelve record-building kernel refusals, `kernel_refusal_record` builds the ten value refusals' records, and a `sum` seed or running total outside its domain is `Undefined::SumOutOfDomain`; a kernel `CheckedInvariant` is an `InternalFault` from `Machine::run` |
 | [FR-097](functional/FR-097-classify-claim-extent-and-write-bounded-requests.md) | FR | Specified and implemented (ADR-013 §7 S-6, ADR-014 §11): F `bound`, `ClaimExtent`, the O-20 request writer, `explore::Outcome::category()` and the optional kernel bounds -- TC-436 to TC-439 and TC-441 pass locally; TC-440 is partly passed, its quantity fixture in an ignored agreement test |
 | [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) implemented, TC-444 step 7 passes locally |
-| [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended) |
+| [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended); AC-7's import-graph node, edge and byte limits (`dependency.*`) replace the import depth, step 8 pending |
 | [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR | Implemented (ADR-011 §5 spine `run`, OQ-1): CLI `run` routes a native-run/1 request by the program's declared edition, and a `1-draft` program's named function runs through `qsl_replay::spine::run` (spine compile, then `CheckedPackage::call`) with name-keyed canonical integer arguments, the full FR-096 outcome mapping (record, family and kernel refusal rows, and the internal-failure path) and FR-301 exit codes -- TC-450 to TC-452 (see FR-100's Status for the kernel catalog codes still pending STD-110); FR-100-AC-11 and the amended AC-10 (exit statuses from FR-285, undefined exits 10, TC-786) specified, not yet implemented; TC-452 is planned again until its undefined assertions expect exit 10 |
 | [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md) | FR | Specified: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, `quire.simulation.sampler/v1` (preimage with `choice`), `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned; AC-12 to AC-14 (findings, `ExpansionStop`, `Outcome::Stopped`, stopped-trace replay) specified -- TC-474 planned; AC-15 (published `Limits` defaults) specified -- TC-536 planned |
 | [FR-102](functional/FR-102-build-state-clause-forms.md) | FR | Specified: S2 `invariant`/`pre`/`post` state clause forms and the `self`, `result` and `reaches` expressions (ADR-012 §15); not yet implemented -- TC-456, TC-457 planned |
@@ -1202,7 +1229,18 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-323](functional/FR-323-key-union-values-in-collections.md) | FR | Specified: Union values in sets, bags and ordered sets keyed by QSpec FR-144's union key, ordered sets in first-occurrence order; not yet implemented -- TC-833 planned |
 | [FR-324](functional/FR-324-admit-unions-under-the-value-profile.md) | FR | Specified: Unions and `case` admitted under the same profile and definition selections as records and tuples (QSpec FR-143 value profile); not yet implemented -- TC-834 planned |
 | [US-032](usecase/US-032-model-alternatives-with-a-union-and-handle-every-case.md) | US | Draft |
-| [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
+| [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings (nodes, preimage bytes, work), recorded with each checked result -- TC-423; depth rule deleted by ADR-030, not yet implemented |
+| [FR-255](functional/FR-255-name-the-setting-that-raises-a-reached-limit.md) | FR | Specified: every configurable limit has one dotted setting name (stage and counter); a limit outcome names the limit, its value, the count reached and the setting; the same name raises it through the library builder, the replay request's `stage_limits` and the settings operation the driver CLI's `--limit` calls (ADR-029 CB-1); not yet implemented -- TC-720, TC-721 planned |
+| [FR-256](functional/FR-256-parse-source-at-any-nesting-depth.md) | FR | Specified: every S1 parser lexes and parses any bracket nesting and chain length over explicit heap stacks, bounded by `s1.*` byte, token, node and work limits; not yet implemented -- TC-722, TC-723 planned |
+| [FR-257](functional/FR-257-build-forms-at-any-depth.md) | FR | Specified: S2 builds arena forms and control anchors of any depth over explicit stacks, with no limit set, bounded by S1's node limit; not yet implemented -- TC-724 planned |
+| [FR-258](functional/FR-258-check-and-lower-expressions-at-any-depth.md) | FR | Specified: S3 checks, lowers and emits expressions and types of any depth: arena checked nodes, walks in arena order or on the walker toolkit including the text-leaf walk, stratified semantic terms, `s3.*` node, preimage-byte and work limits only; not yet implemented -- TC-725 to TC-727 planned |
+| [FR-259](functional/FR-259-encode-identities-and-read-json-through-quire-canonical-at-any-depth.md) | FR | Specified: identities and canonical bytes through `quire-canonical` (fixed-depth path, event API, tree encoder), untrusted JSON through its shared reader, `IDENTITY_LIMITS` byte-only, byte errors reported as the calling stage's byte limit; the capabilities are a quire-canonical follow-up; not yet implemented -- TC-728, TC-729 planned |
+| [FR-260](functional/FR-260-admit-semantic-ir-documents-at-any-depth.md) | FR | Specified: semantic-IR intake reads once through the shared reader under `intake.input_bytes`, judges documents of any depth on content, reports composite cycles of any length; not yet implemented -- TC-730 to TC-732 planned |
+| [FR-261](functional/FR-261-read-other-untrusted-json-at-any-depth.md) | FR | Specified: the library preimage read, observation digest admission and the observation document reader use the shared reader, keep malformed input apart from limits, and judge deep documents on content; not yet implemented -- TC-733 planned |
+| [FR-262](functional/FR-262-evaluate-values-and-calls-at-any-depth.md) | FR | Specified: evaluation on an explicit task stack with `work_units` fuel and no call-depth counter, iterative `ValueType` traits, state keys through the event API; not yet implemented -- TC-734, TC-735 planned |
+| [FR-263](functional/FR-263-replay-at-any-depth-under-the-request-limits.md) | FR | Specified: replay of deep sources and values; the request's `stage_limits` maps setting names to bounds and every entry passes through; `replay.input_bytes` names its setting; not yet implemented -- TC-736, TC-737 planned |
+| [FR-264](functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md) | FR | Specified: the v2 emitter writes QSpec FR-322's stratified body grammar; QSL's I2 read is bounded by `i2.*` size and work limits only and refuses an inline nested term as a malformed wire; not yet implemented -- TC-738, TC-739 planned |
+| [FR-356](functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md) | FR | Specified: every nested structure is walked in arena order or on one shared `no_std`, Kani-verified walker toolkit (explicit stack, enter and exit callbacks, typed frames); the qualified core is iterative only; outside it one `maybe_grow` wrapper, the std-only crate `qsl-walk-grow`, with a 100,000-depth test per use; a 100,000-depth small-stack test on every public core entry point; a deep-input fuzz target for the parser and the checker; not yet implemented -- TC-898, TC-899, TC-902, TC-903 planned |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names |
@@ -1253,3 +1291,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-296](functional/FR-296-select-the-execution-backend-in-the-request.md) | FR | Specified (ADR-029): backend chosen in the request (`--engine`), no substitution; not yet implemented |
 | [FR-277](functional/FR-277-bound-every-lifecycle-operation-by-caller-limits.md) | FR | Specified (ADR-029): every bound a caller limit with a published default; `LimitExceeded` names the limit, value and field; depth is not a limit (ADR-030); not yet implemented |
 | [FR-284](functional/FR-284-keep-the-qualified-core-separable-by-crate.md) | FR | Specified (ADR-029): the qualified core's crate set, the `cargo tree` direction check, no ambient input; not yet implemented |
+| [ADR-030](decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md) | ADR | Draft; arbitrary nesting depth: depth bounded only by caller resource limits (bytes, nodes, work), flat v2 body grammar, iterative walks and arenas per component, shared JSON reader in quire-canonical, limit outcomes name the setting that raises them, NFR-011 depth rule deleted; owner rulings RU-1 to RU-3 |

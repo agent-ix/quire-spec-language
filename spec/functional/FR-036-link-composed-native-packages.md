@@ -33,14 +33,14 @@ When linking an explicitly inventoried composed package, the compiler SHALL reso
 The complete native source inventory, parsed units, exact supplied edition/profile
 definitions, the admitted domain packages from
 [FR-056](FR-056-admit-domain-package-model-declarations.md) with their model
-declarations and export records, and static binding contracts. Each package traversal has explicit finite caller-lowered
-limits for supplied bytes, units, definitions, declarations, references and
+declarations and export records, and static binding contracts. Each package traversal has explicit caller-configured
+limits, each with a published default and used as given with no ceiling, for supplied bytes, units, definitions, declarations, references and
 dependency edges; these are processing controls rather than semantic selections.
 No filesystem discovery, network retrieval or installed backend supplies an
 omitted dependency.
 
 The public package boundary declares its work-accounting version, supported
-dimensions, default and hard capacities, and effective caller-lowered limits
+dimensions, published default capacities, and effective caller-configured limits
 before accepting work. Its versioned charging rules identify the bytes and
 inventory entries counted, the resolution attempts and dependency-edge visits
 charged, and how shared dependencies, cache hits and revisits are charged.

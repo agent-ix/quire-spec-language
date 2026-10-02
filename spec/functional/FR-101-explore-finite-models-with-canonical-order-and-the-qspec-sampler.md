@@ -68,7 +68,8 @@ AC-14).
   `>= k` are not expanded, and a run that expands every reachable state
   below the horizon returns `Outcome::BoundReached` stating the horizon it
   used; `None` sets no horizon. `Limits::default()` publishes `max_states`
-  10,000,000 and `max_transitions` 100,000,000. A run that
+  10,000,000 (setting `explore.states`) and `max_transitions` 100,000,000
+  (setting `explore.transitions`) (FR-255). A run that
   reaches `max_states` or `max_transitions` names it and its value in
   `Outcome::Bounded`, and the caller raises it by setting that `Limits`
   member.
@@ -192,8 +193,8 @@ pub struct RequiresBound {
 
 /// A `TransitionSystem::Key` or `TransitionId` has no RFC 8785 encoding: for
 /// example an integer outside the exact-double range (`2^53`), a
-/// non-finite float, a non-string map key, or nesting past
-/// `quire_canonical::Limits::MAX_DEPTH`.
+/// non-finite float or a non-string map key. A key of any depth encodes
+/// through the event API (FR-262).
 pub struct EncodingRefusal(String);
 ```
 

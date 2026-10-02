@@ -47,7 +47,7 @@ or one clock field without changing the compiled source.
 Run the `/1` emitter and strict reader over the pre-extension fixture and
 compare its bytes to the frozen expected artifact. Offer `/1` to the `/2` reader
 and `/2` to the `/1` reader. For every added work dimension, independently count
-the successful `/2` run and retry with exact, one-short and above-hard limits.
+the successful `/2` run and retry with exact, one-short and raised-above-default limits.
 
 Import the public `protocol_artifact::handoff` path, member-name and mutation
 format constants. Join each member name to `PUBLISHED_HANDOFF`, require every

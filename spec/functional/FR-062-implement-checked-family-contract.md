@@ -63,7 +63,7 @@ The contract's six parts (ADR-012 §2):
    or a refusal carrying a family-owned typed cause that maps to a catalog
    code through one exhaustive function with no fallback arm; a `check` that
    reaches a limit SHALL return a limit outcome naming the exhausted limit
-   kind (input bytes, nesting depth, node count or work budget), distinct
+   kind (input bytes, node count or work budget), distinct
    from a refusal. A family's `evaluate` hook (stage S6a) SHALL be the only
    hook that returns `Incomplete` (a meter-budget outcome). `check` SHALL
    NOT return `Incomplete`; it SHALL instead return a `Limit` outcome when a
@@ -149,22 +149,23 @@ environment or a limit except through the typing context parameter. `check`
 SHALL be given no way to mutate anything except the meter, the diagnostic
 sink and the scope stack the typing context exposes.
 
-### Explicit limits bound every stage entry, including recursion
+### Explicit resource limits bound every stage entry, at any depth
 
 Every stage entry (`check`, and every other stage ADR-011 §2.3 names) SHALL
-take explicit limits: input bytes, nesting depth, node count and work
-budget, as that stage needs them. The checking stage's default limits are
-finite and recorded with each checked result
-([NFR-011](../non-functional/NFR-011-bound-value-checking-work.md)). A stage that is recursive (`check` is one;
-ADR-011 §2.3 also names S1, S2 and S6a) SHALL bound its recursion depth by
-one of these explicit limits, checked before each recursive step, and SHALL
-NOT rely on the native call stack to bound recursion. A family's `check`
-called on an arbitrarily deeply nested form (for example, nested function
-application) SHALL refuse with a limit outcome naming the nesting-depth
-limit once that limit is reached, rather than exhaust the native stack.
+take explicit resource limits: input bytes, node count and work budget, as
+that stage needs them. The checking stage's default limits are finite and
+recorded with each checked result
+([NFR-011](../non-functional/NFR-011-bound-value-checking-work.md)). Every
+walk a stage makes over its input SHALL run over an explicit heap stack whose
+growth those limits charge, and SHALL NOT use native recursion that grows
+with the input (ADR-030 D-1,
+[FR-258](FR-258-check-and-lower-expressions-at-any-depth.md)). A family's
+`check` called on a form of any nesting depth (for example, nested function
+application) SHALL check it, or stop with a limit outcome naming the input
+bytes, node count or work budget it reached.
 
 The expression-node budget a caller configures for checking a package
-(`CheckingLimits::new(nodes, depth)`) bounds the package as a whole: the
+(`CheckingLimits::new(nodes)`) bounds the package as a whole: the
 expression nodes of every declaration in the package count against that one
 budget. It is separate from the per-declaration stage-entry node-count limit
 (`StageLimits::node_count`), whose exhaustion is the `Limit` outcome of
@@ -322,14 +323,14 @@ condition.
 | FR-062-AC-2 | Given two parsed forms with identical structure checked into the same package, the checker mints one identity for both, and given the same node occurring twice in the source, the source map carries two distinct occurrence keys (identity, role, ordinal) for the one identity. Reordering the two source occurrences changes only their ordinal, never the identity. | Test (TC-160) |
 | FR-062-AC-3 | A family's `check` compiles with no path to global or thread-local state, and a test that mutates only the typing context's meter, diagnostic sink and scope stack observes those mutations reflected in the returned outcome; a test that constructs two typing contexts from the same resolved declarations and checks the same form through each produces identical checked output, showing no hidden shared mutable state. | Test (TC-160) |
 | FR-062-AC-4 | A claim form with no FR-057 capability kind yields no `Requirements` value from the pure requirements function, and each claim with a kind yields exactly one `Requirements` value naming that kind at its checked site: a function declaration whose body is `b and c` over Boolean parameters yields none, and one whose body is `x + y` over `Int[0, 9]` parameters yields exactly one, `value-validity`, at the `+` application. Calling the requirements function twice on the same checked item yields equal values. | Test (TC-160) |
-| FR-062-AC-5 | A `check` that reaches a limit (input bytes, nesting depth, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts that neither `check` nor the S4 v2 emitter (`qsl_package::emit_checked`) returns `Incomplete` across each stage's fixture set. | Test (TC-160) |
+| FR-062-AC-5 | A `check` that reaches a limit (input bytes, node count or work budget) returns a `Limit` outcome naming that limit kind, and a test asserts the returned value is not a refusal, not a checked node and not `Incomplete`; a family's `evaluate` hook that exhausts its meter budget returns `Incomplete`, and a test asserts that neither `check` nor the S4 v2 emitter (`qsl_package::emit_checked`) returns `Incomplete` across each stage's fixture set. | Test (TC-160) |
 | FR-062-AC-6 | The `Relation` family has no evaluation hook, and S6a's input type admits no `Relation` node, so a `Relation` node never reaches evaluation and yields neither a panic, a silently omitted call, nor a successful evaluated result (FR-090-AC-4). Every other family's evaluation hook, invoked on a checked node built only from checked input, returns without reading any CST, token or display string. A display string is rendered text (`Display` or `Debug` output, diagnostic text, source spelling), not a declared name carried on a checked node; this is verified by a scan that the evaluator has no path to source text and calls nothing that renders text or reads a string-shaped accessor of the checked package, and by a test that renaming every declared name in a package leaves the evaluation outcome, loss count and metered work unchanged. | Test (TC-160) |
-| FR-062-AC-7 | Given a fixture nested to depth D (for example, function application nested D levels deep), checking it with the nesting-depth limit configured to D-1 returns a `Limit` outcome naming the nesting-depth limit. Checking the identical fixture with the limit configured to D, one greater and nothing else changed, does not return a nesting-depth `Limit` outcome. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's absolute size or the host's available stack, is shown to be the proximate cause of the refusal; this holds regardless of whether `check` walks the form by native recursion or by an explicit-stack iterative loop. | Test (TC-378) |
+| FR-062-AC-7 | Given a fixture of N expression nodes nested N deep (for example, `not` applied N - 1 times to `true`), checking it with the `CheckingLimits` node limit configured to N - 1 returns a `Limit` outcome naming the node-count limit, bound N - 1, count N and setting `s3.nodes`. Checking the identical fixture with the limit configured to N, one greater and nothing else changed, checks it. A test holds the fixture fixed and varies only the configured limit by exactly one, so the limit value, not the fixture's depth or the host's available stack, is shown to be the proximate cause of the refusal. | Test (TC-378) |
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked package holding two functions, one of whose body names a node the emitter omits and one that names no omitted node: `emit_checked` omits the first function's declaration node and each node on its path to the omitted node, each with cause `NamesOmittedNode`; it writes the second function and its body; and QSL's I2 read of the bytes reads back Verified and exports the second function and not the first. Given the same package with an occurrence the region conversion cannot place, `emit_package` returns `EmitRefusal::UnlocatedOccurrence` and no bytes. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
-| FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4, 128)` admits a package holding `a` alone; with `CheckingLimits::new(100, 128)` it admits a package holding both; with `CheckingLimits::new(4, 128)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
-| FR-062-AC-12 | A family `check` that reaches one of its four stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the depth the refused entry would reach for nesting depth, the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
+| FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4)` admits a package holding `a` alone; with `CheckingLimits::new(100)` it admits a package holding both; with `CheckingLimits::new(4)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
+| FR-062-AC-12 | A family `check` that reaches one of its three stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
@@ -497,52 +498,9 @@ tags as they exist in the delivered code today:
     The scan reads `evaluate.rs` and the `evaluate` method in `family.rs`
     only; `causes.rs`, `mod.rs`, `s6a.rs` and callees in other crates are
     not scanned.
-- FR-062-AC-7: backed by TC-378
-  (`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`,
-  `qsl-semantics/src/check/family.rs`). History: it was unbacked
-  (PR #303 review, findings 4/5; reverted from an earlier "backed" claim). That earlier claim rested on
-  `check::family::charge_recursive_nesting`, a side-walk added purely to
-  charge `CheckContext`'s nesting counter once per expression-tree node --
-  it re-walked the already-checked form afterward, charging nesting for
-  nodes `Typer` had already finished checking, rather than charging nesting
-  *at* real recursive descent as AC-7 requires. It also silently dropped
-  the real walk's own source location and its early-return-on-first-error
-  behavior (findings 4/5), so it was a regression as well as a
-  mischaracterization; it has been deleted, not repaired, and
-  `real_recursive_descent_is_nesting_depth_bounded` (the test that claimed
-  to demonstrate it) is deleted with it.
-  There are two distinct depth-limiting mechanisms in this codebase, and
-  AC-7 is about the second one: `CheckContext::enter_nesting`
-  (`qsl-semantics/src/family/`) is charged once per top-level declaration by
-  `ValueFunctionFamily::check`, bounding how many declarations' worth of
-  contract-level nesting are in flight -- it does not walk into a
-  declaration's body. `Typer`'s own `CheckingLimits.depth`
-  (`qsl-semantics/src/check/check.rs`) is charged once per real recursive `infer`/
-  `check_as` call and is what actually bounds a function body's real
-  recursive descent today; `real_checker_depth_limit_is_the_proximate_cause`
-  (`qsl-semantics/src/check/family.rs` `checking_tests`, untagged) demonstrates that bound
-  through `ValueFunctionFamily::check` end-to-end (a body nested 4 deep,
-  limit 3 refuses via `CheckCause::ResourceExhausted{kind: Depth}`, limit 4
-  admits). But that refusal surfaces as `StageFailure::Refused`, not the
-  `StageFailure::Limit` outcome AC-7's wording names, and `Typer`'s depth
-  counter is not `CheckContext`'s nesting-depth limit -- they are
-  configured, charged and reported independently. Making AC-7 literally
-  true would require threading `&mut CheckContext` through every recursive
-  arm of `Typer::infer_form` (not just the `Call` arm this ticket touches),
-  so real descent charges the *contract's* counter and reports through the
-  contract's `Limit` outcome. That is real, load-bearing `Typer`
-  entanglement -- the same entanglement the function-checking migration asked to be
-  reported rather than worked around -- and it is out of scope for this PR.
-  Resolved by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md).
-  AC-7's nesting-depth limit is `Typer`'s `CheckingLimits`
-  depth, the bound real recursive descent charges. It is a stage limit
-  (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
-  as `StageFailure::Limit` with kind nesting depth, carrying the
-  `Locus::Region` of the node whose entry failed. No `CheckContext` is
-  threaded through `Typer`. The `Locus` keeps the location PR #303
-  required; it needs the unit's `RawSourceRef` (FR-001, ADR-013 §7 slice
-  S-4b) and the forms' expression spans (FR-091-AC-10). TC-378
-  backs AC-7.
+- FR-062-AC-7: TC-378, over `not not not true` read through S1, S2 and
+  the assembler, varying the `CheckingLimits` node limit by one (FR-096-AC-11
+  gives its locus).
 - FR-062-AC-8: backed (`TC-161`). `check::refusal::CheckCause` has
   a `#[cfg(seam_probe)] __SeamProbe` variant; `CheckCause::code` (the one
   family `Cause` enum's `catalog_code()`-shaped mapping S4 names) has no
@@ -586,7 +544,6 @@ tags as they exist in the delivered code today:
   case-variant and a qualified name with `ReplayRefusal::UnknownFunction`,
   naming the selection and the recompiled package.
 - FR-062-AC-12: backed (`TC-432`):
-  `nesting_depth_limit_is_the_proximate_cause`,
   `stage_limits_restored_kinds_refuse_one_below_the_real_metric` and
   `work_budget_kind_refuses_from_a_denied_meter_charge`
   (`qsl-semantics/src/check/family.rs`, `checking_tests`). Package

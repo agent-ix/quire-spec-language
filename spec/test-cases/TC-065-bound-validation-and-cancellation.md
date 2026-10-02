@@ -15,7 +15,7 @@ failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure
 
-Generate valid inventories, selected populations, shared arenas, Unicode comparisons and many independent defects. Exercise every ValidationLimits counter at measured exact, one below and zero and hard-limit clamping. Include unselected inventory bytes versus selected object work. Poll deterministic cancellation before work and during loops. In a test-only catch_unwind boundary, make the caller poll panic, then run a fresh valid request.
+Generate valid inventories, selected populations, shared arenas, Unicode comparisons and many independent defects. Exercise every ValidationLimits counter at measured exact, one below, zero and raised above its default. Include unselected inventory bytes versus selected object work. Poll deterministic cancellation before work and during loops. In a test-only catch_unwind boundary, make the caller poll panic, then run a fresh valid request.
 
 Shared Unicode input uses two 200-element sequence levels: 40,000 logical text
 occurrences with individually admitted declarations. It must still reach the

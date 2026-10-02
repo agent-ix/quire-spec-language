@@ -696,8 +696,9 @@ changed bounds, unused values and ordered parameters. False line/column/source/
 revision and split-scalar loci are constructor-valid before native refusal.
 
 Exact small ModelLimits include every dimension and every aggregate-entry class.
-Valid 10,000-node/10,000-entry and depth-64 models pass; the next required node,
-entry or depth fails even with elevated options. The 10,001-role ceiling is
+Valid 10,000-node/10,000-entry models pass at the defaults; the next required
+node or entry fails at the default and passes with that limit raised. Deeply
+nested models pass under node limits sized for them. The 10,001-role ceiling is
 observed before artifact work; 10,000 full roles exceed this fixture's artifact
 ceiling, so that is recorded as a coupled refusal rather than an exact success.
 The earlier native-link tests retain exact 1 MiB and 8 MiB artifact boundaries.

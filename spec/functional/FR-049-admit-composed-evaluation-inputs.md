@@ -29,7 +29,7 @@ representation.
 
 The public Rust entry points take either a version-1 `AdmittedPackage` or a
 version-2 `v2::AdmittedPackage`, an `EvaluationRequest`, a borrowed `StateView`
-and caller-lowered `Limits`. The request selects one declaration and one
+and caller-configured `Limits`. The request selects one declaration and one
 declaration-local value handle. The state view contains explicit binder values
 and finite population/object views selected by their declaration-local binding
 requirements. Version-2 evaluation includes compensation guard, retry and

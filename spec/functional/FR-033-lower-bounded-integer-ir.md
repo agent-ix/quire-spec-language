@@ -14,8 +14,8 @@ When integer-ir/v1 is selected, the compiler shall lower checked Boolean and bou
 
 ## Inputs
 
-A NativePackage, an explicit lowering target and the existing caller-lowered
-node/depth/byte limits. Existing lower calls and the standalone lower command
+A NativePackage, an explicit lowering target and the existing caller-configured
+node/byte limits, each used as given. Existing lower calls and the standalone lower command
 default to boolean-oracle/v1. The optional command suffix
 `--target integer-ir/v1` selects this IR-only target; unknown names refuse
 before file intake. The request remains native-compile/1.
@@ -58,7 +58,7 @@ promise transactional directory publication.
 | --- | --- | --- |
 | FR-033-AC-1 | The actual strict IR reader reconstructs integer literals, direct declarations, arithmetic/comparisons and source-bound guarded definedness with exact signed bounds and operator order. | Test |
 | FR-033-AC-2 | State/pre/post and captured-input correspondence retain original model/declaration identities; changed scalar bounds alter the relevant native and bound identities. | Test |
-| FR-033-AC-3 | The Boolean default still refuses numeric clauses; unsupported later clauses and node/depth/byte exhaustion return no partial projection, and fresh retries succeed. | Test |
+| FR-033-AC-3 | The Boolean default still refuses numeric clauses; unsupported later clauses and node/byte exhaustion return no partial projection, and fresh retries succeed. | Test |
 | FR-033-AC-4 | Actual command target selection exports exactly the library's bytes, which the IR reader accepts with the selected clause, identifies integer lowering failures and rejects unknown targets before dependent file access; runnable integer fixtures produce true/false natively and identical projection bytes. | Test |
 | FR-033-AC-5 | Native and Markdown fixture generation propagate output-directory and later file-write errors; the executable returns exit 2 with an error message, and a fresh valid output directory succeeds. | Test |
 

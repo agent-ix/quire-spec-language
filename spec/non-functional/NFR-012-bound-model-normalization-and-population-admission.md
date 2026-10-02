@@ -52,9 +52,12 @@ ceiling therefore bounds the work done, not only the result:
   `normalize.cycle-check` charges have already admitted as work.
 - Every fact derived along one ancestor path shares that path, so memory
   grows with the number of facts plus the total ancestor-path length, and
-  the total path length is bounded by the work the cycle checks admitted. `ancestor_steps` and
-`family_steps` are read, not charged: a walk that would pass one refuses
-`resource_exhausted` naming it, unless an earlier charge was denied first.
+  the total path length is bounded by the work the cycle checks admitted.
+- `ancestor_steps` and `family_steps` are charged like every other ceiling:
+  each `supertypes` or `redefines` edge a walk follows is charged before it
+  is followed (FR-082, FR-083), and the first denied charge stops the walk
+  `Incomplete`. They count edges, never a depth, and every walk uses an
+  explicit stack.
 
 A meter holds fixed-size state. It counts admitted charges and keeps no
 per-charge record, so its memory does not grow with the work it bounds.
@@ -69,7 +72,8 @@ per-charge record, so its memory does not grow with the work it bounds.
 | Dispatch candidates | At most the selected ceiling (default 1600000) per dispatch link | 1600000 candidates by default | negative-abuse-testing |
 | Hashed preimage bytes | At most the selected ceiling (default 268435456 bytes) per normalization | 268435456 bytes by default | negative-abuse-testing |
 | Normalization work | At most the selected ceiling (default 16777216 work units) per normalization | 16777216 units by default | negative-abuse-testing |
-| Ancestor and family steps | At most the selected ceilings (default 100000 each) per walk | 100000 steps by default | negative-abuse-testing |
+| Ancestor steps | At most the selected ceiling (default 16777216 edges) per conformance walk | 16777216 edges by default | negative-abuse-testing |
+| Family steps | At most the selected ceiling (default 16777216 edges) per dispatch-family link | 16777216 edges by default | negative-abuse-testing |
 | Population members | At most the selected ceiling (default 100000) per admission | 100000 members by default | negative-abuse-testing |
 | Admission work | At most the selected ceiling (default 16777216 work units) per admission | 16777216 units by default | negative-abuse-testing |
 | Meter memory | Constant in the number of charges | No allocation per charge | inspection-and-test |
@@ -97,10 +101,10 @@ per-charge record, so its memory does not grow with the work it bounds.
   declaration and hash charges one unit, and a cycle check charges its path
   length. The work ceiling binds before the fact ceiling when ancestor paths
   average more than about nine steps.
-- **Ancestor and family steps, 100000.** A walk expands each type at most
-  once and follows each redefinition at most once, so neither count exceeds
-  the package's declaration count, which the record ceiling bounds. Every
-  walk uses an explicit stack, so the ceiling is not a stack-depth bound.
+- **Ancestor and family steps, 16777216 edges.** The work default above,
+  NFR-011's S3 work default. Both count edges followed, a unit of work: a
+  walk follows each edge of a type's closure at most once, so the default
+  admits any package whose closures fit the work default.
 
 Every existing normalization and admission fixture, and every model
 benchmark input, completes at these defaults with the same result as with no
@@ -119,8 +123,9 @@ TC-434 covers the defaults and the bound on work:
   diamond lattice's exponentially many ancestor paths are walked only as far
   as `derivation_facts` admits.
 - Inherited facts share their type's ancestor paths at the defaults.
-- A counted limit denied before the walk reaches `ancestor_steps` wins over
-  the `AncestorSteps` refusal, and otherwise the walk refuses on
+- The first denied charge decides the outcome: a `declaration_records`
+  charge denied before the walk exhausts `ancestor_steps` stops on
+  `declaration_records`, and otherwise the walk stops `Incomplete` on
   `ancestor_steps`.
 - A production meter and a production admission meter allocate nothing per
   charge.

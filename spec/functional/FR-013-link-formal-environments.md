@@ -17,7 +17,8 @@ When a native unit is linked under the formal-environment binding profile, the l
 ## Inputs
 
 An owned ParsedUnit, a borrowed slice of validated Contract IR
-DeclarationEnvironment values and caller-lowered LinkLimits. The public
+DeclarationEnvironment values and caller-configured LinkLimits, each with a published default and used as given
+with no ceiling. The public
 `link(unit, environments, limits)` API is specified in
 [the binding contract](../../docs/formal-environment-linking.md).
 
@@ -62,7 +63,7 @@ equality and Boolean roots remain FR-006's subsequent checking phase.
 | FR-013-AC-2 | A canonical semantic digest or another environment's byte digest cannot substitute for the selected canonical-declaration byte digest. | Test (TC-030) |
 | FR-013-AC-3 | Lexical scopes, record fields, values and enum variants resolve to their exact local or owner-qualified identities; a missing reference refuses without a package. | Test (TC-031) |
 | FR-013-AC-4 | Unsupported reference/operation mappings refuse with unsupported_construct and never yield a package or Boolean result. | Test (TC-032) |
-| FR-013-AC-5 | Exact caller limits are admitted, a required next operation above a lowered or hard limit returns resource_exhausted, and zero does not disable a limit. | Test (TC-033) |
+| FR-013-AC-5 | Exact caller limits are admitted, a required next operation above a configured limit returns resource_exhausted, an input above a default links once that limit is raised to fit it, and zero does not disable a limit. | Test (TC-033) |
 | FR-013-AC-6 | Ambiguity diagnostics retain every conflicting formal declaration locus, and prior calls or candidate order cannot expose partial linkage. | Test (TC-034) |
 
 ## Dependencies

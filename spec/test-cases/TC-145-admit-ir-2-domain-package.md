@@ -31,7 +31,7 @@ refusal), FR-056-CON-4.
    a lone surrogate in a member name, and `1e400`. Offer a lone-surrogate
    document under the `sha256-jcs` digest of the same document with U+FFFD in
    its place, and `not json` under its own raw digest with an empty identity
-   and version. Offer documents over the reader's input-size and depth limits.
+   and version. Offer a document over `intake.input_bytes`.
    Offer documents carrying `18446744073709551615`, `18446744073709551616`,
    `123456789012345678901234567890` and `-9007199254740993`, each first under
    the digest of its double form and then under the digest of its exact digits.

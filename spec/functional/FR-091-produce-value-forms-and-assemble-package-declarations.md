@@ -48,8 +48,9 @@ The requirement carries testable criteria for decisions already taken:
   source.
 - ADR-011 §2.3. E2 refuses with diagnostics and builds no partial form. E3
   refuses with every error diagnostic and yields no partial output. Every
-  stage entry takes explicit limits, and recursive stages (S2 among them)
-  bound their depth by an explicit limit.
+  stage entry takes explicit resource limits. ADR-030 D-1 removes depth as a
+  limit: S2 walks over explicit heap stacks and is bounded by S1's node
+  limit (FR-257).
 - ADR-011 §1: name binding is a phase inside S3.
 - ADR-011 §3 FB-01: no stage after S1 reads source text, CST or token text
   to recover meaning. FB-13: only `check` calls the kernel `NodeKey`
@@ -123,7 +124,6 @@ for the syntax this requirement maps.
 
 - The S1 output of one complete-V1 unit, `qsl_cst::ParsedSource`, whose CST
   is a `LosslessCst`.
-- An explicit S2 limit set, which holds at least a nesting-depth bound.
 - For the assembler: the parsed unit that S2 returned for that source, and
   the unit's source owner `SourceOwner{authority, identity}`, taken from the
   source reference the unit was compiled from. It is a required input:
@@ -338,19 +338,14 @@ and `float64(bits: ..)`, `null` outside a record field value, `none`,
 `reaches(..)` is a `StateModel` construct (model-graph reachability), and
 its variant is `StateModel`'s to add (ADR-012 §4.3).
 
-### S2 depth limit
+### S2 depth
 
-S2 bounds its recursion by the nesting-depth bound `L` in its limit set, not
-by the native stack (ADR-011 §2.3 Limits). Depth counts `Expression` nodes.
-The root expression of a function body or measure is at depth 1, and each
-child is one deeper than its parent. A body whose deepest node is at depth
-`L` builds. A body with a node at depth `L + 1` gives a limit refusal that
-names limit kind nesting depth, the bound `L`, and the span of the first node
-at depth `L + 1` in source order. It is never a truncated form and never a
-`NoDispatchEntry` or `UnrepresentedConstruct` refusal. The S2 bound applies
-to sources that S1 admits. S1's delimiter-nesting ceiling
-([NFR-001](../non-functional/NFR-001-bound-syntax-work.md) "Nesting level")
-counts delimiter pairs, a different quantity, and is enforced independently.
+S2 builds a form for every body S1 admits, whatever its depth. It builds at
+most one form node per CST node, so S1's node limit
+([NFR-001](../non-functional/NFR-001-bound-syntax-work.md)) bounds it, and
+S2 takes no limit set of its own. S2 walks the CST and builds `Expression`
+over explicit heap stacks
+([FR-257](FR-257-build-forms-at-any-depth.md), ADR-030 D-4.2).
 
 ### S2 layering
 
@@ -689,7 +684,6 @@ code or code/cause:
 | zero denominator | `undefined_expression`/`unproved-nonzero` |
 | decimal-scale limit | `stage_limit_exceeded`/`work-budget-exceeded` |
 | unit-graph topology | `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12) |
-| S2 nesting-depth limit | `stage_limit_exceeded`/`nesting-depth-exceeded` |
 | unresolved state clause operation (FR-104) | `missing_declaration`/`missing-name` |
 | ambiguous state clause operation (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
 | ambiguous state clause population (FR-104) | `ambiguous_declaration`/`ambiguous-name` |
@@ -742,7 +736,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-6 | S2 builds a parsed unit with one form for an admissible unit whose only declaration is `enum Color { RED }`, `ordered enum Level { LOW }`, `predicate P using v(x: Boolean): Boolean { x }`, `dimension Length;` or, after `dimension Length;`, `unit m : Length = rational(1, 1);`. None of these refuses with `NoDispatchEntry`. No module under `forms` other than the `Value` family form builder names the `EnumDeclaration`, `EnumMember`, `Predicate`, `DimensionDeclaration` or `UnitDeclaration` CST production. | Test (TC-395) |
 | FR-091-AC-7 | S2 refuses the whole unit with cause `UnrepresentedConstruct`, naming the construct's CST production and span and returning no form, for a function body that holds exactly one of: a text literal, `decimal(1, 2)`, `a mod b`, `xs[0]`, `none`, `reaches(a, b, M::R)`. | Test (TC-396) |
 | FR-091-AC-8 | For each of `function f using v(x: Int[0, 9]): Boolean pure { B }` with body `B` equal to `deref(x)`, `allInstances<M::T>(x)` or `pre(x)`, and `function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }`, each in a unit with no admitted domain package, S2 returns a parsed unit that holds `Deref`, `AllInstances` or `Pre` where the construct is written. Check refuses `pre(x)`, in the body and in the measure, with `wrong_snapshot`/`forbidden-pre-read`, the `ProtocolClause` cause, and `deref(x)` with `ill_typed`/`type-mismatch`. The assembler refuses `allInstances<M::T>(x)` with an unresolved-type-name error naming `M::T` (`missing_declaration`/`missing-name`). None of these refusals has code `unsupported_construct`. | Test (TC-396) |
-| FR-091-AC-9 | With S2 nesting-depth bound `L = 8`, S2 builds a function body `not`×7 `a`, whose deepest node is at depth 8. It refuses `not`×8 `a` with a limit refusal that names limit kind nesting depth, bound `8`, and the span of the node at depth 9, and returns no parsed unit. It refuses `not`×20 `a` in the same way. S1 admits all three sources, so each refusal comes from S2. | Test (TC-397) |
+| FR-091-AC-9 | S2 builds a form for each of the function bodies `not`×8 `a`, `not`×20 `a` and `not`×129 `a`, each admitted by S1 at its default limits, and each form's expression tree is as deep as its body. S2 takes no limit set, and no S2 outcome names a depth. | Test (TC-397) |
 | FR-091-AC-10 | Every `Expression` node in a `Value` form carries the span of the CST node it maps from. For the body `if a then b else c + d`, the `If` node's span covers the whole body, the `Add` node's span covers `c + d`, and the `Name("d")` node's span covers `d`. For `(a + b) * c`, the `Add` node's span covers `a + b`, without the parentheses. | Test (TC-403) |
 | FR-091-AC-11 | The `Value` family form builder module has `use` edges and inline paths only to the `forms` core, `qsl_cst`, `qsl_foundation` and `quire_exact`. It has none to another family module or to anything under `crate::check`, `crate::value` or `crate::model`. No field of a `Value` parsed form, of the type form, of a parsed-unit selection, or of an `Expression` variant in the mapping table has type `ValueType` or `NodeKey`. The dispatch `match`, the expression `match` and the assembler's resolution `match` have no `_` arm. | Test (TC-398) |
 | FR-091-AC-12 | The assembler returns a `PackageDeclarations` value for the S2 output of source that declares `type Digit = Int[0, 9];`, then `function inc using v(x: Digit): Int[0, 10] pure { x + 1 }`, then `function two using v(): Int[0, 10] pure { inc(1) }`. Its `aliases` is `[("Digit", Int[0..9])]`. Its `functions` are `inc` and then `two`. `inc`'s check-owned resolved signature has parameter type `Int[0..9]` and result type `Int[0..10]`. | Test (TC-399) |
@@ -754,7 +748,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 | FR-091-AC-18 | For `record Point { x: Int[0, 9]; y: Int[0, 9]; }`, `tuple Pair(Int[0, 9], Int[0, 9]);` and `function px using v(p: Point): Int[0, 9] pure { p.x }`, assembled under source owner authority `a`, identity `u`, the assembler's `types` holds one record declaration `Point` and one tuple declaration `Pair`, each with a key that `check` minted over that owner. `px`'s resolved parameter type is `ValueType::Composite` of `Point`'s key, and `PackageDeclarations::check` admits the package. Assembling and checking the same source again under (`a`, `u`) gives the same `Point` and `Pair` keys and the same checked node id for `px`. Under (`a`, `w`) it gives a different key for each of the three. No item named `DEFAULT_PACKAGE_IDENTITY` exists under `src/`. | Test (TC-401) |
 | FR-091-AC-19 | The assembler admits a parameter typed `Float64[nearest-even]`, `Float32[toward-zero]` or `Float64`. Resolving each gives a `ValueType::Float` of the written width and rounding mode `nearest-even`, `toward-zero` and `exact` (the bare spelling). The evaluator rounds a `Float64[mode]` `+` by that mode. It refuses a parameter typed `Reference<M::T>`, in a unit with no admitted domain package, with an unresolved-type-name error naming `M::T`, and returns no `PackageDeclarations`. | Test (TC-405) |
 | FR-091-AC-20 | The assembler module is under the layer-3 `check` core. Its non-test code has no `use` edge or inline path to `qsl_cst`. Its `#[cfg(test)]` code may reach `qsl_cst` only to run S1 and S2. | Test (TC-402) |
-| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit name cause `missing_declaration`/`missing-name`, the dimension or unit cycle cause `invalid_package`/`definition-cycle`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology cause returns `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). S2's nesting-depth limit refusal reports `stage_limit_exceeded`/`nesting-depth-exceeded`. | Test (TC-406) |
+| FR-091-AC-21 | `catalog_code()` on each S2 and assembler cause returns the code in the Catalog codes table, and matches every cause with no `_` arm. The diagnosed-source cause returns its diagnostic's own code. The floating-type cause returns `unknown_required_feature`, the undeclared-alias cause `missing_declaration`, the duplicate-alias cause `ambiguous_declaration`, the alias-cycle cause `invalid_package`, the duplicate-enum-member cause `ambiguous_declaration`/`ambiguous-name`, the nominal-admission-fault cause `runtime_invariant`/`established-invariant-broken`, the duplicate dimension or unit name cause `ambiguous_declaration`/`ambiguous-name`, the unresolved dimension or unit name cause `missing_declaration`/`missing-name`, the dimension or unit cycle cause `invalid_package`/`definition-cycle`, the zero-denominator cause `undefined_expression`/`unproved-nonzero`, and the decimal-scale limit `stage_limit_exceeded`/`work-budget-exceeded`. The unit-graph topology cause returns `invalid_package`/`unit-graph-topology`, interim, replaced by the STD-112 cause once published (FR-091-OQ-12). | Test (TC-406) |
 | FR-091-AC-22 | For a unit with one profile selection, alias `v`, and `function f using v(): Boolean pure { true }`, the assembler records `f`'s `using` alias as resolved to that selection. With `function g using w(): Boolean pure { true }` added, it returns one refusal holding an undeclared-alias error, code `missing_declaration`/`missing-selection`, that names `w` and the span of `g`'s `using` field, and no `PackageDeclarations`. A unit that declares two profile selections with alias `v` refuses with a duplicate-alias error, code `ambiguous_declaration`/`ambiguous-name`, naming `v` and both selection spans. | Test (TC-412) |
 | FR-091-AC-23 | S1 admits a unit whose function parameter is typed `Float32` or `Float64` with no `[mode]`, and S2 builds that parameter's type form with head `Float32` or `Float64` and no rounding mode. | Test (TC-405) |
 | FR-091-AC-24 | Spine `compile` of a unit that declares `import "test/units" version "2" digest "<64 lowercase hex>" as u;`, with no library supplied as `test/units`, refuses at stage `intake`, before assembly, with `missing_import`/`missing-selection` naming `test/units` at the import's identity string (FR-099, ADR-015 D-1), and emits no package. | Test (TC-405) |
@@ -841,7 +835,7 @@ preimage can refuse, and the refusal is the nominal-admission fault. `qsl_forms:
 unit's declarations and dispatches `function`, `type`, `record` and `tuple`
 to the `Value` builder (`qsl-forms/src/value.rs`), which maps every row of
 the expression table with each node's span, refuses the listed
-unrepresented constructs, and bounds its depth. The forms
+unrepresented constructs, and builds every depth S1 admits. The forms
 `FunctionDeclaration` carries its `using` alias. The assembler records each
 resolved selection in `PackageDeclarations::function_selections`
 (FR-091-AC-22). A bare `Float32` or `Float64` is admitted by S1 and builds a

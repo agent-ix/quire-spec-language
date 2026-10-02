@@ -18,7 +18,7 @@ recomputed `package_id`, types an imported function call from the
 library's checked graph and emits it as a `dependency_reference`, and
 refuses each ADR-015 D-1 and D-2 case with no package.
 
-Scope: FR-099-AC-1 to FR-099-AC-6, FR-027-AC-10.
+Scope: FR-099-AC-1 to FR-099-AC-7, FR-027-AC-10.
 
 ## Test Procedure
 
@@ -62,6 +62,13 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    version `1`, by file, source digest and the labels above; then the same
    request with a `0-draft` program.
 
+8. Import `test/a`, with `test/a` importing `test/b` and `test/b`
+   importing `test/c`; compile with `dependency.libraries` at 2, then at 3;
+   with `dependency.import_edges` at 2; and with `dependency.source_bytes`
+   one byte below the three libraries' summed source bytes. Then compile a
+   unit importing the first of a chain of 200 libraries, each importing the
+   next, at the default limits.
+
 Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
 ## Expected Results
@@ -100,9 +107,15 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   with an empty identity or version, refuse with `invalid-request`, exit
   20, empty stdout.
 
+- Step 8: `stage_limit_exceeded` at stage `intake` at `test/b`'s import of
+  `test/c`, node count, bound 2, actual 3, setting `dependency.libraries`,
+  no package; at 3 the compile succeeds; edge count, bound 2, actual 3,
+  setting `dependency.import_edges`; input bytes, setting
+  `dependency.source_bytes`. The 200-library chain compiles.
+
 ## Status
 
-Steps 1 to 6 pass locally: `qsl-replay`
+Step 8 (FR-099-AC-7) is pending. Steps 1 to 6 pass locally: `qsl-replay`
 `spine::dependency_tests`, and `qsl-cst` `an_import_digest_is_bare_lowercase_hex`
 for step 2's digest spellings. Step 5's `g::f(3)` result was amended to
 expect the `Int[0, 9]` conversion node. Step 7

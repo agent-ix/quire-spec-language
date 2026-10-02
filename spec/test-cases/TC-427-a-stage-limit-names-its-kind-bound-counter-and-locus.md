@@ -21,7 +21,9 @@ Scope: FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5.
 
 1. Read `catalog_code()` of each `LimitKind` and of a `LimitExceeded` of
    each kind.
-2. Run S2 with nesting-depth bound 8 over a body of `not`×8 `a`.
+2. Run S1 over a body of `not`×8 `a` with `s1.nodes` one below the unit's
+   syntax-node count; then run S1 at the default limits and S2 over the
+   result.
 3. Check a declaration whose preimage input bytes exceed bound `B`; then
    reach the same limit for an FR-151 synthesized function.
 4. Check a declaration whose work charge a work budget `W` denies.
@@ -31,12 +33,14 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 ## Expected Results
 
 - Step 1: `stage_limit_exceeded` with `input-bytes-exceeded`,
-  `nesting-depth-exceeded`, `token-count-exceeded`, `node-count-exceeded`,
-  `edge-count-exceeded`, `occurrence-count-exceeded`,
-  `diagnostic-count-exceeded` and `work-budget-exceeded` (revision
-  `1-draft.7`), and each `LimitExceeded` gives its kind's code.
-- Step 2: kind nesting depth, bound 8, actual 9, the region of the node at
-  depth 9 under the unit's `RawSourceRef`.
+  `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`,
+  `occurrence-count-exceeded`, `diagnostic-count-exceeded` and
+  `work-budget-exceeded` for the seven kinds, and each `LimitExceeded`
+  gives its kind's code and carries its setting name.
+- Step 2: `stage_limit_exceeded`/`node-count-exceeded` with the configured
+  bound, the count reached and setting `s1.nodes`, at the region S1's
+  diagnostic names under the unit's `RawSourceRef`; at the defaults S2
+  builds the form.
 - Step 3: kind input bytes, bound `B`, actual the measured bytes, the
   declaration's region; the synthesized function's limit has no locus.
 - Step 4: kind work budget, bound `W`, actual the spend the denied charge
@@ -44,11 +48,13 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 
 ## Status
 
-Backed. Step 1:
+Partly backed. Step 1:
 `limit_exceeded_reports_stage_limit_exceeded_per_kind`
-(`qsl-foundation/src/diagnostic/stage.rs`). Step 2:
+(`qsl-foundation/src/diagnostic/stage.rs`), for eight kinds; the
+seven-kind form and the setting are planned. Step 2 is planned; the present
 `the_s2_depth_limit_is_located_at_the_first_node_past_the_bound`
-(`qsl-forms/tests/it/value_forms.rs`). Steps 3 and 4:
+(`qsl-forms/tests/it/value_forms.rs`) drives the S2 depth limit ADR-030
+deletes. Steps 3 and 4:
 `a_declaration_input_bytes_limit_is_located_at_the_declaration` and
 `a_denied_work_charge_is_located_at_the_declaration`
 (`qsl-semantics/src/check/family.rs`, `locus_tests`), over declarations

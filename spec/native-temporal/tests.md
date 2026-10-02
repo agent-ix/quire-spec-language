@@ -151,7 +151,7 @@ profiles. Valid and invalid profile identities and revisions, matching and
 mismatched clock binding names, closed-complete and open decision scopes, present
 and absent valuations, fully, partially and foreign-keyed admitted orders, an
 authoritative origin against a bare history cutoff, and zero, exact, one-short
-and clamped ceilings each have explicit controls.
+and raised-above-default limits each have explicit controls.
 
 Two state machines are under test. Activation transitions through inactive,
 unknown-open, unknown-incomplete, unknown-refused and active, with a guard-false

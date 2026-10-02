@@ -441,7 +441,7 @@ reads the first). The first rule that matches wins:
 
 1. `Ok` → admitted.
 2. any cause with code `runtime_invariant`; `Intake` other than its limit
-   cause, `Profile`, `DependencyInput`, `Import` other than its depth limit,
+   cause, `Profile`, `DependencyInput`, `Import` other than its limit cause,
    `Dependency`, `Link` or `Emit` → tool failure (the case's setup is
    broken).
 3. `Source`, `Forms`, `Assembly` or `Check` holding a typed refusal cause (a
@@ -449,7 +449,7 @@ reads the first). The first rule that matches wins:
    `unsupported_projection`) → refused.
 4. any `stage_limit_exceeded` cause (`FormsFailure::Limit`,
    `UnitIntakeCause::Limit`, `AssemblyCause::TypeLimit`,
-   `ImportRefusal::DepthLimit`, or an `Assembly` or `Check` cause with that
+   `ImportRefusal::Limit`, or an `Assembly` or `Check` cause with that
    code) → incomplete.
 5. `Omitted`; any `unsupported_projection` cause; any `unsupported_construct`
    cause whose cause is `not-yet-implemented` → unsupported (a QSL

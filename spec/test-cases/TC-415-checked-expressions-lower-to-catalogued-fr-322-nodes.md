@@ -22,8 +22,8 @@ This catches a lowering that inlines operands (losing occurrences), a
 `result_type` inferred rather than taken from the checked type, a wrong
 catalog identity (for example `numeric.convert` for a narrowing), a law
 invented from a constant, a `NodeKind` added without a lowering arm, a leaf
-walk that runs a recursive composite to the depth limit, and an optional
-field's leaf path without `inner`.
+walk that runs a recursive composite past its first reentry, and an
+optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
 FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-CON-1.
@@ -67,10 +67,11 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
    lock evidence that supplies no text-profile definition, and again with a
    node limit that admits every node of its package but not also its two
    leaves.
-10. On a spawned thread with a 2 MiB stack, check a function body of 127
-    nested `a and (…)` and one of 128 at the default limits. For each of
-    these forms, check the deepest nesting the default limits admit and one
-    level deeper: `a and (…)`, `(…) and a`, `if a then (…) else false`,
+10. On a spawned thread with a 512 KiB stack, check a function body of the
+    longest nested `a and (…)` chain the default S1 limits admit, at the
+    default limits. For each of these forms, check it nested 2 deep and
+    1,000 deep, with S1 and S3 limits raised to fit the 1,000-deep form:
+    `a and (…)`, `(…) and a`, `if a then (…) else false`,
     `if (…) then a else a`, `let bN = a in (…)`, `not (…)`, `g(…)`,
     `(x < x) = (…)`, a guard `if ((…) and x < 1) then a else a`,
     `x + (…)`, `(…) + x`, `-(…)`, `h(x * (…))` narrowed to `Int[0, 9]`, a
@@ -85,9 +86,7 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `size(allInstances<M::Order>(p)) + (…)`, the clause
     `r.scaled(r.scaled(…)) >= 0` nesting dispatch arguments, and
     `Order.scaled`'s precondition `n + (…) >= 0`, which the dispatch bridge
-    renames into `Sub.scaled`'s effective precondition. Check each form nested 1,000
-    deep at the default limits, at the maximum depth with node, input-byte
-    and work limits unlimited, and at a depth limit of 16. Check a
+    renames into `Sub.scaled`'s effective precondition. Check a
     postcondition `pre(…)` over 1,000 nested `a and (…)`, and one over
     1,000 nested `let`s around `pre(a)`.
 11. With the alias `Total = Integer` and parameters `a: Boolean`,
@@ -128,13 +127,11 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
   `missing_declaration`/`missing-selection` naming role `text_profile`, and
   under the node limit with `stage_limit_exceeded`/`node-count-exceeded`
   at that limit, each time yielding no node.
-- Step 10: 127 levels check and 128 stop with
-  `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 128.
-  Each form checks at its deepest admitted nesting, except the unguarded
-  `value` chain, which refuses there as an unproved presence, and stops with
-  `nesting-depth-exceeded` one level deeper. Every 1,000-deep form refuses
-  with `nesting-depth-exceeded` at the depth limit in force. The first `pre` refuses as a forbidden
-  pre-read and the second on the depth limit. No check aborts.
+- Step 10: the default-limit chain checks. Each form checks at 2 and at
+  1,000 deep, except the unguarded `value` chain, which refuses at both
+  depths as an unproved presence. The first `pre` refuses as a forbidden
+  pre-read, and the second settles as the same form over 2 nested `let`s
+  does. No outcome names a depth, and no check aborts.
 - Step 11: each read after its binder's body refuses with
   `missing_declaration`/`missing-name` naming the name read. Each form
   beside a copy of itself checks. `v` lowers at level 4, `w` and `u` at
@@ -156,7 +153,7 @@ stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
 cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 (`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
 The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
-`stage_limit_exceeded`/`node-count-exceeded` directly; the depth steps'
-(`check/lowering/tests/expression_depth.rs`,
-`check/lowering/model/tests/expression_depth.rs`) assert the full depth
-cause, bound and actual counter.
+`stage_limit_exceeded`/`node-count-exceeded` directly. Step 10's present
+tests (`check/lowering/tests/expression_depth.rs`,
+`check/lowering/model/tests/expression_depth.rs`) drive the depth limit
+ADR-030 deletes; step 10 as written above is planned.

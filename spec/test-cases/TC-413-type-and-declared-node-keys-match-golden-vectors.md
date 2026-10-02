@@ -45,16 +45,17 @@ selection whose alias is `v`.
 4. Check `type Digit = Int[0, 9];` with
    `function g using v(x: Digit): Boolean pure { true }`. Read the semantic
    type of `x`'s parameter node, and list every node's `declaration`.
-5. With the depth limit set to 4, check a parameter typed with four nested
-   `Option`s around `Boolean`, and one with five. Check the recursive `f` of
+5. On a spawned thread with a 512 KiB stack, check a parameter typed with
+   100,000 nested `Option`s around `Boolean` under S1 and S3 limits raised
+   to fit it, and the same type on a thread with an 8 MiB stack. Check the
+   recursive `f` of
    FR-092 vectors G4 to G6 and the same declaration named `g`, calling `g`,
    in one unit.
-   On a spawned thread with a 2 MiB stack, at the default limits, check a
+   On a spawned thread with a 512 KiB stack, at the default limits, check a
    chain of 30 records, each `record Ci { next?: C{i+1}; }`, the last into
    `record Leaf { label: Text[0, 8; nfc]; }`, alone and with an equality
    over `C0`; check the same chain 1,000 records long, alone and with the
-   equality, at the default limits, at the maximum depth with nodes and work
-   unlimited, and at a depth limit of 16.
+   equality, with S1 and S3 limits raised to fit it.
 6. Key QSpec's `enum-status` and `enum-status-ready` preimages from
    `node-identity-vectors.json`, read at run time from `QSPEC_DIR` (the opt-in
    `make conformance` gate).
@@ -86,15 +87,14 @@ Tag the tests `#[trace("FR-092-AC-n", "TC-413")]` with the AC each backs.
 - Step 3: both (`a`, `u`) keys equal D1 and the (`a`, `w`) key equals D2. D1's
   preimage has `owner` and `declaration`; T4's has neither member.
 - Step 4: the semantic type is T4, and no node's `declaration` is `Digit`.
-- Step 5: four `Option`s are keyed; five stop with
-  `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 4. The
+- Step 5: the nested `Option` type is keyed on both threads, with equal
+  keys. The
   `f`/`g` unit refuses with `unknown_required_feature`/`unsupported-feature`
   naming the regions of `f` and `g`, and no member of either group has a
   key; each conditional's preimage alone keys to G5.
   The 30-record chain checks, alone and with the equality, and the thread
-  completes. The 1,000-record chain refuses under every limit set, each
-  stop `stage_limit_exceeded`/`nesting-depth-exceeded` at the depth limit set, and the thread
-  completes.
+  completes. The 1,000-record chain checks, alone and with the equality,
+  and the thread completes. No outcome names a depth.
 - Step 6: each key equals the recorded `sha256`, and each preimage's
   `version` is its nominal one.
 - Step 7: T10 and T9, T12 and T11, D5, D3, D4 (differing from D3), and L3
@@ -118,7 +118,6 @@ groups and the declared record's own key included.
 stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
 cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 (`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
-Step 5's test (`check/lowering/tests.rs`) asserts
-`stage_limit_exceeded`/`nesting-depth-exceeded` directly; step 6's
-(`check/lowering/tests/depth.rs`) asserts the full depth cause, bound and
-actual counter for every refusal.
+Step 5's present tests (`check/lowering/tests.rs`,
+`check/lowering/tests/depth.rs`) drive the depth limit ADR-030 deletes;
+step 5 as written above is planned.

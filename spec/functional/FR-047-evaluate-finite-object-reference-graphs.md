@@ -39,7 +39,7 @@ object-type, reference field and observation selections; immutable current, invo
 invocation-post anchors; a finite object arena keyed by the complete storage
 identity `(observation occurrence, model, universe, object type, object
 identifier)` and preserving reference occurrence order; explicit membership
-and closure authority; and caller-lowered finite evaluation limits admitted by
+and closure authority; and caller-configured finite evaluation limits admitted by
 [FR-049](FR-049-admit-composed-evaluation-inputs.md).
 
 The observation occurrence is the exact semantic anchor, snapshot identity,
@@ -117,11 +117,10 @@ domain is false.
 
 The evaluator SHALL use `quire.state.evaluation-work/1` and the charge-before-
 work depth-first-search rules in
-[NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md). The selected
-start has active graph depth one; each recursively entered unexpanded storage
-key adds one active frame. If the next expansion, edge, comparison or active-
-depth charge exceeds the clamped ceiling, then evaluation SHALL return typed
-resource exhaustion without a Boolean result.
+[NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md), over an
+explicit stack of entered storage keys rather than native recursion. If the
+next expansion, edge or comparison charge exceeds the caller's limit, then
+evaluation SHALL return typed resource exhaustion without a Boolean result.
 
 The evaluator SHALL start a retry with fresh work accounting over the unchanged
 admitted package and immutable graph input.
@@ -146,7 +145,7 @@ merely to reuse `reaches`.
 | FR-047-AC-4 | Reachability is positive-length: an isolated `a` does not reach itself, while `a→a` and `a→b→a` do; a direct or longer path to another target succeeds. | Test (TC-130) |
 | FR-047-AC-5 | Deterministic depth-first search expands each full storage identity at most once, visits sibling edges in authored occurrence order and charges duplicate edges independently without changing Boolean reachability. | Test (TC-130) |
 | FR-047-AC-6 | Optional absence and empty edge sequences have no outgoing edge; only `Ref(T)`, `Option(Ref(T))` and `Seq(Ref(T),N)` edges are admitted by this profile. | Test (TC-130) |
-| FR-047-AC-7 | Zero, exact, one-step-insufficient and above-hard requests under `quire.state.evaluation-work/1` distinguish completed true/false results from typed resource exhaustion; a sufficient retry starts fresh and returns the same Boolean with deterministic usage. | Test (TC-131) |
+| FR-047-AC-7 | Zero, exact, one-step-insufficient and above-default requests under `quire.state.evaluation-work/1` distinguish completed true/false results from typed resource exhaustion; a sufficient retry starts fresh and returns the same Boolean with deterministic usage. | Test (TC-131) |
 | FR-047-AC-8 | Historical ConfigVersion parsing, linkage and evaluation retain their original identities and parent semantics without a fabricated finite numeric or graph selection. | Test (TC-131) |
 
 ## Dependencies
@@ -160,7 +159,7 @@ FR-042's family-completeness and consumer-handoff criteria do not precede graph
 evaluation. [FR-049](FR-049-admit-composed-evaluation-inputs.md) owns
 the immutable storage/input admission boundary and
 [NFR-009](../non-functional/NFR-009-bound-composed-evaluation.md) owns the
-versioned work identity, hard ceilings and charge order. The immutable standard's
+versioned work identity, default limits and charge order. The immutable standard's
 FR-043 supplies the selected graph meaning. Concrete object membership and
 closure are independently supplied runtime inputs. This retrospective cycle under
 [#66](https://github.com/agent-ix/quire-spec-language/issues/66) records that

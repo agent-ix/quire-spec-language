@@ -16,10 +16,10 @@ ConfigVersion compatibility.
 
 Measure successful true and false depth-first traversals under
 `quire.state.evaluation-work/1`, then rerun each with zero, exact and one-step-
-insufficient graph-expansion, graph-edge, comparison and active-depth limits
-while keeping other dimensions sufficient. Request each graph limit above its
-NFR-009 hard ceiling and verify clamping. Exercise a self-loop at depth one, a
-chain at the exact active-depth limit, a duplicate edge, and an exhaustion that
+insufficient graph-expansion, graph-edge and comparison limits
+while keeping other dimensions sufficient. Raise each graph limit above its
+NFR-009 default and run input past the default. Exercise a self-loop, a chain of
+10,000 objects on a thread with a 512 KiB stack, a duplicate edge, and an exhaustion that
 occurs immediately before the next expansion and immediately before the next
 edge inspection. Retry from the unchanged package and environment.
 
@@ -34,7 +34,7 @@ relation.
 
 ## Expected Results
 
-Exact capacities complete; one-short and clamped-insufficient capacities return
+Exact and raised capacities complete; one-short capacities return
 typed exhaustion before the next operation and no Boolean. Retrying starts fresh
 and repeats the same Boolean and deterministic usage; no run reports a path
 witness. The complete-domain absence refuses as dangling, unavailable membership
