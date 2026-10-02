@@ -85,3 +85,20 @@ Round 2, reviewed at `f742a64e179a20a327f1ef973de10ed227ea7a20` (diff `cd999fc8.
 | --- | --- | --- |
 | FND-002 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |
 | FND-003 | fixed | 305bb0e64f1302a8dd1618cc624028714072cc4d |
+
+Round 3, reviewed at `b1e2a0c8666126bef9663be1842ffd680009dae0`. The branch is rebased onto main 8508458d.
+`git range-diff` of the eight PR commits (old base..f742a64e against
+8508458d..4aa9030c) shows seven identical, and one (918e5cae) differing only
+in two hunk-header context lines (`impl CallSiteRefusal`). The changed
+lines of the PR diff against its base are byte-identical before and after
+the rebase, so nothing was dropped from either side. Two commits are new:
+c747313f (the `Retained` doc, plus the committed review files) and
+b1e2a0c8, which changes only the profile header line in #593's
+`witness.rs` and `witness_member.rs` to
+`profile v = "quire.value.complete/v1";`. No `PROFILE_DIGEST` reference or
+versioned `quire.value.complete/v1` header is left. The witness tests pass
+(49).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | c747313fbcaf114e71a485e97f7e0a4f62e2df82 |
