@@ -95,3 +95,10 @@ Round 1, reviewed at `0a2609e8f64f4e7d05b634a4567b3b21120b216e` (diff `4fb4e69b.
 | FND-004 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
 | FND-005 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
 | FND-006 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
+
+Round 2, reviewed at `7226baa9eccc241574fec9b7a5706b8c45f1952d` (rebased onto main f5a2cc1d; round-2 changes `0fc3c91fa..7226baa9e`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 2881f26f234f71461944a429e82e5549fac0e706 |
+| FND-007 | fixed | 2881f26f234f71461944a429e82e5549fac0e706 |
