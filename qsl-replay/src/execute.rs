@@ -37,8 +37,7 @@ use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
 use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessCheck,
-    WitnessArmResult,
+    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
     compile, CompileRefusal, Compiled, DependencyInput, DependencyInputRefusal, SpineLimits,
@@ -56,6 +55,8 @@ pub use frame::{replay_frame, FrameIdentityMismatch, FrameReplayResult};
 
 mod state_clause;
 pub use state_clause::{replay_state_clause, ClauseIdentityMismatch, StateClauseReplayResult};
+#[cfg(test)]
+pub(crate) use state_clause::{separate, stopped_reason, SeparationOutcome};
 
 /// The S1 limit a request names that is above this executor's reader
 /// limit (ADR-013 O-26: "a limit above the reader limit").

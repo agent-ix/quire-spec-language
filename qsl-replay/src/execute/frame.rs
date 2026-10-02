@@ -28,8 +28,7 @@ use crate::identity::RawSourceRef;
 use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessCheck,
-    WitnessArmResult,
+    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
 };
 use crate::spine::{
     check_frame, resolve_frame, CallOutcome, CallValue, ClauseDisposition, ClauseRunSelection,

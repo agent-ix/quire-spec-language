@@ -2629,6 +2629,17 @@ fn run_config_version_invocation(
     versions: InvocationVersions,
     self_key: &str,
 ) -> ClauseDisposition {
+    run_config_version_invocation_report(request_builder, clause_name, versions, self_key)
+        .disposition
+}
+
+/// [`run_config_version_invocation`]'s whole report.
+fn run_config_version_invocation_report(
+    request_builder: fn(ClauseRunSelection) -> ClauseRunRequest,
+    clause_name: &str,
+    versions: InvocationVersions,
+    self_key: &str,
+) -> super::ClauseRunReport {
     let model_digest_hex = config_version_model_digest_hex();
 
     let (pre_label, pre_bytes) = document_ref_and_bytes("invocation-pre", |label| {
@@ -2660,9 +2671,7 @@ fn run_config_version_invocation(
     request
         .invocations
         .insert(invocation_label.digest, invocation_bytes);
-    run_clause(request)
-        .expect("a well-formed request always reports")
-        .disposition
+    run_clause(request).expect("a well-formed request always reports")
 }
 
 /// TC-466 step 1 (FR-107-AC-1): `VersionUnchanged` over an `attemptUpdate`
@@ -5004,3 +5013,4 @@ mod call_site;
 mod frame;
 mod frame_replay;
 mod state_clause_replay;
+mod witness;

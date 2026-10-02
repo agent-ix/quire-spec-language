@@ -11,17 +11,17 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
-use super::s6a::separation::{
-    occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail, WitnessClaim,
-};
 use super::causes::{
     identity_string, ModelQueryRefusal, PreconditionFailure, ProtocolClauseSnapshot,
     ProtocolClauseUnsupported, StateModelUndefined,
 };
+use super::s6a::separation::{
+    occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail, WitnessClaim,
+};
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
-    Arithmetic, CheckedGraph, Connective, DispatchTable, Node, NodeKind, Operator,
-    OrderedKind, RecordSlot, Scope, Slot, Visit,
+    Arithmetic, CheckedGraph, Connective, DispatchTable, Node, NodeKind, Operator, OrderedKind,
+    RecordSlot, Scope, Slot, Visit,
 };
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
@@ -2085,7 +2085,8 @@ impl<'a, 'm> Machine<'a, 'm> {
         if !self.on_claim_level() {
             return;
         }
-        let Some(occurrence) = occurrence_at(self.graph, node.location(), Some(Operator::Collection))
+        let Some(occurrence) =
+            occurrence_at(self.graph, node.location(), Some(Operator::Collection))
         else {
             return;
         };

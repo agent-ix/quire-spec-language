@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use qsl_eval::value::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{
@@ -46,9 +45,6 @@ pub enum CauseCodecError {
     /// An identity member is empty.
     #[error("the member {0} is empty")]
     Empty(&'static str),
-    /// A catalog code the diagnostics catalog does not define.
-    #[error("the refusal code {0:?} is not a catalog code")]
-    UnknownCode(String),
     /// A record naming a deciding quantifier carries no index: a collection
     /// quantifier's family assigns one (QSpec FR-351).
     #[error("a record naming a deciding quantifier carries no index")]
@@ -101,13 +97,13 @@ enum CauseWire {
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        given: Option<RecordWire>,
+        given: Option<Box<RecordWire>>,
         #[serde(
             default,
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        derived: Option<RecordWire>,
+        derived: Option<Box<RecordWire>>,
         failure: FailureWire,
     },
 }
@@ -132,8 +128,16 @@ impl CauseWire {
             } => Self::Witness {
                 proved: VerdictWire::of(*proved),
                 replayed: VerdictWire::of(*replayed),
-                given: given.as_deref().map(RecordWire::of).transpose()?,
-                derived: derived.as_deref().map(RecordWire::of).transpose()?,
+                given: given
+                    .as_deref()
+                    .map(RecordWire::of)
+                    .transpose()?
+                    .map(Box::new),
+                derived: derived
+                    .as_deref()
+                    .map(RecordWire::of)
+                    .transpose()?
+                    .map(Box::new),
                 failure: FailureWire::of(failure),
             },
         })
@@ -158,8 +162,11 @@ impl CauseWire {
             } => DisagreementCause::Witness {
                 proved: proved.read(),
                 replayed: replayed.read(),
-                given: given.map(RecordWire::read).transpose()?.map(Box::new),
-                derived: derived.map(RecordWire::read).transpose()?.map(Box::new),
+                given: given.map(|record| record.read()).transpose()?.map(Box::new),
+                derived: derived
+                    .map(|record| record.read())
+                    .transpose()?
+                    .map(Box::new),
                 failure: failure.read()?,
             },
         })
@@ -341,7 +348,8 @@ impl ValueWire {
             } => Value::Reference(ObjectReference::new(
                 UniverseId::from_digest(digest(&universe, "universe")?),
                 EffectiveId::from_digest(digest(&object_type, "type")?),
-                ObjectId::new(object_identity).map_err(|_| CauseCodecError::Empty("object_identity"))?,
+                ObjectId::new(object_identity)
+                    .map_err(|_| CauseCodecError::Empty("object_identity"))?,
             )),
         })
     }
@@ -520,7 +528,7 @@ impl FailureWire {
                         }
                     }
                     SeparationReason::Refused(refusal) => ReasonWire::Refused {
-                        code: refusal.code.as_str().to_owned(),
+                        code: refusal.code.clone(),
                         cause: refusal.cause.clone(),
                         fields: refusal.fields.clone(),
                     },
@@ -552,7 +560,7 @@ impl FailureWire {
                         cause,
                         fields,
                     } => SeparationReason::Refused(SeparationRefusal {
-                        code: Code::from_code(&code).ok_or(CauseCodecError::UnknownCode(code))?,
+                        code,
                         cause,
                         fields,
                     }),

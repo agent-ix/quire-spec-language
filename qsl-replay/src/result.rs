@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 use qsl_eval::value::{
     RuntimeValuePath, SeparationStep, StopReport, ValuePathStep, ValuePathSubject,
 };
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use quire_exact::{compare_keys, ScalarLimits, Value};
 use quire_semantic_value::location::Location;
@@ -22,10 +21,10 @@ use quire_semantic_value::location::Location;
 use crate::bounds::BoundExceeded;
 
 mod wire;
-pub use wire::CauseCodecError;
 use crate::identity::TracePosition;
 use crate::proof_result::ProofCategory;
 use qsl_foundation::source::provenance::SourceRegion;
+pub use wire::CauseCodecError;
 
 /// The verdict a proved or replayed outcome settles to, taken from the
 /// QSpec outcome-to-verdict map fixed per ADR-013 O-16 category (QC-8). A
@@ -181,8 +180,8 @@ pub enum SeparationReason {
 /// its catalog code and cause and its catalog fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SeparationRefusal {
-    /// The catalog code.
-    pub code: Code,
+    /// The catalog code's spelling.
+    pub code: String,
     /// The catalog cause.
     pub cause: String,
     /// The catalog fields, by payload name.
@@ -197,7 +196,7 @@ pub enum WitnessCheck {
     /// (present exactly when the settlement basis is decisive; always
     /// absent for a function or frame replay, which has no decisive
     /// occurrence, ADR-031 SW-7).
-    Agrees(Option<SeparatingWitnessRecord>),
+    Agrees(Option<Box<SeparatingWitnessRecord>>),
     /// The witness disagrees (FR-269).
     Disagrees {
         /// The payload's record, or its absence.
@@ -374,7 +373,7 @@ pub struct WitnessArmResult {
     disagreement: Option<DisagreementCause>,
     category: ProofCategory,
     value: Option<EvaluatedValue>,
-    record: Option<SeparatingWitnessRecord>,
+    record: Option<Box<SeparatingWitnessRecord>>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
 }
@@ -439,7 +438,7 @@ impl WitnessArmResult {
     /// The nested FR-351 record, present only when the settlement basis is
     /// decisive (an agreement).
     pub fn record(&self) -> Option<&SeparatingWitnessRecord> {
-        self.record.as_ref()
+        self.record.as_deref()
     }
     /// The resolved source regions this arm's result cites.
     pub fn resolved_regions(&self) -> &[SourceRegion] {
@@ -644,7 +643,7 @@ mod tests {
     }
 
     fn agrees(record: SeparatingWitnessRecord) -> WitnessCheck {
-        WitnessCheck::Agrees(Some(record))
+        WitnessCheck::Agrees(Some(Box::new(record)))
     }
 
     /// FR-072-AC-1 (TC-189): a `Witness`-arm agreement settles
@@ -827,10 +826,7 @@ mod tests {
             charges(),
         );
         assert_eq!(round_tripped.record(), Some(&read_back_record));
-        assert_eq!(
-            round_tripped.record().unwrap().index,
-            Some(2)
-        );
+        assert_eq!(round_tripped.record().unwrap().index, Some(2));
         assert_eq!(
             round_tripped.record().unwrap().value_path,
             record(vec!["outer", "items", "member"]).value_path

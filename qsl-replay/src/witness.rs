@@ -433,6 +433,8 @@ pub use state_clause::StateClauseCounterexample;
 // separating witness, which the clause run and the replay share.
 mod derivation;
 pub(crate) use derivation::derive_separating_witness;
+#[cfg(test)]
+pub(crate) use derivation::Derived;
 
 /// FR-070/ADR-013 O-25: the typed counterexample/witness envelope, generic
 /// over its family-owned payload `P` (the extension point FR-070-AC-5

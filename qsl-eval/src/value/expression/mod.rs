@@ -498,7 +498,10 @@ fn resolve_quantifier<'g>(
     graph: &'g qsl_semantics::check::CheckedGraph,
     clause: &'g qsl_semantics::check::CheckedStateClause,
     quantifier: &qsl_foundation::source::provenance::OccurrenceKey,
-) -> Option<(Vec<&'g qsl_semantics::check::Node>, &'g qsl_semantics::check::Node)> {
+) -> Option<(
+    Vec<&'g qsl_semantics::check::Node>,
+    &'g qsl_semantics::check::Node,
+)> {
     use qsl_semantics::check::{NodeKind, Visit};
     let key = graph.semantic_graph().resolve_wire(quantifier.node())?;
     let location = graph.occurrence(key, quantifier.origin())?;

@@ -39,17 +39,15 @@ use crate::spine::{
     check_clause_admitted, convert_outcome, CallOutcome, CallRefusal, CallValue, ClauseCheck,
     ClauseDisposition, ClauseRunSelection, CompiledRun, UnitProvenance,
 };
+use crate::witness::{ReplaySource, StateClauseCounterexample};
+use crate::WitnessEnvelope;
 use qsl_eval::value::{
-    CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep,
-    WitnessClaim,
+    CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
 };
-use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::Source;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::observation::AdmittedObservations;
 use quire_exact::Meter;
-use crate::witness::{ReplaySource, StateClauseCounterexample};
-use crate::WitnessEnvelope;
 
 /// FR-122's `stale_dependency`/`revision-mismatch`: an envelope clause
 /// identity that is not the recompiled clause's, naming both.
@@ -282,9 +280,12 @@ pub fn replay_state_clause(
     // FR-268: an agreeing verdict compares the payload's record with the
     // re-derived one, then checks the record separates the clause.
     let witness = if value == Some(EvaluatedValue::Boolean(false)) {
-        let observations = observations
-            .as_ref()
-            .ok_or_else(|| ReplayRefusal::Fault(InternalFault::new("replay", "evaluated-clause-was-admitted")))?;
+        let observations = observations.as_ref().ok_or_else(|| {
+            ReplayRefusal::Fault(InternalFault::new(
+                "replay",
+                "evaluated-clause-was-admitted",
+            ))
+        })?;
         match compare_witness(
             &compiled.package,
             &selection.name,
@@ -395,9 +396,18 @@ fn compare_witness(
     match (given, derived) {
         (None, None) => Ok(Some(WitnessCheck::Agrees(None))),
         (Some(given_record), Some(derived_record)) if given_record == derived_record => {
-            let outcome = separate(package, clause, observations, derived_record, sources, meter)?;
+            let outcome = separate(
+                package,
+                clause,
+                observations,
+                derived_record,
+                sources,
+                meter,
+            )?;
             Ok(match outcome {
-                SeparationOutcome::Holds => Some(WitnessCheck::Agrees(Some(derived_record.clone()))),
+                SeparationOutcome::Holds => {
+                    Some(WitnessCheck::Agrees(Some(Box::new(derived_record.clone()))))
+                }
                 SeparationOutcome::Failed(step, reason) => {
                     Some(disagrees(WitnessFailure::Separation { step, reason }))
                 }
@@ -455,7 +465,9 @@ pub(crate) fn separate(
         Ok(separation) => separation,
         Err(CallFailure::Fault(fault)) => return Err(ReplayRefusal::Fault(fault)),
         // The clause was resolved by name and admitted for that clause.
-        Err(CallFailure::Input(_)) => return Err(fault("separation-check-over-the-admitted-clause")),
+        Err(CallFailure::Input(_)) => {
+            return Err(fault("separation-check-over-the-admitted-clause"))
+        }
     };
     match separation {
         Separation::Holds => Ok(SeparationOutcome::Holds),
@@ -472,17 +484,18 @@ pub(crate) fn separate(
 /// FR-269: why a separation-check evaluation that completed no value
 /// fails its step; `None` for an exhausted meter, which is not a witness
 /// failure.
-fn stopped_reason(
+pub(crate) fn stopped_reason(
     evaluation: qsl_eval::value::Evaluation,
     graph: &CheckedGraph,
     sources: &[Source],
 ) -> Result<Option<SeparationReason>, ReplayRefusal> {
     let fault = |invariant| ReplayRefusal::Fault(InternalFault::new("replay", invariant));
     let location = evaluation.location.clone();
-    let outcome = convert_outcome(evaluation, graph, sources).map_err(|refusal| match *refusal {
-        crate::spine::RunRefusal::Fault(fault) => ReplayRefusal::Fault(fault),
-        _ => fault("separation-evaluation-maps-to-an-outcome"),
-    })?;
+    let outcome =
+        convert_outcome(evaluation, graph, sources).map_err(|refusal| match *refusal {
+            crate::spine::RunRefusal::Fault(fault) => ReplayRefusal::Fault(fault),
+            _ => fault("separation-evaluation-maps-to-an-outcome"),
+        })?;
     Ok(match outcome {
         CallOutcome::Incomplete { .. } => None,
         CallOutcome::Undefined { reason } => Some(SeparationReason::UndefinedEvaluation {
@@ -495,8 +508,7 @@ fn stopped_reason(
                 CallRefusal::Family { code, .. } => (code, std::collections::BTreeMap::new()),
             };
             Some(SeparationReason::Refused(SeparationRefusal {
-                code: Code::from_code(code.code())
-                    .ok_or_else(|| fault("refusal-code-is-catalogued"))?,
+                code: code.code().to_owned(),
                 cause: code.cause().to_owned(),
                 fields: fields
                     .into_iter()
