@@ -163,7 +163,7 @@ names different artifacts in each.
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC |
 | TC-378 | On a nested fixture, the node limit is the proximate cause of a function-declaration stop | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | 🚧 Planned (ADR-030: node limit replaces the deleted depth limit) |
-| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Steps 1 and 3 pass locally; steps 2 and 4 unreachable as written; see TC-379 Status |
+| TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Steps 1 and 3 pass locally; steps 2 and 4 planned |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally: the whole-package count refuses as `ResourceExhausted` with the node-count stage-limit cause, code `stage_limit_exceeded` |
 | TC-382 | S6a returns each kernel outcome unchanged in FamilyOutcome::Evaluated | Unit | P1 | FR-090-AC-1 | ✅ Passed locally |
