@@ -37,7 +37,8 @@ Tag the tests `#[trace("TC-536", "FR-101-AC-15")]` and
   `max_transitions` 100,000,000; `ModelCheckLimits::default()` has
   `limits` equal to `Limits::default()` and `max_automaton_states`
   1,048,576; neither limits type has a depth member, and
-  `max_live_instances` is a request member, `None` by default.
+  `max_live_instances`, `max_store_buffer` and `max_messages` are request
+  members, `None` by default.
 - Step 2: `Exhaustive`; `Outcome::Bounded` at `Limit::States`, value 2.
 - Step 3: the FR-126-AC-1 outcomes; `Stopped{ResourceExhausted,
   {MaxStates, 2}}`.

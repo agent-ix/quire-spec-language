@@ -368,6 +368,18 @@ names different artifacts in each.
 | TC-662 | The replay facade replays a protocol counterexample through ProtocolSystem | Integration | P1 | FR-217-AC-1, FR-217-AC-2, FR-217-AC-3, FR-217-AC-4 | 🚧 Planned |
 | TC-663 | S3 checks every protocol control construct and records scopes | Unit | P1 | FR-218-AC-1, FR-218-AC-2, FR-218-AC-3, FR-218-AC-4, FR-218-AC-5, FR-218-AC-6, FR-218-AC-7 | 🚧 Planned |
 | TC-887 | S2 builds the complete protocol forms with their members and spans | Unit | P1 | FR-308-AC-1, FR-308-AC-2, FR-308-AC-3, FR-308-AC-4, FR-308-AC-5 | 🚧 Planned |
+| TC-664 | The memory clause checks and the request selects the resolved model | Unit | P1 | FR-219-AC-1, FR-219-AC-2, FR-219-AC-3, FR-219-AC-4, FR-219-AC-5 | 🚧 Planned |
+| TC-665 | S3 checks orderings and fences and classifies every access | Unit | P1 | FR-220-AC-1, FR-220-AC-2, FR-220-AC-3, FR-220-AC-4, FR-220-AC-5 | 🚧 Planned |
+| TC-666 | The tso memory model explores store buffers, flushes and locked accesses | Integration | P1 | FR-221-AC-1, FR-221-AC-2, FR-221-AC-3, FR-221-AC-4 | 🚧 Planned |
+| TC-667 | The ra memory model explores messages, views, fences and garbage collection | Integration | P1 | FR-222-AC-1, FR-222-AC-2, FR-222-AC-3, FR-222-AC-4 | 🚧 Planned |
+| TC-668 | The SC event graph orders seq_cst events and prunes cyclic choices | Integration | P1 | FR-223-AC-1, FR-223-AC-2, FR-223-AC-3, FR-223-AC-4 | 🚧 Planned |
+| TC-669 | Non-atomic locations explore and the race-freedom item reports races once | Integration | P1 | FR-224-AC-1, FR-224-AC-2, FR-224-AC-3, FR-224-AC-4 | 🚧 Planned |
+| TC-670 | Memory bounds limit stores, default to 4 and are stated in every result | Integration | P1 | FR-225-AC-1, FR-225-AC-2, FR-225-AC-3, FR-225-AC-4 | 🚧 Planned |
+| TC-671 | S3 warns of load-buffering shapes and negotiation routes by resolved model | Unit | P1 | FR-226-AC-1, FR-226-AC-2, FR-226-AC-3 | 🚧 Planned |
+| TC-672 | Weak-memory counterexamples carry memory components and replay | Integration | P1 | FR-227-AC-1, FR-227-AC-2, FR-227-AC-3, FR-227-AC-4 | 🚧 Planned |
+| TC-673 | Flush and visibility fairness join every infinite-trace fairness set | Integration | P1 | FR-228-AC-1, FR-228-AC-2, FR-228-AC-3, FR-228-AC-4 | 🚧 Planned |
+| TC-674 | The memory component, observations, atoms and footprints flow through the seam | Integration | P1 | FR-229-AC-1, FR-229-AC-2, FR-229-AC-3, FR-229-AC-4, FR-229-AC-5 | 🚧 Planned |
+| TC-888 | S2 builds the memory clause, access ordering and fence forms | Unit | P1 | FR-309-AC-1, FR-309-AC-2, FR-309-AC-3 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
