@@ -16,9 +16,9 @@ they are, carry no declaration, tell a precondition from a body by their
 `clause` binding, and keep the synthesized lookup name out of the preimage.
 
 This catches a clause function keyed with a `SourceOwner` it has no source
-for, a key that merges two domain-package versions' clauses or two members'
-equal clauses, and a key that changes when the synthesized name's spelling
-does.
+for, a key that merges two members' equal clauses, a key that changes
+across a version-only change of the domain package, and a key that changes
+when the synthesized name's spelling does.
 
 Scope: FR-094-AC-5, FR-094-CON-1, FR-094-CON-2.
 
@@ -32,8 +32,8 @@ The receiver parameter of each candidate is `self: Reference<M::Order>`.
    precondition `true` and the body `7`, under `acme/orders` `1.0.0`. Read the
    receiver parameter node and the key and preimage bytes of each clause
    function.
-2. Repeat step 1 under `acme/orders` `2.0.0`, where `M::Order` resolves to
-   M2.
+2. Repeat step 1 under `acme/orders` `2.0.0`, where `M::Order` still
+   resolves to M1.
 3. Run it for `Order.count` with the authored precondition `true`, under
    `1.0.0`.
 4. Add `Sub.size`, which redefines `Order.size` with the authored
@@ -50,10 +50,10 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
 
 - Step 1: the receiver parameter keys to P7, the precondition to C1 and the
   body to C2. Both preimages carry `owner` `{kind: "model", identity:
-  "acme/orders", version: "1.0.0", node: "ix://acme/orders/Order/size"}` and
-  `declaration` `null`.
-- Step 2: the receiver parameter keys to P9 over R2, and the precondition
-  keys to C3, which references P9.
+  "acme/orders", node: "ix://acme/orders/Order/size"}`, with no `version`
+  member, and `declaration` `null`.
+- Step 2: the receiver parameter keys to P7 over R1, the precondition to C1
+  and the body to C2, and the graph's keys equal step 1's.
 - Step 3: the precondition keys to C4.
 - Step 4: the receiver parameter keys to P8, `Sub.size`'s authored
   precondition to C5 and its effective precondition to C6 in both runs, each
@@ -65,5 +65,4 @@ Tag the tests `#[trace("FR-094-AC-5", "TC-418")]`.
 
 ## Status
 
-Implemented (#384). The tests back every step, step 2's C3 key (over P9)
-included.
+Implemented (#384). The tests back every step.

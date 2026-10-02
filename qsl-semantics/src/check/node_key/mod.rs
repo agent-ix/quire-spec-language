@@ -174,15 +174,16 @@ impl SourceOwner {
 }
 
 /// The owner of a model-owned node (FR-094, ADR-013 O-04, C-02): QSpec's
-/// `ModelOwner{kind: "model", identity, version, node}`. `identity` and
-/// `version` are the declaring domain package's `DomainPackageRef`'s;
-/// `node` is the declaration's IR node identity.
+/// content-only `ModelOwner{kind: "model", identity, node}`. `identity` is
+/// the declaring domain package's `DomainPackageRef` identity; `node` is the
+/// declaration's IR node identity. The owner carries no version: the
+/// version is selection evidence in the lock's `model_selections`, so a
+/// version-only change of the domain package keys the same node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelOwner {
     identity: String,
     kind: ModelOwnerKind,
     node: String,
-    version: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
@@ -198,29 +199,21 @@ pub enum InvalidModelOwner {
     /// `identity` is empty.
     #[error("the model owner's identity is empty")]
     EmptyIdentity,
-    /// `version` is empty.
-    #[error("the model owner's version is empty")]
-    EmptyVersion,
     /// `node` is empty.
     #[error("the model owner's node is empty")]
     EmptyNode,
 }
 
 impl ModelOwner {
-    /// The model owner `{kind: "model", identity, version, node}`.
+    /// The model owner `{kind: "model", identity, node}`.
     pub fn new(
         identity: impl Into<String>,
-        version: impl Into<String>,
         node: impl Into<String>,
     ) -> Result<Self, InvalidModelOwner> {
         let identity = identity.into();
-        let version = version.into();
         let node = node.into();
         if identity.is_empty() {
             return Err(InvalidModelOwner::EmptyIdentity);
-        }
-        if version.is_empty() {
-            return Err(InvalidModelOwner::EmptyVersion);
         }
         if node.is_empty() {
             return Err(InvalidModelOwner::EmptyNode);
@@ -229,18 +222,12 @@ impl ModelOwner {
             identity,
             kind: ModelOwnerKind::Model,
             node,
-            version,
         })
     }
 
     /// The declaring domain package's identity.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// The declaring domain package's version.
-    pub fn version(&self) -> &str {
-        &self.version
     }
 
     /// The declaration's IR node identity.

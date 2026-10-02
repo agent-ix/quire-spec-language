@@ -4,10 +4,10 @@
 //! nodes.
 //!
 //! A model declaration node stands for one domain package declaration. It
-//! is keyed by `quire.structural-node/v1` with QSpec's `ModelOwner` (the
-//! declaring package's `DomainPackageRef` identity and version, and the
-//! declaration's IR node identity), a `null` `declaration` and an empty
-//! body. A `Reference<T>` carries `T` as an `EffectiveId` (ADR-013 O-05);
+//! is keyed by `quire.structural-node/v1` with QSpec's content-only
+//! `ModelOwner` (the declaring package's `DomainPackageRef` identity and
+//! the declaration's IR node identity, no version), a `null` `declaration`
+//! and an empty body. A `Reference<T>` carries `T` as an `EffectiveId` (ADR-013 O-05);
 //! `check` maps it to its `DeclarationKey` through the admitted effective
 //! view's `type_identities` and keys the node by that key, so no preimage
 //! member is computed from an `EffectiveId` (FR-094-CON-2). Each model
@@ -254,7 +254,7 @@ fn record_form(record: &DomainPackageRecord) -> Option<(NodeTag, &'static str)> 
 
 impl<'a> Lowering<'a> {
     /// The `ModelOwner` of `declaration`: its admitted domain package's
-    /// identity and version, and its IR node identity.
+    /// identity and its IR node identity.
     pub(super) fn model_owner(
         &self,
         declaration: &DeclarationKey,
@@ -265,12 +265,8 @@ impl<'a> Lowering<'a> {
             .iter()
             .find(|model| model.selection.identity == declaration.package)
             .ok_or_else(|| fault(location, KeyFault::UnadmittedPackage(declaration.clone())))?;
-        let owner = ModelOwner::new(
-            model.selection.identity.clone(),
-            model.selection.version.clone(),
-            declaration.node.clone(),
-        )
-        .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
+        let owner = ModelOwner::new(model.selection.identity.clone(), declaration.node.clone())
+            .map_err(|_| fault(location, KeyFault::EmptyNode(declaration.clone())))?;
         Ok((owner, model))
     }
 
