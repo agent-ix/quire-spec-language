@@ -331,7 +331,7 @@ FR-088-AC-2). TK-3 fixes it (§6).
 
 | Input | Identity carrier | Check | Effect of a change |
 | --- | --- | --- | --- |
-| Domain package (frames) | `DomainPackageRef` identity, version, `sha256-jcs` digest (O-01) | I1 digest recompute; document `model` header equality (`invalid_model_binding`/`wrong-model-selection`) | A new version changes the model-owned node ids (O-04) and so the `package_id`; an old packet refuses by FR-098's `package_id` rule |
+| Domain package (frames) | `DomainPackageRef` identity and `sha256-jcs` digest (O-01) | I1 digest recompute; document `model` header equality (`invalid_model_binding`/`wrong-model-selection`) | A content change changes the model-owned node ids (O-04) and so the `package_id`; an old packet refuses by FR-098's `package_id` rule |
 | Checked package | `quire.checked-package/v2`, `package_id` (O-02, O-22) | `WitnessEnvelope::reconstruct` reads the contract; `replay_frame` checks `package_id` | A meaning edit changes `package_id`; replay refuses by FR-098 |
 | Snapshots and invocation | `sha256-jcs` digest (FR-106) | byte check at admission | `stale_dependency`/`content-mismatch` |
 | Frame payload | none | identity equality only | Staleness is detected through content-addressed identities (O-02, O-04), never through a version field |
