@@ -123,5 +123,4 @@ steps 1 to 6. Step 7 (FR-098-AC-6, FR-098-AC-7) passes locally:
 and `tc_444_dependency_entries_refuse_by_the_d4_rules`.
 
 Step 5's whitespace-only authority passes locally with `invalid_source_identity`,
-cause `blank-label` and `label` `authority` (catalog revision `1-draft.8`,
-FR-001).
+cause `blank-label` and `label` `authority` (FR-001).

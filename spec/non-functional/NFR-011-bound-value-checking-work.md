@@ -21,8 +21,7 @@ If the next checking charge would exceed a selected checking ceiling, then the
 checker shall stop with a stage limit, reported as `stage_limit_exceeded`
 with the ceiling's kind and its selected bound, without performing that
 charge. The ceilings are stage limits, not a caller work budget
-(`quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision
-`1-draft.6`; [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
+(`quire.native.diagnostics/v1` `stage_limit_exceeded` row; [FR-096](../functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)).
 
 ## Scope
 

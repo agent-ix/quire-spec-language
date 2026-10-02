@@ -476,8 +476,7 @@ operations, unavailable as implicit ambient state"):
 - `reaches` outside a state clause: `ill_typed`/`operator-ineligible` at the
   `reaches` (FR-104).
 
-Every code and cause above is in QSpec `native-diagnostics.md` revision
-`1-draft.8`.
+Every code and cause above is in QSpec `native-diagnostics.md`.
 
 ## Acceptance Criteria
 
@@ -514,7 +513,7 @@ identity text of operation `op`.
   and `deletes` rules); QSpec FR-151 (the receiver as parameter 0, effective
   pre- and postconditions, conformance); QSpec `state-contract.md` and
   `shared-grammar.md` (anchor operations are caller-side);
-  `native-diagnostics.md` revision `1-draft.8`.
+  `native-diagnostics.md`.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md):
   the engine, its `TransitionSystem` trait, findings, `Outcome::Stopped`,
   `StopReason::Stopped` and replay.

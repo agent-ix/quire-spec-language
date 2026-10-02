@@ -50,9 +50,8 @@ shared `no_std` leaf crates: the kernel K (§6.1 "K is a leaf") and the
 semantic-value leaf SV, whose dependencies are K, ADR-013's one RFC 8785
 encoder `quire-canonical`, `serde` and `thiserror`. Neither depends on a QSL
 layer or on an IR, RT or CG crate, so an edge into either closes no cycle. Every other package sourced from the QSL repository classifies as
-QSL. This exemption is local to edge extraction; the shared `graph::classify`,
-and so [FR-061](FR-061-check-duplicate-ecosystem-revisions.md), classifies a
-QSL-sourced shared leaf as QSL.
+QSL. This exemption is local to edge extraction; the shared `graph::classify`
+classifies a QSL-sourced shared leaf as QSL.
 
 The check SHALL treat a `build`-kind dependency as a normal edge for FB-05/
 FB-11 purposes, and a `dev`-kind dependency as a dev edge.
@@ -121,3 +120,10 @@ Specified and implemented under
 [#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
 `arch-lint direction` subcommand (`tools/arch-lint/graph.rs`,
 `tools/arch-lint/metadata.rs`).
+
+Remaining work (implementation A5, QSL-477): `tools/arch-lint` still has the
+`duplicate-revisions` subcommand (`duplicate_revisions.rs`, its `main.rs`
+entry and its `graph.rs` helpers) tracing the deleted FR-061 and TC-158, and
+the Makefile's `arch-lint-duplicate-revisions` target runs it in `make ci`.
+The subcommand, its traces and the target are deleted; `graph::classify`
+stays for this check.

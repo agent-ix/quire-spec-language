@@ -36,14 +36,14 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
 2. Spell the import's digest `sha256:<d>`, then in uppercase hex, then
    with 63 and with 65 hex characters. Then supply `test/geometry` from
    a source whose `f` is `x < 6`.
-3. Supply no library; supply `test/geometry` at version `2`; supply two
+3. Supply no library; supply two
    libraries as `test/geometry`; supply a library whose source has the
    unit's authority and identity; supply a library with an empty identity;
    supply `test/a` and `test/b`, each importing the other, and import
    `test/a`: the cycle's import digests are arbitrary, because the cycle
    refusal precedes any digest comparison; import `test/geometry` version
    `1` and then `test/a`, in that order, with `test/a` importing
-   `test/geometry` version `2`;
+   `test/geometry` under another digest;
    import `test/a` with `test/a` importing a `test/missing` no library
    supplies.
 4. Build `LibraryName` from `test/geometry`, `a.b`, `L` and the empty
@@ -74,7 +74,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   at the import, naming `test/geometry`, `d` and the recompiled
   `package_id`. No package.
 - Step 3: `missing_import`/`missing-selection` at the import's identity
-  string, stage `intake`; `stale_dependency`/`revision-mismatch` at the import;
+  string, stage `intake`;
   `invalid_package`/`conflicting-definition` from the dependency input
   naming both libraries, twice; `invalid_identifier`;
   `invalid_package`/`definition-cycle`, unwrapped, naming `test/a` and

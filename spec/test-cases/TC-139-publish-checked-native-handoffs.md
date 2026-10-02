@@ -37,9 +37,8 @@ formula document bytes are cross-wired against the other's selection, and
 trigger and anchor handles remain invalid predicate selections.~~
 
 **FR-051-AC-6 stays live**, amended to the production-dependency-graph fact:
-`arch-lint duplicate-revisions --lockfile Cargo.lock` (FR-061), run by
-`make ci`, confirms that `Cargo.lock` holds one copy of each first-party
-crate, so no dependency of QSL resolves a second QSL copy and the graph is
+`arch-lint direction` (FR-059), run over the four repositories' checkouts,
+confirms that no dependency of QSL depends back on QSL, so the graph is
 cycle-free; the production dependency key is `quire-contract-model`, the
 package's own name.
 
@@ -48,12 +47,12 @@ package's own name.
 FR-051-AC-1 through FR-051-AC-5 (retired): no longer applicable; the surface
 they described does not exist.
 
-FR-051-AC-6 (live): `arch-lint duplicate-revisions --lockfile Cargo.lock`
-exits 0 in `make ci`.
+FR-051-AC-6 (live): `arch-lint direction` reports no FB-05 edge into QSL and
+no FB-11 cycle.
 
 ## Status
 
 Passing for `quire-spec-language#90`; activation-guard coverage extended by
 `quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired
 (M-6d); FR-051-AC-6 amended to the still-live cycle-free production-graph
-check, which `make ci` runs as `arch-lint duplicate-revisions`.
+check, which `arch-lint direction` (FR-059) runs.

@@ -110,19 +110,6 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   request's public constructors and decoders SHALL NOT accept a bare `&str`
   or `String` in the function-selection position, and no implicit
   string-to-`QualifiedName` conversion SHALL exist.
-- The reader SHALL refuse a request whose `contract_version` is not exactly
-  `quire.native-runtime/v1`, or whose `replay` property names a
-  capability-vocabulary or semantic-profile identifier outside its closed
-  set, with a structured cause and no partial request — before any
-  recompilation is attempted.
-- The reader SHALL refuse a request whose `package_contract_version` is not
-  exactly the one package contract version this reader admits
-  (`quire.checked-package/v2`), with the catalog's unsupported-wire refusal
-  (`unknown_wire`/`unsupported-wire`, ADR-013 O-22) naming the actual version
-  supplied, before the package reference or byte provision is read — the same
-  ordering and no-negotiation rule the envelope's own `contract_version`
-  check already follows. **Added**: this member previously
-  decoded unchecked.
 
 ## Acceptance Criteria
 
@@ -131,11 +118,9 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-1 | The request carries exactly the O-26 members, invents none, and a construct → serialize → read round trip preserves the package reference, replay members, byte provision and limits exactly. | Test (TC-185) |
 | FR-071-AC-2 | The request type has no path-, environment-variable-, or search-location-typed field or accessor; a byte-provision entry whose digest domain is outside the closed FR-201 set refuses at decode. | Test (TC-186) |
 | FR-071-AC-3 | No public constructor or decoder of the request accepts a bare `&str` or `String` for function selection, and no implicit conversion from a string to `QualifiedName` exists; an attempted call site passing a string literal in that position fails to compile. | Test (TC-187) |
-| FR-071-AC-4 | An unknown `contract_version`, or a `replay` property naming a capability-vocabulary or semantic-profile identifier outside its closed set, refuses at decode with a structured cause and no partial request, before any recompilation is attempted. | Test (TC-188) |
 | FR-071-AC-5 | A request whose package reference names a `RawSourceRef` digest with no matching byte-provision entry refuses at construction; no incomplete request is returned for a later consumer to discover the gap. | Test (TC-186) |
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
-| FR-071-AC-8 | A request whose `package_contract_version` is not exactly `quire.checked-package/v2` refuses at decode with the catalog's unsupported-wire refusal, naming the actual version supplied, before the package reference or byte provision is read. | Test (TC-445) |
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
 
 ## Dependencies
@@ -157,3 +142,12 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   staleness check, and the function call itself, are explicitly out of this
   requirement's scope; this requirement owns only the decode-time
   byte-vs-declared-digest integrity check (AC-6).
+
+## Status
+
+Remaining work (implementation A1, QSL-470): `qsl-replay/src/request.rs`
+still carries the `contract_version`, vocabulary and `package_contract_version`
+members, checks them, traces the deleted FR-071-AC-4, FR-071-AC-8, TC-188 and
+TC-445, and names the identity member `originating_counterexample_identity`.
+The members, their checks and those traces are deleted, and the member is
+renamed `obligation_identity` (FR-098, ADR-013 O-26).

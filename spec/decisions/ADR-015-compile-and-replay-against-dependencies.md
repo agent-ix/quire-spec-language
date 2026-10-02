@@ -63,8 +63,8 @@ FR-087-AC-14). Five questions were still open, so E3 refused every
 
 A compile takes a **dependency input**: a set of **supplied libraries**
 (QSpec FR-307), at most one per library identity. A supplied library is
-`{identity, version, source}`, where `identity` is a `LibraryName` (D-3),
-`version` the library's version string, and `source` a source unit: its
+`{identity, source}`, where `identity` is a `LibraryName` (D-3) and
+`source` a source unit: its
 FR-001 `SourceIdentity` (four labels), a display path and its bytes. It
 carries no `package_id`: a library's `package_id` is the one its own
 compile yields (ADR-013 O-02). Building the input refuses, naming both
@@ -74,8 +74,8 @@ offending libraries or the empty field:
   library whose source has the authority and identity of the unit's or of
   another library's source (one owner per compile, ADR-013 O-04), with
   `invalid_package`/`conflicting-definition`;
-- an empty identity or version with `invalid_identifier`
-  (`HostCause::SelectionIdentity` or `SelectionVersion`).
+- an empty identity with `invalid_identifier`
+  (`HostCause::SelectionIdentity`).
 
 Spine `compile` takes the dependency input beside FR-056's package input.
 Each supplier names its libraries, as FR-001 has every caller name its
@@ -83,7 +83,7 @@ sources:
 
 - a library caller builds the dependency input itself;
 - the CLI's `1-draft` native-compile/1 request carries it in a `libraries`
-  member, one `{identity, version, source}` object per library, where
+  member, one `{identity, source}` object per library, where
   `source` is the same source selection a model or the program uses
   (file, `sha256:` source digest and the four labels) (FR-027);
 - `replay` builds it from the request's package reference (D-4).
@@ -99,15 +99,14 @@ these steps to each import in this order:
    naming the identity path. This check runs before any other step, so the
    digests of a cycle's imports are never compared.
 2. **Diamond.** When an earlier import in the closure names the same
-   identity with a different version or digest, the compile refuses
+   identity with a different digest, the compile refuses
    `invalid_package`/`conflicting-definition`, naming both dependency paths
    (QSpec FR-307's diamond rule). An import equal to an earlier one reuses
    that import's library once its compile has completed, and skips steps 3
    to 6.
 3. **Selection.** The supplied library of the import's identity is
    selected. None refuses `missing_import`/`missing-selection` at the
-   import's identity string. A version other than the import's refuses
-   `stale_dependency`/`revision-mismatch` at the import.
+   import's identity string.
 4. **Compile.** The library's source compiles through S1 to S4 by this same
    resolution, against the same dependency input and package input and
    under the same stage limits. Each library compile is charged the full S1
@@ -203,8 +202,8 @@ run before the recompile:
 2. The proved package's `sources`, and each entry's `sources`, name exactly
    one `quire.source.bytes/v1` source, else the existing `NotASource` or
    `SourceCount`.
-3. `replay` builds the dependency input from the entries: identity and
-   version from the entry, the four labels from its source reference, the
+3. `replay` builds the dependency input from the entries: the identity from
+   the entry, the four labels from its source reference, the
    reference's identity as the path, and the bytes from the byte
    provision, as FR-001 states for the proved source. The FR-071 reader
    bound bounds the number of entries. A dependency-input refusal, such as
@@ -216,8 +215,7 @@ run before the recompile:
    `ReplayRefusal::Recompile`. A stale dependency's source refuses there as
    `DependencyIdentityMismatch` at the import that records it, naming the
    identity. A removed entry refuses there as
-   `missing_import`/`missing-selection` at the import it supplied, and an
-   entry with a changed version as `stale_dependency`/`revision-mismatch`.
+   `missing_import`/`missing-selection` at the import it supplied.
    When that import is in a library, not in the proved unit, the refusal
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).

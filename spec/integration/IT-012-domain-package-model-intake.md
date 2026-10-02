@@ -31,8 +31,7 @@ intake seam and model linker. Its external dependencies are:
   2.0.0 bytes;
 - `agent-ix-semantic-ir`, which reads and checks those bytes.
 
-All three are Rust crate calls at the exact git revisions selected in
-`Cargo.lock`. The integration type is an in-process library call chain.
+All three are Rust crate calls. The integration type is an in-process library call chain.
 
 ## Preconditions
 
@@ -70,8 +69,7 @@ All three are Rust crate calls at the exact git revisions selected in
    - IT-012-SC-04: every model reference binds to its declaration key and kind
      under the selected domain package identity and digest.
 5. Inspect the resolved dependency graph and compiler source.
-   - IT-012-SC-05: `Cargo.lock` selects the pinned revisions, the FCD crates stay
-     `publish = false`, and no compiler source contains a module object-type name
+   - IT-012-SC-05: the FCD crates stay `publish = false`, and no compiler source contains a module object-type name
      used for dispatch.
 
 ## Expected Results

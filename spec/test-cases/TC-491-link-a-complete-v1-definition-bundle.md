@@ -26,8 +26,8 @@ dependency edges between them.
 1. Link the full root set; read the bundle's definitions, facets,
    capabilities, identity and limits. Validate the capabilities against a
    broader and a narrower known set.
-2. Link against catalogs that lack a root's identity, hold it at another
-   version, hold it with other bytes, and hold a root whose edge names an
+2. Link against catalogs that lack a root's identity, hold it with other
+   bytes, and hold a root whose edge names an
    absent definition.
 3. Link two roots of one identity at two selections, a root whose closure
    reaches another selection of a root's identity, and a catalog with a
@@ -47,7 +47,6 @@ dependency edges between them.
   identity is the same under both known sets, and only
   `validate_known_capabilities` refuses the narrower one.
 - Step 2 refuses `unknown_profile`/`unsupported-selection`,
-  `stale_dependency`/`revision-mismatch`,
   `stale_dependency`/`byte-digest-mismatch` and
   `missing_import`/`missing-selection`, each naming the root's index.
 - Step 3 refuses `ambiguous_declaration`/`conflicting-authority` twice,
@@ -61,7 +60,7 @@ dependency edges between them.
   `stage_limit_exceeded`/`nesting-depth-exceeded` for `depth`,
   `resource_exhausted`/`insufficient-next-charge` for the others; the raised
   ceiling admits.
-- Step 7: every pair is listed by `quire.native.diagnostics/v1` `1-draft.7`.
+- Step 7: every pair is listed by `quire.native.diagnostics/v1`.
 
 ## Status
 

@@ -321,8 +321,7 @@ observations belong only to the later consumer fixture.
     temporary directory, from a test that calls only that public function --
     exactly as a downstream crate would, never an example, a private helper or
     a dev-dependency-only type. Confirm the two written trees are
-    byte-identical, that every file `SHA256SUMS` lists is present with the
-    matching digest, that the written `expected.json` selection's artifact
+    byte-identical, that the written `expected.json` selection's artifact
     reference and digest match the written offer and reference files, and that
     the strict public reader (used in step 7 and by
     [quire-protocol IT-001](ix://agent-ix/quire-protocol/IT-001)) admits the

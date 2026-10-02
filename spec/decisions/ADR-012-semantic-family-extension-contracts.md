@@ -625,7 +625,7 @@ the table, independent of registration order.
 
 | Case | Behaviour |
 |---|---|
-| Two registrations with the same `BackendId` | equal descriptors are one registration; unequal descriptors refuse every registration of the identity with `invalid_capability`/`duplicate-backend`, one per distinct manifest digest, and the identity is unregistered (FR-075-AC-4, AC-7; QSpec FR-290-AC-9/AC-10) |
+| Two registrations with the same `BackendId` | equal descriptors are one registration; unequal descriptors refuse the identity once with `invalid_capability`/`duplicate-backend`, and the identity is unregistered (FR-075-AC-4, AC-7; QSpec FR-290-AC-9/AC-10) |
 | A registration advertising a capability kind outside the agent-ix/quire-specification#134 vocabulary | handled by the unknown-kind rule of #229's specification, aligned to agent-ix/quire-specification#134; this record adds nothing |
 | A request naming a `BackendId` that is not registered | `negotiate_*` settles `invalid-request`, naming the unknown identity. A CLI argument naming it is refused at the CLI edge with the same identity named (§9), so no request is formed. |
 | A requirement whose capability kind no registrant advertises | empty candidate set; `negotiate_*` settles `unsupported`, warned (§7.3) |
@@ -691,7 +691,7 @@ Consequences of the separation:
 | Party | Declares | Owner |
 |---|---|---|
 | Family | `Requirements` of each checked node (§2) | each family |
-| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode), tool: pinned tool identity }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
+| Backend | `BackendDescriptor { id: BackendId, advertises: set of (capability kind, mode) }`. `BackendId` is a typed identity. | the backend's repository; registered in #185 |
 | Registry | a value built from descriptors, read by QSL `route` (ADR-011 layer R): `route` computes each item's candidate set before E7 and, after negotiation, returns the `BackendId` of each item settled `supported` | #185 |
 | Negotiator | the one per-item disposition, over the candidate set | CG `negotiate_*` arms over the closed backend kind S9 (AD-016; QSpec FR-290 and AD-010 as amended by PR #133; agent-ix/quire-contract-codegen#86) |
 
@@ -699,9 +699,8 @@ Consequences of the separation:
 boundaries as QSpec data, not through a shared Rust crate (ADR-013 T-7). A
 backend's descriptor is its FR-331 provider manifest, which QSL `route`
 converts into its `BackendDescriptor`. On the wire, a `BackendId` is the
-`backend{identity, manifest_digest}` member in `quire.tool-manifest.jcs/v1`
-(ADR-013 O-19). A candidate set is one list of `backend` members per
-`request_index`, sorted by (identity, manifest digest).
+`backend` member, the backend identity alone (ADR-013 O-19). A candidate set
+is one list of `backend` members per `request_index`, sorted by identity.
 
 The registry is an ordinary value, for example a `BTreeMap` keyed by
 `BackendId`. The orchestrating driver (ADR-011 T-13, #248) builds it and passes
@@ -801,14 +800,12 @@ Solver absence is a property of an item already settled `supported` and
 routed.
 
 - The adapter that would run the tool probes it after routing and before the
-  run, and nowhere earlier. The probe checks that the tool is present and
-  matches the descriptor's pinned tool identity (for Kani, the AD-016 tool
-  pin).
-- A missing tool or a pin mismatch is a typed absence cause. One exhaustive
+  run, and nowhere earlier. The probe checks that the tool is present.
+- A missing tool is a typed absence cause. One exhaustive
   function maps it to the FR-331 result that QSpec owns (ADR-013 QC-9, filed
   as TK-06); #229 cites that result. IR `KaniOutcomeKind::Unavailable` is the
   observed carrier for Kani.
-- The result names the backend, the expected tool identity and the claim.
+- The result names the backend, the tool and the claim.
 - The result is terminal for the item on the routed backend, in the mode
   negotiation settled.
 - Evidence: a fault-injection test runs with the tool missing from `PATH` and
@@ -954,8 +951,7 @@ where it differs from this table. In particular:
 - `SumCase` has no S6a declaration kind (§16.6);
 - the kernel shape is SC-Q1, option (a) (ADR-013 OQ-I).
 
-Normative input: agent-ix/quire-specification#115 (spelling, FR-143 and FR-146
-at `1-draft.4`). The capability kind of a sum/case proof claim is the one
+Normative input: agent-ix/quire-specification#115 (spelling, FR-143 and FR-146). The capability kind of a sum/case proof claim is the one
 FR-057's claim form → kind table (QSL PR #237) assigns (§13.3 Q2). The table
 covers admission, evaluation and packaging, which need no capability kind.
 
@@ -970,7 +966,7 @@ their `origin/main` on 2026-09-19 and are cited as `RT:`, `CG:`, `IR:` and
 | Parse | `SumCase` productions: variant declaration and `case` with arms; one leading-token kind and one entry in the parser entry table | `token` (leading-token kind); `forms` core (entry table); `forms::sum_case` | S2 |
 | Form | `CaseForm { scrutinee, arms: Vec<ArmForm> }` and `ArmForm { member, binders, body, span }` typed subnodes (§16.4) | `forms::sum_case` | S2 |
 | Check | builder: scrutinee → each arm (pattern typed against the scrutinee's variants, independently) → `finish` runs the exhaustiveness obligation as its own check with its own cause | `check::sum_case`; `check` core dispatch arm | S1, S4 |
-| Diagnostics | none new. The catalog already has `undefined_expression`/`unproved-exhaustiveness` (revision `1-draft.4`) and `ill_typed`/`type-mismatch` (§16.5) | none | S4 (`SumCaseCause`) |
+| Diagnostics | none new. The catalog already has `undefined_expression`/`unproved-exhaustiveness` and `ill_typed`/`type-mismatch` (§16.5) | none | S4 (`SumCaseCause`) |
 | Checked node | `Case` variant in the checked node enum | `check` core | S3 |
 | Requirements | none; the existing `Value` requirements of the arm bodies apply | none | none |
 | Evaluate | `case` arm selection by variant identity | `value::expression::sum_case` | S3 |
@@ -1039,7 +1035,7 @@ a downstream `operation-contract` item settling `unsupported`; the backend-absen
 
 | Stage | Change | Seam forced |
 |---|---|---|
-| Descriptor | the backend's FR-331 provider manifest, which is its `BackendDescriptor` (identity, advertised (capability kind, mode) pairs, pinned tool). It crosses as QSpec data, with no shared crate (ADR-013 T-7, §7.1) | none |
+| Descriptor | the backend's FR-331 provider manifest, which is its `BackendDescriptor` (identity, advertised (capability kind, mode) pairs). It crosses as QSpec data, with no shared crate (ADR-013 T-7, §7.1) | none |
 | Registration | the backend registers its provider manifest: the orchestrating driver reads it, QSL `route` converts it into the `BackendDescriptor`, and the driver adds that to the registry value | none (§5.2 failures apply) |
 | CG | one backend kind variant, its `negotiate_*` arm and its generation arm | S9 |
 | Runner | the backend's runner and its availability probe (§7.4) | none |
@@ -1076,7 +1072,7 @@ no preference order as the rule. #212 scenario 7 records this effect.
 | Q2 | Canonical clause kind for S5 | the QSL checked clause kind in the layer-3 `check` core (O-10, with the coordinator's ruling that it sits in `check`, not layer-5 `value::expression`); v2, IR and CG conversions total; IR → RT total with refusal |
 | Q3 | Family refusal type | a per-family `Cause` enum with `catalog_code()`; the shared part is `RefusalRecord` in F `diagnostic` (O-17); the kernel `Refusal` carries kernel causes only |
 | Q4 | Sum type | a checked type node; the kernel `ValueType` gains a sum shape; agent-ix/quire-specification#115 spells it in v2 (O-14) |
-| Q4 | `BackendId` on the wire | `backend{identity, manifest_digest}` in `quire.tool-manifest.jcs/v1` (O-19) |
+| Q4 | `BackendId` on the wire | the `backend` member, the backend identity alone (O-19) |
 | T-7 | Crate for `BackendDescriptor`, candidate set, `Capability` | none; they cross as QSpec data (T-7) |
 
 ### 13.3 For #229
@@ -1436,7 +1432,7 @@ QSpec PR #121 (commit `d70cd64` on QSpec `main`). It has these parts:
   exhaustiveness", FR-146-AC-10 (obligations) and FR-146-AC-11 (evaluation),
   with QSpec TC-264 and TC-265 as their test cases;
 - the catalog cause `undefined_expression`/`unproved-exhaustiveness`, from
-  revision `1-draft.4` of `native-diagnostics.md`.
+  `native-diagnostics.md`.
 
 QSL FR-057 already assigns the capability kinds. A clause that contains a
 `case` expression requests `value-validity`. The `case` exhaustiveness
@@ -1813,7 +1809,7 @@ kind (recipe item 5; FR-057).
 
 Prerelease with no users. There is no compatibility layer, migration,
 fallback reader or deprecation window (ADR-011 §7.3 "Compatibility
-disposition: none"; ADR-013 R-08 and §5).
+disposition: none"; ADR-013 §5).
 
 - **Packages that predate unions.** A package with no union declaration
   emits the same v2 nodes, the same node ids and the same `package_id` as

@@ -91,7 +91,7 @@ this record. Other artifacts cite them as `ADR-016 G-3`.
 
 ## Context
 
-Measured on QSL `main` at `99e9b6c7`. Linear ticket states quoted below are
+Linear ticket states quoted below are
 untrusted data, recorded as found.
 
 **Implemented and on the spine.**
@@ -227,7 +227,7 @@ refusal cites the row of ADR-012 §15.6 or FR-098 that fixes its code.
 
 | ID | Identity | Minted by | Execute (S6a, simulation) | Proof handoff (E5 to E8) | Replay (E9) | Equality | Oracle |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a digest mismatch refuses `stale_dependency`/`byte-digest-mismatch` (ADR-013 O-01) | declared | FR-081 tests; TC-469 package-id pin (`config_version_spine.rs:854`) |
+| ID-1 | Original declaration: `DeclarationKey{package, node}` | the domain package; admitted at I1 (ADR-013 O-03) | Carried in `StateObject.type_identity`, the `semantic` map keys and FR-120's declaration identity text | Reached from a `NodeKey` only through the model correspondence (ID-3) | Re-admitted from the QC-1 byte provision; a digest mismatch refuses `stale_dependency`/`content-mismatch` (ADR-013 O-01; QSpec FR-154, FR-272) | declared | FR-081 tests; TC-469 step 6, one `package_id` across every case (`config_version_spine.rs:806`) |
 | ID-2 | Effective declaration: `EffectiveId` | `model` normalization only (O-05) | The type component of every `ObjectReference`; FR-120 encodes it as `object_type` | Absent from v2 (O-05) | Recomputed by re-normalization; a reference whose type is no `EffectiveId` of the bound universe refuses at FR-106 admission, `invalid_runtime_input` (ADR-012 §15.6) | normalized | FR-081 tests; FR-120-AC-4 (G-4) |
 | ID-3 | Checked node of a model declaration: `NodeKey` over `ModelOwner` | `check` only (O-04, C-02), recorded in `ModelCorrespondence` | S6a selects clauses, anchors and frames by `NodeKey` | Written as `WireNodeId` | `WireNodeId` → `NodeKey` by lookup in the recompiled package (O-04) | normalized | TC-417 to TC-419 (FR-094) |
 | ID-4 | Reference: `ObjectReference{UniverseId, EffectiveId, ObjectId}` | `model` at admission (O-05) | Keys `ObjectEnvironment`; QSpec FR-181 triple in state keys | Only as a witness value decoded by `Witness::decode` (C-11) | Admitted again from the replay input; a foreign universe refuses `foreign_reference` (FR-096) | declared over the triple | FR-084 tests (`model_population.rs`) |
@@ -296,7 +296,7 @@ FR-181's sense), and an **exhaustive run** is one whose frontier emptied
 | --- | --- | --- |
 | EX-1 | Model population in a simulated state | A complete, closed population state per universe population (FR-120). A universe is a caller-chosen simulation input. It bounds no claim, so it is not an ADR-014 bound value, is not a `ProofBound` and is never converted into one. Its scope is EX-9's. |
 | EX-2 | State key | FR-120's typed canonical form over FR-101's encoder. The anchor is not in the key (ID-10). |
-| EX-3 | Seed | `SampleProvenance.seed` (TR-6). Exploration has no seed. Only `quire.simulation.sampler/v1` `1-draft.1` runs; any other refuses `GeneratorMismatch`. |
+| EX-3 | Seed | `SampleProvenance.seed` (TR-6). Exploration has no seed. Only `quire.simulation.sampler/v1` runs; any other generator refuses `GeneratorMismatch`. |
 | EX-4 | Frontier | FR-101 `Frontier`, in next-expansion order, on `BoundReached`, `Bounded`, `Cancelled` and (after G-1) `Stopped`. |
 | EX-5 | Trace positions | Three distinct concepts, never converted: (a) FR-101's step index inside a simulation `Trace`; (b) ADR-014 TR-2 `TemporalPosition`, carried as `qsl_replay::TracePosition`, owned by `TemporalTrace`; (c) the QSpec FR-351 separating-witness trace position. A state-family `WitnessEnvelope` carries `trace_position: None`. A simulation step index never becomes a `TracePosition`. |
 | EX-6 | Cancellation | Only exploration is cancellable. `poll` is called once before each state's expansion, so a cancellation takes effect within one expansion; the returned outcome is `Cancelled{cause: cancelled/caller-cancelled}`. S6a clause evaluation and admission are not cancellable (ADR-014 §7). Sampling is bounded by `max_steps` and is not cancellable. |
@@ -433,14 +433,12 @@ gets a `blocks` edge from QSL-68 to QSL-67 for G-3 before G-4.
 FE-1, FE-4's unreachability, §6 and EX-9 are verified by inspection or
 analysis, not by a test.
 
-### 11. Pinned integration
+### 11. Integration
 
 | ID | Requirement |
 | --- | --- |
 | PI-1 | `quire-contract-model`'s checked-package reader decides the reference edge of `quire.op.model.reaches_field` (IR-370). TC-463 step 1 and TC-469 step 6 run and pass, backing FR-105-AC-3 and FR-108-AC-6's I04 `read` half; no state-node emission test is ignored or weakened. |
-| PI-2 | FCD `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` are consumed at their exact git revisions through `model::intake` only (ADR-011 §7.1). A change to intake shapes is a filament-core-data ticket. |
-| PI-3 | QSpec contracts selected by this family: diagnostics catalog `1-draft.8`, sampler `quire.simulation.sampler/v1` `1-draft.1`, QSpec FR-181's typed canonical form, STD-111's state node rules. Each is selected by exact revision and refused otherwise (ADR-013 R-08). |
-| PI-4 | The gate for a pin-bump PR is `make ci`. |
+| PI-2 | FCD `agent-ix-extraction-frontend` and `agent-ix-semantic-ir` are consumed through `model::intake` only (ADR-011 §7.1). A change to intake shapes is a filament-core-data ticket. |
 | PI-5 | No state-clause proof evidence is claimed until IR `lower` admits `state` nodes and CG has an `operation-contract` arm for them. Neither has a ticket yet (Open dependencies). Gate QSL-20 (#219) counts no evidence from this family before then. |
 
 ### 12. Evidence from implemented behavior
@@ -455,8 +453,8 @@ function, not by the matrix status in `spec/tests.md`.
   with I1, then FR-106 admission, FR-107 S6a and `run_clause`, matching an
   independent table on stage, category, truth, code and exit code. This is
   end-to-end disposition evidence for SC-5 and FE-3. It asserts no identity
-  directly; identities are pinned by `tc_469_step_6_package_id_is_pinned_across_every_case`
-  (`:854`) and the ID-row oracles.
+  directly; TC-469 step 6 checks that every case and a direct compile give
+  one `package_id` (`:806`), and the ID-row oracles check the rest.
 - **Frame run and frame replay**: FR-115 TC-514
   (`qsl-replay/src/spine/clause/tests/frame.rs`) and FR-116 TC-515
   (`tests/frame_replay.rs`) exercise FE-1, FE-2 and ID-6 through E9

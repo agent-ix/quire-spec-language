@@ -20,12 +20,12 @@ over the v2 wire QSL emits. Scope: FR-097-AC-6.
    `Holder` (names `Box`), `Ints` (bounded sequence of `Integer`), `Flags`
    (bounded sequence of `Boolean`), `RangedTree` (recursive) and `Mixed`
    (`Integer` beside `Int[0,9]`).
-2. Read it with IR's v2 reader at the pinned revision and lower each record
+2. Read it with IR's v2 reader and lower each record
    with `require_bounds`.
 3. Classify each record with `classify_extent`.
 4. Check and emit `function f using v(x: Int[0, 9], n: Integer): Integer
    pure { (x + 1) + n }`. Read its requirement records (FR-062-AC-13) and,
-   with IR's v2 reader at the pinned revision, apply IR's `requires-bound`
+   with IR's v2 reader, apply IR's `requires-bound`
    predicate to each record's application node. Then check and emit
    FR-062's RR-7 (`let t = x + 1 in t * 2`) and `function k using v(x:
    Int[0, 9], n: Integer): Integer pure { if n = 0 then x + 1 else 0 }`,

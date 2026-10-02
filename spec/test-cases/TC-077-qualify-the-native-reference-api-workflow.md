@@ -21,7 +21,7 @@ failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure
 
-Execute every step of IT-006 through actual source-derived Rust model admission and public parse/link/check/construct/validate/evaluate APIs. Record exact revisions, source/model/input references and healthy, violating, refused and incomplete outcomes, including operations.
+Execute every step of IT-006 through actual source-derived Rust model admission and public parse/link/check/construct/validate/evaluate APIs. Record source/model/input references and healthy, violating, refused and incomplete outcomes, including operations.
 
 ## Expected Results
 

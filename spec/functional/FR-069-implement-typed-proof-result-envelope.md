@@ -57,10 +57,6 @@ an FR-331 terminal value.
 - A Kani run whose obligation has zero SUCCESS checks SHALL map to
   `inconclusive` with the typed cause `kani_vacuous_proof`, never to
   `proved` (ADR-013 O-16 proof column).
-- The reader SHALL refuse an envelope whose `contract_version` is not
-  exactly `quire.backend-provider/v1`, or whose `capability_vocabulary` is
-  not exactly `quire.capability-kind/v1`, before reading any `results`,
-  `dispositions`, `counterexamples` or `accounting` member.
 - The reader SHALL refuse an envelope whose encoded size exceeds the
   configured reader bound, and SHALL NOT return a truncated or
   partially-populated envelope in that case.
@@ -76,8 +72,7 @@ an FR-331 terminal value.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-069-AC-1 | Given an FR-331 terminal record for each of the seven O-16 categories the proof column produces, including a vacuous `Proved` (zero SUCCESS checks, category `inconclusive`) and a `tested` backend result (category `success`, distinct from and never promoted to `proved`), the reader maps each to its exact O-16 category with no collapsing. | Test (TC-177) |
-| FR-069-AC-2 | Given an envelope whose `contract_version` or `capability_vocabulary` does not match the expected identifier, the reader refuses with a structured, typed cause before reading any result, disposition, counterexample or accounting member. | Test (TC-178) |
-| FR-069-AC-3 | Given a positive envelope, a construct → serialize → read round trip preserves the `backend` member (identity and manifest digest) and every per-item disposition byte-for-byte. | Test (TC-179) |
+| FR-069-AC-3 | Given a positive envelope, a construct → serialize → read round trip preserves the `backend` member (the backend identity) and every per-item disposition byte-for-byte. | Test (TC-179) |
 | FR-069-AC-4 | Given an envelope whose encoded size exceeds the configured reader bound, the reader refuses with a bound-exceeded cause and returns no truncated or partially-populated envelope. | Test (TC-178) |
 
 ## Dependencies
@@ -95,3 +90,10 @@ an FR-331 terminal value.
   parallel category or outcome type.
 - **Downstream**: [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md)
   carries the counterexample this envelope's `violation` category names.
+
+## Status
+
+Remaining work (implementation A1, QSL-470): `qsl-replay/src/proof_result.rs`
+still carries the `contract_version` and `capability_vocabulary` members,
+checks them, and traces the deleted FR-069-AC-2 and TC-178's version cases.
+The members, their checks and those traces are deleted.

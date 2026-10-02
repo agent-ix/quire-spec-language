@@ -19,7 +19,7 @@ relationships:
 
 **RETIRED (M-6d), which deletes `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject`.** This description specified that when a consumer requested an immutable native definition handoff, the compiler derived either `quire.checked-predicate/v1` or `quire.checked-temporal-subject/v1` from the exact admitted `quire.compiled-protocol/2` package and returned canonical bounded bytes plus a constructor-private validated view. That surface is deleted for the same reason as FR-051-AC-1 (see Acceptance Criteria): the spine `ProtocolClause` path no longer needs this producer/consumer round trip, and nothing outside the deleted modules' own tests called them. This description is retired, not amended, since there is no successor module for it to describe.
 
-**Live: the production dependency graph (FR-051-AC-6).** QSL's resolved dependency graph is cycle-free and holds one copy of each first-party crate: no QSL crate is resolved a second time through a dependency. `arch-lint duplicate-revisions` (FR-061) over `Cargo.lock` verifies this in `make ci`, and `tc_arch_lint_duplicate_revisions_006` (TC-139) runs the same check over the real root `Cargo.lock` under `cargo test`; a dependency that depended back on QSL would resolve a second QSL copy and fail it. `arch-lint direction` (FR-059, FB-05/FB-11) checks the same graph across the four repositories when given their checkouts.
+**Live: the production dependency graph (FR-051-AC-6).** QSL's resolved dependency graph is cycle-free: no dependency of QSL depends back on QSL. `arch-lint direction` (FR-059, FB-05/FB-11) checks this across the four repositories when given their checkouts.
 
 ## Contract set and public API (RETIRED M-6d)
 
@@ -124,7 +124,7 @@ Contract-IR vocabulary, TL proposition value or Boolean coercion participates.
 | FR-051-AC-3 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: unknown fields/contracts, trailing bytes, noncanonical encodings, invalid spans, duplicate/unbounded populations and exact-limit-plus-one inputs refused before excess state was retained. | Retired |
 | FR-051-AC-4 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: independent schema and identity digest vectors matched the producer, and same identity on unequal canonical bytes refused. | Retired |
 | FR-051-AC-5 | **RETIRED (M-6d)**, for the same reason as FR-051-AC-1: a textual or externally built expression, self-asserted trust/total flag, non-Boolean leaf, evaluator callback, and copied consumer vocabulary could not construct either validated view. | Retired |
-| FR-051-AC-6 | **Amended (M-6d).** This criterion previously read: "The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth"; that text is retired for the same reason as FR-051-AC-1. The criterion now states: QSL's resolved dependency graph is cycle-free and `Cargo.lock` holds exactly one copy of each first-party crate; `arch-lint duplicate-revisions` in `make ci` verifies it. | Test (TC-139) |
+| FR-051-AC-6 | **Amended (M-6d).** This criterion previously read: "The temporal view preserves exact activation, clock, inclusive interval, history kind and reachable formula predicate identities without asserting observation or result state; the predicate view admits the exact optional temporal activation guard separately and asserts no truth"; that text is retired for the same reason as FR-051-AC-1. The criterion now states: QSL's resolved dependency graph is cycle-free, with no dependency of QSL depending back on QSL; `arch-lint direction` (FR-059) verifies it. | Test (TC-139) |
 
 ## Ownership
 
@@ -153,4 +153,4 @@ ecosystem architecture; temporal activation-guard selection is extended by
 `tests/it/compiled_protocol_v2.rs`, which remains for its unrelated TC-138
 coverage); the spine `ProtocolClause` path no longer needs this handoff.
 FR-051-AC-6 states the still-live production-dependency-graph fact, which
-`arch-lint duplicate-revisions` verifies in `make ci`.
+`arch-lint direction` (FR-059) verifies.

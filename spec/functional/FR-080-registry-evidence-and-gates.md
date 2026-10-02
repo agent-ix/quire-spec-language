@@ -54,8 +54,7 @@ against it yields identical candidate sets, in identical order, for every
 item in a fixture item set. The test SHALL fail when a registry
 implementation's candidate set for any item depends on insertion order, for
 example an implementation that stores registrations in a `Vec` and returns
-matches in insertion order rather than sorting by `(identity, manifest
-digest)`.
+matches in insertion order rather than sorting by identity.
 
 ### The `cargo-deny` ban is a positive fail, not an absence of use
 
@@ -92,7 +91,7 @@ checked-in `E0004` locations when the probe feature is enabled.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-080-AC-1 | Running the permutation property test against a reference registry implementation with at least three registered backends and at least 20 randomly sampled permutations of their registration order produces no failure; running the same test against a mutant implementation that returns candidates in raw insertion order (undoing the `(identity, manifest digest)` sort) produces a failure on at least one sampled permutation. | Test (TC-194, owned by FR-075) |
+| FR-080-AC-1 | Running the permutation property test against a reference registry implementation with at least three registered backends and at least 20 randomly sampled permutations of their registration order produces no failure; running the same test against a mutant implementation that returns candidates in raw insertion order (undoing the identity sort) produces a failure on at least one sampled permutation. | Test (TC-194, owned by FR-075) |
 | FR-080-AC-2 | `cargo deny check` fails when `inventory`, `linkme` or `ctor` is added to the registry crate's dependencies, and passes on the unmodified tree. | Test (TC-205) |
 | FR-080-AC-3 | The lint gate fails when a `static`, `OnceLock` or `thread_local!` item is present in the registry module, and passes on the unmodified module. | Test (TC-206) |
 | FR-080-AC-4 | Each of ADR-012 §5.2's five rows has at least one unit test, and each such test fails if its row's documented outcome is not produced (for example, a test for the duplicate-`BackendId` row fails if the second registration is silently accepted instead of refused). | Test (TC-207) |
@@ -121,3 +120,7 @@ checked-in `E0004` locations when the probe feature is enabled.
 Specified under
 [quire-spec-language#185](https://github.com/agent-ix/quire-spec-language/issues/185).
 Not yet implemented.
+
+Remaining work (implementation A1, QSL-470): `tests/it/lowering_registry_isolation.rs`
+still traces the deleted FR-079 and TC-204 (`#[trace("TC-204", "FR-079-AC-2")]`
+and its module doc). The traces are deleted.

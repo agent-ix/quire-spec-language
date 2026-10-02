@@ -60,7 +60,7 @@ scalars. Admission checks the labels first, in the order `authority`,
 - When every label is non-blank and the path is empty, the source shall
   refuse with `invalid_source_identity`, cause `empty-path`, and no field.
 
-These are the two causes `quire.native.diagnostics/v1` revision `1-draft.8`
+These are the two causes `quire.native.diagnostics/v1`
 (QSpec STD-110) closes `invalid_source_identity` to. Neither names a source
 region.
 
@@ -73,7 +73,7 @@ namespace (`EditPredecessor`), a CST node rendered against a parsed source it
 does not belong to (`ForeignNode`), and an editor request bound to another
 document revision (`RequestRevision`). They SHALL refuse with
 `invalid_source_map`, the retained host code for an invalid correspondence,
-source binding or queried range, whose causes revision `1-draft.8` does not
+source binding or queried range, whose causes the catalog does not
 close, keeping their host cause. They SHALL name no region: byte 0 cannot
 stand in for a location (the catalog's common structured context). They
 never use `invalid_source_identity`, whose causes are the two above.
@@ -208,7 +208,7 @@ revision namespace and value part of every immutable key
 - QSpec FR-004: a path or display label is a locator, and a key includes the
   revision namespace and value. QSpec FR-322 `RawSourceRef`, `Revision`,
   `SourceOwner` and `PackageLock.sources`.
-- `quire.native.diagnostics/v1` revision `1-draft.8` (QSpec STD-110,
+- `quire.native.diagnostics/v1` (QSpec STD-110,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the `invalid_source_identity` row, its causes `blank-label`
   and `empty-path`, and the `label` payload spelling; QSpec FR-272-AC-12.
@@ -226,11 +226,10 @@ native-v1 `Diagnostic` still renders a region-less refusal at byte 0 (the
 debt recorded above). The replay executor's recompilation under the
 reference's labels is ADR-013 TK-01's.
 
-QSL emits the catalog revision `1-draft.8` causes:
+QSL emits the catalog causes:
 `SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
 `Source::read_typed` checks the four labels in order before the path
-(`qsl-foundation/src/source.rs`). The revision claim
-(`src/linking/composed/definition_source.rs`) reads `1-draft.8`.
+(`qsl-foundation/src/source.rs`).
 The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
 native-state-input construction error and the replay recompile refusal, each

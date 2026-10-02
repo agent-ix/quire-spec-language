@@ -42,4 +42,4 @@ Tag the tests `#[trace("TC-425", "FR-010-AC-11")]`.
 ## Status
 
 Passed locally under ADR-013 §7 slice S-4b: step 3's `blank-label` cause and `label`
-field (catalog revision `1-draft.8`, FR-001) are asserted.
+field (FR-001) are asserted.

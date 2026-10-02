@@ -106,7 +106,6 @@ to this record; other artifacts cite them as `ADR-017 PF-n`.
 
 ## Context
 
-Measured on QSL `main` at `99e9b6c7` and QSpec `main` at `4634f5fd`.
 External ticket text is quoted as data, not verified in its repository.
 
 **Layer 3 decisions this record consumes, not reopens.** ADR-011 (stage DAG,
@@ -271,7 +270,7 @@ FR-115 (operation frame) and FR-116 (frame replay). They are one rule:
 - At E9, after the `package_id` check (FR-098), replay compares each resolved
   identity with the packet's: for a frame, the frame node and its occurrence
   and the anchor node. A mismatch refuses `stale_dependency`/
-  `revision-mismatch` naming both, before admission (FR-116). This detects a
+  `content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming both, before admission (FR-116). This detects a
   packet whose members disagree with a recompile of the same `package_id`; a
   stale packet already refuses at the `package_id` check.
 - A member name inside an O-06 pair, and an operation `Identifier` looked up
@@ -305,7 +304,7 @@ Decision, with no wire change:
   of a clause's).
 - If the envelope's `clause_node` differs from the payload's `frame`, or its
   `occurrence_key` from the payload's `occurrence`, `replay_frame` refuses
-  `stale_dependency`/`revision-mismatch` naming both, before it recompiles.
+  `stale_dependency`/`content-mismatch` naming both, before it recompiles.
 - `replay_frame` reads no `selected_function`: the envelope constructor
   still requires one, and its value is not interpreted for a frame packet.
   A selection member that names a function or a frame operation is a change
@@ -328,13 +327,13 @@ third representation that only its own test uses
 (`frame_subjects_resolve_only_through_the_recorded_correspondence`, TC-248,
 FR-088-AC-2). TK-3 fixes it (§6).
 
-#### PF-6 Versions
+#### PF-6 Staleness
 
-| Input | Version carrier | Check | Effect of a change |
+| Input | Identity carrier | Check | Effect of a change |
 | --- | --- | --- | --- |
 | Domain package (frames) | `DomainPackageRef` identity, version, `sha256-jcs` digest (O-01) | I1 digest recompute; document `model` header equality (`invalid_model_binding`/`wrong-model-selection`) | A new version changes the model-owned node ids (O-04) and so the `package_id`; an old packet refuses by FR-098's `package_id` rule |
-| Checked package | `quire.checked-package/v2`, `package_id` (O-02, O-22) | `WitnessEnvelope::reconstruct` pins the contract; `replay_frame` checks `package_id` | A meaning edit changes `package_id`; replay refuses by FR-098 |
-| Snapshots and invocation | FR-001 four labels plus `sha256-jcs` digest (FR-106) | label and byte checks at admission | `stale_dependency`/`revision-mismatch` or `byte-digest-mismatch` |
+| Checked package | `quire.checked-package/v2`, `package_id` (O-02, O-22) | `WitnessEnvelope::reconstruct` reads the contract; `replay_frame` checks `package_id` | A meaning edit changes `package_id`; replay refuses by FR-098 |
+| Snapshots and invocation | `sha256-jcs` digest (FR-106) | byte check at admission | `stale_dependency`/`byte-digest-mismatch` |
 | Frame payload | none | identity equality only | Staleness is detected through content-addressed identities (O-02, O-04), never through a version field |
 
 #### PF-7 No protocol-internal redesign
@@ -363,8 +362,8 @@ tickets. SEAM-3 and the composed protocol checker are not on the spine path,
 and their deletion is owned (PF-8).
 
 The `unsupported_construct`/`not-yet-implemented` refusal that S3 uses for an
-unimplemented protocol construct names a cause that QSpec's catalog revision
-`1-draft.8` does not list for `unsupported_construct`
+unimplemented protocol construct names a cause that QSpec's catalog
+does not list for `unsupported_construct`
 (`declaration-form`, `expression-form`). Q-6 asks QSpec for it.
 
 #### PF-8 Lane deletions (ADR-011 §7.3, T-3)
@@ -731,7 +730,7 @@ There is no totality check.
 
 | Consumer | Versioned inputs | Capability | QSL-side contract |
 | --- | --- | --- | --- |
-| CG#84 Verus (IR-32) | `quire.checked-package/v2` with the Q-2 relation node; `package_id`; the QSpec FR-331 request, holding only bound items; the Verus QSpec FR-331 manifest and tool pin | the bound claim's QSpec FR-290 kind; Verus's mode per its manifest | AR-2 keys and values; unbound items never reach CG |
+| CG#84 Verus (IR-32) | `quire.checked-package/v2` with the Q-2 relation node; `package_id`; the QSpec FR-331 request, holding only bound items; the Verus QSpec FR-331 manifest | the bound claim's QSpec FR-290 kind; Verus's mode per its manifest | AR-2 keys and values; unbound items never reach CG |
 | CG Kani (QSpec FR-196, CG#49) | as for Verus, with Kani's bounded mode (ADR-014 §6) | as the claim | as for Verus |
 | IR#136 SMT/runtime parity (IR-33) | `quire.checked-package/v2`; the QSpec FR-323 runtime request | the claim's kind | none: parity compares model-level encodings with `runtime::execute` and reads no abstraction relation |
 
@@ -739,7 +738,7 @@ There is no totality check.
 
 | Mapping | Types and owners | Conversions | Version effect | Failure oracle | Tests | Tickets |
 | --- | --- | --- | --- | --- | --- | --- |
-| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `revision-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
+| Protocol/frame | PF-1; `check`, `package`, `qsl-replay` | ADR-013 C-02, C-03, C-11, C-13, C-14 | PF-6 | stale ids refuse `content-mismatch` (PF-3, PF-4); `frame_violation`/`unauthorized-change` | TC-462, TC-463, TC-514, TC-515 pass; TC-510 to TC-513 specified; each TK adds its own (§6) | TK-1 to TK-4 |
 | Refinement | `xtask refinement`; spine `run_clause` and `compile`; `ClauseDisposition`, `CompileRefusal` | disposition → class and compile result → class (RF-2) | RF-6 | RF-2 and RF-3 tables; RF-5 seed and controls | RF-5 | #191; #192 |
 | Abstraction relation | AR-2, AR-3; `check` core; layer-4 export | checked relation → v2 node (Q-2); export → driver → CG | AR-4 relation revision | AR-3 and AR-4 refusals | AR-7 | #198 slices; Q-1, Q-2 |
 
@@ -796,7 +795,7 @@ These are proposed; the team lead files them.
 | ID | Scope | Verification | Repository |
 | --- | --- | --- | --- |
 | TK-1 | G-1: retype `qsl_replay::spine::OperationName` to (model alias `Identifier`, object `Identifier`, operation `Identifier`); add one resolver in `check` from it to (object `DeclarationKey`, operation `Identifier`), the `DeclarationKey` carrying its domain package, refusing `missing_declaration`/`missing-name` when the alias or type does not resolve; make `CheckedGraph::operation_frame` take its output; update `resolve_frame`, its two entry paths, `execute/frame.rs::operation_name` and the test at `spine/clause/tests/frame_replay.rs:85` | an inherited operation selects its declaring frame through the resolver; a formatted string no longer type-checks as a selection; TC-514 and TC-515 pass unchanged | QSL |
-| TK-2 | G-2: `replay_frame` checks the envelope's `clause_node` and `occurrence_key` against the payload; the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope whose `clause_node` or `occurrence_key` differs from the payload refuses `stale_dependency`/`revision-mismatch` naming both, before recompiling; TC-515 extended | QSL |
+| TK-2 | G-2: `replay_frame` checks the envelope's `clause_node` and `occurrence_key` against the payload; the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope whose `clause_node` or `occurrence_key` differs from the payload refuses `stale_dependency`/`content-mismatch` naming both, before recompiling; TC-515 extended | QSL |
 | TK-3 | G-3: delete `check::identity::{Frame, FrameSubjects, ResolvedFrameSubjects}`; re-home TC-248 onto `CheckedOperationFrame` and `OperationEffect` subject resolution (FR-088-AC-2); correct the stale `model/intake.rs:17-23` module doc | TC-248 passes against the live types; FR-088-AC-2 stays backed | QSL |
 | TK-4 | Consume IR-370's `reaches_field` reference-edge check; TC-463 step 1 and TC-469 step 6 run without `#[ignore]` (FR-105-AC-3, FR-108-AC-6) | TC-463 step 1 and TC-469 step 6 pass | QSL |
 | Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar. Decided: QSpec FR-450 (STD-116) | QSpec | QSpec |

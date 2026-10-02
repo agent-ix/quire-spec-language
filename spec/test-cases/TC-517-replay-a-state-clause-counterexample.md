@@ -68,7 +68,7 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 - Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice, each
   holding the evaluated `true` and no QSpec FR-351 record;
   `inconclusive`, `NoValue`.
-- Step 3: `stale_dependency`/`revision-mismatch` naming the envelope's and
+- Step 3: `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming the envelope's and
   the recompiled clause node, then both occurrences, then both clause
   nodes again (the node goes first), each with no admission, and the same
   three refusals with the invocation removed;

@@ -148,7 +148,7 @@ The refused outcome's members:
   code string names, found by `Code::from_code` (the `Code::all()` entry
   whose `as_str` equals it). A code string no `Code` names exits 20.
 
-At catalog revision `1-draft.8` (QSpec `native-diagnostics.md`,
+In the catalog (QSpec `native-diagnostics.md`,
 `quire.native.diagnostics/v1`), `kernel_refusal_record` builds a record for
 every kernel refusal but `CheckedInvariant`, with the code, causes and fields
 of FR-096's key table, and each exits 20:
@@ -370,8 +370,7 @@ exit 30.
 
 ## Status
 
-Implemented, against catalog revision
-`1-draft.8`. `qsl_replay::spine::run` and the CLI `run` command render the
+Implemented. `qsl_replay::spine::run` and the CLI `run` command render the
 outcome mapping, the internal-failure path (`CheckedInvariant`,
 `CallFailure::Fault`, an unresolvable locus, each exiting 30 directly), and
 locus resolution over the program's and every supplied library's source.

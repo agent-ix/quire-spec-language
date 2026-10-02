@@ -11,8 +11,6 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-078
     type: exercises
-  - target: ix://agent-ix/quire-spec-language/FR-079
-    type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-080
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
@@ -106,5 +104,4 @@ requires a QSL core change and there is no honest, uniform way to report
 - [FR-076](../functional/FR-076-settle-backend-absence-as-unsupported.md)
 - [FR-077](../functional/FR-077-remove-composed-linker-backend-negotiation.md)
 - [FR-078](../functional/FR-078-remove-qsl-negotiate-copies.md)
-- [FR-079](../functional/FR-079-preserve-kani-lowering-corpora.md)
 - [FR-080](../functional/FR-080-registry-evidence-and-gates.md)

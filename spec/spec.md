@@ -54,11 +54,7 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-060
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-061
-    type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-009
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/NFR-010
     type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-011
     type: contains
@@ -784,7 +780,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 
 | Artifact | Type | Status |
 | --- | --- | --- |
-| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-10 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) implemented (ADR-013 §7 S-4b); catalog revision `1-draft.8` (STD-110) `invalid_source_identity` causes `blank-label` (with `label`, labels checked first in order) and `empty-path` (AC-6's cause and field, AC-11) implemented; the complete-V1 edit and binding host causes refuse as `invalid_source_map` with no region (AC-12, team-lead ruling 2026-09-26), implemented |
+| [FR-001](functional/FR-001-read-exact-source.md) | FR | Draft; AC-5 to AC-10 (the caller-named four-label `RawSourceRef` for every source admission, S0 refusal regions, render-time line and column; TC-424) implemented (ADR-013 §7 S-4b); `invalid_source_identity` causes `blank-label` (with `label`, labels checked first in order) and `empty-path` (AC-6's cause and field, AC-11) implemented; the complete-V1 edit and binding host causes refuse as `invalid_source_map` with no region (AC-12, team-lead ruling 2026-09-26), implemented |
 | [FR-002](functional/FR-002-parse-native-units.md) | FR | Draft |
 | [FR-003](functional/FR-003-format-native-source.md) | FR | Draft |
 | [FR-004](functional/FR-004-verify-source-maps.md) | FR | Draft |
@@ -793,7 +789,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-007](functional/FR-007-validate-runtime-inputs.md) | FR | Draft |
 | [FR-008](functional/FR-008-evaluate-state-reference.md) | FR | Draft |
 | [FR-009](functional/FR-009-lower-qualified-projections.md) | FR | Draft |
-| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft; AC-11 (the four source labels, TC-425) implemented (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
+| [FR-010](functional/FR-010-report-native-outcomes.md) | FR | Draft; AC-11 (the four source labels, TC-425) implemented (ADR-013 §7 S-4b); the `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
 | [FR-011](functional/FR-011-integrate-opaque-extraction.md) | FR | Draft |
 | [US-001](usecase/US-001-author-native-source.md) | US | Draft |
 | [US-002](usecase/US-002-link-exact-models.md) | US | Draft |
@@ -834,7 +830,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-015](functional/FR-015-project-native-model-semantics.md) | FR | Planned native semantic roles |
 | [FR-016](functional/FR-016-check-native-clauses.md) | FR | Qualified type/definedness checker |
 | [FR-017](functional/FR-017-separate-qualification-stages.md) | FR | Qualified construction-stage repairs; SR-083 |
-| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction; FR-018-AC-8 (four source labels, TC-431) implemented (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
+| [FR-018](functional/FR-018-construct-native-runtime-inputs.md) | FR | Planned LC03 byte-bound input construction; FR-018-AC-8 (four source labels, TC-431) implemented (ADR-013 §7 S-4b); the `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
 | [NFR-006](non-functional/NFR-006-bound-native-runtime.md) | NFR | Planned runtime work/content limits |
 | [IT-006](integration/IT-006-native-reference-workflow.md) | IT | Planned native reference API qualification |
 | [FR-019](functional/FR-019-package-checked-native-clauses.md) | FR | Implemented; qualified in the native-packages test matrix |
@@ -844,7 +840,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-023](functional/FR-023-run-native-packages.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-024](functional/FR-024-read-native-runtime-artifacts.md) | FR | Implemented; tested in the native-workflow test matrix; FR-024-AC-6 (four source labels, TC-431) implemented (ADR-013 §7 S-4b) |
 | [FR-025](functional/FR-025-compile-rule-model-source.md) | FR | Implemented; tested in the native-workflow test matrix |
-| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); the catalog revision `1-draft.8` `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
+| [FR-026](functional/FR-026-run-standalone-native-workflow.md) | FR | Implemented; tested in the native-workflow test matrix; FR-026-AC-6 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); the `invalid_source_identity` cause `blank-label` and its `label` field (FR-001) are implemented |
 | [FR-027](functional/FR-027-export-compiled-native-package.md) | FR | Implemented; tested in the native-workflow test matrix; FR-027-AC-4 (four source labels, TC-430) implemented (ADR-013 §7 S-4b); FR-027-AC-5 to FR-027-AC-8 (edition routing: `1-draft` to the spine, `0-draft` to native, TC-435) implemented (ADR-011 §7.3 M-6a); FR-027-AC-9 (domain packages on the spine, `model_selections`, TC-442) implemented; FR-027-AC-10 (`libraries`, TC-446 step 7) implemented |
 | [FR-028](functional/FR-028-run-selected-native-package.md) | FR | Implemented; tested in the native-workflow test matrix |
 | [FR-029](functional/FR-029-export-executable-projection.md) | FR | Implemented; tested in the native-workflow test matrix |
@@ -881,11 +877,8 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-057](functional/FR-057-admit-shared-capability-kinds.md) | FR | Planned FR-290 capability-kind admission and stage split; #229 specifies; canonical `Capability` type implemented (TC-153 partial); requests carry it and `report` reads no backend, registration and candidate sets are in `route`; carrier-version refusal and admission remain under #213, the post-E7 routing step under #185; kind applicability is FR-057-AC-11 (TC-115) |
 | [IT-012](integration/IT-012-domain-package-model-intake.md) | IT | Planned quire-rs and FCD crate model intake; #131 |
 | [ADR-013](decisions/ADR-013-canonical-type-package-conversion-ownership.md) | ADR | Proposed; canonical type, package and conversion ownership (#211) |
-| [FR-058](functional/FR-058-detect-current-head-cross-repository-incompatibility.md) | FR | **Retired**, which deletes `integration/current-head/`; QSL's own build resolves quire-contract-ir from `main` and quire-integration tests cross-repository composition |
 | [FR-059](functional/FR-059-check-backend-dependency-direction.md) | FR | Implemented ADR-011 FB-05/FB-11 backend dependency-direction check (`arch-lint direction`); #215 |
 | [FR-060](functional/FR-060-check-qsl-api-surface-boundary.md) | FR | Implemented ADR-011/ADR-013 T-12 API-surface boundary check (`arch-lint api-surface`); T12-A pending, T12-B (`check` only) and T12-C (`model` only) live, each with a named debt list that only shrinks (amended 2026-09-22; gate rewrite pending), T12-D (kernel `PopulationId` constructor, `model` only) live and passing; #215 |
-| [FR-061](functional/FR-061-check-duplicate-ecosystem-revisions.md) | FR | Implemented duplicate-ecosystem-revision check over `Cargo.lock` (`arch-lint duplicate-revisions`); #215 |
-| [IT-013](integration/IT-013-current-head-integration-lane.md) | IT | **Retired**, for the same reason as FR-058 |
 | [FR-062](functional/FR-062-implement-checked-family-contract.md) | FR | Specified under #214; implemented. All thirteen ACs are backed, among them AC-4 (`requirements`, TC-160: the no-kind and the with-kind clause), AC-10 (the `replay` facade's typed `QualifiedName` selection, TC-166), AC-11 (package-wide expression-node limit, TC-381) and AC-12 (a family limit's actual counter, TC-432) |
 | [FR-063](functional/FR-063-exhaustive-family-extension-seam-probe.md) | FR | Specified under #214; not yet implemented |
 | [FR-064](functional/FR-064-restrict-string-dispatch-to-marked-edges.md) | FR | Implemented; `xtask string-edge` runs in `make ci` |
@@ -895,7 +888,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-068](functional/FR-068-split-expression-checking-into-check-stage.md) | FR | Specified (ADR-011 §7.3 M-5), split from #214 by owner ruling 2026-09-20; implemented, commit `9692382` — TC-170–176 (TC-175/176's FR-068-AC-7/AC-9 assertions retired by FR-074; see FR-074). Amended by FR-087 (owner ruling on QSL-158, 2026-09-21): AC-2/AC-6/AC-10 superseded in part for `CheckedPackage`, which relocates to `package`. AC-6 amended 2026-09-22: item-level import tiers replaced by a module-level layer rule (gate rewrite pending) |
 | [FR-069](functional/FR-069-implement-typed-proof-result-envelope.md) | FR | Implemented under #231; TC-177–179 pass locally — see `spec/tests.md` |
 | [FR-070](functional/FR-070-implement-typed-counterexample-witness-envelope.md) | FR | Implemented under #231; TC-180–186 pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
-| [FR-071](functional/FR-071-implement-typed-replay-request.md) | FR | Implemented under #231; TC-185, TC-186 (step 7, FR-071-AC-9), TC-188 pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
+| [FR-071](functional/FR-071-implement-typed-replay-request.md) | FR | Implemented under #231; TC-185, TC-186 (step 7, FR-071-AC-9) pass locally, TC-187 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
 | [FR-072](functional/FR-072-implement-typed-replay-result.md) | FR | Implemented under #231; TC-189–191 pass locally, TC-192 stays Planned (absence-only claim not runtime-assertable) — see `spec/tests.md` |
 | [FR-073](functional/FR-073-implement-redacted-safe-diagnostic-rendering.md) | FR | Implemented under #231; TC-209–211 pass locally — see `spec/tests.md` |
 | [FR-074](functional/FR-074-move-model-below-check.md) | FR | Specified and implemented (ADR-011 §7.3 M-2), GitHub #241; TC-261/262 pass locally — see `spec/tests.md` |
@@ -903,7 +896,6 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-076](functional/FR-076-settle-backend-absence-as-unsupported.md) | FR | Specified under #185; not yet implemented; exit waits on quire-contract-codegen#86 |
 | [FR-077](functional/FR-077-remove-composed-linker-backend-negotiation.md) | FR | Specified under #185; not yet implemented |
 | [FR-078](functional/FR-078-remove-qsl-negotiate-copies.md) | FR | Implemented — see TC-201, TC-202 |
-| [FR-079](functional/FR-079-preserve-kani-lowering-corpora.md) | FR | Specified under #185; AC-2 backed for the current catalog (TC-204); AC-1 unbacked (TC-203); AC-1/AC-2 retire with `lowering` in ADR-011 §7.3 M-6a |
 | [FR-080](functional/FR-080-registry-evidence-and-gates.md) | FR | Specified under #185; not yet implemented |
 | [FR-081](functional/FR-081-preserve-model-correspondence-and-declaration-identity.md) | FR | Specified under #120; most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120 |
 | [FR-082](functional/FR-082-resolve-conformance-subsetting-and-redefinition.md) | FR | Specified under #120; most backing code and 16 of 30 TCs predate this spec (retrospective coverage from #131) — see `spec/tests.md`; remaining work: #120. The type-environment ceilings are stage limits by ADR-014 §1 (AC-6, AC-7), implemented (S-5b) |
@@ -920,7 +912,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-093](functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md) | FR | Specified, with recursive text leaves; lowering and keys implemented (#384), recursive text leaves included; serialized by the M-4 emitter -- TC-415 passes locally, TC-416 partial (see its row) |
 | [FR-094](functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md) | FR | Specified (ADR-013 O-04, C-02, QC-25, QC-26); implemented (#384) -- TC-417 to TC-419 pass locally |
 | [FR-095](functional/FR-095-occurrence-keyed-source-map-and-locus.md) | FR | Specified and implemented (ADR-013 §7 S-4: O-07, O-12, T-5, C-14) -- TC-420 to TC-422 pass locally; `LocatedSpan` replacement and C-21 are slice S-4b (FR-001), check-stage regions slice S-5b (FR-096) |
-| [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Partly implemented (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci); catalog revision `1-draft.8` (STD-110) -- AC-2 to AC-17 pass locally (TC-427 to TC-429, TC-378, TC-470, TC-500): each of the ten kernel value refusals carries its target domain or width, `Refusal::code()`/`cause()` return the key table's code and cause for all twelve record-building kernel refusals, `kernel_refusal_record` builds the ten value refusals' records, and a `sum` seed or running total outside its domain is `Undefined::SumOutOfDomain`; a kernel `CheckedInvariant` is an `InternalFault` from `Machine::run` |
+| [FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md) | FR | Partly implemented (ADR-013 §7 S-5b: T-4, O-17, O-22 with T-5 loci) -- AC-2 to AC-17 pass locally (TC-427 to TC-429, TC-378, TC-470, TC-500): each of the ten kernel value refusals carries its target domain or width, `Refusal::code()`/`cause()` return the key table's code and cause for all twelve record-building kernel refusals, `kernel_refusal_record` builds the ten value refusals' records, and a `sum` seed or running total outside its domain is `Undefined::SumOutOfDomain`; a kernel `CheckedInvariant` is an `InternalFault` from `Machine::run` |
 | [FR-097](functional/FR-097-classify-claim-extent-and-write-bounded-requests.md) | FR | Specified and implemented (ADR-013 §7 S-6, ADR-014 §11): F `bound`, `ClaimExtent`, the O-20 request writer, `explore::Outcome::category()` and the optional kernel bounds -- TC-436 to TC-439 and TC-441 pass locally; TC-440 is partly passed, its quantity fixture in an ignored agreement test |
 | [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) implemented, TC-444 step 7 passes locally |
 | [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended) |

@@ -28,7 +28,7 @@ Config::ConfigVersion::attemptUpdate, invocation: ... }` unless stated.
    `config_history`; an invocation declaring `created: [child]`.
 3. changed-version with an expected `package_id` from another unit; with its
    invocation bytes edited after the digest was taken; with another
-   `revision` label; with another `model` digest; with `operation` `probe`.
+   `model` digest; with `operation` `probe`.
 4. `operation: Config::ConfigVersion::missing`; a package operation that no
    clause or attempt names; `operation: Nope::ConfigVersion::attemptUpdate`,
    an alias no `model` declaration binds; `operation:
@@ -55,8 +55,7 @@ Tag the tests `#[trace("TC-514", "FR-115-AC-n")]`.
   the creation of `c2`; `evaluate`, `refusal`,
   `population_delta_mismatch`/`delta-disagreement`, exit 20.
 - Step 3: `compile`, `stale_dependency`, naming both; `admit`,
-  `stale_dependency`/`byte-digest-mismatch`; `admit`, `stale_dependency`/
-  `revision-mismatch`; `admit`, `invalid_model_binding`/
+  `stale_dependency`/`content-mismatch`; `admit`, `invalid_model_binding`/
   `wrong-model-selection`; `admit`, `wrong_snapshot`/`wrong-invocation`.
   None reaches `evaluate`.
 - Step 4: `select`, `missing_declaration`/`missing-name`, four times;

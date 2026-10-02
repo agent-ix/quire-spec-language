@@ -34,7 +34,7 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
 ## Inputs
 
 - ADR-013 T-4, T-5, O-12, O-16, O-17, O-18 and O-22.
-- `quire.native.diagnostics/v1` revision `1-draft.8`
+- `quire.native.diagnostics/v1`
   (`ix://agent-ix/quire-specification`,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the common structured context ("original source region and
@@ -42,7 +42,7 @@ The types are layer F's, in `qsl_foundation::diagnostic` (ADR-011 §6.1).
   unavailable; byte zero, an empty path or a name-search match cannot
   masquerade as a located failure"); the `stage_limit_exceeded`,
   `unknown_wire`, `invalid_runtime_input` and `wrong_snapshot` rows; the ten
-  value-refusal rows revision `1-draft.8` adds (`inexact_decimal`,
+  value-refusal rows (`inexact_decimal`,
   `decimal_out_of_domain`, `division_pair_out_of_domain`,
   `modulo_out_of_domain`, `text_length_out_of_domain`,
   `integer_out_of_domain`, `rational_out_of_domain`, `ieee_not_exact`,
@@ -124,8 +124,7 @@ count, node count, edge count, occurrence count, diagnostic count and work
 budget. Its `catalog_code()` SHALL be `stage_limit_exceeded` with cause
 `input-bytes-exceeded`, `nesting-depth-exceeded`, `token-count-exceeded`,
 `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`,
-`diagnostic-count-exceeded` or `work-budget-exceeded` respectively
-(revision `1-draft.8`).
+`diagnostic-count-exceeded` or `work-budget-exceeded` respectively.
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
 actual counter at the failed charge, and an optional `Locus`. Its catalog
@@ -149,7 +148,7 @@ accounting-contract limits type (`ModelNormalizationLimitsV1`,
 meter wherever it is read and keeps `resource_exhausted`
 ([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
 §1). The `quire.native.diagnostics/v1`
-`stage_limit_exceeded` row (revision `1-draft.8`) names these surfaces,
+`stage_limit_exceeded` row names these surfaces,
 together with S1, `replay` and `route`, and the catalog keeps `resource_exhausted` for the caller's
 work-budget meter, adding that a semantic maximum is not a caller work
 budget. The check stage's `CheckingLimits` ceilings (nesting depth, node
@@ -204,8 +203,7 @@ its causes in the cause's own variant. `catalog_fields` reads them from the
 variant and never from a message.
 
 The keys of the family and kernel causes S6a raises are these. Each key
-names the catalog payload item beside it (`quire.native.diagnostics/v1`
-revision `1-draft.8`):
+names the catalog payload item beside it (`quire.native.diagnostics/v1`):
 
 | Cause type | Code / cause | Key: catalog payload item |
 | --- | --- | --- |
@@ -374,14 +372,11 @@ name.
   per-declaration limits and the package node budget.
 - [FR-090](FR-090-return-a-family-outcome-or-a-typed-family-refusal.md):
   `CatalogCoded`, `UndefinedCoded`, `Evaluation` and `FamilyResult`.
-- The catalog revision QSL claims: `1-draft.8` (QSpec STD-110)
-  (`qsl-cst/src/diagnostic.rs`, `qsl-semantics/src/complete/package.rs`,
-  the checked-package emitter's diagnostics catalog and the native
-  Diagnostics registration). `token-count-exceeded`, `edge-count-exceeded`,
-  `occurrence-count-exceeded` and `diagnostic-count-exceeded` are revision
-  `1-draft.7`; the ten kernel value-refusal codes and the
-  `invalid_source_identity` causes `blank-label` and `empty-path`
-  ([FR-001](FR-001-read-exact-source.md)) are revision `1-draft.8`.
+- The QSpec diagnostics catalog (QSpec STD-95, STD-110): its
+  `token-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`
+  and `diagnostic-count-exceeded` causes, the ten kernel value-refusal codes
+  and the `invalid_source_identity` causes `blank-label` and `empty-path`
+  ([FR-001](FR-001-read-exact-source.md)).
 - [NFR-011](../non-functional/NFR-011-bound-value-checking-work.md): the
   `CheckingLimits` ceilings.
 - IR (`agent-ix/quire-contract-ir`, `quire-contract-model`'s
@@ -395,10 +390,9 @@ name.
 
 - **FR-096-OQ-1 (answered):** IR's `Edges`, `Occurrences` and `Diagnostics`
   limits carry `edge-count-exceeded`, `occurrence-count-exceeded` and
-  `diagnostic-count-exceeded`, which `quire.native.diagnostics/v1` revision
-  `1-draft.7` adds (ADR-013 QC-28, STD-95).
+  `diagnostic-count-exceeded`, which `quire.native.diagnostics/v1` carries (ADR-013 QC-28, STD-95).
 - **FR-096-OQ-2 (open):** `inexact_decimal`'s `expected` is the target's
-  declared domain. Revision `1-draft.8` spells a domain only with both
+  declared domain. The catalog spells a domain only with both
   bounds, so it gives no spelling for an unbounded `Integer` target of a
   unit conversion under strict `exact`. QSpec owns the ruling. QSL cannot
   reach that case today: `QuantityTarget::Integer` always carries a
@@ -413,7 +407,7 @@ name.
 
 Partly implemented.
 
-- `LimitKind` has the eight `1-draft.7` kinds, and `LimitExceeded` carries
+- `LimitKind` has the eight catalogued kinds, and `LimitExceeded` carries
   an optional `Locus` (AC-2).
 - S2's depth limit is located at the first node past the bound (AC-3).
 - A family `check` locates its declaration-level limits at the
@@ -473,7 +467,7 @@ Implemented:
   (`quire-exact` fields `required`/`supplied`), and `kernel_refusal_record`
   builds the record from them.
 
-Implemented against catalog revision `1-draft.8` (QSpec
+Implemented against the catalog (QSpec
 STD-110, merged):
 
 - AC-8 is backed for all twelve kernel causes. Each of the ten value
@@ -495,11 +489,9 @@ STD-110, merged):
   over an empty sequence checks under `CheckMode::Kernel` and reaches it
   (FR-100-AC-10). FR-100's kernel undefined-reason table owns the
   `sum-out-of-domain` spelling, and `qsl-replay` renders it.
-- The build claims catalog revision `1-draft.8` (the definition lock, the
-  checked-package emitter's diagnostics catalog and the native Diagnostics
-  registration), and conformance passes against QSpec's `1-draft.8`.
+- Conformance passes against QSpec's catalog.
 
-Not built, independent of the catalog revision:
+Not built:
 
 - The key table has no row for the other `ModelQueryRefusal` causes
   (including `type-mismatch`) or for `qsl-route`'s `BoundRefusal`; they build

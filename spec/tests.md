@@ -48,8 +48,6 @@ names different artifacts in each.
 | TC-010 | Owned verification language inventory | Manual | P1 | NFR-005-M-1 | ✅ Inspected locally |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-9 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-5 | ✅ Passed locally for FR-060-AC-1..AC-3 and AC-5; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
-| TC-158 | Report a quire-ecosystem crate resolved to more than one source | Integration | P1 | FR-061-AC-1..FR-061-AC-5 | ✅ Passed locally |
-| TC-159 | Run the current-head integration lane against real and intentionally incompatible heads | Manual | P1 | FR-058-AC-1..FR-058-AC-4 (retired) | ❌ Retired; `integration/current-head/` deleted |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`), AC-7 backed by TC-378, AC-9 (step 8), AC-12, and AC-13 (steps 10 and 11); AC-3 (all three clauses, for `src/check` and `src/family`) and AC-6 (first sentence, an API-surface scan and a rename test); AC-1 (step 1: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case) |
 | TC-161 | The seam probe demonstrates exhaustiveness at every S1-S4 seam | Integration | P1 | FR-063-AC-1..FR-063-AC-7, FR-062-AC-8, FR-067-AC-4 | ✅ Passed locally for FR-062-AC-8 (`CheckCause::code`), backed by the `make seam-probe` gate (part of `make ci`); FR-063-AC-6 backed (S1/S2/S3/S4 all land, including the qsl-forms leading-token-kind table via its own probe build); FR-063's other criteria per its own Status section |
 | TC-162 | The string-edge scan reports every unmarked string dispatch | Integration | P1 | FR-064-AC-1..FR-064-AC-6 | ✅ Passed locally |
@@ -68,11 +66,11 @@ names different artifacts in each.
 | TC-175 | The move stays inside M-5: no early M-2 work, no edge widening | Integration | P1 | FR-068-AC-6, FR-068-AC-7 | 🚧 FR-068-AC-6 steps amended to the module-level layer rule (2026-09-22), gate rewrite planned; FR-068-AC-7 steps retired by FR-074, superseded by TC-261 |
 | TC-176 | The interim `model` -> `check` edge stays bounded to two files and thirteen names, imported directly | Unit | P1 | FR-068-AC-9, FR-068-CON-5 | ❌ Retired by FR-074, superseded by TC-262 |
 | TC-193 | Candidate set matches registered backends advertising the requested kind | Unit | P1 | FR-075-AC-1, FR-075-AC-5 | ✅ Passed locally; AC-5's no-second-enum half by inspection |
-| TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | ✅ Passed locally |
+| TC-194 | Registry candidate sets are invariant under registration-order permutation | Property | P1 | FR-075-AC-2, FR-075-AC-4, FR-075-AC-7, FR-080-AC-1 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-195 | An unregistered named backend yields a distinct unknown-backend marker | Unit | P1 | FR-075-AC-3 | ✅ Passed locally |
 | TC-196 | A conflicting backend identity registration refuses both and withdraws the held registration | Unit | P1 | FR-075-AC-4 | ✅ Passed locally; inverted (quire-specification FR-290-AC-10) |
-| TC-433 | A backend member keeps its identity and checks its digest domain first | Unit | P1 | FR-075-AC-6 | ✅ Passed locally; `qsl-route/src/lib.rs` |
-| TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9, FR-290-AC-10) |
+| TC-433 | A backend member is its identity, kept verbatim | Unit | P1 | FR-075-AC-6 | 🚧 Planned (implementation: identity-only `backend`) |
+| TC-447 | Duplicate backend identity registration matches quire-specification TC-282 under every order | Unit | P1 | FR-075-AC-4, FR-075-AC-7 | 🚧 Planned (implementation: one `duplicate-backend` refusal per identity, identity-only candidates) |
 | TC-448 | An identical repeat registration is idempotent | Unit | P1 | FR-075-AC-7 | ✅ Passed locally (quire-specification FR-290-AC-9) |
 | TC-449 | The request builder writes one item per requirement record | Unit | P1 | FR-075-AC-8 | ✅ Passed locally |
 | TC-197 | Empty candidate set carries the data an unsupported warning needs | Unit | P1 | FR-076-AC-1, FR-076-AC-2 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
@@ -81,25 +79,21 @@ names different artifacts in each.
 | TC-200 | Requests are still recorded as data after negotiation removal | Unit | P1 | FR-077-AC-3 | ✅ Passed locally; `tests/it/composed_admission_stages.rs` |
 | TC-201 | value::ieee and value::division carry no negotiate_* function | Unit | P1 | FR-078-AC-1, FR-078-AC-2 | ✅ Passed locally; `cargo test --doc -p quire-spec-language` |
 | TC-202 | value::ieee and value::division evaluation is unchanged by negotiate_* removal | Unit | P1 | FR-078-AC-3 | ✅ Passed locally; `tests/ieee_profiles.rs` + `tests/integer_division.rs` |
-| TC-203 | Existing Kani lowering corpus output is byte-identical before and after the registry swap | Integration | P1 | FR-079-AC-1 | 🚧 Planned; retires with `lowering` (ADR-011 §7.3 M-6a) |
-| TC-204 | The three legacy lowering target names resolve identically through the registry | Unit | P1 | FR-079-AC-2 | ✅ Passed locally for the current catalog; retires with `lowering` (ADR-011 §7.3 M-6a) |
 | TC-205 | cargo-deny denies inventory, linkme and ctor | Integration | P1 | FR-080-AC-2 | ✅ Passed locally with `cargo-deny` installed; `qsl-route/tests/it/route_registry.rs` (the test skips when `cargo-deny` is absent; `make cargo-deny-bans` does not) |
 | TC-206 | The registry module lint gate finds no static, OnceLock or thread_local | Integration | P1 | FR-080-AC-3 | ✅ Passed locally; `xtask/src/route_lint.rs` |
 | TC-207 | One unit test exists and passes per ADR-012 §5.2 row | Unit | P1 | FR-080-AC-4 | ✅ Passed locally; `qsl-route/tests/it/route_registry.rs` |
 | TC-208 | The S7 seam probe fails to compile the registry arm on an unhandled capability-kind variant | Integration | P1 | FR-080-AC-5 | 🚧 No tagged test; `make seam-probe` (part of `make ci`) confirms the S7 location `qsl-route/src/lib.rs::same_kind` |
 | TC-177 | The proof-result envelope maps every FR-331 outcome to its exact O-16 category | Property | P1 | FR-069-AC-1 | ✅ Passed locally |
-| TC-178 | The proof-result reader refuses an unknown version, vocabulary, or oversized envelope before consumption | Unit | P1 | FR-069-AC-2, FR-069-AC-4 | ✅ Passed locally |
+| TC-178 | The proof-result reader refuses an oversized envelope | Unit | P1 | FR-069-AC-4 | ✅ Passed locally |
 | TC-179 | A positive proof-result envelope round-trips its backend identity and dispositions exactly | Unit | P1 | FR-069-AC-3 | ✅ Passed locally |
 | TC-180 | The witness envelope stores the transcript once and derives every other fact from it | Unit | P1 | FR-070-AC-1 | ✅ Passed locally |
 | TC-181 | The witness envelope refuses a malformed transcript, an out-of-domain digest, or an oversized encoding | Property | P1 | FR-070-AC-2, FR-070-AC-6, FR-070-AC-7 | ✅ Passed locally |
 | TC-182 | A positive witness envelope round-trips its transcript and every O-25 member exactly | Unit | P1 | FR-070-AC-3 | ✅ Passed locally |
 | TC-183 | The witness envelope refuses reconstruction when any one O-25 member is missing | Property | P1 | FR-070-AC-4 | ✅ Passed locally |
 | TC-184 | A family adds a typed witness payload through a typed extension point, not an untyped map | Unit | P1 | FR-070-AC-5 | ✅ Passed locally |
-| TC-445 | The witness-packet and replay-request readers refuse an unknown package contract version | Unit | P1 | FR-070-AC-8, FR-071-AC-8 | ✅ Passed locally |
 | TC-185 | The replay request carries exactly the O-26 members and round-trips them exactly | Unit | P1 | FR-071-AC-1 | ✅ Passed locally |
 | TC-186 | The replay request's byte provision is reachable only by digest, never by path, is complete, and stays within the size bound | Property | P1 | FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7, FR-071-AC-9 | ✅ Passed locally; step 7 (FR-071-AC-9, the package reference's `dependencies`) passes locally |
 | TC-187 | The replay request's function selection accepts only a typed QualifiedName, never a bare string | Unit | P1 | FR-071-AC-3 | 🚧 Planned; #231 |
-| TC-188 | The replay request refuses an unknown version or an out-of-set profile/capability identifier before recompilation | Unit | P1 | FR-071-AC-4 | ✅ Passed locally |
 | TC-189 | The replay result keeps the Witness arm and Input arm distinct, each with its own settlement | Unit | P1 | FR-072-AC-1 | ✅ Passed locally |
 | TC-190 | A replay disagreement settles inconclusive with a typed cause and is never repairable | Unit | P1 | FR-072-AC-2 | ✅ Passed locally |
 | TC-191 | A replay result's nested witness record round-trips exactly, compares without display-text interpretation, and refuses an oversized encoding | Unit | P1 | FR-072-AC-3, FR-072-AC-5 | ✅ Passed locally |
@@ -543,8 +537,8 @@ limits, refusal records and the I2 reader's loci are slice S-5b
 ([FR-096](functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md),
 TC-426 to TC-429). TC-426 (a check location's region, including the C-21
 embedded-document mapping), TC-427, TC-429, TC-378, TC-428
-(refusal record fields at S6a, including the ten kernel value refusals
-catalog revision `1-draft.8` codes) and TC-500 (a `sum` running total
+(refusal record fields at S6a, including the ten kernel value refusals'
+catalog codes) and TC-500 (a `sum` running total
 outside its domain is undefined) pass locally.
 
 ## Stage typestate, clause and type (FR-087–088, ADR-013 S-3) coverage
@@ -623,17 +617,15 @@ the same round-trip-equality pattern, or the same redacted-`Debug` pattern)
 as a row that was.
 
 - TC-177 (FR-069-AC-1): `qsl-replay/src/proof_result.rs::tests::tc_177_every_fr331_value_maps_to_its_exact_category`
-- TC-178 (FR-069-AC-2, FR-069-AC-4): `qsl-replay/src/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
+- TC-178 (FR-069-AC-4): `qsl-replay/src/proof_result.rs::tests::tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope`
 - TC-179 (FR-069-AC-3): `qsl-replay/src/proof_result.rs::tests::tc_179_round_trip_preserves_backend_and_dispositions`
 - TC-180 (FR-070-AC-1): `qsl-replay/src/witness.rs::witness_tests::tc_180_exactly_one_field_and_derived_facts_track_the_stored_transcript`
 - TC-181 (FR-070-AC-2, FR-070-AC-6, FR-070-AC-7): `qsl-replay/src/witness.rs::witness_tests::tc_181_refuses_malformed_transcripts`, `::envelope_tests::tc_181_refuses_an_out_of_domain_digest`, `::envelope_tests::tc_181_refuses_an_oversized_encoding`
 - TC-182 (FR-070-AC-3): `qsl-replay/src/witness.rs::envelope_tests::tc_182_round_trip_preserves_every_o25_member_and_the_transcript`
 - TC-183 (FR-070-AC-4): `qsl-replay/src/witness.rs::envelope_tests::tc_183_refuses_reconstruction_when_any_o25_member_is_missing` — caveat: this is a `Property`-typed row, but the test asserts only four of the roughly thirteen O-25 members individually (`backend`, `trace_position`, `source_digests`, `obligation_identity`); the rest share the identical `.ok_or(WitnessRefusal::MissingMember(...))?` pattern but are not each individually exercised.
 - TC-184 (FR-070-AC-5): `qsl-replay/src/witness.rs::envelope_tests::tc_184_family_payload_is_a_typed_extension_point` — caveat: the "typed extension point" half is asserted by attaching and round-tripping a new payload type; the "not an untyped map" half is a source-inspection fact (no `get_extra`/string-keyed accessor exists on `WitnessEnvelope`), not itself a runtime assertion.
-- TC-445 (FR-070-AC-8, FR-071-AC-8): `qsl-replay/src/witness.rs::envelope_tests::tc_445_refuses_an_unknown_package_contract_version`, `qsl-replay/src/request.rs::tests::tc_445_refuses_an_unknown_package_contract_version`
 - TC-185 (FR-071-AC-1): `qsl-replay/src/request.rs::tests::tc_185_carries_exactly_o26_members_and_round_trips`
 - TC-186 (FR-071-AC-2, FR-071-AC-5, FR-071-AC-6, FR-071-AC-7): `qsl-replay/src/request.rs::tests::tc_186_byte_provision_is_digest_only_complete_and_bounded`
-- TC-188 (FR-071-AC-4): `qsl-replay/src/request.rs::tests::tc_188_refuses_unknown_version_or_profile_before_recompilation`
 - TC-189 (FR-072-AC-1): `qsl-replay/src/result.rs::tests::tc_189_witness_and_input_arms_stay_distinct`
 - TC-190 (FR-072-AC-2): `qsl-replay/src/result.rs::tests::tc_190_disagreement_settles_inconclusive_and_is_never_repaired`
 - TC-191 (FR-072-AC-3, FR-072-AC-5): `qsl-replay/src/result.rs::tests::tc_191_round_trips_the_fr351_record_and_compares_structurally`
@@ -745,14 +737,6 @@ The preexisting 21 Rust tests and older FR/NFR obligations still need their own
 formal TC/evidence remediation. TC-010's inspection is recorded in
 [the remediation inventory](../docs/rust-verification-remediation.md); the module
 classifies Manual as no_source_symbol. Hosted CI is manual-dispatch only.
-
-## Execution record
-
-The audit unit and default audit integration tests pass locally. All three named
-private-packet tests were explicitly executed against specification revision
-36293bae7f5bcb7ca3b2389ed166e525dc9dba87 and passed. Quire resolves every audit
-test symbol, every FR-012 AC and every executable TC. TC-010 has manual evidence. These counts establish
-the selected scope; they are not full compiler or semantic qualification.
 
 ## Kernel population identity (FR-089) coverage
 
