@@ -600,6 +600,15 @@ re-walks them against the scenarios.
   `VerifiedPackage` and this binding are defined in layer-3 `library`. The
   layer-4 `package` reader reads the bytes and calls `library` to verify
   them. #213 S-3 implements the types (ADR-013 T-1).
+  The reader has one consumer, the S4 source resolution (ADR-015 D-1 step
+  6). Spine `compile`, and `replay` when it compiles a dependency (source 2
+  of the dependency binding below), reads each library's emitted v2 bytes
+  through `qsl_package::read_import_view` into the `ImportView` E3 resolves
+  against. No other path reads a checked package from its wire: a library
+  import, CG and `replay` each compile from source, and the bytes read are
+  only the ones that compile just emitted. The reader keeps no refusal-record
+  mapping, multi-entry pinned request or export listing that this consumer
+  does not call.
 - **Dependency binding (E4, E9).** Each dependency in the S4 closure is
   compiled from source through S1 to S4, and its recomputed `package_id`
   equals the `package_id` of the verified view that E3 resolved against.
@@ -1521,3 +1530,4 @@ sections it names.
   is the amendment ticket.
 - ADR-029 (QSL-390): the S6c stage, layers A, P and X, `format` in layer 1,
   and X-12, applied in place.
+- QSL-347: §4: the I2 reader's consumer is the S4 source resolution.
