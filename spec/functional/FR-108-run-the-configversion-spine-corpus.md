@@ -114,10 +114,8 @@ the same two objects through `sameIdentity`, over the same snapshot data
   boundary-zero and boundary-max `Completed(true)`, below-range and
   above-range `Validation { code: "invalid_runtime_input", incomplete: false }`.
 - With feature `quire-extraction`, each case's unit SHALL also be embedded in
-  a Markdown fence and run through the I3 adapter; its disposition SHALL equal
-  the direct run's, while its source identity and digest differ and its
-  report carries the extraction's original identity (FR-032-AC-4's spine
-  half).
+  a Markdown fence and run through the I3 adapter; its disposition and
+  `package_id` SHALL equal the direct run's (FR-032-AC-4's spine half).
 
 ## Acceptance Criteria
 
@@ -126,8 +124,8 @@ the same two objects through `sameIdentity`, over the same snapshot data
 | FR-108-AC-1 | Every one of the 17 cases gives the disposition and exit code in the Corpus table through `run_clause`, checked against the independent expected table. | Test (TC-469) |
 | FR-108-AC-2 | For each of the 17 cases, native `quire-spec run` and `run_clause` agree on stage (under the map), category, truth, code and exit code. | Test (TC-469) |
 | FR-108-AC-3 | below-range and above-range refuse at admission in both paths with `invalid_runtime_input`, and both name the object (`root`, `child`) and the field `versionNumber`; boundary-zero and boundary-max complete with `true` in both (QSpec FR-180-AC-4, QSL's share). | Test (TC-469) |
-| FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports; each report's provenance names the source digest, `package_id`, the domain package's `sha256-jcs` digest, every observation's identity and digest, the selection and the limits, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
-| FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case gives the direct run's disposition, a different source identity and digest, and the extraction's original identity and digest in its provenance. | Test (TC-469) |
+| FR-108-AC-4 | Generating the corpus twice gives identical files, and running it twice gives identical reports, each holding the disposition, the `package_id` and the usage FR-109 states, so the case is fixed by its inputs (QSpec FR-180-AC-5). A run whose request carries the `package_id` that spine `compile` emits for the unit gives the same report (FR-032-AC-4's package half). | Test (TC-469) |
+| FR-108-AC-5 | With `quire-extraction`, the Markdown run of each case gives the direct run's disposition and `package_id`. | Test (TC-469) |
 | FR-108-AC-6 | Every case's report agrees on the unit's `package_id` (the one spine `compile` emits for the FR-108 unit and package, independently re-derived and compared against every case's report); the emitted package bytes admit through QSpec I04 `read` (QSpec FR-180's reference verdict contract). | Test (TC-469) |
 
 ## Dependencies
@@ -148,3 +146,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 Specified. AC-1 to AC-6 are implemented. AC-6's I04 `read`
 half admits the emitted package, including the `reaches_field` application
 the FR-108 unit's `ParentOrder` cycle predicate lowers to.
+
+## References
+
+- Linear QSL-460 (deleting `ClauseRunProvenance` from the code).
