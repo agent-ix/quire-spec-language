@@ -109,16 +109,17 @@ entry or empty corpus, all passed to FR-344's report.
 | `incomplete` | any | `unresolved (incomplete)` |
 | otherwise | any | `not applicable` |
 
-- For each `witness` entry the unit admits, the gate SHALL submit its one
-  clause as an item of a QSpec FR-331 request whose required FR-290 kind
-  and extent classification are the layer's `witness_request` in QSpec's
-  `header_selectable_layers` row, with the registry's candidate set, and
-  read the item's disposition from `negotiate_*` (QSpec FR-331-AC-4).
+- For each `witness` entry the unit admits, the gate SHALL take the
+  registry's QSpec FR-290 candidate set for the layer's `witness_request`
+  kind (QSpec `header_selectable_layers` row), and submit the entry's one
+  clause in one QSpec FR-331 request per candidate, each naming that
+  candidate's backend, with the `witness_request` kind and extent, reading
+  each disposition from `negotiate_*` (QSpec FR-331-AC-4).
 - The gate SHALL give each layer FR-453's witness result: `holds` when every
   `witness` entry for the layer classifies `admitted` and its item settles
-  `supported`, and `regression` otherwise, naming the layer and either the
-  compile codes or the item's disposition and candidate backend
-  identities.
+  `supported` under at least one candidate, and `regression` otherwise,
+  naming the layer and either the compile codes or every candidate's
+  backend identity and disposition (or the empty candidate set).
 - The gate SHALL give each edge FR-453's proper-subset result: `holds` when
   every `distinguishing` entry for the edge classifies `prohibited` on the
   parent side, naming the parent layer, and `admitted` on the child side,
@@ -153,7 +154,7 @@ hook.
 | FR-345-AC-3 | A case whose parent class is `prohibited` and whose child admits is `not applicable`. | Test (TC-867) |
 | FR-345-AC-4 | Over a layering corpus with cases on each of QSpec FR-453's edges E1 to E5, one seeded case per edge that its parent refuses and its child admits fails the gate naming that case and its edge, and every other case holds or is not applicable. | Test (TC-868) |
 | FR-345-AC-5 | A case whose two units differ outside the header identity string, and a case naming state core and complete model, are each `tool failure` naming the case; verdict tool failure, exit 30. | Test (TC-868) |
-| FR-345-AC-6 | Each of the five layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent, settles `supported`; a layer that refuses its witness, or a witness item that settles `unsupported`, gives a `regression` naming the layer and the codes or the disposition and candidates; verdict violation, exit 10. | Test (TC-868) |
+| FR-345-AC-6 | Each of the five layers admits its witness unit and the witness item, requested with the layer's `witness_request` kind and extent once from each candidate backend by name, settles `supported` under at least one candidate; with two candidates of which one supports and one does not, the layer holds. A layer that refuses its witness, or whose item settles `supported` under no candidate, gives a `regression` naming the layer and the codes or each candidate's identity and disposition; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-7 | On each of E1 to E5, the parent prohibits the distinguishing unit naming the parent layer and the child admits it; a parent that admits it gives a `regression` naming the edge; verdict violation, exit 10. | Test (TC-868) |
 | FR-345-AC-8 | An empty corpus gives one tool-failure result naming the corpus; a corpus with no `witness` entry for state graph and no `distinguishing` entry for E5 gives exactly two tool-failure results naming state graph / `witness` and E5 / `distinguishing`; an `entry.json` with an extra member `expected` gives one tool-failure result naming its path and the defect while the other entries still compile; each verdict tool failure, exit 30. | Test (TC-868) |
 | FR-345-AC-9 | The local test target runs the gate over `tests/fixtures/refinement/layering/` and passes; removing one `witness` entry from that corpus makes the target fail. | Test (TC-868) |

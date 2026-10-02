@@ -49,7 +49,10 @@ names another.
 5. Run the gate core with a wrapper that returns a refusal for state core's
    witness, then with one that returns `Ok` for E1's distinguishing unit on
    the parent side. Then run step 1's corpus with a test registry whose one
-   backend advertises only `value-validity`.
+   backend advertises only `value-validity`. Then run it with a test
+   registry of two backends advertising both kinds in `bounded` mode, one
+   whose negotiation arm settles every witness item `supported` and one that
+   settles every item `unsupported`; then with both settling `unsupported`.
 6. Run the gate over an empty corpus; over step 1's corpus without the state
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
@@ -75,8 +78,11 @@ Each expected result is a literal in the test. Tag the test
   the second gives a `regression` naming E1; the third gives a
   `regression` for each of the four layers whose `witness_request` kind is
   `operation-contract`, naming disposition `unsupported` and the empty
-  candidate set, while complete value holds. Each verdict violation, exit
-  10.
+  candidate set, while complete value holds; the fourth gives verdict
+  success, every layer holding, with each candidate requested by name and
+  no request settling `ambiguous-backend`; the fifth gives a `regression`
+  for every layer, each naming both backend identities with disposition
+  `unsupported`. Each run but the fourth has verdict violation, exit 10.
 - Step 6: exactly one tool-failure result naming the corpus and no other
   result; exactly two naming
   state graph / `witness` and E5 / `distinguishing`; one naming the

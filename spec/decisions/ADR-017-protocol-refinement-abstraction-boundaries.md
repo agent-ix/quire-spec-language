@@ -511,7 +511,8 @@ string of one header `profile` declaration, each compiled through spine
 checks that each parent layer is a subset a user would select: each layer
 admits its witness unit, and the witness item, requested through QSpec
 FR-331 negotiation with the layer's `witness_request` FR-290 kind and
-extent, settles `supported`; and each parent prohibits its child's
+extent once from each candidate backend by name, settles `supported` under
+at least one candidate (a failure lists each candidate's disposition); and each parent prohibits its child's
 distinguishing form (QSpec FR-453-AC-5, AC-6; FR-345).
 
 Per case (parent `R`, child `C`), first match wins: tool failure on either
