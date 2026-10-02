@@ -38,8 +38,9 @@ Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
 7. Component certificates (FR-127-AC-8): check FR-126-AC-1's weak `each`
    proof with its certificate; with the witness of `{(*, 0, q1)}` naming
    `upd(a)`; with the two accepting components listed first.
-8. Settle a Kani `Proved{Checks{3}}`, an SMT `Proved{BoundedComplete{depth:
-   5}}` and an SMT `Proved{Inductive{depth: 2}}`; read the category of
+8. Read the label and category of `Proved{Checks{3}, Uncertified}`,
+   `Proved{BoundedComplete{depth: 5}, Uncertified}` and
+   `Proved{Inductive{depth: 2}, Uncertified}`, and the category of
    `Inconclusive(CertificateRejected)`.
 9. Settle a replay result with cause `Verdicts`.
 

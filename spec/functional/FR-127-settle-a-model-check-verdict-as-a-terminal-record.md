@@ -197,9 +197,12 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
   enabled at every state of the component and taken by no edge with both
   ends in it. It SHALL accept otherwise.
 - A rejection SHALL name the rule and the product state at which it failed.
-- `TerminalValue::Proved` from a backend with no core certificate checker
-  (`Checks`, `BoundedComplete`, `Inductive`) SHALL carry `certification:
-  Uncertified` and settle `proved` (ADR-018 PC-1).
+- `TerminalValue::Proved` with a `Checks`, `BoundedComplete` or
+  `Inductive` basis, whose engines have no core certificate checker, SHALL
+  carry `certification: Uncertified`, settle `proved` and map to success
+  (ADR-018 PC-1). CG's C-09 map (ADR-013 C-09, ADR-011 T-13) and its SMT
+  map (ADR-018 DS-2) construct those values; this settlement map covers
+  QSL's native engine, EN-1, only.
 
 ### Categories of every proof value
 
@@ -224,7 +227,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
 
 | FR-127-AC-7 | Closure certificate. Over ADR-018 §6's subject, FR-126-AC-2's TP-1 claim `always holds(c.versionNumber <= 1000)` returns `Holds` with a `ClosureCertificate` of its explored product states; `check_closure` accepts it and the item settles `Proved{Exhaustive, Certified}`. The same certificate with the product state for model state `(1, 0)` removed is rejected with `SuccessorMissing` at that state, and the item settles `inconclusive`, `CertificateRejected`. Over the `Counter` subject with no `terminal` member, a `ClosureCertificate` holding every reachable state, offered for the deadlock-freedom item, is rejected with `BadState` at value 3 (deadlocked). | Test (TC-522) |
 | FR-127-AC-8 | Component certificate. FR-126-AC-1's weak `each` outcome returns a `ComponentCertificate` whose accepting components `{(*, 0, q1)}` and `{(*, 1, q1)}` carry `UnfairWeak` naming the `each` constraint's identity `upd(b)`; `check_components` accepts it. The same certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming the identity `upd(a)`, which edges inside the component take, is rejected with `WitnessFails` at that component's first state; with those two components listed before the components that reach them, it is rejected with `BackwardEdge`. | Test (TC-522) |
-| FR-127-AC-9 | A Kani `Proved{Checks{3}}`, an SMT `Proved{BoundedComplete{depth: 5}}` and an SMT `Proved{Inductive{depth: 2}}` each settle `proved` with `certification: Uncertified`, category success, never `inconclusive`. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
+| FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, Uncertified}`, `Proved{BoundedComplete{depth: 5}, Uncertified}` and `Proved{Inductive{depth: 2}, Uncertified}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
 | FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the FR-331 record. | Test (TC-522) |
 
 ## Dependencies
