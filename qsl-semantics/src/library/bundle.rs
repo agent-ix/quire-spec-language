@@ -303,9 +303,13 @@ impl DefinitionCatalog {
         Ok(catalog)
     }
 
-    /// The definition `selected` names, by identity alone.
+    /// The definition `selected` names: the catalog definition with the
+    /// same authority and identity (STD-150). A selection of the identity
+    /// under another authority names nothing.
     fn resolve(&self, selected: &DefinitionRef) -> Option<&Arc<Definition>> {
-        self.definitions.get(selected.identity())
+        self.definitions
+            .get(selected.identity())
+            .filter(|definition| definition.exact == *selected)
     }
 }
 
@@ -629,9 +633,10 @@ pub fn link_bundle(
     }
 
     let mut resolved = BTreeMap::new();
-    let mut provenance = BTreeMap::<DefinitionRef, usize>::new();
-    let mut provenance_order = BTreeMap::<DefinitionRef, usize>::new();
-    let mut next_provenance_order = 0_usize;
+    // The first selection of each identity and the root whose closure made
+    // it, so a later selection of the identity under another authority
+    // refuses naming both.
+    let mut selections = BTreeMap::<String, (DefinitionRef, usize)>::new();
     let mut active = Vec::new();
     let mut done = BTreeSet::new();
     let mut traversed_edges = 0_usize;
@@ -641,6 +646,15 @@ pub fn link_bundle(
         while let Some((selected, expanded)) = work.pop() {
             if done.contains(&selected) {
                 continue;
+            }
+            match selections.get(selected.identity()) {
+                Some((first, first_root)) if *first != selected => {
+                    return Err(conflict(first, *first_root, &selected, index));
+                }
+                Some(_) => {}
+                None => {
+                    selections.insert(selected.identity().to_owned(), (selected.clone(), index));
+                }
             }
             let Some(definition) = catalog.resolve(&selected) else {
                 return Err(refusal(
@@ -665,13 +679,6 @@ pub fn link_bundle(
                 }
                 resolved.insert(selected, definition.clone());
                 continue;
-            }
-            if let std::collections::btree_map::Entry::Vacant(entry) =
-                provenance.entry(selected.clone())
-            {
-                entry.insert(index);
-                provenance_order.insert(selected.clone(), next_provenance_order);
-                next_provenance_order = next_provenance_order.saturating_add(1);
             }
             if let Some(start) = active.iter().position(|definition| definition == &selected) {
                 return Err(refusal(
@@ -717,20 +724,6 @@ pub fn link_bundle(
             work.push((selected, true));
             for dependency in definition.dependencies.iter().rev() {
                 work.push((dependency.clone(), false));
-            }
-        }
-    }
-
-    let mut closed_logical = BTreeMap::<&str, (&DefinitionRef, usize)>::new();
-    let mut discovered: Vec<_> = resolved.keys().collect();
-    discovered.sort_by_key(|selected| provenance_order[*selected]);
-    for selected in discovered {
-        let selected_root = provenance[selected];
-        if let Some((previous, previous_root)) =
-            closed_logical.insert(selected.identity(), (selected, selected_root))
-        {
-            if previous != selected {
-                return Err(conflict(previous, previous_root, selected, selected_root));
             }
         }
     }

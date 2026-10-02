@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Complete-V1 format fixture; the profile digest is a placeholder.
+// Complete-V1 format fixture.
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
 type Digit = Int[0, 9];

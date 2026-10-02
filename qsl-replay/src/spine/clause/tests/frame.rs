@@ -410,7 +410,7 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
     let ClauseRunSelection::Frame { invocation, .. } = &mut relabelled.request.selection else {
         unreachable!("changed_version selects a frame");
     };
-    invocation.revision = "2".to_owned();
+    invocation.identity = "other-invocation".to_owned();
     // Another `model` digest in the invocation document.
     let other_model = frame_input(
         config_version_request,
@@ -432,7 +432,7 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
 
     for (input, code, cause) in [
         (edited, "stale_dependency", "byte-digest-mismatch"),
-        (relabelled, "stale_dependency", "revision-mismatch"),
+        (relabelled, "stale_dependency", "content-mismatch"),
         (
             other_model,
             "invalid_model_binding",

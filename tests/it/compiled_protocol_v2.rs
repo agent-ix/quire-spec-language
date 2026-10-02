@@ -2657,18 +2657,11 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
             assert_pre_position_refusal(at, &supplied, dimension);
         }
 
-        for dimension in [
-            temporal::Dimension::Profile,
-            temporal::Dimension::ProfileRevision,
-            temporal::Dimension::Clock,
-        ] {
+        for dimension in [temporal::Dimension::Profile, temporal::Dimension::Clock] {
             let mut supplied = trace_input("sample-clock", temporal::FIXED_SAMPLE, &matching);
             match dimension {
                 temporal::Dimension::Profile => {
                     supplied.clock.profile_identity = temporal::EVENT_POSITION.into();
-                }
-                temporal::Dimension::ProfileRevision => {
-                    supplied.clock.profile_revision = "other-revision".into();
                 }
                 temporal::Dimension::Clock => supplied.clock.name = "other-clock".into(),
                 _ => unreachable!("closed local mutation table"),

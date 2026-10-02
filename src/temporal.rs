@@ -395,13 +395,6 @@ fn run(
         }
         .into());
     }
-    if trace.clock.profile_revision != selected.revision {
-        return Err(Refusal::Binding {
-            dimension: Dimension::ProfileRevision,
-            subject,
-        }
-        .into());
-    }
     // A missing clock binding is a dangling reference; a clock binding whose
     // name lacks the `clock:` spelling names no clock and is a clock-binding
     // mismatch, exactly as when the name was parsed here.
@@ -581,13 +574,6 @@ fn authenticate_v2(
     if trace.clock.profile_identity != selected.profile.identity() {
         return Err(Refusal::Binding {
             dimension: Dimension::Profile,
-            subject,
-        }
-        .into());
-    }
-    if trace.clock.profile_revision != selected.revision {
-        return Err(Refusal::Binding {
-            dimension: Dimension::ProfileRevision,
             subject,
         }
         .into());

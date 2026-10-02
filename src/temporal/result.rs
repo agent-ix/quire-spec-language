@@ -195,8 +195,6 @@ pub struct Assessment {
 pub enum Dimension {
     /// Selected temporal profile identity.
     Profile,
-    /// Exact admitted profile revision.
-    ProfileRevision,
     /// Clock binding name.
     Clock,
     /// Declared fixed-sample period clock parameter.

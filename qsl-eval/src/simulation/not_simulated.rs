@@ -32,7 +32,7 @@ pub enum NotSimulated {
     #[error("the request's extent could not be classified: {0:?}")]
     Extent(ClassifyFailure),
     /// `sampler` names a generator other than
-    /// `quire.simulation.sampler/v1` `1-draft.1`, the only one
+    /// `quire.simulation.sampler/v1`, the only one
     /// `sample_request` runs. Refused before any draw;
     /// `explore_request` never returns this.
     #[error("sampler {supplied:?} is not the quire.simulation.sampler/v1 generator")]

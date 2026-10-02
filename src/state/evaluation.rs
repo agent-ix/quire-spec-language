@@ -932,7 +932,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             || offered.assessment_selection.window_identity.is_some()
                 != offered.assessment_selection.window_digest.is_some()
         {
-            return Err(Stop::Refused(Refusal::AuthorityRevision));
+            return Err(Stop::Refused(Refusal::MalformedAuthorityEvidence));
         }
         let compiled = self
             .package

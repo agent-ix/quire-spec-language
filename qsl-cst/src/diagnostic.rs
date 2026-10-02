@@ -163,10 +163,7 @@ impl CompleteCause {
                     | CompleteCode::UnknownEdition
                     | CompleteCode::UnknownProfile
             ),
-            Self::ByteDigestMismatch => matches!(
-                code,
-                CompleteCode::StaleDependency | CompleteCode::SourceDigestMismatch
-            ),
+            Self::ByteDigestMismatch => code == CompleteCode::SourceDigestMismatch,
             Self::InsufficientNextCharge => code == CompleteCode::ResourceExhausted,
             Self::MissingSelection => code == CompleteCode::MissingImport,
             Self::AmbiguousName | Self::ConflictingAuthority => {

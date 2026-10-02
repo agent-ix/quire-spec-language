@@ -1392,7 +1392,7 @@ mod tests {
             .iter()
             .filter(|row| row["identity"] == root.identity)
             .collect();
-        assert_eq!(selected.len(), 1);
+        assert_eq!(selected, [&serde_json::to_value(root.reference()).unwrap()]);
 
         // Step 2 (AC-2): an identity in no catalog.
         let header = profile_line("v", "test:unknown-profile");

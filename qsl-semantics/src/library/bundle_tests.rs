@@ -195,6 +195,28 @@ fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() 
     assert!(matches!(unknown.cause, PackageError::MissingDefinition(_)));
     assert_catalogued(&unknown);
 
+    // A root naming a catalog identity under another authority finds
+    // nothing: identity is the `{authority, identity}` pair.
+    let mut foreign = roots(&definitions);
+    foreign[4] = DefinitionRef::new("other-authority", definitions[4].exact().identity()).unwrap();
+    let other_authority = link_bundle(
+        &foreign,
+        &DefinitionCatalog::new(definitions.clone()).unwrap(),
+        PackageLimits::default(),
+    )
+    .unwrap_err();
+    assert_eq!(other_authority.code, Code::UnknownProfile);
+    assert_eq!(
+        other_authority.cause_tag,
+        ResolutionCause::UnsupportedSelection
+    );
+    assert_eq!(other_authority.root, Some(4));
+    assert_eq!(
+        other_authority.cause,
+        PackageError::MissingDefinition(foreign[4].clone())
+    );
+    assert_catalogued(&other_authority);
+
     // A root whose identity the catalog holds resolves by identity alone,
     // whatever bytes the catalog's definition carries.
     let mut rebytes = definitions.clone();
@@ -238,6 +260,33 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
     let missing = link_roots(&definitions, 9, PackageLimits::default()).unwrap_err();
     assert_eq!(missing.code, Code::MissingImport);
     assert!(matches!(missing.cause, PackageError::MissingDefinition(_)));
+    assert_eq!(missing.cause_tag, ResolutionCause::MissingSelection);
+    assert_eq!(missing.root, Some(3));
+    assert_catalogued(&missing);
+
+    // An edge naming a catalog identity under another authority, selected
+    // nowhere else, finds nothing either.
+    let mut definitions = complete_definitions();
+    let foreign = DefinitionRef::new("other-authority", definitions[5].exact().identity()).unwrap();
+    definitions[3] = definition(
+        definitions[3].exact().identity(),
+        DefinitionRole::Observation,
+        BTreeSet::from([foreign.clone()]),
+        BTreeSet::new(),
+        b"observation root naming the runtime identity under another authority",
+    );
+    let roots_without_runtime: Vec<_> = roots(&definitions)
+        .into_iter()
+        .filter(|root| root.identity() != foreign.identity())
+        .collect();
+    let missing = link_bundle(
+        &roots_without_runtime,
+        &DefinitionCatalog::new(definitions).unwrap(),
+        PackageLimits::default(),
+    )
+    .unwrap_err();
+    assert_eq!(missing.code, Code::MissingImport);
+    assert_eq!(missing.cause, PackageError::MissingDefinition(foreign));
     assert_eq!(missing.cause_tag, ResolutionCause::MissingSelection);
     assert_eq!(missing.root, Some(3));
     assert_catalogued(&missing);

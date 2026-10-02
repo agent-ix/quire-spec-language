@@ -463,7 +463,7 @@ pub enum Refusal {
     /// Two supplied objects in the same population share the same storage identity.
     DuplicateObject(ObjectKey),
     /// The supplied authority evidence's identities or digests are malformed.
-    AuthorityRevision,
+    MalformedAuthorityEvidence,
     /// The supplied authority evidence does not match what the named binding requires.
     Authority(wire::Handle),
     /// The supplied authority adapter does not ground the offered authority evidence.

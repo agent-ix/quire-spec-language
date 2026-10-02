@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Seeded sampling over the same successor relation the exploration engine
-//! walks, with the pinned `quire.simulation.sampler/v1` `1-draft.1`
+//! walks, with the `quire.simulation.sampler/v1`
 //! generator (FR-101; QSpec `proposals/quire-v1/definitions/
 //! simulation-sampler.md`).
 
@@ -79,7 +79,7 @@ impl U256 {
     }
 }
 
-/// The pinned `quire.simulation.sampler/v1` `1-draft.1` generator: a
+/// The `quire.simulation.sampler/v1` generator: a
 /// counter-mode SHA-256 rejection sampler over `{seed, trace, step, draw}`.
 pub(crate) struct PinnedSampler {
     seed: u64,

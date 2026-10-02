@@ -169,10 +169,7 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
 }
 
 fn labels_match(document: &DocumentRef, selection: &DocumentRef) -> bool {
-    document.authority == selection.authority
-        && document.identity == selection.identity
-        && document.revision_namespace == selection.revision_namespace
-        && document.revision == selection.revision
+    document.authority == selection.authority && document.identity == selection.identity
 }
 
 /// FR-106 check 1: read one document from `provision` under `selected`'s
@@ -319,7 +316,7 @@ pub(super) fn read_document(
     }
     if !labels_match(&document_identity, selected) {
         return Err(refuse(
-            admission_record(Code::StaleDependency, "revision-mismatch")
+            admission_record(Code::StaleDependency, "content-mismatch")
                 .with("required", format!("{selected:?}"))
                 .with("supplied", format!("{document_identity:?}")),
         ));

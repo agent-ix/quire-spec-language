@@ -3482,11 +3482,11 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
     );
 }
 
-/// Row 9 (check 1.8): the selection's `revision` differs from the
+/// Row 9 (check 1.8): the selection's `identity` differs from the
 /// document's own.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
-fn tc465_row9_revision_mismatch_refuses_revision_mismatch() {
+fn tc465_row9_identity_mismatch_refuses_content_mismatch() {
     let document = tc465_document();
     let model_digest_hex = tc465_model_digest_hex(&document);
     let label = frame_label("current-snap");
@@ -3494,7 +3494,7 @@ fn tc465_row9_revision_mismatch_refuses_revision_mismatch() {
     let bytes = value.to_string().into_bytes();
     let digest = frame_document_digest(&bytes);
     let selected = qsl_semantics::model::observation::DocumentRef {
-        revision: "2".to_owned(),
+        identity: "other-snap".to_owned(),
         digest,
         ..label
     };
@@ -3517,7 +3517,7 @@ fn tc465_row9_revision_mismatch_refuses_revision_mismatch() {
         snapshots,
         BTreeMap::new(),
     );
-    assert_tc465_refused(result, "stale_dependency", "revision-mismatch");
+    assert_tc465_refused(result, "stale_dependency", "content-mismatch");
 }
 
 /// Row 10 (check 2): `Current` selecting `VersionUnchanged` (a
