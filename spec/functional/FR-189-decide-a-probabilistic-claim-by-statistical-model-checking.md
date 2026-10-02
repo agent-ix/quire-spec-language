@@ -78,7 +78,7 @@ pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Bi
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
-pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor, NoRegeneration { max_cycle_steps: u64 } }
+pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
 
 `StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's

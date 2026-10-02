@@ -27,5 +27,5 @@ Tag the tests `#[trace("TC-625", "FR-190-AC-n")]`.
 ## Expected Results
 
 - Step 1: Accepted, estimate within `1/5000` of `1800/1801`, `coverage: Asymptotic`, equal outcomes, the cycle count the first `n >= 100` with half-width at most `1/5000` and above 100; Undecided, `IndifferenceRegion`.
-- Step 2: `Completed` Undecided, `NoRegeneration` naming `max_cycle_steps`; exactly `min_cycles` cycles closed.
+- Step 2: `Stopped`, `ResourceExhausted`, no decision, `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`; exactly `min_cycles` cycles closed.
 - Step 3: down positions weigh 3; both refused `NotStatistical`.

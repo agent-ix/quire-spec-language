@@ -60,10 +60,10 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 - The test SHALL stop when the half-width is at most `ι`, and decide as
   Okamoto does (FR-189) over the interval `[Â − w, Â + w]`.
 - When a cycle reaches `max_cycle_steps` steps without returning to `s0`,
-  EN-4 SHALL end the test Undecided with cause
-  `NoRegeneration{max_cycle_steps}`, naming the setting, its value and
-  `statistical.max_cycle_steps`, so a transient initial state, which never
-  regenerates, ends there (FR-191).
+  EN-4 SHALL stop the run `Stopped`, `ResourceExhausted`, naming
+  `max_cycle_steps`, its value and `statistical.max_cycle_steps`, which
+  settles `incomplete`, `limit-reached{limit, value, setting}` (FR-191), so a
+  transient initial state, which never regenerates, stops there.
 - A cycle whose total weight is 0 SHALL be kept; a run whose closed cycles
   all have weight 0 has no estimate yet and continues.
 - A request naming the regenerative method for a claim that is not a
@@ -75,7 +75,7 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-190-AC-1 | `LongRun` (ADR-024 §7.3) with `Regenerative{min_cycles: 100}` settles `Completed` Accepted with an estimate within `1/5000` of `1800/1801`, an interval of half-width at most `1/5000` whose lower end is at least `999/1000`, a cycle count equal to the first `n >= 100` at which the half-width recomputed from the recorded cycles is at most `1/5000`, and `coverage: Asymptotic`. `long-run fraction holds(v.up) <= 0.9995` with the same parameters settles `Completed` Undecided, `IndifferenceRegion`, and a run whose first 100 cycles have no failure does not stop at 100 cycles. Two runs with the same seed give equal outcomes. | Test (TC-625) |
-| FR-190-AC-2 | A variant of `Avail` whose initial state is a start state that no step re-enters settles `Completed` Undecided with cause `NoRegeneration` naming `max_cycle_steps`, its value and `statistical.max_cycle_steps`. With `min_cycles` above the number of cycles the half-width rule would need, the run closes exactly `min_cycles` cycles before deciding. | Test (TC-625) |
+| FR-190-AC-2 | A variant of `Avail` whose initial state is a start state that no step re-enters stops `Stopped`, `ResourceExhausted`, with no decision, naming `max_cycle_steps`, its value and `statistical.max_cycle_steps`, and settles `incomplete`, `limit-reached`. With `min_cycles` above the number of cycles the half-width rule would need, the run closes exactly `min_cycles` cycles before deciding. | Test (TC-625) |
 | FR-190-AC-3 | A `weighted by duration` long-run claim over a variant of `Avail` with a `duration` reward of 1 on `tick` and 3 on `repair` reads each position's weight from the step that leaves it, so a down position counts 3 in `L_k`. `Regenerative` for `P95` and `Okamoto` for `LongRun` are refused `NotStatistical`. | Test (TC-625) |
 
 ## Dependencies
@@ -86,6 +86,6 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 
 ## References
 
-- QSpec half, which owns the regenerative estimator, its interval and
-  `NoRegeneration`: QSpec FR-408 (Linear STD-137).
+- QSpec half, which owns the regenerative estimator, its interval and the
+  `limit-reached` stop: QSpec FR-408 (Linear STD-137).
 - Owning ticket: Linear QSL-371.
