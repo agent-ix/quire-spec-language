@@ -31,8 +31,7 @@ Build `ClauseRunRequest`s from FR-108's fixtures, in memory.
    with both `child`; with `b` naming `ghost`; with an extra argument `c`; a
    function `n(a: Config::ConfigVersion): Integer pure { 1 }` selected the
    same way.
-5. healthy-parent twice; healthy-parent with the snapshot bytes edited after
-   the selection digest was taken; then, for each S6a outcome FR-100-AC-9
+5. healthy-parent twice; then, for each S6a outcome FR-100-AC-9
    constructs other than `Completed`, pass it through `run_clause`'s mapping
    and through FR-100's, and compare; FR-100's internal failures (the kernel
    `CheckedInvariant` and a `CallFailure::Fault`) among them.
@@ -60,8 +59,7 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   `invalid_runtime_input`/`wrong-role-mapping`; `admit`, FR-100's
   unknown-parameter refusal naming `c`; `select`, `ill_typed`/
   `type-mismatch`, with an uncharged meter.
-- Step 5: equal reports including usage; `admit`, `stale_dependency`/
-  `byte-digest-mismatch`; every compared outcome gives the same `outcome`
+- Step 5: equal reports including usage; every compared outcome gives the same `outcome`
   member and exit status in both mappings; `CheckedInvariant` and the
   `CallFailure::Fault` each report stage `evaluate`, category
   `internal-failure`, the fault's stage and invariant (for

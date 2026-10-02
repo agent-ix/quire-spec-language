@@ -68,8 +68,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 ## Expected Results
 
 - Step 1: `reproduced-without-witness`, value `false`, the executor's pin and
-  non-zero work charges; `reproduced-with-evaluated-witness` with a record
-  whose deciding element is `false`; a missing-binding decode refusal naming
+  non-zero work charges; `reproduced-with-evaluated-witness` with no QSpec FR-351
+  record; a missing-binding decode refusal naming
   `x`'s node id.
 - Step 2: `inconclusive` with cause `Verdicts` (`violation`/`success`),
   then with cause `NoValue`, replayed verdict `incomplete` and no value;

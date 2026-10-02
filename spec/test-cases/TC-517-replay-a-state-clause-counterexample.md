@@ -58,10 +58,9 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 ## Expected Results
 
 - Step 1: `reproduced-with-evaluated-witness`,
-  `reproduced-without-witness`, `reproduced-with-evaluated-witness`. Each
-  `Witness`-arm result's QSpec FR-351 record holds `false` as deciding element,
-  index 0, an empty value path and no trace position; the `Input`-arm
-  result holds `false` and no QSpec FR-351 record. Each
+  `reproduced-without-witness`, `reproduced-with-evaluated-witness`. No
+  payload carries a `witness` and no result carries an QSpec FR-351 record; each
+  result holds the evaluated `false`. Each
   result holds the source digest, `package_id`, the payload's `clause`, the
   envelope's `clause_node` and `occurrence_key`, and the identities and digests of the
   invocation and both snapshots, or of the one current snapshot.

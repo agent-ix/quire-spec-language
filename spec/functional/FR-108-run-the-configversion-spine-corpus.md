@@ -23,8 +23,8 @@ The ConfigVersion corpus SHALL run through the spine (FR-109) from a
 documents, and each case SHALL give the typed disposition native-run/1 gives
 today for the same case data. This is QSL's share of QSpec FR-180-AC-1,
 AC-4 and AC-5 for ConfigVersion (QSpec TC-209's ownership table: QSL #121),
-and it is the end-to-end test ADR-011 §7.3 M-6c needs before native `run` is
-deleted (ADR-012 §15.8).
+and it is the end-to-end test needed before native `run` is deleted in
+the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`) (ADR-031 R-1).
 
 The native corpus is FR-032's: 13 cases in
 `examples/config-version/cases.rs`, run by `tests/it/config_version.rs`
@@ -43,13 +43,19 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
   repository's `AGPL-3.0-or-later`, because they are example content beside
   `model.json` and the generated `program.native`, which FR-032 authors as
   `AGPL-3.0-only`; one example keeps one licence.
-- One `1-draft` unit, generated with the fixtures:
+- One `1-draft` unit, generated with the fixtures. Its header selects the
+  `root` profile FR-110 resolves, `quire.value.complete/v1`, by identity,
+  and the domain package by its identifier and the canonical content digest
+  the supplied document is checked against (refusing
+  `stale_dependency`/`content-mismatch`, QSpec FR-272 as amended by
+  quire-specification#174). The `model` line is QSpec's shared-grammar
+  `model` production, with no `version`:
 
 ```text
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
 profile v = "quire.value.complete/v1";
-model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<the package's digest>";
+model Config = "example/config-version" digest "sha256-jcs:<the package's digest>";
 invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }
 post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { self.versionNumber = pre(self.versionNumber) }
@@ -108,7 +114,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
   fails to compile until it has an expected spine result.
 - A parity test SHALL run each case through native `quire-spec run` and
   through `run_clause` and compare (stage, category, truth, code, exit
-  code) under the map above. It is deleted in the M-6c PR with native `run`;
+  code) under the map above. It is deleted in the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), with native `run`;
   the spine test stays.
 - The native test's `expected()` SHALL gain the four boundary cases:
   boundary-zero and boundary-max `Completed(true)`, below-range and
@@ -134,7 +140,7 @@ the same two objects through `sameIdentity`, over the same snapshot data
 - FR-032 (the native corpus and its catalog), FR-031 (native extracted run).
 - QSpec FR-180 and TC-209. QSL's share is the reference dispositions; the
   generated-oracle, property and proof consumers of FR-180-AC-1 are CG's and
-  IR's, and IR admits no `state` node at 48ab5dc (ADR-012 §15.7).
+  IR's (ADR-012 §15.7).
 - STD-111 (QSpec), which FR-105 names, for the emitted package's `state`
   bodies, frame entries and `reaches_field` member; AC-1 to AC-6's
   `package_id` half run over the in-process `CheckedPackage` and need none of

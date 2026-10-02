@@ -694,7 +694,7 @@ its own repository, agent-ix/quire-driver.
   `spine-run-result/1` outcome ([FR-100](../functional/FR-100-run-a-named-function-through-the-spine.md),
   amended 2026-09-26). Native-run/1 clause execution over snapshots and
   invocations (FR-023, FR-026, FR-028, FR-031, FR-032) has no spine
-  equivalent before M-6c and stays until M-6c lands one (§7.3).
+  equivalent until the change that lands FR-100's clause runner (FR-312's reader plus `run_clause`), which deletes it in M-6c (§7.3; ADR-031 R-1).
 
 ## 6. Module DAG
 

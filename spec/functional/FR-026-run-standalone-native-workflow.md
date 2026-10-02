@@ -90,8 +90,10 @@ program, and shall apply the member rules of the program's edition after it
 reads the program source's declared edition.
 The command shall reject unknown/duplicate fields and positional record arrays.
 The command shall open each file once and cap reads before parsing or hashing.
-The command shall limit the request to 1 MiB, dependent files to 64, and aggregate
-dependent bytes to 8 MiB, also applying each stage's existing byte ceiling.
+The command shall read the request under the caller's `request_bytes` limit
+(default 1 MiB) and the dependent files it names under the caller's
+`dependent_bytes` limit on their total size (default 8 MiB). The CLI raises
+them with `--request-bytes` and `--dependent-bytes`; neither has a ceiling.
 The command shall verify selected source and runtime digests before consumption.
 The command shall use the existing source frontend, admission, parser, linker,
 checker, package constructor and runtime execute APIs.
@@ -109,7 +111,7 @@ including incomplete native, model, package and runtime input failures.
 | FR-026-AC-1 | A file-driven aggregate example returns exact true/false outcomes, package/source/input identities and measured work using the real compiler/runtime. | Test |
 | FR-026-AC-2 | Recorded pre/post operation files execute with immutable captures; illegal frame changes refuse without Boolean truth. | Test |
 | FR-026-AC-3 | Stale source/input selections, malformed requests, unknown formats and unavailable files report their actual stage and catalogued code with available provenance; emitted outcomes conform to the native result schema. | Test |
-| FR-026-AC-4 | Request/file/read and caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
+| FR-026-AC-4 | A request one byte over `request_bytes`, and dependent files one byte over `dependent_bytes`, each refuse naming the limit, its configured value and its CLI option; the same requests with each limit raised to their size run; caller-lowered runtime limits stop with incomplete; a fresh default request succeeds. | Test |
 | FR-026-AC-5 | Existing parse/format behavior remains, command-specific arity errors precede I/O, and relative and absolute file operands resolve independently of the working directory. | Test |
 | FR-026-AC-6 | A native-run/1 request whose program source, model source and snapshot selection each name `authority` `agent-ix`, their own `identity`, `revision_namespace` `git` and `revision` `1` runs, and its result renders each with those four labels. The same request without the program source's `authority`, and again without the snapshot selection's `revision_namespace`, refuses at the request stage with `invalid-request` and exits 20. A present but blank `authority` refuses with `invalid_source_identity`, cause `blank-label`, field `label` `authority` (FR-001). | Test (TC-430) |
 
@@ -120,5 +122,9 @@ including incomplete native, model, package and runtime input failures.
 - [FR-023](FR-023-run-native-packages.md): native execution and retained outcomes.
 
 ## Status
+
+Remaining work (implementation): the code applies fixed 1 MiB, 64-file and
+8 MiB ceilings; they become the configurable `request_bytes` and
+`dependent_bytes` limits above (FR-026-AC-4).
 
 FR-026-AC-6 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".

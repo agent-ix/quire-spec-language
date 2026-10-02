@@ -267,6 +267,8 @@ names different artifacts in each.
 | TC-515 | The replay facade replays a frame counterexample and keeps its identities | Integration | P1 | FR-116-AC-1, FR-116-AC-2, FR-116-AC-3, FR-116-AC-4, FR-116-AC-5, FR-116-AC-6 | ✅ Passed locally |
 | TC-516 | call_site names a function's parameters and an operation's and a state clause's identities, matching what replay accepts | Unit | P1 | FR-121-AC-1, FR-121-AC-2, FR-121-AC-3, FR-121-AC-4, FR-121-AC-5, FR-121-AC-6, FR-121-AC-7, FR-121-AC-8, FR-121-AC-9, FR-121-AC-10, FR-121-AC-11, FR-121-AC-12, FR-121-AC-13 | ✅ Passed locally |
 | TC-517 | The replay facade replays a state-clause counterexample and keeps its identities | Integration | P1 | FR-122-AC-1, FR-122-AC-2, FR-122-AC-3, FR-122-AC-4, FR-122-AC-5, FR-122-AC-6 | 🚧 Planned |
+| TC-740 | S6a stop reports and the decision path derive a state clause's basis and witness | Unit | P1 | FR-265-AC-1, FR-265-AC-2, FR-265-AC-3, FR-265-AC-4, FR-265-AC-5, FR-265-AC-6 | 🚧 Planned |
+| TC-741 | Clause run reports carry a settlement basis on every disposition and a witness only when decisive | Integration | P1 | FR-266-AC-1, FR-266-AC-2, FR-266-AC-3 | 🚧 Planned |
 | TC-745 | The checked-input gate rejects pre-check signatures and reconstruction and passes the workspace | Unit | P1 | FR-270-AC-1, FR-270-AC-2, FR-270-AC-3, FR-270-AC-4 | 🚧 Planned |
 | TC-746 | Canonical doc tags define the canonical set, and misplaced or duplicate tags fail | Unit | P1 | FR-271-AC-1, FR-271-AC-2 | 🚧 Planned |
 | TC-747 | The canonical-types gate finds namesakes, re-exports and same-shaped copies | Unit | P1 | FR-272-AC-1, FR-272-AC-2, FR-272-AC-3, FR-272-AC-4 | 🚧 Planned |
@@ -978,3 +980,8 @@ TC-826 and TC-831 under `QSpec-` tags. TC-827's wire assertions,
 TC-830's v2 `union_value` spelling, TC-832's charge points and TC-833's
 union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 (FR-143, FR-146, `value-accounting.md`) and key rules (FR-144).
+
+| TC-742 | native-run-result/2 carries basis and witness, and its strict reader refuses malformed and /1 documents | Integration | P1 | FR-267-AC-1, FR-267-AC-2, FR-267-AC-3 | 🚧 Planned |
+| TC-743 | Replay re-derives a state-clause witness and checks that the element separates the clause | Integration | P1 | FR-268-AC-1, FR-268-AC-2, FR-268-AC-3, FR-268-AC-4 | 🚧 Planned |
+| TC-744 | A witness disagreement settles inconclusive with a typed Witness cause that round-trips | Unit | P1 | FR-269-AC-1, FR-269-AC-2, FR-269-AC-3 | 🚧 Planned |
+| TC-891 | A clause-run request file runs through run_clause and writes a /2 document | Integration | P1 | FR-312-AC-1, FR-312-AC-2, FR-312-AC-3, FR-312-AC-4 | 🚧 Planned |

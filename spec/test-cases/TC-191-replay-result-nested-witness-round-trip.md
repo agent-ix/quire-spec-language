@@ -12,7 +12,8 @@ relationships:
 
 Verify that a decisive `Witness`-arm replay result's construct → serialize
 → read round trip preserves the nested QSpec FR-351 separating-witness record's
-deciding element, index, value path and trace position exactly; that
+deciding quantifier, deciding element, index, value path and trace
+position exactly; that
 comparing two results for agreement reads only these typed fields, never a
 rendered transcript or a diagnostic message string; and that a result
 whose encoded size exceeds the reader's configured bound refuses rather
@@ -29,11 +30,12 @@ construction. Scope: FR-072-AC-3, FR-072-AC-5.
 ## Test Procedure
 
 1. Construct a decisive `Witness`-arm replay result whose QSpec FR-351 record
-   names a specific deciding element, a nonzero index, a multi-segment
+   names a specific deciding quantifier occurrence key, a deciding element
+   that is a kernel record `Value`, a nonzero index, a multi-segment
    value path (into a nested record and a collection), and a trace
    position.
-2. Serialize and read the result back; compare the QSpec FR-351 record's four
-   fields, field by field, against step 1.
+2. Serialize and read the result back; compare the QSpec FR-351 record's five
+   fields (the deciding element under ADR-013 O-13), field by field, against step 1.
 3. Construct a second result identical in every QSpec FR-351 field except the
    value path (a different nested member decided it), but whose rendered
    debug/display text happens to be textually identical to the first.
@@ -48,7 +50,7 @@ construction. Scope: FR-072-AC-3, FR-072-AC-5.
 
 ## Expected Results
 
-- All four QSpec FR-351 fields are identical, byte-for-byte or value-for-value,
+- All five QSpec FR-351 fields are identical, byte-for-byte or value-for-value,
   between the constructed and read-back results in step 2.
 - The two results in step 4 compare as **not equal**, because their value
   paths differ, despite having textually identical rendered output.
