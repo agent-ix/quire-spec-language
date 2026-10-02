@@ -93,3 +93,10 @@ Changes requested: two low findings.
 | --- | --- | --- | --- |
 | FND-001 | low | `Exact` is a public trait, and `Zone<W: Exact = Integer>` is public, so a downstream crate can implement `Exact` for a machine integer with wrapping arithmetic and run the checker on it. That voids the "no bound too large" guarantee the module doc states. Production only ever needs `Integer`, and the i64 impl exists only under `cfg(kani)`. Seal the trait with a private supertrait, so the in-crate Kani impl still compiles and no outside impl can. | qsl-replay/src/certificate/zone.rs:27-45; qsl-replay/src/certificate/zone.rs:104-109 |
 | FND-002 | low | `pub mod certificate` adds checker internals (`Zone`, `LuBounds`, `ZoneError`, `Exact`) to the public API of the layer-6 facade crate that CG reaches, with no consumer yet. qsl-replay's crate doc still lists the facade's public API as the replay entry and the four envelopes. Either keep the module crate-private until the checker uses it, or name it in the crate doc as deliberate public API. | qsl-replay/src/lib.rs:6-16; qsl-replay/src/lib.rs:32 |
+
+## Dispositions
+
+| ID | Outcome |
+| --- | --- |
+| FND-001 | fixed cf5e9a89d: `Exact` has the private supertrait `sealed::Sealed`, implemented for `Integer` and, under `cfg(kani)` only, `i64`. |
+| FND-002 | fixed cf5e9a89d: `certificate` is a private module of `qsl-replay` until `check_zone_certificate` calls it. |

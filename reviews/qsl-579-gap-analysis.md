@@ -40,3 +40,11 @@ Trace:
 ## Verdict
 
 Changes requested: FND-001 and FND-003 are medium, FND-002 is low.
+
+## Dispositions
+
+| ID | Outcome |
+| --- | --- |
+| FND-001 | fixed cf5e9a89d: `qsl-analyze/src` is in `qsl_scan_src_roots` and in the arch-lint fixtures (`ensure_qsl_roots`, tc_arch_lint_api_surface_019, tc_arch_lint_api_surface_021, `canonical_encoder` `ROOTS`). |
+| FND-002 | fixed cf5e9a89d: `tests/it/family_outcome_layering.rs` `no_core_crate_depends_on_qsl_analyze` checks that no core crate's normal, dev or build table names `qsl-analyze`. Planting a `qsl-analyze` dev-dependency in `qsl-replay` makes it fail. |
+| FND-003 | fixed cf5e9a89d: FR-238 and TC-693 are passed locally; FR-245 and TC-700 are partial, with AC-4 passing locally and AC-1, AC-2, AC-3 and AC-5 planned. |
