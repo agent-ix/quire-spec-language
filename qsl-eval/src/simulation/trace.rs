@@ -165,6 +165,8 @@ pub fn replay<S: TransitionSystem>(
         Some(StopReason::StepLimit | StopReason::NoSuccessors) | None => None,
     };
     let last = trace.steps.len();
+    let mut check = FindingsCheck::new(&trace.findings);
+    let mut current_digest = trace.initial;
 
     for index in 0..=last {
         let recorded = if index == last { recorded_stop } else { None };
@@ -173,7 +175,7 @@ pub fn replay<S: TransitionSystem>(
                 successors,
                 findings,
             } => (successors, findings),
-            Expanded::Stopped(stop) if recorded == Some(stop.cause) => return Ok(()),
+            Expanded::Stopped(stop) if recorded == Some(stop.cause) => break,
             Expanded::Stopped(stop) => {
                 return Err(ReplayError::Stopped {
                     step: index,
@@ -189,9 +191,7 @@ pub fn replay<S: TransitionSystem>(
                 replayed: None,
             });
         }
-        if recorded_findings(trace, index) != findings.as_slice() {
-            return Err(ReplayError::FindingMismatch { step: index });
-        }
+        check.expanded(current_digest, index, findings)?;
         let Some(step) = trace.steps.get(index) else {
             break;
         };
@@ -210,7 +210,10 @@ pub fn replay<S: TransitionSystem>(
             }
         }
         current = match (matched_state, first_match_digest) {
-            (Some(next), _) => next,
+            (Some(next), _) => {
+                current_digest = step.key;
+                next
+            }
             (None, Some(actual)) => {
                 return Err(ReplayError::KeyMismatch {
                     step: index,
@@ -227,15 +230,69 @@ pub fn replay<S: TransitionSystem>(
             }
         };
     }
-    Ok(())
+    check.finish()
 }
 
-/// The findings `trace` recorded for the state at step index `index`; empty
-/// when it recorded none.
-fn recorded_findings<T, F>(trace: &Trace<T, F>, index: usize) -> &[F] {
-    trace
-        .findings
-        .iter()
-        .find(|entry| entry.depth == index)
-        .map_or(&[], |entry| entry.findings.as_slice())
+/// Compares the findings replay recomputes with the trace's recorded
+/// `findings`, entry by entry in step order: depth, state digest and
+/// findings all must match, and the recorded list must hold no other entry.
+struct FindingsCheck<'a, F> {
+    recorded: &'a [StateFindings<F>],
+    /// How many recorded entries have matched a recomputed one.
+    matched: usize,
+}
+
+impl<'a, F: PartialEq> FindingsCheck<'a, F> {
+    fn new(recorded: &'a [StateFindings<F>]) -> Self {
+        Self {
+            recorded,
+            matched: 0,
+        }
+    }
+
+    /// The state at step index `depth`, with digest `state`, expanded to
+    /// `findings`. Refuses at the first recorded entry, at or before
+    /// `depth`, that differs from the recomputed entries.
+    fn expanded<T: std::fmt::Debug>(
+        &mut self,
+        state: DigestRecord,
+        depth: usize,
+        findings: Vec<F>,
+    ) -> Result<(), ReplayError<T>> {
+        let next = self.recorded.get(self.matched);
+        if !findings.is_empty() {
+            let expected = StateFindings {
+                state,
+                depth,
+                findings,
+            };
+            return match next {
+                Some(entry) if *entry == expected => {
+                    self.matched += 1;
+                    Ok(())
+                }
+                Some(entry) => Err(ReplayError::FindingMismatch {
+                    step: entry.depth.min(depth),
+                }),
+                None => Err(ReplayError::FindingMismatch { step: depth }),
+            };
+        }
+        match next {
+            // A recorded entry at or before this state that matches no
+            // recomputed one: extra, duplicate or out of order.
+            Some(entry) if entry.depth <= depth => {
+                Err(ReplayError::FindingMismatch { step: entry.depth })
+            }
+            Some(_) | None => Ok(()),
+        }
+    }
+
+    /// Replay reached the trace's end: any recorded entry left over matches
+    /// no expanded state.
+    fn finish<T: std::fmt::Debug>(self) -> Result<(), ReplayError<T>> {
+        match self.recorded.get(self.matched) {
+            Some(entry) => Err(ReplayError::FindingMismatch { step: entry.depth }),
+            None => Ok(()),
+        }
+    }
 }

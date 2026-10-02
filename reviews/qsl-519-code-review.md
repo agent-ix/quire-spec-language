@@ -3,7 +3,7 @@ id: SR-1205
 title: "Code review of quire-spec-language PR #593: state-clause separating witness (E19a)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language PR #593 diff against origin/main: qsl-eval/src/value/expression/{evaluate.rs,mod.rs,s6a/mod.rs,s6a/protocol_clause.rs,s6a/separation.rs}, qsl-eval/src/value/mod.rs, qsl-foundation/src/{lib.rs,witness.rs}, qsl-replay/Cargo.toml, qsl-replay/src/{execute.rs,execute/frame.rs,execute/state_clause.rs,execute/tests.rs,lib.rs,proof_result.rs,result.rs,result/wire.rs,spine.rs,spine/clause.rs,witness.rs,witness/derivation.rs,witness/state_clause.rs}, qsl-replay/src/spine/clause/tests/*, Cargo.lock"
+scope: "agent-ix/quire-spec-language@4fb4e69b13e8d14c6e3b95f4c0d91511d4f53931; PR #593 diff against origin/main: qsl-eval/src/value/expression/{evaluate.rs,mod.rs,s6a/mod.rs,s6a/protocol_clause.rs,s6a/separation.rs}, qsl-eval/src/value/mod.rs, qsl-foundation/src/{lib.rs,witness.rs}, qsl-replay/Cargo.toml, qsl-replay/src/{execute.rs,execute/frame.rs,execute/state_clause.rs,execute/tests.rs,lib.rs,proof_result.rs,result.rs,result/wire.rs,spine.rs,spine/clause.rs,witness.rs,witness/derivation.rs,witness/state_clause.rs}, qsl-replay/src/spine/clause/tests/*, Cargo.lock"
 review_set: subset
 ---
 # Code review of quire-spec-language PR #593

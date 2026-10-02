@@ -3,7 +3,7 @@ id: SR-1206
 title: "Gap analysis of quire-spec-language PR #593: FR-265, FR-266, FR-268, FR-269 acceptance criteria to tests"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language PR #593 diff against origin/main; ACs FR-265-AC-1..6, FR-266-AC-1..3, FR-268-AC-1..4, FR-269-AC-1..3, with FR-098 and FR-122 regression tests touched by the diff; tests in qsl-replay/src/spine/clause/tests/witness.rs, state_clause_replay.rs, execute/tests.rs, result.rs"
+scope: "agent-ix/quire-spec-language@4fb4e69b13e8d14c6e3b95f4c0d91511d4f53931; PR #593 diff against origin/main; ACs FR-265-AC-1..6, FR-266-AC-1..3, FR-268-AC-1..4, FR-269-AC-1..3, with FR-098 and FR-122 regression tests touched by the diff; tests in qsl-replay/src/spine/clause/tests/witness.rs, state_clause_replay.rs, execute/tests.rs, result.rs"
 review_set: subset
 ---
 # Gap analysis of quire-spec-language PR #593

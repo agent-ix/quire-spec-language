@@ -1782,6 +1782,20 @@ fn tc_474_an_expansion_stop_ends_exploration_stopped() {
     for (cause, category) in [
         (EXHAUSTED, Category::Incomplete),
         (BROKEN, Category::InternalFailure),
+        // Any other catalogued code takes the catalog's category.
+        (
+            CatalogCode::new("invalid_runtime_input", "invalid-value"),
+            Category::Refusal,
+        ),
+        (
+            CatalogCode::new("cancelled", "caller-cancelled"),
+            Category::Incomplete,
+        ),
+        // A code the catalog does not define is an internal failure.
+        (
+            CatalogCode::new("not_a_catalog_code", "anything"),
+            Category::InternalFailure,
+        ),
     ] {
         let system = branch_graph().with_stop("1", cause);
         let exploration = explore_474(&system, hundred_limits(), None);
@@ -1817,6 +1831,35 @@ fn tc_474_findings_cover_exactly_the_expanded_states() {
             depth: 1,
             findings: vec!["f".to_owned()],
         }]
+    );
+
+    // Entries come in expansion order: breadth-first, then canonical order
+    // within a level (1 before 2, then 3).
+    let several = branch_graph()
+        .with_finding("3", "h")
+        .with_finding("2", "f")
+        .with_finding("1", "g")
+        .with_finding("1", "g2");
+    let ordered = explore_474(&several, hundred_limits(), None);
+    assert_eq!(
+        ordered.findings,
+        vec![
+            qsl_eval::simulation::StateFindings {
+                state: key("1"),
+                depth: 1,
+                findings: vec!["g".to_owned(), "g2".to_owned()],
+            },
+            qsl_eval::simulation::StateFindings {
+                state: key("2"),
+                depth: 1,
+                findings: vec!["f".to_owned()],
+            },
+            qsl_eval::simulation::StateFindings {
+                state: key("3"),
+                depth: 2,
+                findings: vec!["h".to_owned()],
+            },
+        ]
     );
 
     let horizon = explore_474(&system, hundred_limits(), Some(1));
@@ -1943,6 +1986,51 @@ fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
     assert_eq!(
         replay(&system, &edited),
         Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // An entry past the trace's last state.
+    let mut past_the_end = trace.clone();
+    past_the_end
+        .findings
+        .push(qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 2,
+            findings: vec!["f".to_owned()],
+        });
+    assert_eq!(
+        replay(&system, &past_the_end),
+        Err(ReplayError::FindingMismatch { step: 2 })
+    );
+
+    // A duplicate of the one real entry.
+    let mut duplicate = trace.clone();
+    duplicate.findings.push(trace.findings[0].clone());
+    assert_eq!(
+        replay(&system, &duplicate),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // The right depth and findings under another state's digest.
+    let mut wrong_digest = trace.clone();
+    wrong_digest.findings[0].state = key("1");
+    assert_eq!(
+        replay(&system, &wrong_digest),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // An entry for a state that has no findings, before the real one.
+    let mut extra = trace.clone();
+    extra.findings.insert(
+        0,
+        qsl_eval::simulation::StateFindings {
+            state: key("0"),
+            depth: 0,
+            findings: vec!["x".to_owned()],
+        },
+    );
+    assert_eq!(
+        replay(&system, &extra),
+        Err(ReplayError::FindingMismatch { step: 0 })
     );
 }
 
