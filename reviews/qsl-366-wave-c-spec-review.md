@@ -68,3 +68,17 @@ To fix:
 - FND-002: forward references to records in later PRs of the stack.
 - FND-003: an off-lane sampler change.
 - FND-004 and FND-005: leave an undefined `terminal when` predicate without one consistent classification and replay path.
+
+## Dispositions
+
+Round 1, reviewed at 18a9c22bd1783e2d40eaf3528e662f943183e2b8.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 18a9c22b |
+| FND-002 | fixed | 18a9c22b |
+| FND-003 | accepted-no-change | The team leader kept the `choice` member to align FR-101 with the FR-181 preimage of QSpec #175 (agent-ix/quire-specification, open draft, STD-137/139). The vector is real on #175 and I recomputed the step-0 digest `d5160380…`. FR-101-AC-3 now says it is TC-210 as amended by QSpec FR-181. It agrees with QSpec main only if #175 merges before #562. |
+| FND-004 | fixed | 18a9c22b |
+| FND-005 | fixed | 18a9c22b |
+| FND-006 | fixed | 18a9c22b |
+| FND-007 | fixed | 18a9c22b |
