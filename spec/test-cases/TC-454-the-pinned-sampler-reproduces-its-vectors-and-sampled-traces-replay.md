@@ -81,6 +81,4 @@ Tag each test `#[trace("TC-454", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-🚧 Steps 4 to 7 and 9 pass. Steps 1 to 3 and 8 change with the `choice`
-preimage member and the identity-only generator check, which are not yet
-implemented.
+✅ Implemented; every step passes locally under the `choice` preimage member.

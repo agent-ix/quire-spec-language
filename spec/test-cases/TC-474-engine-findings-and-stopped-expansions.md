@@ -77,4 +77,4 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
 
 ## Status
 
-Planned.
+✅ Implemented in `qsl-eval/tests/it/finite_simulation.rs` (`tc_474_*`); passes locally.

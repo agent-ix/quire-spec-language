@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-101: finite exploration and seeded sampling through the public
-//! entries, `explore_request` and `sample_request`. Traces to TC-453,
-//! TC-454 and TC-455.
+//! entries, `explore_request` and `sample_request`. Traces to TC-439,
+//! TC-453, TC-454, TC-455, TC-474 and TC-536.
 //!
 //! `EdgeGraph` is a toy `TransitionSystem` over `String`-labelled states: its
 //! key is the label itself, and its transitions are an explicit, authored
@@ -13,8 +13,8 @@ use std::cell::Cell;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::{
-    explore_request, replay, sample_request, Limit, Limits, NotSimulated, Outcome, ReplayError,
-    StopReason, Trace, TransitionSystem,
+    explore_request, replay, sample_request, Expansion, ExpansionStop, Limit, Limits, NotSimulated,
+    Outcome, ReplayError, StopReason, Trace, TransitionSystem,
 };
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
@@ -83,23 +83,44 @@ fn key(label: &str) -> DigestRecord {
 struct EdgeGraph {
     initial: Vec<String>,
     edges: Vec<(String, Transition, String)>,
+    /// Findings each listed state's expansion returns, in order.
+    findings: Vec<(String, String)>,
+    /// States whose expansion returns `ExpansionStop` with this cause.
+    stops: Vec<(String, CatalogCode)>,
 }
 
 impl EdgeGraph {
     /// Build from short-lived label references, owning a copy of each.
     fn new(initial: Vec<&str>, edges: Vec<(&str, Transition, &str)>) -> Self {
-        Self {
-            initial: initial.into_iter().map(str::to_owned).collect(),
-            edges: edges
+        Self::from_owned(
+            initial.into_iter().map(str::to_owned).collect(),
+            edges
                 .into_iter()
                 .map(|(from, transition, to)| (from.to_owned(), transition, to.to_owned()))
                 .collect(),
-        }
+        )
     }
 
     /// Build from already-owned labels, for a fixture that formats them.
     fn from_owned(initial: Vec<String>, edges: Vec<(String, Transition, String)>) -> Self {
-        Self { initial, edges }
+        Self {
+            initial,
+            edges,
+            findings: vec![],
+            stops: vec![],
+        }
+    }
+
+    /// The same graph, whose expansion of `state` also returns `finding`.
+    fn with_finding(mut self, state: &str, finding: &str) -> Self {
+        self.findings.push((state.to_owned(), finding.to_owned()));
+        self
+    }
+
+    /// The same graph, whose expansion of `state` stops with `cause`.
+    fn with_stop(mut self, state: &str, cause: CatalogCode) -> Self {
+        self.stops.push((state.to_owned(), cause));
+        self
     }
 }
 
@@ -107,6 +128,7 @@ impl TransitionSystem for EdgeGraph {
     type State = String;
     type TransitionId = Transition;
     type Key = String;
+    type Finding = String;
 
     fn initial(&self) -> Vec<String> {
         self.initial.clone()
@@ -116,12 +138,27 @@ impl TransitionSystem for EdgeGraph {
         state.clone()
     }
 
-    fn successors(&self, state: &String) -> Vec<(Transition, String)> {
-        self.edges
-            .iter()
-            .filter(|(from, _, _)| from == state)
-            .map(|(_, transition, to)| (transition.clone(), to.clone()))
-            .collect()
+    fn successors(
+        &self,
+        state: &String,
+    ) -> Result<Expansion<Transition, String, String>, ExpansionStop> {
+        if let Some((_, cause)) = self.stops.iter().find(|(at, _)| at == state) {
+            return Err(ExpansionStop { cause: *cause });
+        }
+        Ok(Expansion {
+            successors: self
+                .edges
+                .iter()
+                .filter(|(from, _, _)| from == state)
+                .map(|(_, transition, to)| (transition.clone(), to.clone()))
+                .collect(),
+            findings: self
+                .findings
+                .iter()
+                .filter(|(at, _)| at == state)
+                .map(|(_, finding)| finding.clone())
+                .collect(),
+        })
     }
 }
 
@@ -149,6 +186,7 @@ impl TransitionSystem for EnvelopeGraph {
     type State = usize;
     type TransitionId = Transition;
     type Key = serde_json::Value;
+    type Finding = ();
 
     fn initial(&self) -> Vec<usize> {
         vec![0]
@@ -158,12 +196,16 @@ impl TransitionSystem for EnvelopeGraph {
         self.states[*state].clone()
     }
 
-    fn successors(&self, state: &usize) -> Vec<(Transition, usize)> {
-        self.edges
-            .iter()
-            .filter(|(from, _)| from == state)
-            .map(|&(_, to)| (op("next"), to))
-            .collect()
+    fn successors(&self, state: &usize) -> Result<Expansion<Transition, usize, ()>, ExpansionStop> {
+        Ok(Expansion {
+            successors: self
+                .edges
+                .iter()
+                .filter(|(from, _)| from == state)
+                .map(|&(_, to)| (op("next"), to))
+                .collect(),
+            findings: vec![],
+        })
     }
 }
 
@@ -190,6 +232,7 @@ impl TransitionSystem for RecordingSystem {
     type State = ();
     type TransitionId = Transition;
     type Key = ();
+    type Finding = ();
 
     fn initial(&self) -> Vec<()> {
         self.calls.set(self.calls.get() + 1);
@@ -200,9 +243,9 @@ impl TransitionSystem for RecordingSystem {
         self.calls.set(self.calls.get() + 1);
     }
 
-    fn successors(&self, _state: &()) -> Vec<(Transition, ())> {
+    fn successors(&self, _state: &()) -> Result<Expansion<Transition, (), ()>, ExpansionStop> {
         self.calls.set(self.calls.get() + 1);
-        vec![]
+        Ok(no_successors())
     }
 }
 
@@ -217,6 +260,7 @@ impl TransitionSystem for BigIntKeyGraph {
     type State = ();
     type TransitionId = Transition;
     type Key = u64;
+    type Finding = ();
 
     fn initial(&self) -> Vec<()> {
         vec![()]
@@ -226,8 +270,16 @@ impl TransitionSystem for BigIntKeyGraph {
         self.key
     }
 
-    fn successors(&self, _state: &()) -> Vec<(Transition, ())> {
-        vec![]
+    fn successors(&self, _state: &()) -> Result<Expansion<Transition, (), ()>, ExpansionStop> {
+        Ok(no_successors())
+    }
+}
+
+/// An expansion with no successors and no findings.
+fn no_successors<S>() -> Expansion<Transition, S, ()> {
+    Expansion {
+        successors: vec![],
+        findings: vec![],
     }
 }
 
@@ -238,9 +290,41 @@ fn empty_types() -> TypeEnvironment {
 fn generous_limits() -> Limits {
     Limits {
         max_states: usize::MAX,
-        max_depth: usize::MAX,
         max_transitions: usize::MAX,
     }
+}
+
+/// `explore_request` with no horizon, keeping only the outcome.
+fn explore_outcome<S: TransitionSystem>(
+    system: &S,
+    domains: &[(WireNodeId, &ValueType)],
+    types: &TypeEnvironment,
+    position_limit: u64,
+    limits: Limits,
+    poll: impl FnMut() -> bool,
+) -> Result<Outcome, NotSimulated> {
+    explore_request(system, domains, types, position_limit, limits, None, poll)
+        .map(|exploration| exploration.outcome)
+}
+
+/// `explore_request` over no domains with horizon `max_depth`, keeping only
+/// the outcome.
+fn explore_to_horizon<S: TransitionSystem>(
+    system: &S,
+    limits: Limits,
+    max_depth: usize,
+) -> Outcome {
+    explore_request(
+        system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        limits,
+        Some(max_depth),
+        never_cancels,
+    )
+    .expect("bounded domains explore")
+    .outcome
 }
 
 fn never_cancels() -> bool {
@@ -270,28 +354,17 @@ fn canonical_order_sorts_successors_by_transition_identity_bytes() {
     // identity (a before z), never from sorting by post-state key (which
     // would put z's smaller key first).
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("z"), "3"), ("0", op("a"), "9")]);
-    let outcome = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 1,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
+    let outcome = explore_to_horizon(&system, generous_limits(), 1);
     assert_eq!(
         outcome,
-        Outcome::Bounded {
+        Outcome::BoundReached {
             stats: qsl_eval::simulation::Stats {
                 states: 3,
                 transitions: 2,
                 depth: 1,
             },
+            depth: 1,
             frontier: vec![key("9"), key("3")],
-            limit: Limit::Depth,
         }
     );
 }
@@ -309,20 +382,9 @@ fn canonical_order_sorts_integer_arguments_by_decimal_string_bytes() {
             ("0", op_int("step", 10), "ten"),
         ],
     );
-    let outcome = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 1,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
-    let Outcome::Bounded { frontier, .. } = outcome else {
-        panic!("expected Bounded, got {outcome:?}");
+    let outcome = explore_to_horizon(&system, generous_limits(), 1);
+    let Outcome::BoundReached { frontier, .. } = outcome else {
+        panic!("expected BoundReached, got {outcome:?}");
     };
     assert_eq!(frontier, vec![key("ten"), key("nine")]);
 }
@@ -334,20 +396,9 @@ fn canonical_order_sorts_integer_arguments_by_decimal_string_bytes() {
 #[test]
 fn canonical_order_breaks_ties_by_ascending_state_key_bytes() {
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("x"), "b"), ("0", op("x"), "a")]);
-    let outcome = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 1,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
-    let Outcome::Bounded { frontier, .. } = outcome else {
-        panic!("expected Bounded, got {outcome:?}");
+    let outcome = explore_to_horizon(&system, generous_limits(), 1);
+    let Outcome::BoundReached { frontier, .. } = outcome else {
+        panic!("expected BoundReached, got {outcome:?}");
     };
     assert_eq!(frontier, vec![key("a"), key("b")]);
 }
@@ -358,7 +409,7 @@ fn canonical_order_breaks_ties_by_ascending_state_key_bytes() {
 #[test]
 fn several_initial_states_are_all_admitted_when_the_cap_allows() {
     let system = EdgeGraph::new(vec!["0", "1", "2"], vec![]);
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -383,7 +434,7 @@ fn several_initial_states_are_all_admitted_when_the_cap_allows() {
 #[test]
 fn duplicate_initial_states_coalesce_to_one_state() {
     let system = EdgeGraph::new(vec!["0", "0", "1"], vec![]);
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -404,37 +455,33 @@ fn duplicate_initial_states_coalesce_to_one_state() {
 
 /// TC-453 step 4, FR-101-AC-9, as written: three distinct initial states
 /// listed in descending state-key order, with one repeated. `max_states` 3
-/// admits all three distinct states; `max_depth` 0 then stops the run
-/// before any of them expands, `Bounded` at `Limit::Depth` (not
-/// `Limit::States`, which `max_states` 3 never reaches), with the frontier
-/// in ascending key order regardless of the system's descending listing.
+/// admits all three distinct states; the `max_depth` 0 horizon then stops
+/// the run before any of them expands, `BoundReached{depth: 0}` (not
+/// `Bounded` at `Limit::States`, which `max_states` 3 never reaches), with
+/// the frontier in ascending key order regardless of the system's
+/// descending listing.
 #[trace("TC-453", "FR-101-AC-9")]
 #[test]
-fn several_initial_states_in_descending_order_stop_bounded_at_depth_zero() {
+fn several_initial_states_in_descending_order_reach_the_horizon_at_depth_zero() {
     let system = EdgeGraph::new(vec!["c", "b", "a", "a"], vec![]);
-    let outcome = explore_request(
+    let outcome = explore_to_horizon(
         &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
         Limits {
             max_states: 3,
-            max_depth: 0,
             ..generous_limits()
         },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
+        0,
+    );
     assert_eq!(
         outcome,
-        Outcome::Bounded {
+        Outcome::BoundReached {
             stats: qsl_eval::simulation::Stats {
                 states: 3,
                 transitions: 0,
                 depth: 0,
             },
+            depth: 0,
             frontier: vec![key("a"), key("b"), key("c")],
-            limit: Limit::Depth,
         }
     );
 }
@@ -458,7 +505,7 @@ fn cancellation_frontier_keeps_fifo_order_not_key_order() {
         ],
     );
     let mut polls = 0usize;
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -509,20 +556,9 @@ fn float64_state_keys_pin_their_digests_and_stay_distinct() {
             states: vec![float64_envelope(bits)],
             edges: vec![],
         };
-        let outcome = explore_request(
-            &system,
-            NO_DOMAINS,
-            &empty_types(),
-            1000,
-            Limits {
-                max_depth: 0,
-                ..generous_limits()
-            },
-            never_cancels,
-        )
-        .expect("bounded domains explore");
-        let Outcome::Bounded { frontier, .. } = outcome else {
-            panic!("expected Bounded, got {outcome:?}");
+        let outcome = explore_to_horizon(&system, generous_limits(), 0);
+        let Outcome::BoundReached { frontier, .. } = outcome else {
+            panic!("expected BoundReached, got {outcome:?}");
         };
         assert_eq!(frontier.len(), 1);
         assert_eq!(frontier[0].domain(), DigestDomain::SimulationStateKeyV1);
@@ -537,7 +573,7 @@ fn float64_state_keys_pin_their_digests_and_stay_distinct() {
             states: vec![float64_envelope(a), float64_envelope(b)],
             edges: vec![(0, 1)],
         };
-        let outcome = explore_request(
+        let outcome = explore_outcome(
             &system,
             NO_DOMAINS,
             &empty_types(),
@@ -565,7 +601,7 @@ fn a_key_with_no_rfc_8785_encoding_refuses_instead_of_panicking() {
     let system = BigIntKeyGraph {
         key: (1u64 << 53) + 1,
     };
-    let explore_error = explore_request(
+    let explore_error = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -589,9 +625,10 @@ fn a_key_with_no_rfc_8785_encoding_refuses_instead_of_panicking() {
     .expect_err("an unencodable key refuses");
     assert!(matches!(sample_error, NotSimulated::KeyEncoding(_)));
 
-    let trace: Trace<Transition> = Trace {
+    let trace: Trace<Transition, ()> = Trace {
         initial: key("anything"),
         steps: vec![],
+        findings: vec![],
         provenance: None,
     };
     let replay_error = replay(&system, &trace).expect_err("an unencodable key refuses");
@@ -612,7 +649,7 @@ fn key_equal_coalescing_merges_two_paths_to_the_same_state() {
             ("2", op("merge"), "3"),
         ],
     );
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -639,7 +676,7 @@ fn key_equal_coalescing_merges_two_paths_to_the_same_state() {
 #[test]
 fn state_limit_on_initial_states_admits_in_canonical_order() {
     let system = EdgeGraph::new(vec!["d", "b", "a", "c"], vec![]);
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -660,11 +697,11 @@ fn state_limit_on_initial_states_admits_in_canonical_order() {
                 depth: 0,
             },
             frontier: vec![key("a"), key("b"), key("c"), key("d")],
-            limit: Limit::States,
+            limit: Limit::States(2),
         }
     );
 
-    let zero_cap = explore_request(
+    let zero_cap = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -685,12 +722,12 @@ fn state_limit_on_initial_states_admits_in_canonical_order() {
                 depth: 0,
             },
             frontier: vec![key("a"), key("b"), key("c"), key("d")],
-            limit: Limit::States,
+            limit: Limit::States(0),
         }
     );
 
     let no_initial = EdgeGraph::new(vec![], vec![]);
-    let empty = explore_request(
+    let empty = explore_outcome(
         &no_initial,
         NO_DOMAINS,
         &empty_types(),
@@ -728,7 +765,7 @@ fn cancellation_stops_the_run_and_returns_the_frontier() {
         ],
     );
     let mut polls = 0usize;
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -758,51 +795,33 @@ fn cancellation_stops_the_run_and_returns_the_frontier() {
     );
 }
 
-/// TC-455 step 2, FR-101-AC-7: each smaller limit on the chain 0 -> 1 -> 2
-/// returns `Bounded` with its `Limit`; each larger limit completes it
-/// `Exhaustive` with the same counts.
+/// TC-455 step 2, FR-101-AC-7: on the chain 0 -> 1 -> 2, the `max_depth` 2
+/// horizon returns `BoundReached{depth: 2}` with frontier `[<2>]`, category
+/// inconclusive; horizon 3 completes it `Exhaustive` with the same counts.
 #[trace("TC-455", "FR-101-AC-7")]
 #[test]
-fn depth_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
+fn horizon_n_reaches_its_bound_and_n_plus_one_is_exhaustive() {
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
 
-    let stopped = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 2,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
+    let stopped = explore_to_horizon(&system, generous_limits(), 2);
     assert_eq!(
         stopped,
-        Outcome::Bounded {
+        Outcome::BoundReached {
             stats: qsl_eval::simulation::Stats {
                 states: 3,
                 transitions: 2,
                 depth: 2,
             },
+            depth: 2,
             frontier: vec![key("2")],
-            limit: Limit::Depth,
         }
     );
+    assert_eq!(
+        stopped.category(),
+        qsl_foundation::diagnostic::Category::Inconclusive
+    );
 
-    let completed = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 3,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
+    let completed = explore_to_horizon(&system, generous_limits(), 3);
     assert_eq!(
         completed,
         Outcome::Exhaustive(qsl_eval::simulation::Stats {
@@ -819,7 +838,7 @@ fn depth_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
 fn state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
 
-    let stopped = explore_request(
+    let stopped = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -840,11 +859,11 @@ fn state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
                 depth: 1,
             },
             frontier: vec![key("1"), key("2")],
-            limit: Limit::States,
+            limit: Limit::States(2),
         }
     );
 
-    let completed = explore_request(
+    let completed = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -873,7 +892,7 @@ fn state_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
 fn transition_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
 
-    let stopped = explore_request(
+    let stopped = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -894,11 +913,11 @@ fn transition_limit_n_stops_bounded_and_n_plus_one_is_exhaustive() {
                 depth: 1,
             },
             frontier: vec![key("1")],
-            limit: Limit::Transitions,
+            limit: Limit::Transitions(1),
         }
     );
 
-    let completed = explore_request(
+    let completed = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -933,7 +952,7 @@ fn state_limit_mid_successors_places_the_blocked_key_after_the_queue() {
             ("1", op("c"), "3"),
         ],
     );
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -954,7 +973,7 @@ fn state_limit_mid_successors_places_the_blocked_key_after_the_queue() {
                 depth: 1,
             },
             frontier: vec![key("1"), key("2"), key("3")],
-            limit: Limit::States,
+            limit: Limit::States(3),
         }
     );
 }
@@ -977,13 +996,12 @@ fn requires_bound_refuses_before_any_transition_system_call() {
     for limits in [
         Limits {
             max_states: 1,
-            max_depth: 1,
             max_transitions: 1,
         },
         generous_limits(),
     ] {
         let system = RecordingSystem::new();
-        let error = explore_request(&system, &domains, &types, 1000, limits, never_cancels)
+        let error = explore_outcome(&system, &domains, &types, 1000, limits, never_cancels)
             .expect_err("an unbounded Integer domain requires a bound");
         let NotSimulated::RequiresBound(requires_bound) = error else {
             panic!("expected RequiresBound, got {error:?}");
@@ -1021,7 +1039,7 @@ fn requires_bound_refuses_before_any_transition_system_call() {
     );
     let bounded_domains = [(node, &bounded)];
     let system = RecordingSystem::new();
-    let extent_error = explore_request(
+    let extent_error = explore_outcome(
         &system,
         &bounded_domains,
         &types,
@@ -1051,7 +1069,7 @@ fn exhaustive_small_graph_reports_exact_state_and_transition_counts() {
             ("2", op("d"), "4"),
         ],
     );
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -1082,7 +1100,7 @@ fn bounded_domain_request_explores() {
     );
     let domains = [(node, &bounded)];
     let system = EdgeGraph::new(vec!["0"], vec![]);
-    let outcome = explore_request(
+    let outcome = explore_outcome(
         &system,
         &domains,
         &empty_types(),
@@ -1099,14 +1117,14 @@ fn bounded_domain_request_explores() {
 // ---------------------------------------------------------------------------
 
 /// TC-439 (ADR-014 §7, §10 scenario 4): an exhaustive run is O-16 success; a
-/// run a bound stops or the caller cancels is incomplete, and keeps its
-/// frontier and the bound that stopped it.
+/// run that reaches its horizon is inconclusive and keeps its frontier; a
+/// run the caller cancels is incomplete and keeps its frontier.
 #[trace("TC-439", "FR-097-AC-5")]
 #[test]
 fn tc_439_explore_outcomes_map_to_their_o16_category() {
     use qsl_foundation::diagnostic::Category;
     let system = EdgeGraph::new(vec!["0"], vec![("0", op("a"), "1"), ("1", op("b"), "2")]);
-    let exhaustive = explore_request(
+    let exhaustive = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -1118,31 +1136,20 @@ fn tc_439_explore_outcomes_map_to_their_o16_category() {
     assert!(matches!(exhaustive, Outcome::Exhaustive(_)));
     assert_eq!(exhaustive.category(), Category::Success);
 
-    let bounded = explore_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        Limits {
-            max_depth: 1,
-            ..generous_limits()
-        },
-        never_cancels,
-    )
-    .expect("bounded domains explore");
-    let Outcome::Bounded {
+    let bounded = explore_to_horizon(&system, generous_limits(), 1);
+    let Outcome::BoundReached {
         ref frontier,
-        limit,
+        depth,
         ..
     } = bounded
     else {
-        panic!("expected Bounded, got {bounded:?}");
+        panic!("expected BoundReached, got {bounded:?}");
     };
-    assert_eq!(limit, Limit::Depth);
+    assert_eq!(depth, 1);
     assert_eq!(frontier, &vec![key("1")]);
-    assert_eq!(bounded.category(), Category::Incomplete);
+    assert_eq!(bounded.category(), Category::Inconclusive);
 
-    let cancelled = explore_request(
+    let cancelled = explore_outcome(
         &system,
         NO_DOMAINS,
         &empty_types(),
@@ -1206,9 +1213,9 @@ fn selected_index(transition: &Transition) -> usize {
         .expect("fixture transitions are named t<index>")
 }
 
-/// TC-454 step 1, FR-101-AC-3: the pinned sampler reproduces QSpec TC-210's
-/// vector, seed 424242 trace 0 over five-way branches: indices 0, 0, 4, 4,
-/// 4.
+/// TC-454 step 1, FR-101-AC-3: the sampler reproduces QSpec TC-210's
+/// vector under FR-181's `choice` preimage member, seed 424242 trace 0 over
+/// five-way branches: indices 1, 3, 3, 4, 4.
 #[trace("TC-454", "FR-101-AC-3")]
 #[test]
 fn pinned_sampler_reproduces_tc_210_five_way_vector() {
@@ -1229,12 +1236,12 @@ fn pinned_sampler_reproduces_tc_210_five_way_vector() {
         .iter()
         .map(|step| selected_index(&step.transition))
         .collect();
-    assert_eq!(indices, vec![0, 0, 4, 4, 4]);
+    assert_eq!(indices, vec![1, 3, 3, 4, 4]);
 }
 
 /// TC-454 step 2, FR-101-AC-3: seed 424242 trace 1 over five-way branches
-/// draws 1, 4, 3, 4, 0; seed 424242 trace 0 over three-way branches draws
-/// 2, 1, 0, 2, 1.
+/// draws 4, 4, 1, 3, 4; seed 424242 trace 0 over three-way branches draws
+/// 1, 2, 0, 0, 1.
 #[trace("TC-454", "FR-101-AC-3")]
 #[test]
 fn pinned_sampler_reproduces_tc_210_further_vectors() {
@@ -1255,7 +1262,7 @@ fn pinned_sampler_reproduces_tc_210_further_vectors() {
         .iter()
         .map(|step| selected_index(&step.transition))
         .collect();
-    assert_eq!(indices, vec![1, 4, 3, 4, 0]);
+    assert_eq!(indices, vec![4, 4, 1, 3, 4]);
 
     let three_way = three_way_chain();
     let trace_three = sample_request(
@@ -1274,13 +1281,14 @@ fn pinned_sampler_reproduces_tc_210_further_vectors() {
         .iter()
         .map(|step| selected_index(&step.transition))
         .collect();
-    assert_eq!(indices, vec![2, 1, 0, 2, 1]);
+    assert_eq!(indices, vec![1, 2, 0, 0, 1]);
 }
 
 /// TC-454 step 3, FR-101-AC-3, FR-101-AC-10: a one-successor chain always
 /// selects index 0 with no digest computed; a system with `n = 1` at steps
-/// 0 and 1 and `n = 5` at step 2 selects index 4 at step 2, the step
-/// counter having advanced over the no-digest steps.
+/// 0 and 1 and `n = 5` at step 2 selects index 3 at step 2, the step
+/// counter having advanced over the no-digest steps (a counter that skipped
+/// them would select 1).
 #[trace("TC-454", "FR-101-AC-3")]
 #[test]
 fn pinned_sampler_advances_the_step_counter_across_no_digest_steps() {
@@ -1330,7 +1338,7 @@ fn pinned_sampler_advances_the_step_counter_across_no_digest_steps() {
         3,
     )
     .expect("a bounded, generator-matched sample");
-    assert_eq!(selected_index(&mixed_trace.steps[2].transition), 4);
+    assert_eq!(selected_index(&mixed_trace.steps[2].transition), 3);
 }
 
 /// TC-454 step 4, FR-101-AC-3: a state with no successors ends the trace on
@@ -1464,7 +1472,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         vec!["0"],
         vec![("0", op("recv"), "1"), ("0", op("recv"), "2")],
     );
-    // Seed 1 draws index 1 (recomputed independently), the second-listed
+    // Seed 2 draws index 1 (recomputed independently), the second-listed
     // `recv` edge to "2": this is what makes the test discriminate a
     // replay that only takes the first matching-identity successor from a
     // replay that matches by digest, per FR-101-AC-5.
@@ -1474,7 +1482,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
         &empty_types(),
         1000,
         &sampler_ref(),
-        1,
+        2,
         0,
         1,
     )
@@ -1483,18 +1491,19 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
     assert_eq!(replay(&duplicate_ids, &sampled), Ok(()));
 
     let multi_initial = EdgeGraph::new(vec!["a", "b"], vec![("b", op("from_b"), "z")]);
-    let trace: Trace<Transition> = Trace {
+    let trace: Trace<Transition, String> = Trace {
         initial: key("b"),
         steps: vec![qsl_eval::simulation::Step {
             transition: op("from_b"),
             key: key("z"),
         }],
+        findings: vec![],
         provenance: None,
     };
     assert_eq!(replay(&multi_initial, &trace), Ok(()));
 
     let chain = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
-    let good: Trace<Transition> = Trace {
+    let good: Trace<Transition, String> = Trace {
         initial: key("0"),
         steps: vec![
             qsl_eval::simulation::Step {
@@ -1506,6 +1515,7 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
                 key: key("2"),
             },
         ],
+        findings: vec![],
         provenance: None,
     };
     assert_eq!(replay(&chain, &good), Ok(()));
@@ -1587,7 +1597,7 @@ fn not_simulated_catalog_code_and_fields_cover_every_variant() {
     let unbounded = ValueType::Integer;
     let requires_bound_domains = [(node, &unbounded)];
     let system = RecordingSystem::new();
-    let requires_bound = explore_request(
+    let requires_bound = explore_outcome(
         &system,
         &requires_bound_domains,
         &empty_types(),
@@ -1636,7 +1646,7 @@ fn not_simulated_catalog_code_and_fields_cover_every_variant() {
     let unencodable = BigIntKeyGraph {
         key: (1u64 << 53) + 1,
     };
-    let key_encoding = explore_request(
+    let key_encoding = explore_outcome(
         &unencodable,
         NO_DOMAINS,
         &empty_types(),
@@ -1691,4 +1701,387 @@ fn sample_request_reports_empty_initial_and_the_step_limit() {
         trace.provenance.expect("sampled trace").stopped,
         StopReason::StepLimit
     );
+}
+
+// ---------------------------------------------------------------------------
+// TC-474: findings, expansion stops, and replay of a stopped trace.
+// ---------------------------------------------------------------------------
+
+/// `resource_exhausted`/`insufficient-next-charge`, an exhausted budget.
+const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+
+/// `runtime_invariant`/`established-invariant-broken`, a broken invariant.
+const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+
+/// TC-474's `Limits`: 100 each.
+fn hundred_limits() -> Limits {
+    Limits {
+        max_states: 100,
+        max_transitions: 100,
+    }
+}
+
+/// TC-474's graph `0 -> {1, 2}`, `1 -> 3`; transition `a` (to 1) sorts
+/// before `b` (to 2).
+fn branch_graph() -> EdgeGraph {
+    EdgeGraph::new(
+        vec!["0"],
+        vec![
+            ("0", op("a"), "1"),
+            ("0", op("b"), "2"),
+            ("1", op("c"), "3"),
+        ],
+    )
+}
+
+/// TC-474's chain `0 -> 1`.
+fn short_chain() -> EdgeGraph {
+    EdgeGraph::new(vec!["0"], vec![("0", op("a"), "1")])
+}
+
+/// `explore_request` over no domains with TC-474's limits.
+fn explore_474(
+    system: &EdgeGraph,
+    limits: Limits,
+    max_depth: Option<usize>,
+) -> qsl_eval::simulation::Exploration<String> {
+    explore_request(
+        system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        limits,
+        max_depth,
+        never_cancels,
+    )
+    .expect("bounded domains explore")
+}
+
+/// `sample_request` over no domains with the v1 sampler.
+fn sample_474(system: &EdgeGraph, seed: u64, max_steps: usize) -> Trace<Transition, String> {
+    sample_request(
+        system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        &sampler_ref(),
+        seed,
+        0,
+        max_steps,
+    )
+    .expect("a bounded, generator-matched sample")
+}
+
+/// TC-474 step 1, FR-101-AC-12, FR-097-AC-5: an expansion stop ends the run
+/// `Stopped` with its cause and the stopped state, then the queue, as the
+/// frontier; the category follows the cause's code.
+#[trace("TC-474", "FR-101-AC-12", "FR-097-AC-5")]
+#[test]
+fn tc_474_an_expansion_stop_ends_exploration_stopped() {
+    use qsl_foundation::diagnostic::Category;
+    for (cause, category) in [
+        (EXHAUSTED, Category::Incomplete),
+        (BROKEN, Category::InternalFailure),
+        // Any other catalogued code takes the catalog's category.
+        (
+            CatalogCode::new("invalid_runtime_input", "invalid-value"),
+            Category::Refusal,
+        ),
+        (
+            CatalogCode::new("cancelled", "caller-cancelled"),
+            Category::Incomplete,
+        ),
+        // A code the catalog does not define is an internal failure.
+        (
+            CatalogCode::new("not_a_catalog_code", "anything"),
+            Category::InternalFailure,
+        ),
+    ] {
+        let system = branch_graph().with_stop("1", cause);
+        let exploration = explore_474(&system, hundred_limits(), None);
+        assert_eq!(
+            exploration.outcome,
+            Outcome::Stopped {
+                stats: qsl_eval::simulation::Stats {
+                    states: 3,
+                    transitions: 2,
+                    depth: 1,
+                },
+                frontier: vec![key("1"), key("2")],
+                cause,
+            }
+        );
+        assert_eq!(exploration.outcome.category(), category, "{cause}");
+    }
+}
+
+/// TC-474 step 2, FR-101-AC-13: each expanded state with a finding gets one
+/// entry with its digest and depth; horizon states, states a limit put back
+/// in the frontier and a stopped state get none.
+#[trace("TC-474", "FR-101-AC-13")]
+#[test]
+fn tc_474_findings_cover_exactly_the_expanded_states() {
+    let system = branch_graph().with_finding("2", "f");
+    let exploration = explore_474(&system, hundred_limits(), None);
+    assert!(matches!(exploration.outcome, Outcome::Exhaustive(_)));
+    assert_eq!(
+        exploration.findings,
+        vec![qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 1,
+            findings: vec!["f".to_owned()],
+        }]
+    );
+
+    // Entries come in expansion order: breadth-first, then canonical order
+    // within a level (1 before 2, then 3).
+    let several = branch_graph()
+        .with_finding("3", "h")
+        .with_finding("2", "f")
+        .with_finding("1", "g")
+        .with_finding("1", "g2");
+    let ordered = explore_474(&several, hundred_limits(), None);
+    assert_eq!(
+        ordered.findings,
+        vec![
+            qsl_eval::simulation::StateFindings {
+                state: key("1"),
+                depth: 1,
+                findings: vec!["g".to_owned(), "g2".to_owned()],
+            },
+            qsl_eval::simulation::StateFindings {
+                state: key("2"),
+                depth: 1,
+                findings: vec!["f".to_owned()],
+            },
+            qsl_eval::simulation::StateFindings {
+                state: key("3"),
+                depth: 2,
+                findings: vec!["h".to_owned()],
+            },
+        ]
+    );
+
+    let horizon = explore_474(&system, hundred_limits(), Some(1));
+    assert_eq!(
+        horizon.outcome,
+        Outcome::BoundReached {
+            stats: qsl_eval::simulation::Stats {
+                states: 3,
+                transitions: 2,
+                depth: 1,
+            },
+            depth: 1,
+            frontier: vec![key("1"), key("2")],
+        }
+    );
+    assert_eq!(horizon.findings, vec![]);
+
+    // `max_states` 2 stops while 0 is mid-expansion: 0 goes back into the
+    // frontier, unexpanded, so neither 0 nor 2 has an entry.
+    let bounded_system = branch_graph().with_finding("0", "e").with_finding("2", "f");
+    let bounded = explore_474(
+        &bounded_system,
+        Limits {
+            max_states: 2,
+            ..hundred_limits()
+        },
+        None,
+    );
+    let Outcome::Bounded { ref frontier, .. } = bounded.outcome else {
+        panic!("expected Bounded, got {:?}", bounded.outcome);
+    };
+    assert_eq!(frontier, &vec![key("0"), key("1"), key("2")]);
+    assert_eq!(bounded.findings, vec![]);
+
+    let stopping = branch_graph()
+        .with_stop("1", EXHAUSTED)
+        .with_finding("1", "g");
+    let stopped = explore_474(&stopping, hundred_limits(), None);
+    assert!(matches!(stopped.outcome, Outcome::Stopped { .. }));
+    assert_eq!(stopped.findings, vec![]);
+}
+
+/// TC-474 steps 3 to 5, FR-101-AC-14: a stop at the trace's last state ends
+/// it `Stopped` and replays against the same system; replay refuses
+/// `ReplayError::Stopped` when the recomputed stop differs.
+#[trace("TC-474", "FR-101-AC-14")]
+#[test]
+fn tc_474_a_stopped_trace_replays_and_a_differing_stop_refuses() {
+    let stopping = short_chain().with_stop("1", EXHAUSTED);
+    let trace = sample_474(&stopping, 1, 4);
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].key, key("1"));
+    assert_eq!(
+        trace.provenance.as_ref().expect("sampled trace").stopped,
+        StopReason::Stopped(EXHAUSTED)
+    );
+    assert_eq!(replay(&stopping, &trace), Ok(()));
+
+    assert_eq!(
+        replay(&short_chain(), &trace),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: Some(EXHAUSTED),
+            replayed: None,
+        })
+    );
+    assert_eq!(
+        replay(&short_chain().with_stop("1", BROKEN), &trace),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: Some(EXHAUSTED),
+            replayed: Some(BROKEN),
+        })
+    );
+
+    let unstopped = sample_474(&short_chain(), 1, 1);
+    assert_eq!(unstopped.steps.len(), 1);
+    assert_eq!(
+        unstopped
+            .provenance
+            .as_ref()
+            .expect("sampled trace")
+            .stopped,
+        StopReason::StepLimit
+    );
+    assert_eq!(
+        replay(&stopping, &unstopped),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: None,
+            replayed: Some(EXHAUSTED),
+        })
+    );
+}
+
+/// TC-474 step 6, FR-101-AC-14: a sampled trace records the findings of the
+/// states it expands, and a trace whose recorded findings differ from the
+/// recomputed ones refuses `FindingMismatch` at that state. Seed 424246's
+/// step-0 draw selects index 1 of `n = 2`, successor 2.
+#[trace("TC-474", "FR-101-AC-14")]
+#[test]
+fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
+    let system = branch_graph().with_finding("2", "f");
+    let trace = sample_474(&system, 424_246, 2);
+    assert_eq!(trace.initial, key("0"));
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].key, key("2"));
+    assert_eq!(
+        trace.provenance.as_ref().expect("sampled trace").stopped,
+        StopReason::NoSuccessors
+    );
+    assert_eq!(
+        trace.findings,
+        vec![qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 1,
+            findings: vec!["f".to_owned()],
+        }]
+    );
+    assert_eq!(replay(&system, &trace), Ok(()));
+
+    let mut edited = trace.clone();
+    edited.findings[0].findings.clear();
+    assert_eq!(
+        replay(&system, &edited),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // An entry past the trace's last state.
+    let mut past_the_end = trace.clone();
+    past_the_end
+        .findings
+        .push(qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 2,
+            findings: vec!["f".to_owned()],
+        });
+    assert_eq!(
+        replay(&system, &past_the_end),
+        Err(ReplayError::FindingMismatch { step: 2 })
+    );
+
+    // A duplicate of the one real entry.
+    let mut duplicate = trace.clone();
+    duplicate.findings.push(trace.findings[0].clone());
+    assert_eq!(
+        replay(&system, &duplicate),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // The right depth and findings under another state's digest.
+    let mut wrong_digest = trace.clone();
+    wrong_digest.findings[0].state = key("1");
+    assert_eq!(
+        replay(&system, &wrong_digest),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+
+    // An entry for a state that has no findings, before the real one.
+    let mut extra = trace.clone();
+    extra.findings.insert(
+        0,
+        qsl_eval::simulation::StateFindings {
+            state: key("0"),
+            depth: 0,
+            findings: vec!["x".to_owned()],
+        },
+    );
+    assert_eq!(
+        replay(&system, &extra),
+        Err(ReplayError::FindingMismatch { step: 0 })
+    );
+}
+
+// ---------------------------------------------------------------------------
+// TC-536: exploration limits publish their defaults.
+// ---------------------------------------------------------------------------
+
+/// TC-536 steps 1 and 2, FR-101-AC-15: `Limits::default()` publishes
+/// FR-255's defaults; a 3-state chain completes under them, and with
+/// `max_states` 2 it stops `Bounded` at `Limit::States` naming the value
+/// and the `explore.states` setting that raises it.
+#[trace("TC-536", "FR-101-AC-15")]
+#[test]
+fn tc_536_exploration_limits_publish_their_defaults() {
+    assert_eq!(
+        Limits::default(),
+        Limits {
+            max_states: 10_000_000,
+            max_transitions: 100_000_000,
+        }
+    );
+
+    let chain = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
+    let completed = explore_outcome(
+        &chain,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        Limits::default(),
+        never_cancels,
+    )
+    .expect("bounded domains explore");
+    assert!(matches!(completed, Outcome::Exhaustive(_)));
+
+    let bounded = explore_outcome(
+        &chain,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        Limits {
+            max_states: 2,
+            ..Limits::default()
+        },
+        never_cancels,
+    )
+    .expect("bounded domains explore");
+    let Outcome::Bounded { limit, .. } = bounded else {
+        panic!("expected Bounded, got {bounded:?}");
+    };
+    assert_eq!(limit, Limit::States(2));
+    assert_eq!(limit.value(), 2);
+    assert_eq!(limit.setting(), "explore.states");
+    assert_eq!(Limit::Transitions(5).setting(), "explore.transitions");
 }

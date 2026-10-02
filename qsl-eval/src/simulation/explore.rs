@@ -4,17 +4,18 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use qsl_foundation::diagnostic::Category;
+use qsl_foundation::diagnostic::{category_of, Category};
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::CatalogCode;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
+use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
 use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
-use crate::simulation::order::{ordered_successors, sorted_initial};
+use crate::simulation::order::{expand, sorted_initial, Expanded};
 
 /// A finite-branching transition system the engine explores.
 ///
@@ -32,6 +33,9 @@ pub trait TransitionSystem {
     /// The typed canonical view of one state, serializable so the engine can
     /// key it (FR-101).
     type Key: Serialize;
+    /// What the system finds at an expanded state; the engine records it
+    /// and never interprets it (FR-101-AC-13).
+    type Finding: Clone + Eq + std::fmt::Debug;
 
     /// Every state the system starts from.
     fn initial(&self) -> Vec<Self::State>;
@@ -41,22 +45,48 @@ pub trait TransitionSystem {
     /// equal.
     fn key(&self, state: &Self::State) -> Self::Key;
 
-    /// The transitions enabled from `state`. The engine orders them itself
-    /// (FR-101-AC-1); this order is never preserved.
-    fn successors(&self, state: &Self::State) -> Vec<(Self::TransitionId, Self::State)>;
+    /// Expand `state`: its enabled transitions and its findings, or a stop.
+    /// The engine calls this once per expanded state and orders the
+    /// successors itself (FR-101-AC-1); the listed order is never
+    /// preserved.
+    ///
+    /// # Errors
+    ///
+    /// [`ExpansionStop`] when the system cannot expand `state`; the engine
+    /// stops the run there (FR-101-AC-12, FR-101-AC-14).
+    fn successors(
+        &self,
+        state: &Self::State,
+    ) -> ExpansionResult<Self::TransitionId, Self::State, Self::Finding>;
 }
 
-/// Caller-supplied ceilings on one exploration run.
+/// What [`TransitionSystem::successors`] returns: an [`Expansion`] or an
+/// [`ExpansionStop`].
+type ExpansionResult<T, S, F> = Result<Expansion<T, S, F>, ExpansionStop>;
+
+/// Caller-raisable resource limits on one exploration run (ADR-014 B-5,
+/// FR-255). The search horizon is `explore_request`'s `max_depth`, never a
+/// member of this type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
     /// Greatest number of distinct discovered states, by key equality.
+    /// Setting `explore.states`.
     pub max_states: usize,
-    /// States at depth `>= max_depth` are not expanded.
-    pub max_depth: usize,
     /// Greatest number of transitions explored, counting every edge the
     /// engine looks at, including ones that coalesce into an already-known
-    /// state.
+    /// state. Setting `explore.transitions`.
     pub max_transitions: usize,
+}
+
+impl Default for Limits {
+    /// FR-255's published defaults: `max_states` 10,000,000 and
+    /// `max_transitions` 100,000,000.
+    fn default() -> Self {
+        Self {
+            max_states: 10_000_000,
+            max_transitions: 100_000_000,
+        }
+    }
 }
 
 /// Aggregate counts for one exploration run, whatever stopped it.
@@ -73,17 +103,27 @@ pub struct Stats {
 /// The result of one exploration run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
-    /// The frontier went empty: every declared choice and schedule was
-    /// visited.
+    /// The frontier went empty: every reachable state was expanded.
     Exhaustive(Stats),
-    /// An explicit bound stopped the run before the frontier went empty.
+    /// Every reachable state below the `max_depth` horizon was expanded and
+    /// the frontier holds only states at the horizon.
+    BoundReached {
+        /// Counts at the moment the run stopped.
+        stats: Stats,
+        /// The horizon the run used.
+        depth: usize,
+        /// The horizon states, in the order the run would have expanded
+        /// them next.
+        frontier: Frontier,
+    },
+    /// A resource limit stopped the run before the frontier went empty.
     Bounded {
         /// Counts at the moment the run stopped.
         stats: Stats,
         /// The unexpanded state-key digests, in the order the run would
         /// have expanded them next.
         frontier: Frontier,
-        /// The bound that stopped the run.
+        /// The limit that stopped the run, with its value.
         limit: Limit,
     },
     /// The poll callback requested cancellation before the frontier went
@@ -98,22 +138,57 @@ pub enum Outcome {
         /// (FR-101, ADR-014 TR-7).
         cause: CatalogCode,
     },
+    /// The system returned an [`ExpansionStop`] for a state.
+    Stopped {
+        /// Counts at the moment the run stopped.
+        stats: Stats,
+        /// The state whose expansion stopped, then the queued states in
+        /// next-expansion order.
+        frontier: Frontier,
+        /// The stop's cause.
+        cause: CatalogCode,
+    },
 }
 
 /// `Outcome::Cancelled`'s one cause (FR-101).
 const CANCELLED_CAUSE: CatalogCode = CatalogCode::new("cancelled", "caller-cancelled");
 
 impl Outcome {
-    /// The ADR-013 O-16 category of this run (ADR-014 §7): `Exhaustive` is
-    /// success; `Bounded` and `Cancelled` are incomplete, each keeping its
-    /// frontier. A stopped run never reports success or a verdict (QSpec
-    /// FR-181).
+    /// The ADR-013 O-16 category of this run (FR-097-AC-5): `Exhaustive` is
+    /// success; `BoundReached` is inconclusive; `Bounded` and `Cancelled`
+    /// are incomplete; `Stopped` takes its cause's category. A stopped run
+    /// never reports success (QSpec FR-181).
     pub fn category(&self) -> Category {
         match self {
             Self::Exhaustive(_) => Category::Success,
+            Self::BoundReached { .. } => Category::Inconclusive,
             Self::Bounded { .. } | Self::Cancelled { .. } => Category::Incomplete,
+            Self::Stopped { cause, .. } => stop_category(cause),
         }
     }
+}
+
+/// The O-16 category of an expansion stop's cause. `resource_exhausted` is
+/// an exhausted execution budget, incomplete (ADR-014 B-2); every other code
+/// takes the catalog's category, and a code the catalog does not define is
+/// an internal failure: the system stopped for a reason the engine cannot
+/// classify. The only site that reads a stop cause's code spelling.
+#[qsl_attrs::string_edge]
+fn stop_category(cause: &CatalogCode) -> Category {
+    if cause.code() == "resource_exhausted" {
+        return Category::Incomplete;
+    }
+    category_of(cause).unwrap_or(Category::InternalFailure)
+}
+
+/// The result of one exploration run: its outcome and the findings of every
+/// expanded state that had any, in expansion order (FR-101-AC-13).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Exploration<F> {
+    /// How the run ended.
+    pub outcome: Outcome,
+    /// One entry per expanded state with at least one finding.
+    pub findings: Vec<StateFindings<F>>,
 }
 
 /// One queued, not-yet-expanded discovered state.
@@ -133,6 +208,7 @@ fn frontier_of<S>(head: DigestRecord, queue: &VecDeque<Queued<S>>) -> Frontier {
 /// Explore `system` breadth-first, level by level, in FR-101's canonical
 /// order, coalescing states only when their full key bytes are equal.
 ///
+/// With `max_depth = Some(k)`, states at depth `>= k` are not expanded.
 /// `poll` is called once per state the engine attempts to expand; returning
 /// `true` cancels the run before that state is touched.
 ///
@@ -146,19 +222,24 @@ fn frontier_of<S>(head: DigestRecord, queue: &VecDeque<Queued<S>>) -> Frontier {
 pub(crate) fn explore<S: TransitionSystem>(
     system: &S,
     limits: Limits,
+    max_depth: Option<usize>,
     mut poll: impl FnMut() -> bool,
-) -> Result<Outcome, EncodingRefusal> {
+) -> Result<Exploration<S::Finding>, EncodingRefusal> {
+    let mut findings = Vec::new();
     let initial = sorted_initial(system)?;
     if initial.len() > limits.max_states {
         let frontier: Frontier = initial.iter().map(|item| item.digest).collect();
-        return Ok(Outcome::Bounded {
-            stats: Stats {
-                states: limits.max_states,
-                transitions: 0,
-                depth: 0,
+        return Ok(Exploration {
+            outcome: Outcome::Bounded {
+                stats: Stats {
+                    states: limits.max_states,
+                    transitions: 0,
+                    depth: 0,
+                },
+                frontier,
+                limit: Limit::States(limits.max_states),
             },
-            frontier,
-            limit: Limit::States,
+            findings,
         });
     }
 
@@ -175,14 +256,36 @@ pub(crate) fn explore<S: TransitionSystem>(
     let mut transitions = 0usize;
     let mut depth_reached = 0usize;
 
-    while let Some(Queued {
-        state,
-        digest,
-        depth,
-    }) = queue.pop_front()
-    {
+    let outcome = 'run: loop {
+        let Some(Queued {
+            state,
+            digest,
+            depth,
+        }) = queue.pop_front()
+        else {
+            break Outcome::Exhaustive(Stats {
+                states,
+                transitions,
+                depth: depth_reached,
+            });
+        };
+        // Breadth-first order queues every state below the horizon before
+        // the first state at it, so the first horizon state popped means
+        // every state below it is expanded and the queue holds only
+        // horizon states.
+        if let Some(horizon) = max_depth.filter(|horizon| depth >= *horizon) {
+            break Outcome::BoundReached {
+                stats: Stats {
+                    states,
+                    transitions,
+                    depth: depth_reached,
+                },
+                depth: horizon,
+                frontier: frontier_of(digest, &queue),
+            };
+        }
         if poll() {
-            return Ok(Outcome::Cancelled {
+            break Outcome::Cancelled {
                 stats: Stats {
                     states,
                     transitions,
@@ -190,30 +293,36 @@ pub(crate) fn explore<S: TransitionSystem>(
                 },
                 frontier: frontier_of(digest, &queue),
                 cause: CANCELLED_CAUSE,
-            });
+            };
         }
-        if depth >= limits.max_depth {
-            return Ok(Outcome::Bounded {
-                stats: Stats {
-                    states,
-                    transitions,
-                    depth: depth_reached,
-                },
-                frontier: frontier_of(digest, &queue),
-                limit: Limit::Depth,
-            });
-        }
-        for successor in ordered_successors(system, &state)? {
-            if transitions >= limits.max_transitions {
-                return Ok(Outcome::Bounded {
+        let (successors, state_findings) = match expand(system, &state)? {
+            Expanded::Successors {
+                successors,
+                findings,
+            } => (successors, findings),
+            Expanded::Stopped(stop) => {
+                break Outcome::Stopped {
                     stats: Stats {
                         states,
                         transitions,
                         depth: depth_reached,
                     },
                     frontier: frontier_of(digest, &queue),
-                    limit: Limit::Transitions,
-                });
+                    cause: stop.cause,
+                };
+            }
+        };
+        for successor in successors {
+            if transitions >= limits.max_transitions {
+                break 'run Outcome::Bounded {
+                    stats: Stats {
+                        states,
+                        transitions,
+                        depth: depth_reached,
+                    },
+                    frontier: frontier_of(digest, &queue),
+                    limit: Limit::Transitions(limits.max_transitions),
+                };
             }
             transitions += 1;
             if visited.contains(&successor.key) {
@@ -222,15 +331,15 @@ pub(crate) fn explore<S: TransitionSystem>(
             if states >= limits.max_states {
                 let mut frontier = frontier_of(digest, &queue);
                 frontier.push(successor.digest);
-                return Ok(Outcome::Bounded {
+                break 'run Outcome::Bounded {
                     stats: Stats {
                         states,
                         transitions,
                         depth: depth_reached,
                     },
                     frontier,
-                    limit: Limit::States,
-                });
+                    limit: Limit::States(limits.max_states),
+                };
             }
             visited.insert(successor.key);
             states += 1;
@@ -242,17 +351,26 @@ pub(crate) fn explore<S: TransitionSystem>(
                 depth: successor_depth,
             });
         }
-    }
+        // Recorded only once every successor is queued: a state a limit put
+        // back in the frontier is unexpanded and has no entry.
+        if !state_findings.is_empty() {
+            findings.push(StateFindings {
+                state: digest,
+                depth,
+                findings: state_findings,
+            });
+        }
+    };
 
-    Ok(Outcome::Exhaustive(Stats {
-        states,
-        transitions,
-        depth: depth_reached,
-    }))
+    Ok(Exploration { outcome, findings })
 }
 
 /// Explore `system`, first refusing an unbounded `domains` request before any
 /// `TransitionSystem` method is called (FR-101).
+///
+/// `max_depth` is the search horizon: `Some(k)` expands no state at depth
+/// `>= k` and reports `Outcome::BoundReached` when it is the only thing that
+/// stopped the run; `None` sets no horizon.
 ///
 /// `explore` and `Sampler` stay `pub(crate)`; this and `sample_request` are
 /// the only entries that explore or sample, so no caller skips the
@@ -272,8 +390,9 @@ pub fn explore_request<S: TransitionSystem>(
     types: &TypeEnvironment,
     position_limit: u64,
     limits: Limits,
+    max_depth: Option<usize>,
     poll: impl FnMut() -> bool,
-) -> Result<Outcome, NotSimulated> {
+) -> Result<Exploration<S::Finding>, NotSimulated> {
     check_requires_bound(domains, types, position_limit)?;
-    explore(system, limits, poll).map_err(NotSimulated::from)
+    explore(system, limits, max_depth, poll).map_err(NotSimulated::from)
 }

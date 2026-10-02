@@ -820,14 +820,18 @@ impl InternalFault {
 /// Every code of the `quire.native.diagnostics/v1` "Required distinguishing
 /// causes" table with its ADR-013 O-16 category, in the catalog's row order.
 ///
-/// A catalog code in QSL is carried by a refusal record (O-17: each cause
-/// type has a fixed category), so every code is `Category::Refusal` except:
-/// `runtime_invariant`, which is `InternalFault`'s one code and category
-/// `internal failure` (T-4); and `cancelled`, a caller cancellation, which
-/// O-16's `incomplete` row names. `resource_exhausted` is a refusal: QSL
-/// raises it only for a semantic maximum, which the catalog states is not a
-/// caller work budget; an exhausted S6a work budget is the kernel
-/// `Incomplete` outcome, which carries no catalog code. The `unsupported_*`
+/// This is the refusal-record map: the category a code has when a refusal
+/// record carries it (O-17: each cause type has a fixed category). Every
+/// code is `Category::Refusal` except `runtime_invariant`, which is
+/// `InternalFault`'s one code and category `internal failure` (T-4), and
+/// `cancelled`, a caller cancellation, which O-16's `incomplete` row names.
+/// `resource_exhausted` is the caller work-budget code (the catalog's
+/// `insufficient-next-charge`; a semantic maximum is not a work budget). It
+/// is a refusal here, when a refusal record carries it (ADR-013's read-only
+/// ceiling row). When a denied charge stops a run instead, the outcome is
+/// incomplete and still carries `resource_exhausted` (ADR-014 B-2; FR-101's
+/// `Outcome::Stopped`), and that outcome's own category map says so rather
+/// than reading this table. The `unsupported_*`
 /// codes are refusals too: the catalog has no category column, and O-16's
 /// evaluation column rules `unsupported` out of an evaluation outcome.
 /// [`Code::is_incomplete`] and [`Code::is_unsupported`] are the native-v1
@@ -885,8 +889,9 @@ const CATALOG_CATEGORIES: [(&str, Category); 48] = [
 ];
 
 /// FR-090-AC-5: the O-16 category of a catalog code, read from the code
-/// alone. `None` for a code the catalog does not define: an unknown code has
-/// no category, and this map never guesses one.
+/// alone, as a refusal record carries it (`CATALOG_CATEGORIES`). `None`
+/// for a code the catalog does not define: an unknown code has no
+/// category, and this map never guesses one.
 pub fn category_of(code: &CatalogCode) -> Option<Category> {
     catalog_category(code.code())
 }
