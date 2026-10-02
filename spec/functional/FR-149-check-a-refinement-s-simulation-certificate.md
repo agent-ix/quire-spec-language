@@ -133,7 +133,11 @@ pub enum CertificateRejection {
 
 ## Dependencies
 
-- ADR-020 §6a CT-1 to CT-4, RS-1; ADR-029 CB-2 and RU-2.
+- ADR-020 §6a CT-1 to CT-4, RS-1; ADR-018 PC-1, PC-2, PC-5 and LA-3;
+  ADR-029 CB-2 and RU-2.
+- [FR-338](FR-338-check-an-en-1-closure-certificate.md) and
+  [FR-339](FR-339-check-an-en-1-component-certificate.md), EN-1's closure
+  and component checkers, beside which this checker sits in `qsl-replay`.
 - [FR-141](FR-141-decide-one-concrete-step-against-the-abstract-model.md)
   (`check_initial`, `check_step`),
   [FR-142](FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md)

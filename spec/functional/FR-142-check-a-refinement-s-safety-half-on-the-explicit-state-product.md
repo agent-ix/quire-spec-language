@@ -163,7 +163,7 @@ pub fn check_refinement(
 - ADR-020 §2 RS-2 to RS-6, §3 CO-1, §4 AX-2 to AX-4, §5 RE-1 and RE-4, §6
   RC-1; ADR-018 §3 EN-1; ADR-011 §1 S6c and E10 as amended by ADR-018;
   ADR-027 TS-1 and TS-6.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md),
   [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)

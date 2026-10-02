@@ -87,7 +87,8 @@ pub enum StepVerdict {
 pub enum Taken { Stutter, Abstract(Vec<ModelTransition>) }  // abstract identities matched
 ```
 
-`ModelTransition` and `ProtocolTransition` are `quire-semantic-value` types.
+`ModelTransition` and `ProtocolTransition` are `quire-semantic-value` types
+(ADR-018 LA-5).
 
 `RefinementFailure` is ADR-020 RC-1's: `InitialNotAbstract{initial}`,
 `StutterChanged{position}`, `AbstractStepRejected{position, transition,

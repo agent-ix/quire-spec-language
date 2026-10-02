@@ -120,7 +120,7 @@ pub struct MappingUndetermined {
 ## Dependencies
 
 - ADR-020 §1 RM-2, RM-3, RM-7 and §5 RE-4, RE-5; ADR-016 FE-3 and ID-10.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (state key), [FR-107](FR-107-evaluate-state-clauses-at-s6a.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-135](FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md),
