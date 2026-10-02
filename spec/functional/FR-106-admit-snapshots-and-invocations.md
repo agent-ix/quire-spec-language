@@ -49,17 +49,19 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
 - A snapshot provision and an invocation provision: maps from `sha256-jcs`
   digest to document bytes.
 - A `ClauseSelection`.
-- `ObservationLimits`: document bytes (default 1 MiB), JSON nesting depth
-  (default 64), objects per document (default 10,000) and values per
-  document (default 100,000).
+- `ObservationLimits`: document bytes (default 1 MiB), objects per
+  document (default 10,000) and values per document (default 100,000).
+  Documents are read at any nesting depth; the byte, object and value
+  limits bound the read.
 
 ## Outputs
 
 - An `AdmittedObservations` value: for an invariant, one current observation,
   its anchor and the self object; for a precondition selected by `PreCall`,
   the pre observation, the self object and the parameter values; for a
-  precondition or postcondition selected by `Invocation`, the pre and post
-  observations, the self object, the parameter values, the result value or
+  precondition selected by `Invocation`, the same pre-call observation from
+  the invocation's pre snapshot, `self` and parameters; for a postcondition
+  selected by `Invocation`, the pre and post observations, the self object, the parameter values, the result value or
   none, and the admitted invocation delta. Each observation
   holds its `PopulationBinding`s and an `ObjectEnvironment` with every field
   value of every object, and keeps its document identity and digest.
@@ -154,6 +156,17 @@ document order, objects in document order within a population, and fields in
 the object type's declared field order, and it reports the first failing
 object and field.
 
+A precondition's input is the pre-call observation (QSpec FR-046-AC-7,
+FR-208-AC-13). For a precondition selected by `Invocation`, the selected
+documents are the invocation document and its `pre` snapshot only. Admission
+SHALL read the invocation's `self`, `parameters` and `pre` members and that
+snapshot, and SHALL neither require, read nor check the invocation's `post`,
+`result`, `created` or `deleted` members or its `post` snapshot: checks 1,
+3, 4, 6 and 10 skip them, and check 11 does not run. A missing, malformed or
+out-of-frame post side therefore changes nothing. Its admitted observation
+and verdict SHALL equal those of a `PreCall` selection over the same pre
+snapshot, `self` and parameters.
+
 A **required population** is the population holding `self`, every
 declared population of the package that a reference-valued parameter names
 (of an invocation or a `PreCall` selection, in the pre snapshot), and,
@@ -164,22 +177,24 @@ parameter reference naming no declared population makes no population
 required; check 10 settles it.
 
 1. Read check. For each selected document (the snapshot of `Current` or
-   `PreCall`, or the invocation and then its `pre` and `post` snapshots):
+   `PreCall`; the invocation and then its `pre` and `post` snapshots for a
+   postcondition; the invocation and then its `pre` snapshot for a
+   precondition selected by `Invocation`):
    1. If no document is in its provision under the selected digest, then
       admission SHALL return `Incomplete` with `unavailable_observation`/
       `missing-required-artifact` (missing observation evidence is
       incomplete input, QSpec state contract).
-   2. If the bytes exceed the document byte limit, or a value is nested
-      deeper than the depth limit, then admission SHALL refuse
-      `stage_limit_exceeded` with `input-bytes-exceeded` or
-      `nesting-depth-exceeded`.
+   2. If the bytes exceed the document byte limit, then admission SHALL
+      refuse `stage_limit_exceeded`/`input-bytes-exceeded`.
    3. If the document's `sha256-jcs` digest differs from the selected digest,
       then admission SHALL refuse `stale_dependency`/`byte-digest-mismatch`.
       Bytes that do not parse as JSON are digested raw, as FR-056 does, and
       so refuse here. This check comes before any member is read.
    4. If `format` is not the expected format, then admission SHALL refuse
       `unknown_wire`/`unsupported-wire`.
-   5. If a required member is missing, then admission SHALL refuse
+   5. If a required member is missing (for a precondition selected by
+      `Invocation`, `post`, `result`, `created` and `deleted` are not
+      required), then admission SHALL refuse
       `invalid_runtime_input`/`missing-member`, naming the first missing
       member in the member order above.
    6. If an unknown member is present, then admission SHALL refuse
@@ -198,18 +213,20 @@ required; check 10 settles it.
    invariant, then admission SHALL refuse `wrong_snapshot`/
    `wrong-observation`.
 3. Observation role and anchor check. If the current snapshot does not say
-   `current`, a `PreCall` snapshot does not say `pre`, or an invocation's
-   `pre` or `post` snapshot does not say `pre` or `post`, then admission SHALL refuse `wrong_snapshot`/
+   `current`, a `PreCall` snapshot does not say `pre`, an invocation's
+   `pre` snapshot does not say `pre`, or (for a postcondition) its `post`
+   snapshot does not say `post`, then admission SHALL refuse `wrong_snapshot`/
    `wrong-observation`. If the current snapshot's `anchor` differs from the
    selection's, then admission SHALL refuse `wrong_snapshot`/`wrong-anchor`,
    naming both.
-4. Model check. If a document's `model` differs from the package's model
+4. Model check. If a selected document's `model` differs from the package's model
    selection for the clause's alias, then admission SHALL refuse
    `invalid_model_binding`/`wrong-model-selection`.
 5. Operation check. If an invocation's `context` or `operation` differs from
    the clause's, then admission SHALL refuse `wrong_snapshot`/
    `wrong-invocation`.
-6. **Populations and values**, per object in walk order:
+6. **Populations and values**, per object of the selected documents in walk
+   order:
    1. If the population names no population of the package, or the object's
       type is not one of its member types (FR-084), then admission SHALL
       refuse `invalid_runtime_input`/`wrong-role-mapping`.
@@ -248,7 +265,7 @@ required; check 10 settles it.
     parameter or hold an undeclared one, then admission SHALL refuse
     `invalid_runtime_input`/`missing-member` or `unknown-member`; if a value
     does not fit its declared type, `wrong-value-kind` or `invalid-value`, by
-    check 6's value rule. If the result member is `null` for an
+    check 6's value rule. For a postcondition, if the result member is `null` for an
     operation that declares a result, or a value for one that declares none,
     then admission SHALL refuse `invalid_runtime_input`/`missing-member` or
     `unknown-member`. A `PreCall` selection carries no result. A reference
@@ -260,7 +277,8 @@ required; check 10 settles it.
     admission SHALL refuse `dangling_reference`/
     `absent-target-in-complete-population`, naming it and its population
     (check 8's closure rule).
-11. Frame and delta check. For an invocation, admission SHALL run the frame
+11. Frame and delta check. For an invocation selected for a postcondition,
+    admission SHALL run the frame
     check (`enforce_frame` through `admit_invocation`, with the operation's
     `OperationEffect`, FR-103) once per population, in the pre snapshot's
     population document order and then any population only in the post
@@ -305,12 +323,13 @@ required; check 10 settles it.
 |----|----------|--------------|
 | FR-106-AC-1 | The healthy-parent current snapshot above, selected with anchor `handler validate` and `self` = `child` for `ParentOrder`, admits: one observation with population `config_history` complete, objects `root` and `child` with `versionNumber` 1 and 2, `child.parent` present and naming `root`, and the snapshot's identity and digest retained. Re-serializing the document with other whitespace and member order gives the same digest and the same admitted value. Over a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub`, the same snapshot with `child.parent` naming `k`, a `Sub` object of a complete `archive`, admits with `child.parent` naming `k` typed `Sub`. | Test (TC-464) |
 | FR-106-AC-2 | The changed-version invocation (pre: `child` at 2; post: `child` at 3; result `true`; no parameters, created or deleted) selected for `VersionUnchanged` admits, with the pre and post observations distinct and `result` true. | Test (TC-464) |
-| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, a value nested 65 deep, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, another `revision`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter and a result value. | Test (TC-465) |
+| FR-106-AC-3 | Each condition of checks 1 to 6, 9 and 10 has one case that fails only it and returns exactly its code and cause, as TC-465 lists: among them an absent document, a 1 MiB + 1 byte document, bytes edited under their original digest, `format` `native-state-input/1` (`unknown_wire`/`unsupported-wire`), a missing `populations`, an extra member, a blank `authority`, another `revision`, `Current` selecting `VersionUnchanged`, a `pre` document selected as current, anchor `handler other`, another model digest, operation `other`, an unknown population, a duplicate `root` key, a set-typed field, `versionNumber` `{"boolean": true}`, `"01"`, `"-1"` and `"1001"`, `self` = `ghost`, a `result` of `null` for `attemptUpdate`, an object of a type that is not a member type of its population, a missing declared field, an undeclared field, `child.parent` naming an object of a type unrelated to `ConfigVersion` (`wrong-value-kind` at `child`, `parent`), and, for an operation `probe(target: ConfigVersion)` with no result, a missing, an unknown and an ill-typed parameter and a result value. | Test (TC-465) |
 | FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test (TC-465) |
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
 | FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `byte-digest-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `revision_namespace` and `revision` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `revision_namespace`. | Test (TC-465) |
 | FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. In that variant, `target` naming a `Sub` object of a complete `archive` admits, typed `Sub`. Over the base `probe` unit plus an object type `Other` unrelated to `ConfigVersion` and a population `others` over it, `target` naming an `Other` object of a complete `others` refuses `invalid_runtime_input`/`wrong-value-kind`; over the variant plus an operation `probeSub(target: Sub)` on `ConfigVersion` and a precondition on it, `PreCall` with `target` naming `a` refuses `invalid_runtime_input`/`wrong-value-kind`. | Test (TC-464) |
+| FR-106-AC-9 | The forbidden-parent-change invocation (its post sets `child.parent` absent, outside `attemptUpdate`'s frame) selected for a precondition admits the pre observation, `self` and parameters with no post observation, result or delta and no frame check, and the precondition's verdict equals its verdict under `PreCall` over the same pre snapshot, `self` and parameters. The same invocation whose `post` snapshot is absent from the provision, and the same invocation whose `post` snapshot bytes are malformed (not JSON), each admit and give that same verdict, with no `unavailable_observation`, `byte-digest-mismatch` or other refusal. | Test (TC-464) |
 
 ## Dependencies
 
@@ -319,6 +338,6 @@ required; check 10 settles it.
   digest-first order), FR-038 (integer spelling).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` revision `1-draft.8` (every code and cause above).
-- QSpec frames a precondition over an invocation (QSpec FR-046, FR-208).
-  `PreCall` is QSL's form for a precondition observed before the operation
-  runs, with no post state; a QSpec alignment picks it up there.
+- QSpec FR-046-AC-7 and FR-208-AC-13 make a precondition's input the
+  pre-call observation; `PreCall` and a precondition selected by
+  `Invocation` both admit exactly that observation.

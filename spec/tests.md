@@ -249,7 +249,7 @@ names different artifacts in each.
 | TC-461 | S3 records one operation-contract requirement per state clause and frame | Unit | P1 | FR-104-AC-5, FR-104-AC-6 | ✅ Passed locally |
 | TC-462 | S4 emits state clause, operation anchor and frame nodes with their bodies | Integration | P1 | FR-105-AC-1, FR-105-AC-2, FR-105-AC-5 | ✅ Covered |
 | TC-463 | The state package reads back through I2, keeps its identity rules and emits all or nothing | Integration | P1 | FR-105-AC-3, FR-105-AC-4, FR-105-AC-6 | ✅ Passed locally; step 1 covered; steps 2 to 3 covered; step 4 covered |
-| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8 | 🚧 Planned |
+| TC-464 | Snapshot and invocation documents read and admit into an observation set | Unit | P1 | FR-106-AC-1, FR-106-AC-2, FR-106-AC-6, FR-106-AC-8, FR-106-AC-9 | 🚧 Planned |
 | TC-465 | Admission refuses or reports incomplete for each input defect, in check order | Unit | P1 | FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7 | 🚧 Planned |
 | TC-466 | S6a evaluates state clauses over their observations, pre reads and reaches | Integration | P1 | FR-107-AC-1, FR-107-AC-2, FR-107-AC-3 | ✅ Passed locally |
 | TC-467 | S6a clause entry refuses bad selections, reports exhaustion and is deterministic | Integration | P1 | FR-107-AC-4, FR-107-AC-5, FR-107-AC-6 | 🚧 Planned |
@@ -508,6 +508,26 @@ names different artifacts in each.
 | TC-589 | Complete enabling footprints and membership locations keep safety violations under partial-order reduction | Integration | P1 | FR-155-AC-5, FR-155-AC-6, FR-156-AC-5, FR-156-AC-6 | 🚧 Planned |
 | TC-617 | Complete enabling footprints and membership keep fair violations under partial-order reduction | Integration | P1 | FR-157-AC-5, FR-157-AC-6 | 🚧 Planned |
 | TC-886 | Reduced and unreduced runs agree over the model-check corpus | Integration | P1 | FR-160-AC-6 | 🚧 Planned |
+| TC-815 | S1 and S2 build union declaration and case forms | Unit | P1 | FR-313-AC-1, FR-313-AC-2 | 🚧 Planned |
+| TC-816 | S1 parses a case scrutinee without a top-level record and keeps protocol case apart | Unit | P1 | FR-313-AC-3 | 🚧 Planned |
+| TC-817 | S3 admits union declarations, including an escaping recursive union | Unit | P1 | FR-316-AC-1, FR-316-AC-2 | 🚧 Planned |
+| TC-818 | S3 refuses ill-formed union declarations and bounds them only by checking ceilings | Unit | P1 | FR-316-AC-2, FR-316-AC-3, FR-316-AC-4 | 🚧 Planned |
+| TC-819 | S3 checks union construction and refuses FR-143's four construction errors | Unit | P1 | FR-317-AC-1, FR-317-AC-2, FR-317-AC-4 | 🚧 Planned |
+| TC-820 | S3 resolves qualified member names by candidate and refuses ambiguity | Unit | P1 | FR-317-AC-3 | 🚧 Planned |
+| TC-821 | S3 checks a case, types its binders per arm and decides its result type by QSpec FR-146 | Unit | P1 | FR-318-AC-1, FR-318-AC-2 | 🚧 Planned |
+| TC-822 | S3 refuses each exhaustiveness obligation with its payload and locus | Unit | P1 | FR-318-AC-3 | 🚧 Planned |
+| TC-823 | S3 reports exactly one refusal per case, in builder order | Unit | P1 | FR-318-AC-4 | 🚧 Planned |
+| TC-824 | A case checks under each clause kind and adds no requirement record | Unit | P1 | FR-318-AC-5 | 🚧 Planned |
+| TC-825 | Deeply nested case checks under default ceilings and stops only at a named ceiling | Unit | P1 | FR-318-AC-6 | 🚧 Planned |
+| TC-826 | Union, member and case identities are stable and member identity is a retyped VariantId | Unit | P1 | FR-319-AC-1, FR-319-AC-2, FR-319-AC-3 | 🚧 Planned |
+| TC-827 | Union nodes lower and emit in QSpec's spelling and survive the I2 read and recompile | Integration | P1 | FR-320-AC-1, FR-320-AC-2 | 🚧 Planned |
+| TC-828 | A value-validity item containing case settles unsupported downstream | Integration | P1 | FR-320-AC-3 | 🚧 Planned |
+| TC-829 | Argument admission refuses ill-formed supplied union values before any charge | Unit | P1 | FR-321-AC-1, FR-321-AC-2 | 🚧 Planned |
+| TC-830 | Union values round-trip through v2 union_value nodes at any depth | Unit | P1 | FR-321-AC-3, FR-321-AC-4 | 🚧 Planned |
+| TC-831 | S6a evaluates case and construction, propagates stopped operands and faults on a broken invariant | Unit | P1 | FR-322-AC-1, FR-322-AC-2, FR-322-AC-4 | 🚧 Planned |
+| TC-832 | S6a charges union construction at QSpec's accounting point and nothing for case selection | Unit | P1 | FR-322-AC-3 | 🚧 Planned |
+| TC-833 | Union values as collection elements, in queries and in predicates | Unit | P1 | FR-323-AC-1, FR-323-AC-2, FR-323-AC-3, FR-046-AC-9 | 🚧 Planned |
+| TC-834 | Unions compile under the value profile with the same lock selections as records | Integration | P1 | FR-324-AC-1 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -928,7 +948,6 @@ witness waits on agent-ix/quire-contract-ir#109 and
 agent-ix/quire-contract-codegen#49; TC-515 drives a hand-built envelope.
 
 ## StateModel family and abstraction relation (FR-300 to FR-307) coverage
-
 [FR-300](functional/FR-300-check-model-forms-through-the-state-model-family.md)
 to [FR-303](functional/FR-303-keep-the-model-correspondence-one-to-one.md)
 carry ADR-016 G-2a to G-2c, G-7 and G-8: the `StateModel` check hook and its
@@ -957,9 +976,7 @@ declaration (FR-335) and a model subject's universes (FR-336). TC-835 to
 TC-846 back every AC, with TC-847 (undefined letters) and TC-848 (the
 missing fairness premise), all `🚧 Planned`. TC-842 and TC-845 run downstream
 of CG `negotiate_*` with test descriptors.
-
 ## Refinement gates (FR-340 to FR-345) coverage
-
 FR-340 to FR-345 carry ADR-017 §2: the spec-versioning gate's corpus and
 case runs (FR-340), the shared compile classification (FR-341), the run
 classification (FR-342), the prior/superseding comparison (FR-343), the
@@ -970,3 +987,10 @@ with the gate's classification or comparison code. The seeds and controls
 live in a test-only corpus the gate's real run over
 `tests/fixtures/refinement/versioning/` does not read. TC-868's corpus
 covers all five QSpec AD-003 `requires` edges (QSpec FR-453).
+## Sum types and `case` (FR-313 and FR-316 to FR-324) coverage
+TC-815 to TC-834 back every AC of FR-313 and FR-316 to FR-324 and FR-046-AC-9. All are
+`🚧 Planned`. QSpec TC-262 to TC-265 run inside TC-817 to TC-819, TC-822,
+TC-826 and TC-831 under `QSpec-` tags. TC-827's wire assertions,
+TC-830's v2 `union_value` spelling, TC-832's charge points and TC-833's
+union-key order read QSpec's union spelling (FR-440, FR-441), accounting
+(FR-143, FR-146, `value-accounting.md`) and key rules (FR-144).
