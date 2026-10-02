@@ -85,3 +85,9 @@ Round 1, reviewed at `4d6b74ea86d637dff8177014dfbd2ef2c62131d7` (rebased; fix co
 | --- | --- | --- |
 | FND-001 | fixed | 4d6b74ea86d637dff8177014dfbd2ef2c62131d7 |
 | FND-002 | fixed | d0692cc650e02e7da5d938e61fe35f287f7c0617 |
+
+Round 2, reviewed at `65302add82e1540b704fe9e7ebcd30826da2d69b` (rebased; fix commit `65302add`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-003 | fixed | 65302add82e1540b704fe9e7ebcd30826da2d69b |
