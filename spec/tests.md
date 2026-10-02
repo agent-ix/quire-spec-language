@@ -432,7 +432,7 @@ names different artifacts in each.
 | TC-556 | The simulation certificate checker accepts a true relation and rejects a false one | Integration | P1 | FR-149-AC-1, FR-149-AC-2, FR-149-AC-3, FR-149-AC-4, FR-144-AC-7 | 🚧 Planned |
 | TC-889 | S2 builds the refinement form with every row in source order | Unit | P1 | FR-310-AC-1, FR-310-AC-2, FR-310-AC-3 | 🚧 Planned |
 | TC-620 | S3 admits random parameters, workloads and rewards and refuses malformed ones | Unit | P1 | FR-185-AC-1, FR-185-AC-2, FR-185-AC-3, FR-185-AC-4 | 🚧 Planned |
-| TC-643 | S2 builds random-parameter, workload and reward forms | Unit | P1 | FR-274-AC-1, FR-274-AC-2, FR-274-AC-3 | 🚧 Planned |
+| TC-890 | S2 builds random, reward and workload declaration forms | Unit | P1 | FR-311-AC-1, FR-311-AC-2, FR-311-AC-3 | 🚧 Planned |
 | TC-621 | S3 checks probabilistic claim forms, thresholds, units and confidence parameters | Unit | P1 | FR-186-AC-1, FR-186-AC-2, FR-186-AC-3, FR-186-AC-4 | 🚧 Planned |
 | TC-622 | ModelSystem gives actions, step probabilities and rewards, and reports NotMarkov | Integration | P1 | FR-187-AC-1, FR-187-AC-2, FR-187-AC-3, FR-187-AC-4 | 🚧 Planned |
 | TC-623 | The revised sampler draws weighted choices exactly and reproducibly | Integration | P1 | FR-188-AC-1, FR-188-AC-2, FR-188-AC-3 | 🚧 Planned |

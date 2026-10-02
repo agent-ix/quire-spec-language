@@ -25,9 +25,9 @@ checks.
 
 ## Use case
 
-A modeller writes `random d: Quantity<Time> ~ { 1 ms: 90, 3 ms: 7, 12 ms:
-3 }` on an operation, a `workload Steady` with one weight per operation and
-`reward duration = d`. S3 accepts the model, or refuses it with a diagnostic
+A modeller writes `random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms:
+3 };`, a `workload Steady on Service` with one weight per operation and
+`reward duration on Server::attempt = d;` (FR-311). S3 accepts the model, or refuses it with a diagnostic
 that names the declaration and the rule it breaks.
 
 ## Inputs
