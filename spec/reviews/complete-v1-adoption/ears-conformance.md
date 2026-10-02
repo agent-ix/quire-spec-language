@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Quire 0.32.0 reports 527/527 scoped documents grammar-clean and zero EARS
+Quire reports 527/527 scoped documents grammar-clean and zero EARS
 findings. FR-055 uses one event trigger, a named system subject and concrete,
 singular responses; semantic inspection found no trigger/intent mismatch.
 

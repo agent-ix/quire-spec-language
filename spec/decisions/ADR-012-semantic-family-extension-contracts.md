@@ -62,7 +62,7 @@ decision.
   OBS-014, OBS-033), the capability authority DA-11 and the program item L1-D1
   to #210. Its §4.3 lists the dispatch sites, five of them on strings in
   production code. Code citations below use ADR-010's `QSL:<path>:<line>`
-  form at its pinned revision de627b5.
+  form.
 - QSpec AD-016 (accepted) fixes the seven-arrow path for one family, function
   application, from source to native replay. It makes CG `negotiate_*` the
   single capability negotiation point, and it makes QSL admission
@@ -1378,8 +1378,7 @@ populations cannot name exactly one, and refuses at S3 with
 context type belongs to several populations, a run's context object is in
 the population the selection's `self` names (FR-106).
 Recording a requirement grants nothing; no backend proves a state clause
-until IR admits `state` nodes (IR `lower` returns no form for them at the
-pinned revision 48ab5dc).
+until IR admits `state` nodes (IR `lower` returns no form for them).
 
 ### 15.8 Replacement and deletion
 
@@ -1415,12 +1414,11 @@ this record. It is the #221 (ARCH-41) mapping that §14.1 hands to #187
 (QSL-44). It refines §12.1, which was written before QSpec specified the
 feature. Where §12.1 and this section differ, this section holds, and §12.1's
 rows now point here. This section decides no QSpec wire and writes no code.
-Code citations are at QSL `99e9b6c7`.
 
 ### 16.1 Normative inputs
 
 QSpec merged the sum/case design for agent-ix/quire-specification#115 in
-QSpec PR #121 (commit `d70cd64` on QSpec `main`). It has these parts:
+QSpec PR #121. It has these parts:
 
 - the design record, QSpec AD-015 (accepted);
 - the `union-decl`, `union-member`, `case` and `case-arm` productions in

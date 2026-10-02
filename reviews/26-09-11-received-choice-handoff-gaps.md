@@ -40,9 +40,7 @@ stripped-release focused test passed, including the final fixture assertions.
 ## Coverage
 
 Reconciliation: `quire coverage --scope
-/home/peter/dev/worktrees/quire-language-received-choice-handoff --json` (quire
-0.31.0, engine `ca7362d4`; raw report
-`/tmp/quire-received-choice-handoff-coverage.json`) reports 374/383 rows backed.
+/home/peter/dev/worktrees/quire-language-received-choice-handoff --json` reports 374/383 rows backed.
 TC-010 (Manual) and FR-017-AC-2 (Inspection) are `no_source_symbol` exemptions,
 not test-backing failures; the four rows in FND-001 are the remaining ordinary
 gaps. `status_lies` is empty. FR-042 is 9/10 backed corpus-wide and the changed
@@ -51,8 +49,8 @@ fixture has a real `#[trace("TC-121", "FR-042-AC-1", "FR-042-AC-4",
 
 No plan bundle covers protocol-artifact emission (SR-355 precedent), so plan
 completion is inapplicable. The optional semantic review was not selected. The
-focused ignored stripped-release test passed in the final parent-owned log
-`/tmp/quire-received-handoff-gates.log`, alongside formatting, strict minimal
+focused ignored stripped-release test passed in the final parent-owned run,
+alongside formatting, strict minimal
 and all-feature Clippy, and a fresh stripped-release producer invocation.
 This review does not claim corpus or release acceptance.
 

@@ -43,4 +43,4 @@ The checker consumes the reviewed finite-state semantics. Presence facts cannot 
 
 Implemented and qualified through the native checker. TC-025–029 exercise all
 five original reference/operation judgments against the qualified rule model;
-see the checker evidence in reviews/data/native-checking/ and Task-009.
+see Task-009.

@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of b0c02c7 using actual code-review, rust-review and
+Author PR-readiness review using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -34,7 +34,7 @@ The wire boundary constructs fallible typed borrowed views of the already bounde
 IR tree before writing bytes. Unadmitted declarations or nested forms retain
 clause and native source; foreign coordinates become InvalidCorrespondence.
 These views preserve the existing flattened integer contract, without changing
-native semantics or adding a parser. Both pinned IR readers accept actual output.
+native semantics or adding a parser. Both IR readers accept actual output.
 Codegen continues to return its explicit unsupported-expression result for numeric
 programs; that is a tested boundary, not numeric backend qualification.
 
@@ -46,7 +46,7 @@ Shared generators retain named Boolean/operation payloads from the parent and
 propagate selected-path filesystem failures. No dependency, unsafe code,
 request panic, unchecked numeric cast or workflow change was introduced.
 
-At b0c02c7, full local suites pass: 342 ordinary tests plus three compile-fail
+Full local suites pass: 342 ordinary tests plus three compile-fail
 doctests with all features; 326 plus three with minimal features. Four existing
 assurance tests remain ignored in each. Strict all-targets Clippy passes in both
 configurations; formatting, cached minimal binary/example build and

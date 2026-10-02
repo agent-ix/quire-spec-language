@@ -3,7 +3,7 @@ id: SR-087
 title: "Gap analysis of the completed native checking plan"
 type: SpecReview
 analysis: gap-analysis
-scope: "plan/Plan-005-native-checking; source cdb6560; review/handoff 5eb2332 plus final report/status changes"
+scope: "plan/Plan-005-native-checking; source and review/handoff plus final report/status changes"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-005
@@ -31,20 +31,18 @@ The full runtime/backend/Quire assignment remains incomplete.
 
 ## Target and completion evidence
 
-Applied the installed QUOIN gap-analysis skill at
-/home/peter/.codex/plugins/cache/quoin/quoin/0.22.5/skills/gap-analysis/SKILL.md.
+Applied the installed QUOIN gap-analysis skill.
 The target is the repository's Plan-005 bundle, spec/spec.md identifies
 agent-ix/quire-spec-language, and spec/model-linking/tests.md owns TM-003.
-Production/tests were reviewed at cdb6560ea26b9baad725b17ab82a315ae7c39a30;
-5eb2332 adds SR-086 and the actual task log. This report and final completion
+Production/tests were reviewed; a later commit adds SR-086 and the actual task log. This report and final completion
 metadata do not change that tested source. Private PR #10 is pushed and ready
 for review; merge is separate from this plan's reviewable-handoff deliverable.
 
 | Task | Actual completion evidence |
 | --- | --- |
-| Task-011 | Done; occurrence-aware fixture source mapping and separate ownership stages at 08a4fe7, SR-083. TC-054 and the real linker/audit regressions pass in the current full run. |
-| Task-008 | Done; model admission/linkage and TC-040–045 qualified at 0cd679c with SR-084/085. All model/link cases pass in the current full run. |
-| Task-009 | Done; 24 checker tests at cdb6560 cover all thirteen cases. SR-086 records actual IR judgments, exact source/binding behavior, bounded proof expansion and the fixed transitive-population omission. |
+| Task-011 | Done; occurrence-aware fixture source mapping and separate ownership stages, SR-083. TC-054 and the real linker/audit regressions pass in the current full run. |
+| Task-008 | Done; model admission/linkage and TC-040–045 qualified with SR-084/085. All model/link cases pass in the current full run. |
+| Task-009 | Done; 24 checker tests cover all thirteen cases. SR-086 records actual IR judgments, exact source/binding behavior, bounded proof expansion and the fixed transitive-population omission. |
 | Task-010 | Done; all documented gates and code/Rust review pass. Coverage and reverse inspection are recorded here, task/matrix status is reconciled, and the private PR handoff is published. |
 
 Every task's deliverable checkboxes are complete. The plan retains the full
@@ -56,9 +54,7 @@ execution, extra agent, external semantic reviewer, Loom run or fuzz result.
 ## Coverage
 
 Reconciliation: actual `quire coverage --scope
-/home/peter/dev/worktrees/formalization-a-language --json`, using Quire 0.31.0
-(cli 4f6ed024, engine 0.46.0@ca7362d4). Evidence is
-reviews/data/native-checking/checker-coverage.json; no grep fallback was used.
+/home/peter/dev/worktrees/formalization-a-language --json`; no grep fallback was used.
 
 - TM-003: 35/35 backed cases. All have actual execution evidence, including
   the thirteen formerly planned checker cases.
@@ -123,8 +119,7 @@ lint, test assertion or manual-only CI policy was weakened.
 
 ## Validation and claim boundary
 
-Explicit-root Quire spec/plan/review validation passes; command results are under
-reviews/data/native-checking/. SR-086 records the successful required README,
+Explicit-root Quire spec/plan/review validation passes. SR-086 records the successful required README,
 strict Rust and private audit gates for the unchanged source. Final completion
 metadata and this report are validated before commit/publication.
 

@@ -3,12 +3,12 @@ id: SR-269
 title: "Evidence review of owned runtime decoding"
 type: SpecReview
 analysis: evidence
-scope: "FR-024 amendment; TC-099/100; Task-035; implementation 3c6a0e6"
+scope: "FR-024 amendment; TC-099/100; Task-035"
 review_set: all
 ---
 ## Summary
 
-`quoin advise --json` was run and failed CLI version detection despite Quire 0.31.0 (engine 0.46.0@ca7362d4). The catalog was read; the choices below are author judgment, not deterministic recommendations.
+`quoin advise --json` was run and failed CLI version detection. The catalog was read; the choices below are author judgment, not deterministic recommendations.
 
 ## Findings
 

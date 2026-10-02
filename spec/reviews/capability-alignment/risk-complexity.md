@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit cd4f71a (branch `task/229-capability-spec`), the diff
+Reviewed branch `task/229-capability-spec`, the diff
 `origin/main...HEAD`. Checked against the #229 acceptance bullets, QSpec
 `origin/main` FR-290 and AD-016, `src/linking/composed/requests.rs` and
 `tests/composed_admission_stages.rs`.
@@ -71,21 +71,20 @@ sentence or a test step inside this spec.
 
 ## Failure-domain gaps
 
-`spec/reviews/capability-alignment/failure-domain.md` (SR-491) is current for
-cd4f71a. It overlaps here in two places, and this review does not repeat them.
+`spec/reviews/capability-alignment/failure-domain.md` (SR-491) is current. It overlaps here in two places, and this review does not repeat them.
 SR-491 FND-003 covers the retention of refused pairs and a version-refused
 carrier against FR-036. SR-491 FND-010 covers which FR-290 revision v1 denotes.
 FND-003 here depends on that fix.
 
 ## Round 2 dispositions
 
-Checked against the current tree: cd4f71a plus the uncommitted edits.
+Checked against the current tree, including the uncommitted edits.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |
 | FND-001 | resolved | The new "Family-body admission" section states that body checking is language admission, not a capability kind. Every resolved declaration goes to its family checker, and a refused form is never shown as checked (FR-057:184-194). FR-057-AC-5 tests the handoff (FR-057:310). FR-036-AC-6 and TC-115 step 4 test the refusal without a kind (FR-036:139; TC-115:32-36). #213 owns the family-body handoff (FR-057:347-348). |
 | FND-002 | resolved | Settlement parts are consumed as fixture input (TC-155:16-18, 37-39; TC-115:25-31). Negotiation is not a QSL stage (FR-057:232). The routing checks need no #210 placement. |
-| FND-003 | resolved | TC-153 step 1 compares against FR-057's own v1 table as a test constant, pinned to FR-290 at `046d1bd` (TC-153:21-23; FR-057:38-40). |
+| FND-003 | resolved | TC-153 step 1 compares against FR-057's own v1 table as a test constant, pinned to FR-290 (TC-153:21-23; FR-057:38-40). |
 | FND-004 | resolved | FR-036:210-211 now names the FR-057-kind pairs. `tests.md:244-247` records that the TC-115 controls use the four-member vocabulary that #213 replaces. The FR-036-AC-5 criterion names no kind and its control passes today, so ✅ is accurate until #213 rewrites the control. |
 | FND-005 | resolved | FR-331 is qualified and linked as quire-specification's (FR-057:20-21, 223, 269, 287-289). |
 | FND-006 | resolved | "#213 lands the canonical `Capability`, admission and family-body handoff first; #185 builds registration, candidate sets and routing on it" (FR-057:347-349). |

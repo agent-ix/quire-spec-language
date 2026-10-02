@@ -10,7 +10,7 @@ review_set: all
 
 FR-031 has medium technical risk and medium volatility: it adds local request composition over pinned producer contracts. The principal hazards are confusing original/body coordinates, changing ordinary requests and accepting unsupported mode combinations. Explicit identities, a retained byte map, feature/mode negative controls and the full regression suite mitigate these risks. See failure-domain.md; no new concurrency or latency guarantee is introduced.
 
-Author PR-readiness review of `0d3d294`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

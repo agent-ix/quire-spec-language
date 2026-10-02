@@ -3,7 +3,7 @@ id: SR-771
 title: "QSL-309 gap analysis of PR 510 (FR-114 acceptance criteria against TC-513 tests)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@d2c1a5d389c8a94ef820fb66c74ad811586ac7e2; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/test-cases/TC-511-s3-resolves-scoped-anchors-in-nested-scopes.md; spec/test-cases/TC-512-s3-refuses-ambiguous-and-shadowing-names.md (unchanged); spec/test-cases/TC-513-s3-binds-a-protocol-attempt-to-its-operation-frame.md; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-replay/src/spine.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/functional/FR-114-bind-a-protocol-attempt-to-its-operation-frame.md; spec/test-cases/TC-511-s3-resolves-scoped-anchors-in-nested-scopes.md; spec/test-cases/TC-512-s3-refuses-ambiguous-and-shadowing-names.md (unchanged); spec/test-cases/TC-513-s3-binds-a-protocol-attempt-to-its-operation-frame.md; qsl-forms/tests/it/protocol_clause_forms.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-replay/src/spine.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-114
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-309. PR: quire-spec-language#510 at d2c1a5d. There is no plan
+Ticket: QSL-309. PR: quire-spec-language#510. There is no plan
 bundle; the scope is the ticket's five build steps and FR-114-AC-1 to AC-4
 (TC-513).
 
@@ -66,12 +66,12 @@ guard, and update the Status text.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 005647d6: the AC-1 emission test asserts the attempt's anchor and frame on the wire, `contracts == [VersionUnchanged]`, `modifies == [versionNumber]` and one frame record |
-| FND-002 | fixed | 005647d6: `an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record` |
-| FND-003 | fixed | 005647d6: tests for `contracts [ProbePre]` and `on ...::missing` |
-| FND-004 | fixed | 005647d6: `an_inherited_operation_binds_its_declaring_types_anchor_and_frame` |
-| FND-005 | fixed | 005647d6: qsl-replay `a_protocol_with_unchecked_garbage_content_does_not_compile_silently` plus two emission probes |
+| FND-001 | fixed | the AC-1 emission test asserts the attempt's anchor and frame on the wire, `contracts == [VersionUnchanged]`, `modifies == [versionNumber]` and one frame record |
+| FND-002 | fixed | `an_operation_named_only_by_an_attempt_emits_its_anchor_frame_and_record` |
+| FND-003 | fixed | tests for `contracts [ProbePre]` and `on ...::missing` |
+| FND-004 | fixed | `an_inherited_operation_binds_its_declaring_types_anchor_and_frame` |
+| FND-005 | fixed | qsl-replay `a_protocol_with_unchecked_garbage_content_does_not_compile_silently` plus two emission probes |
 | FND-006 | rejected | An attempt under case/branch/await sits in a refused node kind, so the protocol cannot compile whatever S2 captures there. The capture shares one `event_node_anchors` path at every depth |
-| FND-007 | fixed | 005647d6, completed by f976743e (SR-773 FND-001) |
+| FND-007 | fixed | completed under SR-773 FND-001 |

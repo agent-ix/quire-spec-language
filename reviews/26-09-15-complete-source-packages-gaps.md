@@ -49,10 +49,10 @@ TC-223 result. Package tests execute as crate-local tests because semantic
 constructors require an unforgeable crate-issued reader proof; public
 source/editor tests exercise the authority-free exact-reference catalog.
 
-Npm Quire 0.32.0 reports repository-wide coverage of 502/524 matrix rows. Its
+Npm Quire reports repository-wide coverage of 502/524 matrix rows. Its
 remaining rows, unmatched tags and suspicions predate or lie outside #117; the
 manual scoped reconciliation and independent semantic/Rust reviews found no
-unbacked #117 obligation. Native Quoin 0.23.1 does not yet expose `coverage`
+unbacked #117 obligation. Native Quoin does not yet expose `coverage`
 ([quoin#538](https://github.com/agent-ix/quoin/issues/538)); the permitted npm
 fallback supplied this census. Native `quoin validate --repo . --strict`
 reports no repository finding.
@@ -76,8 +76,7 @@ crate-private and test-only; Task-054 must connect the concrete checked reader.
 
 The review found and corrected an upstream allocation drift before recording
 PASS. QSpec PR
-[#67](https://github.com/agent-ix/quire-specification/pull/67) (merge
-`56dd9315929ce870bc9ab2b799d7a11cedfdca43`) now assigns V1-SRC-010/011/013/014
+[#67](https://github.com/agent-ix/quire-specification/pull/67) now assigns V1-SRC-010/011/013/014
 and V1-EXPR-023 primary delivery to QSL #123. V1-EXPR-023 now uses TC-047 for
 typed diagnostic classification while retaining TC-231 final qualification.
 The central manifest, matrix, local Plan-013 and executable allocation fixture

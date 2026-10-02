@@ -18,7 +18,7 @@ relationships:
 
 This bounded enablement step serves US-002/StR-001. It does not complete the
 broader FR-006 type checker or IT-002 state workflow. QUOIN spec-to-plan follows
-the all-analysis review at 257f787 of contract revision 4eb4ef6.
+the all-analysis review of the contract.
 
 ## Dependency Graph
 

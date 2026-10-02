@@ -8,7 +8,7 @@ review_set: all
 ---
 ## Summary
 
-Reviewed the FR-015/TC-041 amendment and TC-065 fixture adaptation at PR readiness against implementation fd69a60. The owner-selected all set applies; no required AssuranceProfile is installed. The sequence slice is reviewable, with matrix status verification still limited by #28.
+Reviewed the FR-015/TC-041 amendment and TC-065 fixture adaptation at PR readiness. The owner-selected all set applies; no required AssuranceProfile is installed. The sequence slice is reviewable, with matrix status verification still limited by #28.
 
 ## Findings
 

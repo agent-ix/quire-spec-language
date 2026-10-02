@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–030 are done at 0d3d294. The standalone binary now executes selected
+Task-021–030 are done. The standalone binary now executes selected
 Markdown clauses through actual Quire extraction and native runtime semantics.
 The complete LC05 adoption and assurance effort remains open.
 

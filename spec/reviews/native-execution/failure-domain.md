@@ -10,7 +10,7 @@ review_set: all
 
 The failed-validation variant has no evaluation fields. Invalid/foreign/unavailable requests retain their original offered bytes and selection. Validation status precedence, terminal reasons, evaluation stop prefixes and cancellation survive composition; caller poll panics retain existing unwind behavior.
 
-Author PR-readiness review of `9c3e5ff`, following implementation as directed.
+Author PR-readiness review, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

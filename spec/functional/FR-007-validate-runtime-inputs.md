@@ -86,8 +86,8 @@ Diagnostic detail capacity and a separate terminal stop reason follow
 
 ## Status
 
-Validation is qualified at 45ed1b4 by SR-097: all fifteen acceptance criteria
+Validation is qualified by SR-097: all fifteen acceptance criteria
 have executed evidence in 35 public API tests. Reference execution is qualified
-at 48f53ae by SR-098. Task-015 owns the complete native API review/handoff;
+by SR-098. Task-015 owns the complete native API review/handoff;
 remaining LC03/backend/Quire issue-level acceptance is separate.
 Remaining LC02/FS03 issue acceptance is separate from the landed checker API.

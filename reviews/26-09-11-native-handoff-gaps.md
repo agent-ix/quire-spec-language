@@ -14,9 +14,9 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` rerun over correction source `56c1621` with a fresh
+QUOIN `gap-analysis` rerun over the correction source with a fresh
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-handoff
---json` (quire 0.31.0). The correction adds one matrix row and no test, so the
+--json`. The correction adds one matrix row and no test, so the
 corpus reconciliation moves from 367/376 to 368/377 backed with the same six
 unbacked rows, two method-exempt rows, twenty untracked `NFR-007-M-*` symbols,
 three unmatched `IT-004` tags and zero status lies. Steps 1-3 ran; the optional
@@ -75,13 +75,11 @@ owns generated Boolean execution and is unrelated to this example.
 | Status lies | 0 | — |
 | FR-042 acceptance criteria | 9 / 10 backed | `FR-042-AC-10` unbacked, pending quire-protocol IT-001 |
 
-Raw report retained at `/tmp/quire-native-handoff-recheck-coverage.json`.
-
 ## Step 3 — underspecified code (reverse gap)
 
 Unchanged and still fully owned: both example files carry `FR-042/TC-121` module
 headers, the README states the requirement contract, and the increment adds no
-`pub` library API, test symbol or trace tag. The restructuring in `915f479`
+`pub` library API, test symbol or trace tag. The restructuring
 introduced new private types (`Inputs`, `DefinitionInputs`, `SelectedInputs`,
 `StageIssue`, `ProofCause`) inside the example module only; none is a stub,
 placeholder return or re-export-only module, and the built binary still executes

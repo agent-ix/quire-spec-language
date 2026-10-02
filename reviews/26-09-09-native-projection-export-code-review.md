@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of d1fcf16 using actual code-review, rust-review and
+Author PR-readiness review using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -36,15 +36,15 @@ unmapped_span retained for invalid coordinates. Boxing metadata resolves the
 strict result_large_err finding without suppressing it. No new unsafe code,
 parser, dependency, unchecked cast or recoverable-input panic was introduced.
 
-Four binary tests exercise exact output through both pinned IR readers and
+Four binary tests exercise exact output through both IR readers and
 actual codegen/syn output, later-clause refusal, fresh retry, shared intake and
 command-specific arity. Two unit tests cover coordinate resolution and controlled
 adapter serialization/classification; these are not claimed as end-to-end
 production failures. Shared fixture variants name flag/frame payloads and adverse
 request cases use exhaustive enum dispatch.
 
-At b910d64, 311 tests plus three compile-fail doctests passed, with four existing
-assurance tests ignored. After boxing metadata at d1fcf16, all 21 library/lower
+311 tests plus three compile-fail doctests passed, with four existing
+assurance tests ignored. After boxing metadata, all 21 library/lower
 tests, strict all-targets/all-features Clippy, formatting, cached minimal build
 and warnings-denied rustdoc passed. Cargo phases ran serially with one build job.
 No hosted CI ran. This author review does not claim independent acceptance,

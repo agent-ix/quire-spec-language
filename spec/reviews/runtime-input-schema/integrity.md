@@ -3,7 +3,7 @@ id: SR-278
 title: "Integrity review of the runtime input schema"
 type: SpecReview
 analysis: integrity
-scope: "FR-024 amendment and TC-099/100 at f4679ef"
+scope: "FR-024 amendment and TC-099/100"
 review_set: all
 ---
 ## Summary

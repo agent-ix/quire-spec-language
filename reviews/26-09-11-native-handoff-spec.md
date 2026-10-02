@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Base checklist rerun over correction source `56c1621`, which changes FR-042
+Base checklist rerun over the correction source, which changes FR-042
 Inputs, TC-121 steps 1 and 10, and the TC-121 matrix rows. No
 `type: AssuranceProfile` document exists in the local specification scope, so no
 `review_selection` is enforced and the owner's selection stands: base set,
@@ -45,7 +45,7 @@ accurate against FR-042 and still understate rather than overstate coverage; one
 | FR quality: description, inputs, outputs, behavior, error conditions, criteria | pass — Inputs now owns the cross-repository inventory transfer as well as the three caller-supplied revision namespaces; typed refusal vocabulary still named, not paraphrased |
 | Six coverage rules | pass — every AC maps to TC-121, and AC-10's distinct open state is now expressible: it reads `backed: false` in the FR-042 criterion group (9/10) because its verification cell cites quire-protocol IT-001 alongside TC-121 |
 | Cross-referencing, terminology | pass — FR-042 ↔ US-004 ↔ TC-121 ↔ IT-001 all resolve, and TC-121 step 1 now also resolves to the delivered recipe |
-| Grammar corpus | 398/398 docs grammar-clean (`/tmp/quire-native-handoff-corrections-spec.log`) |
+| Grammar corpus | 398/398 docs grammar-clean |
 
 ## Claims checked against the corrected requirement
 

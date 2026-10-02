@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–027 are done; selected-package execution is implemented at 4f15f0f.
+Task-021–027 are done; selected-package execution is implemented.
 Broader LC05 producer adoption and deferred assurance remain open.
 
 ## Verdict

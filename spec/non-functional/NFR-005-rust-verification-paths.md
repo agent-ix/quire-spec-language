@@ -24,24 +24,22 @@ wrapper is not an exemption.
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Owned Python audit executables or CI invocations | 0 | 0 | inspection |
 | Non-Rust verification logic launched by the audit command | 0 | 0 | integration-testing |
 
 ## Verification
 
-Inspect CI, executable files and documented commands after removing the four
-Python helpers. Execute the Rust self-test check without Python or Node in the
+Execute the Rust self-test check without Python or Node in the
 command's environment; run the optional packet/syntax modes against
 the selected local fixtures. Trace actual test functions to TC and AC identities
 with imported `ix_trace_rs::trace` and canonical `#[trace("TC-...", "FR-...-AC-...")]`
 attributes under the installed Quire/module grammar. Legacy doc-comment tags
 are not the convention for new tests. `#[cfg(test)]` controls compilation only.
 Quire checks actual bindings separately from the macro's argument-shape check.
-Use pinned serde 1.0.229 for the Rust audit target's strict JSON and reuse
-thiserror 2.0.20 for the audit error envelope. Native Diagnostic implements
+Use serde for the Rust audit target's strict JSON and reuse
+thiserror for the audit error envelope. Native Diagnostic implements
 standard error traits directly to preserve its source-identity field, as
 specified in FR-010. Use
-tempfile 3.27.0 only for isolated Rust test
+tempfile only for isolated Rust test
 fixtures; all offer MIT OR Apache-2.0 and retain their original grants.
 Use the existing shared ix-trace-rs marker as a dev-dependency tracking its
 `main` branch, retaining its AGPL-3.0-or-later grant. No local marker implementation or

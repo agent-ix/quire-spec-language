@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit: 048deb3 (branch `task/210-family-extension`), plus the
+Reviewed branch `task/210-family-extension`, plus the
 uncommitted two-line Context edit that adds the `ADR-012 S<n>` citation form.
 That edit changes no finding. The `spec/spec.md` index row (line 388) and the
 `ADR-012` relationship (line 39) are present and consistent with the record.
@@ -45,12 +45,12 @@ The medium findings are about whether slices can be built as sized:
   covers them (FND-009);
 - #185, #188 and #189 wait on a CG ticket that has not been opened (FND-002).
 
-Verdict: ACCEPT WITH FINDINGS (round 2, commit 8fb238b). The round-1 verdict
-at 048deb3 was REJECT (1 high, 7 medium, 5 low); see Round 2.
+Verdict: ACCEPT WITH FINDINGS (round 2). The round-1 verdict
+was REJECT (1 high, 7 medium, 5 low); see Round 2.
 
 ## Method
 
-- Read ADR-012 at 048deb3 and its working-tree diff, the `spec/spec.md` index
+- Read ADR-012 and its working-tree diff, the `spec/spec.md` index
   row, ADR-010 (§4.3 dispatch sites, OBS/DA routing) and the issue bodies of
   #210, #205, #212, #185, #213, #214, #221 and #229.
 - Read accepted QSpec AD-016 (`origin/main`): terminal-disposition rule,
@@ -128,9 +128,9 @@ still aggregate after a clause is refused).
 
 ## Round 2
 
-Reviewed commit: 8fb238b (branch `task/210-family-extension`), against the
+Reviewed branch `task/210-family-extension` against the
 round-1 findings above, using
-`git diff 048deb3 8fb238b -- spec/decisions/`. The revision was also checked
+`git diff -- spec/decisions/`. The revision was also checked
 against QSpec AD-016 and against FR-290 and AD-010 as amended by merged QSpec
 PR #133. Round-1 verdict: REJECT (1 high, 7 medium, 5 low).
 
@@ -182,10 +182,10 @@ names the owner that holds the remaining work.
 | FND-015 | Fixed: §7.2 has the orchestrating binary pass every registered `BackendId` through CG's conversion before negotiation, and refuse the run if one has no CG kind. |
 | FND-016 | Fixed: §5.3 states that S1–S4 and their match sites are in the one QSL crate (§1). Cross-repository seams are probed in their own repositories. |
 
-## PR review (QSL PR #234, delta 43677c9..10664aa)
+## PR review (QSL PR #234)
 
-The PR reviewer checked the author-closure lines above against ADR-012 at
-10664aa. FND-002, FND-004, FND-006 and FND-013 to FND-016 are confirmed
+The PR reviewer checked the author-closure lines above against ADR-012.
+FND-002, FND-004, FND-006 and FND-013 to FND-016 are confirmed
 fixed. One effect of FND-006 is still open: after the S1 row moved the hook
 calls to S2 and S3 arms, §13.5 still says "every S1 dispatch seam has one arm
 per family" (SR-474 PR-N4). The open PR findings are in SR-474.

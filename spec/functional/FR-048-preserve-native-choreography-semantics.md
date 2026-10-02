@@ -197,7 +197,7 @@ resource incompleteness and emits no static subject.
 | FR-048-AC-7 | Registration, activation policy, retry attempt, effect, commit and recovery remain distinct; swapped anchors/operations/subjects or a commit-before-recovery mutation refuse with typed causes. The artifact retains the exact causal-order, semantic-trigger, receipt-provenance and no-reactivation requirements for downstream F/B assessment without claiming that any runtime trigger set satisfies them. | Test (TC-134) |
 | FR-048-AC-8 | Recovery retains exact target/captures, relationship/population closure, temporal activation/deadline and progress requirements. A timed subject uses `/2` with every selected temporal definition identity/revision/raw-byte digest/artifact and exactly one tagged clock configuration; `/1` remains strict and cannot carry or infer them. A missing static domain-package declaration is unsupported; missing concrete assessment authority remains an external incomplete/refused outcome and is never represented by A as recovery success. | Test (TC-134) |
 | FR-048-AC-9 | The release compiler emits canonical bytes and selections that B independently rederives and admits through its public Rust intake; source/domain-package/artifact/result digest substitution or recanonicalization refuses. | Test (TC-135) |
-| FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned pinned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
+| FR-048-AC-10 | A's release compiler contributes the exact source-derived artifact, selection and static binding requirements to the separately owned campaign run. The contribution is byte-identical at B's intake and retains every required domain-package, L5 and F role selection; A's local evidence does not claim PT02 truth, observation adequacy, batch/incremental agreement or campaign completion. | Test (TC-135) |
 
 ## Dependencies
 
@@ -208,8 +208,8 @@ from spec artifacts through quire-rs and the FCD semantic IR crates. F's
 observation contract owns concrete record/correlation, availability, membership,
 completeness, progress and closure assertions.
 
-The pinned external L5 requirement and Rust-interface baseline is merged PR #70,
-compiler revision `72507f8`, comprising FR-043/044/045 and
+The external L5 requirement and Rust-interface baseline is merged PR #70,
+comprising FR-043/044/045 and
 `temporal::evaluate`, `temporal::evaluate_with_progress` and
 `temporal::mapping_support`. That baseline records its narrow A-owned prerequisite:
 `quire.compiled-protocol/2` must extend `/1` with each selected temporal

@@ -10,7 +10,7 @@ review_set: all
 
 Reviewed wrong language, malformed/foreign/multiple clauses, unresolved names, ill-typed predicates and exhausted stages. The API retains the verified map and original typed error; only native locations are mapped. It returns no partial package and fresh calls receive fresh budgets.
 
-PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
+PR-readiness review of implementation baseline; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

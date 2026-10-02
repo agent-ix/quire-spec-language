@@ -3,7 +3,7 @@ id: SR-743
 title: "QSL-293 gap analysis of PR 493 (FR-096-AC-1 embedded body)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@09e9d18585d4aed678ce681ef824a24b19a24b27; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/test-cases/TC-426-a-check-location-resolves-to-its-unit-region.md; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-source/src/lib.rs; qsl-foundation/src/source_map.rs"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/test-cases/TC-426-a-check-location-resolves-to-its-unit-region.md; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-source/src/lib.rs; qsl-foundation/src/source_map.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493 at 09e9d185.
+Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493.
 
 TC-426 step 3 is backed by
 `an_embedded_body_resolves_its_locations_under_the_document_shifted`,
@@ -23,7 +23,7 @@ the checked package. It checks the source reference, the start and end
 positions, and the document bytes. Steps 1, 2 and 4 are backed by the
 QSL-239 tests, so all four steps are covered.
 
-Mutation check: a detached worktree at 09e9d185 with its own
+Mutation check: a detached worktree with its own
 `CARGO_TARGET_DIR`, running `cargo test -p qsl-semantics --lib
 check::region::tests::an_embedded`. The baseline passed (4/4 region tests).
 Eight mutants were run. Five were killed: the shift is dropped (the embedding
@@ -47,5 +47,5 @@ deferred with a ticket and an honest FR-096 Status line.
 
 | ID | Disposition |
 | --- | --- |
-| FND-001 | deferred: filed as QSL-294 ("Wire qsl-source's document embedding map into PackageDeclarations (FR-096-AC-1 end to end)"), a child of QSL-293, per the reviewer's ruling. FR-096's Status (aea25ff46537b3d00ca787cd55d2c09290960fa6) now states the gap plainly and links QSL-294. |
-| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: added `an_embedding_for_a_different_body_is_ignored` and `a_span_the_embedding_splits_has_no_region` (kills mutant (c), and the SR-742 FND-001 identity mutant), plus declaration-region assertions through `regions.declaration_region(0)` and `checked.declaration_region(0)` in `an_embedded_body_resolves_its_locations_under_the_document_shifted` (kills mutants (a) and (b)). All three re-run and killed post-fix. |
+| FND-001 | deferred: filed as QSL-294 ("Wire qsl-source's document embedding map into PackageDeclarations (FR-096-AC-1 end to end)"), a child of QSL-293, per the reviewer's ruling. FR-096's Status now states the gap plainly and links QSL-294. |
+| FND-002 | fixed: added `an_embedding_for_a_different_body_is_ignored` and `a_span_the_embedding_splits_has_no_region` (kills mutant (c), and the SR-742 FND-001 identity mutant), plus declaration-region assertions through `regions.declaration_region(0)` and `checked.declaration_region(0)` in `an_embedded_body_resolves_its_locations_under_the_document_shifted` (kills mutants (a) and (b)). All three re-run and killed post-fix. |

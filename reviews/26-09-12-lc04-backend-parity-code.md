@@ -3,7 +3,7 @@ id: SR-403
 title: "Code and Rust review of LC04 backend parity completion"
 type: SpecReview
 analysis: code-review
-scope: "d2154af; tests/native_backend.rs; tests/fixtures/native-lowering; FR-009-AC-5; IT-008; TC-094"
+scope: "tests/native_backend.rs; tests/fixtures/native-lowering; FR-009-AC-5; IT-008; TC-094"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-009
@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-PASS at `d2154af`. The actual code review dispatched through the Rust lane. The
+PASS. The actual code review dispatched through the Rust lane. The
 change is qualification-only: it compiles codegen's generated strategy and
 oracles, runs the strategy through proptest's real runner, requires all eight
 Boolean assignments, compares native and independent truth, and observes each

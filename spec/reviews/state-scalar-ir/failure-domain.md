@@ -8,10 +8,10 @@ review_set: subset
 ---
 ## Summary
 
-Current recheck scope is narrowed to the one applicable analysis for correction
-`09c50a5` against integrated baseline `87b35ea`: public versus defensive failure
+Current recheck scope is narrowed to the one applicable analysis for the correction
+against the integrated baseline: public versus defensive failure
 boundaries, exact context and read identity, and finite alias work in the two
-edited spec artifacts. The earlier all-set review of `b789eed` is historical; its
+edited spec artifacts. The earlier all-set review is historical; its
 PASS is not the current verdict. No AssuranceProfile document exists.
 
 Public versus defensive boundary. FR-034 now separates three caller-reachable

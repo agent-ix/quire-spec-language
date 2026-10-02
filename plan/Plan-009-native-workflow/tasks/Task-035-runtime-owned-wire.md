@@ -20,7 +20,7 @@ foreign identifiers, and test direct/nested records and required nullable result
 The standalone runtime-input schema and upstream IR resource classification
 remain separate follow-ups. Run QUOIN all-set and code/Rust reviews at PR readiness.
 
-Implemented at 3c6a0e6. Three new public-API tests cover eleven records and all
+Implemented. Three new public-API tests cover eleven records and all
 ten value variants; two tests reproduced direct positional-array acceptance
 before the fix. Local suites pass 353/337 ordinary tests with all/minimal features,
 plus three compile-fail doctests in each. PR-readiness reviews are SR-265–274;

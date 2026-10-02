@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–026 are done; source-only compiler export is implemented at f0cfe7b.
+Task-021–026 are done; source-only compiler export is implemented.
 Broader LC05 producer adoption and deferred assurance remain open.
 
 ## Verdict

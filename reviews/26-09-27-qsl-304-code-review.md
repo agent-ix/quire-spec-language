@@ -3,12 +3,12 @@ id: SR-765
 title: "QSL-304 code review (with rust-review lane) of PR 506"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@1d58b150d62709540b21adcf474ead696251aebb; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; qsl-semantics/src/model/observation/document.rs (admit_scalar; unchanged); quire-exact/src/integer.rs (Integer::from_str; unchanged); qsl-semantics/tests/it/type_environment_model.rs (RedefinitionWidens tests; unchanged); qsl-replay/src/spine/clause/tests.rs (separate ConfigVersion builder; unchanged)"
+scope: "agent-ix/quire-spec-language; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; qsl-semantics/src/model/observation/document.rs (admit_scalar; unchanged); quire-exact/src/integer.rs (Integer::from_str; unchanged); qsl-semantics/tests/it/type_environment_model.rs (RedefinitionWidens tests; unchanged); qsl-replay/src/spine/clause/tests.rs (separate ConfigVersion builder; unchanged)"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-304. PR: quire-spec-language#506 at 1d58b150, base f17c2d4f.
+Ticket: QSL-304. PR: quire-spec-language#506.
 Methods: code-review with the rust-review lane folded in.
 
 The PR flips the shared `ConfigVersion` fixture's `versionNumber` from
@@ -70,8 +70,8 @@ Rust-review lane: test-only diff. The `unwrap()`/`expect()` calls are in
 tests, and there are no new panics or casts in production code. The findings
 below are stale documentation and duplicated fixture code.
 
-Gates, run fresh by me in the worktree (not taken from the PR's log): at
-1d58b150, `make ci` exited 0. The log has 93 `test result: ok` lines and 0
+Gates, run fresh by me in the worktree (not taken from the PR's log):
+`make ci` exited 0. The log has 93 `test result: ok` lines and 0
 FAILED, and the `it` binary ran 229 tests.
 
 ## Findings
@@ -93,9 +93,9 @@ and duplication fixes that belong in this PR.
 
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | e59e1ff8 — header now states `versionNumber` is the bound `VersionNumber` scalar and out-of-bound values refuse at admission (TC-465 rows 20/30) |
-| FND-002 | fixed | e59e1ff8 — module doc now says `delta` is typed by the same `VersionNumber` declaration; the dedicated test's doc no longer cites a removed scope note or a substitution |
-| FND-003 | fixed | e59e1ff8 — the comment says the redefinition matches the redefined type and admits; widening is covered in `type_environment_model.rs` |
-| FND-004 | fixed | e59e1ff8 — `version_number_identity()` and `version_number_bound()` replace the four interval constructions and three identity re-spellings; `bound_integer_value_type_admits_and_assembles` reuses `version_number_value_type()`, and the `appliesTo` explanation moved into that helper |
+| FND-001 | fixed | header now states `versionNumber` is the bound `VersionNumber` scalar and out-of-bound values refuse at admission (TC-465 rows 20/30) |
+| FND-002 | fixed | module doc now says `delta` is typed by the same `VersionNumber` declaration; the dedicated test's doc no longer cites a removed scope note or a substitution |
+| FND-003 | fixed | the comment says the redefinition matches the redefined type and admits; widening is covered in `type_environment_model.rs` |
+| FND-004 | fixed | `version_number_identity()` and `version_number_bound()` replace the four interval constructions and three identity re-spellings; `bound_integer_value_type_admits_and_assembles` reuses `version_number_value_type()`, and the `appliesTo` explanation moved into that helper |

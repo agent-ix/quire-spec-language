@@ -31,8 +31,7 @@ separate acceptance work.
 
 ## Preconditions
 
-Record source revision, Rust 1.98.1, IR 690bde7, adopted standard e897f81 and
-all source/model/package/input digests. The new package specification and all
+The new package specification and all
 eight selected QUOIN reviews must pass before implementation. IT-006's existing
 native pipeline is qualified. A missing package implementation leaves this
 test planned; a setup failure cannot be substituted for a package refusal.

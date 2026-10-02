@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness re-review of d7437e2 with actual code-review, rust-review and
+Author PR-readiness re-review with actual code-review, rust-review and
 portable rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -31,7 +31,7 @@ semantics. No new crate is justified by an independent consumer. RunResult.value
 is now an immutable NativeResult; as_value() exposes a borrowed view. RunError.value()
 is fallible so serialization errors propagate instead of panicking.
 
-Full tests passed at 1971d36: 294 tests and three compile-fail doctests, four
+Full tests passed: 294 tests and three compile-fail doctests, four
 existing ignored. After the package accessor, stream assertion and immutable
 wrapper, all 14 focused command/CLI/catalog tests, strict all-targets/all-features
 Clippy, formatting and warnings-denied rustdoc passed. The cached minimal build

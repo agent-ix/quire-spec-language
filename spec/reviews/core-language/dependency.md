@@ -3,7 +3,7 @@ id: SR-394
 title: "Dependency review of the retrospective L3, L4, L5 and L6 compiler packet"
 type: SpecReview
 analysis: dependency
-scope: "FR-046–050; NFR-009; TC-126–138; IT-009; compiled-protocol v2 contract; master index and TM-003; #40 at merged L5 revision 72507f8"
+scope: "FR-046–050; NFR-009; TC-126–138; IT-009; compiled-protocol v2 contract; master index and TM-003; #40 after merged L5"
 review_set: subset
 review_date: "2026-09-11"
 relationships:
@@ -23,8 +23,7 @@ FR-046–050/NFR-009 product graph is acyclic when its authored allocation is re
 as written. FR-049 and NFR-009 now supply the missing composed input, outcome and
 work-accounting layer before FR-046/047 runtime features. FR-050 separately owns
 the narrow `quire.compiled-protocol/2` temporal-authentication extension required
-by the latest compiler #40 decision after merged L5 revision
-`72507f856457ba0922719bd5d9f5cadcce4058cd`; FR-048 depends on FR-050 only for
+by the latest compiler #40 decision after merged L5; FR-048 depends on FR-050 only for
 the timed choreography path. D, E, F and B retain their named authorities rather
 than becoming compiler implementation.
 
@@ -49,9 +48,9 @@ dependent positive acceptance cases.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | **Original:** FR-046/047/048 each depend on the whole FR-042, while FR-042-AC-4..6 and AC-10 require complete query/graph/choreography emission and the real consumer handoff. Read literally, FR-042 must complete before the new stages and cannot complete until their outputs exist. Split or name the already available artifact-schema/reader/emitter boundary as enablement, then place FR-042 family-completeness and handoff acceptance after the applicable new feature outputs.<br><br>**Recheck — resolved:** FR-046/047/048 and new FR-049 now `reference` FR-042 and name only its implemented artifact-core portions. FR-050 alone depends on FR-042 to extend that core; FR-048 depends on FR-050, and no FR-042 edge returns to either requirement. The latest #40 `/2` decision is therefore a forward edge, not a cycle. | FR-046/047/048 frontmatter and Dependencies; FR-042 Inputs, Behavior, AC-4..6, AC-10 and Dependencies; FR-049/050; #40 `/2` comment after `72507f8` |
+| FND-001 | high | **Original:** FR-046/047/048 each depend on the whole FR-042, while FR-042-AC-4..6 and AC-10 require complete query/graph/choreography emission and the real consumer handoff. Read literally, FR-042 must complete before the new stages and cannot complete until their outputs exist. Split or name the already available artifact-schema/reader/emitter boundary as enablement, then place FR-042 family-completeness and handoff acceptance after the applicable new feature outputs.<br><br>**Recheck — resolved:** FR-046/047/048 and new FR-049 now `reference` FR-042 and name only its implemented artifact-core portions. FR-050 alone depends on FR-042 to extend that core; FR-048 depends on FR-050, and no FR-042 edge returns to either requirement. The latest #40 `/2` decision is therefore a forward edge, not a cycle. | FR-046/047/048 frontmatter and Dependencies; FR-042 Inputs, Behavior, AC-4..6, AC-10 and Dependencies; FR-049/050; #40 `/2` comment after merged L5 |
 | FND-002 | high | **Original:** FR-046 and FR-047 require validated immutable runtime sequences/populations/graphs, incomplete-input classification, caller-lowered evaluation limits, exact usage and fresh retry, but neither selects FR-007/FR-018/NFR-006 nor a replacement composed runtime-input contract. Static FR-040 and artifact FR-042 do not produce these runtime inputs. Select an existing compatible boundary criterion by criterion or add a separate composed runtime-intake/accounting enablement requirement before runtime implementation.<br><br>**Recheck — resolved:** FR-049 defines `AdmittedPackage` + declaration-local `EvaluationRequest` + immutable `StateView` + typed outcomes. NFR-009 defines fourteen independent input/expression/predicate/query/comparison/graph counters under `quire.state.evaluation-work/1`. FR-046/047 depend on FR-049 and are constrained by NFR-009; TC-136/137 and TM-003 cover the new seam. | FR-046 Inputs, Behavior, AC-3..7; FR-047 Inputs, Behavior, AC-2..7; TC-127–131; FR-018; NFR-006; FR-049; NFR-009; TC-136/137 |
-| FND-003 | high | **Original:** Full FR-048 acceptance has hard external prerequisites that are not represented as dependency edges: authoritative producer relationship/correspondence/population/clock exports; B artifact admission and PT02 conformance; F observation, progress and completeness intake; and selected temporal settlement meaning. `references` links to B do not express must-complete-before acceptance, and no F/temporal target is linked. Separate compiler implementation dependencies from cross-repository acceptance gates and identify exact versioned interfaces/requirements.<br><br>**Recheck — resolved for compiler scope; external gates remain open:** FR-048 now depends on D FR-100–104, local L5 FR-043/044/045 and FR-050, pins Producer interface 1.2.0 at `6259d3a5b99088740df9bcc8e8d60f3720aaa603`, and allocates E/F/B semantics explicitly. AC-10 and TC-135 now limit A's result to byte-exact compilation/preservation. D research #39/#49 owns the aggregate campaign pending repository transfer, so PT02 truth, observation adequacy and campaign completion are downstream evidence rather than hidden compiler implementation edges. | FR-048 Inputs, Behavior, AC-1, AC-6, AC-8..10 and Dependencies; TC-132, TC-134, TC-135; IT-009 Preconditions and former SC-06; FR-050; local FR-043/044/045 merged at `944abdb` from `72507f8` |
+| FND-003 | high | **Original:** Full FR-048 acceptance has hard external prerequisites that are not represented as dependency edges: authoritative producer relationship/correspondence/population/clock exports; B artifact admission and PT02 conformance; F observation, progress and completeness intake; and selected temporal settlement meaning. `references` links to B do not express must-complete-before acceptance, and no F/temporal target is linked. Separate compiler implementation dependencies from cross-repository acceptance gates and identify exact versioned interfaces/requirements.<br><br>**Recheck — resolved for compiler scope; external gates remain open:** FR-048 now depends on D FR-100–104, local L5 FR-043/044/045 and FR-050, selects Producer interface 1.2.0, and allocates E/F/B semantics explicitly. AC-10 and TC-135 now limit A's result to byte-exact compilation/preservation. D research #39/#49 owns the aggregate campaign pending repository transfer, so PT02 truth, observation adequacy and campaign completion are downstream evidence rather than hidden compiler implementation edges. | FR-048 Inputs, Behavior, AC-1, AC-6, AC-8..10 and Dependencies; TC-132, TC-134, TC-135; IT-009 Preconditions and former SC-06; FR-050; local FR-043/044/045 as merged from L5 |
 | FND-004 | medium | **Original:** The master index table lists FR-046/047/048, but its frontmatter `relationships` contains no `contains` edge for any of them. They are therefore visible in prose while absent from the master relationship graph.<br><br>**Recheck — resolved:** The master frontmatter contains one edge each for FR-046/047/048 and now also FR-049/050 and NFR-009; the Requirements table lists the same expanded set. | spec/spec.md frontmatter and Requirements table |
 | FND-005 | medium | **Original:** IT-009 declares requirement-wide `verifies` relationships to FR-047 and FR-048, but its procedure checks static producer correspondence, role retention and B intake. It does not execute positive-length graph traversal, query runtime, repeat progress, compensation recovery, or the A→B→F assessment campaign. Narrow the relationship to the criteria actually exercised or classify IT-009 as an integration enablement gate; do not use it as whole-requirement completion evidence.<br><br>**Recheck — resolved:** IT-009 now verifies only its actual existing FR-036 static-linking requirement and references FR-046–050/NFR-009. Its objective, five-step procedure and expected result exclude evaluation, graph traversal, conformance and F assessment. | IT-009 Objective, Test Procedure and relationships; FR-047-AC-3..7; FR-048-AC-3..10 |
 | FND-006 | medium | **Original:** TC-135 explicitly verifies FR-042 and names FR-042-AC-10 in the Test Case Summary, but the FR-042-AC-10 coverage row still maps only TC-121. The terminal A→B→F gate is disconnected from the existing criterion row, so matrix reconciliation cannot use TC-135 consistently.<br><br>**Recheck — resolved:** TM-003 maps FR-042-AC-10 to both TC-121 and TC-135, while TC-135 keeps its compiler contribution distinct from the D-owned research #39/#49 campaign result. | TC-135 relationships; TM-003 Test Case Summary; TM-003 FR-042-AC-10 row |
@@ -74,7 +73,7 @@ misclassified as product features.
 | NFR-009 | Enablement | Supplies the shared finite accounting contract that constrains FR-049, FR-046 and FR-047 evaluation work. |
 
 Existing FR-035/036/038/040/041 and FR-042's implemented `/1` artifact core are
-prior enablement. Merged L5 FR-043/044/045 at `72507f8` supplies the evaluator,
+prior enablement. Merged L5 FR-043/044/045 supplies the evaluator,
 activation and mapping interfaces consumed by the `/2` evidence and timed
 choreography. External D/E/F/B requirements remain owned prerequisites or
 acceptance gates, not compiler functionality to duplicate.
@@ -106,7 +105,7 @@ flowchart TD
 
   FR042Core --> FR050[FR-050 strict temporal artifact /2]
   Std090[Standard FR-090 clock/profile meaning] --> FR050
-  L5[FR-043/044/045 merged L5 at 72507f8] --> FR048[FR-048 choreography preservation]
+  L5[FR-043/044/045 merged L5] --> FR048[FR-048 choreography preservation]
   FR050 --> FR048
   FR036 --> FR048
   FR040 --> FR048
@@ -131,7 +130,7 @@ flowchart TD
   Input[FR-049 + NFR-009 + TC-136/137] --> Query[FR-046 + TC-126..128]
   Input --> Graph[FR-047 + TC-129..131]
   V2 --> Choreo[FR-048 + TC-132..134]
-  L5[L5 72507f8 and E meaning] --> V2
+  L5[L5 and E meaning] --> V2
   Producer[D correspondence/relationship/population exports] --> IT009
   Producer --> Graph
   Producer --> Choreo
@@ -151,8 +150,7 @@ those later requirements.
 ## Topological order
 
 1. Retain the accepted shared semantic definitions, FR-035/036/038/040/041,
-   FR-042's implemented strict `/1` artifact core and merged L5 FR-043/044/045 at
-   `72507f856457ba0922719bd5d9f5cadcce4058cd`.
+   FR-042's implemented strict `/1` artifact core and merged L5 FR-043/044/045.
 2. Establish FR-049's typed immutable input/report boundary together with
    NFR-009's independent finite counters. Their API and constraint are one
    enablement layer; neither must be declared complete before the other is
@@ -195,7 +193,7 @@ The exact evidence order is:
    exercise reachability, deterministic traversal, bounds and history.
 3. The strict `/2` positive in TC-138 must precede the timed portion of TC-134
    and the timed campaign fixture in TC-135. Its L5 substitution oracle uses the
-   already merged evaluator at `72507f8`; it does not make L5 implementation
+   already merged evaluator; it does not make L5 implementation
    depend on the new wire.
 4. TC-133 follows TC-132's admitted choreography identities. TC-134 follows
    TC-132/133 for recovery/control meaning and follows TC-138 only for its timed

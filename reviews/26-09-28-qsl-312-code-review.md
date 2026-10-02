@@ -3,7 +3,7 @@ id: SR-772
 title: "QSL-312 code review of PR 512 (FR-105 AC-2/AC-4 test remainder)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@5247a61078b8ee67283cbaf82af46c561dad71ca; qsl-replay/src/spine/clause/tests.rs; qsl-package/src/emit.rs (read, unchanged); qsl-semantics/src/check/lowering.rs (read, unchanged)"
+scope: "agent-ix/quire-spec-language; qsl-replay/src/spine/clause/tests.rs; qsl-package/src/emit.rs (read, unchanged); qsl-semantics/src/check/lowering.rs (read, unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-312. PR: quire-spec-language#512 at 5247a610. This review covers
+Ticket: QSL-312. PR: quire-spec-language#512. This review covers
 code and Rust (the rust-review lane is folded in here). The diff is test-only.
 It touches `qsl-replay/src/spine/clause/tests.rs` and four spec files, and
 changes no production code.

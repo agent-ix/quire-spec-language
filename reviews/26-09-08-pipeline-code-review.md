@@ -3,7 +3,7 @@ id: SR-083
 title: "Code and Rust review of qualification pipeline repairs"
 type: SpecReview
 analysis: code-review
-scope: "FR-017 / Task-011 at 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f"
+scope: "FR-017 / Task-011"
 review_set: subset
 ---
 
@@ -27,12 +27,10 @@ FR-015/016, native runtime evaluation or the full Agent A assignment.
 
 ## Evaluated context and sequence
 
-Reviewed source revision 08a4fe79a0ed734c2b96acc831ac750a8c1eb56f, including
-implementation d1168dd6604100d52fa4cb97877cf6991e68dda4 and the following
-regression-trace-only commit. The original architecture evaluation remains
-FAIL at its historical 4798508 baseline; this artifact records its repair.
-FR-017/TC-054 were specified at a350754 and received the owner-selected base
-plus all seven analyses in SR-075–082 at 02b7cc8 before repair implementation.
+Reviewed the implementation. The original architecture evaluation remains
+FAIL at its historical baseline; this artifact records its repair.
+FR-017/TC-054 were specified and received the owner-selected base
+plus all seven analyses in SR-075–082 before repair implementation.
 The preimplementation handoff is recorded on LC02 #3.
 
 Applied the actual `/home/peter/dev/agent-skills/code-review/SKILL.md`, its
@@ -57,13 +55,12 @@ No additional agents, hosted runs or external producer processes were used.
 
 ## Rust, faithfulness and implementation-gap inspection
 
-The source-aware helper uses the pinned Serde grammar and structured errors.
+The source-aware helper uses the Serde grammar and structured errors.
 Every newly exposed test-support item has a doc comment; production model
 access is immutable and fallible. Native role identities use existing IR
 newtypes. Exhaustive typed enum conversion remains appropriate; no lexer,
 general model reader, parallel semantic table or new dependency package was
-introduced. The development-only raw_value feature and original dependency
-grant are recorded in docs/dependencies.md; Cargo.lock is unchanged.
+introduced. Cargo.lock is unchanged.
 
 Reviewed the new NativeModel admission/artifact modules as the real consumer
 used to qualify the producer. They validate supplied roles and source loci,
@@ -96,38 +93,35 @@ planned completion statuses despite their five initial passing tests.
 
 All Cargo phases ran sequentially with nice 10, one build job, one test thread,
 locked offline dependencies and existing target caches. Every listed command
-completed with exit 0. Logs are retained under data/native-checking/.
-Terminal blank lines were removed from saved Cargo test output for repository
-whitespace conformance; test results and diagnostic content are unchanged.
+completed with exit 0.
 The full test and private-audit suites were rerun after the trace-only change.
 Minimal build, strict rustdoc and CLI checks precede only that annotation edit;
 no corresponding runtime body changed afterward.
 
-| Command | Result | Log |
-| --- | --- | --- |
-| `nice -n 10 cargo fmt --all -- --check` | Passed | fmt.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 61 passed; 3 private tests explicitly ignored | tests.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private tests passed | pipeline-private-audits.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | clippy.txt |
-| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using the existing minimal-build cache | minimal-build.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | rustdoc.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls passed; duplicate keys refused | audit-self-test.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 checkpoint digests and exact producer pin passed | audit-model-bytes.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | cli-parse.txt |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | cli-format.txt |
+| Command | Result |
+| --- | --- |
+| `nice -n 10 cargo fmt --all -- --check` | Passed |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 61 passed; 3 private tests explicitly ignored |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private tests passed |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
+| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using the existing minimal-build cache |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls passed; duplicate keys refused |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 checkpoint digests passed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted |
 
 Actual `quire coverage --scope /home/peter/dev/worktrees/formalization-a-language
---json` completed with exit 0. Its retained report binds all 64/64 Rust test
+--json` completed with exit 0. It binds all 64/64 Rust test
 symbols, reports no status lies or untracked symbols, and binds FR-017's three
 Test criteria. AC-2 is correctly identified as Inspection with no required test
 symbol; this review supplies that evidence. TM-003 has 21/35 cases with tags,
 of which 16 have completed qualification and five are partial model cases.
 The engine still reports 18 existing diagnostics; those are retained rather
 than suppressed. Spec, plan and review validation commands also completed with
-exit 0; their logs retain the existing duplicate registry notices.
+exit 0.
 
 The full-plan non-semantic gap gate remains Task-010 work. Existing unmatched
-historical IT-004 labels and matrix/classifier limitations are retained in raw
-coverage evidence; tag presence alone does not establish complete model or
+historical IT-004 labels and matrix/classifier limitations remain; tag presence alone does not establish complete model or
 checker qualification. Hosted CI remains workflow_dispatch-only and was not
 dispatched. LC02 remains open.

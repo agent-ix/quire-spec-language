@@ -5,12 +5,11 @@ type: SpecReview
 analysis: integrity
 scope: "FR-035/036; TC-113–115; IT-009; US-001/002; master index and TM-003 amendment"
 review_set: all
-evaluated_revision: "fa07b07"
 ---
 ## Summary
 
-Reviewed the L2 requirements at `fa07b07` against the compiler at `dd34599` and
-the shared standard draft at `d7483f3`. All fourteen criteria have planned cases;
+Reviewed the L2 requirements against the compiler and
+the shared standard draft. All fourteen criteria have planned cases;
 two inherited package rules need explicit compiler controls before the exact
 agreement and budget oracles are unambiguous.
 
@@ -91,10 +90,10 @@ their declared budget oracle can be reproduced rather than guessed.
 
 ## Correction recheck
 
-Targeted reread of `d5047a8` resolves both findings while retaining their original
-`fa07b07` observations above:
+Targeted reread of the correction resolves both findings while retaining their original
+observations above:
 
-| Finding | Disposition at d5047a8 |
+| Finding | Disposition |
 | --- | --- |
 | FND-001 | Resolved. FR-036 now refuses namespace admission unless every header agrees with the inventory's single language/edition, retaining selections and original header loci. AC-1 and TC-114 step 3 require separate mixed-available-edition and equal-header/foreign-inventory mutations, plus a matching positive control. |
 | FND-002 | Resolved. FR-036 declares accounting version, dimensions, capacities, effective limits and charging rules before work; shared dependencies, cache hits, revisits, zero, prospective charges, overflow and fresh retries are explicit. AC-7 and TC-114 step 6 derive expected charges independently from that contract and preserve inputs and the prior report. Historical per-unit limits do not silently set new package capacities. |
@@ -106,7 +105,7 @@ introduce no new semantic engine, numeric ceiling or execution claim.
 
 ## Verdict
 
-The integrity verdict was CONDITIONAL at `fa07b07`; the scoped correction
-recheck at `d5047a8` is PASS. Shared-standard/producer acceptance and all composed
+The integrity verdict was CONDITIONAL before the correction; the scoped correction
+recheck is PASS. Shared-standard/producer acceptance and all composed
 implementation evidence remain outstanding. This review ran no build or Rust
 test and creates no architecture or qualification campaign.

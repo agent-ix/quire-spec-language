@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-`/code-review` over `origin/main...a33a3c1` (12 files, +751/−247), Rust lane from
+`/code-review` over the branch diff (12 files, +751/−247), Rust lane from
 the actual `/home/peter/dev/agent-skills/skills/rust-review/SKILL.md` plus the
 portable `/home/peter/dev/agent-skills/skills/rust-style/SKILL.md`; this repo
 publishes no Rust idiom skill of its own. The increment removes the duplicated
@@ -65,7 +65,7 @@ initializer is asserted to lie strictly before the `recover` region
 (`capture.span.end < recover.span.start`) and is still followed when the
 recovery reads it.
 
-The regression is genuine. `/tmp/quire-recovery-provenance-red.log` shows the
+The regression is genuine. The red run shows the
 new test failing on pre-change production at the `reads_capture = true` case with
 `Invalid(Binding)` at locus `span 999..2117`. The false case is the
 over-inclusion guard and was expected green before; it is honest to say only the
@@ -154,20 +154,19 @@ malformed identity rather than refuse it. Dropped to low.
 
 ### Gates
 
-Root logs read, not rerun; no Cargo reproduction was needed, so
-`/tmp/quire-heavy-check.lock` was not taken.
+Root logs read, not rerun; no Cargo reproduction was needed.
 
-- `/tmp/quire-recovery-provenance-fmt.log` — empty.
-- `-clippy-minimal.log`, `-clippy-all.log` — both `Finished`, no warning line;
+- fmt — empty.
+- Clippy minimal and all-features — both `Finished`, no warning line;
   `--all-targets` with `--no-default-features` / `--all-features` and
   `-D warnings`. No new `#[allow]` appears in the diff.
-- `-focused.log` — 59 cases pass.
-- `-test-minimal.log` / `-test-all.log` — 55 `test result: ok` lines each, no
+- Focused — 59 cases pass.
+- Tests minimal / all-features — 55 `test result: ok` lines each, no
   `FAILED`, 4 inherited ignored, 5 doctests included;
   `recovery_population_origins_follow_used_capture_operands_not_neighboring_source`
   passes in both lanes.
-- `-red.log` — pre-change production, 1 failed as described above.
-- `-spec.log` — 398/398 docs grammar-clean.
+- Red — pre-change production, 1 failed as described above.
+- Spec — 398/398 docs grammar-clean.
 - No `deny.toml` in this repo, so no `cargo deny` lane. No CI workflow file is
   touched by this diff, so no gate was narrowed.
 

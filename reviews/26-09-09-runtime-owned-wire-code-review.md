@@ -3,7 +3,7 @@ id: SR-273
 title: "Code and Rust review of owned runtime wire decoding"
 type: SpecReview
 analysis: code-review
-scope: "3c6a0e6 against 8866239; runtime input/wire/reading, digest, runtime_reading tests"
+scope: "runtime input/wire/reading, digest, runtime_reading tests"
 review_set: subset
 ---
 ## Summary
@@ -51,7 +51,7 @@ source/test stub. Full native profile conformance is still #30.
 
 ## Local verification
 
-At implementation 3c6a0e6, with locked/offline Cargo, target cache, nice 10,
+With locked/offline Cargo, target cache, nice 10,
 one job and one test thread:
 
 | Gate | Result |
@@ -64,6 +64,6 @@ one job and one test thread:
 | Warnings-denied all-feature rustdoc; fmt | Pass |
 | Rust fixture-audit self-test/model-bytes; CLI parse example | Pass; historical producer bytes only |
 
-No deny.toml is installed. Logs are /tmp/agent-a-owned-wire-*. Hosted CI was
+No deny.toml is installed. Hosted CI was
 not dispatched. SR-265–272 carry the required QUOIN all-set review; #28 and the
 advisor's version-detection failure limit assurance claims, not these run results.

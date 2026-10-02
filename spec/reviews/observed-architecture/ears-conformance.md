@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit `faa1731` (branch `task/206-observed-architecture`):
+Reviewed branch `task/206-observed-architecture`:
 `spec/decisions/ADR-010-observed-architecture-baseline.md` and its index row in
 `spec/spec.md` (line 385). ADR-010 is a descriptive ADR, not an FR, NFR or StR, so
 the EARS scope is empty. The document has no `shall` statement. Its only `must`
@@ -38,7 +38,7 @@ Verdict: ACCEPT WITH FINDINGS
 | FND-002 | low | Consequences says "#212's change-scenario gate checks that every §9 item has a decision". That describes an open gate ticket as if it already works, and #212 does not say it. #212 applies seven change scenarios, and its Failure rule reopens the owning Layer 1 ticket when a scenario exposes a missing decision. Fix: cite #212 as written, for example "#212 applies seven change scenarios; a scenario that exposes a missing decision reopens its owning Layer 1 ticket (#212 Failure rule)". | ADR-010 Consequences |
 | FND-003 | low | The only modal verb in the record is the `must` in L1-D1 ("Which of #186 … must wait on capability registry #185"). It is a question, but a normative-keyword scan reads it as an obligation. Fix: rephrase as "Whether each of #186, #187, #188, #189, #191, #192 and #198 waits on capability registry #185". | ADR-010 §9.1 L1-D1 |
 
-## Round 1 resolution (author, commit after 432e615)
+## Round 1 resolution (author)
 
 Recorded by the authoring agent; this analysis was ACCEPT WITH FINDINGS and was
 not rerun.

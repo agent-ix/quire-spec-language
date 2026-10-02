@@ -3,7 +3,7 @@ id: SR-753
 title: "QSL-289 gap analysis of PR 498 (FR-056 value-type reader; FR-103-AC-1, AC-3; TC-458)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@ebcc62d94065581527c7a13a14ebe462afed7f68; qsl-semantics/src/model/intake.rs; spec/functional/FR-056-admit-domain-package-model-declarations.md; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/functional/FR-104-check-state-clauses.md; spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md; spec/tests.md; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs"
+scope: "agent-ix/quire-spec-language; qsl-semantics/src/model/intake.rs; spec/functional/FR-056-admit-domain-package-model-declarations.md; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md; spec/functional/FR-104-check-state-clauses.md; spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md; spec/tests.md; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-056
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-289. PR: quire-spec-language#498 at ebcc62d9.
+Ticket: QSL-289. PR: quire-spec-language#498.
 
 The ticket's done condition is "model intake reads the bound-scalar value
 type, and TC-458 runs with `Int[0, 1000]`". The PR delivers the first half as

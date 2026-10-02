@@ -13,15 +13,12 @@ relationships:
 
 ## Summary
 
-Round 2. Reviewed the #229 change on `task/229-capability-spec`: commit cd4f71a
-plus the uncommitted edits, diffed against `origin/main`. The change rewrites
+Round 2. Reviewed the #229 change on `task/229-capability-spec`, including
+the uncommitted edits, diffed against `origin/main`. The change rewrites
 FR-057, amends FR-036, TC-115, `spec/model-linking/tests.md` and
-`spec/spec.md`, and adds TC-153, TC-154 and TC-155. FR-057 now pins
-quire-specification revision `046d1bd` (quire-specification#135), which
-replaces the placeholders it carried earlier (FR-057:38-40, 319-320).
+`spec/spec.md`, and adds TC-153, TC-154 and TC-155.
 
-The upstream authority is quire-specification at commit `046d1bd`, the #134
-head in the `qspec-134` worktree. It includes
+The upstream authority is quire-specification in the `qspec-134` worktree. It includes
 FR-290, FR-331, FR-271, FR-272 and `native-diagnostics.md` revision
 `1-draft.5`. FR-057 matches it on each point the #229 brief lists:
 
@@ -81,7 +78,7 @@ findings. Each one is a matrix or TC wording fix.
 
 - Read `git -C /home/peter/dev/worktrees/qsl-arch13 diff origin/main` in full,
   plus the working tree of every changed document, with line numbers.
-- Compared FR-057 clause by clause against `qspec-134` at `046d1bd`:
+- Compared FR-057 clause by clause against `qspec-134`:
   FR-290 (Values, Families, Vocabulary authority, Claim-form assignment,
   Advertised mode, Candidate set and negotiation, Identity and comparison),
   FR-331 (Properties, Identity and validation), FR-271 and FR-272
@@ -109,6 +106,4 @@ Every finding left open or raised in round 2 across SR-490..SR-497 is fixed in t
 | SR-492 FND-009, FND-012, FND-013 | US-002 exercises FR-057; FR-146 replaces `SumCase`; FR-057 carries the missing qualifiers and states that FR-290 governs where it abbreviates. |
 | SR-497 FND-009, FND-011 | FR-036 retention SHALL has the compiler as subject; claim-form and tool-absence routing rules are SHALL statements. |
 
-## Re-pin to quire-specification 55d2fcc
-
-After quire-specification#135 merged, FR-057 was re-pinned from `046d1bd` to `55d2fcc`. The only normative change between the two was the post-probe tool change. FR-057 adds a case-table row for a tool changed after a passing probe (FR-331 result `failed` with `unsupported_projection`/`tool-unavailable`). FR-057-AC-9 and TC-155 step 7 now route that result as well. The #237 PR reviewer checked these against FR-290 at `55d2fcc`.
+After quire-specification#135 merged, FR-057 adds a case-table row for a tool changed after a passing probe (FR-331 result `failed` with `unsupported_projection`/`tool-unavailable`). FR-057-AC-9 and TC-155 step 7 now route that result as well. The #237 PR reviewer checked these against FR-290.

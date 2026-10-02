@@ -10,7 +10,7 @@ review_set: all
 
 FR-029 defines the lower command over the existing closed source-only request, its fixed Boolean target, exact IR output and located refusal behavior. All three acceptance criteria map to TC-107. The three binary tests cover exact producer/consumer bytes, complete backend generation, later-clause refusal, fresh retry and shared request limits. Existing commands remain exercised.
 
-Author PR-readiness review of `d1fcf16`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 The fourth binary test exercises command-specific arity. Two adapter unit tests

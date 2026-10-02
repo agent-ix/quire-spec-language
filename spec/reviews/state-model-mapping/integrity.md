@@ -13,8 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-016 on `spec/19-arch40-mapping` at commit `47b1b806`, whose
-parent is the `99e9b6c7` the record measures against. The review checked
+Reviewed ADR-016 on `spec/19-arch40-mapping`. The review checked
 four things:
 
 - completeness against Linear QSL-19 (#220), read as data;
@@ -90,7 +89,7 @@ What does not hold:
 | FND-016 | low | §6's first consumer says "no clause outcome derived from it is promoted beyond `tested` (ADR-013 O-16 success row)". In O-16, `tested` is a backend's QSpec FR-331 result. No rule turns an exploration finding into a clause outcome or an FR-331 result, so this bullet cites a map that does not apply. Fix: say that exploration results never enter QSpec FR-331 results or clause outcomes. If a map is intended, name it and its owner. | ADR-016 §6; ADR-013 O-16 success row |
 | FND-017 | low | OR-1 to OR-5 each name an owning ticket. OR-6 (unsupported), OR-7 (incomplete) and OR-8 (requires-bound) name only components. The ticket's acceptance says each named behavior has "an owner and oracle". Fix: add the ticket to each row, for example QSL-67 for OR-7's exploration and FR-120 parts, QSL-68 for admission, "delivered under FR-101" for OR-8, and CG negotiation plus QSL-67 for OR-6. | ADR-016 §10 OR-6 to OR-8 |
 | FND-018 | low | ND-1 says "nothing prunes one except a false effective pre- or postcondition". FR-120 "Contract clauses" also leaves an application disabled when the conjunction is undecided (`ContractUndetermined`), and an `Incomplete` clause stops the whole expansion. Fix: add both cases to ND-1, citing FR-120 "Contract clauses". | ADR-016 §5 ND-1; FR-120 "Contract clauses", "Post-states" |
-| FND-019 | low | PI-1 says "QSL pins `quire-contract-ir` at `2a28643` in `Cargo.lock`". In `Cargo.lock`, `2a28643` is the package `quire-contract-model` (workspace alias `quire-contract-ir`, `Cargo.toml:72`). A separate package named `quire-contract-ir` is locked at `04eb6f8` (`quire-contract-ir-historical`, `Cargo.toml:105`). Fix: name the pinned package `quire-contract-model` (alias `quire-contract-ir`), as Context already does. | ADR-016 §11 PI-1, Context |
+| FND-019 | low | PI-1 says "QSL pins `quire-contract-ir` in `Cargo.lock`". In `Cargo.lock`, that is the package `quire-contract-model` (workspace alias `quire-contract-ir`, `Cargo.toml:72`). A separate package named `quire-contract-ir` is locked (`quire-contract-ir-historical`, `Cargo.toml:105`). Fix: name the pinned package `quire-contract-model` (alias `quire-contract-ir`), as Context already does. | ADR-016 §11 PI-1, Context |
 | FND-020 | low | The Alternatives say "QSpec FR-181 and ADR-014 §8 make finite results evidence for what was evaluated only". QSpec FR-181 says exhaustion "cannot claim exhaustive success" and that enumeration is deterministic. It has no evidence-scope rule. Fix: cite ADR-014 §8 alone, or quote the FR-181 sentence the claim relies on. | ADR-016 Alternatives; QSpec FR-181 Behavior; ADR-014 §8 |
 
 ## Disposition

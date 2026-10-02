@@ -38,8 +38,7 @@ every `result_type` and literal `type` from the checked type, never by
 inference. Each `Expression` form checks to the `NodeKind` the table below
 names.
 
-QSpec references (`ix://agent-ix/quire-specification`, by reference, at
-`e72756f`): FR-322 "Operation families, groups and constraints", the closed
+QSpec references (`ix://agent-ix/quire-specification`, by reference): FR-322 "Operation families, groups and constraints", the closed
 `proposals/checked-package-v2/operation-catalog.json` and the operator-class
 semantic forms its qualification tests fix.
 
@@ -461,8 +460,7 @@ for the named node, under owner (`a`, `u`), from these declarations:
 
 The lock evidence selects QSpec's text definition
 `quire.value.text.unicode-17.0.0/v1`, revision `quire-draft`/`1-draft.1`,
-the `DefinitionRef` of QSpec's `structural-eq-record` operation vector at
-`e72756f`; every text leaf carries it as its `text_profile` law. The leaves
+the `DefinitionRef` of QSpec's `structural-eq-record` operation vector; every text leaf carries it as its `text_profile` law. The leaves
 are:
 
 | Vector | Compared type | Leaves, in order |
@@ -770,7 +768,7 @@ text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. The lowering spells an integer literal as a decimal string and gives
 `quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is the M-4 emitter, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12, AC-18, AC-19 and CON-2 there. The pinned IR reader
+TC-416 backs AC-7, AC-9, AC-12, AC-18, AC-19 and CON-2 there. The IR reader
 admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
 and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
 so a function with parameters and a recursive function are written whole

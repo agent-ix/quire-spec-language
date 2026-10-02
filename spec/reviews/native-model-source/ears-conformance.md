@@ -10,7 +10,7 @@ review_set: all
 
 Quire validation reports 277/277 grammar-clean documents and zero grammar findings at the implementation baseline. FR-025 uses a When trigger for explicit source-profile submission and single-subject frontend obligations for decoding, correspondence and limits. Responses are observable through the returned draft, admitted model or retained typed failure; no continuous condition is mislabeled as a submission event.
 
-Author PR-readiness re-review of `fbdf687`, using the owner-selected all set.
+Author PR-readiness re-review, using the owner-selected all set.
 No applicable AssuranceProfile was found. Review timing follows the owner directive.
 
 The revised obligations name the frontend or located JSON utility and observable refusal, retention and accounting order. The grammar warning on an After trigger was corrected to a single-subject shall statement.

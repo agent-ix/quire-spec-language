@@ -3,7 +3,7 @@ id: SR-277
 title: "Failure-domain review of the runtime input schema"
 type: SpecReview
 analysis: failure-domain
-scope: "FR-024-AC-5; native-state-input/1 schema at f4679ef"
+scope: "FR-024-AC-5; native-state-input/1 schema"
 review_set: all
 ---
 ## Summary

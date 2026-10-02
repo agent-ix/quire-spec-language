@@ -1,7 +1,6 @@
 # Native model roles and static checking
 
-This contract implements FR-015/016 over Contract IR at
-690bde7f2dc58662cf9ff0595c2c0e3b17107c6f. Existing formal-environment linking and
+This contract implements FR-015/016 over Contract IR. Existing formal-environment linking and
 its byte artifact remain unchanged. Native semantics require the explicit
 native-state-model/1 binding profile and the following typed Rust interface.
 
@@ -107,7 +106,7 @@ sorting; sorting does not silently deduplicate them.
 Artifact numbers use exact base-ten integer spelling, with no floating-point
 conversion. Strings use JSON scalar escaping, no Unicode normalization, and
 otherwise retain UTF-8; object field order is fixed by the documented structures.
-The pinned serde_json writer emits this raw artifact. This is not a new FS05
+The serde_json writer emits this raw artifact. This is not a new FS05
 canonical identity domain or an IR CanonicalDigest. Native import digest is
 ByteDigest::of(artifact_bytes); package and version retain the exact IR owner
 namespace and positive revision decimal spelling. All included provenance and

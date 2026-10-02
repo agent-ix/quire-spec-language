@@ -3,7 +3,7 @@ id: SR-761
 title: "QSL-298 code review (with rust-review lane) of PR 503"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@cc535653df24672b569727cf4bcd7d7a5ef11a50; qsl-forms/src/lib.rs; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-replay/src/spine.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs"
+scope: "agent-ix/quire-spec-language; qsl-forms/src/lib.rs; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-replay/src/spine.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-113
@@ -11,10 +11,10 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-298. PR: quire-spec-language#503 at cc535653, base 68f2dfed.
+Ticket: QSL-298. PR: quire-spec-language#503.
 Methods: code-review with the rust-review lane folded in.
 
-Gates, run by the reviewer at cc535653 in a fresh detached worktree with a
+Gates, run by the reviewer in a fresh detached worktree with a
 fresh `CARGO_TARGET_DIR`: `make ci` exit 0 (93 `test result: ok` blocks, 0
 failed). `cargo fmt --check` clean. `cargo clippy -p qsl-forms -p
 qsl-semantics -p qsl-replay --all-targets --all-features -- -D warnings`

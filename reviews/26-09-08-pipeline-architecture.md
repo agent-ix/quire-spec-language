@@ -3,7 +3,7 @@ id: SR-074
 title: "Architecture evaluation of decoding and model construction boundaries"
 type: SpecReview
 analysis: architecture-evaluation
-scope: "src/, tools/fixture-audit/, tests/ and new native producer at 47985080b9c7077e96cf919eb2a967b98d8a1751"
+scope: "src/, tools/fixture-audit/, tests/ and new native producer"
 review_set: subset
 ---
 

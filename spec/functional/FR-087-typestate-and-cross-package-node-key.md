@@ -30,8 +30,7 @@ it is the whole of what #242 (ADR-011 M-4) waits on; **S-3b**
 (FR-088) is the clause/name/type half — O-08, O-09 clause id, O-10, O-11,
 O-14, C-26. This requirement covers S-3a only.
 
-S-3a's gate (ADR-013 §7: "S-2, QC-10") is clear: S-2 landed as PR #260
-(`97ec26e3`), and QC-10 landed under STD-2 (Done) — QSpec
+S-3a's gate (ADR-013 §7: "S-2, QC-10") is clear: S-2 landed as PR #260, and QC-10 landed under STD-2 (Done) — QSpec
 [FR-322](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/interfaces/FR-322-checked-package-artifact.md)
 (`quire-specification`, not this repository; `spec/objects/` does not exist
 here) defines `dependency_reference` as `PackageNodeKey{package, node}` at
@@ -638,7 +637,7 @@ that change each scenario of `tests/it/complete_package.rs` and
 
 Specified (ADR-013 §7 S-3, split into S-3a/S-3b by the
 2026-09-21 comment on that ticket). Partly implemented. Gate (ADR-013 §7:
-"S-2, QC-10") is clear: S-2 landed as PR #260 (`97ec26e3`); QC-10 landed
+"S-2, QC-10") is clear: S-2 landed as PR #260; QC-10 landed
 under STD-2 (Done).
 
 Landed: PR #304 added `CheckedGraph` (`check`), which

@@ -5,7 +5,6 @@ type: SpecReview
 analysis: ears-conformance
 scope: "FR-014, docs/formal-source-binding.md, TC-035–039 and TM-003 addition"
 review_set: all
-evaluated_revision: "4eb4ef6"
 review_date: "2026-09-08"
 ---
 

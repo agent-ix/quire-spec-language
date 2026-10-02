@@ -48,7 +48,7 @@ QSL proposals to QSpec (ADR-013 QC-25, QC-26), as `quire.structural-node/v1`
 is (QC-24). QSpec references (`ix://agent-ix/quire-specification`, cited by
 reference, never copied): FR-322, `proposals/checked-package-v2/schema.json`,
 `node-identity-preimage.schema.json`, `node-identity-vectors.json`,
-`operation-catalog.json` and the positive fixtures, at `e72756f`.
+`operation-catalog.json` and the positive fixtures.
 
 ## Inputs
 

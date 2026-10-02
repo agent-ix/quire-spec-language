@@ -32,7 +32,7 @@ gap remains for issue #84 or the five-item #83 checklist.
 
 ## Coverage
 
-Pinned Quire 0.31.0 (`ca7362d4`) reports the targeted
+Quire reports the targeted
 `spec/native-lowering/tests.md` group backed 11/11, with no targeted unbacked
 row, status lie, or untracked IT-010 symbol. IT-010-SC-01 through SC-06 occur on
 the executing ConfigVersion tests; the plain-integer test carries its owning

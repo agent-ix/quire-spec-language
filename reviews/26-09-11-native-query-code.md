@@ -21,7 +21,7 @@ relationships:
 `/code-review` with the Rust lane from `/home/peter/dev/agent-skills/rust-review/SKILL.md`
 and the portable `rust-style` defaults (the repo declares no Rust idiom doc of its
 own), over `agent-a/native-query-proofs` diffed against
-`agent-a/native-population-exports` at `667226b`, rechecked at `baf93f5`. All
+`agent-a/native-population-exports`, rechecked after the correction. All
 eight ordered query forms are implemented in the real composed definedness path
 and lowered from their original AST occurrences; the query proof and emission
 tests are behavioural and non-tautological. The recheck confirms the sum work
@@ -30,7 +30,7 @@ N=10,000 test discharges under unchanged default limits.
 
 ## Verdict
 
-**CONDITIONAL** (recheck) — both mediums resolved at `baf93f5` and verified
+**CONDITIONAL** (recheck) — both mediums resolved after the correction and verified
 against the code and the passing tests; two low items remain (untested mixed
 denominator, portable style notes). Was CONDITIONAL on the initial review.
 
@@ -38,9 +38,9 @@ denominator, portable style notes). Was CONDITIONAL on the initial review.
 
 | ID      | Severity | Summary                                                                                       | Refs                                                        | Escape Cause                        |
 | ------- | -------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------- |
-| FND-001 | medium   | RESOLVED at `baf93f5` — `sum` proof cost is linear in declared capacity; no sum over a 10,000-element domain can discharge | src/checking/composed/proofs/engine/queries.rs:274; src/checking/composed/proofs/work.rs:60 | correct-requirement-no-evidence     |
-| FND-002 | medium   | RESOLVED at `baf93f5` — `Unsupported::OrderedQuery` is now unconstructible public API with no producer and no test      | src/checking/composed/proofs.rs:32                            | implementation-bug-despite-evidence |
-| FND-003 | low      | RESOLVED at `baf93f5` — emitted binder scope locus spans the collection, so locus containment is not an availability oracle | src/protocol_artifact/native/layout.rs:462; docs/compiled-protocol-v1.md:533 | wrong-requirement                   |
+| FND-001 | medium   | RESOLVED by the correction — `sum` proof cost is linear in declared capacity; no sum over a 10,000-element domain can discharge | src/checking/composed/proofs/engine/queries.rs:274; src/checking/composed/proofs/work.rs:60 | correct-requirement-no-evidence     |
+| FND-002 | medium   | RESOLVED by the correction — `Unsupported::OrderedQuery` is now unconstructible public API with no producer and no test      | src/checking/composed/proofs.rs:32                            | implementation-bug-despite-evidence |
+| FND-003 | low      | RESOLVED by the correction — emitted binder scope locus spans the collection, so locus containment is not an availability oracle | src/protocol_artifact/native/layout.rs:462; docs/compiled-protocol-v1.md:533 | wrong-requirement                   |
 | FND-004 | low      | Rational sum gate requires denominator 1 on both endpoints; the mixed 1/2 case has no test      | src/checking/composed/proofs/engine/queries.rs:288; tests/composed_query_proofs.rs:535 | correct-requirement-no-evidence     |
 | FND-005 | low      | `query()` re-destructures a node `walk.rs` already matched, leaving an unreachable arm; `element()` returns a bare 3-tuple beside a named `Body` | src/checking/composed/proofs/engine/queries.rs:191; src/checking/composed/proofs/engine/queries.rs:46 | missing-requirement                 |
 
@@ -93,7 +93,7 @@ claim about.
 
 ### What the tests actually establish
 
-- `tests/composed_query_proofs.rs` (10 cases at `baf93f5`, all passing): `IndependentElements`
+- `tests/composed_query_proofs.rs` (10 cases after the correction, all passing): `IndependentElements`
   is the load-bearing independence control — two binders over the same filtered
   collection, where `lhs != 0` must not discharge the divisor for `rhs`; it is
   asserted `Refused` with `NonZeroDivisor` at the original `rational(0,1) / rhs`
@@ -104,7 +104,7 @@ claim about.
   passes and prefix 2 fails, and `accumulated - accumulated = 0` cannot repair it.
   `N=5` versus `N=6` over `Amount 1..20/U` into `Total 0..100/U` sits exactly on
   the boundary (prefix 5 upper endpoint = 100).
-- `tests/native_query_emission.rs` (4 cases at `baf93f5`): `original_queries` builds every
+- `tests/native_query_emission.rs` (4 cases after the correction): `original_queries` builds every
   expectation from the original `ComposedUnit` AST — operator, binder span, domain
   and body `original_expression` indices, per-binder read handles, result type —
   and returns an occurrence histogram asserted as `[1,3,1,1,1,1,1,1]` and
@@ -143,7 +143,7 @@ FND-005 is filed as `missing-requirement` because this repo publishes no Rust
 idiom document of its own (rust-review §0), so these are portable `rust-style`
 defaults with nothing in-repo to test against — not defects that escaped a gate.
 
-### Recheck at `baf93f5` — the sum transfer argument
+### Recheck after the correction — the sum transfer argument
 
 The prefix loop is replaced by two goals, one per element endpoint. Checked
 against the code rather than the commit message:
@@ -202,9 +202,7 @@ re-destructures a node `walk.rs` matched, and `element()` still returns a bare
 
 ### Gates inspected
 
-Read from the root's completed logs at
-`/tmp/quire-native-query-corrections-{fmt,focused,clippy-minimal,clippy-all,test-minimal,test-all,spec}.log`;
-green heavy checks were not rerun. `cargo fmt --all -- --check` (empty),
+Read from the root's completed logs; green heavy checks were not rerun. `cargo fmt --all -- --check` (empty),
 `cargo clippy --locked --all-targets --no-default-features -- -D warnings` and
 `--all-features` (both `Finished`, no warnings), `cargo test --locked
 --no-default-features` and `--all-features` (54 suites each, 0 failures, 3

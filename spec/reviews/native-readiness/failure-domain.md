@@ -5,7 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "FR-002/003/010, NFR-001/005 refinements and TM-002/Plan-002"
 review_set: all
-evaluated_revision: "afeeb20 (requirement changes a10ec80)"
 ---
 
 ## Summary
@@ -15,7 +14,7 @@ owner-selected base plus all seven QUOIN analyses. The reviewed boundary is expl
 
 ## Verdict
 
-### Compatibility amendment reviewed at 5d0c9de
+### Compatibility amendment review
 
 **PASS** for the FR-010/NFR-005 native Error implementation exception.
 Diagnostic.source remains source identity, never a nested error. Error::source returns None, and Display cannot perform I/O or fail except through its formatter.
@@ -39,11 +38,10 @@ Usage validation precedes I/O for non-UTF-8 labels and commands; native source e
 
 ## Provenance and validation
 
-Used the installed Quoin 0.20.0 specify/spec-review and the actual catalog
+Used the installed Quoin specify/spec-review and the actual catalog
 skeletons/schema pack (org agent-ix). The owner retained the full review set
 and declined the optional semantic gap comparison. No additional agent was
-spawned. Native runtime source remains unchanged at this reviewed revision.
-The source merge at 8751eff reconciles only upstream owner-policy documentation.
+spawned.
 74/74 requirement/TC/plan documents were grammar-clean before these eight reports;
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain

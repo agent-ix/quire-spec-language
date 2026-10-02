@@ -3,7 +3,7 @@ id: SR-672
 title: "QSL-272 code and Rust review of the FR-101 finite simulation implementation"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@05db9adf6e2c557f30c2911ab286d02d946bdcb2; qsl-eval/Cargo.toml; Cargo.lock; qsl-eval/src/simulation/mod.rs; qsl-eval/src/simulation/explore.rs; qsl-eval/src/simulation/frontier.rs; qsl-eval/src/simulation/key.rs; qsl-eval/src/simulation/not_simulated.rs; qsl-eval/src/simulation/order.rs; qsl-eval/src/simulation/sample.rs; qsl-eval/src/simulation/trace.rs; qsl-eval/tests/it/finite_simulation.rs; tests/it/family_outcome_layering.rs; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/tests.md"
+scope: "agent-ix/quire-spec-language; qsl-eval/Cargo.toml; Cargo.lock; qsl-eval/src/simulation/mod.rs; qsl-eval/src/simulation/explore.rs; qsl-eval/src/simulation/frontier.rs; qsl-eval/src/simulation/key.rs; qsl-eval/src/simulation/not_simulated.rs; qsl-eval/src/simulation/order.rs; qsl-eval/src/simulation/sample.rs; qsl-eval/src/simulation/trace.rs; qsl-eval/tests/it/finite_simulation.rs; tests/it/family_outcome_layering.rs; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/test-cases/TC-390-family-outcome-and-refusal-layering.md; spec/tests.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-101
@@ -12,10 +12,9 @@ relationships:
 
 ## Summary
 
-Ticket: QSL-272 (PR agent-ix/quire-spec-language#467, head 05db9adf, gate
-commit f2c0d37e). `/code-review` with the `/rust-review` lane over
-`git diff origin/main...HEAD` (merge base 9f4853d2). QSpec reference:
-agent-ix/quire-specification origin/main 0d53cf2 (FR-181,
+Ticket: QSL-272 (PR agent-ix/quire-spec-language#467). `/code-review` with the `/rust-review` lane over
+`git diff origin/main...HEAD`. QSpec reference:
+agent-ix/quire-specification origin/main (FR-181,
 `proposals/quire-v1/definitions/simulation-sampler.md` revision `1-draft.1`).
 
 What holds:
@@ -46,8 +45,8 @@ What holds:
   main and which X-8 allows.
 - `explore`, `sample` and `Sampler` are `pub(crate)`. `explore_request`,
   `sample_request` and `replay` are the only public entry points.
-- Coder deviation 1 (the markdown-only commit 05db9adf after the gate run):
-  accepted. This review re-ran `make ci` at 05db9adf.
+- Coder deviation 1 (the markdown-only commit after the gate run):
+  accepted. This review re-ran `make ci` at the PR head.
 - Coder deviation 3 (`GeneratorMismatch` is checked before requires-bound):
   conformant. FR-101 says "`sample_request` first compares the supplied
   `DefinitionRef`". Both checks come before any `TransitionSystem` call.
@@ -112,19 +111,18 @@ retagged tests also lost the property they exist to discriminate
 
 ## Dispositions
 
-Disposition pass at 54732520 (rebased; fixes in e8c5f6c7 and 54732520),
-checked against the code and re-run with `rv467/recompute.py`.
+Disposition pass, checked against the code and re-run with `rv467/recompute.py`.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | e8c5f6c7: `Outcome::Cancelled` gains `cause: CatalogCode` and is set to `CANCELLED_CAUSE` = `cancelled`/`caller-cancelled` (explore.rs). Both cancellation tests assert it literally. |
-| FND-002 | fixed | e8c5f6c7: `state_key` and `canonical_bytes` return `Result<_, EncodingRefusal>`, surfaced as `NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding`. FR-101-AC-11 and TC-453 step 9 were added, with a test using the key `2^53 + 1`. `plain_digest` still panics, but it encodes only the engine-built `DrawPreimage`, which is acceptable. |
-| FND-003 | fixed | e8c5f6c7: the test now uses seed 1 and asserts `steps[0].key == key("2")`. Recomputed: seed 1, trace 0, step 0, n=2 selects index 1. The replay has to skip the first-listed `"1"`. |
-| FND-004 | fixed | e8c5f6c7: the fixture is now `z` → `"3"` and `a` → `"9"`, and the test expects `[key("9"), key("3")]`. Sorting by post-state key would give `[3, 9]`, so the test now discriminates. |
-| FND-005 | fixed | e8c5f6c7: byte order is now pinned by an n=2 vector `0,0,0,0,1` and an n=7 vector `0,2,6,2,4`, which match my recompute. The little-endian reading differs. The rejection half is not fixed: see R1-FND-001. |
-| FND-006 | fixed | e8c5f6c7: `state_key` encodes once and hashes the bytes with `ByteDigest::of`. |
-| FND-007 | fixed | e8c5f6c7: `unreachable!` is replaced by `swap_remove(index)`, which cannot panic because `index < n`. The initial-state pick uses the same pattern. |
-| FND-008 | fixed | e8c5f6c7: replay walks `sorted_initial` and `ordered_successors`, so `KeyMismatch.actual` is the first match in canonical order. |
+| FND-001 | fixed | `Outcome::Cancelled` gains `cause: CatalogCode` and is set to `CANCELLED_CAUSE` = `cancelled`/`caller-cancelled` (explore.rs). Both cancellation tests assert it literally. |
+| FND-002 | fixed | `state_key` and `canonical_bytes` return `Result<_, EncodingRefusal>`, surfaced as `NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding`. FR-101-AC-11 and TC-453 step 9 were added, with a test using the key `2^53 + 1`. `plain_digest` still panics, but it encodes only the engine-built `DrawPreimage`, which is acceptable. |
+| FND-003 | fixed | the test now uses seed 1 and asserts `steps[0].key == key("2")`. Recomputed: seed 1, trace 0, step 0, n=2 selects index 1. The replay has to skip the first-listed `"1"`. |
+| FND-004 | fixed | the fixture is now `z` → `"3"` and `a` → `"9"`, and the test expects `[key("9"), key("3")]`. Sorting by post-state key would give `[3, 9]`, so the test now discriminates. |
+| FND-005 | fixed | byte order is now pinned by an n=2 vector `0,0,0,0,1` and an n=7 vector `0,2,6,2,4`, which match my recompute. The little-endian reading differs. The rejection half is not fixed: see R1-FND-001. |
+| FND-006 | fixed | `state_key` encodes once and hashes the bytes with `ByteDigest::of`. |
+| FND-007 | fixed | `unreachable!` is replaced by `swap_remove(index)`, which cannot panic because `index < n`. The initial-state pick uses the same pattern. |
+| FND-008 | fixed | replay walks `sorted_initial` and `ordered_successors`, so `KeyMismatch.actual` is the first match in canonical order. |
 
 New findings, round 1:
 
@@ -134,6 +132,6 @@ New findings, round 1:
 
 ## R1 Dispositions
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| R1-FND-001 | fixed in ce67367b | `accepts(v, quotient, n64, always_accepts)` split out of `PinnedSampler::next_index`; a new test asserts it at the real `n = 7` threshold `floor(2^256/7)*7` and one below it. The `u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls the synthetic `98` the sampler's rejection bound. |
+| R1-FND-001 | fixed | `accepts(v, quotient, n64, always_accepts)` split out of `PinnedSampler::next_index`; a new test asserts it at the real `n = 7` threshold `floor(2^256/7)*7` and one below it. The `u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls the synthetic `98` the sampler's rejection bound. |

@@ -13,14 +13,14 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit: cd4f71a (branch `task/229-capability-spec`), diff
+Round 1. Reviewed branch `task/229-capability-spec`, diff
 against `origin/main`: new FR-057 and TC-153 to TC-155, and amendments to
 FR-036, TC-115, `spec/model-linking/tests.md` and `spec/spec.md`.
 
 Sources checked: the bodies of #229 (with the 2026-09-19 owner ruling), #213,
 #185, #222, #210, #211 and #205. QSpec `origin/main`: FR-290, AD-010, AD-016
 (System Boundary, Terminal-disposition rule, arrows 1, 2 and 4, Shared-type
-table), FR-271, FR-322 and interface_013. QSL code at cd4f71a:
+table), FR-271, FR-322 and interface_013. QSL code:
 `src/linking/composed/requests.rs`, `src/checking/composed.rs:320`,
 `src/complete/package.rs:690` and `tests/composed_admission_stages.rs`.
 
@@ -114,7 +114,7 @@ flowchart LR
 
 ## Round 2 dispositions
 
-Checked against the current tree: cd4f71a plus the uncommitted edits.
+Checked against the current tree, including the uncommitted edits.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |

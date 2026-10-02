@@ -3,7 +3,7 @@ id: SR-523
 title: "Base review of the QSL-208 node-key and expression-lowering requirements"
 type: SpecReview
 analysis: base
-scope: "Commit d96591be: FR-092, FR-093, TC-413 to TC-416, and the FR-065, FR-091, ADR-011, ADR-013, TC-163, spec.md, tests.md and US-005 edits"
+scope: "FR-092, FR-093, TC-413 to TC-416, and the FR-065, FR-091, ADR-011, ADR-013, TC-163, spec.md, tests.md and US-005 edits"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092

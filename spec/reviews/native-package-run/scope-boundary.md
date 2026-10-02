@@ -10,7 +10,7 @@ review_set: all
 
 Agent A owns local command orchestration and native package verification. Existing source/model constructors and the reader retain semantic authority. Filesystem inputs follow FR-026's local path and bounded-read contract; the command is not a sandbox. B retains portable evidence and C retains extraction/producer adoption. Native output is the existing result view, with selected-reader provenance added only to the relevant failure.
 
-Author PR-readiness review of implementation `4f15f0f` and the FR-028 corrections.
+Author PR-readiness review of the implementation and the FR-028 corrections.
 The owner-selected review set is all; no applicable AssuranceProfile was found.
 
 FR-028 explicitly inherits absolute and parent-relative local path semantics;

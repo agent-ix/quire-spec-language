@@ -3,7 +3,7 @@ id: SR-734
 title: "QSL-245 spec review of PR 489 status edits (blank-label and empty-path)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@237f65714b313473649a155f87932778a790d819; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-430, TC-431, TC-444"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-010-report-native-outcomes.md; spec/functional/FR-018-construct-native-runtime-inputs.md; spec/functional/FR-026-run-standalone-native-workflow.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-425, TC-430, TC-431, TC-444"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-001
@@ -11,10 +11,10 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#489 at 237f6571. The spec diff is
+Ticket: QSL-245. PR: quire-spec-language#489. The spec diff is
 limited to Status text and status rows. No requirement statement or AC
-changed. Each edit was checked against the code and tests at 237f6571 and
-against the catalog at QSpec 84ed5298
+changed. Each edit was checked against the code and tests and
+against the QSpec catalog
 (`proposals/quire-v1/definitions/native-diagnostics.md`, the
 `invalid_source_identity` row at line 102).
 
@@ -43,11 +43,11 @@ low-severity findings blocks a merge.
 
 ## Dispositions
 
-Checked against `git diff 9f1be528..86cabd0e` on 2026-09-26.
+Checked against the fix diff on 2026-09-26.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed 86cabd0e | FR-001 Status says the revision claim still reads `1-draft.7` and that the bump lands with #490. The merge-order constraint stays open under SR-732 FND-001. |
-| FND-002 | fixed 86cabd0e | The FR-001 S0 bullet (lines 95-98) now reads "A blank label or an empty path ... no complete, non-blank label set to name the source by, and an empty path names no location." |
-| FND-003 | fixed 86cabd0e | FR-026 Status, TC-430 Status and a new FR-001 Status paragraph each point to the byte-0 debt. |
-| FND-004 | fixed 86cabd0e | The TC-430 Status and its spec/tests.md row are back to Partial, and say that step 1 passes only with the deviation. |
+| FND-001 | fixed | FR-001 Status says the revision claim still reads `1-draft.7` and that the bump lands with #490. The merge-order constraint stays open under SR-732 FND-001. |
+| FND-002 | fixed | The FR-001 S0 bullet (lines 95-98) now reads "A blank label or an empty path ... no complete, non-blank label set to name the source by, and an empty path names no location." |
+| FND-003 | fixed | FR-026 Status, TC-430 Status and a new FR-001 Status paragraph each point to the byte-0 debt. |
+| FND-004 | fixed | The TC-430 Status and its spec/tests.md row are back to Partial, and say that step 1 passes only with the deviation. |

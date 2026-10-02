@@ -5,7 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "Compiler L2 FR-035/036, US-001/002, TC-113–115, IT-009 and TM-003 against current parser/model/link/package boundaries"
 review_set: all
-evaluated_revision: "fa07b079861286c884e2f44380a3ed8f9508ef86"
 review_date: "2026-09-10"
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-035, type: reviews }
@@ -63,7 +62,7 @@ whose semantic contract this compiler consumes instead of redefining.
 
 | Dependency or actor | Assumed or Guaranteed | Named contract and control |
 | --- | --- | --- |
-| Shared grammar and semantic definitions | Assumed meaning authority; guaranteed selection checks, planned | Standard shared grammar/package/edition contracts at d7483f3d0abe7e71614f73ee18eb51a677ebe3d8; compiler FR-035/036 and TC-113/114. An unavailable edition or conflicting closure refuses rather than choosing a backend default. |
+| Shared grammar and semantic definitions | Assumed meaning authority; guaranteed selection checks, planned | Standard shared grammar/package/edition contracts; compiler FR-035/036 and TC-113/114. An unavailable edition or conflicting closure refuses rather than choosing a backend default. |
 | Source author and inventory caller | Guaranteed input checks, planned | FR-001/035/036; TC-113/114. Exact source identity/spans, namespace closure, duplicate authorities and excluded ambient files are explicit. |
 | Model producer and formal/native correspondence | Guaranteed boundary checks, planned | Existing FR-013/015 seam plus FR-036 and IT-009-SC-01/03. The real producer supplies exports; foreign same-shaped owners and canonical-versus-byte digest substitution refuse. |
 | D/F static binding contracts | Assumed contract meaning; guaranteed retained requirements, planned | FR-036-AC-4 and IT-009-SC-02/04. Exact model, scope, anchor and authority roles survive without requiring future observations. No compiler-owned parallel schema is authorized. |

@@ -67,8 +67,8 @@ run, not five interleaved rounds. It does not meet this rule.
 | Item | Value |
 | --- | --- |
 | Machine | Intel Core i9-10900K @ 3.70 GHz, 20 logical CPUs (`nproc`), 62 GiB RAM, WSL2 Linux 6.18.33.2-microsoft-standard-WSL2 |
-| Toolchain | rustc 1.98.1 (48a229cea 2026-09-01), `bench` profile (release) |
-| Harness | criterion 0.8.2, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
+| Toolchain | `bench` profile (release) |
+| Harness | criterion, default features off. Defaults apply unless a bench overrides them: 3 s warm-up, 100 samples, 5 s measurement. |
 | Checker and evaluator axes | 5 runs, 2026-09-23 17:22 to 18:23 (UTC-7), at `4dd02fb1`. That revision's checker, evaluator, package, forms and kernel sources are identical to this branch's base, `25ee38ff`. Load average ranged from 3.3 to 26.6, with two other QSL builds running. |
 | Parser, CST and model axes | 5 runs, 2026-09-23 19:39 to 20:40 (UTC-7), at `46113bb5`. This is rebased on `25ee38ff` (the intake single-parse change) and includes the qsl-cst identity-byte counter the CST axis reads. Load average ranged from 4.2 to 11.6. |
 

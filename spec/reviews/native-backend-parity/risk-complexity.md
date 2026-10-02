@@ -9,9 +9,8 @@ review_set: all
 
 ## Summary
 
-The volatile edge is confined to an exact cargo-llvm-cov 0.9.0 / LLVM JSON 3.1.0
-fixture reader. Exact version, manifest, file and probe assertions make producer
-drift fail closed; production lowering and the reusable reader are unchanged.
+The volatile edge is confined to an LLVM JSON 3.1.0 fixture reader. Format,
+manifest, file and probe assertions make producer drift fail closed; production lowering and the reusable reader are unchanged.
 
 ## Findings
 

@@ -3,7 +3,7 @@ id: SR-098
 title: "Code and Rust review of native reference evaluation"
 type: SpecReview
 analysis: code-review
-scope: "FR-008 / Task-014 at 48f53aed5990f7daf15ae6871c1c081d8974c64f"
+scope: "FR-008 / Task-014"
 review_set: subset
 ---
 
@@ -29,10 +29,10 @@ remain required by the original assignment.
 
 ## Scope and review process
 
-Reviewed source 48f53aed5990f7daf15ae6871c1c081d8974c64f against FR-008,
+Reviewed source against FR-008,
 NFR-006, NFR-003/NFR-005 and docs/native-runtime-evaluation.md. The governing
 specification and eight actual QUOIN reviews remain those recorded in Plan-006:
-045025f, SR-088–095, 1603f97/f7ed193, with the earlier construction-test setup
+SR-088–095, with the earlier construction-test setup
 correction and review addenda. This implementation changes no admitted syntax,
 native scalar/observation meaning, runtime input encoding or model authority.
 
@@ -117,22 +117,21 @@ for a Loom model. No fuzz or mutation-adequacy result is inferred from these tes
 ## Actual local gates
 
 Cargo phases ran serially with nice 10, locked/offline resolution, one job,
-one test thread and the existing explicit target caches. Logs are under
-reviews/data/native-runtime/.
+one test thread and the existing explicit target caches.
 
-| Command | Actual result | Evidence |
-| --- | --- | --- |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | Full checkpoint regression: 192 ordinary tests and one compile-fail doctest passed; three named private tests ignored in this lane | evaluation-checkpoint-full-tests.txt |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_evaluation --lib -- --test-threads=1` | Final affected scope: all 29 evaluator tests and three library unit tests, including both private invariant controls, passed | evaluation-qualified-tests.txt |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed on final source and tests | evaluation-qualified-clippy.txt |
-| `nice -n 10 cargo fmt --all -- --check` | Passed | evaluation-qualified-fmt.txt |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed | evaluation-rustdoc.txt |
-| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed with the existing minimal-build cache | evaluation-minimal-build.txt |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | Three selected private audits passed | evaluation-private-audits.txt |
+| Command | Actual result |
+| --- | --- |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | Full checkpoint regression: 192 ordinary tests and one compile-fail doctest passed; three named private tests ignored in this lane |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test runtime_evaluation --lib -- --test-threads=1` | Final affected scope: all 29 evaluator tests and three library unit tests, including both private invariant controls, passed |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed on final source and tests |
+| `nice -n 10 cargo fmt --all -- --check` | Passed |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed |
+| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed with the existing minimal-build cache |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | Three selected private audits passed |
 
 After the full checkpoint suite, five evaluator controls were added and the
 arena-index conversion was tightened. The final affected tests and Clippy passed;
-the full checkpoint log is not presented as a fresh 197-test run. Subsequent
+the full checkpoint run is not presented as a fresh 197-test run. Subsequent
 test-index conversion/formatting changes were compiled by the final Clippy gate.
 Failed and successful earlier logs retain the actual sequence. No failed gate
 was waived or relabeled as a successful semantic observation.

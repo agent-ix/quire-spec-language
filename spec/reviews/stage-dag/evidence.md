@@ -13,13 +13,13 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit 944a1c8 on `task/209-stage-dag`. ADR-011 is a design
+Round 1. Reviewed `task/209-stage-dag`. ADR-011 is a design
 record, not an FR. It has no acceptance-criterion rows, and `quoin advise`
 returns no obligation for it. So every method below is a reviewer judgement,
 not a catalog verdict. The review asks two questions of each decision. Can it
 be verified? Does the record name the mechanism and the owner that verify it?
 It also spot-checks the record's factual claims against ADR-010, the issues it
-cites and `src/` at 944a1c8.
+cites and `src/`.
 
 What holds:
 
@@ -27,7 +27,7 @@ What holds:
 - The §6.2 module table covers all 31 top-level modules in `QSL:lib.rs:13-44`.
 - The AD-016 arrow 7 executor, the crate graph deltas and the Owner decisions
   are cited correctly.
-- RT `src/exact/` is 11,519 lines at RT d97bc0b.
+- RT `src/exact/` is 11,519 lines.
 - The index row in `spec/spec.md:388` matches the record.
 
 What does not hold:
@@ -62,7 +62,7 @@ verifier. None reopens AD-016, #210 or #211.
 | FND-010 | low | §4 and §5 give rules with no verification method. §4: the constructors of S3 and S4 types are private to their stage modules. Inside one crate, only module privacy holds this, and `pub(crate)` does not. Across crates it can be shown by `compile_fail` doctests. §5: the exit-code map has no `_` arm, which can be checked by `clippy::wildcard_enum_match_arm` on that function or by a closure test. **Fix:** add one sentence per rule that names the method and the gate. Suggested gates: #216 "checked typestate prevents unchecked values" evidence for §4, and #230 for §5. | ADR-011 §4, §5; #216; #230 |
 | FND-011 | low | SEAM-1 quotes "#205 Layer 2: 'No deprecated producer path remains reachable'". That text is not in #205. The gate wording is #216's: "Old producer/bypass paths are unreachable." **Fix:** quote and cite #216. | ADR-011 §6.2 SEAM-1; #205; #216 |
 | FND-012 | low | `state` imports IR today, which the target layer rule forbids, and the record does not say so. `QSL:state/evaluation.rs:15` has `use quire_contract_ir as ir;`, which is the `quire-contract-model` crate, and uses `ir::ValueType` at `:1352,1357`. §6.1 layer 5 depends on "4, 3, K" only. The §6.2 `state` row mentions only FB-03. **Fix:** note the import in the `state` row, and name its retirement: the K `ValueType` from X-1, typed by #211. | ADR-011 §6.1 layer 5, §6.2 `state` |
-| FND-013 | low | The RT figure in the Context has no revision. "Compiles 11,519 lines of it" does not say which revision was counted, and RT #53 does not give the figure. It holds at RT d97bc0b (origin/main, 2026-09-18). **Fix:** add "at RT d97bc0b", following the ADR-010 evidence convention. | ADR-011 Context (RT #53) |
+| FND-013 | low | The RT figure in the Context has no revision. "Compiles 11,519 lines of it" does not say which revision was counted, and RT #53 does not give the figure. It holds at RT origin/main, 2026-09-18. | ADR-011 Context (RT #53) |
 
 ## Verification by decision
 
@@ -81,7 +81,7 @@ has no criterion rows.
 
 ## Method
 
-- **ADR-011.** Read at 944a1c8 (`git -C` log confirms the head). The index row
+- **ADR-011.** Read in full. The index row
   was checked at `spec/spec.md:37-39,388`.
 - **`quoin advise --json`.** Run in the worktree. It returned zero rows for
   ADR-011.
@@ -91,7 +91,7 @@ has no criterion rows.
   - §3.1: SCCs S1–S3 and the 7 two-cycles.
   - §2: lane labels.
   - The X4 row.
-- **QSL `src/` at 944a1c8:**
+- **QSL `src/`:**
   - `lib.rs:13-44`
   - `model/checked_dispatch.rs:101-112,747`
   - `value/mod.rs:106-121`
@@ -111,15 +111,14 @@ has no criterion rows.
   - Titles of #213–#232, #185, #122, #133, #29, CG #58, #59, #60, #73, IR #109
     and QSL PR #200.
   - The full open-issue list of IR.
-- **RT.** The `src/exact/` line count was taken at d97bc0b.
 
-## Round 2 (HEAD 5cbd853)
+## Round 2
 
 ### Round 2 summary
 
-Round 2 reviews commit 5cbd853, which revises the record against the round-1
+Round 2 reviews the revision of the record against the round-1
 findings. Round-1 content above is unchanged. Code claims were checked against
-`src/` at 5cbd853, and the #215, #216, #219 and #226 bodies were read with
+`src/`, and the #215, #216, #219 and #226 bodies were read with
 `gh`. Eleven of the 13 round-1 findings are resolved and two are partly
 resolved. The revision introduced one new `high` finding: its new
 `semantic_value` split leaves the `quire-exact` kernel depending on layer 3.
@@ -128,7 +127,7 @@ resolved. The revision introduced one new `high` finding: its new
 
 | Finding | Status | Reason |
 |---|---|---|
-| FND-001 | Resolved | §6.1 and the new §6.2 row move `model::checked_dispatch` and `check_field_refinement_obligation` to `check` (M-2). At 5cbd853 the only other `model` → `value::expression` imports are `Location` and `Origin`, which are in the kernel row, and the helpers of the moved obligation (`conformance.rs:741-893`). |
+| FND-001 | Resolved | §6.1 and the new §6.2 row move `model::checked_dispatch` and `check_field_refinement_obligation` to `check` (M-2). The only other `model` → `value::expression` imports are `Location` and `Origin`, which are in the kernel row, and the helpers of the moved obligation (`conformance.rs:741-893`). |
 | FND-002 | Resolved | §1 I2 row: the reader is in layer-4 `package`, the view type is in layer-3 `library`, and `check` never calls `package`. The E3 cell names layer-3 import views. |
 | FND-003 | Resolved | §6.1 gives the F order `json_number` < … < `source` < `diagnostic` < `located_json`, and `source` no longer constructs a `Diagnostic` (M-1). The checking↔linking and linking↔native_model two-cycles retire with SEAM-1. The imports at `diagnostic.rs:3`, `source.rs:3` and `located_json.rs:4` fit that order once M-1 lands. |
 | FND-004 | Partly | §3 now has a "Verified by" column and an interim rule until #226. But FB-05 and FB-11 are assigned to "#215 direction check", and #215's scope and acceptance hold no direction check. The Owner questions do not list a #215 amendment. |
@@ -140,7 +139,7 @@ resolved. The revision introduced one new `high` finding: its new
 | FND-010 | Resolved | §4 names `compile_fail` tests as #216 evidence. §5 names `clippy::wildcard_enum_match_arm` and #230. |
 | FND-011 | Resolved | SEAM-1 quotes #216. Both quoted sentences match the #216 body. |
 | FND-012 | Resolved | The `state` row cites the IR import (`state/evaluation.rs:15`) and the `native_model` import (`:21`), and M-6c removes both. |
-| FND-013 | Resolved | The Context now reads "At RT d97bc0b (origin/main, 2026-09-18)". |
+| FND-013 | Resolved | The Context now names RT origin/main, 2026-09-18. |
 
 ### Verification by decision (round 2)
 
@@ -162,7 +161,7 @@ judgement, because ADR-011 has no criterion rows.
 | ID | Severity | Summary | Refs |
 |---|---|---|---|
 | FND-014 | high | The revision creates a kernel ↔ layer-3 cycle. §6.2 now maps `composite`, `collection`, `equality` and `outcome` to K `quire-exact`, and maps `enumeration`, `quantity`, `unit`, `key` and `reference` to layer-3 `semantic_value`. But the kernel `Value` and `ValueType` (`value/composite.rs:50-67,144-158`) have `Quantity`, `Enum`, `Reference` and `Population` variants. Their payload types are imported from `quantity`, `enumeration`, `reference` and `model::population::PopulationBinding` (`composite.rs:22,27,29,31`). `collection.rs:25` imports `key::compare_keys`. `equality.rs:23,26` imports `enumeration` and `quantity`. `outcome.rs:10,12,13` imports `expression::WrongSnapshotCause`, `reference` and `diagnostic::Code`. K "depends on none in the ecosystem", so X-1 cannot build a leaf crate from this map. The claim that M-2 breaks SCC S2 then fails, because `semantic_value` and `model` import K while K imports them back. AD-016 limits the kernel to "exactly the types listed in this row plus `Undefined`". **Fix:** state which layer owns the payload types of `Value`'s `Quantity`, `Enum`, `Reference` and `Population` variants. Either put their closure in K, or state that the kernel `Value` is narrower than QSL's and name where the extended variants live. If the choice is a type decision, route it to #211 and AD-016 WP5a. Then correct the §6.2 kernel and `semantic_value` rows and the X-1 "Leaf" claim. Also place `WrongSnapshotCause` and the `Code` that `outcome` uses at or below K. | ADR-011 §6.1 layers K and 3, §6.2 `value` rows, §7.3 X-1 and M-2; AD-016 Shared-type strategy |
-| FND-015 | medium | Layer inversion inside the `value::library` row. §6.2 maps `value::library` to layer-3 `library` and `value::package_identity` to layer-4 `package`. But `value/library.rs:25` imports `project_declarations`, `PreimageDefect` and `ProjectedDeclarations` from `package_identity`. Layer 3 may not depend on layer 4. The row dates from 944a1c8 and round 1 missed it. The revision makes §6.1 an exhaustive allow-list, so a #226 gate written to it would fail here. **Fix:** place the declaration projection that `library` uses in layer 3, or state that `library` receives it as a layer-3 type. Then correct the row. | ADR-011 §6.1, §6.2 `value::library` row |
+| FND-015 | medium | Layer inversion inside the `value::library` row. §6.2 maps `value::library` to layer-3 `library` and `value::package_identity` to layer-4 `package`. But `value/library.rs:25` imports `project_declarations`, `PreimageDefect` and `ProjectedDeclarations` from `package_identity`. Layer 3 may not depend on layer 4. The row dates from round 1, which missed it. The revision makes §6.1 an exhaustive allow-list, so a #226 gate written to it would fail here. **Fix:** place the declaration projection that `library` uses in layer 3, or state that `library` receives it as a layer-3 type. Then correct the row. | ADR-011 §6.1, §6.2 `value::library` row |
 | FND-016 | low | §2.3 says "#226 checks each claimed-module list against the transcript census". #226's gate list holds no proof-transcript or claimed-module check. #219 does carry the rule. **Fix:** drop the #226 clause or route it as a #226 amendment. Keep #219 as the verifier. | ADR-011 §2.3; #226; #219 |
 
 ### Round 2 verdict
@@ -181,9 +180,8 @@ AD-016, #210 or #211.
 
 ### Round 2 method
 
-- **ADR-011.** Read at 5cbd853. `git -C` log confirms the head. The round-1
-  commit was 944a1c8.
-- **QSL `src/` at 5cbd853:**
+- **ADR-011.** Read in full.
+- **QSL `src/`:**
   - `diagnostic.rs:3` · `source.rs:3` · `source_map.rs:3` · `located_json.rs:4`
   - `model/conformance.rs:89-91,741-894`
   - `model/*` imports of `crate::value`
@@ -198,9 +196,9 @@ AD-016, #210 or #211.
   `origin/main` with `gh api`.
 - **GitHub, read-only `gh`:** the #215, #216, #219 and #226 bodies.
 
-## Round 3 (HEAD 22fa948)
+## Round 3
 
-Delta review f781e32 → 22fa948, with ADR-013 at 4152eb8. FB-05 now has a
+Delta review, with ADR-013. FB-05 now has a
 checkable surface: T-12 adds an API-surface check that CG uses only the layer-6
 `replay` facade, beside the `cargo tree` direction check.
 

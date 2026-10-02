@@ -13,12 +13,11 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (base
-`99e9b6c7`), and its amendment pointers in ADR-011 §1, ADR-012 §3 and §13.5
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping`, and its amendment pointers in ADR-011 §1, ADR-012 §3 and §13.5
 Q210-3, ADR-013 R-06, O-08 and O-25, and `spec/spec.md`. The review applied
 the base checklist as it fits an ADR: id formats, cross-references, link
 validity, terminology, verifiable decisions, and catalog codes checked against
-QSpec `main` at `4634f5f` (`native-diagnostics.md`, revision `1-draft.8`).
+QSpec `main` (`native-diagnostics.md`, revision `1-draft.8`).
 
 What holds:
 
@@ -65,7 +64,7 @@ What does not hold:
 | FND-006 | low | RF-6 item 2 cites "ADR-011 §2.3 rule 8". Rule 8 is Decision item 8 (ADR-011 lines 140-150), a rule for proof gates, and §2.3 carries only its detail. Fix: cite "ADR-011 Decision item 8 (§2.3)", and say it is applied to a test gate by analogy. | ADR-017 RF-6; ADR-011 Decision item 8, §2.3 |
 | FND-007 | low | PF-7 cites `unsupported_construct`/`not-yet-implemented` as the forced sites. Catalog `1-draft.8` gives `unsupported_construct` only the causes `declaration-form` and `expression-form`, so `not-yet-implemented` is not a catalog cause. RF-4 justifies its `unsupported` class with AD-003's "prohibited by the selected profile", but the code uses the same code for "QSL has not implemented this checker" (`check/protocol_clause.rs:409-418`). Fix: record the catalog gap and its owning ticket. State that RF-4's `unsupported` class covers both meanings on purpose. | ADR-017 PF-7, RF-4; QSpec `native-diagnostics.md` `unsupported_construct` row |
 | FND-008 | low | PF-7 scenario 1 offers `compensate` as a new construct that needs "an S2 production in `forms::protocol_clause`". S2 already parses it (`ProtocolNodeKind::CompensateTemplate`, `qsl-forms/src/syntax.rs:1225`), and S3's `covered_kind` refuses it (`check/protocol_clause.rs:389-405`). Fix: use a construct that has no S2 production, or reword scenario 1 as "an S2-parsed construct gains its check": classify it in `covered_kind`, check it, and lower it. | ADR-017 PF-7 |
-| FND-009 | medium | §4 lists TC-463 as landed. At `99e9b6c7` it is `#[ignore = "blocked on IR-370 …"]` (`qsl-replay/src/spine/clause/tests.rs:4931`), and QSL still pins quire-contract-ir at `2a28643`, while Context says IR-370 is Done. The ticket forbids claiming unfinished behaviour. Fix: say TC-463 is ignored until the IR pin moves past IR-370, and name the ticket that moves it. | ADR-017 Context, §4; QSL commit `99e9b6c7` |
+| FND-009 | medium | §4 lists TC-463 as landed. It is `#[ignore = "blocked on IR-370 …"]` (`qsl-replay/src/spine/clause/tests.rs:4931`), and QSL still pins quire-contract-ir, while Context says IR-370 is Done. The ticket forbids claiming unfinished behaviour. Fix: say TC-463 is ignored until the IR pin moves past IR-370, and name the ticket that moves it. | ADR-017 Context, §4 |
 | FND-010 | low | AR-2 calls the operation key an "O-06 pair" but types it as (`DeclarationKey`, `Identifier`). The O-06 operation member is `operation{declaration: NodeKey, name}`, and O-06 equality uses the receiver's static type node. Fix: either key by the O-06 member (a `NodeKey`) or drop the O-06 label and cite O-03 plus the identifier. | ADR-017 AR-2; ADR-013 O-06 |
 | FND-011 | low | The front matter omits artifacts that the decisions amend or depend on: QSL FR-070, FR-071, FR-098, FR-100, FR-104 and FR-109, and QSpec AD-006, FR-012, FR-013, FR-177, FR-196, FR-301 and FR-331. Fix: add `depends_on` or `relates_to` edges for them. | ADR-017 front matter, PF-3, TK-2, RF-5, AR-2, AR-6 |
 | FND-012 | low | The §6 ticket-text corrections leave out one error. QSL-40 and QSL-39 (ticket text, read as data) name QSpec FR-177 as their "normative contract", but Context says FR-177 is a different claim, protocol implementation refinement. Fix: add that correction to the list for the owner. | ADR-017 Context, §6; Linear QSL-40, QSL-39 |

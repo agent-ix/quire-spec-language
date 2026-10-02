@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Reviewed `agent-a/composed-native-binding` (92313b7) against
+Reviewed `agent-a/composed-native-binding` against
 `agent-a/composed-native-linking` under `code-review` + `rust-review` +
 `rust-style`, plus the repo's own `AGENTS.md`/`CLAUDE.md` idioms. The binding
 design is sound — charge-before-work is real, dispositions never fabricate empty
@@ -29,25 +29,24 @@ unraisable hard reference ceiling.
 parser's own 50 000-node ceiling cannot be bound at any caller limit setting.
 Everything else is medium or low.
 
-**Current verdict (correction re-review of 9aa788a, 2026-09-10): CONDITIONAL.**
+**Current verdict (first correction re-review, 2026-09-10): CONDITIONAL.**
 FND-001 is resolved and re-verified by a gate-run test; every other original
 finding is resolved or dispositioned. Three residual findings remain, all
-medium or low. The original FAIL above records the state at 92313b7 and is
+medium or low. The original FAIL above records the original state and is
 retained as evidence, not as the current gate.
 
-**Current verdict (correction re-review of 5381672, 2026-09-10): CONDITIONAL.**
+**Current verdict (second correction re-review, 2026-09-10): CONDITIONAL.**
 The three residual findings are dispositioned below: FND-016 and FND-017
 resolved, FND-015 resolved for the model-wide scans and open for the
 record-field scan. Three findings arise from this correction and its remainder
 — FND-018 and FND-020 medium, FND-019 low. No high finding stands, so the gate
-stays CONDITIONAL. The FAIL above remains the record of 92313b7 and the
-9aa788a paragraph the record of that commit.
+stays CONDITIONAL. The FAIL above remains the record of the original state and
+the first-correction paragraph the record of that correction.
 
 ## Gates
 
-All run in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`.
+All run in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`.
 
 | Gate | Result |
 | --- | --- |
@@ -59,7 +58,7 @@ All run in this session from the worktree, one heavy command at a time under
 | `cargo deny check` | not applicable — no `deny.toml` in the repo |
 
 The four `#[ignore]`d tests are pre-existing named lanes documented in
-`README.md`, not new. The implementation agent's logs in `/tmp/quire-binding-*.log`
+`README.md`, not new. The implementation agent's logs
 agree with these outcomes; its `quire-binding-fmt.log` and
 `quire-binding-first-check.log` record two failures (module ordering, a missing
 `flow` file) that were fixed before the commit under review.
@@ -82,10 +81,10 @@ agree with these outcomes; its `quire-binding-fmt.log` and
 | FND-012 | low | Six requirement ids preserved under `resources/native-v1/spec/**` collide with local `spec/` ids; only tool scoping convention keeps them apart | resources/native-v1/spec/functional/FR-036-retain-lexical-source-locations.md:2, spec/functional/FR-036-link-composed-native-packages.md:2 |
 | FND-013 | low | `Cause::DefinitionCycle` and `Cause::IncompatibleRequirement` are structurally unreachable in the closed registry | src/linking/composed/definitions.rs:86, src/linking/composed/definitions.rs:88 |
 | FND-014 | low | Three new submodules omit the `FR-` owning-requirement `//!` header the other six carry | src/linking/composed/scopes/values.rs:2, src/linking/composed/scopes/protocol.rs:2, src/linking/composed/scopes/protocol/flow.rs:2 |
-| FND-015 | medium | Catalog name lookups are now honestly charged but remain linear in model size, so a large-model package that bound at 92313b7 now exhausts References | src/linking/composed/models.rs:534, src/linking/composed/models.rs:541, src/linking/composed/models.rs:717, src/linking/composed/models.rs:169 |
+| FND-015 | medium | Catalog name lookups are now honestly charged but remain linear in model size, so a large-model package that bound originally now exhausts References | src/linking/composed/models.rs:534, src/linking/composed/models.rs:541, src/linking/composed/models.rs:717, src/linking/composed/models.rs:169 |
 | FND-016 | low | The new binary boundary lookup's arena precondition is neither asserted nor unit-tested; a violation silently returns a partial region instead of refusing | src/linking/composed/arena.rs:7, src/linking/composed/arena.rs:25, src/linking/composed/arena.rs:35, src/linking/composed/dependencies.rs:195 |
 | FND-017 | low | `ScopeIssue::InvalidEnvironment` is structurally unreachable and untested, without the "defensive, retained for future change" label its analogue got | src/linking/composed/scopes.rs:295, src/linking/composed/scopes.rs:571, src/linking/composed/definitions.rs:496 |
-| FND-018 | medium | Eager per-model name indexes double `charge_exports` Bindings, so 59 supplied models exhaust the unraisable 262 144 ceiling that 9aa788a cleared | src/linking/composed/models.rs:870, src/linking/composed/models.rs:178, src/linking/composed/models.rs:333 |
+| FND-018 | medium | Eager per-model name indexes double `charge_exports` Bindings, so 59 supplied models exhaust the unraisable 262 144 ceiling that the first correction cleared | src/linking/composed/models.rs:870, src/linking/composed/models.rs:178, src/linking/composed/models.rs:333 |
 | FND-019 | low | The new accounting doc charges References for borrowed-index entries, but the scalars index is still built free and the Catalog Bindings reservation stays approximate | src/linking/composed/models.rs:251, src/linking/composed/models.rs:886, src/linking/composed/models.rs:890 |
 | FND-020 | medium | FND-015's record-field path is untouched: `field()` still scans an already name-sorted field vector linearly, charged per candidate | src/linking/composed/models.rs:799, src/linking/composed/models.rs:803, src/checking/types.rs:203 |
 
@@ -212,7 +211,7 @@ without approval). Separately,
 `resources/native-v1/external/quire-spec-language/src/diagnostic.rs` and
 `docs/native-error-codes.md` are byte-identical to the repo's own current
 `src/diagnostic.rs` and `docs/native-error-codes.md` and are labelled with URLs
-into this same repository at f444d03c, so "external" is inaccurate and the
+into this same repository, so "external" is inaccurate and the
 copies will drift silently the next time a `Code` variant is added. Nothing
 compares them. The remedy is a co-located provenance/licensing record and a
 drift control — not a per-file checksum catalog, which `CLAUDE.md` prohibits.
@@ -290,14 +289,13 @@ registry that may grow, but it is currently dead and should be labelled as such.
   `pub(crate)` and only the parser builds them, so no caller can inject one; the
   charged loops would exhaust rather than hang regardless.
 
-## Correction re-review (9aa788a, 2026-09-10)
+## Correction re-review (first correction, 2026-09-10)
 
 Targeted re-review of the remediation commit against this review's findings.
 Read-only over source, tests, spec and Git; the only writes are this section,
 the current-verdict paragraph and rows FND-015..017. All four gates were re-run
-in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`.
+in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`.
 
 | Gate | Result |
 | --- | --- |
@@ -309,7 +307,7 @@ in this session from the worktree, one heavy command at a time under
 | `cargo deny check` | not applicable — no `deny.toml` in the repo |
 
 Counts rose from 401/417 to 419/435; the four `#[ignore]`d tests are the same
-pre-existing named lanes. Logs are `/tmp/quire-binding-rereview-*.log`.
+pre-existing named lanes.
 
 ### Disposition of the original findings
 
@@ -345,7 +343,7 @@ type lookups + **both record candidates** + Sequence + scalar leaf", and
 declarations with four typed parameters each is ordinary source; that is
 400 × ~5 003 ≈ 2 001 200 References against the unraisable ceiling of 2 000 000
 (`binding_work.rs:30`, `:42-51`), so the package reports `Unfinished`. This
-input bound successfully at 92313b7, where the same scan was billed as one
+input bound successfully originally, where the same scan was billed as one
 Reference — so the honest-charging fix, taken alone, converts a hidden cost into
 a refusal for legal input. The remedy is local and does not touch the shared
 `Catalog`: `Exports` already carries exactly the right pattern for scalars — a
@@ -389,23 +387,21 @@ labelling them defensive; the same label belongs here.
   work behaving correctly — the record was never created — and
   `tests/composed_models.rs:1065-1075` asserts exactly that boundary.
 - `ACCOUNTING_VERSION` stays at `composed-binding-work/1` despite a materially
-  changed charging contract. Both `92313b7` and `9aa788a` are unmerged commits
+  changed charging contract. The original and corrected commits are unmerged
   on the same branch, so `/1` has never been published and no bump is owed;
   a comparable change after this ships would owe one.
 
-## Correction re-review (5381672, 2026-09-10)
+## Correction re-review (second correction, 2026-09-10)
 
 Targeted re-review of the second remediation commit against this review's three
-residual findings (FND-015..017) and the diff `9aa788a..5381672` only. The
+residual findings (FND-015..017) and that commit's diff only. The
 fourteen original findings stay as dispositioned above and were not re-opened.
 Read-only over source, tests, spec and Git; the only writes are this section,
 the current-verdict paragraph and rows FND-018..020. Every gate was executed in
 this session from the worktree — not read from the implementation agent's logs
-— one heavy command at a time, the whole batch under a single
-`flock /tmp/quire-heavy-check.lock`, with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10` and
-`--locked`. `src/lib.rs` was touched (mtime only, no content change) under that
-lock immediately before the first gate so the shared target could not reuse
+— one heavy command at a time, with `CARGO_BUILD_JOBS=1`, `nice -n 10` and
+`--locked`. `src/lib.rs` was touched (mtime only, no content change)
+immediately before the first gate so the shared target could not reuse
 another worktree's same-package library.
 
 | Gate | Result |
@@ -420,7 +416,7 @@ another worktree's same-package library.
 Counts rose 419 → 422 and 435 → 438; the three added tests are the two
 `arena::tests` unit tests and `large_admitted_model_...`, and all three ran in
 both feature configurations. The four `#[ignore]`d tests are the same
-pre-existing named lanes. Logs are `/tmp/quire-binding-final-review-*.log`.
+pre-existing named lanes.
 
 ### Disposition of the residual findings
 
@@ -443,7 +439,7 @@ test admits (1 500 records, one Boolean field each → 3 Bindings per record,
 4 500 per model, ~257 KB of source): a package supplying 59 such models charges
 265 500 Bindings and exhausts during `collect()`, so `bind_models` leaves
 `complete = false`, every later qualified lookup returns `IncompleteCatalog`
-and every declaration reports `Unfinished`. At 9aa788a the same input charged
+and every declaration reports `Unfinished`. After the first correction the same input charged
 3 000 per model — 177 000 — and completed; it would have taken 88 models to
 exhaust. Nothing else refuses first: 59 models is inside `models: 128`, the
 ~15 MB of artifact bytes is inside `bytes: 33 554 432`, and References are
@@ -465,7 +461,7 @@ reserve "the shared Catalog and each additional borrowed-name entry", but the
 Catalog half stays approximate — a record costs `records` + `ordered_fields` +
 its `Vec<&Field>` + `fields` = 2 + 2F entries against 2 + F charged, and an
 object role costs both `objects` and `references` entries against
-`models.rs:890`'s one. The under-reservation is inherited from 9aa788a, not
+`models.rs:890`'s one. The under-reservation is inherited from the first correction, not
 introduced here; the claim of exactness is new. Correct one or the other: charge
 the scalars index like its siblings, and soften the comment to "reserve before
 allocating" rather than implying entry-for-entry parity.
@@ -481,12 +477,12 @@ with no new allocation. Admission caps a record at ~4 999 fields (`nodes` is
 `src/native_model/admission.rs:80-102`). Scenario: one such record and an
 ordinary unit with 500 member accesses costs 500 × 4 999 ≈ 2 499 500 References
 against the unraisable 2 000 000 ceiling, and the package reports `Unfinished`.
-At 92313b7 the same scan was billed as one Reference, so this is the unfixed
+Originally the same scan was billed as one Reference, so this is the unfixed
 remainder of the FND-015 regression rather than a new cost.
 `tests/composed_models.rs:856-903` currently pins the per-candidate field
 charge, so the fix owes that test an update.
 
-### Verified safe at 5381672, not findings
+### Verified safe after the second correction, not findings
 
 - Removing the `find_charged` scans changes cost, not outcome. Both the old
   first-match scan and the new `BTreeMap::get` see exactly one candidate per
@@ -504,5 +500,5 @@ charge, so the fix owes that test an update.
   historical resource bytes are untouched by this commit.
 - `ACCOUNTING_VERSION` still reads `composed-binding-work/1` after a second
   charging-contract change. Both commits remain unpublished on this branch, so
-  the FND-009/9aa788a disposition carries; a comparable change after this ships
+  the FND-009 disposition carries; a comparable change after this ships
   would owe a bump.

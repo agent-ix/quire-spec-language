@@ -1,9 +1,9 @@
 ---
 id: SR-735
-title: "QSL-245 code review of the PR 489 fix round (86cabd0e)"
+title: "QSL-245 code review of the PR 489 fix round"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@86cabd0e092158fb9b90d85b34cbe9d76ab79cb8; qsl-cst/src/diagnostic.rs; qsl-foundation/src/diagnostic.rs; qsl-foundation/src/source.rs; src/command/output.rs; src/command/output/types.rs; src/main.rs; tests/it/cli.rs"
+scope: "agent-ix/quire-spec-language; qsl-cst/src/diagnostic.rs; qsl-foundation/src/diagnostic.rs; qsl-foundation/src/source.rs; src/command/output.rs; src/command/output/types.rs; src/main.rs; tests/it/cli.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-001
@@ -12,7 +12,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-245. PR: quire-spec-language#489. This round is a code and Rust
-review of the fix delta `9f1be528..86cabd0e` only; it records new findings
+review of the fix delta only; it records new findings
 that the fix introduced. Dispositions of SR-732, SR-733 and SR-734 are in
 those files.
 
@@ -30,7 +30,7 @@ Checked sound:
   `None` adds no key, so the run output's shape does not change for existing
   consumers. The cli and standalone tests pass: 22 passed.
 
-Measured by building the CLI at 237f6571 and at 86cabd0e and running both on
+Measured by building the CLI before and after the fix round and running both on
 a blank label, invalid UTF-8 and a blank identity.
 
 ## Findings

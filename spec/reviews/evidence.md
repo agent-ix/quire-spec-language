@@ -5,7 +5,6 @@ type: SpecReview
 analysis: evidence
 scope: "spec/spec.md and indexed requirements"
 review_set: all
-evaluated_revision: "a80a17d1dd303b91712df2023fdba8aba83e89c1"
 review_date: "2026-09-07"
 ---
 
@@ -21,24 +20,24 @@ The mandatory advisor and catalog commands ran successfully. Uncatalogued NFR la
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | NFR-001-M-1: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate source/output sizes around the selected inclusive byte ceiling. | NFR-001-M-1; [raw advice](data/advice.json) |
-| FND-002 | medium | NFR-001-M-2: authored `Boundary tests` is uncatalogued. Advisor: `dast`, `iast`, `negative-abuse-testing`, `performance-benchmarking`, `sast`. Reviewer proposes `property-based-testing`; Generate token counts at and above a lowered ceiling. | NFR-001-M-2; [raw advice](data/advice.json) |
-| FND-003 | medium | NFR-001-M-3: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate syntax-node counts around the bound. | NFR-001-M-3; [raw advice](data/advice.json) |
-| FND-004 | medium | NFR-001-M-4: authored `Depth tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate delimiter/parser depth and long flat chains separately. | NFR-001-M-4; [raw advice](data/advice.json) |
-| FND-005 | medium | NFR-001-M-5: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate segment counts around selected/hard source-map limits. | NFR-001-M-5; [raw advice](data/advice.json) |
-| FND-006 | medium | NFR-002-M-1: authored `Manifest/lock inspection` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `inspection`; Compare exact direct versions with manifest, lock and dependency inventory. | NFR-002-M-1; [raw advice](data/advice.json) |
-| FND-007 | medium | NFR-002-M-2: authored `CLI execution` is uncatalogued. Advisor: `fuzzing`, `performance-benchmarking`. Reviewer proposes `e2e-testing`; Run real native parse/format with Node/JVM unavailable. | NFR-002-M-2; [raw advice](data/advice.json) |
-| FND-008 | medium | NFR-002-M-3: authored `Minimal-feature build` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `compile-time-check`; Build with the pinned toolchain, lock and no default features. | NFR-002-M-3; [raw advice](data/advice.json) |
-| FND-009 | medium | NFR-003-M-1: authored `Adverse pipeline cases` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `fault-injection`; Refuse or interrupt each required phase and observe no logical completion. | NFR-003-M-1; [raw advice](data/advice.json) |
-| FND-010 | medium | NFR-003-M-2: authored `Obligation census comparison` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `contract-testing`; Compare the authored and lowered obligation populations, including unsupported entries. | NFR-003-M-2; [raw advice](data/advice.json) |
-| FND-011 | medium | NFR-004-M-1: authored `Included-file inventory` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `inspection`; Inspect included new-code and generated/fixture rights. | NFR-004-M-1; [raw advice](data/advice.json) |
-| FND-012 | medium | NFR-004-M-2: authored `Dependency/notice review` is uncatalogued. Advisor: `performance-benchmarking`, `sca-sbom`. Reviewer proposes `sca-sbom`; Check the dependency inventory and preserved grants; supplement with notice inspection. | NFR-004-M-2; [raw advice](data/advice.json) |
+| FND-001 | medium | NFR-001-M-1: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate source/output sizes around the selected inclusive byte ceiling. | NFR-001-M-1 |
+| FND-002 | medium | NFR-001-M-2: authored `Boundary tests` is uncatalogued. Advisor: `dast`, `iast`, `negative-abuse-testing`, `performance-benchmarking`, `sast`. Reviewer proposes `property-based-testing`; Generate token counts at and above a lowered ceiling. | NFR-001-M-2 |
+| FND-003 | medium | NFR-001-M-3: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate syntax-node counts around the bound. | NFR-001-M-3 |
+| FND-004 | medium | NFR-001-M-4: authored `Depth tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate delimiter/parser depth and long flat chains separately. | NFR-001-M-4 |
+| FND-005 | medium | NFR-001-M-5: authored `Boundary tests` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `property-based-testing`; Generate segment counts around selected/hard source-map limits. | NFR-001-M-5 |
+| FND-006 | medium | NFR-002-M-1: authored `Manifest/lock inspection` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `inspection`; Compare exact direct versions with manifest, lock and dependency inventory. | NFR-002-M-1 |
+| FND-007 | medium | NFR-002-M-2: authored `CLI execution` is uncatalogued. Advisor: `fuzzing`, `performance-benchmarking`. Reviewer proposes `e2e-testing`; Run real native parse/format with Node/JVM unavailable. | NFR-002-M-2 |
+| FND-008 | medium | NFR-002-M-3: authored `Minimal-feature build` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `compile-time-check`; Build with no default features. | NFR-002-M-3 |
+| FND-009 | medium | NFR-003-M-1: authored `Adverse pipeline cases` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `fault-injection`; Refuse or interrupt each required phase and observe no logical completion. | NFR-003-M-1 |
+| FND-010 | medium | NFR-003-M-2: authored `Obligation census comparison` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `contract-testing`; Compare the authored and lowered obligation populations, including unsupported entries. | NFR-003-M-2 |
+| FND-011 | medium | NFR-004-M-1: authored `Included-file inventory` is uncatalogued. Advisor: `performance-benchmarking`. Reviewer proposes `inspection`; Inspect included new-code and generated/fixture rights. | NFR-004-M-1 |
+| FND-012 | medium | NFR-004-M-2: authored `Dependency/notice review` is uncatalogued. Advisor: `performance-benchmarking`, `sca-sbom`. Reviewer proposes `sca-sbom`; Check the dependency inventory and preserved grants; supplement with notice inspection. | NFR-004-M-2 |
 
 ## Scope and provenance
 
-Reviewed `quire-spec-language@a80a17d1dd303b91712df2023fdba8aba83e89c1`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
+Reviewed `quire-spec-language`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
 
-The installed Quoin 0.20.0 `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. [Provenance](data/provenance.json), [coverage output](data/coverage.json), [advisor output](data/advice.json), and [actual method catalog](data/verification-methods.json) preserve the deterministic inputs. IDs in this report are local to this repository unless qualified.
+The installed Quoin `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. IDs in this report are local to this repository unless qualified.
 
 These are new repositories. Missing formal plans, TC records, suites, and matrices are workflow setup/readiness debt. Unimplemented LC02–LC05 stages and unqualified shared consumers are known remaining work; they are not reported as regressions or hidden stubs. No completion status is fabricated.
 
@@ -61,7 +60,7 @@ Coverage counts 57 criteria targets, including two stakeholder validation criter
 | NFR-001-M-5 | property-based-testing | Generate segment counts around selected/hard source-map limits. | Proposed review disposition; not recorded as human-confirmed discharge |
 | NFR-002-M-1 | inspection | Compare exact direct versions with manifest, lock and dependency inventory. | Proposed review disposition; not recorded as human-confirmed discharge |
 | NFR-002-M-2 | e2e-testing | Run real native parse/format with Node/JVM unavailable. | Proposed review disposition; not recorded as human-confirmed discharge |
-| NFR-002-M-3 | compile-time-check | Build with the pinned toolchain, lock and no default features. | Proposed review disposition; not recorded as human-confirmed discharge |
+| NFR-002-M-3 | compile-time-check | Build with no default features. | Proposed review disposition; not recorded as human-confirmed discharge |
 | NFR-003-M-1 | fault-injection | Refuse or interrupt each required phase and observe no logical completion. | Proposed review disposition; not recorded as human-confirmed discharge |
 | NFR-003-M-2 | contract-testing | Compare the authored and lowered obligation populations, including unsupported entries. | Proposed review disposition; not recorded as human-confirmed discharge |
 | NFR-004-M-1 | inspection | Inspect included new-code and generated/fixture rights. | Proposed review disposition; not recorded as human-confirmed discharge |

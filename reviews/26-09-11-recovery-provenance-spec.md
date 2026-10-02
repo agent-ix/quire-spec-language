@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 `/spec-review` base checklist over the specification half of
-`origin/main...a33a3c1`: one new normative paragraph in FR-042, a rewritten
+the branch diff: one new normative paragraph in FR-042, a rewritten
 AC-6, one extended TC-121 step and a matching wire-contract paragraph. Selected
 analyses are base and failure-domain (SR-357); the optional semantic extension
 was declined. ID formats, uniqueness, sequence and cross-references are clean —
@@ -77,7 +77,7 @@ repository's design note.
 
 ### FND-002 — AC-6 keeps growing
 
-At `c7275f5` AC-6 was flagged for holding eleven refusal conditions in five
+Earlier, AC-6 was flagged for holding eleven refusal conditions in five
 sentences (SR-349 FND-002, carried open). This increment adds a sixth sentence
 covering producer/reader membership equality and the span/proof-folding
 exclusion. The criterion is still verifiable, but it can no longer fail for one

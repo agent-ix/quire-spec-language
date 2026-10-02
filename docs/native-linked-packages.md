@@ -1,11 +1,9 @@
 # Native checked-package artifact and reconstruction
 
-Draft LC02 contract for FR-019/020/021 and NFR-007, based on compiler
-789c636bf9fb26812a74a2a2f5310b595262bfee. This is the compiler-owned payload
+Draft LC02 contract for FR-019/020/021 and NFR-007. This is the compiler-owned payload
 inside any separately selected transport/reference envelope. B owns shared
 references/results; Contract IR owns executable binding. Plan-007 tracks
-implementation after all-eight QUOIN review at 69588ad and the source-setup
-correction/re-review at 2c6b9b8/1c3aa50. Construction, verified reconstruction
+implementation. Construction, verified reconstruction
 and runtime integration are implemented under Task-016/017/018.
 
 ## Purpose and boundaries
@@ -383,14 +381,13 @@ error contract; copying it would not establish these limits. The package's
 recognition adapter remains private and contains no application interpretation.
 Typed selectors stay strings until explicit selection, so a Deserialize enum
 cannot turn unknown_wire or unknown_profile into an accidental shape error.
-The existing serde_json pin may enable unbounded_depth solely so this adapter's
+The serde_json dependency may enable unbounded_depth solely so this adapter's
 own checked 128-container bound governs traversal; other decoders retain their
 existing recursion configuration. No arbitrary-precision number feature or new
 production dependency is required. Qualification may use the already locked
-MIT jsonschema 0.17.1 as a direct development dependency with default features
+MIT jsonschema as a direct development dependency with default features
 disabled and draft202012 enabled. Schema tests use local references only and
-do not perform network/file resolution. Dependency inventory and the complete
-existing audit/IR regression remain required when selecting these features.
+do not perform network/file resolution.
 Shared canonical-domain registration, independent consumer adoption, compiled ConfigVersion
 backend parity and Quire extraction integration remain explicit full-assignment
 acceptance work. No passing package test can close those gates.

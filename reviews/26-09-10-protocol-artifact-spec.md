@@ -17,8 +17,7 @@ relationships:
 ## Summary
 
 Base checklist review of FR-042/TC-121/US-004 and their normative wire contract,
-rechecked at 23a5892 against the corrections made after the original review at
-51506ed. IDs, cross-references and the six coverage rules still hold. All three
+rechecked against the corrections made after the original review. IDs, cross-references and the six coverage rules still hold. All three
 medium interoperability findings are resolved: the contract now publishes the
 typed refusal vocabulary, states the inclusive `U` bound, and gives the exact
 first-use type indexing order. What remains is two low bookkeeping items and one
@@ -90,4 +89,4 @@ provenance; and the await paragraph matches the `Progress`/`Closure` +
 `Subject::Control` + `requires`-contains-clock rule the reader enforces.
 
 `quire spec` gate: 398/398 docs grammar-clean, 0 grammar findings; 83/258 criteria
-property-extractable (`/tmp/quire-artifact-corrections-spec.log`).
+property-extractable.

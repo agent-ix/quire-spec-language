@@ -5,7 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "FR-017, TC-054, SR-074 repairs and existing regression contracts"
 review_set: all
-evaluated_revision: "a350754988dab207bbecff590f121039ccf2682b"
 review_date: "2026-09-08"
 ---
 

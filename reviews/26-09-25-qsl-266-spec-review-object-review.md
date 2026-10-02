@@ -2,7 +2,7 @@
 id: SR-639
 title: "QSL-266 object review of requirement records, ClaimSite and the request builder"
 type: SpecReview
-scope: "agent-ix/quire-spec-language@64ee12700cd66bb17767a8e9090cbca114308364; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md; spec/test-cases/TC-160-checked-family-contract-shape.md; spec/test-cases/TC-449-request-builder-writes-one-item-per-requirement-record.md; qsl-semantics/src/family/contract.rs; qsl-semantics/src/check/mod.rs; qsl-route/src/request.rs; qsl-route/src/lib.rs"
+scope: "agent-ix/quire-spec-language; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md; spec/test-cases/TC-160-checked-family-contract-shape.md; spec/test-cases/TC-449-request-builder-writes-one-item-per-requirement-record.md; qsl-semantics/src/family/contract.rs; qsl-semantics/src/check/mod.rs; qsl-route/src/request.rs; qsl-route/src/lib.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
@@ -50,10 +50,10 @@ What is wrong:
 
 ## Dispositions
 
-Disposition pass at `agent-ix/quire-spec-language@accbac3849a26f9f8206e655369105408b9f4a11` (fix commit `accbac38`, "QSL-266 spec: address spec review SR-636 to SR-640"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed accbac38 | `ClaimSite` is now defined in FR-062 "Claim sites" as a design name holding the checked `Location`, the result bound and the path condition. S3 pairs each site with the occurrence recorded at its own `Location`, "never by the order in which sites or occurrences were produced". Two occurrences are two regions, so two sites. The ADR-012 sketch comment points there (FR-062:205-226, 239-249; ADR-012:234-238). |
-| FND-002 | fixed accbac38 | The item is now named `RequirementItem` (a design name). It carries the request index, occurrence key, node, kind, extent classification, unbounded domains (`DomainKey` and kind), result bound (a type-node `WireNodeId`) and candidate outcome (FR-075:77-80, 117-133). Whether it wraps or replaces `RequestItem` is left to the implementing ticket, which is acceptable for a design name. |
-| FND-003 | fixed accbac38 | FR-062's frontmatter now has `depends_on` FR-057, FR-093 and ADR-014 (FR-062:18-23). |
+| FND-001 | fixed | `ClaimSite` is now defined in FR-062 "Claim sites" as a design name holding the checked `Location`, the result bound and the path condition. S3 pairs each site with the occurrence recorded at its own `Location`, "never by the order in which sites or occurrences were produced". Two occurrences are two regions, so two sites. The ADR-012 sketch comment points there (FR-062:205-226, 239-249; ADR-012:234-238). |
+| FND-002 | fixed | The item is now named `RequirementItem` (a design name). It carries the request index, occurrence key, node, kind, extent classification, unbounded domains (`DomainKey` and kind), result bound (a type-node `WireNodeId`) and candidate outcome (FR-075:77-80, 117-133). Whether it wraps or replaces `RequestItem` is left to the implementing ticket, which is acceptable for a design name. |
+| FND-003 | fixed | FR-062's frontmatter now has `depends_on` FR-057, FR-093 and ADR-014 (FR-062:18-23). |

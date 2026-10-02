@@ -28,7 +28,7 @@ types this requirement's cited types are checked-graph members of
 `library`.
 
 This requirement's gate is ADR-013 §7's "S-2, QC-10" for S-3 as a whole
-(clear: S-2 landed as PR #260 `97ec26e3`; QC-10 landed under STD-2, Done —
+(clear: S-2 landed as PR #260; QC-10 landed under STD-2, Done —
 see FR-087's Description for the verification detail) plus S-3a's
 `CheckedGraph` type (FR-087), since every object this requirement owns is a
 member of that checked graph.

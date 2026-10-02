@@ -1,8 +1,5 @@
 # LC05 technical acceptance packet
 
-Accepted compiler revision: `78828d84dc642c2ee61817494bb230321d5bf716`
-(`quire-spec-language` main, 2026-09-12).
-
 ## Admitted workflow
 
 The named ConfigVersion workflow runs end to end in the explicit
@@ -20,9 +17,9 @@ Quoin, Node, JVM or network dependency. Quire extraction remains an explicit
 
 ## Setup effort
 
-Rust 1.98.1 and `Cargo.lock` are the reproducible toolchain boundary. The native
+The native
 path needs only Cargo and the checked-in inputs. The extracted path additionally
-needs access to the pinned private `quire-rs` dependency.
+needs access to the private `quire-rs` dependency.
 
 The implementation landed as eleven scoped PRs, #14 through #24, followed by
 the runtime wire and schema corrections in #32 and #34. The auditable delivery
@@ -45,7 +42,7 @@ nice -n 10 cargo run --locked --offline --target-dir target -j 1 --features quir
 | Authored model | `examples/config-version/model.json`, AGPL-3.0-only |
 | Case catalog and generator | `examples/config-version/cases.rs` and `fixtures.rs`, Rust |
 | Native source path | generated `program.native` → model/link/check/package pipeline |
-| Quire source path | generated `rules.md` → pinned Rust extractor → mapped compiler intake |
+| Quire source path | generated `rules.md` → Rust extractor → mapped compiler intake |
 | Runtime inputs | generated snapshot/invocation files with case-specific identities |
 | Compiled artifact | `native-linked-package/1`, selected and verified by exact digest |
 | Result | native runtime report with completed/refused/incomplete stage and provenance |

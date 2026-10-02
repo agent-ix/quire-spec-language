@@ -21,8 +21,8 @@ compiler SHALL emit and admit that declaration's exact definition artifact and
 clock configuration through `quire.compiled-protocol/2`.
 
 This is the narrow temporal producer extension accepted on compiler
-[#40](https://github.com/agent-ix/quire-spec-language/issues/40) after merged L5
-revision `72507f856457ba0922719bd5d9f5cadcce4058cd`. It extends the reviewed
+[#40](https://github.com/agent-ix/quire-spec-language/issues/40) after the L5
+merge. It extends the reviewed
 [FR-042](FR-042-publish-compiled-protocol-artifacts.md) contract without changing
 the bytes, meaning or strict reader for `quire.compiled-protocol/1`.
 

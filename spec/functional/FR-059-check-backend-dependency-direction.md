@@ -68,31 +68,6 @@ This check is crate-level only: it establishes that an edge into QSL exists at
 all, not that the edge's caller code stays inside the layer-6 `replay` facade.
 [FR-060](FR-060-check-qsl-api-surface-boundary.md) verifies the latter.
 
-### Freshness of the operator-supplied checkouts
-
-`--ir`, `--rt` and `--cg` name local clones the operator maintains; `--qsl` is
-this tool's own worktree. Without a freshness check, the same command against
-a fresh clone and against one that fell behind head can report two silently
-different answers with no warning: a stale clone can hide a real FB-05/FB-11
-finding, or (less likely but not excluded) manufacture one that current head
-no longer has (#249 review round 2 H-2).
-
-The check SHALL compare each of `--ir`'s, `--rt`'s and `--cg`'s local head
-against that repository's remote `main` head (`git ls-remote`) before
-building the edge graph, and SHALL fail (distinct from a reported FB-05/FB-11
-finding) if any local head does not match, naming the repository, the
-resolved commit and the remote's current commit. `--offline` SHALL skip this
-comparison (it requires network access `cargo metadata --offline` already
-forgoes) rather than fail the whole run for a reason unrelated to metadata
-resolution; an `--offline` run is only as fresh as the operator's clones and
-does not claim otherwise.
-
-The check SHALL print the exact commit resolved for each of the four
-repositories (including `--qsl`, which has no remote-main comparison, since
-it is routinely a feature branch rather than `main`) in its report,
-regardless of pass, fail, or `--offline`, so a reader never has to trust an
-unstated clone state.
-
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -103,7 +78,6 @@ unstated clone state.
 | FR-059-AC-4 | A 2-repository or longer cycle over normal and/or dev edges among the four repositories is reported exactly once as an FB-11 violation, however many repositories the search starts from. | Test (TC-156) |
 | FR-059-AC-5 | An acyclic graph with edges only running toward QSL and CG reports no FB-11 violation. | Test (TC-156) |
 | FR-059-AC-6 | Run against the real, current-head resolution of quire-contract-ir's manifest, the check reports no FB-05 edge from IR into QSL and no FB-11 cycle between QSL and IR, since neither IR manifest declares a QSL dependency (ADR-011 OBS-029). Resolving QSL's own workspace manifest through the same edge-resolution path the check uses for `--qsl` yields QSL's normal edge on the git-sourced `quire-contract-model`, classified as QSL → IR, the permitted direction. | Test (TC-156) |
-| FR-059-AC-7 | A local `--ir`/`--rt`/`--cg` clone whose head does not match that repository's remote `main` fails distinctly, naming both revisions and the url; a clone that matches passes; `--offline` skips the comparison; every resolved revision, including `--qsl`'s, is printed regardless of outcome. | Test (TC-156) |
 | FR-059-AC-8 | A resolved RT dependency on the git-sourced `quire-exact` yields no edge and no finding; a resolved RT dependency on another crate sourced from the QSL repository, such as `qsl-eval`, yields an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 | FR-059-AC-9 | A resolved RT dependency on the git-sourced `quire-semantic-value` yields no edge and no finding; resolved RT dependencies on `qsl-eval` and on `qsl-semantics`, from the same QSL source, each yield an RT → QSL edge reported as an FB-05 violation. | Test (TC-156) |
 
@@ -127,3 +101,8 @@ entry and its `graph.rs` helpers) tracing the deleted FR-061 and TC-158, and
 the Makefile's `arch-lint-duplicate-revisions` target runs it in `make ci`.
 The subcommand, its traces and the target are deleted; `graph::classify`
 stays for this check.
+
+`arch-lint direction` also still compares each `--ir`/`--rt`/`--cg` clone's
+head with its remote `main` and prints every resolved revision, under the
+deleted FR-059-AC-7 (implementation A5, QSL-477). That comparison, its
+`--offline` switch and its traces are deleted.

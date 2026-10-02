@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Base checklist recheck at source commit `84aec59`. The specification half of the
+Base checklist recheck of the correction. The specification half of the
 correction adds six lines to FR-042's Behavior section, six lines to the
 `compiled-protocol-v1` wire contract, and rewrites the TC-121 evidence paragraph
 in the linking matrix. Two of the three initial findings are resolved; the third

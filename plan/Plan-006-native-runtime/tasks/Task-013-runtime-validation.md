@@ -58,12 +58,12 @@ Qualified validator, immutable validated context API, stable classified runtime 
 
 ## Notes
 
-Task-009 is done in Plan-005 and Task-012 is qualified at c8fa41f by SR-096.
+Task-009 is done in Plan-005 and Task-012 is qualified by SR-096.
 The implementation dependencies are satisfied. Reuse exact native roles and
 checked runtime obligations; do not infer a formal model from generated layouts
 or create another type authority.
 
-Qualified at 45ed1b4d11eb162ac6bab9d94e2dca6113545037 by SR-097.
+Qualified by SR-097.
 All fifteen FR-007 criteria and NFR-006 validation metrics M-6..11 have
 executed evidence: 35 validation tests, 166 ordinary tests plus one compile-fail
 doctest, three private audits and strict local Rust gates passed. The review

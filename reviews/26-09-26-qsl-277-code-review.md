@@ -3,7 +3,7 @@ id: SR-736
 title: "QSL-277 code and Rust review of PR 491 (S3 state checker, FR-104)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@e278a3bdbde466895dc438b93138b2897028ee5d; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/check/observation.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/lowering/model.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/check/typing.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/facts.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/value/declaration.rs; qsl-semantics/tests/it/main.rs; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; qsl-eval/src/value/expression/evaluate.rs; qsl-forms/src/syntax.rs; qsl-replay/src/spine.rs; src/command/output.rs; src/command/output/types.rs"
+scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/state_clause.rs; qsl-semantics/src/check/observation.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/lowering/model.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/assemble/tests.rs; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/check/typing.rs; qsl-semantics/src/check/claims.rs; qsl-semantics/src/check/facts.rs; qsl-semantics/src/check/ir.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/value/declaration.rs; qsl-semantics/tests/it/main.rs; qsl-semantics/tests/it/model_operations.rs; qsl-semantics/tests/it/state_clauses.rs; qsl-eval/src/value/expression/evaluate.rs; qsl-forms/src/syntax.rs; qsl-replay/src/spine.rs; src/command/output.rs; src/command/output/types.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-104
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-277. PR: quire-spec-language#491 at e278a3bd (base f05b526c).
+Ticket: QSL-277. PR: quire-spec-language#491.
 This is a code review with the rust-review lane. It covers only the PR diff:
 24 files, +2742/-161.
 
@@ -37,7 +37,7 @@ Sound:
   declaration (mod.rs:577-632).
 - SR-723 FND-007 (operations visible on subtypes) is closed in the code.
   `TypeEnvironment::operation` resolves through ancestry and keeps the
-  declaring type (declaration.rs:896-928). A scratch probe at e278a3bd
+  declaring type (declaration.rs:896-928). A scratch probe
   checked `post A on Config::Sub::attemptUpdate` with `Sub` specializing
   `ConfigVersion`. It passed, and `declaring != context`. No test in the PR
   covers this path (FND-006).
@@ -45,9 +45,9 @@ Sound:
   `u32::try_from` is mapped to a fault. The new `NodeKind::Reaches` has an
   explicit arm in each exhaustive match, including qsl-eval's.
 - `cargo clippy -p qsl-semantics --all-targets -D warnings` is clean. The 21
-  `state_clauses` and `model_operations` tests pass at e278a3bd.
+  `state_clauses` and `model_operations` tests pass.
 
-Scratch probes were run in a detached worktree at e278a3bd, since removed,
+Scratch probes were run in a detached worktree, since removed,
 with extra tests only:
 
 1. Two operations with empty frames, `isStable(): Boolean` and
@@ -82,23 +82,22 @@ run.
 
 ## Dispositions
 
-Round 2, checked against ab6a987c (fix commit, rebased on origin/main
-2df75ab6) on 2026-09-26. Probes were run in a detached scratch worktree at
-ab6a987c, since removed. `cargo clippy -p qsl-semantics -p qsl-replay
+Round 2, checked against the fix commit (rebased on origin/main)
+on 2026-09-26. Probes were run in a detached scratch worktree, since removed. `cargo clippy -p qsl-semantics -p qsl-replay
 --all-targets -D warnings` is clean, and the 24 `state_clauses` and
 `model_operations` tests pass. The rebase kept #490's `evaluate.rs` and
 `output.rs` intact: `git diff origin/main HEAD` on those files shows only
 this PR's additions (the `Reaches` arm and the `StateClause` origin).
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed ab6a987c | Each frame record is keyed by (frame node, an occurrence minted once per operation identity (declaring, name)), in `Lowering::frame_occurrence` (lowering.rs:1305-1324, lowering/state.rs:218-219). Both probes are now tests, and each gives 4 records (state_clauses.rs:723-770). The `Occupied(_)` fault is now unreachable. Clause keys are (state_clause node, claim ordinal), unique per clause. Frame keys are unique per operation. Clauses that name one operation build equal records, because roots, `frame_population` and the Boolean node all come from the operation. A probe with `post` clauses on `ConfigVersion::attemptUpdate` and on the inherited `Sub::attemptUpdate` gives 3 records and no fault. The ordinal is order-dependent, which is recorded as a new finding, FND-008. |
-| FND-002 | fixed ab6a987c | `populations_of` covers by `conforms` (lowering/model.rs:117-150). FR-104 states conformance and the no-population case. Tested at state_clauses.rs:778-810. See the new FND-010 on domain keying. |
-| FND-003 | fixed ab6a987c | Only the assembler resolves the context and frame populations (assemble.rs:1646-1690), carried on `StateClauseDeclaration.{context,frame}_population`. The S3 copies are deleted. The `reaches`-target resolution stays in S3, as ruled. It still refuses at the `reaches` locus and packs the names with `format!`; that part is accepted under the ruling. |
-| FND-004 | fixed ab6a987c | `clause_records` uses `limit_cause` (state_clause.rs:534-546). The clause path reuses `classify_extent`. Only the frame path, which has a prefix, walks `classify_domains`. |
-| FND-005 | fixed ab6a987c | The `WrongSnapshotCause` doc now names `UnanchoredResult` as the checking-time path to `wrong-anchor` (refusal.rs:213-223). |
-| FND-006 | fixed ab6a987c | FR-104 Resolution states the hiding and ambiguity rule. Inheritance and ambiguity are tested (state_clauses.rs:815-840). |
-| FND-007 | fixed ab6a987c | The spine renders the clause kind and operation (spine.rs:405-421). The payload is asserted at the cause level (state_clauses.rs:286-296). The spine arm itself has no test; this is minor and not reopened. |
+| FND-001 | fixed | Each frame record is keyed by (frame node, an occurrence minted once per operation identity (declaring, name)), in `Lowering::frame_occurrence` (lowering.rs:1305-1324, lowering/state.rs:218-219). Both probes are now tests, and each gives 4 records (state_clauses.rs:723-770). The `Occupied(_)` fault is now unreachable. Clause keys are (state_clause node, claim ordinal), unique per clause. Frame keys are unique per operation. Clauses that name one operation build equal records, because roots, `frame_population` and the Boolean node all come from the operation. A probe with `post` clauses on `ConfigVersion::attemptUpdate` and on the inherited `Sub::attemptUpdate` gives 3 records and no fault. The ordinal is order-dependent, which is recorded as a new finding, FND-008. |
+| FND-002 | fixed | `populations_of` covers by `conforms` (lowering/model.rs:117-150). FR-104 states conformance and the no-population case. Tested at state_clauses.rs:778-810. See the new FND-010 on domain keying. |
+| FND-003 | fixed | Only the assembler resolves the context and frame populations (assemble.rs:1646-1690), carried on `StateClauseDeclaration.{context,frame}_population`. The S3 copies are deleted. The `reaches`-target resolution stays in S3, as ruled. It still refuses at the `reaches` locus and packs the names with `format!`; that part is accepted under the ruling. |
+| FND-004 | fixed | `clause_records` uses `limit_cause` (state_clause.rs:534-546). The clause path reuses `classify_extent`. Only the frame path, which has a prefix, walks `classify_domains`. |
+| FND-005 | fixed | The `WrongSnapshotCause` doc now names `UnanchoredResult` as the checking-time path to `wrong-anchor` (refusal.rs:213-223). |
+| FND-006 | fixed | FR-104 Resolution states the hiding and ambiguity rule. Inheritance and ambiguity are tested (state_clauses.rs:815-840). |
+| FND-007 | fixed | The spine renders the clause kind and operation (spine.rs:405-421). The payload is asserted at the cause level (state_clauses.rs:286-296). The spine arm itself has no test; this is minor and not reopened. |
 
 ### New findings (round 2)
 
@@ -110,18 +109,17 @@ this PR's additions (the `Reaches` arm and the `StateClause` origin).
 
 ### Round 3 dispositions
 
-Checked against e2e5ffdc (fix round 2 6b144f75, plus the clippy fix
-e2e5ffdc) on 2026-09-26. The 26 `state_clauses` and `model_operations` tests
+Checked against fix round 2 plus the clippy fix on 2026-09-26. The 26 `state_clauses` and `model_operations` tests
 pass. `cargo clippy -p qsl-semantics -p qsl-replay --all-targets -D
-warnings` is clean. The `qsl-277-ci-r6.log` file's first line is the head
-SHA and its last line is `exit=0`. The diff of `evaluate.rs` and `output.rs`
+warnings` is clean. The `qsl-277-ci-r6.log` file's last line is `exit=0`.
+The diff of `evaluate.rs` and `output.rs`
 against origin/main is still this PR's additions only.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-008 | fixed 6b144f75 | `register_frame_occurrences` (lowering/state.rs:263-286) dedups the named operations by (EffectiveId, name). It sorts them by (declaring `DeclarationKey`, name) and mints every frame occurrence before any clause is lowered (mod.rs:1117-1134). A later per-clause `frame_occurrence` call only reads the cache. `frame_node` adds no occurrences of its own (`object_node`, `frame_field` and `text_literal` record none). If registration fails, the refusal is pushed, so a source-order mint afterwards cannot reach a checked graph. The test compares the whole key-to-record map across clause orders (state_clauses.rs:871-917), and would fail on the round-2 source-order mint. FR-104:176-189 is amended. |
-| FND-009 | fixed 6b144f75 | The frame occurrence is `OccurrenceRole::Generated` (lowering.rs:1325), recorded at `generated_location()`. `finish` then adds no second `generated` occurrence, because `has(frame)` is true. FR-105:67 is amended. The test asserts role `generated` with ordinals {0, 1}. |
-| FND-010 | fixed 6b144f75 | `populations_of` returns the covering member's `EffectiveId`, and `population_of` keys the domain by it (lowering/model.rs:131-158, state_clause.rs:195-219). A test shows that `Sub` and `ConfigVersion` clauses key `config_history` identically (state_clauses.rs:965-996). FR-104:197-206 is amended. See the new FND-011 for populations with several member types. |
+| FND-008 | fixed | `register_frame_occurrences` (lowering/state.rs:263-286) dedups the named operations by (EffectiveId, name). It sorts them by (declaring `DeclarationKey`, name) and mints every frame occurrence before any clause is lowered (mod.rs:1117-1134). A later per-clause `frame_occurrence` call only reads the cache. `frame_node` adds no occurrences of its own (`object_node`, `frame_field` and `text_literal` record none). If registration fails, the refusal is pushed, so a source-order mint afterwards cannot reach a checked graph. The test compares the whole key-to-record map across clause orders (state_clauses.rs:871-917), and would fail on the round-2 source-order mint. FR-104:176-189 is amended. |
+| FND-009 | fixed | The frame occurrence is `OccurrenceRole::Generated` (lowering.rs:1325), recorded at `generated_location()`. `finish` then adds no second `generated` occurrence, because `has(frame)` is true. FR-105:67 is amended. The test asserts role `generated` with ordinals {0, 1}. |
+| FND-010 | fixed | `populations_of` returns the covering member's `EffectiveId`, and `population_of` keys the domain by it (lowering/model.rs:131-158, state_clause.rs:195-219). A test shows that `Sub` and `ConfigVersion` clauses key `config_history` identically (state_clauses.rs:965-996). FR-104:197-206 is amended. See the new FND-011 for populations with several member types. |
 
 ### New findings (round 3)
 
@@ -131,11 +129,11 @@ against origin/main is still this PR's additions only.
 
 ### Round 4 dispositions
 
-Checked against 18e70b23 on 2026-09-26. The 27 `state_clauses` and
+Checked on 2026-09-26. The 27 `state_clauses` and
 `model_operations` tests pass, and `cargo clippy -p qsl-semantics
---all-targets -D warnings` is clean. The `qsl-277-ci-r7.log` file's first
-line is the head SHA and its last line is `exit=0`.
+--all-targets -D warnings` is clean. The `qsl-277-ci-r7.log` file's last
+line is `exit=0`.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-011 | fixed 18e70b23 | `populations_of` keeps a population when any declared member covers the target. It keys the domain by the least declared member by `DeclarationKey`, whichever member covers (lowering/model.rs:135-168). FR-104:197-210 states this. `population_with_several_members_has_one_canonical_domain_key` (state_clauses.rs:1072-1099) declares members [Sub, ConfigVersion] and asserts one equal key across `Sub` and `ConfigVersion` clauses. The round-3 first-covering-member code would give `Sub` and `ConfigVersion` there, so the test catches a regression. Note, not a finding: the `?` on `min()` and on the canonical `find_map` (:160-164) would silently drop a covered population if the canonical member were not an admitted object type of this package. Normalization refuses missing and native members, so this cannot be reached today. |
+| FND-011 | fixed | `populations_of` keeps a population when any declared member covers the target. It keys the domain by the least declared member by `DeclarationKey`, whichever member covers (lowering/model.rs:135-168). FR-104:197-210 states this. `population_with_several_members_has_one_canonical_domain_key` (state_clauses.rs:1072-1099) declares members [Sub, ConfigVersion] and asserts one equal key across `Sub` and `ConfigVersion` clauses. The round-3 first-covering-member code would give `Sub` and `ConfigVersion` there, so the test catches a regression. Note, not a finding: the `?` on `min()` and on the canonical `find_map` (:160-164) would silently drop a covered population if the canonical member were not an admitted object type of this package. Normalization refuses missing and native members, so this cannot be reached today. |

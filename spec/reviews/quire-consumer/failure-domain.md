@@ -10,7 +10,7 @@ review_set: all
 
 Identity and package mismatches refuse before extraction; unavailable or duplicate clauses retain the actual upstream outcome. Exact byte correspondence precedes mapping, including final CRLF deletion and Quire byte-column validation. Native refusal retains the selected obligation and source; no callback, mutable shared state or graph traversal is added. Original byte/line bounds precede producer work.
 
-Author PR-readiness review of `55649b3`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 Typed preflight variants now distinguish byte/line ceilings, both version

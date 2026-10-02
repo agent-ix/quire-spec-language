@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Inspected all five Plan-005 tasks, the TM-003 bindings and the Task-034 code/test
-amendment at fd69a60 plus final review wording. The new sequence ceiling is
+amendment plus final review wording. The new sequence ceiling is
 implemented and locally checked; the broader source-profile ruling remains #30.
 
 ## Verdict
@@ -32,7 +32,7 @@ delivery direction permits the PR while this existing assurance gap stays open.
 
 ## Coverage
 
-Quire 0.31.0, actual `quire coverage --scope . --json`, with no grep fallback:
+Actual `quire coverage --scope . --json`, with no grep fallback:
 FR-015 6/6 criteria backed; TM-003 35/35 test-case rows backed; global rollup
 325/329. Those are trace counts, not execution or project-completion percentages.
 All five Plan-005 tasks are done. SR-263 records the actual new red/green controls,
