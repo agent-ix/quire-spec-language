@@ -54,3 +54,13 @@ Trace:
 
 Changes requested: FND-002 is high, FND-001 and FND-003 are medium. All three
 are spec drift, or a missing trace, for this PR's fix round.
+
+## Dispositions
+
+Round 1, reviewed at 321b740821583f148b1e18a7a90a81202bec298d.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 321b7408: new FR-071 Behavior bullet and FR-071-AC-10 (an unknown semantic profile refuses `unknown_profile`/`unsupported-selection` at decode, keeping the selection and its role, before the byte provision is read). TC-186 gains step 8 and its expected result. The test is traced `#[trace("TC-186", "FR-071-AC-10")]`, and it asserts the selection, the role, the code and the message, with a mismatching byte-provision entry alongside. |
+| FND-002 | fixed | 321b7408: "unknown version" is deleted from FR-098-AC-4, and the unknown contract version is deleted from TC-444 step 5's procedure and expected results. FR-098 Behavior had no such entry. |
+| FND-003 | fixed | 321b7408: FR-071 Outputs now read "a structured refusal when the input is malformed or names an out-of-domain digest or profile identifier." |

@@ -61,3 +61,11 @@ Changes requested: one low finding.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The `ReplayRequestRefusal::UnknownSemanticProfile` doc still says "catalog `unknown_profile`/`unsupported-selection` (revision `1-draft.3`)". A catalog revision label in a doc is version tracking, and this PR edited that same doc line. Delete "(revision `1-draft.3`)". | qsl-replay/src/request.rs:268-271 |
+
+## Dispositions
+
+Round 1, reviewed at 321b740821583f148b1e18a7a90a81202bec298d.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 321b7408: the `UnknownSemanticProfile` doc now ends "catalog `unknown_profile`/`unsupported-selection`. It", with no revision label. |
