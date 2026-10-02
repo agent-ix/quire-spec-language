@@ -74,9 +74,9 @@ causes, and the report counts as a refutation only then.
   each step with FR-101 `replay`.
 - The executor SHALL read the fairness set, scheduler constraints included,
   from the recompiled clause, and SHALL refuse a payload fairness set that
-  differs with `stale_dependency`/`revision-mismatch`, naming both sets.
+  differs with `stale_dependency`/`content-mismatch`, naming both sets.
 - When a step's identity has no successor with the recorded digest, the
-  executor SHALL refuse `stale_dependency`/`revision-mismatch`, naming the
+  executor SHALL refuse `stale_dependency`/`content-mismatch`, naming the
   step and both digests.
 - When a step is not enabled at its pre-state, or a loop's last state is not
   its entry, the executor SHALL refuse `invalid_runtime_input`/
@@ -107,7 +107,7 @@ causes, and the report counts as a refutation only then.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-217-AC-1 | The deadlock counterexample of ADR-027 §7 (`fork(Both)`, `attempt(A)`) replays: both post-state digests match, no step is enabled at s2, its instance is live, the recomputed blocked threads equal FR-211-AC-2's, and the result is `reproduced-with-evaluated-witness`. The envelope's steps serialize with protocol transition identities and the blocked list. | Test (TC-662) |
-| FR-217-AC-2 | Changing the second step's post-state digest refuses `stale_dependency`/`revision-mismatch`, naming the step and both digests. Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. Replaying the same steps against the repaired `Fill` (`TwoPre: self.v <= 1`) with recorded digests from the unrepaired one refuses on the package identity by FR-098's rule. | Test (TC-662) |
+| FR-217-AC-2 | Changing the second step's post-state digest refuses `stale_dependency`/`content-mismatch`, naming the step and both digests. Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. Replaying the same steps against the repaired `Fill` (`TwoPre: self.v <= 1`) with recorded digests from the unrepaired one refuses on the package identity by FR-098's rule. | Test (TC-662) |
 | FR-217-AC-3 | A deadlock envelope whose blocked list drops `right` settles `inconclusive`, `ReplayParity`. An envelope whose prefix runs on to s6, which holds no live instance, with `kind: Deadlock` settles `inconclusive`, `ReplayParity`. | Test (TC-662) |
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
 

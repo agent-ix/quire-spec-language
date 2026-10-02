@@ -348,6 +348,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-218
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-308
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-024
     type: contains
 ---
@@ -733,6 +735,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-216](functional/FR-216-give-every-protocol-step-a-static-footprint.md) | FR | Specified: static read and write footprints, enabling footprints, independence and visibility for every protocol step (ADR-027 FT-1 to FT-5); not yet implemented -- TC-661 planned |
 | [FR-217](functional/FR-217-replay-a-protocol-counterexample.md) | FR | Specified: the protocol counterexample and its replay through `ProtocolSystem`, with lasso fairness over scheduler constraints and the deadlock check with recomputed blocked threads (ADR-027 PX-1, PX-2); not yet implemented -- TC-662 planned |
 | [FR-218](functional/FR-218-check-every-protocol-control-construct-at-s3.md) | FR | Specified: S3 checks of `parallel` and its join policy, `choice`, `repeat`, `await`, `check`, channel and event nodes, captures, compensation templates, replicated roles and activation, with the edge relation, binder readers and role regions in a `CheckedProtocolClause` (ADR-027 DS-1); not yet implemented -- TC-663 planned |
+| [FR-308](functional/FR-308-build-the-complete-protocol-forms-at-s2.md) | FR | Specified: S2 forms for the complete protocol productions (roles, channels, `parallel` join policies, `repeat` with optional maximum and loop proof, `await`, compensation, `terminal`, `scheduling`, `activation on each`), citing QSpec's shared grammar; not yet implemented -- TC-887 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

@@ -367,6 +367,7 @@ names different artifacts in each.
 | TC-661 | Protocol steps carry static footprints, enabling footprints and visibility | Unit | P1 | FR-216-AC-1, FR-216-AC-2, FR-216-AC-3, FR-216-AC-4, FR-216-AC-5 | 🚧 Planned |
 | TC-662 | The replay facade replays a protocol counterexample through ProtocolSystem | Integration | P1 | FR-217-AC-1, FR-217-AC-2, FR-217-AC-3, FR-217-AC-4 | 🚧 Planned |
 | TC-663 | S3 checks every protocol control construct and records scopes | Unit | P1 | FR-218-AC-1, FR-218-AC-2, FR-218-AC-3, FR-218-AC-4, FR-218-AC-5, FR-218-AC-6, FR-218-AC-7 | 🚧 Planned |
+| TC-887 | S2 builds the complete protocol forms with their members and spans | Unit | P1 | FR-308-AC-1, FR-308-AC-2, FR-308-AC-3, FR-308-AC-4, FR-308-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
