@@ -52,7 +52,7 @@ match no pair of runs satisfies reads `inconclusive`, `VacuousMatch`, never
 
 - A `ModelCheckOutcome` from FR-176, FR-177, FR-178 or FR-179, or an SMT
   outcome for HP-2 mapped by CG (ADR-023 HC-6, HC-7) into the same values.
-- For `Holds` from EN-1: the `CertificateCheck` of its certificate
+- For `Holds` from EN-1: the `ProductClosureCheck` of its certificate
   (FR-163).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
   (FR-183), or the `ReplayRefusal` that stopped it.

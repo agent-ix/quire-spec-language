@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-178
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-338
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-179
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-181
@@ -83,18 +85,21 @@ set's members as sorted (existential tuple key, automaton key) pairs.
 ## Outputs
 
 ```rust
-pub enum CertificateCheck {
+pub enum ProductClosureCheck {
     Accepted,
-    Rejected { rule: CertificateRule, state: ProductStateKey },
-    Stopped(IncompleteCause, ModelCheckLimit),
-}
-
-pub enum CertificateRule {
-    Malformed, Initial, Closure, Undefined, Component, Violation,
+    Rejected(CertificateRejection),          // FR-338's: rule and locus
+    Stopped(ReachedLimit),                   // FR-126: the limit and its value
 }
 ```
 
-`Rejected` is ADR-018 PC-2's `CertificateRejected{rule, state}`.
+The checker uses FR-338's `CertificateRejection{rule, state}`; `Rejected`
+settles ADR-018 PC-2's `CertificateRejected{rule, state}`. It reuses
+FR-338's `InitialMissing` (a missing initial product state),
+`SuccessorMissing` (a missing successor) and `WitnessFails` (a component
+whose witness or ordering fails), and FR-338's `CertificateRule` gains
+`Malformed`, `UndefinedMember` and `ViolatingMember`. `CertificateLocus`
+gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
+`Malformed` carries the first offending member's key.
 
 ## Behavior
 
@@ -110,20 +115,22 @@ pub enum CertificateRule {
   LA-2), using no `qsl-analyze` code.
 - **Malformed.** A certificate whose `closure` keys are unsorted or
   duplicated, or whose `components` are absent for HP-2 or HP-3, SHALL be
-  rejected with `Malformed` before any recomputation.
+  rejected with rule `Malformed` before any recomputation.
 - **Initial.** Every recomputed initial product state SHALL be a member;
-  otherwise the checker SHALL reject with `Initial`.
+  otherwise the checker SHALL reject with rule `InitialMissing`.
 - **Closure.** Every recomputed successor of every member, canonicalised by
   FR-174's copy-swap rule when `reduction` is set, SHALL be a member;
-  otherwise the checker SHALL reject with `Closure`, naming the member.
+  otherwise the checker SHALL reject with rule `SuccessorMissing`, naming
+  the member.
 - **Undefined.** No member's body letters, `μ_U` or `μ_E` SHALL evaluate
   undefined, refused or incomplete; otherwise the checker SHALL reject with
-  `Undefined`.
+  rule `UndefinedMember`.
 - **Components (HP-2, HP-3).** The checker SHALL check PC-4 (b) to (d) over
   the members: the components partition them, every recomputed edge goes
   from a component to itself or to a later one, and each component's
-  witness holds; otherwise it SHALL reject with `Component`.
-- **Violation by form.** The checker SHALL reject with `Violation` when the
+  witness holds; otherwise it SHALL reject with rule `WitnessFails`.
+- **Violation by form.** The checker SHALL reject with rule
+  `ViolatingMember` when the
   closed set holds:
   - HP-2: a component whose PC-4 witness does not exclude a fair accepting
     cycle of the self-composition;
@@ -138,8 +145,9 @@ pub enum CertificateRule {
   report the first failing rule with its member.
 - **Limits.** The checker SHALL count recomputed states and successors
   against the request's `ModelCheckLimits` with checked arithmetic.
-- **Stop.** When a count reaches its limit, the checker SHALL stop with
-  `Stopped`, naming the limit and its value.
+- **Stop.** When a count reaches its limit, the checker SHALL return
+  `Stopped`, naming the limit and its value, which settles V-7,
+  `incomplete`, `LimitReached{limit, value, setting}`.
 - **Purity.** The checker SHALL read no path, environment variable, clock
   or search location, and its result SHALL be a function of the
   certificate, the request and the limits.
@@ -152,9 +160,9 @@ pub enum CertificateRule {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-163-AC-1 | Accepted vectors: §8.1's secure `NonInterference` certificate (8 product states, every component `MissingAcceptance` or `Trivial`) is `Accepted`; the copy-swap certificate (6 states) is `Accepted`; §8.2's secure `Opaque` certificate is `Accepted`; FR-179-AC-1's `Det` certificate is `Accepted`; FR-181-AC-1's HP-5 certificate is `Accepted`. | Test (TC-645) |
-| FR-163-AC-2 | Rejected vectors over the AC-1 `NonInterference` certificate: one member removed is `Rejected{Closure}` naming the member whose successor is missing; its keys unsorted is `Rejected{Malformed}` before any recomputation; an added member whose `l` components differ, in a component marked `MissingAcceptance`, is `Rejected{Component}`; the initial product state removed is `Rejected{Initial}`. | Test (TC-646) |
-| FR-163-AC-3 | A certificate for the leaky vault's `NonInterference` built by listing its 14 product states with the components of the secure run is `Rejected{Component}`, so a false proof is never accepted; a certificate for FR-181-AC-5's body listing the reached product states is `Rejected{Undefined}` at the first state with `l = 1`. | Test (TC-646) |
-| FR-163-AC-4 | The AC-1 `NonInterference` certificate checked with `max_states` 1 returns `Stopped(ResourceExhausted, MaxStates)` naming the limit and its value; checking it twice gives equal results. | Test (TC-646) |
+| FR-163-AC-2 | Rejected vectors over the AC-1 `NonInterference` certificate: one member removed is `Rejected` with rule `SuccessorMissing` naming the member whose successor is missing; its keys unsorted is `Rejected` with rule `Malformed` before any recomputation; an added member whose `l` components differ, in a component marked `MissingAcceptance`, is `Rejected` with rule `WitnessFails`; the initial product state removed is `Rejected` with rule `InitialMissing`. | Test (TC-646) |
+| FR-163-AC-3 | A certificate for the leaky vault's `NonInterference` built by listing its 14 product states with the components of the secure run is `Rejected` with rule `WitnessFails`, so a false proof is never accepted; a certificate for FR-181-AC-5's body listing the reached product states is `Rejected` with rule `UndefinedMember` at the first state with `l = 1`. | Test (TC-646) |
+| FR-163-AC-4 | The AC-1 `NonInterference` certificate checked with `max_states` 1 returns `Stopped` with `{MaxStates, 1}` naming the limit and its value; checking it twice gives equal results. | Test (TC-646) |
 
 ## Dependencies
 

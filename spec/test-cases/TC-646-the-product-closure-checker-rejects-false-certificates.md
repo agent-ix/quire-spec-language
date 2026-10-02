@@ -35,10 +35,10 @@ Tag the tests `#[trace("TC-646", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: `Rejected{Closure}` naming the member whose successor is missing;
-  `Rejected{Malformed}` before any recomputation; `Rejected{Component}`;
-  `Rejected{Initial}`.
-- Step 2: `Rejected{Component}`; `Rejected{Undefined}` at the first state
+- Step 1: `Rejected` with rule `SuccessorMissing` naming the member whose successor is missing;
+  `Rejected` with rule `Malformed` before any recomputation; `Rejected` with rule `WitnessFails`;
+  `Rejected` with rule `InitialMissing`.
+- Step 2: `Rejected` with rule `WitnessFails`; `Rejected` with rule `UndefinedMember` at the first state
   with `l = 1`.
-- Step 3: `Stopped(ResourceExhausted, MaxStates)` naming the limit and its
+- Step 3: `Stopped` with `{MaxStates, 1}` naming the limit and its
   value; equal results.
