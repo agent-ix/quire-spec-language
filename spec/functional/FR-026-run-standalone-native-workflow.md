@@ -125,4 +125,4 @@ Remaining work (implementation): the code applies fixed 1 MiB, 64-file and
 8 MiB ceilings; they become the configurable `request_bytes` and
 `dependent_bytes` limits above (FR-026-AC-4).
 
-FR-026-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation): the request and result identities drop `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".
+FR-026-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request and result identities drop `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".

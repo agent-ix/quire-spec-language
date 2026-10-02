@@ -134,7 +134,7 @@ typed failure without a successful artifact.
 
 ## Status
 
-FR-027-AC-4 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation): the request identity and the package `source` drop `revision_namespace` and `revision` (QSpec STD-150).
+FR-027-AC-4 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-430. Remaining work (implementation, Linear QSL-381): the request identity and the package `source` drop `revision_namespace` and `revision` (QSpec STD-150).
 FR-027-AC-5 to FR-027-AC-8 are implemented (ADR-011 §7.3 M-6a) and backed by TC-435.
 FR-027-AC-10 (the `libraries` member) is implemented and backed by TC-446 step 7. Library source files count toward `dependent_bytes`.
 Remaining work (implementation): the code still applies fixed file-count and aggregate-byte ceilings; they become the configurable `request_bytes` and `dependent_bytes` limits FR-026 states.

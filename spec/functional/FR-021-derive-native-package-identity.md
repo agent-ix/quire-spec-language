@@ -63,7 +63,7 @@ existing closed shared-reference schemas are not silently extended here.
 
 ## Status
 
-The manifest's source identity carries the two source labels of FR-001, so the independently authored hash vectors of FR-021-AC-1 change. Implemented for the four-label identity (ADR-013 §7 S-4b), with the `minimal`, `controls` and `multiple` vectors regenerated from the independent recipe with authority `agent-ix` and revision namespace `draft`. Remaining work (implementation): the manifest drops the revision labels and the three vectors are regenerated from the recipe without them (QSpec STD-150).
+The manifest's source identity carries the two source labels of FR-001, so the independently authored hash vectors of FR-021-AC-1 change. Implemented for the four-label identity (ADR-013 §7 S-4b), with the `minimal`, `controls` and `multiple` vectors regenerated from the independent recipe with authority `agent-ix` and revision namespace `draft`. Remaining work (implementation, Linear QSL-381): the manifest drops the revision labels and the three vectors are regenerated from the recipe without them (QSpec STD-150).
 
 Draft producer contract. Review, implementation, independent vectors and shared
 consumer adoption are required before their corresponding qualification claims.

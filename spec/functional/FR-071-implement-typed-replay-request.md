@@ -151,6 +151,6 @@ TC-445, and names the identity member `originating_counterexample_identity`.
 The members, their checks and those traces are deleted, and the member is
 renamed `obligation_identity` (FR-098, ADR-013 O-26).
 
-Remaining work (implementation): each package-reference source entry still
+Remaining work (implementation, Linear QSL-381): each package-reference source entry still
 carries the revision namespace and revision; it carries the two labels and
 the digest (QSpec STD-150).

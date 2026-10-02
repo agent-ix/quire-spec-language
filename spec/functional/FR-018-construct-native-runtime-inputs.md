@@ -63,7 +63,7 @@ can select an exact digest. Limits and accounting follow
 
 ## Status
 
-FR-018-AC-8 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation): the artifact identity drops `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed.
+FR-018-AC-8 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the artifact identity drops `revision_namespace` and `revision` (QSpec STD-150). Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed.
 
 Qualified construction API, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware

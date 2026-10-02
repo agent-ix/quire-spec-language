@@ -230,7 +230,7 @@ QSL emits the catalog causes:
 `Source::read_typed` checks the labels in order before the path
 (`qsl-foundation/src/source.rs`).
 
-Remaining work (implementation): `SourceIdentity`, `RawSourceRef` and the
+Remaining work (implementation, Linear QSL-381): `SourceIdentity`, `RawSourceRef` and the
 label check still carry the revision namespace and revision labels (four
 labels in all); they drop to the authority and identity as AC-5, AC-6,
 AC-7, AC-8, AC-10 and AC-11 state. The `RequestRevision` and

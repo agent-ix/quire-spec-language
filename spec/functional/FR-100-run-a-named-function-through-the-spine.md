@@ -419,6 +419,6 @@ specified and not yet implemented -- TC-786 planned. TC-452 is planned
 again: its code test still asserts exit 20 for an undefined outcome and
 needs updating to exit 10.
 
-Remaining work (implementation): the program selection and the `source`
+Remaining work (implementation, Linear QSL-381): the program selection and the `source`
 member still carry the revision namespace and revision; they carry the two
 FR-001 labels (QSpec STD-150).

@@ -100,4 +100,4 @@ model-aware execution remain reader/constructor/runtime responsibilities.
 
 ## Status
 
-FR-024-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation): the envelope identity and the local schema drop `revision_namespace` and `revision` (QSpec STD-150).
+FR-024-AC-6 is implemented for the four-label identity (ADR-013 §7 slice S-4b) and backed by TC-431. Remaining work (implementation, Linear QSL-381): the envelope identity and the local schema drop `revision_namespace` and `revision` (QSpec STD-150).
