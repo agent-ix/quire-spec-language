@@ -1,12 +1,12 @@
 ---
 id: TC-522
-title: "Model-check outcomes settle as FR-331 terminal records with their strength"
+title: "Model-check outcomes settle as QSpec FR-331 terminal records with their strength"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-127
     type: verifies
 ---
-# TC-522: Model-check outcomes settle as FR-331 terminal records with their strength
+# TC-522: Model-check outcomes settle as QSpec FR-331 terminal records with their strength
 
 ## Description
 

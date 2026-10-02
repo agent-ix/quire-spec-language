@@ -39,7 +39,7 @@ so its author writes `terminal any` and gets no deadlock report.
 
 QSpec owns the surface grammar of the `terminal` member, the definition of
 a deadlock, and the deadlock-freedom item's wire identity and place in the
-FR-331 request (ADR-018 QS-12; References). This requirement specifies what
+QSpec FR-331 request (ADR-018 QS-12; References). This requirement specifies what
 S3 checks once the shared grammar has parsed the member, how QSL classifies
 terminal states, and what the request writer adds. The spellings `terminal
 when` and `terminal any` follow ADR-018 DL-1 and are illustrative.

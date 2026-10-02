@@ -1,6 +1,6 @@
 ---
 id: FR-127
-title: "Settle a model-check verdict as an FR-331 terminal record"
+title: "Settle a model-check verdict as a QSpec FR-331 terminal record"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-015
@@ -26,12 +26,12 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-314
     type: depends_on
 ---
-# FR-127: Settle a model-check verdict as an FR-331 terminal record
+# FR-127: Settle a model-check verdict as a QSpec FR-331 terminal record
 
 ## Description
 
 QSL SHALL settle every temporal item over a model subject that EN-1 decides
-as exactly one FR-331 terminal record whose value states the verdict's
+as exactly one QSpec FR-331 terminal record whose value states the verdict's
 strength (ADR-018 V-1, V-4 to V-7). `qsl-replay` owns the terminal record,
 its category map and the `ProofBasis` and `InconclusiveCause` additions
 (ADR-013 O-24, as amended by ADR-018), whose category map covers every
@@ -54,7 +54,7 @@ it replays.
 ## Semantic authority and boundary
 
 QSpec owns the verdict table onto QSpec FR-360 and FR-243,
-the method and depth members of the FR-331 terminal record, and the new
+the method and depth members of the QSpec FR-331 terminal record, and the new
 inconclusive causes on the wire (ADR-018 QS-6; References). This
 requirement specifies QSL's types and its map from EN-1's outcomes. The SMT
 backend's outcomes (V-2, V-3, `InductionNotClosed`) reach `TerminalValue`
@@ -99,7 +99,7 @@ pub enum Certification { Certified, Uncertified, Trusted }
 
 The certificate types and checkers are FR-338's and FR-339's.
 
-and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its QSpec FR-243 basis and its O-16 category.
+and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label, its QSpec FR-243 basis and its O-16 category.
 
 ## Behavior
 
@@ -203,7 +203,7 @@ and the FR-331 terminal record carrying the value, its QSpec FR-360 label, its Q
 | FR-127-AC-7 | FR-338-AC-1's TP-1 proof with its accepted certificate settles `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; with FR-338-AC-2's `(1, 0)`-removed certificate it settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{SuccessorMissing, (1, 0)})`. | Test (TC-522) |
 | FR-127-AC-8 | FR-339-AC-1's weak `each` proof with its accepted certificate settles `Proved{Exhaustive, Certified}`; with FR-339-AC-2's `upd(a)` witness it settles `Inconclusive(CertificateRejected{WitnessFails, ...})` naming that component's first state. | Test (TC-522) |
 | FR-127-AC-9 | The `TerminalValue`s `Proved{Checks{3}, None}`, `Proved{BoundedComplete{depth: 5}, Some(Uncertified)}`, `Proved{Inductive{depth: 2}, Some(Uncertified)}` and a plugin's `Proved{Exhaustive, Some(Trusted)}`, as CG's maps construct them, each read `proved` with category success, never `inconclusive`; the Kani one carries no label. `Inconclusive(CertificateRejected)` maps to category inconclusive. | Test (TC-522) |
-| FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the FR-331 record. | Test (TC-522) |
+| FR-127-AC-10 | A replay result with cause `Verdicts` settles the item `inconclusive`, cause `ReplayParity`, written `replay-parity` in the QSpec FR-331 record. | Test (TC-522) |
 
 ## Dependencies
 

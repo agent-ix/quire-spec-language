@@ -302,7 +302,7 @@ names different artifacts in each.
 | TC-519 | Terminal declarations check, and the request carries one deadlock-freedom item per subject | Unit | P1 | FR-124-AC-1, FR-124-AC-2, FR-124-AC-3 | 🚧 Planned |
 | TC-520 | A model subject's behaviours read as temporal traces, with terminal stutter and interval wrap | Integration | P1 | FR-125-AC-1, FR-125-AC-2, FR-125-AC-3, FR-125-AC-4, FR-125-AC-5 | 🚧 Planned |
 | TC-521 | The explicit-state model checker proves, refutes and stops over model subjects | Integration | P1 | FR-126-AC-1, FR-126-AC-2, FR-126-AC-3, FR-126-AC-4, FR-126-AC-5, FR-126-AC-6, FR-126-AC-7 | 🚧 Planned |
-| TC-522 | Model-check outcomes settle as FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4, FR-127-AC-5, FR-127-AC-7, FR-127-AC-8, FR-127-AC-9, FR-127-AC-10 | 🚧 Planned |
+| TC-522 | Model-check outcomes settle as QSpec FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4, FR-127-AC-5, FR-127-AC-7, FR-127-AC-8, FR-127-AC-9, FR-127-AC-10 | 🚧 Planned |
 | TC-523 | The replay facade replays a model counterexample through ModelSystem | Integration | P1 | FR-128-AC-1, FR-128-AC-2, FR-128-AC-3, FR-128-AC-4 | 🚧 Planned |
 | TC-524 | A checked temporal clause emits as a v2 temporal clause node and reads back | Integration | P1 | FR-337-AC-1, FR-337-AC-2, FR-337-AC-3, FR-337-AC-4 | 🚧 Planned |
 | TC-525 | An EN-1 closure certificate is accepted or rejected by the core checker | Unit | P1 | FR-338-AC-1, FR-338-AC-2, FR-338-AC-3 | 🚧 Planned |

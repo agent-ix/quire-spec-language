@@ -351,7 +351,7 @@ does not apply.
 Amended by ADR-018 §3 and §5: these rules hold for `explore` and `sample`. A
 temporal model-check result (ADR-018 EN-1, layer A `qsl-analyze` `model_check`) is a
 negotiated backend result: it reaches proof accounting through negotiation
-and an FR-331 terminal record, and its counterexample is a
+and a QSpec FR-331 terminal record, and its counterexample is a
 `WitnessEnvelope` with a `ReplaySource::ModelTrace` source that enters E9.
 
 ### 7. Family placement of the model
