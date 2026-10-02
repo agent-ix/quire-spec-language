@@ -69,7 +69,8 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
   `ResourceExhausted`, the limit, its value, the setting name
   (`statistical.max_samples`, `statistical.max_draws`,
   `statistical.max_cycle_steps`) and the counts reached, which settles
-  `incomplete`, `limit-reached{limit, value, setting}` (QSpec FR-408). A time budget, the clause meter and a `true` poll
+  `incomplete`, `limit-reached{limit, value, setting}` (QSpec FR-408). A time budget, the clause meter and a cancelled `Cancel` handle
+  (FR-276)
   SHALL stop the run the same way with their own causes.
 - A run stopped before its method completes SHALL never carry a decision; an
   Undecided decision is kept for a run that completed its method.
@@ -94,7 +95,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-191-AC-1 | `NoFault` (ADR-024 §7.1) with Okamoto and `max_samples` set to 1,000,000 stops before deciding: `Stopped`, `ResourceExhausted`, limit `MaxSamples`, value 1,000,000, member `statistical.max_samples`, 1,000,000 samples counted and no decision. With `max_samples` 9,210,341, Okamoto's `N`, it completes and decides. A request that omits `max_samples` runs with 16,777,216. | Test (TC-626) |
-| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `statistical.max_draws`; a `true` poll stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant stops `ResourceExhausted` with no decision, settling `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`. | Test (TC-626) |
+| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `statistical.max_draws`; a cancelled `Cancel` handle stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant stops `ResourceExhausted` with no decision, settling `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`. | Test (TC-626) |
 | FR-191-AC-3 | `P95` with SPRT and seed 7 run twice gives byte-equal results: provenance, per-test counts, estimates and decision. The run stopped by `max_samples` 100 and the rerun with the default limit draw equal samples at trace indices 0 to 99. A run with seed 8 records seed 8, the same obligation identity, and a different sample at some trace index. | Test (TC-626) |
 | FR-191-AC-4 | A two-test run records per test its initial state index, binding and trace-index range, with test 1's first trace index equal to 1 and its step 2. Changing the method from Okamoto to SPRT changes the result's method and leaves its obligation identity unchanged. | Test (TC-626) |
 

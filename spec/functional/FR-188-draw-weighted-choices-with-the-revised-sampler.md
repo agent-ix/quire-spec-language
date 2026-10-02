@@ -49,12 +49,12 @@ pub fn weighted_choice(at: ChoicePoint, weights: &[Rational]) -> usize;
 
 pub fn sample_probabilistic(
     system: &ModelSystem, workload: &Workload, start: &ModelState,
-    seed: Seed, trace: u64, positions: u64, poll: impl FnMut() -> bool,
+    seed: Seed, trace: u64, positions: u64, cancel: &Cancel, // FR-276
 ) -> Result<SampledBehaviour, SampleStop>;
 
 pub struct SampledStep { pub transition: TransitionId, pub post_digest: Digest, pub choices: Vec<u32>, pub random: Vec<Value>, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
 pub struct SampledBehaviour { pub trace: u64, pub start: StateKey, pub steps: Vec<SampledStep> }
-pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled }
+pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled(CancelCause) }
 ```
 
 ## Behavior
@@ -89,7 +89,7 @@ pub enum SampleStop { Expansion(ExpansionStop), NotMarkov(NotMarkov), Cancelled 
   steps (ADR-018 SM-4).
 - A drawn identity and vector that FR-187 reports `NotMarkov` SHALL stop the
   sample with `SampleStop::NotMarkov`; an `ExpansionStop` SHALL stop it with
-  its cause; a `true` poll with `Cancelled`.
+  its cause; a cancelled `Cancel` handle (FR-276) with `Cancelled`.
 - The sampled behaviour SHALL be a function of the system, the workload,
   the start, the seed, the trace index and the number of positions.
 

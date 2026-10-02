@@ -19,7 +19,7 @@ Scope: FR-191-AC-1 to FR-191-AC-4.
 Fixtures: `NoFault`, `P95`, FR-189-AC-4's activation variant, FR-190-AC-2's transient variant, a two-test variant of `Service`.
 
 1. `NoFault` with Okamoto at `max_samples` 1,000,000 and at 9,210,341; a request omitting `max_samples`.
-2. The activation variant at `max_draws` 1,000; the transient variant; a `true` poll.
+2. The activation variant at `max_draws` 1,000; the transient variant; a cancelled `Cancel` handle.
 3. `P95` with SPRT and seed 7 twice; with `max_samples` 100 and then the default; with seed 8.
 4. The two-test variant; `P95` with Okamoto and with SPRT.
 

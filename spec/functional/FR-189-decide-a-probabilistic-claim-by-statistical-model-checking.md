@@ -61,7 +61,7 @@ pub enum StatisticalMethod { Okamoto, Sprt, Regenerative { min_cycles: u64 } }
 
 pub fn check_statistical(
     request: StatisticalRequest<'_>,
-    poll: impl FnMut() -> bool,
+    cancel: &Cancel,                    // FR-276
 ) -> Result<StatisticalOutcome, StatisticalRefusal>;
 ```
 
@@ -83,8 +83,9 @@ pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 
 `StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's
 `RequiresBound`, `EveryScheduler` for a claim `under every scheduler` and
-`MissingConfidence` for a claim without confidence parameters, which
-negotiation never routes here (FR-192), or `NotStatistical` for a method
+`MissingConfidence` for a claim without confidence parameters,
+`ExactOnlyForm` for a claim form only EN-5 decides (QSpec FR-411, ADR-028
+XF-5), or `NotStatistical` for a method
 the claim's form does not admit (FR-190, SPRT below).
 
 ## Behavior

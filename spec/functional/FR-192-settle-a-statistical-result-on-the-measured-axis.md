@@ -24,8 +24,8 @@ relationships:
 
 ## Description
 
-QSL SHALL settle every `probabilistic-satisfaction` item that negotiation
-routes to statistical evidence as exactly one FR-331 terminal record with
+QSL's settlement map in `qsl-replay` SHALL settle every
+`probabilistic-satisfaction` item that EN-4 runs as exactly one FR-331 terminal record with
 the result value `measured`, carried by `TerminalValue::Measured
 (StatisticalVerdict)`, and SHALL never settle it `proved` or `refuted`
 (ADR-024 SV-1 to SV-5, SV-9, SV-10). The record SHALL carry QSpec FR-241's
@@ -43,8 +43,8 @@ counts none of the three as proved.
 
 ## Inputs
 
-- A `StatisticalOutcome` (FR-189, FR-190), or the negotiation disposition of
-  a `probabilistic-satisfaction` item that was not routed to EN-4.
+- A `StatisticalOutcome` (FR-189, FR-190) or a `StatisticalRefusal`
+  (FR-189).
 
 ## Outputs
 
@@ -68,24 +68,22 @@ pub struct StatisticalBasis {
     pub coverage: Coverage,
 }
 pub enum Coverage { FiniteSample, Asymptotic }
-// UnsupportedCause gains: NotMarkov{…}, EveryScheduler, MissingConfidence
+// UnsupportedCause gains: NotMarkov{…}, EveryScheduler, MissingConfidence, ExactOnlyForm
 ```
 
 ## Behavior
 
-### Negotiation
+### EN-4's capability and refusals
 
-- CG's `negotiate_*` arm for `probabilistic-satisfaction` SHALL route an
-  item that names `statistical` evidence only to a candidate advertising
-  (`probabilistic-satisfaction`, `statistical`), and an item that names
-  `exact` evidence only to a candidate advertising `exact`. It SHALL never
-  substitute one evidence kind for the other.
-- An item naming `statistical` evidence SHALL settle `unsupported` at
-  negotiation, with no engine run, when its claim states `under every
-  scheduler` (`EveryScheduler`) or states no confidence parameters
-  (`MissingConfidence`). An item naming an evidence kind no registered
-  candidate advertises SHALL settle `unsupported`,
-  `unsupported-requested-capability`.
+- EN-4's provider manifest SHALL advertise (`probabilistic-satisfaction`,
+  `statistical`) only. Routing an item by its evidence kind, and never
+  substituting one kind for the other, is QSpec FR-290's negotiation rule,
+  which QSL does not restate.
+- When `check_statistical` receives a claim `under every scheduler`, one
+  with no confidence parameters, or a mean-time or expected-reward form, it
+  SHALL refuse it `EveryScheduler`, `MissingConfidence` or `ExactOnlyForm`
+  (FR-189) with no sample drawn, and the map SHALL settle the refusal
+  `unsupported` with that cause.
 
 ### The map
 
@@ -99,7 +97,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` | `failed` | `resource-incomplete` | none | `Incomplete(cause)` naming the limit | incomplete |
-| `Unsupported`; negotiation refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
+| `Unsupported`; an EN-4 refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
 
 - The record SHALL carry no FR-242 truth value and no FR-243 settlement
   basis for any of these rows.
@@ -125,7 +123,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`; `Unsupported(NotMarkov)`. None of the five records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
-| FR-192-AC-4 | At negotiation, with EN-4 registered and no exact candidate: `P95` naming `statistical` routes to EN-4; `P95` naming `exact` settles `unsupported-requested-capability`; a claim `under every scheduler` naming `statistical` settles `unsupported`, `EveryScheduler`; `NoFault` with no confidence parameters naming `statistical` settles `unsupported`, `MissingConfidence`. No engine runs for the last three. | Test (TC-627) |
+| FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). `check_statistical` given a claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |
 | FR-192-AC-5 | FR-189-AC-6's result settles `measured`, `rejected`, category violation, with the test's `UndefinedEvaluation` in the record, and fails the pipeline gate as a violation does. | Test (TC-640) |
 
 ## Dependencies

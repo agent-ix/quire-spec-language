@@ -426,6 +426,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-194
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-274
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-022
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-219
@@ -934,6 +936,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-192](functional/FR-192-settle-a-statistical-result-on-the-measured-axis.md) | FR | Specified: `TerminalValue::Measured` on the FR-331 value `measured` with its own axis (accepted, rejected, undecided), no truth or basis, Rejected failing the pipeline, never proof evidence, and negotiation by evidence kind (ADR-024 SV-1 to SV-5, SV-9, SV-10); a rejection by an undefined sample; not yet implemented -- TC-627, TC-640 planned |
 | [FR-193](functional/FR-193-keep-and-replay-sampled-witnesses.md) | FR | Specified: sampled witnesses kept in trace order and `replay_sampled_witness` with support and draw checks, and their use as qualitative counterexamples (ADR-024 SV-6 to SV-8); the undefined sample kept and replayed; not yet implemented -- TC-628, TC-640 planned |
 | [FR-194](functional/FR-194-evaluate-window-aggregates-in-monitors.md) | FR | Specified: aggregate terms over past windows of trace subjects (count, sum, min, max, fraction, nearest-rank quantile), `InsufficientData` as undefined, `max_window_values`, derived Boolean signals for tl-mltl (ADR-024 WA-1 to WA-8); not yet implemented -- TC-629 planned |
+| [FR-274](functional/FR-274-build-random-parameter-workload-and-reward-forms-at-s2.md) | FR | Specified: S1 parses and S2 builds random-parameter, reward and workload forms (QSpec FR-405's spelling), with the `workload` dispatch entry; not yet implemented -- TC-643 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
