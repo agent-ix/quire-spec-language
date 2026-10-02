@@ -149,7 +149,7 @@ is added.
 | V-4 | Refuted | A counterexample (§5) reproduced by replay, including one that ends where the claim evaluated undefined (UE-1) | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | Bounded-to-`k` | The engine completed its analysis to depth `k` and found no counterexample of length at most `k` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: k})` | inconclusive |
 | V-6 | Inconclusive, other cause | `InductionNotClosed{depth: k}`: base case holds to `k`, the step case has a counterexample-to-induction. `UndecidedSuccessor`: a contract conjunction was refused during expansion, with no clause false and none undefined, so the successor relation is not exactly known (FR-120 `ContractUndetermined` with a `Refused` evaluation); an undefined one refutes (UE-6). `CertificateRejected{rule, state}`: the core checker rejected EN-1's proof certificate (PC-2). `NoInitialState`: the subject has no initial state (ADR-016 EX-10). `ReplayParity` and `ReplayRefused`: as ADR-013 C-09 | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | Limit reached | A run limit stopped the analysis before it completed its method: `max_states`, `max_transitions`, `max_automaton_states` (IV-6), the evaluation meter or `max_candidates`. Every limit has a published default, the request setting raises it, and every terminal record states the values used and whether one was reached. This is the one stop cause of every engine (QSpec FR-331 `limit-reached`). The `max_depth` horizon is not a limit: a run that completes it settles V-5 and the record states `k`. A cancelled run (ADR-029 FR-276) settles `failed`, `Incomplete(Cancelled)` | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, naming the limit, its value and the request setting that raises it | incomplete |
+| V-7 | Limit reached | A run limit stopped the analysis before it completed its method: `max_states`, `max_transitions`, `max_automaton_states` (IV-6), the evaluation meter or `max_candidates`. Every limit has a published default, the request setting raises it, and every terminal record states the values used and whether one was reached. This is the one stop cause of every engine (QSpec FR-331 `limit-reached`). The `max_depth` horizon is not a limit: a run that completes it settles V-5 and the record states `k`. A cancelled run (ADR-029 FR-276) settles `incomplete` too, `Incomplete(Cancelled)`, written `cancelled` (QSpec FR-408-AC-8) | `incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, naming the limit, its value and the request setting that raises it | incomplete |
 | V-8 | Unsupported | No candidate settles the form; or a profile the model subject does not admit | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
 `ProofBasis` is `Checks{success_checks}` (Kani, unchanged in meaning: zero
@@ -159,7 +159,8 @@ inconclusive with `KaniVacuousProof`, as today, and every other basis to
 success. `InconclusiveCause` gains `BoundReached{depth}`,
 `InductionNotClosed{depth}`, `UndecidedSuccessor`, `NoInitialState` and
 `CertificateRejected{rule, state}`. `IncompleteCause` gains `LimitReached{limit, value,
-setting}`, QSpec FR-331's `limit-reached` (V-7). `TerminalValue::Proved` carries
+setting}`, QSpec FR-331's `limit-reached`, and `Cancelled`, written
+`cancelled` (V-7). `TerminalValue::Proved` carries
 `certification: Certification::{Certified, Uncertified}` beside its basis
 (PC-1).
 

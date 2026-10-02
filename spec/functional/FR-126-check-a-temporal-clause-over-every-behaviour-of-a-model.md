@@ -114,7 +114,7 @@ subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
   (V-6);
 - `Stopped { cause: IncompleteCause, limit: Option<ReachedLimit> }`: a run
   budget or cancellation stopped the run before it completed its method
-  (a budget settles V-7; cancellation settles `failed`, FR-127). `ReachedLimit{limit: ModelCheckLimit, value: u64}` names the limit
+  (both settle V-7, `incomplete`, FR-127). `ReachedLimit{limit: ModelCheckLimit, value: u64}` names the limit
   and its value. `ModelCheckLimit` is `MaxStates`, `MaxTransitions` or
   `MaxAutomatonStates` (members of `ModelCheckLimits`), or
   `EvaluationMeter` or `MaxCandidates` (members of the subject's FR-120
