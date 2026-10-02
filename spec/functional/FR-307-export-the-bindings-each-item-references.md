@@ -48,11 +48,10 @@ a `missing_declaration`/`missing-name` refusal.
 
 ### Caller and position
 
-The orchestrating driver (ADR-011 T-13) SHALL call the export after S4 and
-before `route` and E7. The export names no `BackendId` (ADR-012 §11). For an
-emission onto implementation code, the driver SHALL put only the items the
-export bound in the QSpec FR-331 request it sends CG, and SHALL report each
-refused item with its refusal.
+The export SHALL be callable after S4 and before `route` and E7, and SHALL
+name no `BackendId` (ADR-012 §11). The orchestrating driver (ADR-011 T-13)
+builds the QSpec FR-331 request from the bound items; the end-to-end run
+lives in quire-integration.
 
 ### Referenced elements
 
