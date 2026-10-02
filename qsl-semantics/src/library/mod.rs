@@ -189,6 +189,8 @@ impl PackageId {
 /// package, compiled from its digest-addressed source) or at E9 (`replay`'s
 /// recompiled package) -- never by a conversion function, and none is
 /// defined here.
+///
+/// quire:canonical
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PackageNodeKey {
     /// The verified package's own content-addressed identity.
@@ -333,6 +335,8 @@ pub const PACKAGE_ID_PATH: &str = "/package_id";
 pub const IDENTITY_PREIMAGE_PATH: &str = "/identity_preimage";
 
 /// Why a package's import closure is refused.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, PartialEq, thiserror::Error)]
 pub enum LibraryRefusal {
     /// A package's `package_id` is not the digest of its identity preimage,
@@ -654,6 +658,8 @@ pub(crate) fn verify_package(
 /// let candidate: LibraryPackage = todo!();
 /// let _ = verify_binding(SupportedV2Wire(()), candidate, todo!());
 /// ```
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPackage {
     package: LibraryPackage,
@@ -818,6 +824,8 @@ pub fn verify_binding(
 ///     exports: todo!(),
 /// };
 /// ```
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportView {
     package: PackageId,

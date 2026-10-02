@@ -369,36 +369,22 @@ mod tests {
         );
     }
 
-    /// Unrelated items in the scanned trees that share a name with an item
-    /// of the layer-SV leaf: `src/package/view.rs`'s `Location<'a>` is a
-    /// borrowed view of a declaration's position in a package, not the
-    /// expression location.
-    const SEMANTIC_VALUE_NAMESAKES: [(&str, &str); 1] = [("Location", "src/package/view.rs")];
-
     /// Asserts `name` is defined exactly once across every tree
     /// [`scan_crate`] reads, and that the one definition is under
-    /// `quire-semantic-value/src/`. A copy anywhere else in the scanned
-    /// trees fails this; only the named namesakes in
-    /// [`SEMANTIC_VALUE_NAMESAKES`] are not counted.
+    /// `quire-semantic-value/src/`. A canonical type (`/// quire:canonical`)
+    /// is not asserted here: `cargo xtask canonical-types` holds it to one
+    /// definition.
     fn assert_defined_exactly_once_in_semantic_value(name: &str, locations: &[Definition]) {
-        let counted: Vec<&Definition> = locations
-            .iter()
-            .filter(|location| {
-                !SEMANTIC_VALUE_NAMESAKES
-                    .iter()
-                    .any(|(namesake, file)| *namesake == name && location.file == *file)
-            })
-            .collect();
         assert_eq!(
-            counted.len(),
+            locations.len(),
             1,
-            "{name} has {} defining location(s) across the scanned trees: {counted:?}",
-            counted.len()
+            "{name} has {} defining location(s) across the scanned trees: {locations:?}",
+            locations.len()
         );
         assert!(
-            counted[0].file.starts_with("quire-semantic-value/src/"),
+            locations[0].file.starts_with("quire-semantic-value/src/"),
             "{name} is defined at {:?}, not under quire-semantic-value/src/",
-            counted[0]
+            locations[0]
         );
     }
 
@@ -406,10 +392,11 @@ mod tests {
     /// CON-3-named symbol, has exactly one defining location. The `check`
     /// symbols are counted under `check`/`value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why that is scoped
-    /// rather than crate-wide). The checking limits, `CheckMode` and the
-    /// expression location live in the layer-SV leaf `quire-semantic-value`
-    /// and are counted across every scanned tree
-    /// ([`assert_defined_exactly_once_in_semantic_value`]).
+    /// rather than crate-wide). The checking limits and `CheckMode` live in
+    /// the layer-SV leaf `quire-semantic-value` and are counted across every
+    /// scanned tree ([`assert_defined_exactly_once_in_semantic_value`]).
+    /// `CheckRefusal` and `CheckedGraph` are canonical types, which
+    /// `cargo xtask canonical-types` holds to one definition.
     ///
     /// **Updated.** `check`'s S3 output type was renamed
     /// `CheckedPackage` -> `CheckedGraph` (ADR-013 T-1): the checking
@@ -441,7 +428,6 @@ mod tests {
         }
         let symbols = [
             "CheckCause",
-            "CheckRefusal",
             "Obligation",
             "MeasureObligation",
             "CheckingStage",
@@ -450,7 +436,6 @@ mod tests {
             "InvalidDispatchDeclaration",
             "ProvedInterval",
             "WrongSnapshotCause",
-            "CheckedGraph",
             "CheckedExpression",
             "CheckedFunction",
             "PackageDeclarations",
@@ -462,8 +447,6 @@ mod tests {
             assert_defined_exactly_once_under_check(symbol, &locations);
         }
         for symbol in [
-            "Location",
-            "Origin",
             "CheckingLimits",
             "DepthAboveMaximum",
             "MAX_CHECKING_DEPTH",
@@ -477,19 +460,17 @@ mod tests {
         }
     }
 
-    /// TC-173 step 1: the ten check-cause types are each defined once under
+    /// TC-173 step 1: the check-cause types are each defined once under
     /// `check`, none under `value::expression` (see
     /// [`assert_defined_exactly_once_under_check`] for why this is scoped
-    /// rather than crate-wide), and the expression `Location` and `Origin`
-    /// are each defined once across every scanned tree, in
-    /// `quire-semantic-value`.
+    /// rather than crate-wide). `CheckRefusal` is a canonical type, which
+    /// `cargo xtask canonical-types` holds to one definition.
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
     fn check_cause_types_are_defined_exactly_once_under_check() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
         let names = [
             "CheckCause",
-            "CheckRefusal",
             "Obligation",
             "MeasureObligation",
             "CheckingStage",
@@ -502,10 +483,6 @@ mod tests {
         for name in names {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_defined_exactly_once_under_check(name, &locations);
-        }
-        for name in ["Location", "Origin"] {
-            let locations = definitions.items.get(name).cloned().unwrap_or_default();
-            assert_defined_exactly_once_in_semantic_value(name, &locations);
         }
     }
 
@@ -539,15 +516,17 @@ mod tests {
         }
     }
 
-    /// TC-173 step 2: the call-admission refusal `InputRefusal` and the
-    /// loss records `ValueLoss` and `LocatedLoss` are each defined once
-    /// across every scanned tree, in `quire-semantic-value`; neither
-    /// `check` nor `value::expression` defines them.
+    /// TC-173 step 2: the loss records `ValueLoss` and `LocatedLoss` are
+    /// each defined once across every scanned tree, in
+    /// `quire-semantic-value`; neither `check` nor `value::expression`
+    /// defines them. The call-admission refusal `InputRefusal` is a
+    /// canonical type, which `cargo xtask canonical-types` holds to one
+    /// definition.
     #[trace("TC-173", "FR-068-AC-4")]
     #[test]
     fn input_refusal_and_losses_are_defined_exactly_once_in_semantic_value() {
         let definitions = scan_crate(&workspace_root()).expect("scan runs");
-        for name in ["InputRefusal", "ValueLoss", "LocatedLoss"] {
+        for name in ["ValueLoss", "LocatedLoss"] {
             let locations = definitions.items.get(name).cloned().unwrap_or_default();
             assert_defined_exactly_once_in_semantic_value(name, &locations);
         }

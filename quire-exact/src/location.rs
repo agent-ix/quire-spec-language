@@ -72,6 +72,8 @@ impl From<String> for Role {
 /// A source occurrence key within one checked node (ADR-013 O-07): a role
 /// and an ordinal disambiguating repeated occurrences of that role on the
 /// same node (e.g. the third `"reference"` occurrence).
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Origin {
     role: Role,
@@ -99,6 +101,8 @@ impl Origin {
 /// A full source location (ADR-013 T-5): which checked node, and which
 /// occurrence within it. Names a node id and an occurrence key; carries no
 /// bytes of its own.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Location {
     node: NodeKey,

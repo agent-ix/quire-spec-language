@@ -226,6 +226,8 @@ pub use crate::model::refusal::{ModelRefusalCause, OfferedSelection};
 
 /// A refusal FR-150 normalization returns for a real defect (never a
 /// resource limit; see [`Incomplete`] for that).
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelRefusal {
     /// The stable top-level code.

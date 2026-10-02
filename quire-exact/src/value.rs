@@ -183,6 +183,8 @@ impl EnumMember {
 /// `#[derive(Debug)]` printed, except that in alternate mode a leaf gets
 /// plain `{:#?}`, so the caller's format flags reach compact-mode leaves
 /// only.
+///
+/// quire:canonical
 #[derive(Eq)]
 pub enum ValueType {
     /// `Boolean`.
@@ -302,6 +304,8 @@ impl ValueType {
 ///   [`crate::compare_keys`]) are worklist walks.
 /// - [`ValueType::admits`] reads only the outermost value, since a nested
 ///   value carries a type that was checked when it was built.
+///
+/// quire:canonical
 #[derive(Clone)]
 pub enum Value {
     /// A Boolean.

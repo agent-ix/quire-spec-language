@@ -41,6 +41,8 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Source, SourceIdentity, Span};
 
 /// A version-bound source artifact and its lossless parse evidence.
+///
+/// quire:canonical
 #[derive(Clone, Debug)]
 pub struct ParsedSource {
     source: Source,

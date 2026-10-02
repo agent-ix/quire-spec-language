@@ -24,6 +24,11 @@ pub enum Code {
     /// FR-270: `cargo xtask checked-input` found a stage entry that takes,
     /// or a stage crate function that rebuilds, a pre-check representation.
     CheckedInput,
+    /// FR-272: `cargo xtask canonical-types` found a misplaced or duplicate
+    /// tag, a second definition, a re-export or a copy of a canonical type.
+    CanonicalTypes,
+    /// `cargo metadata` could not be run or read.
+    Metadata,
 }
 
 impl Code {
@@ -36,6 +41,8 @@ impl Code {
             Self::ImportGraph => "import-graph",
             Self::RouteLint => "route-lint",
             Self::CheckedInput => "checked-input",
+            Self::CanonicalTypes => "canonical-types",
+            Self::Metadata => "metadata",
         }
     }
 }
@@ -207,6 +214,39 @@ pub enum Error {
         /// The findings, one per line.
         summary: String,
     },
+    /// `cargo metadata` could not be spawned.
+    #[error("canonical-types: cannot spawn cargo metadata: {source}")]
+    CanonicalTypesSpawn {
+        /// The underlying spawn failure.
+        #[source]
+        source: io::Error,
+    },
+    /// `cargo metadata` exited non-zero.
+    #[error("canonical-types: cargo metadata failed. stderr:\n{stderr}")]
+    CanonicalTypesCargoMetadata {
+        /// Its captured stderr.
+        stderr: String,
+    },
+    /// `cargo metadata`'s output is not JSON.
+    #[error("canonical-types: cargo metadata output is not JSON: {source}")]
+    CanonicalTypesMetadataJson {
+        /// The underlying parse failure.
+        #[source]
+        source: serde_json::Error,
+    },
+    /// `cargo metadata`'s output lacks a member the scan reads.
+    #[error("canonical-types: cargo metadata output has no {what}")]
+    CanonicalTypesMetadata {
+        /// The missing member.
+        what: &'static str,
+    },
+    /// `xtask::canonical_types` found one or more violations; `summary`
+    /// lists them.
+    #[error("{summary}")]
+    CanonicalTypesFound {
+        /// The findings, one per line.
+        summary: String,
+    },
 }
 
 impl Error {
@@ -237,6 +277,11 @@ impl Error {
             Self::ImportGraphParse { .. } => Code::ImportGraph,
             Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
             Self::CheckedInputFound { .. } => Code::CheckedInput,
+            Self::CanonicalTypesFound { .. } => Code::CanonicalTypes,
+            Self::CanonicalTypesSpawn { .. }
+            | Self::CanonicalTypesCargoMetadata { .. }
+            | Self::CanonicalTypesMetadataJson { .. }
+            | Self::CanonicalTypesMetadata { .. } => Code::Metadata,
         }
     }
 
@@ -248,8 +293,9 @@ impl Error {
             | Code::StringEdge
             | Code::ImportGraph
             | Code::RouteLint
-            | Code::CheckedInput => 1,
-            Code::Usage | Code::Io => 2,
+            | Code::CheckedInput
+            | Code::CanonicalTypes => 1,
+            Code::Usage | Code::Io | Code::Metadata => 2,
         }
     }
 }

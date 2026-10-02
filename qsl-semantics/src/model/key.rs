@@ -80,6 +80,8 @@ pub const RULE_REDEFINE: RuleRef = RuleRef {
 /// Ordering matches `model-complete.md`: `package`, then `node`, each as
 /// UTF-8 bytes, a proper prefix first. Field declaration order below gives
 /// exactly that comparison under `derive(Ord)`.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationKey {
     /// The domain package identity (FR-154).

@@ -153,6 +153,8 @@ pub enum InconclusiveCause {
 /// FR-331-AC-8's `inconclusive`) from an ordinary one by its own field
 /// rather than by a second tag, so the category-mapping reader can tell
 /// them apart without inspecting anything but this value.
+///
+/// quire:canonical
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum TerminalValue {
     /// A Kani run whose obligation completed with `success_checks` SUCCESS
@@ -207,6 +209,8 @@ impl TerminalValue {
 
 /// One requested item's FR-331 terminal record: its request-scoped item
 /// identity and its result value.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct TerminalRecord {
     item: String,
@@ -237,6 +241,8 @@ impl TerminalRecord {
 /// FR-069/ADR-013 O-24: the typed proof-result envelope for one requested
 /// item. No public constructor other than [`read_backend_provider_envelope`]
 /// (FR-069-CON-1): a caller cannot name an arbitrary category directly.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofResultEnvelope {
     category: ProofCategory,

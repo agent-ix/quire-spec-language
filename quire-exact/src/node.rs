@@ -83,6 +83,8 @@ impl Identifier {
 }
 
 /// An opaque `quire.checked-semantic-node/v1` node key.
+///
+/// quire:canonical
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeKey([u8; 32]);
 

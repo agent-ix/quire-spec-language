@@ -146,6 +146,8 @@ impl std::str::FromStr for NativeValueType {
 /// package. The sole output shape [`crate::model::intake`]'s unified
 /// `typeRef` resolver produces -- never a synthetic `DeclarationKey` under a
 /// made-up "quire/native" package.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValueTypeRef {
     /// A native value type: `ix://quire/native/<Name>`.
@@ -524,6 +526,8 @@ impl DomainPackageRecord {
 
 /// A domain package selection: `{identity, version, digest_domain: "sha256-jcs",
 /// digest}` (FR-321, `model-complete.md`:50).
+///
+/// quire:canonical
 #[derive(Clone, Eq, PartialEq)]
 pub struct DomainPackageRef {
     /// The domain package's own identity (e.g. `test/orders`).

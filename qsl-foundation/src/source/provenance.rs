@@ -100,6 +100,8 @@ impl Revision {
 
 /// ADR-013 O-07 and QSpec `RawSourceRef`: names one source document by
 /// authority, identity, revision and its `quire.source.bytes/v1` digest.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RawSourceRef {
     authority: String,
@@ -250,6 +252,8 @@ impl Ord for SourceRegion {
 /// FR-322's `source_map` key. The node half is the wire node id; the role
 /// and ordinal half is the kernel [`Origin`]. Equality and ordering are
 /// lexical over (node id, role, ordinal).
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OccurrenceKey {
     node: WireNodeId,

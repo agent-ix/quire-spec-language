@@ -14,6 +14,8 @@
 use alloc::string::String;
 
 /// A runtime input a call or evaluation refuses before any charge.
+///
+/// quire:canonical
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum InputRefusal {
     /// No function of this name: `missing_declaration` / `missing-name`.

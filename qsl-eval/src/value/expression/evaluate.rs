@@ -61,6 +61,8 @@ use quire_semantic_value::stop::{outcome_from_stop, outcome_into_stop, Stop};
 /// originated (FR-090, ruling on FR-090-OQ-3). No `Clone`: `FamilyOutcome`'s
 /// `FamilyEvaluated` arm holds a `Box<dyn CatalogCoded>` or
 /// `Box<dyn UndefinedCoded>`, neither `Clone`.
+///
+/// quire:canonical
 #[derive(Debug)]
 pub struct Evaluation {
     /// The outcome.
