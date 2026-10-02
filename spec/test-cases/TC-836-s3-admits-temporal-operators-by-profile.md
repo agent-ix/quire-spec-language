@@ -39,8 +39,9 @@ Tag the tests `#[trace("TC-836", "FR-326-AC-n")]`.
   domain at the clause node; event-position refuses
   `unsupported_construct`/`expression-form` at `eventually`.
 - Step 2: horizon 5; `[3,*]` refuses `unsupported_construct`/
-  `expression-form` under both profiles; `[5,3]` refuses `ill_typed`/
-  `type-mismatch` under both, each at the interval's span.
+  `expression-form` under event-position and checks with `Some{3, Open}`
+  under infinite-trace; `[5,3]` refuses `ill_typed`/`type-mismatch` under
+  both, each at the interval's span.
 - Step 3: `stage_limit_exceeded`, limit kind work budget, at the overflowing
   operator.
 - Step 4: `unknown_profile`/`unsupported-selection` at the clause, naming the

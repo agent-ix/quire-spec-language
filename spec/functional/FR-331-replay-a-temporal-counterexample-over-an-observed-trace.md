@@ -43,10 +43,8 @@ model subject replays through `replay_model_trace` (FR-128); both share the
 payload type and its evaluation.
 
 The observed-step form is `qsl-replay`'s own input, for a refutation found
-over a supplied trace (FR-327 to FR-329). It is not the QSpec FR-364
-counterexample wire, which carries model steps only; a wire form for a
-counterexample over a supplied trace is a QSpec follow-up against FR-364
-(References).
+over a supplied trace (FR-327 to FR-329); QSpec FR-364's wire carries
+model steps.
 
 ## Use case
 
@@ -135,17 +133,13 @@ formula is false on it.
 
 ## Status
 
-Specified; not yet implemented. Code follow-up: delete
-`ClauseRunProvenance` (`qsl-replay/src/spine/clause.rs`, the struct and
-the `ClauseRunReport::provenance` member) and `ClauseRunReport::source_digest`,
-so the clause-run report carries the disposition, the `package_id` and the
-usage only (FR-109, FR-330), and the replay result carries the decoded
-position and the evaluated value only.
+Specified; not yet implemented.
 
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8). A
-  QSpec wire form for a counterexample over a supplied trace is a follow-up
-  against FR-364.
+- QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8).
+- Linear STD-147 (a QSpec wire form for a counterexample over a supplied
+  trace); Linear QSL-460 (deleting `ClauseRunProvenance` and
+  `ClauseRunReport::source_digest` from the code).
 - QSpec FR-362 (the missing fairness premise).

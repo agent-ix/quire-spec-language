@@ -54,15 +54,15 @@ request routes to it and its result lands in the matching category.
 
 - The clause's requirement record (FR-326): (`temporal-satisfaction`,
   `Unbounded{[formula]}`).
-- The registry of backend descriptors (FR-075) and CG `negotiate_*`
-  (ADR-012 §7.1).
+- The registry of backend descriptors (FR-075) and a negotiation
+  disposition for the item (CG `negotiate_*` produces it, ADR-012 §7.1).
 - A routed backend's QSpec FR-360 result: label and
   QSpec FR-241 execution.
 
 ## Outputs
 
 - A requested item classified `unbounded`, `finite_bound_available: false`.
-- A disposition from `negotiate_*`.
+- The item's settlement from its disposition.
 - The item's O-16 category.
 
 ## Behavior
@@ -74,13 +74,13 @@ request routes to it and its result lands in the matching category.
 - When no registrant advertises `temporal-satisfaction`, the registry SHALL
   pass the empty candidate set unchanged (FR-076), and the item SHALL settle
   `unsupported`, warned, naming `temporal-satisfaction`.
-- When the only candidate advertises `temporal-satisfaction` in mode
-  `bounded` only, the item SHALL settle `unsupported`, warned,
+- When the disposition for a sole candidate advertising
+  `temporal-satisfaction` in mode `bounded` only is `unbounded-extent`,
+  QSL SHALL settle the item `unsupported`, warned,
   `unbounded-extent`, naming the kind, the candidate and its modes (QSpec
   FR-290).
-- When a candidate advertises (`temporal-satisfaction`, `unbounded`) and its
-  arm discharges the infinite-trace form, the item SHALL settle `supported`
-  and route to it; over a model subject that candidate is QSL's
+- When the disposition is `supported` for a candidate advertising
+  (`temporal-satisfaction`, `unbounded`), QSL SHALL route the item to it; over a model subject that candidate is QSL's
   explicit-state model checker (ADR-018 EN-1, FR-126), whose outcome FR-127
   settles.
 - A routed backend's result SHALL map to O-16 as ADR-014 A-5 states:
@@ -97,7 +97,7 @@ request routes to it and its result lands in the matching category.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-332-AC-1 | `Reaches` (`eventually holds(c.value = 2)`, infinite-trace) is written as one item classified `unbounded` with `finite_bound_available` false; a bounded request for it with any `FiniteBound` refuses `invalid_runtime_input`/`invalid-value` and writes no item. | Test (TC-842) |
-| FR-332-AC-2 | With an empty registry, `Reaches` settles `unsupported` with a warning naming `temporal-satisfaction`; with only a test descriptor advertising (`temporal-satisfaction`, `bounded`), it settles `unsupported`, warned, `unbounded-extent`, naming the kind, the descriptor and its mode; with a test descriptor advertising (`temporal-satisfaction`, `unbounded`) whose arm takes the infinite-trace form, it settles `supported` and routes to that descriptor. | Test (TC-842) |
+| FR-332-AC-2 | With an empty registry, `Reaches` settles `unsupported` with a warning naming `temporal-satisfaction`; with only a test descriptor advertising (`temporal-satisfaction`, `bounded`) and a fixture `unbounded-extent` disposition, it settles `unsupported`, warned, `unbounded-extent`, naming the kind, the descriptor and its mode; with a test descriptor advertising (`temporal-satisfaction`, `unbounded`) and a fixture `supported` disposition, it routes to that descriptor. | Test (TC-842) |
 | FR-332-AC-3 | Each FR-360 label maps to its O-16 category as the Behavior section's ADR-014 A-5 mapping states, including `failed` with `resource-incomplete` to incomplete and `failed` with another execution to internal failure. | Test (TC-842) |
 | FR-332-AC-4 | Running `Reaches` at S6a on a lasso where it is true gives `tested`; the accounting record for the AC-2 empty-registry request still holds the item `unsupported`. | Test (TC-842) |
 
@@ -111,8 +111,9 @@ request routes to it and its result lands in the matching category.
   [FR-076](FR-076-settle-backend-absence-as-unsupported.md),
   [FR-326](FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md).
-- CG `negotiate_*` settles the dispositions; AC-2 runs in a test harness
-  downstream of CG with test descriptors, as ADR-014 §6 step 5 states.
+- QSL's tests supply each negotiation disposition and backend result as a
+  fixture and run no CG or driver code; the end-to-end run through CG
+  `negotiate_*` and the driver lives in quire-integration.
 - QSpec FR-161-AC-7, FR-290, FR-360, FR-331.
 
 ## References

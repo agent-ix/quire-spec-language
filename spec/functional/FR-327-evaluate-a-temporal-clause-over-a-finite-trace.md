@@ -100,7 +100,8 @@ with an incomplete result, never a guess, when the work budget runs out.
   its horizon; every other clause SHALL read every represented position.
   A position a false-extension profile supplies after the trace SHALL
   evaluate no atom.
-- When an atom evaluates `Undefined` at a position the clause reads, the
+- When an atom evaluates `Undefined` at a position the clause reads (a
+  window's `insufficient-data` excluded, below), the
   evaluator SHALL return `Undefined(UndefinedEvaluation{where, cause})`,
   `where` the first such position and `cause` the `UndefinedRecord` of the
   first such atom in clause-node order, in place of a truth value. An
@@ -109,6 +110,11 @@ with an incomplete result, never a guess, when the work budget runs out.
 - `Undefined` SHALL map to the O-16 category violation, with cause
   `UndefinedEvaluation`: a claim that is not defined on the trace does not
   hold on it.
+- A window aggregate atom that has no value because its window lacks data
+  (`insufficient-data{count, min_count}`, QSpec FR-414) is not an undefined
+  evaluation: the evaluator SHALL settle the clause at that position in the
+  O-16 category `undefined` with that cause, never `UndefinedEvaluation`
+  and never violation (QSpec FR-414).
 
 ### Work
 
@@ -147,3 +153,5 @@ with an incomplete result, never a guess, when the work budget runs out.
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
 - QSpec FR-360 to FR-370: Linear STD-131.
+- QSpec FR-414 (window aggregates: insufficient data is the O-16 `undefined`
+  monitor category).

@@ -20,15 +20,16 @@ Scope: FR-335-AC-1 to FR-335-AC-5.
 ## Test Procedure
 
 Compile `f using v(s: Set<Int[0, 9999]>): Integer pure { size(s) + 1 }` from
-source. In a harness downstream of CG `negotiate_*`, with test
-descriptors:
+source. In QSL's own tests, with test descriptors and fixture dispositions
+(no CG or driver code):
 
 1. Request the `+` claim with an empty registry; read its record.
-2. Request it with only a (`value-validity`, `bounded`) descriptor.
+2. Request it with only a (`value-validity`, `bounded`) descriptor and a
+   fixture `requires-bound` disposition.
 3. Request it bounded with `Cardinality{maximum: 8}`, and again with
    `maximum: 9`.
 4. Add a quantity-typed root read by the `+` and request it against the
-   bounded-only descriptor.
+   bounded-only descriptor with a fixture `unbounded-extent` disposition.
 5. Evaluate `f` at S6a on the set `{0, 1, …, 999}` (1,000 distinct members of `Int[0, 9999]`), then with a meter too small
    for construction.
 

@@ -18,13 +18,15 @@ Scope: FR-332-AC-1 to FR-332-AC-4.
 
 ## Test Procedure
 
-In a harness downstream of CG `negotiate_*`, with test descriptors:
+In QSL's own tests, with test descriptors and fixture dispositions (no CG
+or driver code):
 
 1. Write `Reaches` as an item; request a bounded version with a
    `FiniteBound`.
-2. Negotiate it against an empty registry, a (`temporal-satisfaction`,
-   `bounded`) descriptor, and a (`temporal-satisfaction`, `unbounded`)
-   descriptor whose arm takes the infinite-trace form.
+2. Compute candidates against an empty registry; settle the item from a
+   fixture `unbounded-extent` disposition for a (`temporal-satisfaction`,
+   `bounded`) descriptor, and from a fixture `supported` disposition for a
+   (`temporal-satisfaction`, `unbounded`) descriptor.
 3. Map each FR-360 label, with `failed` under
    `resource-incomplete` and under another execution.
 4. Run `Reaches` at S6a on a lasso where it holds, then read the
@@ -38,7 +40,7 @@ Tag the tests `#[trace("TC-842", "FR-332-AC-n")]`.
   refuses `invalid_runtime_input`/`invalid-value` and writes no item.
 - Step 2: `unsupported`, warned, naming `temporal-satisfaction`;
   `unsupported`, warned, `unbounded-extent`, naming kind, descriptor and
-  mode; `supported`, routed to the descriptor.
+  mode; routed to the descriptor.
 - Step 3: success, violation, inconclusive, unsupported, incomplete,
   internal failure.
 - Step 4: `tested`; the item is still `unsupported`.

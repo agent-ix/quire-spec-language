@@ -464,8 +464,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    counterexample over a supplied trace (FR-331), or ADR-018 CX-2's model
    steps for one over a model subject (FR-128). The model-step form is the
    QSpec FR-364 counterexample wire; the observed-step form is
-   `qsl-replay`'s own input, and a QSpec wire form for it is a follow-up
-   against FR-364. At ADR-011 E9 the
+   `qsl-replay`'s own input (Linear STD-147). At ADR-011 E9 the
    layer-6 `replay` facade recompiles from digest-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
    `stale_dependency`/`content-mismatch`, when the recompiled operator's
@@ -478,8 +477,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    with a typed cause (O-27). The replay result holds the decoded position
    and the evaluated value, and the spine clause-run report (FR-109,
    FR-330) holds the disposition, the compiled `package_id` and the usage:
-   each carries only what replay and the verdict read, and neither keeps a
-   provenance record of its inputs.
+   each carries what replay and the verdict read.
 
 ### 11. Named interfaces for the dependent tickets
 

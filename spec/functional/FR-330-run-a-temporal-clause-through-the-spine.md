@@ -58,8 +58,7 @@ FR-109's `ClauseRunRequest`, with the selection
 ## Outputs
 
 FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
-the usage, with no provenance record of the source, the selection or the
-observations read. Its `category` adds `inconclusive` (a pending result)
+the usage. Its `category` adds `inconclusive` (a pending result)
 and `unsupported` (a missing fairness premise), and its `disposition` for a
 `violation` carries the failing `TemporalPosition`.
 
@@ -87,8 +86,8 @@ and `unsupported` (a missing fairness premise), and its `disposition` for a
   `evaluate`, category `refusal`, with its record.
 - The entry SHALL map `Completed(true)` to `success` (exit 0);
   `Completed(false)` to `violation` with the failing position; `Undefined`
-  to `violation` with its position and its `UndefinedEvaluation` cause, so
-  it reports category `violation`, never FR-109's `undefined` category;
+  to `violation` with its position and its `UndefinedEvaluation` cause, as
+  FR-109 reports a state clause that evaluates undefined;
   `Pending` to `inconclusive` (exit 0, completed without violation);
   `MissingFairnessPremise` to `unsupported` (exit 21) with cause
   `unsupported_projection`/`missing-fairness-premise`; and `Incomplete` to

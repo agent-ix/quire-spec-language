@@ -13,7 +13,7 @@ relationships:
 Verify that bound presence and value enter collection and population node
 identity and `package_id`, and that identities are deterministic.
 
-Scope: FR-334-AC-1 to FR-334-AC-3.
+Scope: FR-334-AC-1 to FR-334-AC-4.
 
 ## Test Procedure
 
@@ -22,7 +22,9 @@ Scope: FR-334-AC-1 to FR-334-AC-3.
    and node members.
 2. Lower `Population<Account>`, `Population<Account>[4]` and an unbounded
    `Set<Reference<Account>>`; compare node keys.
-3. Compile one bounded unit twice; read its definition selections.
+3. Compile one bounded unit twice.
+4. Read QSpec's FR-144-AC-9, AC-13 and FR-153-AC-9 type vectors in place
+   from the QSpec repository and key each with QSL's emitter.
 
 Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
 
@@ -32,5 +34,5 @@ Tag the tests `#[trace("TC-844", "FR-334-AC-n")]`.
   the unbounded node; `collection_bounds{0, 18446744073709551615}` on the
   bounded one.
 - Step 2: three distinct node keys; no `UnrepresentableBound` refusal.
-- Step 3: equal node keys and `package_id`; the selections name the linked
-  root definitions.
+- Step 3: equal node keys and `package_id`.
+- Step 4: every node key equals the vector's expected key.

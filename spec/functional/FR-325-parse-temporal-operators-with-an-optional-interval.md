@@ -27,7 +27,9 @@ interval `[a,*]`, or no interval, under every profile (ADR-014 A-1). S2
 (`qsl-forms`) SHALL build one TemporalTrace form per temporal clause, holding
 each operator with an optional interval form, as the M-3b TemporalTrace forms
 of ADR-011. Parsing selects no meaning: whether an interval is required,
-admitted or refused is the S3 check's decision (FR-326, FR-123).
+admitted or refused is the S3 check's decision (FR-326, FR-123): `[a,*]`
+is admitted under the infinite-trace profile and refused under the bounded
+profiles (ADR-018 IV-1, QSpec FR-048-AC-10).
 
 ## Use case
 
