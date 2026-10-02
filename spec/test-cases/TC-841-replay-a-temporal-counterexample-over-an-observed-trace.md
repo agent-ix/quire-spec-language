@@ -38,8 +38,8 @@ Tag the tests `#[trace("TC-841", "FR-331-AC-n")]`.
 - Step 1: `reproduced-with-evaluated-witness`; `inconclusive`,
   `ReplayParity`.
 - Step 2: `reproduced-with-evaluated-witness`; `inconclusive`,
-  `ReplayParity`; `stale_dependency`/`revision-mismatch` naming the interval.
-- Step 3: `stale_dependency`/`revision-mismatch` naming the profile, then the
+  `ReplayParity`; `stale_dependency`/`content-mismatch` naming the interval.
+- Step 3: `stale_dependency`/`content-mismatch` naming the profile, then the
   fairness set; `invalid_runtime_input`/`invalid-value` twice.
 - Step 4: `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole
   inc`, catalog code `unsupported_projection`/`missing-fairness-premise`,

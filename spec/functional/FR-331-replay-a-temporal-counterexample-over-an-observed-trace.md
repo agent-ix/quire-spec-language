@@ -81,7 +81,7 @@ formula is false on it.
   FR-098's order, and SHALL resolve the occurrence key to the clause's
   operator node.
 - When the recompiled clause's profile selection, fairness set or failing
-  interval key differs from the packet's, the facade SHALL refuse `stale_dependency`/`revision-mismatch`, naming the member
+  interval key differs from the packet's, the facade SHALL refuse `stale_dependency`/`content-mismatch`, naming the member
   that differs.
 - When the loop is present and empty, or the decoded `trace_position` lies
   outside the represented trace, the facade SHALL refuse
@@ -114,8 +114,8 @@ formula is false on it.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-331-AC-1 | A packet for the `Counter` unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) with an observed lasso, empty prefix, loop 0, 1, and `trace_position` `0` settles `reproduced-with-evaluated-witness`; the same packet with loop 0, 1, 2 settles `inconclusive`, `ReplayParity`. | Test (TC-841) |
-| FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `[0,1]` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `[0,2]` it refuses `stale_dependency`/`revision-mismatch` naming the interval. | Test (TC-841) |
-| FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`revision-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
+| FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `[0,1]` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `[0,2]` it refuses `stale_dependency`/`content-mismatch` naming the interval. | Test (TC-841) |
+| FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`content-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome with `trace_position` `2` settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` `1` settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 
