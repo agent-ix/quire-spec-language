@@ -45,7 +45,7 @@ pub struct ZoneCertificate {
     pub obligation: ObligationIdentity,         // ADR-013 O-09
     pub scale: BigInt,                          // FR-238
     pub lu_bounds: Vec<LuBounds>,               // per discrete state and clock
-    pub nodes: Vec<CertNode>,                   // (state key, automaton state, canonical Dbm)
+        pub nodes: Vec<CertNode>,                   // (state key, automaton state, canonical Dbm, locked: bool)
     pub edges: Vec<CertEdge>,                   // (node, transition identity, target node)
     pub initial: NodeIndex,
     pub components: Option<Vec<CertComponent>>, // CF-2 forms only
@@ -62,8 +62,12 @@ pub struct ZoneCertificate {
   and each transition identity enabled from it one edge to a named target
   node whose zone covers the successor under the aLU simulation with the
   listed LU bounds. It SHALL name the node that covers the initial symbolic
-  state. No listed node SHALL be bad: a rejecting automaton state, or a
-  deadlocked valuation for the deadlock-freedom item.
+  state. No listed node SHALL be bad (a rejecting automaton state, or a deadlocked
+  valuation for the deadlock-freedom item) unless it is marked `locked`.
+- **Locked nodes.** For each violating symbolic state FR-239 continued past
+  because its violating points are time-locked, the certificate SHALL list
+  the violating part `Z ∩ Bad` as its own node marked `locked`, with its
+  edges, so the certificate's edges from it cover its forward closure.
 - **Büchi part.** For a TT-4 item and the time-lock-freedom item, the
   engine SHALL give each node a component index such that every edge goes
   to a node of equal or greater index, and give each component its reason: the
@@ -91,6 +95,7 @@ pub struct ZoneCertificate {
 | FR-244-AC-1 | `NoLateReply` over `Rpc` with `T = 4 ms`, run on the zone search, returns a certificate with a reachability part, no components, every edge's target zone covering its successor, an `admitted` path from the initial node to a quiescent node (`Idle`), and the item's obligation identity; FR-245 accepts it. | Test (TC-699) |
 | FR-244-AC-2 | FR-240-AC-1's liveness proof returns a certificate with components in which every edge respects the numbering and each component names its reason; FR-240-AC-2's fair proof names `fair weak serve` as the reason of the component that holds the `idle` loop. | Test (TC-699) |
 | FR-244-AC-3 | The time-lock-freedom item over the unmodified `Rpc` returns a certificate whose divergence part names, for every node, a path to a quiescent node. Two runs give byte-equal certificates. | Test (TC-699) |
+| FR-244-AC-4 | Over a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field), `always holds(c.phase = A)` is proved, and its certificate lists the node `(B, x <= 1)` marked `locked`, with `ping` edges that stay in `B` and reach no quiescent node and no cycle of positive total delay. | Test (TC-699) |
 
 ## Dependencies
 

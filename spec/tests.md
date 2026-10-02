@@ -462,24 +462,24 @@ names different artifacts in each.
 | TC-689 | S3 checks timed intervals with open or closed ends and classifies TT-1 to TT-4, with the punctual-interval boundary | Unit | P1 | FR-234-AC-1, FR-234-AC-2, FR-234-AC-3, FR-234-AC-4 | 🚧 Planned |
 | TC-690 | Timed outcomes settle as FR-331 terminal records with zone-certified, exhaustive and new-cause rows | Unit | P1 | FR-235-AC-1, FR-235-AC-2, FR-235-AC-3, FR-235-AC-4 | 🚧 Planned |
 | TC-691 | Timed counterexamples carry exact rational delays, a final delay for time-locks, and a time-divergent lasso | Unit | P1 | FR-236-AC-1, FR-236-AC-2, FR-236-AC-3, FR-236-AC-4 | 🚧 Planned |
-| TC-692 | The replay facade replays timed counterexamples and time-locks in exact arithmetic | Integration | P1 | FR-237-AC-1, FR-237-AC-2, FR-237-AC-3, FR-237-AC-4 | 🚧 Planned |
+| TC-692 | The replay facade replays timed counterexamples and time-locks in exact arithmetic | Integration | P1 | FR-237-AC-1, FR-237-AC-2, FR-237-AC-3, FR-237-AC-4, FR-237-AC-6 | 🚧 Planned |
 | TC-693 | Zones as difference-bound matrices in exact integer arithmetic | Unit | P1 | FR-238-AC-1, FR-238-AC-2, FR-238-AC-3 | 🚧 Planned |
 | TC-694 | The zone engine decides timed claims by symbolic search, with finite abstraction, budgets and determinism | Integration | P1 | FR-239-AC-1, FR-239-AC-2, FR-239-AC-3, FR-239-AC-4 | 🚧 Planned |
-| TC-695 | Timed liveness under time divergence and fairness, and time-lock search, on the symbolic graph | Integration | P1 | FR-240-AC-1, FR-240-AC-2, FR-240-AC-3, FR-240-AC-4 | 🚧 Planned |
+| TC-695 | Timed liveness under time divergence and fairness, and time-lock search, on the symbolic graph | Integration | P1 | FR-240-AC-1, FR-240-AC-2, FR-240-AC-3, FR-240-AC-4, FR-241-AC-5 | 🚧 Planned |
 | TC-696 | Symbolic counterexamples concretize canonically to exact rational delays | Unit | P1 | FR-241-AC-1, FR-241-AC-2, FR-241-AC-3, FR-241-AC-4 | 🚧 Planned |
 | TC-697 | Timed formulas translate to claim automata that agree with the evaluator | Unit | P1 | FR-242-AC-1, FR-242-AC-2, FR-242-AC-3 | 🚧 Planned |
 | TC-698 | Timed items route to the zone engine, and only exact probabilistic claims to the digital-clock route | Integration | P1 | FR-243-AC-1, FR-243-AC-2, FR-243-AC-3 | 🚧 Planned |
-| TC-699 | Every zone-engine proof carries a canonical zone certificate | Unit | P1 | FR-244-AC-1, FR-244-AC-2, FR-244-AC-3 | 🚧 Planned |
-| TC-700 | The in-core checker accepts valid zone certificates and rejects every tampering | Integration | P1 | FR-245-AC-1, FR-245-AC-2, FR-245-AC-3, FR-245-AC-4 | 🚧 Planned |
+| TC-699 | Every zone-engine proof carries a canonical zone certificate | Unit | P1 | FR-244-AC-1, FR-244-AC-2, FR-244-AC-3, FR-244-AC-4 | 🚧 Planned |
+| TC-700 | The in-core checker accepts valid zone certificates and rejects every tampering | Integration | P1 | FR-245-AC-1, FR-245-AC-2, FR-245-AC-3, FR-245-AC-4, FR-245-AC-5 | 🚧 Planned |
 | TC-701 | S3 checks task sets and routes schedulability claims to EN-7 | Unit | P1 | FR-246-AC-1, FR-246-AC-2 | 🚧 Planned |
 | TC-702 | EN-7 computes fixed-priority, EDF and AMC verdicts in exact arithmetic | Unit | P1 | FR-247-AC-1, FR-247-AC-2, FR-247-AC-3, FR-247-AC-4 | 🚧 Planned |
-| TC-703 | Closed-form verdicts settle only after check_closed_form recomputes their evidence | Unit | P1 | FR-248-AC-1, FR-248-AC-2, FR-248-AC-3 | 🚧 Planned |
+| TC-703 | Closed-form verdicts settle only after check_closed_form recomputes their evidence | Unit | P1 | FR-248-AC-1, FR-248-AC-2, FR-248-AC-3, FR-248-AC-4 | 🚧 Planned |
 | TC-704 | Task automata lower to timed subjects for deadline checking, and the stopwatch class is unsupported | Integration | P1 | FR-249-AC-1, FR-249-AC-2 | 🚧 Planned |
 | TC-705 | Hybrid solver results map to proved or inconclusive, never refuted | Unit | P1 | FR-250-AC-1, FR-250-AC-2 | 🚧 Planned |
 | TC-706 | Tick-based monitor plans round soundly, size buffers from the event rate and fault on counter errors | Unit | P1 | FR-251-AC-1, FR-251-AC-2, FR-251-AC-3 | 🚧 Planned |
 | TC-707 | QSL writes monitor-agreement, tick-arithmetic and timestamp-contract obligations, and disposes elapsed-time obligations unsupported | Unit | P1 | FR-252-AC-1, FR-252-AC-2 | 🚧 Planned |
 | TC-708 | Delay distributions check, windows are exact and the race resolves ties by the workload | Unit | P1 | FR-253-AC-1, FR-253-AC-2, FR-253-AC-3, FR-253-AC-4 | 🚧 Planned |
-| TC-709 | Timed runs sample with exact rational delays, measure timed events and replay | Integration | P1 | FR-254-AC-1, FR-254-AC-2, FR-254-AC-3 | 🚧 Planned |
+| TC-709 | Timed runs sample with exact rational delays, measure timed events and replay | Integration | P1 | FR-254-AC-1, FR-254-AC-2, FR-254-AC-3, FR-254-AC-4 | 🚧 Planned |
 | TC-710 | An undefined timed claim evaluation refutes with a timed prefix and replays | Integration | P1 | FR-239-AC-5, FR-237-AC-5, FR-235-AC-5 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage

@@ -44,7 +44,9 @@ each delay is a value replay can check exactly.
 
 ## Behavior
 
-- **Finite paths.** The engine SHALL pick a valuation in the last zone and,
+- **Finite paths.** The engine SHALL pick a valuation in the last zone
+  among the violating points FR-239 found to have a time-divergent
+  continuation, never a time-locked point, and,
   step by step backwards, a predecessor valuation and a delay. At each step
   it SHALL choose the least admissible delay when the delay set has a
   least element, otherwise the midpoint of a bounded delay set, otherwise
@@ -71,6 +73,7 @@ each delay is a value replay can check exactly.
 | FR-241-AC-2 | ADR-026 §9's retry counterexample has a heartbeat delay `d1` with `0 < d1 < 1` and a retry delay `d2` with `d1 + d2 > 1` and `d2 < 1`, each an exact rational, and it replays to `reproduced-with-evaluated-witness` (FR-237). Two runs give byte-equal counterexamples. | Test (TC-696) |
 | FR-241-AC-3 | FR-240-AC-2's `idle` lasso concretizes with a positive loop delay and with `x` above 1 at loop entry. | Test (TC-696) |
 | FR-241-AC-4 | A symbolic lasso constructed with a loop whose delay constraints are `d > 1` and `d < 1` returns, with no other accepting cycle, `Undecided(LassoNotConcretized)`. | Test (TC-696) |
+| FR-241-AC-5 | Over the variant of a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field) in which `ping` resets `x`, `always holds(c.phase = A)` concretizes to `go` after delay 0 with a last valuation of `x` at most 1 from which `ping` diverges; the engine never returns a last valuation from which no time-divergent continuation exists. | Test (TC-695) |
 
 ## Dependencies
 

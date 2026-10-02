@@ -21,7 +21,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 1. Check `NoLateReply` with both values of `T`, and the deadlock-freedom item.
 2. Check `always holds(not retried)` over the retry model.
 3. Check the loop model with constant 5 and with `10^12`.
-4. Check `Settles` with `max_symbolic_states` 2, with a cancelling poll, and the unbounded-root subject; run each request twice.
+4. Check `Settles` with `max_symbolic_states` 2, with a cancelled `Cancel` handle, and the unbounded-root subject; run each request twice.
 
 Tag the tests `#[trace("TC-694", "FR-239-AC-n")]`.
 
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-694", "FR-239-AC-n")]`.
 - Step 1: `Holds` with a certificate (`T = 4 ms`); `Violated` at position 3 (`T = 3 ms`); `Holds` for deadlock freedom under both.
 - Step 2: `Violated`.
 - Step 3: equal finite numbers of stored symbolic states.
-- Step 4: `Stopped(ResourceExhausted, MaxSymbolicStates)` naming 2; `Stopped(Cancelled, …)`; `RequiresBound` with no state explored; equal outcomes and byte-equal artefacts.
+- Step 4: `Stopped(LimitReached, MaxSymbolicStates)` naming 2; `Stopped(Cancelled, …)`; `RequiresBound` with no state explored; equal outcomes and byte-equal artefacts.

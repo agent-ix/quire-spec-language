@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-702", "FR-247-AC-n")]`.
 - Step 1: fixpoints `(1, 3, 12)` with iteration `5, 9, 12, 12`; EDF schedulable; `<= 12 ms` holds, `<= 11 ms` misses.
 - Step 2: fixed-priority miss for the third task, job 0, iterates `6, 10, 13`; the jitter-and-blocking set misses for `b`, job 0, iterates `5, 7`, and its evidence rechecks; `Miss(Utilization(13/12))`.
 - Step 3: `Schedulable`, low-mode 2, high-mode 4; `SufficientTestFailed`; `Miss`.
-- Step 4: `Stopped(ResourceExhausted, MaxDemandPoints)` naming 3.
+- Step 4: `Stopped(LimitReached, MaxDemandPoints)` naming 3.

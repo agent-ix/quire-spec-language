@@ -49,7 +49,7 @@ pub fn check_zone_certificate(
     item: &ObligationIdentity,
     certificate: &ZoneCertificate,         // FR-244
     limits: CertificateCheckLimits,
-    poll: impl FnMut() -> bool,
+    cancel: &Cancel,                       // FR-276
 ) -> Result<CertificateVerdict, CertificateRefusal>;
 
 pub struct CertificateCheckLimits {
@@ -79,9 +79,12 @@ pub struct CertificateCheckLimits {
   - each successor is covered by its named target under the aLU simulation
     with the certificate's LU bounds;
   - the certificate's LU bounds are at least the bounds the checker
-    computes from the recompiled model and claim automaton;
+    computes from the recompiled model and the claim automaton, built by
+    `qsl-eval`'s property-automaton translation (ADR-018 LA-5);
   - the initial symbolic state is covered by the named initial node;
-  - no node is bad;
+    - no node is bad unless it is marked `locked`, and from each `locked`
+    node no quiescent node and no node of a component with a cycle of
+    positive total delay is reachable over certificate edges;
   - every edge respects the component numbering, and each component's
     stated reason holds;
   - for the time-lock-freedom item, each node's divergence path exists in
@@ -90,8 +93,9 @@ pub struct CertificateCheckLimits {
     edges, and ends at a quiescent node or at a node of a component with a
     cycle of positive total delay (ADR-026 TD-6).
 - The first failure in node order SHALL return `Rejected` naming it.
-- The checker SHALL run under `CertificateCheckLimits` and `poll`; reaching
-  a limit SHALL return `Stopped` naming the limit and its value.
+- The checker SHALL run under `CertificateCheckLimits` and FR-276's
+  `Cancel` handle; reaching a limit SHALL return `Stopped` naming the
+  limit, its value and its setting.
 - The checker's Kani harnesses SHALL prove its DBM operations free of
   overflow and in agreement with a reference implementation on bounded
   dimensions.
@@ -111,6 +115,7 @@ pub struct CertificateCheckLimits {
 | FR-245-AC-2 | Each tampering is `Rejected`, naming the failing part: one node removed; one target zone shrunk so it no longer covers its successor; one LU bound lowered below the computed bound; one edge pointing to a node of smaller component index; one component reason naming a fairness constraint that an edge inside it takes; one node replaced by a bad node; the `admitted` path cut so it ends at a node that is neither quiescent nor in a component with a positive-delay cycle. | Test (TC-700) |
 | FR-245-AC-3 | AC-1's certificate checked against the identity of another item refuses `stale_dependency`/`content-mismatch` naming both; after a source edit that changes the package identity it refuses by FR-098's rule. With `max_certificate_edges` 1 it returns `Stopped` naming the limit and the value 1. | Test (TC-700) |
 | FR-245-AC-4 | The Kani harnesses for the checker's `close`, `constrain`, `reset`, `up`, `includes` and aLU test pass for dimension at most 3 with bounds in `[-8, 8]`, proving no overflow and agreement with the reference implementation. | Test (TC-700) |
+| FR-245-AC-5 | FR-244-AC-4's certificate is `Accepted`; the same certificate with the `locked` mark removed is `Rejected` naming the bad node; a certificate for the variant in which `ping` resets `x` that marks `(B, x <= 1)` `locked` is `Rejected`, naming the `ping` cycle of positive total delay reachable from it. | Test (TC-700) |
 
 ## Dependencies
 

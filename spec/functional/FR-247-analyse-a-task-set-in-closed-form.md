@@ -31,7 +31,7 @@ terminates on its own and needs no iteration cap.
 
 - A checked `TaskSet` and `ScheduleClaim` (FR-246), and
   `ScheduleLimits { max_demand_points: u64 }`, default 1_048_576 (2^20),
-  with a cancellation poll.
+  and FR-276's `Cancel` handle.
 
 ## Outputs
 
@@ -68,9 +68,9 @@ pub enum ClosedFormOutcome {
 - **Response claims.** For a `response S.τ <= d` claim, EN-7 SHALL compare
   the computed response time of `τ` with `d`.
 - EN-7 SHALL count demand points checked and stop with
-  `Stopped(ResourceExhausted, MaxDemandPoints)` when the count would exceed
-  `max_demand_points`, and `Stopped(Cancelled, …)` when the poll returns
-  `true`.
+  `Stopped(LimitReached, MaxDemandPoints)` when the count would exceed
+  `max_demand_points`, and `Stopped(Cancelled, …)` when the `Cancel` handle
+  is cancelled.
 - EN-7 SHALL compute every value exactly, as a function of the task set,
   the claim and the limits.
 
@@ -81,7 +81,7 @@ pub enum ClosedFormOutcome {
 | FR-247-AC-1 | `Ctl` under fixed priority returns `Schedulable` with fixpoints `(1, 3, 12)`, the third iterating `5, 9, 12, 12`; under EDF, utilization exactly 1, `Schedulable` with its busy period and QPA sequence. `response Ctl.c <= 12 ms` holds and `<= 11 ms` misses. | Test (TC-702) |
 | FR-247-AC-2 | `Ctl` with the third WCET 6 returns, under fixed priority, `Miss` for the third task, job 0, iterates `6, 10, 13`. A set of `a` (`C = 1`, `T = D = 4`, priority 1) and `b` (`C = 2`, `T = D = 6`, jitter 1, blocking 3, priority 2) returns `Miss` for `b`, job 0, iterates `5, 7` (response `8 > 6`), and `check_closed_form` accepts that evidence; under EDF, `Miss(Utilization(13/12))`. | Test (TC-702) |
 | FR-247-AC-3 | AMC set `Mc`: `a` `LO`, `C = 1`, `T = D = 4`, priority 1; `b` `HI`, `C(LO) = 1`, `C(HI) = 3`, `T = D = 6`, priority 2. It returns `Schedulable` with low-mode response 2 for `b` and high-mode response 4. With `C(HI) = 6` it returns `SufficientTestFailed`; with `C(LO) = C(HI) = 5` it returns `Miss` in low mode. | Test (TC-702) |
-| FR-247-AC-4 | An EDF set with utilization below 1 whose QPA check sequence under the default limit has more than 3 points, run with `max_demand_points` 3, returns `Stopped(ResourceExhausted, MaxDemandPoints)` naming the value 3. | Test (TC-702) |
+| FR-247-AC-4 | An EDF set with utilization below 1 whose QPA check sequence under the default limit has more than 3 points, run with `max_demand_points` 3, returns `Stopped(LimitReached, MaxDemandPoints)` naming the value 3. | Test (TC-702) |
 
 ## Dependencies
 

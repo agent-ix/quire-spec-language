@@ -76,7 +76,7 @@ pub struct TimedMonitorPlan {
   window length, rounded up, plus one. The rate SHALL be an ADR-014 B-2 run
   limit of the monitor.
 - **Overflow.** An event that would exceed a buffer SHALL never be dropped:
-  the obligations it affects SHALL settle `Incomplete(ResourceExhausted)`
+  the obligations it affects SHALL settle `Incomplete(LimitReached{limit, value, setting})`
   naming the event-rate limit and its value.
 - **Counter width.** If `max_reading_gap` is at least `2^width_bits`, then
   the plan SHALL refuse with `MonitorPlanRefusal::GapExceedsWidth{
@@ -94,7 +94,7 @@ pub struct TimedMonitorPlan {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-251-AC-1 | For `always (holds(req) implies eventually[0 ms, 3 ms] holds(ack))` on a 20-bit 1 MHz counter with uncertainty 0: `req` at tick 0 and `ack` at tick 2998 decides true; `ack` first at tick 3001 decides false; `ack` first at tick 3000 stays indeterminate. With uncertainty 2 µs, `ack` at 2998 stays indeterminate. | Test (TC-706) |
-| FR-251-AC-2 | `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms gets a buffer capacity of 21; a trace with 22 events inside one 10 ms window settles the affected obligation `Incomplete(ResourceExhausted)` naming the event-rate limit and 2 per ms, and drops no event. | Test (TC-706) |
+| FR-251-AC-2 | `once[0 ms, 10 ms] holds(p)` with `max_event_rate` 2 events per ms gets a buffer capacity of 21; a trace with 22 events inside one 10 ms window settles the affected obligation `Incomplete(LimitReached{limit, value, setting})` naming the event-rate limit and 2 per ms, and drops no event. | Test (TC-706) |
 | FR-251-AC-3 | With a 16-bit counter and `max_reading_gap` 100: readings `65530` then `4` give a difference of 10 ticks; readings `65530` then `65500` give a modular difference of 65,506 and settle `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}`, with no verdict. A 16-bit target with `max_reading_gap` 65,536 refuses `GapExceedsWidth`. | Test (TC-706) |
 
 ## Dependencies

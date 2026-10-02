@@ -70,6 +70,12 @@ server is available. Each estimate comes with its confidence and the grid
   each tie-break SHALL be one more choice with its own choice index.
 - A sample SHALL end when its next position's time stamp passes the
   horizon, or at an idle tail.
+- If a sample reaches a local time-lock before its horizon, where no
+  positive delay is admissible and no transition identity is enabled, then
+  EN-4 SHALL settle the item `unsupported`, `TimeLockedSample{state}`,
+  naming the state, and SHALL keep no witness from it: the measure is over
+  time-divergent behaviours only (ADR-026 TD-1), and the time-lock-freedom
+  item reports the time-lock.
 - **Budgets.** If a sample takes more than `max_sample_steps` steps without
   passing its horizon, then EN-4 SHALL stop the run as the statistical
   design's budgets state, naming `max_sample_steps`, its value and the
@@ -95,7 +101,8 @@ server is available. Each estimate comes with its confidence and the grid
 |----|----------|--------------|
 | FR-254-AC-1 | `RareLate` (`probability <= 0.01 [eventually[0 ms, 3 ms] holds(c.late)]`) over FR-253-AC-1's model, whose exact event probability is `1/20`, settles `measured`, `Rejected`, with `q` 64 in its basis; with `reply` under `uniform` it settles `measured`, `Accepted`. Two runs with one seed give equal verdicts. | Test (TC-709) |
 | FR-254-AC-2 | Every sampled delay is an exact rational; a sampled witness replays by FR-237 and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. | Test (TC-709) |
-| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `incomplete`, `limit-reached` naming `statistical.max_cycle_steps` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(ResourceExhausted)` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
+| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `incomplete`, `limit-reached` naming `statistical.max_cycle_steps` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(LimitReached{limit, value, setting})` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
+| FR-254-AC-4 | A stochastic `Lock` variant (one object `c` with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with `delay ~ discrete { 1/2 ms: 1 }`; `time invariant when phase = B { x <= 1 ms }`; no operation enabled in `B`) samples `go` at `1/2`, delays to `(B, x = 1)`, where no positive delay is admissible and no identity is enabled, and settles `unsupported`, `TimeLockedSample` naming that state, with no witness kept. | Test (TC-709) |
 
 ## Dependencies
 
@@ -111,6 +118,6 @@ server is available. Each estimate comes with its confidence and the grid
 ## References
 
 - QSpec half: QSpec FR-420 (Linear STD-139) owns timed events and
-  measures, free delays and the sampler revision with delay draws on the
-  `2^-q` grid (ADR-026 OV-8); QSpec FR-408 (Linear STD-137) owns the
+  measures, free delays and the sampler's delay draws on the `2^-q` grid
+  (ADR-026 OV-8); QSpec FR-408 (Linear STD-137) owns the
   statistical methods.

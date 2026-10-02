@@ -27,5 +27,5 @@ Tag the tests `#[trace("TC-706", "FR-251-AC-n")]`.
 ## Expected Results
 
 - Step 1: true, false, indeterminate; indeterminate.
-- Step 2: capacity 21; `Incomplete(ResourceExhausted)` naming the rate limit, no event dropped.
+- Step 2: capacity 21; `Incomplete(LimitReached{limit, value, setting})` naming the rate limit, no event dropped.
 - Step 3: 10 ticks; `Failed`, `ReadingGapExceeded{gap: 65506, max_reading_gap: 100}`, no verdict; `GapExceedsWidth`.

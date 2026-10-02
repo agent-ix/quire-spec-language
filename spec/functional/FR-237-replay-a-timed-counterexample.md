@@ -75,6 +75,15 @@ refutation.
   total delay is positive, refusing `invalid_runtime_input`/`invalid-value`
   otherwise. It SHALL check fairness over time (FR-232) and refuse an
   unfair lasso as FR-128 does.
+- **Admitted endpoint.** For a finite `Formula`, `Deadlock` or
+  `UndefinedEvaluation` counterexample, replay SHALL also explore the last
+  replayed timed state's forward closure afresh, unreduced, under the
+  request's limits, by the same exploration as the non-local time-lock arm,
+  looking for a quiescent state or a cycle with positive total delay. An
+  exploration that finds one SHALL let the refutation settle; one that
+  completes with none SHALL settle `inconclusive`, `ReplayParity`, since the
+  violation lies only on time-locked behaviour (ADR-026 TD-1, TV-1); one
+  stopped by a limit SHALL settle V-7.
 - **Evaluation.** For `kind: Formula`, replay SHALL evaluate the formula by
   FR-231 over the timed lasso, unrolling the loop until the unrolled time
   span covers the formula's time reach. `false` SHALL settle
@@ -93,8 +102,9 @@ refutation.
   non-local arm.
 - **Non-local time-lock.** On the non-local arm, replay SHALL explore that state's forward closure afresh,
   unreduced, under the request's limits, with the subject's timed
-  exploration (FR-101 `explore` for a `Tick` source, the zone successor
-  relation of FR-238 from the point zone for a `Dense` source), looking for
+  exploration (FR-101 `explore` for a `Tick` source, the zone successor relation of FR-238 from the point zone for a `Dense`
+  source, computed with the checker's DBM code in `qsl-replay` (FR-245),
+  never EN-6's), looking for
   a quiescent state or a cycle with positive total delay. An exploration
   that completes with none SHALL settle `reproduced-with-evaluated-witness`;
   one that finds one SHALL settle `inconclusive`, `ReplayParity`; one a
@@ -112,6 +122,7 @@ refutation.
 | FR-237-AC-3 | The strict-guard variant's local time-lock counterexample reproduces; the same payload replayed against the variant with `reply` guarded by `x >= 3 ms` settles `inconclusive`, `ReplayParity`, since `reply` is enabled at the last state, so replay takes the non-local arm and its exploration reaches the quiescent `Replied` state. | Test (TC-692) |
 | FR-237-AC-4 | The `Stall` model's non-local time-lock counterexample (stem empty, `final_delay` `1/2`) reproduces by fresh exploration finding no quiescent state and no cycle with positive delay; the same payload against a variant with `ping` resetting `x` settles `inconclusive`, `ReplayParity`; with an exploration limit of one state it settles V-7. The `Stall` payload with `final_delay` 1, whose last state `x = 1` admits no positive delay while `ping` is enabled, takes the non-local arm and reproduces. Replaying one envelope twice gives equal results. | Test (TC-692) |
 | FR-237-AC-5 | FR-239-AC-5's counterexample replays to `reproduced-with-evaluated-witness`; with its last step removed it settles `inconclusive`, `ReplayParity`. | Test (TC-710) |
+| FR-237-AC-6 | Over a `Lock` model (one object with `phase: {A, B}` and a clock `x` never reset; `go` moves `A` to `B` with no guard; `time invariant when phase = B { x <= 1 ms }`; `ping`, enabled in `B`, changes no data field), the counterexample `go` after delay 0 to `always holds(c.phase = A)` settles `inconclusive`, `ReplayParity`, because the replayed state `(B, x = 0)` has no time-divergent continuation; over the variant in which `ping` resets `x`, the same counterexample settles `reproduced-with-evaluated-witness`; with an exploration limit of one state it settles V-7. | Test (TC-692) |
 
 ## Dependencies
 
