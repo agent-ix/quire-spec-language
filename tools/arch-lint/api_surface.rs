@@ -1199,8 +1199,8 @@ pub(crate) fn evaluate(
 /// symbols these rules match: the root crate's own `src/`, plus each
 /// extracted ADR-011 §6.1 layer crate's `src/`: `qsl-foundation`
 /// (ADR-011 §7.3 X-2), `qsl-cst` (X-3), `qsl-source` (X-4), `qsl-forms`
-/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-eval` (X-8), `qsl-route` (X-9)
-/// and `qsl-replay` (X-10), and the shared `no_std` leaf `quire-semantic-value`
+/// (X-5), `qsl-semantics` (X-6), `qsl-package` (X-7), `qsl-eval` (X-8), `qsl-route` (X-9),
+/// `qsl-replay` (X-10) and `qsl-analyze` (X-12, layer A), and the shared `no_std` leaf `quire-semantic-value`
 /// (layer SV), a consumer of the kernel that calls none of these
 /// constructors: it resolves node ids by lookup among admitted keys. A module path is relative to its own crate's
 /// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
@@ -1225,6 +1225,7 @@ pub(crate) fn qsl_scan_src_roots(role: Role, scan_root: &Path) -> Vec<PathBuf> {
             "qsl-eval/src",
             "qsl-route/src",
             "qsl-replay/src",
+            "qsl-analyze/src",
             "quire-semantic-value/src",
         ]
         .into_iter()
@@ -1528,6 +1529,7 @@ mod tests {
             "qsl-eval/src",
             "qsl-route/src",
             "qsl-replay/src",
+            "qsl-analyze/src",
             "quire-semantic-value/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
@@ -2163,6 +2165,7 @@ mod tests {
         for missing in [
             "quire-semantic-value/src",
             "qsl-replay/src",
+            "qsl-analyze/src",
             "qsl-source/src",
             "qsl-forms/src",
             "qsl-package/src",

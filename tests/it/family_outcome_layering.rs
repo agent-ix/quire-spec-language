@@ -677,3 +677,52 @@ fn no_shipped_dependency_enables_test_support() {
         }
     }
 }
+
+/// Layer A's `qsl-analyze` sits above the qualified core (ADR-011 §6.1,
+/// ADR-029 CB-3): no core crate (layers K to 6, SV, R and the tools) names
+/// it in any dependency table. In particular `qsl-replay`, whose zone
+/// certificate checker keeps its own DBM separate from the zone engine's
+/// (ADR-026 CF-6, FR-245), cannot reach the engine's DBM through a
+/// dependency edge.
+#[trace("TC-700", "FR-245-AC-4")]
+#[test]
+fn no_core_crate_depends_on_qsl_analyze() {
+    let packages = workspace_dependencies();
+    assert!(
+        packages.iter().any(|package| package.name == "qsl-analyze"),
+        "cargo metadata lists no qsl-analyze"
+    );
+    for core in [
+        "quire-exact",
+        "quire-semantic-value",
+        "qsl-attrs",
+        "qsl-foundation",
+        "qsl-cst",
+        "qsl-source",
+        "qsl-forms",
+        "qsl-semantics",
+        "qsl-package",
+        "qsl-route",
+        "qsl-eval",
+        "qsl-replay",
+        "xtask",
+        "arch-lint",
+    ] {
+        let package = packages
+            .iter()
+            .find(|package| package.name == core)
+            .unwrap_or_else(|| panic!("cargo metadata lists no {core}"));
+        for (kind, dependencies) in [
+            ("normal", &package.normal),
+            ("dev", &package.dev),
+            ("build", &package.build),
+        ] {
+            assert!(
+                !dependencies
+                    .iter()
+                    .any(|dependency| dependency == "qsl-analyze"),
+                "{core} has a {kind} dependency on layer-A qsl-analyze"
+            );
+        }
+    }
+}

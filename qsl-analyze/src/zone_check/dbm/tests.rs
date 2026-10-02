@@ -77,7 +77,8 @@ fn tc_693_zero_up_constrain_reset_give_the_stated_zones() {
 }
 
 /// FR-238-AC-2: `includes` holds for `x <= 3` over `x < 3` and not the
-/// reverse; a strict and a non-strict bound stay distinct.
+/// reverse; a strict and a non-strict bound stay distinct; out-of-shape
+/// operations refuse and leave the DBM unchanged.
 #[trace("TC-693", "FR-238-AC-2")]
 #[test]
 fn tc_693_includes_orders_a_strict_bound_inside_its_non_strict_twin() {
@@ -94,14 +95,17 @@ fn tc_693_includes_orders_a_strict_bound_inside_its_non_strict_twin() {
         strict.includes(&Dbm::zero(3)),
         Err(DbmError::DimensionMismatch { left: 2, right: 3 })
     );
+    let before = strict.clone();
     assert_eq!(
-        strict.clone().constrain(2, 0, le(1)),
+        strict.constrain(2, 0, le(1)),
         Err(DbmError::ClockOutOfRange { clock: 2, dim: 2 })
     );
+    assert_eq!(strict, before);
     assert_eq!(
-        strict.clone().reset(0, &BigInt::from(1)),
+        strict.reset(0, &BigInt::from(1)),
         Err(DbmError::ResetReferenceClock)
     );
+    assert_eq!(strict, before);
 }
 
 /// The reference: a zone as a list of constraints, never closed, read by

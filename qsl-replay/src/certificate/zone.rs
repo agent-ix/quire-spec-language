@@ -24,9 +24,21 @@
 
 use quire_exact::Integer;
 
+/// Seals [`Exact`]: only this module chooses the integers a zone may hold.
+mod sealed {
+    /// The private supertrait of [`super::Exact`].
+    pub trait Sealed {}
+
+    impl Sealed for quire_exact::Integer {}
+
+    #[cfg(kani)]
+    impl Sealed for i64 {}
+}
+
 /// The exact integers a zone holds its encoded bounds in: [`Integer`] for
-/// the checker, a machine integer only in the Kani harnesses.
-pub trait Exact: Clone + Ord + core::fmt::Debug {
+/// the checker, a machine integer only in the Kani harnesses. Sealed: no
+/// other crate or module can add one.
+pub trait Exact: sealed::Sealed + Clone + Ord + core::fmt::Debug {
     /// The integer `value`.
     fn of(value: i64) -> Self;
     /// `self + other`.

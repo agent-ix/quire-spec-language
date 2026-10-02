@@ -29,7 +29,13 @@
 
 mod bounds;
 mod call_site;
-pub mod certificate;
+// Crate-private until `check_zone_certificate` (FR-245) calls it; until then
+// only its own tests and Kani harnesses reach it.
+#[allow(
+    dead_code,
+    reason = "the zone certificate checker is its first caller and has not landed yet"
+)]
+mod certificate;
 mod execute;
 mod identity;
 mod proof_result;
