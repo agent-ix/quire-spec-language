@@ -4,7 +4,7 @@
 //!
 //! The closure -- the admitted objects and the reference closure between
 //! them, keyed by kernel ids -- is SV's
-//! [`ObjectClosure`](quire_semantic_value::object_closure::ObjectClosure).
+//! [`ObjectClosure`].
 //! This module holds only what SV cannot: FR-089's recorded `PopulationId`
 //! -> [`PopulationBinding`] correspondence. `PopulationBinding` is `model`'s
 //! (ADR-011 §6.1, "K is a leaf"), and §6.1's order `semantic_value < model`
