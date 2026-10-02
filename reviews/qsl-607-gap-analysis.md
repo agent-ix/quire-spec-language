@@ -48,3 +48,11 @@ Value test:
 Changes requested: one medium finding. When the SR-1221 fixes land, they
 need fixture cases: a relative-module re-export (FND-002), a backend facade
 re-export (FND-003) and a cross-crate glob (FND-004).
+
+## Dispositions
+
+Round 1, reviewed at fba9bed8eb5b4ba2464314389a17bf31c8614d6d (rebased onto main 13adbf59).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8d124c9b9: FR-272-AC-3 and TC-747 step 3 keep only `ValueType`, the one IR boundary type that is an ADR-013 owner row. `Report` exposes the canonical set, and the test asserts `report.canonical.contains_key("ValueType")` before it asserts no `copy` finding, so the check is no longer vacuous. |
