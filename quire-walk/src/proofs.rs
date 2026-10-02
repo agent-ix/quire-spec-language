@@ -228,7 +228,8 @@ struct Node {
 /// node's subtree size in one forward loop: every child's result is there
 /// when its parent is computed, exactly the nodes before the current one
 /// have a result, and the root's size is the node count. An id of another
-/// arena, at a position this arena holds, is never answered.
+/// arena, at a position this arena holds, is never answered, during the
+/// loop or from the returned results.
 fn check_arena(tree: Tree) {
     let nodes = tree.nodes;
     // Tree nodes are pushed from the last to the first, since every child
@@ -278,6 +279,13 @@ fn check_arena(tree: Tree) {
         size
     });
     assert!(sizes.len() == usize::from(nodes));
+    assert!(
+        sizes.get(foreign).is_none(),
+        "a foreign id has no final result"
+    );
+    let root = ids[0].expect("the root is stored");
+    assert!(sizes.get(root) == Some(&nodes));
+    let sizes = sizes.into_vec();
     assert!(sizes[usize::from(nodes - 1)] == nodes);
 }
 

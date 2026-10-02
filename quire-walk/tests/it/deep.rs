@@ -275,7 +275,9 @@ fn tc_898_a_100k_node_arena_computes_subtree_sizes_in_one_forward_loop() {
             Term::Negate(operand) => 1 + size_of(*operand, done),
         });
         assert_eq!(sizes.len(), DEPTH);
-        assert_eq!(sizes.last().copied(), Some(DEPTH));
+        let (root, _) = arena.iter().last().expect("a root");
+        assert_eq!(sizes.get(root).copied(), Some(DEPTH));
+        assert_eq!(sizes.into_vec().last().copied(), Some(DEPTH));
         let (root, term) = arena.iter().last().expect("a root");
         assert_eq!(root.index(), DEPTH - 1);
         assert!(matches!(term, Term::Negate(_)));
@@ -289,8 +291,9 @@ fn tc_898_a_100k_node_arena_computes_subtree_sizes_in_one_forward_loop() {
 }
 
 /// An id from another arena of the same node type reads as `None` from
-/// `Arena::get` and from the results view, whether its position is in range
-/// or past the end, and so does an id of the arena a clone was made from.
+/// `Arena::get`, from the results view during `bottom_up` and from the
+/// results it returns, whether its position is in range or past the end,
+/// and so does an id of the arena a clone was made from.
 #[trace("TC-898", "FR-356-AC-3")]
 #[test]
 fn tc_898_a_foreign_id_reads_as_none_in_range_or_not() {
@@ -322,7 +325,12 @@ fn tc_898_a_foreign_id_reads_as_none_in_range_or_not() {
             Term::Literal(_) | Term::Add(..) => 1,
         }
     });
-    assert_eq!(sizes, [1, 2]);
+    // After the loop, the returned results answer this arena's ids and
+    // never a foreign one, in range or not.
+    assert_eq!(sizes.get(literal), Some(&1));
+    assert_eq!(sizes.get(foreign_in_range), None);
+    assert_eq!(sizes.get(foreign_past_end), None);
+    assert_eq!(sizes.into_vec(), [1, 2]);
     // The first node sees no result, not even its own; the second sees the
     // literal's. A foreign id is never answered.
     assert_eq!(seen, [(0, None, None, None), (1, None, None, Some(1))]);

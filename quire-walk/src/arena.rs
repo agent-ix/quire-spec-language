@@ -189,9 +189,13 @@ impl<T> Arena<T> {
     /// every node before it. [`Results::get`] returns a child's result,
     /// which is always there since a child is stored before its parent. It
     /// returns `None` for the node itself, a later node, or an id of
-    /// another arena. The returned vector holds each node's result at its
-    /// [`Id::index`].
-    pub fn bottom_up<R>(&self, mut compute: impl FnMut(&T, &Results<'_, T, R>) -> R) -> Vec<R> {
+    /// another arena. The returned [`Computed`] holds every node's result
+    /// under the same check, so a lookup after the loop by an id of
+    /// another arena also reads `None`.
+    pub fn bottom_up<R>(
+        &self,
+        mut compute: impl FnMut(&T, &Results<'_, T, R>) -> R,
+    ) -> Computed<T, R> {
         let mut results = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let result = compute(
@@ -204,7 +208,47 @@ impl<T> Arena<T> {
             );
             results.push(result);
         }
-        results
+        Computed {
+            results,
+            arena: self.token,
+            node: PhantomData,
+        }
+    }
+}
+
+/// Every result [`Arena::bottom_up`] computed, one per node, checked
+/// against the arena's token like [`Arena::get`].
+#[derive(Clone, Debug)]
+pub struct Computed<T, R> {
+    results: Vec<R>,
+    arena: usize,
+    node: PhantomData<fn() -> T>,
+}
+
+impl<T, R> Computed<T, R> {
+    /// The result for `id`, or `None` when `id` is from another arena.
+    pub fn get(&self, id: Id<T>) -> Option<&R> {
+        if id.arena == self.arena {
+            self.results.get(id.index)
+        } else {
+            None
+        }
+    }
+
+    /// The number of results: the arena's node count.
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    /// Whether there are no results, which holds for an empty arena.
+    pub fn is_empty(&self) -> bool {
+        self.results.is_empty()
+    }
+
+    /// The results as a vector, each node's at its [`Id::index`]. The
+    /// vector carries no arena check.
+    pub fn into_vec(self) -> Vec<R> {
+        self.results
     }
 }
 

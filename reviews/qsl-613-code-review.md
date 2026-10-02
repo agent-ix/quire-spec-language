@@ -70,3 +70,18 @@ Changes requested: one medium finding and one low.
 | --- | --- | --- | --- |
 | FND-001 | medium | `Id<T>` carries no arena identity, so an id from one `Arena<T>` is accepted by another. The guarantees in the docs then fail: "a node built from the ids its arena has already returned names only nodes stored before it", and in `bottom_up`, "a child's result is at its `Id::index` in that slice, which always holds it". A node holding a foreign id with a larger index makes `done[id.index()]` in the caller's closure panic. A foreign id with a smaller index silently reads an unrelated node's result. IR, CG and RT will build on this, so either brand the arena (an invariant-lifetime or per-arena token), or hand `compute` a results view with `get(Id<T>) -> Option<&R>` and state the same-arena precondition in the docs. | quire-walk/src/arena.rs:10-26; quire-walk/src/arena.rs:132-147 |
 | FND-002 | low | `fuzz/Cargo.toml` says the crate is its own workspace because "cargo-fuzz builds on nightly with sanitizer flags". The Makefile runs it on the pinned stable toolchain with `-s none`. The real reason is that a `no_main` libFuzzer binary cannot sit in the main workspace's `cargo build/test --workspace`. Fix the comment. | fuzz/Cargo.toml:17-18; Makefile:214-217 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | `Arena::bottom_up` returns a plain `Vec<R>`, documented as holding "each node's result at its [`Id::index`]". After the loop, a caller that looks up a result by id goes through `Id::index` with no arena check. A foreign id with a larger index then panics on `[ ]`, and one with a smaller index reads an unrelated node's result: the same hole FND-001 closed inside `compute`. Return a checked owned view, for example an owned `Results` with `get(Id<T>) -> Option<&R>` and `into_vec`, so a foreign id always reads `None` here too. | quire-walk/src/arena.rs:186-194 |
+
+## Dispositions
+
+Round 1, reviewed at `4d6b74ea86d637dff8177014dfbd2ef2c62131d7` (rebased; fix commits `d0692cc6` and `4d6b74ea`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4d6b74ea86d637dff8177014dfbd2ef2c62131d7 |
+| FND-002 | fixed | d0692cc650e02e7da5d938e61fe35f287f7c0617 |

@@ -56,3 +56,13 @@ Kani bound (the coordinator's question):
 
 Changes requested: FND-001 is medium, FND-002 and FND-003 are low. AC-1 to
 AC-4 and AC-6 are traced and tested.
+
+## Dispositions
+
+Round 1, reviewed at `4d6b74ea86d637dff8177014dfbd2ef2c62131d7` (rebased; fix commits `d0692cc6` and `4d6b74ea`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d0692cc650e02e7da5d938e61fe35f287f7c0617 |
+| FND-002 | fixed | d0692cc650e02e7da5d938e61fe35f287f7c0617 |
+| FND-003 | fixed | 4d6b74ea86d637dff8177014dfbd2ef2c62131d7 |
