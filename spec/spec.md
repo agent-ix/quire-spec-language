@@ -279,13 +279,21 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-129
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-130
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-131
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-132
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-133
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-134
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-016
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-017
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-340
