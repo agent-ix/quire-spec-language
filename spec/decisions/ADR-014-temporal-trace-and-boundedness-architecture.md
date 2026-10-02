@@ -452,23 +452,19 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    `refuted` with a lasso. The #231 envelope `WitnessEnvelope<P>` carries the
    obligation identity, occurrence key, `package_id`, profile selections
    (including the temporal profile), `trace_position` (TR-2) and the
-   TemporalTrace `FamilyPayload`, `TemporalCounterexample{prefix, loop,
-   fairness, interval: Option<IntervalKey>}`, defined in `qsl-replay` beside
-   the other family payloads. `IntervalKey{lower, upper, profile:
-   DefinitionRef, clock_binding}` is the wire-level QSpec FR-255 key, defined
-   in F `bound` so `qsl-replay` can name it; the TemporalTrace `check`
-   converts a `TemporalInterval` to it. `interval` is the failing operator's
-   key under a bounded profile and `None` under infinite-trace.
-   `fairness` names the clause's fairness constraint nodes. The payload's
-   steps are the observed documents by digest, prefix then loop, for a
-   counterexample over a supplied trace (FR-331), or ADR-018 CX-2's model
-   steps for one over a model subject (FR-128). The model-step form is the
-   QSpec FR-364 counterexample wire; the observed-step form is
-   `qsl-replay`'s own input (Linear STD-147). At ADR-011 E9 the
+   TemporalTrace `FamilyPayload`, `TemporalCounterexample`, defined in
+   `qsl-replay` beside the other family payloads, is QSpec FR-364's
+   counterexample with its two arms: `trace: "observed"`, whose steps are
+   the observed documents by `sha256-jcs` digest, prefix then loop, for a
+   counterexample over a supplied trace (FR-331), and `trace: "model"`,
+   ADR-018 CX-2's model steps, for one over a model subject (FR-128). Its
+   `interval` is FR-364's shape (`{lower, upper}`, `{lower, upper: null}` or
+   `null`) and its `fairness` names the clause's fairness constraints. At
+   ADR-011 E9 the
    layer-6 `replay` facade recompiles from digest-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
-   `stale_dependency`/`content-mismatch`, when the recompiled operator's
-   interval key, the profile selection or the fairness set differs from the
+   `stale_dependency`/`content-mismatch`, when the recompiled clause's
+   interval, the profile selection or the fairness set differs from the
    packet's. It refuses a malformed lasso (empty loop, position out of range)
    with `invalid_runtime_input`/`invalid-value`. The TemporalTrace evaluate
    hook then re-evaluates the formula over the lasso at the decoded

@@ -108,9 +108,10 @@ loop is never reported as a violation.
 - The evaluator SHALL compute each subformula's past reach `R`: 0 for an
   atom; the largest operand reach for a Boolean or future operator; `R + b`
   for a past interval operator with upper bound `b`, taking the larger
-  operand reach for `since[a,b]` and `triggered[a,b]`; and the largest
-  operand reach plus `L` for an unbounded `once`, `historically`, `since` or
-  `triggered`.
+  operand reach for `since[a,b]` and `triggered[a,b]`; the largest operand
+  reach plus `L` for an unbounded `once`, `historically`, `since` or
+  `triggered`; and the largest operand reach plus `a + L` for a past
+  `[a,*]` operator.
 - It SHALL unroll the loop `m = ceil(R(φ) / L) + 1` times, evaluate every
   subformula over the `n + m × L` unrolled positions with past operators
   reading back to position 0 and atoms false before it, and read a

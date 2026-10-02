@@ -69,8 +69,9 @@ never reads as a guarantee.
   to a model behaviour that ends at a terminal state (FR-125, ADR-018 SM-4).
 - The safety fragment SHALL be the formulas whose negation normal form uses
   only atoms, negated atoms, `and`, `or`, `always`, `release`, past
-  operators and interval operators (ADR-014 A-4 as amended by ADR-018
-  IV-4). Whether a clause is in the fragment SHALL be read from its checked
+  operators and interval operators, `eventually[a,*]` and `until[a,*]`
+  excluded since they are as unbounded as `eventually` and `until`
+  (ADR-014 A-4 as amended by ADR-018 IV-4). Whether a clause is in the fragment SHALL be read from its checked
   formula.
 - When the clause is in the safety fragment and every infinite extension of
   the prefix makes it false at its activation position, the evaluator SHALL

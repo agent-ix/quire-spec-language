@@ -40,11 +40,9 @@ equal the packet's, reconstructs the trace, and re-evaluates the formula at
 the packet's `trace_position` with the TemporalTrace evaluator (ADR-014 §10
 scenario 5). It settles an FR-072 replay result. A counterexample over a
 model subject replays through `replay_model_trace` (FR-128); both share the
-payload type and its evaluation.
-
-The observed-step form is `qsl-replay`'s own input, for a refutation found
-over a supplied trace (FR-327 to FR-329); QSpec FR-364's wire carries
-model steps.
+payload type and its evaluation. The payload is QSpec FR-364's
+counterexample; this requirement replays its observed arm, for a refutation
+found over a supplied trace (FR-327 to FR-329).
 
 ## Use case
 
@@ -59,16 +57,15 @@ formula is false on it.
 - FR-098's request: package reference, byte provision holding each observed
   document by `sha256-jcs` digest, and limits.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070) whose payload is
-  `TemporalCounterexample{steps, fairness, interval, kind}` with
-  `steps: CounterexampleSteps::Observed{prefix: Vec<DocumentRef>, loop:
-  Vec<DocumentRef>}`, `fairness` the clause's fairness constraint nodes,
-  `interval: Option<IntervalKey>` (the failing operator's key under a
-  bounded profile, `None` under infinite-trace), and `kind: Formula` or
-  `UndefinedEvaluation{where, cause}`. Its
-  `trace_position` names the failing position (ADR-014 TR-2), and its
-  clause node and occurrence key name the clause.
-- `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5).
-  `CounterexampleSteps::Model` is FR-128's step content.
+  QSpec FR-364's counterexample on its observed arm, read by FR-364's
+  member names: `trace: "observed"`, `kind` (formula or the
+  undefined-evaluation envelope), `initial_state: null`, `prefix` and
+  `loop` (steps `{document}`, each an observed document's `sha256-jcs`
+  digest), `over_binding: null`, `fairness`, `interval` (`{lower, upper}`,
+  `{lower, upper: null}` or `null`) and `trace_position` (ADR-014 TR-2).
+  The envelope names the clause by its clause node and occurrence key.
+- `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5); its
+  model arm is FR-128's.
 
 ## Outputs
 
@@ -80,8 +77,12 @@ formula is false on it.
 - The facade SHALL recompile and check the package by FR-098's rules and in
   FR-098's order, and SHALL resolve the occurrence key to the clause's
   operator node.
-- When the recompiled clause's profile selection, fairness set or failing
-  interval key differs from the packet's, the facade SHALL refuse `stale_dependency`/`content-mismatch`, naming the member
+- A payload whose `trace` is `"model"` SHALL refuse
+  `invalid_runtime_input`/`invalid-value`; it replays through FR-128.
+- When the recompiled clause's profile selection or fairness set differs
+  from the packet's, or the interval of its first interval-carrying
+  operator in pre-order differs member by member from the payload's
+  `interval` (QSpec FR-364 step 5), the facade SHALL refuse `stale_dependency`/`content-mismatch`, naming the member
   that differs.
 - When the loop is present and empty, or the decoded `trace_position` lies
   outside the represented trace, the facade SHALL refuse
@@ -103,8 +104,8 @@ formula is false on it.
   `inconclusive` with `InconclusiveCause::ReplayParity` (ADR-013 C-09,
   O-27).
 - For a packet whose refutation is `UndefinedEvaluation`, an evaluation
-  that returns `Undefined` at the packet's `trace_position` with an equal
-  cause SHALL settle `reproduced-with-evaluated-witness`: the reproduced
+  that returns `Undefined` at the packet's `trace_position`, at the
+  expression `where.locus` names, with an equal cause SHALL settle `reproduced-with-evaluated-witness`: the reproduced
   undefined value is the witness (ADR-018 UE-5). Anything else SHALL settle
   `inconclusive`, `ReplayParity`.
 - Replay SHALL need no backend and no solver.
@@ -114,8 +115,8 @@ formula is false on it.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-331-AC-1 | A packet for the `Counter` unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) with an observed lasso, empty prefix, loop 0, 1, and `trace_position` `0` settles `reproduced-with-evaluated-witness`; the same packet with loop 0, 1, 2 settles `inconclusive`, `ReplayParity`. | Test (TC-841) |
-| FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `[0,1]` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `[0,2]` it refuses `stale_dependency`/`content-mismatch` naming the interval. | Test (TC-841) |
-| FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`content-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
+| FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `{lower: "0", upper: "1"}` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `{lower: "0", upper: "2"}` it refuses `stale_dependency`/`content-mismatch` naming the interval. | Test (TC-841) |
+| FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`content-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, or `trace: "model"`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome with `trace_position` `2` settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` `1` settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
 | FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 
@@ -139,7 +140,7 @@ Specified; not yet implemented.
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
 - QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8).
-- Linear STD-147 (a QSpec wire form for a counterexample over a supplied
-  trace); Linear QSL-460 (deleting `ClauseRunProvenance` and
+- QSpec FR-364's observed arm (the wire form for a counterexample over a
+  supplied trace; Linear STD-147); Linear QSL-460 (deleting `ClauseRunProvenance` and
   `ClauseRunReport::source_digest` from the code).
 - QSpec FR-362 (the missing fairness premise).
