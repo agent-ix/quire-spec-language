@@ -615,6 +615,31 @@ fn test_modules(file: &Path, dir: &Path, items: &[syn::Item], out: &mut BTreeSet
 /// `workspace_root`; `tests/` directories excluded) and record the items of
 /// the shipped ones (this module's doc, "Shipped code").
 pub fn scan(workspace_root: &Path, dirs: &[&str]) -> Result<Items> {
+    let shipped = shipped_files(workspace_root, dirs)?;
+    let mut aliases = Aliases::default();
+    for (_, ast) in &shipped {
+        aliases.visit_file(ast);
+    }
+    let mut items = Items::default();
+    for (file, ast) in &shipped {
+        Scanner {
+            file,
+            aliases: &aliases,
+            items: &mut items,
+            self_type: None,
+        }
+        .visit_file(ast);
+    }
+    Ok(items)
+}
+
+/// Every shipped `.rs` file under each of `dirs` (relative to
+/// `workspace_root`; `tests/` directories excluded), parsed, with its path
+/// relative to `workspace_root` (this module's doc, "Shipped code").
+pub(crate) fn shipped_files(
+    workspace_root: &Path,
+    dirs: &[&str],
+) -> Result<Vec<(String, syn::File)>> {
     let mut parsed = Vec::new();
     for dir in dirs {
         for file in source_files(workspace_root, dir)? {
@@ -627,29 +652,35 @@ pub fn scan(workspace_root: &Path, dirs: &[&str]) -> Result<Items> {
         let path = Path::new(file);
         test_modules(path, &child_dir(path), &ast.items, &mut test_only);
     }
-    let shipped: Vec<&(String, syn::File)> = parsed
-        .iter()
+    Ok(parsed
+        .into_iter()
         .filter(|(file, _)| {
             let path = Path::new(file);
             !test_only.iter().any(|excluded| path.starts_with(excluded))
         })
-        .collect();
-    let mut aliases = Aliases::default();
-    for (_, ast) in &shipped {
-        aliases.visit_file(ast);
-    }
-    let mut items = Items::default();
-    for (file, ast) in shipped {
-        Scanner {
-            file,
-            aliases: &aliases,
-            items: &mut items,
-            self_type: None,
-        }
-        .visit_file(ast);
-    }
-    Ok(items)
+        .collect())
 }
+
+/// One stage constructor: the file that defines it, its `Self` type and its
+/// name.
+#[derive(Clone, Copy, Debug)]
+pub struct StageConstructor {
+    /// The defining file, relative to the workspace root.
+    pub file: &'static str,
+    /// The `impl` block's `Self` type: the stage's input.
+    pub receiver: &'static str,
+    /// The method's name.
+    pub name: &'static str,
+}
+
+/// The S3 stage constructor, the first row of TC-244's constructor table:
+/// `PackageDeclarations::check`. Its receiver is the S3 input, which
+/// `checked_input` treats as a pre-check representation (FR-270).
+pub const S3_CONSTRUCTOR: StageConstructor = StageConstructor {
+    file: "qsl-semantics/src/check/mod.rs",
+    receiver: "PackageDeclarations",
+    name: "check",
+};
 
 /// The layer crates ADR-011 §6.1 places the canonical stage types in:
 /// layer 3 `qsl-semantics`, layer 4 `qsl-package`, layer 5 `qsl-eval` and
@@ -786,9 +817,9 @@ mod tests {
     const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 10] = [
         // S3: the checker.
         (
-            "qsl-semantics/src/check/mod.rs",
-            Some("PackageDeclarations"),
-            "check",
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            S3_CONSTRUCTOR.name,
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),

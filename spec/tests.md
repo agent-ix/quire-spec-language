@@ -268,7 +268,7 @@ names different artifacts in each.
 | TC-517 | The replay facade replays a state-clause counterexample and keeps its identities | Integration | P1 | FR-122-AC-1, FR-122-AC-2, FR-122-AC-3, FR-122-AC-4, FR-122-AC-5, FR-122-AC-6 | 🚧 Planned |
 | TC-740 | S6a stop reports and the decision path derive a state clause's basis and witness | Unit | P1 | FR-265-AC-1, FR-265-AC-2, FR-265-AC-3, FR-265-AC-4, FR-265-AC-5, FR-265-AC-6 | 🚧 Planned |
 | TC-741 | Clause run reports carry a settlement basis on every disposition and a witness only when decisive | Integration | P1 | FR-266-AC-1, FR-266-AC-2, FR-266-AC-3 | 🚧 Planned |
-| TC-745 | The checked-input gate rejects pre-check signatures and reconstruction and passes the workspace | Unit | P1 | FR-270-AC-1, FR-270-AC-2, FR-270-AC-3, FR-270-AC-4 | 🚧 Planned |
+| TC-745 | The checked-input gate rejects pre-check signatures and reconstruction and passes the workspace | Unit | P1 | FR-270-AC-1, FR-270-AC-2, FR-270-AC-3, FR-270-AC-4 | ✅ Passed locally (`xtask/src/checked_input.rs`); AC-4's `ci:` wiring by inspection |
 | TC-746 | Canonical doc tags define the canonical set, and misplaced or duplicate tags fail | Unit | P1 | FR-271-AC-1, FR-271-AC-2 | 🚧 Planned |
 | TC-747 | The canonical-types gate finds namesakes, re-exports and same-shaped copies | Unit | P1 | FR-272-AC-1, FR-272-AC-2, FR-272-AC-3, FR-272-AC-4 | 🚧 Planned |
 | TC-748 | Once every namesake is deleted or renamed, the canonical-types gate and make ci pass | Integration | P1 | FR-273-AC-1 | 🚧 Planned |

@@ -1,4 +1,4 @@
-.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
+.PHONY: check-no-committed-binaries check-index-completeness seam-probe string-edge route-lint checked-input cargo-deny-bans quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std fuzz-deep-input ci ci-default-features ci-all-features ci-clean-build ci-docs conformance
 
 # Fail when a tracked file is executable/binary content or exceeds
 # the size ceiling. See the script's own header for the detection method and
@@ -31,6 +31,12 @@ string-edge:
 # never ambient state.
 route-lint:
 	cargo run --package xtask -- route-lint
+
+# FR-270 (ADR-032 CK-1 to CK-5): fails when an execution, routing or replay
+# stage entry takes a pre-check representation, or a stage crate calls a
+# pre-check stage function.
+checked-input:
+	cargo run --package xtask -- checked-input
 
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
@@ -216,7 +222,7 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl
+ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
