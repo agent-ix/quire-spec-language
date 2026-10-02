@@ -204,6 +204,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-022
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-026
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -492,6 +494,58 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-024
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-230
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-231
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-232
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-233
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-234
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-235
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-236
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-237
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-238
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-239
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-240
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-241
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-242
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-243
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-244
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-245
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-246
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-247
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-248
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-249
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-250
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-251
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-252
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-253
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-254
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-026
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-195
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-196
@@ -709,6 +763,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-018](usecase/US-018-prove-that-a-detailed-model-implements-an-abstract-one.md) | US | Draft |
 | [US-022](usecase/US-022-measure-a-probabilistic-property-of-a-model-or-a-live-system.md) | US | Draft |
 | [US-023](usecase/US-023-prove-a-probabilistic-property-exactly-over-every-scheduler.md) | US | Draft |
+| [US-026](usecase/US-026-check-timing-claims-over-a-timed-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -974,6 +1029,31 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-202](functional/FR-202-replay-a-probabilistic-witness.md) | FR | Specified: `ProbabilisticCounterexample` with witness schedulers, path-set or subsystem evidence, and `replay_probabilistic_witness` with scheduler, support, prefix, sum and fairness checks (ADR-028 WS-1 to WS-6); `Undefined` path evidence; not yet implemented -- TC-637, TC-641 planned |
 | [FR-203](functional/FR-203-bound-an-exact-run-and-settle-its-verdict.md) | FR | Specified: `ExactProbLimits` as caller-set budgets with published defaults, and the map onto `Proved{ExactValue|ValueBounds}`, `Refuted`, `PrecisionBudget`, `CertificateRejected` and the unsupported causes (ADR-028 LM-1 to LM-3, XV-1 to XV-7); `refuted` with cause `UndefinedEvaluation`; not yet implemented -- TC-638, TC-641 planned |
 | [FR-204](functional/FR-204-check-probabilistic-timed-automata-through-digital-clocks.md) | FR | Specified: closed probabilistic timed automata through digital clocks, the claim's scheduler resolving delays, `discrete` delays under a workload as a DTMC, free delays decided by their minimum or maximum, and the route's unsupported causes (ADR-028 TA-1 to TA-7, RU-6); not yet implemented -- TC-639, TC-642 planned |
+| [FR-230](functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md) | FR | Specified: S3 admits the `time` member (dense or tick source), `Clock` fields, resets, atomic clock constraints confined to guards, time invariants and urgency (ADR-026 CK-1 to CK-9); not yet implemented -- TC-685 planned |
+| [FR-231](functional/FR-231-read-a-timed-subject-s-behaviours-as-timed-traces.md) | FR | Specified: timed subjects: delay and step moves, time stamps, time divergence, quiescent states and the idle tail, digital time, the untimed reading (ADR-026 TS-1 to TS-7); not yet implemented -- TC-686 planned |
+| [FR-232](functional/FR-232-derive-the-time-lock-freedom-item-and-read-deadlocks-over-time.md) | FR | Specified: the derived time-lock-freedom item per timed subject; local and non-local time-locks; deadlocks, weak fairness and vacuity over time (ADR-026 TD-1 to TD-6); not yet implemented -- TC-687 planned |
+| [FR-233](functional/FR-233-bind-a-model-claim-to-model-time-or-model-steps.md) | FR | Specified: the `model-time` and `model-steps` clock bindings, their defaults, FR-252 binding keys and interval units (ADR-026 CB-1 to CB-5); not yet implemented -- TC-688 planned |
+| [FR-234](functional/FR-234-check-timed-intervals-and-classify-timed-property-forms.md) | FR | Specified: timed intervals with open or closed ends, the TT-1 to TT-4 forms, the punctual-interval boundary and pointwise meaning (ADR-026 DF-1 to DF-7); not yet implemented -- TC-689 planned |
+| [FR-235](functional/FR-235-settle-a-timed-verdict-as-a-terminal-record.md) | FR | Specified: the timed verdict map: `ZoneCertified`, `ClosedForm`, `BoundedSolver` bases, the new causes and the `TimeLock` kind (ADR-026 TV-1, CF-4, OV-14); `refuted` with cause `UndefinedEvaluation`; not yet implemented -- TC-690, TC-710 planned |
+| [FR-236](functional/FR-236-carry-exact-rational-delays-in-a-timed-counterexample.md) | FR | Specified: timed counterexamples: exact rational step delays, the time-lock final delay, the time-divergent timed lasso (ADR-026 CT-1, CT-2, CT-4); not yet implemented -- TC-691 planned |
+| [FR-237](functional/FR-237-replay-a-timed-counterexample.md) | FR | Specified: `replay_model_trace` over timed subjects in exact arithmetic, with local and non-local time-lock replay (ADR-026 CT-3, TD-3); the reproduced undefined evaluation; not yet implemented -- TC-692, TC-710 planned |
+| [FR-238](functional/FR-238-represent-zones-as-difference-bound-matrices.md) | FR | Specified: EN-6 zones as DBMs with arbitrary-precision integer bounds after one scaling (ADR-026 EZ-2); not yet implemented -- TC-693 planned |
+| [FR-239](functional/FR-239-check-a-timed-claim-by-symbolic-zone-search.md) | FR | Specified: EN-6 `zone_check`: symbolic passed/waiting search with aLU coverage under caller-set budgets, provider manifest, determinism (ADR-026 EZ-1, EZ-3 to EZ-5); refutation only on an admitted, time-divergent behaviour and a vacuity check before every proof (ADR-026 TV-1, TD-6); an undefined claim evaluation ending the search; not yet implemented -- TC-694, TC-710 planned |
+| [FR-240](functional/FR-240-decide-timed-liveness-and-time-lock-freedom-on-the-symbolic-graph.md) | FR | Specified: EN-6 liveness with a divergence acceptance set and fairness splitting, and time-lock search with trap confirmation (ADR-026 EZ-6, EZ-7); not yet implemented -- TC-695 planned |
+| [FR-241](functional/FR-241-concretize-a-symbolic-counterexample-with-exact-rational-delays.md) | FR | Specified: canonical concretization of symbolic paths and lassos to exact rational delays, `LassoNotConcretized` (ADR-026 EZ-8); not yet implemented -- TC-696 planned |
+| [FR-242](functional/FR-242-translate-a-timed-formula-into-a-claim-automaton.md) | FR | Specified: claim automata: MightyL for MITL forms, a horizon clock for bounded forms, agreement with the evaluator (ADR-026 EZ-9); not yet implemented -- TC-697 planned |
+| [FR-243](functional/FR-243-digitize-a-closed-timed-subject-for-explicit-state-checking.md) | FR | Specified: every non-probabilistic timed item routes to EN-6; only an `exact` probabilistic claim takes EN-5's digital-clock route (ADR-026 EZ-10); not yet implemented -- TC-698 planned |
+| [FR-244](functional/FR-244-emit-a-zone-certificate-with-every-proof.md) | FR | Specified: zone certificates with reachability, Büchi and divergence parts, bound to the obligation identity (ADR-026 CF-1, CF-2, CF-5); not yet implemented -- TC-699 planned |
+| [FR-245](functional/FR-245-check-a-zone-certificate-in-the-qualified-core.md) | FR | Specified: `check_zone_certificate`, the in-core layer-6 certificate checker with its own DBM code and Kani harnesses (ADR-026 CF-3, CF-4, CF-6); not yet implemented -- TC-700 planned |
+| [FR-246](functional/FR-246-check-task-sets-and-schedulability-claims.md) | FR | Specified: task sets, schedulability and response claims at S3, premises in the obligation identity, routing under `schedulability` (ADR-026 RT-1 to RT-3); not yet implemented -- TC-701 planned |
+| [FR-247](functional/FR-247-analyse-a-task-set-in-closed-form.md) | FR | Specified: EN-7 closed-form analyses: fixed-priority RTA, EDF QPA, AMC-rtb, the demand-point budget (ADR-026 RT-4 to RT-6); not yet implemented -- TC-702 planned |
+| [FR-248](functional/FR-248-settle-a-closed-form-verdict-after-recomputing-its-evidence.md) | FR | Specified: `check_closed_form` recomputes EN-7 evidence before a schedulability verdict settles (ADR-026 RT-7); not yet implemented -- TC-703 planned |
+| [FR-249](functional/FR-249-lower-a-task-automaton-to-a-timed-subject.md) | FR | Specified: task automata lowered to timed subjects for deadline checking; `StopwatchRequired` for the undecidable class (ADR-026 RT-8); not yet implemented -- TC-704 planned |
+| [FR-250](functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md) | FR | Specified: hybrid dynamics routed to QSpec FR-193 providers; solver results map to `proved` or `inconclusive`, never `refuted` (ADR-026 HY-1 to HY-3); not yet implemented -- TC-705 planned |
+| [FR-251](functional/FR-251-derive-a-tick-based-monitor-plan-for-an-embedded-target.md) | FR | Specified: tick-based monitor plans: sound rounding, buffers from a caller-set event rate, overflow and counter faults (ADR-026 MN-1 to MN-4); not yet implemented -- TC-706 planned |
+| [FR-252](functional/FR-252-hand-timing-obligations-to-code-generation.md) | FR | Specified: timing obligations QSL hands CG: monitor agreement, tick arithmetic, timestamp contracts; elapsed-time and WCET obligations unsupported (ADR-026 KG-1 to KG-4); not yet implemented -- TC-707 planned |
+| [FR-253](functional/FR-253-check-delay-distributions-and-define-the-race.md) | FR | Specified: delay distributions, exact windows and the race of a stochastic timed model, free delays as the scheduler's choice, `NotStochastic` (ADR-026 SD-1 to SD-5); not yet implemented -- TC-708 planned |
+| [FR-254](functional/FR-254-sample-timed-runs-for-statistical-checking.md) | FR | Specified: statistical sampling of timed runs with exact delays on a `2^-q` grid, timed events and measures, witness replay, the exact route (ADR-026 SS-1 to SS-7); not yet implemented -- TC-709 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -990,3 +1070,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
 | [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |
 | [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
+| [ADR-026](decisions/ADR-026-dense-time.md) | ADR | Proposed; dense time: real-valued clocks with strict and non-strict constraints, time invariants and urgency, timed-automata semantics over ADR-018's positions with time stamps, time divergence and the time-lock-freedom item, the `model-time` and `model-steps` clock bindings with their defaults, timed MITL forms and their decidability boundary, timed counterexamples with exact rational delays, stochastic delay distributions with statistical checking, the native zone engine EN-6 with checkable zone certificates, task sets with native closed-form schedulability (EN-7), hybrid dynamics through QSpec FR-193's solvers, tick-based embedded monitors and Kani obligations |

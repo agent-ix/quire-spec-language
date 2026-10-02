@@ -1,0 +1,33 @@
+---
+id: TC-703
+title: "Closed-form verdicts settle only after check_closed_form recomputes their evidence"
+type: TC
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-248
+    type: verifies
+---
+# TC-703: Closed-form verdicts settle only after check_closed_form recomputes their evidence
+
+## Description
+
+Verify the closed-form verdict map and that tampered evidence settles inconclusive.
+
+Scope: FR-248-AC-1 to FR-248-AC-4.
+
+## Test Procedure
+
+Fixtures: the outcomes of TC-702 and their tampered copies.
+
+1. Settle `Ctl` and its WCET-6 variant under both policies.
+2. Settle the outcome with fixpoint 11 and the miss with its last iterate 13 replaced by 12; settle the two-task set of FR-248-AC-2 with evidence naming job 2 and with evidence naming job 0.
+3. Settle `Mc` and its `C(HI) = 6` variant.
+4. Check `Ctl`'s fixed-priority outcome against the `under edf` item's identity, and against the package after a WCET edit.
+
+Tag the tests `#[trace("TC-703", "FR-248-AC-n")]`.
+
+## Expected Results
+
+- Step 1: `Proved{ClosedForm{FixedPriorityRta}}` with the fixpoints, `Proved{ClosedForm{EdfQpa}}`; `refuted` with evidence for both.
+- Step 2: `inconclusive`, `ReplayParity`, both. The job-2 evidence: `inconclusive`, `ReplayParity`, naming job 1; the job-0 evidence: `refuted`.
+- Step 3: `Proved{ClosedForm{AmcRtb}}`; `inconclusive`, `SufficientTestFailed`.
+- Step 4: `content-mismatch` naming both identities; FR-098's refusal.
