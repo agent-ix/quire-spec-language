@@ -65,7 +65,7 @@ pub enum Location {
 pub struct Footprint {
     pub reads: BTreeSet<Location>,
     pub writes: BTreeSet<Location>,
-    pub enabling: BTreeSet<Location>,            // = reads for a model transition
+    pub enabling: BTreeSet<Location>,            // = reads for a model transition; ADR-027 FT-3's for a protocol step
 }
 
 pub fn independent(t: &Footprint, u: &Footprint) -> bool;
@@ -93,7 +93,9 @@ receiver's and a reference parameter's membership as `Membership` over
   argument bound to `p`; a `Param(p)` whose argument is absent SHALL give no
   location.
 - **Meeting.** Two locations SHALL meet exactly when QSpec FR-383 says they
-  do; protocol locations meet as ADR-027 FT-1 states.
+  do; protocol locations meet as ADR-027 FT-1 states. A protocol step's
+  enabling footprint SHALL be ADR-027 FT-3's set, which holds the binders
+  its arguments, constraint, guard or retry relation read.
 - **Independence.** `independent(t, u)` SHALL be true exactly when no
   location of `t.writes` meets one of `u.reads ∪ u.writes` and no location
   of `u.writes` meets one of `t.reads`.

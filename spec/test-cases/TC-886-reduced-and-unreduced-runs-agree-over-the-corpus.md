@@ -33,7 +33,9 @@ ADR-027, and the QSpec conformance vectors QSL runs.
    counterexample from either run (FR-128), with fairness re-established for
    a lasso.
 
-Tag the tests `#[trace("TC-886", "FR-160-AC-6")]`.
+Tag the tests `#[trace("TC-886", "FR-160-AC-6")]`. The test runs under `make ci`
+(`cargo test --locked --workspace`) over the whole corpus and is not
+`#[ignore]`, so the differential is part of the gate.
 
 ## Expected Results
 
