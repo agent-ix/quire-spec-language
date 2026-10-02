@@ -86,7 +86,6 @@ An item references:
 | FR-307-AC-3 | A requested occurrence key that names no requirement record refuses `missing_declaration`/`missing-name` naming the key, and the other requested items' results are unchanged. | Test (TC-806) |
 | FR-307-AC-4 | An item reading a member that `Base` declares through a receiver of static type `Sub` references `Sub`: with only `Base` bound it refuses naming `Sub`, and with `Sub` bound it returns `Sub`'s binding. | Test (TC-807) |
 | FR-307-AC-5 | A frame item and a postcondition item of `attemptUpdate` each reference `OperationKey { ConfigVersion, attemptUpdate }`: with the frame bound each returns that `FrameBinding`, and without it each refuses naming that key. | Test (TC-807) |
-| FR-307-AC-6 | Over a QSL fixture checked package, exporting one bound and one refused item gives exactly one bound result, carrying that item and its bindings, and one refused result, naming the refused item with its `missing_declaration`/`missing-name` refusal; the bound results are the items a driver's QSpec FR-331 request holds. The driver's request and report are verified end to end in quire-integration. | Test (TC-808) |
 
 ## Dependencies
 

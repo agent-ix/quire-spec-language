@@ -295,7 +295,6 @@ names different artifacts in each.
 | TC-805 | The abstraction relation changes no requirement record, route result or clause run | Integration | P1 | FR-306-AC-3, FR-306-AC-4 | 🚧 Planned |
 | TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 Planned |
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 Planned |
-| TC-808 | The export partitions an emission's items into bound results and refusals | Integration | P1 | FR-307-AC-6 | 🚧 Planned |
 | TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 Planned |
 | TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 Planned |
 | TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 Planned |
@@ -712,7 +711,7 @@ TC-795, TC-809) and the one-to-one model correspondence (TC-796).
 [FR-307](functional/FR-307-export-the-bindings-each-item-references.md)
 carry ADR-017 AR-1 to AR-6, QSL's share of QSpec FR-353 (QSpec TC-268): the
 S3 check (TC-797 to TC-801, TC-810), the S2 source form (TC-811), the frame binding key (TC-802, TC-803), the v2
-relation node (TC-804, TC-805) and the per-item export (TC-806 to TC-808).
+relation node (TC-804, TC-805) and the per-item export (TC-806, TC-807).
 TC-797 to TC-803 and TC-806 to TC-807 build the relation input in the test
 from checked packages; TC-804 and TC-811 use the spelling and node
 QSpec FR-450 and FR-451 give. Every row is `🚧 Planned`.

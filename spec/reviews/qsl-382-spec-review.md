@@ -62,6 +62,15 @@ stronger. FR-306 and FR-307 match ADR-017 AR-4 to AR-6 and QSpec FR-451 and
 FR-353-AC-3/AC-5. Merge order: FR-304 cites ADR-020 §7, which is on open PR
 #564, in prose only (no `ix://` edge), so either order validates.
 
+## New findings (disposition pass 2)
+
+Delta reviewed: c608c0a2..63b7a058 (0a9eee4b ADR-017 AR-3 names `RustReceiver`; 102ac65c TC-808 on QSL fixtures; 63b7a058 FR-307 drops the driver SHALLs).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | FR-307-AC-6 now restates FR-307-AC-1: the same one-bound, one-refused export over the same kind of fixture. Its two added sentences test nothing in QSL: "the bound results are the items a driver's QSpec FR-331 request holds" describes the downstream driver (agent-ix/quire-driver, ADR-011 T-13), and "verified end to end in quire-integration" is a pointer to another repo, not a criterion. Delete AC-6 and TC-808, or give AC-6 a case AC-1 does not cover. | spec/functional/FR-307-export-the-bindings-each-item-references.md:89 |
+| FND-013 | low | TC-808 step 3 filters the bound results in the test itself, and Expected Result 3 asserts that filter's output, so it cannot fail when Result 2 passes. Steps 1 and 2 repeat TC-806 step 1. The file name still says `driver-sends-only-bound-items-to-cg` after the title changed to the export partition. | spec/test-cases/TC-808-driver-sends-only-bound-items-to-cg.md:22-23, :33 |
+
 ## Dispositions
 
 Round 1, reviewed at c608c0a26baab69d95c7461046544f3e1c9172d8 (fix commit c608c0a2).
@@ -79,3 +88,5 @@ Round 1, reviewed at c608c0a26baab69d95c7461046544f3e1c9172d8 (fix commit c608c0
 | FND-009 | fixed | c608c0a2 |
 | FND-010 | fixed | c608c0a2 |
 | FND-011 | fixed | c608c0a2 |
+
+Round 2, reviewed at 63b7a058b8c150c4bbb411eb1d366f01ef3bc53d. No finding had a still-open or missing outcome before this round, so no row is added. FND-012 and FND-013 are new and have no outcome yet.
