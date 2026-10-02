@@ -30,9 +30,8 @@ the decoded native/formal pair is explicit and performs no revision conversion.
 That identity definition carries the four source labels of
 [FR-001](FR-001-read-exact-source.md) ([FR-026](FR-026-run-standalone-native-workflow.md)).
 
-This local clause-only mode constructs a validated Quire contract 1.0.0 /
-semantic-core 0.1.0 context for the explicitly selected binding's package and
-original path/identity, with empty exports/imports and a Markdown target. It does
+This local clause-only mode constructs a Quire context, validated by content,
+for the explicitly selected binding's package and original path/identity, with empty exports/imports and a Markdown target. It does
 not load installed archetype schemas or infer model meaning from Markdown.
 Native model imports retain their existing authority. C's installed-module and
 existing-system adoption remains separate.
@@ -49,15 +48,14 @@ completed Quire output, native diagnostic and verified original spans when prese
 Other file/model/runtime-input intake failures keep FR-026's existing envelope.
 Unsupported combinations have distinct catalogued codes: extraction-package-conflict,
 extraction-clause-count (with actual count), and extraction-requires-run. A Quire
-context failure uses invalid-quire-context and retains contract_version,
-semantic_core and unchanged producer diagnostics. The extraction report is
+context failure uses invalid-quire-context and retains the unchanged producer
+diagnostics. The extraction report is
 constructed through typed serialization before the immutable native result is exposed.
 
 ## Behavior
 
 The command shall use existing bounded file intake, model frontend, FR-030 consumer and runtime execution.
 The command shall validate the fixed clause-only context through Quire's public semantic-block validator.
-The command shall use FR-030's named contract-version constants for that context.
 The command shall validate and retain exactly one authored binding before dependent file I/O.
 The command shall retain original byte correspondence and producer availability separately from native truth.
 If the request combines extraction with selected-package execution or source-only compile/lower export, then the command shall refuse the unsupported combination before dependent files are read.
