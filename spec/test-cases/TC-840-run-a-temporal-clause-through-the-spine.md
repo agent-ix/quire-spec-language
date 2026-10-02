@@ -12,7 +12,7 @@ relationships:
 
 Verify the `Temporal` selection of `run_clause` from source: selection,
 admission, evaluation dispatch by profile and trace shape, categories, exit
-codes and provenance.
+codes.
 
 Scope: FR-330-AC-1 to FR-330-AC-4.
 
@@ -34,8 +34,7 @@ Tag the tests `#[trace("TC-840", "FR-330-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: stage `evaluate`, `violation`, position 0, exit 10, three
-  snapshot identities and digests in position order.
+- Step 1: stage `evaluate`, `violation`, position 0, exit 10.
 - Step 2: `inconclusive`, exit 0, no `truth`; `violation` at 0; `success`,
   exit 0.
 - Step 3: `select` `missing_declaration`/`missing-name`; `admit`

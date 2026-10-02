@@ -42,6 +42,12 @@ scenario 5). It settles an FR-072 replay result. A counterexample over a
 model subject replays through `replay_model_trace` (FR-128); both share the
 payload type and its evaluation.
 
+The observed-step form is `qsl-replay`'s own input, for a refutation found
+over a supplied trace (FR-327 to FR-329). It is not the QSpec FR-364
+counterexample wire, which carries model steps only; a wire form for a
+counterexample over a supplied trace is a QSpec follow-up against FR-364
+(References).
+
 ## Use case
 
 A backend refutes a temporal claim and returns a counterexample trace. An
@@ -59,7 +65,8 @@ formula is false on it.
   `steps: CounterexampleSteps::Observed{prefix: Vec<DocumentRef>, loop:
   Vec<DocumentRef>}`, `fairness` the clause's fairness constraint nodes,
   `interval: Option<IntervalKey>` (the failing operator's key under a
-  bounded profile, `None` under infinite-trace), and `kind: Formula`. Its
+  bounded profile, `None` under infinite-trace), and `kind: Formula` or
+  `UndefinedEvaluation{where, cause}`. Its
   `trace_position` names the failing position (ADR-014 TR-2), and its
   clause node and occurrence key name the clause.
 - `TemporalCounterexample` implements `FamilyPayload` (FR-070-AC-5).
@@ -67,10 +74,8 @@ formula is false on it.
 
 ## Outputs
 
-- An FR-072 replay result, or a typed `ReplayRefusal` with no partial
-  result. A result retains the source identity and digest, the
-  `package_id`, the clause identity, each observed document's identity and
-  digest, the decoded position and the evaluated value.
+- An FR-072 replay result holding the decoded position and the evaluated
+  value, or a typed `ReplayRefusal` with no partial result.
 
 ## Behavior
 
@@ -86,8 +91,13 @@ formula is false on it.
 - The facade SHALL admit each observed document by FR-106 and re-evaluate
   the formula over the reconstructed trace: by FR-327 under a bounded
   profile, by FR-328 for an infinite-trace prefix with no loop, and by
-  FR-329 for an infinite-trace lasso, including its fairness check and its
-  refusals.
+  FR-329 for an infinite-trace lasso, including its refusals.
+- When the clause's fairness set is non-empty, the facade SHALL refuse with
+  `ReplayRefusal::MissingFairnessPremise{constraint}`, naming the first
+  constraint of the checked fairness set, with catalog code
+  `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported,
+  and no result: an observed trace carries no enabledness (QSpec FR-362;
+  FR-328, FR-329).
 - When the evaluation is `Completed(false)` at the packet's
   `trace_position`, the facade SHALL settle
   `reproduced-with-evaluated-witness`. When it is anything else (true,
@@ -109,6 +119,7 @@ formula is false on it.
 | FR-331-AC-2 | A packet for the bounded clause `Bounded` (`eventually[0,1] holds(c.value = 2)`) over the finite trace 0, 1, 2 with `interval` `[0,1]` under event-position and `trace_position` `0` settles `reproduced-with-evaluated-witness`; with `trace_position` `1` it settles `inconclusive`, `ReplayParity`; with `interval` `[0,2]` it refuses `stale_dependency`/`revision-mismatch` naming the interval. | Test (TC-841) |
 | FR-331-AC-3 | AC-1's first packet recompiled from a unit that selects event-position for `Reaches` refuses `stale_dependency`/`revision-mismatch` naming the profile; one whose packet lists a fairness constraint the clause does not have refuses the same way naming the fairness set; one with an empty loop, or `trace_position` `7`, refuses `invalid_runtime_input`/`invalid-value`. | Test (TC-841) |
 | FR-331-AC-4 | A packet for FR-327-AC-5's `Undefined` outcome with `trace_position` `2` settles `reproduced-with-evaluated-witness`; the same packet with `trace_position` `1` settles `inconclusive`, `ReplayParity`. | Test (TC-847) |
+| FR-331-AC-5 | AC-1's first packet for a clause `ReachesFair` (`eventually holds(c.value = 2)` under `fair weak inc`), whose packet fairness set equals the recompiled clause's, refuses `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole inc`, catalog code `unsupported_projection`/`missing-fairness-premise`, O-16 unsupported, with no result and no formula evaluated. | Test (TC-841) |
 
 ## Dependencies
 
@@ -125,4 +136,7 @@ formula is false on it.
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).
-- QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8).
+- QSpec FR-364 (counterexample replay and wire): Linear STD-131 (QS-8). A
+  QSpec wire form for a counterexample over a supplied trace is a follow-up
+  against FR-364.
+- QSpec FR-362 (the missing fairness premise).

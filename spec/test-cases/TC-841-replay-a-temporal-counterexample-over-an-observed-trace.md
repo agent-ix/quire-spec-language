@@ -27,6 +27,9 @@ Build envelopes by hand over the `Counter` unit of TC-840.
 3. Replay step 1's first packet against a unit that selects event-position
    for `Reaches`; with an extra fairness constraint in the packet; with an
    empty loop; at position `7`.
+4. Replay step 1's first packet for the clause `ReachesFair`
+   (`eventually holds(c.value = 2)` under `fair weak inc`), with the packet
+   fairness set equal to the clause's.
 
 Tag the tests `#[trace("TC-841", "FR-331-AC-n")]`.
 
@@ -38,3 +41,6 @@ Tag the tests `#[trace("TC-841", "FR-331-AC-n")]`.
   `ReplayParity`; `stale_dependency`/`revision-mismatch` naming the interval.
 - Step 3: `stale_dependency`/`revision-mismatch` naming the profile, then the
   fairness set; `invalid_runtime_input`/`invalid-value` twice.
+- Step 4: `ReplayRefusal::MissingFairnessPremise` naming `fair weak whole
+  inc`, catalog code `unsupported_projection`/`missing-fairness-premise`,
+  O-16 unsupported, no result.

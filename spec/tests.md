@@ -319,7 +319,7 @@ names different artifacts in each.
 | TC-838 | S6a evaluates an infinite-trace clause three-valued over a finite prefix | Unit | P1 | FR-328-AC-1, FR-328-AC-2, FR-328-AC-3, FR-328-AC-4 | 🚧 Planned |
 | TC-839 | S6a evaluates an infinite-trace clause exactly over a fair lasso | Unit | P1 | FR-329-AC-1, FR-329-AC-2, FR-329-AC-3, FR-329-AC-4, FR-329-AC-5 | 🚧 Planned |
 | TC-840 | run_clause runs a selected temporal clause over a supplied trace | Integration | P1 | FR-330-AC-1, FR-330-AC-2, FR-330-AC-3, FR-330-AC-4 | 🚧 Planned |
-| TC-841 | The replay facade replays a temporal counterexample over an observed trace | Integration | P1 | FR-331-AC-1, FR-331-AC-2, FR-331-AC-3 | 🚧 Planned |
+| TC-841 | The replay facade replays a temporal counterexample over an observed trace | Integration | P1 | FR-331-AC-1, FR-331-AC-2, FR-331-AC-3, FR-331-AC-5 | 🚧 Planned |
 | TC-842 | An infinite-trace item settles only through negotiation | Integration | P1 | FR-332-AC-1, FR-332-AC-2, FR-332-AC-3, FR-332-AC-4 | 🚧 Planned |
 | TC-843 | Collection and population types resolve with an optional bound | Unit | P1 | FR-333-AC-1, FR-333-AC-2, FR-333-AC-3 | 🚧 Planned |
 | TC-844 | Collection and population nodes are keyed by the root definitions' identity preimage | Integration | P1 | FR-334-AC-1, FR-334-AC-2, FR-334-AC-3 | 🚧 Planned |

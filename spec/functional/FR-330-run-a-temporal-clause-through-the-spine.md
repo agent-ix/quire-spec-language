@@ -39,8 +39,7 @@ runtime's exit asks (ADR-011 §5).
 An operator has recorded observations of a running system and a QSL unit
 with temporal clauses. They run one clause by name over the recording, as
 they already run a state clause, and get one report: held on this trace,
-violated at a named position, pending, unsupported, or incomplete, with the
-identity and digest of every observation it read.
+violated at a named position, pending, unsupported, or incomplete.
 
 ## Inputs
 
@@ -94,15 +93,12 @@ result) and `unsupported` (a missing fairness premise), and whose
   `incomplete` (exit 22), by QSpec FR-301's exit contract. Every
   `violation`, an undefined evaluation included, exits with the violation
   exit, 10.
-- The report's provenance SHALL hold, in addition to FR-109's members, the
-  identity and digest of every observation document read, in position
-  order, and the loop start for a lasso.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-330-AC-1 | From source, the `Counter` unit's clause `Bounded` (`eventually[0,1] holds(c.value = 2)`, event-position false-extension) over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, `violation`, position 0, exit 10, with the three snapshot identities and digests in position order in its provenance. | Test (TC-840) |
+| FR-330-AC-1 | From source, the `Counter` unit's clause `Bounded` (`eventually[0,1] holds(c.value = 2)`, event-position false-extension) over `Finite` snapshots with `c.value` 0, 1, 2 reports stage `evaluate`, `violation`, position 0, exit 10. | Test (TC-840) |
 | FR-330-AC-2 | The unit's infinite-trace clause `Reaches` (`eventually holds(c.value = 2)`) over the same `Finite` trace reports `inconclusive`, exit 0, with no `truth`; over `Lasso` with an empty prefix and loop 0, 1 it reports `violation` at position 0; over `Lasso` with loop 0, 1, 2 it reports `success`, exit 0. | Test (TC-840) |
 | FR-330-AC-3 | A selection naming `Absent` reports stage `select`, `missing_declaration`/`missing-name`; `Bounded` over a `Lasso` reports stage `admit`, `invalid_runtime_input`/`invalid-value`; an `over` naming key `ghost` reports stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; a `Lasso` with an empty loop reports stage `evaluate`, `refusal`, `invalid_runtime_input`/`invalid-value`. | Test (TC-840) |
 | FR-330-AC-4 | `Reaches` over the `Lasso` with loop 0, 1, 2 and a work budget of zero reports `incomplete`, exit 22; running any request of AC-1 to AC-3 twice gives equal reports. | Test (TC-840) |

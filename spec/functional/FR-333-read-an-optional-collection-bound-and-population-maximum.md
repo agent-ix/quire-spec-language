@@ -28,7 +28,6 @@ without a cardinality bound, `K<T>` or `K<T>[a,b]` for `K` in `Sequence`,
 maximum, `Population<T>` or `Population<T>[N]`. An absent bound SHALL resolve
 to the unbounded kernel type: `CollectionType.bound == None` and
 `ValueType::Population(None)` (ADR-014 §2, N-3; QSpec FR-144, FR-153-AC-9).
-No default, profile ceiling or limit stands in for an absent bound.
 
 ## Use case
 
@@ -61,8 +60,6 @@ never chose.
   `ill_typed`/`type-mismatch` at the form's span when `a > b`.
 - When a population form has no maximum, the resolver SHALL return
   `ValueType::Population(None)`; with `[N]`, `Population(Some(N))`.
-- The resolver SHALL read no profile ceiling (ADR-014 B-6), default or
-  limit when a bound is absent.
 - Checking an unbounded type's values, queries and lowering is FR-097-AC-7
   and FR-097-AC-8; this requirement delivers the type those criteria check.
 
@@ -76,7 +73,7 @@ never chose.
 
 ## Dependencies
 
-- ADR-014 §1 B-1 and B-6, §2, §9 N-3, §11 (QSL-42 interfaces).
+- ADR-014 §1 B-1 and B-6, §2, §9 N-3, §11.
 - [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)
   (value forms), [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md)
   AC-7 and AC-8 (checking and lowering unbounded types).

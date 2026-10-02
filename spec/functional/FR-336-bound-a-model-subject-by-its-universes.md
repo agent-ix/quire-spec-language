@@ -31,8 +31,7 @@ relationships:
 ## Description
 
 A temporal item over a model subject (FR-125) SHALL become finite only
-through the subject's universes and the model's own declared domains, never
-through a proof bound, a default or a limit (ADR-018 §1 Scope, EN-1
+through the subject's universes and the model's own declared domains (ADR-018 §1 Scope, EN-1
 pre-check; ADR-016 §2, EX-1). A universe is part of the subject and of the
 item's obligation identity, and a verdict holds for exactly that subject.
 The item's requirement record is computed from checked types alone, so an

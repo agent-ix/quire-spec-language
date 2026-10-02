@@ -84,11 +84,12 @@ loop is never reported as a violation.
 
 ### Fairness
 
-- A fairness constraint SHALL be taken at a loop step whose transition
-  identity belongs to it (ADR-018 FA-1), and enabled at a loop position when
-  ADR-018 FA-2 holds there, computed through FR-120's `ModelSystem`. The
-  lasso SHALL be fair for a weak constraint when the loop takes it or
-  disables it somewhere (FA-3).
+- For a `Lasso::Model`, the evaluator SHALL decide whether the lasso is
+  fair for each constraint of the clause's fairness set, of either kind, by
+  QSpec FR-362's lasso rule, reading a constraint as taken at a loop step
+  whose transition identity belongs to it (ADR-018 FA-1) and as enabled at
+  a loop position where ADR-018 FA-2 holds, computed through FR-120's
+  `ModelSystem`.
 - When the lasso is unfair for any constraint of the clause's fairness set,
   the evaluator SHALL refuse `invalid_runtime_input`/`invalid-value`, naming
   the constraint.
@@ -129,9 +130,9 @@ loop is never reported as a violation.
 | FR-329-AC-2 | On the observed lasso with prefix `a.versionNumber` 5 and loop 0, 1, 2: `always (holds(a.versionNumber = 0) implies once holds(a.versionNumber = 5))` is `Completed(true)`, although no loop position holds 5; `always (holds(a.versionNumber = 0) implies once[1,1] holds(a.versionNumber = 2))` is `Completed(false)` at position 0, because position 1 reads position 0. | Test (TC-839) |
 | FR-329-AC-3 | A lasso with an empty loop refuses `invalid_runtime_input`/`invalid-value`. A `Lasso::Model` whose last loop post-state differs from its entry state refuses the same way. | Test (TC-839) |
 | FR-329-AC-4 | On ADR-018 §6's three-step `upd(a)` lasso as `Lasso::Model`, `always eventually holds(b.versionNumber = 2)` under `fair weak attemptUpdate` is `Completed(false)` at position 0; under `fair weak each attemptUpdate` it refuses `invalid_runtime_input`/`invalid-value` naming the constraint (`upd(b)` is enabled throughout the loop and never taken). | Test (TC-839) |
-| FR-329-AC-7 | The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` returns `MissingFairnessPremise` naming `fair weak whole attemptUpdate`, O-16 unsupported, and evaluates no position; with an empty fairness set over the same observed lasso it is `Completed(false)` at position 0. | Test (TC-848) |
 | FR-329-AC-5 | AC-1's first clause with a meter one unit short of its visit count returns `Incomplete` and no truth value. | Test (TC-839) |
 | FR-329-AC-6 | On the observed `Counter` lasso with an empty prefix and loop `c.value` 0, 1, 2, `always eventually holds(2 / (2 - c.value) = 2)` returns `Undefined{where: 2, cause: division-by-zero}`, category violation. | Test (TC-847) |
+| FR-329-AC-7 | The same clause with `fair weak attemptUpdate` over the lasso as `Lasso::Observed` returns `MissingFairnessPremise` naming `fair weak whole attemptUpdate`, O-16 unsupported, and evaluates no position; with an empty fairness set over the same observed lasso it is `Completed(false)` at position 0. | Test (TC-848) |
 
 ## Dependencies
 

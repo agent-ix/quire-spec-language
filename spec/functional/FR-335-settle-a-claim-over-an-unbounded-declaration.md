@@ -43,7 +43,7 @@ test of that value.
 
 ## Use case
 
-An author declares `s: Set<Int[0, 9]>` with no bound and writes a claim
+An author declares `s: Set<Int[0, 9999]>` with no bound and writes a claim
 over it. Before any proof backend exists they learn the claim is
 `unsupported` and why. When Kani is registered they learn that a bound
 would help, ask again with `Cardinality{maximum: 8}`, and get a result that
@@ -52,7 +52,7 @@ stays unproved.
 
 ## Inputs
 
-- A unit with a Value function `f using v(s: Set<Int[0, 9]>): Integer pure
+- A unit with a Value function `f using v(s: Set<Int[0, 9999]>): Integer pure
   { size(s) + 1 }`, whose `+` application is a `value-validity` claim with
   root `s` (FR-062-AC-13, ADR-014 §4).
 - The registry (FR-075), the request writer (FR-097) and CG
@@ -97,7 +97,7 @@ stays unproved.
 | FR-335-AC-2 | With only a test descriptor advertising (`value-validity`, `bounded`), the claim is written with `finite_bound_available` true and settles `requires-bound`, and no harness is emitted. | Test (TC-845) |
 | FR-335-AC-3 | A bounded request with `ProofBound{s, Cardinality{maximum: 8}}` writes a second item with its own request index, classified `bounded`, whose obligation identity differs from the unbounded item's and from that of a request with `maximum: 9`; the unbounded item still settles `requires-bound`. | Test (TC-845) |
 | FR-335-AC-4 | The same function with an added root of a quantity type, read by the `+` application, is written with `finite_bound_available` false and settles `unsupported`, warned, `unbounded-extent` against the bounded-only descriptor. | Test (TC-845) |
-| FR-335-AC-5 | At S6a, `f` on a concrete set of 1,000 distinct members returns 1,001 with no cardinality refusal; with a meter too small for the construction it returns `Incomplete` at the `collection.bound` or element charge point; neither result changes the AC-1 item's disposition. | Test (TC-845) |
+| FR-335-AC-5 | At S6a, `f` on the concrete set `{0, 1, …, 999}` of 1,000 distinct members of `Int[0, 9999]` returns 1,001 with no cardinality refusal; with a meter too small for the construction it returns `Incomplete` at the `collection.bound` or element charge point; neither result changes the AC-1 item's disposition. | Test (TC-845) |
 
 ## Dependencies
 

@@ -28,8 +28,7 @@ relationships:
 
 S4 SHALL key every collection type node and every population type node by
 the collection-type identity preimage that QSpec's root definitions
-`quire.value.complete/v1` and `quire.model.complete/v1` state at `1-draft.2`,
-in which bound presence and bound values are part of type identity (ADR-014
+`quire.value.complete/v1` and `quire.model.complete/v1` state, in which bound presence and bound values are part of type identity (ADR-014
 N-1, N-2; QSpec FR-144-AC-9, AC-13; FR-153-AC-9). QSL reads those
 definitions from the definition bundle it links (FR-111) and holds no copy
 of them. Every package with a collection type gets the node ids and
@@ -76,12 +75,12 @@ its content under the one rule QSpec publishes.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-334-AC-1 | A unit whose only difference from another is `s: Set<Int>` against `s: Set<Int>[0, 18446744073709551615]` emits a different node key for `s`'s type and a different `package_id`; the unbounded node has no `collection_bounds` member and the bounded node has one with `minimum` 0 and `maximum` 18446744073709551615. | Test (TC-844) |
-| FR-334-AC-2 | `p: Population<Account>` lowers to a population node with no maximum, whose node key differs from those of `Population<Account>[4]` and of an unbounded `Set<Reference<Account>>`; it no longer refuses with `UnrepresentableBound`. | Test (TC-844) |
+| FR-334-AC-2 | `p: Population<Account>` lowers to a population node with no maximum, whose node key differs from those of `Population<Account>[4]` and of an unbounded `Set<Reference<Account>>`; it lowers with no refusal. | Test (TC-844) |
 | FR-334-AC-3 | Compiling the same bounded unit twice gives the same node keys and `package_id`; the compiled package's definition selections name the root definitions the linked bundle supplies. | Test (TC-844) |
 
 ## Dependencies
 
-- ADR-014 §9 N-1 to N-3, §11 (QSL-42 interfaces); ADR-013 O-04, O-09.
+- ADR-014 §9 N-1 to N-3, §11; ADR-013 O-04, O-09.
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md) (node keys),
   [FR-097](FR-097-classify-claim-extent-and-write-bounded-requests.md) AC-7
   and AC-8, [FR-111](FR-111-link-a-complete-v1-definition-bundle.md)

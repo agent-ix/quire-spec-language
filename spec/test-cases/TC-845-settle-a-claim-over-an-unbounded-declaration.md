@@ -19,7 +19,7 @@ Scope: FR-335-AC-1 to FR-335-AC-5.
 
 ## Test Procedure
 
-Compile `f using v(s: Set<Int[0, 9]>): Integer pure { size(s) + 1 }` from
+Compile `f using v(s: Set<Int[0, 9999]>): Integer pure { size(s) + 1 }` from
 source. In a harness downstream of CG `negotiate_*`, with test
 descriptors:
 
@@ -29,7 +29,7 @@ descriptors:
    `maximum: 9`.
 4. Add a quantity-typed root read by the `+` and request it against the
    bounded-only descriptor.
-5. Evaluate `f` at S6a on a 1,000-member set, then with a meter too small
+5. Evaluate `f` at S6a on the set `{0, 1, …, 999}` (1,000 distinct members of `Int[0, 9999]`), then with a meter too small
    for construction.
 
 Tag the tests `#[trace("TC-845", "FR-335-AC-n")]`.

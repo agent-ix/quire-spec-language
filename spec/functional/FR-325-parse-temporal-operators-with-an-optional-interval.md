@@ -57,14 +57,15 @@ profile.
 - When an operator is written with no interval, S2 SHALL build its form
   with `interval: None`.
 - When an operator is written with `[a,b]`, S2 SHALL build `Some` with
-  `upper: Finite(b)`; with `[a,*]`, `Some` with `upper: Open`. S2 SHALL NOT
-  compare `a` with `b`; the S3 check refuses an inverted interval.
+  `upper: Finite(b)`; with `[a,*]`, `Some` with `upper: Open`. S2 SHALL
+  build an interval with `a > b` as written, with no diagnostic; the S3
+  check refuses an inverted interval.
 - A bound that is not a decimal `u64` SHALL fail at S1 with a parse
   diagnostic located at the bound's span.
 - Nesting SHALL be free: an operator with an interval and an operator
   without one may appear in any operand position of each other.
 - S2 SHALL produce the same form for the same source under every profile
-  selection, and SHALL read no profile selection.
+  selection.
 - The TemporalTrace forms SHALL be the only S2 producer for temporal clauses
   (ADR-011 M-3b, FR-067).
 
@@ -79,7 +80,7 @@ profile.
 
 ## Dependencies
 
-- ADR-014 §5 A-1 and §11 (QSL-43 interfaces); ADR-018 §11 IV-1 (operators
+- ADR-014 §5 A-1 and §11; ADR-018 §11 IV-1 (operators
   that carry an interval); ADR-011 M-3b.
 - [FR-067](FR-067-add-s2-forms-and-retire-seam-5.md) (the S2 forms stage).
 - QSpec FR-090-AC-7 and FR-250-AC-6 (which profile admits the unbounded
