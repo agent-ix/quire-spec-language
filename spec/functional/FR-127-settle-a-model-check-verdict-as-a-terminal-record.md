@@ -162,8 +162,9 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 - For an SMT `BoundedComplete` or `Inductive` result that CG's SMT map
   hands it, the settlement map SHALL run FR-314's `check_smt_proof` on the
   result's `SmtProofCertificate` and settle `proved` with
-  `certification: None` when it accepts, `Inconclusive(CertificateRejected{rule,
-  state})` when it rejects, and `proved` with `Some(Uncertified)` when the
+  `certification: None` when it returns `Verified`,
+  `Inconclusive(CertificateRejected{rule, state})` when it rejects, and
+  `proved` with `Some(Uncertified)` when it returns `Unverifiable` or the
   result carries no certificate (ADR-018 PC-6). A proof from any other
   native engine with no core certificate checker SHALL
   carry `Some(Uncertified)`; one from a third-party plugin SHALL

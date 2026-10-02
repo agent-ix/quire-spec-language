@@ -50,7 +50,7 @@ pub struct ClosureCertificate { pub states: Vec<ProductStateRef> }
 
 pub enum CertificateRule {
     InitialMissing, SuccessorMissing, BadState, NotPartition, BackwardEdge,
-    WitnessFails, QueryMismatch, ShapeMismatch, UncheckedRule,
+    WitnessFails, QueryMismatch, ShapeMismatch,
     ProofStepInvalid, NotRefutation,
 }
 pub struct CertificateRejection { pub rule: CertificateRule, pub state: CertificateLocus }

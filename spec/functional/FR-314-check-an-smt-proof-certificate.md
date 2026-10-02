@@ -24,9 +24,10 @@ comes with an SMT `Proved{BoundedComplete{depth}}` or
 the query FR-315 encodes for the item at that depth and every proof it
 carries refutes its query using only checked Alethe rules (ADR-018 PC-6,
 LA-3). FR-127's settlement map runs the check: a proof whose certificate it
-accepts settles `proved` with no certification label; one it rejects
-settles `inconclusive`, `CertificateRejected{rule, state}`; an SMT proof
-that arrives with no certificate stays `proved`, `Uncertified`.
+verifies settles `proved` with no certification label; one it shows wrong
+settles `inconclusive`, `CertificateRejected{rule, state}`; one it cannot
+verify because a step uses an unchecked rule settles `proved`,
+`Uncertified`, as an SMT proof that arrives with no certificate does.
 
 ## Use case
 
@@ -58,11 +59,16 @@ pub fn check_smt_proof(
     request: &CertificateRequest<'_>,
     basis: &ProofBasis,                       // BoundedComplete or Inductive, with depth
     certificate: &SmtProofCertificate,
-) -> Result<(), CertificateRejection>;
+) -> Result<SmtProofCheck, CertificateRejection>;
+
+pub enum SmtProofCheck {
+    Verified,
+    Unverifiable { part: QueryPart, step: u64 },  // first step with an unchecked rule
+}
 ```
 
 FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
-`UncheckedRule`, `ProofStepInvalid` and `NotRefutation`, and
+`ProofStepInvalid` and `NotRefutation`, and
 `CertificateRejection.state` is a `CertificateLocus`:
 `ProductState(ProductStateRef)` for FR-338 and FR-339, and
 `Query { part }` or `ProofStep { part, index: u64 }` here, `part` being
@@ -88,16 +94,19 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 - The checker SHALL reject with `QueryMismatch` at that part when a
   carried query differs, byte for byte, from FR-315's canonical printing of
   the expected query.
-- The checker SHALL reject with `UncheckedRule` at the first proof step
-  whose rule is outside the checked Alethe rule set below, `hole` and
-  `lia_generic` included.
 - The checker SHALL reject with `ProofStepInvalid` at the first proof step
-  whose conclusion does not follow by its checked rule from its premises,
-  or whose premises are not earlier steps or assertions of its query.
+  whose rule is in the checked Alethe rule set below and whose conclusion
+  does not follow by it from its premises, or whose premises are not
+  earlier steps or assertions of its query.
 - The checker SHALL reject with `NotRefutation` at the last step of a proof
   that does not conclude the empty clause.
-- The checker SHALL accept a certificate only when every carried proof
-  refutes its query, both the base and the step for `Inductive`.
+- When no rule above rejects and some step's rule is outside the checked
+  set (`hole` and `lia_generic` included), the checker SHALL return
+  `Unverifiable` naming the first such step: the certificate is not shown
+  wrong, and the proof settles `proved`, `Uncertified`.
+- The checker SHALL return `Verified` only when every carried proof
+  refutes its query using checked rules alone, both the base and the step
+  for `Inductive`.
 - The checker SHALL read nothing from the solver but the certificate.
 
 ### Checked Alethe rules
@@ -122,7 +131,7 @@ command. Every other rule is unchecked.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-314-AC-1 | Accepted vectors: over the `Counter` subject under event-position false-extension, the TP-2 `on origin` claim `always[0,3] holds(c.value <= 3)` proved `BoundedComplete{depth: 3}`, at its horizon 3 (ADR-018 V-2), with an Alethe certificate whose unrolling query is FR-315's encoding at depth 3 and whose proof refutes it with checked rules, is accepted; `always holds(c.value <= 3)` proved `Inductive{depth: 1}` with base and step queries FR-315 encodes at depth 1, each refuted with checked rules, is accepted. Each item settles `proved`, success, with no certification label. | Test (TC-893) |
-| FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with one step's rule replaced by `hole`, `UncheckedRule` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. The bounded result with no certificate settles `proved`, `Uncertified`. | Test (TC-893) |
+| FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. Unverifiable vector: AC-1's bounded certificate with one step's rule replaced by `hole`, or by `lia_generic`, and no other defect returns `Unverifiable` at that step and settles `proved`, `Uncertified`, the same as the bounded result with no certificate. | Test (TC-893) |
 
 ## Dependencies
 
