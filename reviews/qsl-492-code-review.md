@@ -70,3 +70,26 @@ Changes requested: one medium finding and two low.
 | FND-001 | medium | Replay reads `trace.findings` only through `find(|entry| entry.depth == index)` for each expanded index. It never refuses: an entry whose depth is past the last expanded state (or at a stopped state's index); a second entry for the same depth (only the first is read); or an entry whose `state` digest is not the state at that depth (the `state` member is never compared). A forged or corrupted trace with extra findings therefore replays `Ok`. FR-101 says replay succeeds only "when every recomputed expansion matches the trace: the same findings". Build the expected `Vec<StateFindings>` while replaying, with digest, depth and findings, then compare it whole with `trace.findings`. Refuse `FindingMismatch{step}` at the first differing entry, the step being the lower of the two entries' depths. | qsl-eval/src/simulation/trace.rs:192-194; qsl-eval/src/simulation/trace.rs:233-241 |
 | FND-002 | low | The `CATALOG_CATEGORIES` doc comment makes two false claims. (1) "QSL raises [`resource_exhausted`] only for a semantic maximum, which the catalog states is not a caller work budget." QSpec's row says the reverse: `resource_exhausted` is the caller work-budget cause, and a semantic maximum is not one. QSL now also raises it for a work budget, through `ExpansionStop`. (2) "an exhausted S6a work budget is the kernel `Incomplete` outcome, which carries no catalog code." ADR-014 B-2 says it carries `resource_exhausted`. The table value `Refusal` is right for refusal records, so change only the comment. State that `resource_exhausted` is a refusal when a refusal record carries it (ADR-013's read-only ceiling row) and incomplete when a denied charge stops a run (ADR-014 B-2, FR-101 `Outcome::Stopped`). Also state that `category_of` is the refusal-record map, matching what `stop_category`'s doc already says. | qsl-foundation/src/diagnostic.rs:822-832; qsl-eval/src/simulation/explore.rs:171-182 |
 | FND-003 | low | The spec.md index row for FR-101 still begins "Specified:", although FR-101's Status now says AC-1 to AC-15 are implemented and the row itself says TC-453 to TC-455 and TC-474 pass. Other implemented rows begin "Implemented". | spec/spec.md:1022 |
+
+## Dispositions
+
+Round 1, reviewed at `e98d1d87f1c602f22c688b15288b2382fdf10b89`. One fix commit sits directly on the reviewed
+head ca788c9b, with no rebase. The committed `reviews/qsl-492-*.md` are
+byte-identical to the reviewer's copies.
+
+The commit's only deletion is the depth lookup `recorded_findings`.
+Replay's matching-stop path now `break`s instead of returning `Ok`, so
+leftover entries are checked on a stopped trace too.
+
+The `reviews/qsl-519-*.md` scope-SHA restore was ordered by the team
+leader and is outside E1's change.
+
+Checks run on the head:
+- The 35 finite_simulation tests pass.
+- Clippy `-D warnings` is clean for qsl-eval and qsl-foundation.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |
+| FND-002 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |
+| FND-003 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |

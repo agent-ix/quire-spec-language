@@ -38,3 +38,23 @@ Changes requested: one medium finding and two low.
 | FND-001 | medium | AC-14's finding-mismatch half is tested in one direction only, by clearing the recorded findings of an existing entry. No test adds an entry past the trace, duplicates an entry, or changes an entry's `state` digest, and each of those replays `Ok` today (SR-1223 FND-001). Add those three edits to `tc_474_replay_refuses_a_trace_whose_findings_differ`, each expecting `FindingMismatch`. | qsl-eval/tests/it/finite_simulation.rs:1919-1947 |
 | FND-002 | low | FR-101's Status says `Stopped` takes "the catalog's category for any other catalogued code, and internal failure for a code the catalog does not define". The tests exercise only `resource_exhausted` (the override) and `runtime_invariant`. Neither the fall-through to the catalog (for example `invalid_runtime_input` giving `Refusal`) nor an uncatalogued code giving `InternalFailure` is tested. Add both rows to the cause loop in `tc_474_an_expansion_stop_ends_exploration_stopped`. | qsl-eval/tests/it/finite_simulation.rs:1778-1805; qsl-eval/src/simulation/explore.rs:171-182 |
 | FND-003 | low | AC-13 and FR-101 say entries come "in expansion order". Every TC-474 exploration yields at most one entry, so the order is unasserted. Give two states findings (for example `1` and `2` on `branch_graph`) and assert both entries, in breadth-first order. | qsl-eval/tests/it/finite_simulation.rs:1807-1863 |
+
+## Dispositions
+
+Round 1, reviewed at `e98d1d87f1c602f22c688b15288b2382fdf10b89`.
+
+The new replay cases cover:
+- an entry past the end of the trace;
+- a duplicate entry;
+- a wrong state digest;
+- an extra entry before the real one.
+
+The test trace has only one real entry, so out-of-order entries are not
+tested directly. `FindingsCheck` compares entries in sequence, so an
+out-of-order list fails at its first entry.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |
+| FND-002 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |
+| FND-003 | fixed | e98d1d87f1c602f22c688b15288b2382fdf10b89 |
