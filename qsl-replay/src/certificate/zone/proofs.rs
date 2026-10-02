@@ -103,9 +103,8 @@ fn constrain_agrees_with_the_reference(dim: usize) {
 
 /// `reset` gives exactly the points of the eliminated reference, and
 /// leaves the zone canonical.
-fn reset_agrees_with_the_reference(dim: usize) {
+fn reset_agrees_with_the_reference(dim: usize, clock: usize) {
     let (raw, mut zone) = any_closed(dim);
-    let clock = kani::any_where(|x: &usize| (1..dim).contains(x));
     let value = kani::any_where(|v: &i64| (0..=MAX_BOUND).contains(v));
     let point = any_point(dim);
     zone.reset(clock, &value)
@@ -170,16 +169,16 @@ fn alu_agrees_with_the_reference(dim: usize) {
     );
 }
 
-/// One harness per operation and dimension, so each runs over a matrix of
-/// fixed shape. A dimension of at most 3 is the harness input FR-245-AC-4
+/// One harness per operation and dimension (and reset clock), so each runs
+/// over a matrix of fixed shape. A dimension of at most 3 is the harness input FR-245-AC-4
 /// names, not a limit of the checker.
 macro_rules! harnesses {
-    ($($name:ident => $check:ident($dim:expr);)*) => {
+    ($($name:ident => $check:ident($($argument:expr),+);)*) => {
         $(
             #[kani::proof]
             #[kani::unwind(12)]
             fn $name() {
-                $check($dim);
+                $check($($argument),+);
             }
         )*
     };
@@ -192,8 +191,9 @@ harnesses! {
     constrain_dim_1 => constrain_agrees_with_the_reference(1);
     constrain_dim_2 => constrain_agrees_with_the_reference(2);
     constrain_dim_3 => constrain_agrees_with_the_reference(3);
-    reset_dim_2 => reset_agrees_with_the_reference(2);
-    reset_dim_3 => reset_agrees_with_the_reference(3);
+    reset_dim_2 => reset_agrees_with_the_reference(2, 1);
+    reset_dim_3_clock_1 => reset_agrees_with_the_reference(3, 1);
+    reset_dim_3_clock_2 => reset_agrees_with_the_reference(3, 2);
     up_dim_1 => up_agrees_with_the_reference(1);
     up_dim_2 => up_agrees_with_the_reference(2);
     up_dim_3 => up_agrees_with_the_reference(3);
