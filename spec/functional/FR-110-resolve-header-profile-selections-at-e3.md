@@ -17,20 +17,22 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-453
+    type: depends_on
 ---
 # FR-110: E3 resolves a unit's header profile selections against the DefinitionLock catalog
 
 ## Description
 
 When spine `compile` (`qsl_replay::spine::compile`) compiles a complete-V1
-unit, E3 SHALL resolve each of the unit's `profile … version … digest …`
+unit, E3 SHALL resolve each of the unit's `profile <alias> = "<identity>";`
 header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header
 profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
 This requirement specifies the `Value` family's catalog,
 `DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which reads
-QSpec's `complete-value-lock.json` by reference and whose one
-header-selectable row is `root`. A clause profile (FR-322 roles
+QSpec's `complete-value-lock.json` by reference, including its
+`header_selectable_layers` rows. A clause profile (FR-322 roles
 `temporal_profile` and `protocol_profile`) resolves in its clause family's
 catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
 #218), which also writes its `profile_selections` row.
@@ -46,10 +48,12 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
 - The unit's profile selections as S2 carries them
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
-  identity/version/digest, declaration span, identity-literal span).
+  identity, declaration span, identity-literal span).
 - `DefinitionLock::pinned()`, the closed catalog of QSpec
-  `complete-value-lock.json` rows, read from the `quire-specification`
-  crate's compiled-in bytes, which the resolution reads itself.
+  `complete-value-lock.json` rows, including its `header_selectable_layers`
+  rows (each layer's identity, the layers it requires and its admitted-form
+  definition file), read from the `quire-specification` crate's
+  compiled-in bytes, which the resolution reads itself.
 
 ## Outputs
 
@@ -61,8 +65,7 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 - `check::ProfileRefusal`: the profile's alias, the span of its identity
   literal, the `DefinitionRef` it selected, the required role (`root`), the
   `root` row it was compared with (`CatalogEntry`) and a `ProfileCause`:
-  `UnsupportedSelection`, `WrongSelectionRole`, `RevisionMismatch` or
-  `ByteDigestMismatch`. Its `code()` and `cause()`
+  `UnsupportedSelection` or `WrongSelectionRole`. Its `code()` and `cause()`
   give the catalog pair in the table below.
 - `qsl_replay::spine::CompileRefusal::Profile`: the refusals and the region
   of the first, reported at spine stage `assembly`.
@@ -72,36 +75,34 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 ### Profile resolution
 
 For a header profile the `Value` family resolves, E3 SHALL compare its
-selection, in source order, with the `DefinitionLock` rows. The row a header profile selects is
-`root` (`quire.value.complete/v1`): the value system every spine
-declaration's `using` alias names (FR-091). The catalog's other rows are
-selected by its own package-selection rules (always, conditional and
-exactly-one roles), not by a header. The header's `version` is compared
-with the row's revision value, and its `sha256:` digest with the row's
-`quire.definition.bytes/v1` digest.
+identity, in source order, with the `DefinitionLock` rows. A header selects
+a header-selectable layer (see "Layer selection"); the catalog's
+`qualification_catalog` rows are selected by its own package-selection
+rules (always, conditional and exactly-one roles), not by a header. E3
+compares the header's identity, the only member a header profile carries
+(QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`). The
+emitted lock records
+the catalog rows, so the package's identity binds the definitions the
+build compiled against.
 
 | Header selection | Code | Cause |
 | --- | --- | --- |
-| identity, version and digest equal the `root` row's | resolves | |
+| identity equals a `header_selectable_layers` row's | resolves to that layer | |
 | identity equals no catalog row's, and no clause family's catalog holds it | `unknown_profile` | `unsupported-selection` |
-| identity equals a catalog row's other than `root` | `unknown_profile` | `wrong-selection-role` |
-| identity equals `root`'s, version differs | `stale_dependency` | `revision-mismatch` |
-| identity and version equal `root`'s, digest differs | `stale_dependency` | `byte-digest-mismatch` |
+| identity equals a `qualification_catalog` row's and no layer's | `unknown_profile` | `wrong-selection-role` |
 
 - If any header profile refuses, E3 SHALL return every refusing profile, in
   source order, and spine `compile` SHALL produce no checked package and no
   bytes (ADR-011 §2.3, E3 row).
 - An `unknown_profile` refusal SHALL retain the supplied selection and the
   required role, `root` (native-diagnostics: "retain the supplied selection
-  and required role"). A `stale_dependency` refusal SHALL retain the
-  selected triple and the `root` row's identity, revision and digest.
+  and required role").
 - The spine registers no clause family yet, so every header profile a spine
   unit declares reaches this table.
-- Two header profiles that both select the `root` row exactly both resolve;
+- Two header profiles that both select the same layer both resolve;
   a repeated alias is the assembler's duplicate-alias refusal (FR-091-AC-22).
-- Every code and cause is one `quire.native.diagnostics/v1` revision
-  `1-draft.7` lists. The `unsupported-selection`, `revision-mismatch` and
-  `byte-digest-mismatch` rows give the pairs the editor's profile check
+- Every code and cause is one `quire.native.diagnostics/v1` lists. The
+  `unsupported-selection` row gives the pair the editor's profile check
   gives for the same standing (`complete::editor::profile_refusal`).
 
 ### Placement
@@ -111,6 +112,28 @@ unit itself and each library the S4 source resolution compiles (ADR-015
 D-1), after I1 and the S4 source resolution and before the FR-091
 assembler. Replay recompiles through the same spine (ADR-011 §2.1 E9), so
 it applies the same resolution.
+
+### Layer selection
+
+Every layer of QSpec AD-003's state and value/model hierarchy is
+header-selectable (QSpec FR-453; the `header_selectable_layers` rows of
+QSpec `complete-value-lock.json`, which the QSpec definitions README
+section "Header-selectable layers" cites): `quire.state.core/v1`,
+`quire.state.queries/v1`, `quire.state.graph/v1`,
+`quire.value.complete/v1` and `quire.model.complete/v1`.
+
+- When a header profile's identity names a `header_selectable_layers` row,
+  E3 SHALL resolve it to that layer.
+- When a declaration's `using` alias names a header profile resolved to a
+  layer, S3 SHALL admit the declaration under exactly the admitted-form set
+  of that layer's `admitted_forms` definition, together with the sets of
+  the layers its `requires` closure names.
+- When such a declaration uses a declaration form outside that set, S3
+  SHALL refuse it with `unsupported_construct`/`declaration-form` at the
+  declaration's span, naming the selected layer. When it uses an expression
+  form outside that set, S3 SHALL refuse it with
+  `unsupported_construct`/`expression-form` at the expression's span,
+  naming the selected layer. S3 never admits a form under a wider layer.
 
 ### Model selections
 
@@ -125,27 +148,34 @@ The emitted `model_selections` are `CheckedGraph::model_selections`, one
 
 The emitter SHALL write `profile_selections` empty for a package whose
 declarations are all `Value`-family: FR-322 fills it with clause profile
-rows (`temporal_profile`, `protocol_profile`), and the `root` row is
-already an always-selected `definition_selections` entry. The header
-resolution adds nothing to the identity preimage, so it leaves `package_id`
-unchanged.
+rows (`temporal_profile`, `protocol_profile`).
+
+The emitter SHALL write `definition_selections` as the union, over the
+unit's header profiles, of the selected layer and every layer its
+`requires` closure names, and no layer that requires a selected layer,
+together with the `qualification_catalog` rows QSpec FR-001 selects for
+those layers: the lock's `package_selection` rules when the union holds its
+`package_selection.layer`, and its `package_selection.without_layer` rows
+otherwise. The two sides of a QSpec AD-003 `requires`
+edge therefore compile to distinct packages.
 
 ## Constraints
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). | Design | Inspection |
+| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog, including the `header_selectable_layers` rows that name each layer's admitted-form set and `requires` edges, from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). QSL defines no admitted-form set of its own. | Design | Inspection |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-110-AC-1 | A unit whose one header profile is `profile v = "quire.value.complete/v1" version "<root revision value>" digest "sha256:<root digest>"`, with the `root` row's catalog values, compiles through spine `compile`. Its emitted lock has empty `profile_selections` and exactly one `definition_selections` entry for `quire.value.complete/v1`, equal to the `root` row. | Test (TC-490) |
+| FR-110-AC-1 | A unit whose one header profile names `quire.value.complete/v1` compiles through spine `compile`. Its emitted lock has empty `profile_selections`, and its `definition_selections` hold `quire.value.complete/v1`, `quire.state.core/v1` and the `qualification_catalog` rows the package-selection rules select for the unit, and no other layer. | Test (TC-490) |
 | FR-110-AC-2 | The same unit with the profile identity `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection` at the span of the identity literal, naming alias `v`, the selection and required role `root`, and produces no package. | Test (TC-490) |
-| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity, revision value and digest refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and required role `root`. The `edition` row's identity (`ix:native`) refuses the same way. | Test (TC-490) |
-| FR-110-AC-4 | The same unit with the `root` identity and version `"1"` refuses `stale_dependency`/`revision-mismatch`, retaining the selected triple and the `root` row's identity, revision and digest. | Test (TC-490) |
-| FR-110-AC-5 | The same unit with the `root` identity and revision value and a digest of 64 `a`s refuses `stale_dependency`/`byte-digest-mismatch`, retaining the selected triple and the `root` row's digest. | Test (TC-490) |
-| FR-110-AC-6 | A unit with three header profiles, the exact `root` selection under alias `v`, a `revision-mismatch` selection under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the exact `root` selection under two aliases compiles. | Test (TC-490) |
+| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and required role `root`. The `edition` row's identity (`ix:native`) refuses the same way. | Test (TC-490) |
+| FR-110-AC-5 | A unit whose header `profile` declaration holds any token after its identity string, before the `;` (QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`), refuses as a syntax error at that token, before E3, and produces no package. | Test (TC-490) |
+| FR-110-AC-6 | A unit with three header profiles, the `root` selection under alias `v`, the `ieee_profile` row's identity under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the `root` selection under two aliases compiles. | Test (TC-490) |
+| FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` hold the layer and every layer its `requires` closure names and no layer that requires it. | Test (TC-490) |
+| FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
 
 ## Dependencies
 
@@ -161,27 +191,20 @@ unchanged.
   whose assembler resolves each `using` alias to a header profile
   (FR-091-AC-22) after this resolution.
 - QSpec `proposals/quire-v1/definitions/complete-value-lock.json` (the
-  catalog rows), `native-diagnostics.md` (the codes and causes) and
-  FR-322 (the lock members).
+  catalog rows and `header_selectable_layers` rows), `native-diagnostics.md`
+  (the codes and causes) and FR-322 (the lock members).
+- QSpec FR-453 and QSpec FR-001 (header selection of each layer and its
+  restricted admission).
 
 ## Status
 
-Implemented and backed by the
+Implemented, apart from the remaining work below, and backed by the
 TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
 `qsl-replay/src/spine.rs`).
 
-Spine sources declared the placeholder header
-`profile v = "quire.value.complete/v1" version "1" digest "sha256:aaaa…"`,
-which this requirement refuses as `revision-mismatch`. The updates:
-
-- **The implementing change** updated every source a spine compile reads
-  to the `root` row's revision value and digest, and kept `make ci` green:
-  `tests/fixtures/spine-compile.native`, `spine-model.native` and
-  `spine-run.native`; `tests/it/compile_command.rs` and
-  `tests/it/spine_run.rs`; and `qsl-replay`'s `spine.rs` tests,
-  `spine/call/tests.rs`, `spine/dependency_tests.rs` and
-  `execute/tests.rs`. Sources that stop before E3 (the S1, S2, formatter,
-  assembler and emitter unit tests) keep the placeholder. It also rewrote
-  the `CatalogEntry::digest` doc (`value/definition.rs`), which
-  said no reader verifies the digest; FR-110 reads the `root` digest.
-- **Dependency on the A05 lane.** `FR-108:51` and TC-452 step 4 moved to the `root` row.
+Remaining work: the implementation still parses a header's `version` and
+`digest` and compares them with the `root` row. AC-5 states the behavior: a
+header profile is `profile <alias> = "<identity>";` and resolves by identity
+alone. Layer
+selection (AC-7, AC-8) and AC-1's layer-closure lock rows are not yet
+implemented.

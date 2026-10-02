@@ -278,6 +278,20 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-340
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-341
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-342
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-343
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-344
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-345
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-034
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -462,6 +476,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-028](usecase/US-028-trust-one-definition-per-canonical-type.md) | US | Draft |
 | [US-015](usecase/US-015-check-a-temporal-property-over-every-behaviour-of-a-model.md) | US | Draft |
 | [US-033](usecase/US-033-write-unbounded-temporal-claims-and-unbounded-declarations.md) | US | Draft |
+| [US-034](usecase/US-034-catch-a-refinement-regression-across-revisions-and-profiles.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -579,7 +594,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-107](functional/FR-107-evaluate-state-clauses-at-s6a.md) | FR | Specified: S6a `ProtocolClause` clause evaluation over admitted observations; not yet implemented -- TC-466, TC-467 planned |
 | [FR-108](functional/FR-108-run-the-configversion-spine-corpus.md) | FR | Specified: the ConfigVersion spine corpus with native-equal typed dispositions (QSpec FR-180-AC-1, AC-4, AC-5, QSL's share); AC-1 to AC-6 implemented -- TC-469 covered |
 | [FR-109](functional/FR-109-run-a-state-clause-through-the-spine.md) | FR | Specified: layer-6 `qsl_replay::spine::run_clause` beside FR-100's `run`, reusing FR-100's argument binding and outcome mapping: compile, select, admit, evaluate, report; not yet implemented -- TC-468 planned |
-| [FR-110](functional/FR-110-resolve-header-profile-selections-at-e3.md) | FR | Specified: E3 resolves header profile selections against the `DefinitionLock` catalog (`root` row exactly, else `unknown_profile` or `stale_dependency`); model selections through I1; the header-selection successor FR-087-AC-7 waits on; implemented, backed by TC-490 |
+| [FR-110](functional/FR-110-resolve-header-profile-selections-at-e3.md) | FR | Specified: E3 resolves header profile selections by identity against the `DefinitionLock` catalog's header-selectable layers (QSpec FR-453), else `unknown_profile`; S3 admits each declaration under its layer's admitted-form set (AC-7, AC-8); model selections through I1; the header-selection successor FR-087-AC-7 waits on; partly implemented, backed by TC-490 |
 | [FR-111](functional/FR-111-link-a-complete-v1-definition-bundle.md) | FR | Specified (ruling 2026-09-26): layer-3 `library::bundle` links root definitions over a caller-supplied catalog into a complete-V1 bundle (closure, cycle, facets, capabilities, limits, identity), keeping QSpec FR-131-AC-1..3 and FR-339-AC-3 backed; implemented today inside `resolve_source_package`, since moved -- TC-491 planned |
 | [FR-112](functional/FR-112-build-protocol-scoped-anchor-forms.md) | FR | Specified (ADR-012 §12.2): S2 `ScopedAnchorForm { scope, anchor }` per protocol node reference; not yet implemented -- TC-510 planned |
 | [FR-113](functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md) | FR | Specified: S3 scoped anchor resolution through nested control scopes; `missing_declaration`, `ambiguous_declaration` and `ill_typed` refusals for missing, duplicate, shadowing and wrong-kind names; not yet implemented -- TC-511, TC-512 planned |
@@ -625,6 +640,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-334](functional/FR-334-key-collection-types-by-the-root-definitions-identity-preimage.md) | FR | Specified: collection and population nodes keyed by the root definitions' identity preimage, with bound presence in node identity and `package_id` (ADR-014 N-1, N-2); not yet implemented -- TC-844 planned |
 | [FR-335](functional/FR-335-settle-a-claim-over-an-unbounded-declaration.md) | FR | Specified: end-to-end settlement of a claim over an unbounded declaration: `unsupported` warned, `requires-bound`, a separate bounded item, or `unbounded-extent` (ADR-014 §4, §6, §10); not yet implemented -- TC-845 planned |
 | [FR-336](functional/FR-336-bound-a-model-subject-by-its-universes.md) | FR | Specified: a model subject is finite only by its universes and declared domains, never by a proof bound; universes bind the obligation identity and leave the requirement record unchanged (ADR-018 §1, EN-1 pre-check); not yet implemented -- TC-846 planned |
+| [FR-340](functional/FR-340-run-the-spec-versioning-refinement-gate-over-a-corpus.md) | FR | Specified (ADR-017 RF-2): `xtask refinement versioning` reads a corpus of revision pairs, each a `pair.json` naming both units, packages, dependencies and cases, refuses a malformed pair as one tool failure, and runs every case through `run_clause` against both revisions; not yet implemented -- TC-860, TC-864 planned |
+| [FR-341](functional/FR-341-classify-a-spine-compile-result-for-a-refinement-gate.md) | FR | Specified (ADR-017 RF-2): one classification of a spine `compile` result into admitted, refused, prohibited, unsupported, incomplete or tool failure, reading every cause; shared by both refinement gates; not yet implemented -- TC-861 planned |
+| [FR-342](functional/FR-342-classify-a-clause-run-disposition-for-a-refinement-gate.md) | FR | Specified (ADR-017 RF-2): one classification of a `ClauseDisposition` into a refinement class with its stage; not yet implemented -- TC-862 planned |
+| [FR-343](functional/FR-343-compare-prior-and-superseding-classes-per-case.md) | FR | Specified (ADR-017 RF-2): the per-case comparison of the prior and superseding classes into holds, regression, unresolved, not applicable or tool failure; not yet implemented -- TC-863 to TC-865 planned |
+| [FR-344](functional/FR-344-report-a-refinement-gate-verdict-and-exit.md) | FR | Specified (ADR-017 RF-4): the refinement gate report, ordered and byte-deterministic, every regression listed, the verdict and QSpec FR-301 exit code; not yet implemented -- TC-864 to TC-866 planned |
+| [FR-345](functional/FR-345-run-the-profile-layering-refinement-gate.md) | FR | Specified (ADR-017 RF-3): `xtask refinement layering` compares a parent and child layer's compile classes per two-unit case over all five QSpec AD-003 `requires` edges, and checks each layer admits its witness and prohibits its child's distinguishing form (QSpec FR-453); not yet implemented -- TC-867 and TC-868 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

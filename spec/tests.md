@@ -236,7 +236,7 @@ names different artifacts in each.
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally for steps 1 to 6, step 6 being a predicate whose body calls another declared function (the QSL-22 Layer 3 exemplar's shape); step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) passes locally; step 5's whitespace-only authority passes with `invalid_source_identity`, cause `blank-label` and `label` `authority` |
 | TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended) |
-| TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-4, FR-110-AC-5, FR-110-AC-6 | ✅ Implemented |
+| TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8 | 🚧 Partial; step 4 waits on the code change; step 1's layer-closure rows and steps 6-7 (layer selection) planned |
 | TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ Passed locally: `library::bundle_tests`, keeping the `QSpec-FR-131`/`QSpec-FR-339` tags |
 | TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | ✅ Passed locally |
 | TC-451 | Spine run binds arguments by name and maps each outcome and refusal to its exit code | Integration | P1 | FR-100-AC-4, FR-100-AC-5, FR-100-AC-6 | ✅ Passed locally |
@@ -327,6 +327,15 @@ names different artifacts in each.
 | TC-846 | A model subject is finite by its universes, apart from proof bounds | Integration | P1 | FR-336-AC-1, FR-336-AC-2, FR-336-AC-3, FR-336-AC-4 | 🚧 Planned |
 | TC-847 | An undefined letter fails a clause over a supplied trace or lasso, and replays | Integration | P1 | FR-327-AC-5, FR-328-AC-5, FR-329-AC-6, FR-330-AC-5, FR-331-AC-4 | 🚧 Planned |
 | TC-848 | A fairness premise over a supplied trace is missing, and the clause settles unsupported | Integration | P1 | FR-328-AC-6, FR-329-AC-7, FR-330-AC-6 | 🚧 Planned |
+| TC-860 | The spec-versioning gate reads each pair, refuses a malformed one, and runs every case against both revisions | Integration | P1 | FR-340-AC-1, FR-340-AC-2, FR-340-AC-3, FR-340-AC-4, FR-340-AC-5 | 🚧 Planned |
+| TC-861 | Spine compile results classify into exactly one refinement class, reading every cause | Unit | P1 | FR-341-AC-1, FR-341-AC-2, FR-341-AC-3, FR-341-AC-4, FR-341-AC-5, FR-341-AC-6 | 🚧 Planned |
+| TC-862 | Clause-run dispositions classify into one refinement class with their stage | Unit | P1 | FR-342-AC-1, FR-342-AC-2, FR-342-AC-3, FR-342-AC-4, FR-342-AC-5 | 🚧 Planned |
+| TC-863 | The versioning comparison returns the table's result for every class pair | Unit | P1 | FR-343-AC-1 | 🚧 Planned |
+| TC-864 | A seeded spec-versioning regression fails the gate naming exactly that case | Integration | P1 | FR-340-AC-6, FR-343-AC-2, FR-343-AC-3, FR-343-AC-4, FR-344-AC-5 | 🚧 Planned |
+| TC-865 | An unsupported or incomplete superseding run is unresolved, never holds, and names its limit | Integration | P1 | FR-343-AC-5, FR-344-AC-4 | 🚧 Planned |
+| TC-866 | The refinement report orders every result, lists every regression, and gives FR-301's verdict and exit | Unit | P1 | FR-344-AC-1, FR-344-AC-2, FR-344-AC-3, FR-344-AC-6, FR-344-AC-7 | 🚧 Planned |
+| TC-867 | The layering comparison returns the table's result for every parent and child class | Unit | P1 | FR-345-AC-1, FR-345-AC-2, FR-345-AC-3 | 🚧 Planned |
+| TC-868 | A seeded profile-layering regression fails the gate naming the case and its edge | Integration | P1 | FR-345-AC-4, FR-345-AC-5, FR-345-AC-6, FR-345-AC-7, FR-345-AC-8, FR-345-AC-9 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -760,3 +769,16 @@ declaration (FR-335) and a model subject's universes (FR-336). TC-835 to
 TC-846 back every AC, with TC-847 (undefined letters) and TC-848 (the
 missing fairness premise), all `🚧 Planned`. TC-842 and TC-845 run downstream
 of CG `negotiate_*` with test descriptors.
+
+## Refinement gates (FR-340 to FR-345) coverage
+
+FR-340 to FR-345 carry ADR-017 §2: the spec-versioning gate's corpus and
+case runs (FR-340), the shared compile classification (FR-341), the run
+classification (FR-342), the prior/superseding comparison (FR-343), the
+report, verdict and exit (FR-344), and the profile-layering comparison
+(FR-345). TC-860 to TC-868 back every AC; all are `🚧 Planned`. Each
+expected class, result and verdict is a literal in its test, never computed
+with the gate's classification or comparison code. The seeds and controls
+live in a test-only corpus the gate's real run over
+`tests/fixtures/refinement/versioning/` does not read. TC-868's corpus
+covers all five QSpec AD-003 `requires` edges (QSpec FR-453).
