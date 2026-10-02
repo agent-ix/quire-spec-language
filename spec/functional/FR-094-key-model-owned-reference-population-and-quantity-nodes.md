@@ -248,7 +248,18 @@ domain:
 - **Declared unit.** The type node is the unit's QSpec nominal node
   (`scalar_type` / `unit`, `quire.unit-node/v1`, FR-092 rule 1). It is the
   quantity's `semantic_type`, `result_type` and literal `type` directly. No
-  other node stands for the quantity type.
+  other node stands for the quantity type. `check` builds it, and every
+  dimension and unit node it names (its dimension, that dimension's base
+  dimensions, its target units), from the admitted node the unit table
+  holds for each, keyed by its admitted preimage bytes, as QSpec's nominal
+  fixtures spell them: the preimage's qualified name as `declaration`, with
+  a `declaration` occurrence at the declared name, an empty `aggregate`
+  body, a unit typed by its dimension and a dimension self-typed. A
+  compound unit's root units are built the same way. The node carries its
+  nominal preimage when that preimage, rebuilt under the checked unit's own
+  `SourceOwner`, has the admitted bytes; a node another owner declares
+  carries none, and the emission omits it as a nominal node whose owner
+  the lock does not select.
 - **Compound unit.** The type node is `scalar_type` / `compound_unit`, its own
   semantic type, with no `declaration` and no `owner`. Its body is an
   `aggregate` of one term per compound-unit term, in the order of the unit's
@@ -284,6 +295,8 @@ yield no key for the node that needs it:
 - a `DeclarationKey` whose `package` is no admitted domain package's
   identity, or whose `node` is empty;
 - a compound `UnitId` that the check stage's unit scope does not hold;
+- a declared unit, or a dimension or unit a held unit names, whose nominal
+  preimage the unit table does not hold;
 - a domain package record kind that no checked node names.
 
 Type admission refuses an unknown `Reference` target for a source-compiled
@@ -685,7 +698,8 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 | FR-094-AC-4 | With `r: Reference<M::Order>` at level 1, `deref(r).total` lowers to E7 and E8, whose `field` member names M1 and `total`, and `r.size()` keys to E9, whose `operation` member names M1 and `size`. `deref(s).total` and `s.size()` over `s: Reference<M::Sub>` (R4) name `Sub`'s model node M5, not M1. | Test (TC-417) |
 | FR-094-AC-5 | `checked_dispatch_operation` for `Order.size` with the authored precondition `true` and the body `7`, and receiver parameter `self: Reference<M::Order>` (P7), builds clause functions keyed C1 and C2. Under `acme/orders` `2.0.0`, the receiver parameter keys to P9 over R2 and the precondition to C3, which references P9. The same precondition authored on `Order.count` keys to C4. When `Sub.size` redefines `Order.size` with the authored precondition `false` and receiver `self: Reference<M::Sub>` (P8), its authored precondition keys to C5 and its effective precondition `false or true` (E10) to C6, whose owner is `Sub.size`, while `Order.size`'s authored function keeps C1. Each preimage carries `ModelOwner` and `declaration` `null`. Rebuilding with a different synthesized label gives the same keys, and building `Sub.size`'s clauses from both dispatch operations gives one node each. | Test (TC-418) |
 | FR-094-AC-6 | With `a` a quantity of QSpec's declared unit `metre` and `t` one of `second`, `a`'s parameter has semantic type `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, QSpec's `unit-metre` key, and the graph holds no `compound_unit` node for it. In a function body, the result type of `a * a` keys to U1. The compound units that `value::quantity::result_unit` forms for `a / t`, `a / a` and `(a * a) / a`, held in the check stage's unit scope, key to U2, U3 and U4. U2's first term names metre, and U4 differs from the `metre` unit key. | Test (TC-419) |
-| FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
+| FR-094-AC-7 | Keying a `Reference` whose `EffectiveId` is no `type_identities` value, a `DeclarationKey` whose `package` is no admitted identity, a `DeclarationKey` whose `node` is empty, a compound `UnitId` the unit scope does not hold, a declared unit for which the unit table holds no admitted node (a table built from the graph's units without `UnitTable::declared`), and a field member record reaching the record-kind `match` each refuses as an internal fault naming that value, and yields no key. | Test (TC-417, TC-419) |
+| FR-094-AC-8 | Under a unit graph its own source declares, with base dimensions `Length` and `Time`, the derived dimension `Velocity = Length / Time`, root units `metre`, `second` and `mps` (of `Velocity`) and `km = 1000 × metre`, a record `Trip{d: km, v: mps}` is emitted with no node omitted. The `km` node depends on `Length` and `metre` and its preimage targets `metre` with scale `1000`; the `Velocity` node depends on `Length` and `Time` and its preimage holds both terms; `mps` is typed by `Velocity`; and IR's checked-package/v2 reader admits the package. | Test (TC-419) |
 
 ## Dependencies
 
@@ -719,11 +733,12 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 Specified, with C3's receiver (P9) and AC-6's quotient units
 corrected. Implemented (#384):
 `qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
-`Reference`, `Population`, clause-function and quantity type nodes, `check`
+`Reference`, `Population`, clause-function and quantity type nodes, and
+builds each declared unit's and dimension's nominal node, `check`
 records the model correspondence, `check::checked_dispatch_operation` gives
 each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
 scope keeps its formed units until lowering has keyed them. TC-417, TC-418
-and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there. ADR-012 §4.3
+and TC-419 back AC-1 to AC-7, CON-1 and CON-2 there; AC-8 is backed in `qsl-package/src/emit/extent_agreement.rs`. ADR-012 §4.3
 places an operation's postconditions with `ProtocolClause`, so the clause functions
 this requirement keys are exactly the invariant, precondition and body
 functions `DeclaredClauseKind` names. AC-5's `2.0.0` half asserts P9 and

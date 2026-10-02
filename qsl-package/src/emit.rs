@@ -48,10 +48,10 @@
 //!
 //! A node whose (`node_tag`, `semantic_form`) IR's v2 vocabulary does not
 //! hold is omitted. So is a node that names a node the checked graph does
-//! not hold (a declared unit node, which lowering names by key but does not
-//! build, so a `scalar_type`/`compound_unit` node over one), a nominal node
-//! whose owner the lock does not select, and every node that names an
-//! omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
+//! not hold, a nominal node whose owner the lock does not select (a
+//! definition-owned unit or dimension node, so a
+//! `scalar_type`/`compound_unit` node over one), and every node that names
+//! an omitted one. Every other node is written (FR-062-AC-9: all-or-nothing
 //! over the nodes a node names), `value`/`parameter` nodes and
 //! recursion-group application nodes included (IR-280, IR-242).
 //! [`Emission::omitted`] lists each omitted node and its cause.
@@ -74,13 +74,14 @@ use quire_contract_model::{
     CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
     CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
-    CheckedRevision, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
-    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRegion,
-    NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2, DOMAIN_PACKAGE_DIGEST,
-    PACKAGE_DOMAIN_V2,
+    CheckedRational, CheckedRevision, CheckedSelection, CheckedSelectionRole,
+    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2,
+    DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
 use serde::Serialize;
 
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
 use qsl_semantics::check::{CheckedGraph, NodeTag, NominalNode, SemanticNode, SemanticTerm};
@@ -90,7 +91,7 @@ use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
     Member, NodeOwner,
 };
-use quire_exact::{NodeKey, Origin, NODE_KEY_DOMAIN};
+use quire_exact::{Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IDENTITY_LIMITS;
 
@@ -338,10 +339,13 @@ struct Candidate<'g> {
     /// The occurrences `check` recorded for the node, each with the
     /// location it was recorded at.
     occurrences: Recorded<'g>,
+    /// The QSpec nominal preimage the node is keyed by, when it is nominal.
+    nominal: Option<NominalIdentityPreimage>,
 }
 
 impl<'g> Candidate<'g> {
     fn of(node: &'g SemanticNode, occurrences: Recorded<'g>) -> Self {
+        let nominal = nominal_preimage(node);
         let id = node_id(node.key());
         // A self-typed node names itself as its semantic type (FR-322).
         let semantic_type = node_id(node.semantic_type().unwrap_or(node.key()));
@@ -354,10 +358,26 @@ impl<'g> Candidate<'g> {
         if node.node_tag() == NodeTag::BoundedDomain {
             dependencies.insert(semantic_type.clone());
         }
-        // QSpec's `quire.enum-member-node/v1` rule: an enum member node
-        // depends on its declaration.
-        if let Some(NominalNode::EnumMember { declaration, .. }) = node.nominal() {
-            dependencies.insert(node_id(*declaration));
+        // FR-093 rule 4, QSpec's nominal joins: an enum member node depends
+        // on its declaration, a dimension on its base dimensions, and a unit
+        // on its dimension and target unit.
+        match &nominal {
+            Some(NominalIdentityPreimage::EnumMember(member)) => {
+                dependencies.insert(member.declaration_node_id.clone());
+            }
+            Some(NominalIdentityPreimage::Dimension(dimension)) => {
+                dependencies.extend(
+                    dimension
+                        .terms
+                        .iter()
+                        .map(|term| term.dimension_node_id.clone()),
+                );
+            }
+            Some(NominalIdentityPreimage::Unit(unit)) => {
+                dependencies.insert(unit.dimension_node_id.clone());
+                dependencies.extend(unit.target_unit_node_id.clone());
+            }
+            Some(NominalIdentityPreimage::EnumDeclaration(_)) | None => {}
         }
         let mut names = dependencies.clone();
         names.extend(annotations);
@@ -372,6 +392,7 @@ impl<'g> Candidate<'g> {
             names,
             laws,
             occurrences,
+            nominal,
         }
     }
 
@@ -430,7 +451,7 @@ impl<'g> Candidate<'g> {
                 .map(|(occurrence, _)| occurrence.clone())
                 .collect(),
             recursion_group: node.recursion().map(|group| group.label().into()),
-            nominal_identity_preimage: node.nominal().map(nominal_preimage),
+            nominal_identity_preimage: self.nominal.clone(),
             declaration: node.declaration().map(|segments| CheckedDeclaration {
                 qualified_name: segments
                     .iter()
@@ -442,10 +463,13 @@ impl<'g> Candidate<'g> {
     }
 }
 
-/// The node's QSpec nominal preimage as the v2 wire writes it.
-fn nominal_preimage(nominal: &NominalNode) -> NominalIdentityPreimage {
-    match nominal {
-        NominalNode::EnumDeclaration(preimage) => NominalIdentityPreimage::EnumDeclaration(
+/// The node's QSpec nominal preimage as the v2 wire writes it, or `None`
+/// for a node that is not nominal or whose owner the check did not read
+/// back.
+fn nominal_preimage(node: &SemanticNode) -> Option<NominalIdentityPreimage> {
+    let preimage = match node.nominal() {
+        None => return None,
+        Some(NominalNode::EnumDeclaration(preimage)) => NominalIdentityPreimage::EnumDeclaration(
             quire_contract_model::EnumDeclarationPreimage {
                 owner: nominal_owner(preimage.owner()),
                 qualified_declaration: preimage
@@ -461,12 +485,60 @@ fn nominal_preimage(nominal: &NominalNode) -> NominalIdentityPreimage {
                     .collect(),
             },
         ),
-        NominalNode::EnumMember { declaration, case } => {
+        Some(NominalNode::EnumMember { declaration, case }) => {
             NominalIdentityPreimage::EnumMember(quire_contract_model::EnumMemberPreimage {
                 declaration_node_id: node_id(*declaration),
                 case: case.as_str().into(),
             })
         }
+        Some(NominalNode::Dimension(Some(preimage))) => {
+            NominalIdentityPreimage::Dimension(quire_contract_model::DimensionPreimage {
+                owner: nominal_owner(preimage.owner()),
+                qualified_declaration: qualified(preimage.qualified_declaration()),
+                terms: preimage
+                    .terms()
+                    .iter()
+                    .map(|(base, exponent)| quire_contract_model::DimensionTerm {
+                        dimension_node_id: wire_id(*base),
+                        exponent: exponent.to_string().into(),
+                    })
+                    .collect(),
+            })
+        }
+        Some(NominalNode::Unit(Some(preimage))) => {
+            let rational = |(numerator, denominator): (&Integer, &Integer)| CheckedRational {
+                numerator: numerator.to_string().into(),
+                denominator: denominator.to_string().into(),
+            };
+            NominalIdentityPreimage::Unit(quire_contract_model::UnitPreimage {
+                owner: nominal_owner(preimage.owner()),
+                qualified_declaration: qualified(preimage.qualified_declaration()),
+                dimension_node_id: wire_id(preimage.dimension()),
+                target_unit_node_id: preimage.target().map(wire_id),
+                scale: rational(preimage.scale()),
+                offset: rational(preimage.offset()),
+            })
+        }
+        // Another owner's dimension or unit: the emission omits it
+        // (`owner_is_locked`), so no preimage is written for it.
+        Some(NominalNode::Dimension(None) | NominalNode::Unit(None)) => return None,
+    };
+    Some(preimage)
+}
+
+/// A nominal preimage's qualified declaration as the wire spells it.
+fn qualified(segments: &[String]) -> Vec<Box<str>> {
+    segments
+        .iter()
+        .map(|segment| segment.as_str().into())
+        .collect()
+}
+
+/// The wire id of a node a nominal preimage names by id.
+fn wire_id(id: WireNodeId) -> CheckedNodeId {
+    CheckedNodeId {
+        domain: NODE_KEY_DOMAIN.into(),
+        digest: id.to_string().into(),
     }
 }
 
@@ -501,15 +573,18 @@ fn nominal_owner(owner: &NodeOwner) -> NominalOwner {
 /// that owner is the checked unit's `source`, the one lock entry it can
 /// always join (FR-322).
 fn owner_is_locked(nominal: Option<&NominalNode>, source: &RawSourceRef) -> bool {
-    match nominal {
-        None | Some(NominalNode::EnumMember { .. }) => true,
-        Some(NominalNode::EnumDeclaration(preimage)) => matches!(
-            preimage.owner(),
-            NodeOwner::Source(subject)
-                if subject.authority == source.authority()
-                    && subject.identity == source.identity()
-        ),
-    }
+    let owner = match nominal {
+        None | Some(NominalNode::EnumMember { .. }) => return true,
+        Some(NominalNode::Dimension(None) | NominalNode::Unit(None)) => return false,
+        Some(NominalNode::EnumDeclaration(preimage)) => preimage.owner(),
+        Some(NominalNode::Dimension(Some(preimage))) => preimage.owner(),
+        Some(NominalNode::Unit(Some(preimage))) => preimage.owner(),
+    };
+    matches!(
+        owner,
+        NodeOwner::Source(subject)
+            if subject.authority == source.authority() && subject.identity == source.identity()
+    )
 }
 
 /// Which candidates the wire omits, and why: an unsupported form, a

@@ -18,15 +18,18 @@ use std::collections::BTreeMap;
 
 use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
-use super::{refuse, Lowering};
+use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
+use crate::check::family::OccurrenceRole;
 use crate::check::node_key::{ModelOwner, NodeTag, Owner, SemanticTerm};
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::EffectiveView;
+use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use qsl_forms::DeclaredClauseKind;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::QuantityUnit;
+use quire_semantic_value::unit::{NominalDeclaration, NominalUnitForm};
 
 /// One admitted domain package, as `check` keys its declarations (FR-094
 /// "Inputs"): its model selection, its records by declaration key, and
@@ -400,14 +403,19 @@ impl<'a> Lowering<'a> {
     }
 
     /// A quantity's type node: a declared unit's nominal node, or a
-    /// compound unit's `scalar_type`/`compound_unit` node.
+    /// compound unit's `scalar_type`/`compound_unit` node. Either way the
+    /// graph then holds every unit and dimension node the type names.
     pub(super) fn quantity_type(
         &mut self,
         unit: UnitId,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         match unit.domain() {
-            UnitDomain::Declared => Ok(NodeKey::from_digest(*unit.as_bytes())),
+            UnitDomain::Declared => {
+                let key = NodeKey::from_digest(*unit.as_bytes());
+                self.unit_nodes(key, location)?;
+                Ok(key)
+            }
             UnitDomain::Compound => {
                 let terms: Vec<(NodeKey, Integer)> = match self.units.get(unit) {
                     Some(QuantityUnit::Compound(compound)) => compound
@@ -420,6 +428,7 @@ impl<'a> Lowering<'a> {
                 };
                 let mut members = Vec::with_capacity(terms.len());
                 for (root, exponent) in terms {
+                    self.unit_nodes(root, location)?;
                     let exponent = self.integer_literal(exponent, location)?;
                     members.push(SemanticTerm::Aggregate {
                         members: vec![
@@ -438,6 +447,87 @@ impl<'a> Lowering<'a> {
                 )
             }
         }
+    }
+
+    /// FR-094, FR-092 rule 1: add the declared unit node `unit` to the
+    /// graph, and every node it names: its dimension, that dimension's base
+    /// dimensions and its target units. Each is built from the admitted node
+    /// the unit table holds for it, keyed by its admitted preimage bytes, as
+    /// QSpec's `scalar_type`/`unit` or `scalar_type`/`dimension` node: its
+    /// preimage's qualified name as its `declaration`, with a `declaration`
+    /// occurrence at that declared name, an empty body, and a unit typed by
+    /// its dimension. Its nominal preimage is rebuilt under the checked
+    /// unit's own source owner and kept when its bytes are the admitted ones;
+    /// a node another owner declares keeps none. A node already in the graph
+    /// is left as it is. The walk is a heap work list, bounded by the unit
+    /// table's size.
+    fn unit_nodes(&mut self, unit: NodeKey, location: &Location) -> Result<(), CheckRefusal> {
+        let owner = self.owner.node_owner();
+        let mut pending = vec![unit];
+        while let Some(key) = pending.pop() {
+            if self.graph.nodes.contains_key(&key) {
+                continue;
+            }
+            let Some(node) = self.units.nominal_node(key.as_bytes()).cloned() else {
+                return Err(fault(location, KeyFault::UnheldNominal(key)));
+            };
+            let NominalDeclaration {
+                qualified_declaration: qualified,
+                preimage: bytes,
+            } = node.declaration;
+            let site = type_declaration(&qualified.join("."));
+            let own = |rebuilt: Result<Vec<u8>, _>| rebuilt.is_ok_and(|rebuilt| rebuilt == bytes);
+            let (semantic_form, semantic_type, nominal) = match node.form {
+                NominalUnitForm::Unit {
+                    dimension,
+                    target,
+                    scale,
+                    offset,
+                } => {
+                    pending.push(dimension);
+                    pending.extend(target);
+                    let preimage = UnitPreimage::new(
+                        owner.clone(),
+                        qualified.clone(),
+                        dimension,
+                        target,
+                        &scale,
+                        &offset,
+                    )
+                    .ok()
+                    .filter(|preimage| own(preimage.preimage_bytes()));
+                    ("unit", Some(dimension), NominalNode::Unit(preimage))
+                }
+                NominalUnitForm::Dimension { terms } => {
+                    pending.extend(terms.iter().map(|(base, _)| *base));
+                    let preimage = DimensionPreimage::new(owner.clone(), qualified.clone(), terms)
+                        .ok()
+                        .filter(|preimage| own(preimage.preimage_bytes()));
+                    ("dimension", None, NominalNode::Dimension(preimage))
+                }
+            };
+            let declaration = identifiers(qualified.iter().map(String::as_str), &site)?;
+            let inserted = self.insert_nominal(
+                &site,
+                key,
+                bytes,
+                NodeContent {
+                    node_tag: NodeTag::ScalarType,
+                    semantic_form,
+                    semantic_type,
+                    declaration: Some(declaration),
+                    owner: None,
+                    body: SemanticTerm::Aggregate {
+                        members: Vec::new(),
+                    },
+                },
+                nominal,
+            )?;
+            if inserted {
+                self.record(key, OccurrenceRole::Declaration, site);
+            }
+        }
+        Ok(())
     }
 
     /// A clause function's `ModelOwner` and trailing `clause` binding.

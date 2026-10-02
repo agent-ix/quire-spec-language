@@ -99,10 +99,11 @@ an unbounded population its own node, lowering one refuses with
 `Flags`, `RangedTree` and `Mixed`, which depend on IR's `requires-bound`
 being position-sensitive and requiring a bound for a recursive type. For
 `RangedTree`, IR's first unbounded node is a member of the recursion group
-of the root QSL names `Recursive`. A
-quantity fixture is not compared: the emitter omits a record whose field
-names a declared unit node, because lowering does not build that node; its
-agreement test is ignored. FR-097-AC-6's per-application-node agreement
+of the root QSL names `Recursive`. The
+quantity fixture `Measure` is emitted with its unit and dimension nodes
+and IR reads and lowers it, but they disagree: QSL classifies it
+`Unbounded`, and IR's `requires-bound` treats a unit type as needing no
+bound (IR-450), so its agreement test is ignored. FR-097-AC-6's per-application-node agreement
 (TC-440 step 4) passes: IR lowers the inner `+` of `(x + 1) + n` and
 requires a bound for the outer `+`, and the records outside the agreement
 have their extents asserted.

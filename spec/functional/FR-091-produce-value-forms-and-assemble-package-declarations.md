@@ -512,10 +512,10 @@ from their parts, with node keys for the nodes they reference, beside
 so a refusal from a constructor or from `admit` is a nominal-admission
 fault, carried with the span of the first dimension or unit form.
 
-The assembler stops at the admitted `UnitGraph`. Keeping each dimension's
-and unit's preimage through `Unit` and `UnitGraph`, and lowering the
-`quire.dimension-node/v1` and `quire.unit-node/v1` nodes, is QSL-238's unit
-half; lowering quantity type nodes is QSL-247.
+The assembler stops at the admitted `UnitGraph`, which keeps each
+dimension's and unit's preimage bytes; `UnitTable::declared` carries them
+to lowering, which builds the `quire.dimension-node/v1` and
+`quire.unit-node/v1` nodes a quantity type names (FR-094).
 
 **Dimension and unit key vectors.** Owner
 `{kind: "source", authority: "a", identity: "u"}`, each
@@ -799,10 +799,8 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
   building an admitted `EnumBinding`'s declaration and member nodes from
   its preimage (FR-092 rule 1, QSL-238's enum half).
 - The dimension and unit hand-off: the assembler ends at an admitted
-  `UnitGraph` in `PackageDeclarations::units`; keeping each unit's and
-  dimension's preimage through `Unit` and `UnitGraph` and lowering the
-  `quire.dimension-node/v1` and `quire.unit-node/v1` nodes is QSL-238's
-  unit half; lowering quantity type nodes is QSL-247.
+  `UnitGraph` in `PackageDeclarations::units`, which keeps each unit's and
+  dimension's preimage bytes; FR-094's lowering builds their nodes.
 - STD-112 (QSpec catalog causes for unit-graph topology errors) and
   STD-113 (a quantity type reference in complete-V1 source).
 - Resolving a selection's definition reference against the library lock is
@@ -851,9 +849,8 @@ Remaining work:
 - AC-35's catalog code waits on STD-112 (FR-091-OQ-12). Until QSpec
   publishes the topology causes the topology cause reports
   `invalid_package` with the informational cause `unit-graph-topology`.
-  The hand-off to QSL-238 (retaining preimages through `Unit` and
-  `UnitGraph`, lowering) and QSL-247 (quantity type nodes) is under
-  Dependencies.
+  The hand-off to FR-094's lowering of the unit and dimension nodes is
+  under Dependencies.
 - The other families' parsed-form types are not built: the state family's
   under QSL-67, and the others under QSL-45, QSL-44, QSL-43, QSL-42,
   QSL-40, QSL-39 and QSL-36.

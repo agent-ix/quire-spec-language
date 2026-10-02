@@ -616,6 +616,9 @@ pub enum KeyFault {
     UnnamedRecordKind(crate::model::key::DeclarationKey),
     /// A compound `UnitId` the check stage's unit scope does not hold.
     UnheldUnit(quire_exact::UnitId),
+    /// A declared unit node, or a dimension or target unit node a held unit
+    /// names, whose nominal preimage the unit table does not hold.
+    UnheldNominal(quire_exact::NodeKey),
     /// A `Population<T>[N]`-typed node whose object type `T` no population
     /// binding names.
     UntargetedPopulation,
@@ -670,6 +673,7 @@ impl KeyFault {
             Self::UnknownDeclaration(_) => "declaration-record-present",
             Self::UnnamedRecordKind(_) => "record-kind-named",
             Self::UnheldUnit(_) => "compound-unit-held",
+            Self::UnheldNominal(_) => "unit-nominal-preimage-held",
             Self::UntargetedPopulation => "population-target-bound",
             Self::UnbuiltLiteral => "literal-kind-built",
             Self::UnknownComposite(_) => "composite-declared",

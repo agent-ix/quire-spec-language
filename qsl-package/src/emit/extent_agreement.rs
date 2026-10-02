@@ -18,11 +18,11 @@
 //! group requires a bound, so the recursive `RangedTree`, which ADR-014 §4
 //! classifies as unbounded by depth, agrees too.
 //!
-//! One fixture cannot be compared: a quantity (`Measure{len: metre}`). QSL
-//! classifies it unbounded and unboundable (ADR-014 §4), but the emitter
-//! omits the record, because it names the declared unit node lowering does
-//! not build (`NamesAbsentNode`). It sits in an ignored test that asserts
-//! agreement.
+//! A quantity record (`Measure{len: metre}`) is emitted with the `metre`
+//! unit and `Length` dimension nodes lowering builds (FR-094), and IR reads
+//! and lowers it. QSL classifies it unbounded and unboundable (ADR-014 §4);
+//! IR's `requires-bound` treats a unit type as needing no bound, so the
+//! agreement test over it is ignored until IR requires one.
 //!
 //! **Operation-application records** (FR-097-AC-6). QSL's requirement
 //! record is the authority for an operation-application claim's extent.
@@ -51,7 +51,7 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 
-use super::tests::{metre_units, METRE};
+use super::tests::source_metre_units;
 use super::tests::{nodes, source, whole_unit, wire};
 use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
 
@@ -316,28 +316,239 @@ fn both_sides(name: &str) -> (ClaimExtent, CompleteLoweringRecordV2, Value) {
     (extent, ir_lowering(&package, &ir_id), wire)
 }
 
-/// TC-440: agreement over a quantity record, `Measure{len: metre}`. Its
-/// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
-/// unboundable (ADR-014 §4).
+/// `Measure{len: metre}`, whose `metre` unit the fixture unit's own source
+/// declares, checked, emitted and read by IR's v2 reader: the environment,
+/// the wire, IR's package and `Measure`'s ids.
+fn emitted_measure() -> (
+    TypeEnvironment,
+    CompositeDeclaration,
+    Value,
+    Box<CheckedPackageV2>,
+    quire_exact::UnitId,
+) {
+    let (units, metre) = source_metre_units();
+    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
+    let types = TypeEnvironment::new([measure.clone()], [])
+        .expect("FR-143 admits Measure")
+        .with_units(units);
+    let (wire, package, omitted) = emit_and_read(types.clone());
+    assert!(omitted.is_empty(), "{omitted:?}");
+    (types, measure, wire, package, metre)
+}
+
+/// TC-440 (FR-097-AC-6, FR-094 "Quantity type nodes"): a record with a
+/// quantity field reaches IR. Lowering builds the `metre` unit node and its
+/// `Length` dimension node, so the emission omits nothing: it writes
+/// `Measure`, the unit node with its `quire.unit-node/v1` preimage, typed
+/// by and depending on the dimension node, and IR's v2 reader admits the
+/// package and lowers `Measure`.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-#[ignore = "the emitter omits a record naming a declared unit: lowering does not build the unit node (NamesAbsentNode), so Measure is never written for IR to compare"]
-fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
-    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
-    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
-    // `Flag` keeps the package non-empty when `Measure` is omitted.
-    let filler = record(11, "Flag", vec![("b", ValueType::Boolean)]);
-    let types = TypeEnvironment::new([measure.clone(), filler], [])
-        .expect("FR-143 admits Measure")
-        .with_units(metre_units());
-    let (wire, package, omitted) = emit_and_read(types.clone());
-    let written = nodes(&wire)
+fn tc_440_a_quantity_record_is_emitted_and_reaches_ir() {
+    let (_, _, wire, package, metre) = emitted_measure();
+    let metre_id = metre
+        .as_bytes()
         .iter()
-        .any(|node| node["declaration"]["qualified_name"] == json!(["Measure"]));
-    assert!(
-        written,
-        "Measure: not compared: the emitter omits it ({omitted:?})"
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let unit = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"]["digest"] == json!(metre_id))
+        .expect("the metre unit node is written");
+    assert_eq!(unit["node_tag"], json!("scalar_type"));
+    assert_eq!(unit["semantic_form"], json!("unit"));
+    let preimage = &unit["nominal_identity_preimage"];
+    assert_eq!(preimage["version"], json!("quire.unit-node/v1"));
+    assert_eq!(
+        preimage["qualified_declaration"],
+        json!(["Example", "metre"])
     );
+    let dimension = &preimage["dimension_node_id"];
+    assert_eq!(&unit["semantic_type"], dimension);
+    assert_eq!(unit["dependencies"], json!([dimension]));
+    let length = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"] == *dimension)
+        .expect("the Length dimension node is written");
+    assert_eq!(length["semantic_form"], json!("dimension"));
+    assert_eq!(
+        length["nominal_identity_preimage"]["version"],
+        json!("quire.dimension-node/v1")
+    );
+    let (ir_id, _) = declared(&wire, "Measure");
+    let lowering = ir_lowering(&package, &ir_id);
+    assert!(
+        matches!(
+            lowering,
+            CompleteLoweringRecordV2::Lowered { .. }
+                | CompleteLoweringRecordV2::RequiresBound { .. }
+        ),
+        "{lowering:?}"
+    );
+}
+
+/// A source-declared unit graph past roots over base dimensions: the base
+/// dimensions `Length` and `Time`, the derived dimension `Velocity = Length
+/// / Time`, the root units `metre`, `second` and `mps` (of `Velocity`), and
+/// `km = 1000 × metre`, a non-root unit. Each node is owned by the fixture
+/// unit's own source. Returns the table and the keys by name.
+fn velocity_units() -> (
+    quire_semantic_value::quantity::UnitTable,
+    std::collections::BTreeMap<&'static str, NodeKey>,
+) {
+    use qsl_semantics::value::{
+        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+        UnitPreimage,
+    };
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
+    let id =
+        |key: NodeKey| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": key.to_string()});
+    let mut keys = std::collections::BTreeMap::new();
+    let dimension = |name: &str, terms: Value| {
+        let preimage = DimensionPreimage::from_json(json!({
+            "version": "quire.dimension-node/v1",
+            "owner": owner,
+            "qualified_declaration": [name],
+            "terms": terms,
+        }))
+        .expect("a dimension");
+        let key = NodeKey::from_digest(preimage.digest().expect("the dimension digests"));
+        (preimage, key)
+    };
+    let length = dimension("Length", json!([]));
+    let time = dimension("Time", json!([]));
+    let mut velocity_terms = vec![
+        json!({"dimension_node_id": id(length.1), "exponent": "1"}),
+        json!({"dimension_node_id": id(time.1), "exponent": "-1"}),
+    ];
+    velocity_terms.sort_by_key(|term| term["dimension_node_id"]["digest"].to_string());
+    let velocity = dimension("Velocity", Value::Array(velocity_terms));
+    let unit = |name: &str, dimension: NodeKey, target: Option<NodeKey>, scale: &str| {
+        let preimage = UnitPreimage::from_json(json!({
+            "version": "quire.unit-node/v1",
+            "owner": owner,
+            "qualified_declaration": [name],
+            "dimension_node_id": id(dimension),
+            "target_unit_node_id": target.map(id),
+            "scale": {"numerator": scale, "denominator": "1"},
+            "offset": {"numerator": "0", "denominator": "1"},
+        }))
+        .expect("a unit");
+        let key = NodeKey::from_digest(preimage.digest().expect("the unit digests"));
+        (preimage, key)
+    };
+    let metre = unit("metre", length.1, None, "1");
+    let km = unit("km", length.1, Some(metre.1), "1000");
+    let second = unit("second", time.1, None, "1");
+    let mps = unit("mps", velocity.1, None, "1");
+    for (name, key) in [
+        ("Length", length.1),
+        ("Time", time.1),
+        ("Velocity", velocity.1),
+        ("metre", metre.1),
+        ("km", km.1),
+        ("second", second.1),
+        ("mps", mps.1),
+    ] {
+        keys.insert(name, key);
+    }
+    let selection: NodeOwner = serde_json::from_value(owner.clone()).expect("an owner");
+    let graph = admit_unit_graph(
+        [length, time, velocity],
+        [metre, km, second, mps],
+        &OwnerSelection::new([selection]),
+    )
+    .expect("the unit graph admits");
+    (
+        quire_semantic_value::quantity::UnitTable::declared(&graph),
+        keys,
+    )
+}
+
+/// FR-094-AC-8 (TC-419 step 5): `Trip{d: km, v: mps}`, over a non-root
+/// unit and a unit of a derived dimension, is emitted with nothing omitted.
+/// Lowering's walk follows `km`'s target to `metre` and `Velocity`'s terms
+/// to `Length` and `Time`; the emitter lists those as the nodes'
+/// dependencies and writes each node's own preimage; IR's v2 reader admits
+/// the package (the emit-and-read path TC-440 uses) and lowers `Trip`.
+#[trace("FR-094-AC-8", "TC-419")]
+#[test]
+fn a_non_root_unit_and_a_derived_dimension_are_emitted_and_read_by_ir() {
+    let (units, keys) = velocity_units();
+    let quantity = |name: &str| ValueType::Quantity(quire_exact::UnitId::declared(keys[name]));
+    let trip = record(
+        12,
+        "Trip",
+        vec![("d", quantity("km")), ("v", quantity("mps"))],
+    );
+    let types = TypeEnvironment::new([trip], [])
+        .expect("FR-143 admits Trip")
+        .with_units(units);
+    let (wire, package, omitted) = emit_and_read(types);
+    assert!(omitted.is_empty(), "{omitted:?}");
+    let node = |name: &str| {
+        let digest = keys[name].to_string();
+        nodes(&wire)
+            .iter()
+            .find(|node| node["node_id"]["digest"] == json!(digest))
+            .unwrap_or_else(|| panic!("the {name} node is written"))
+            .clone()
+    };
+    let ids = |names: &[&str]| {
+        let mut ids: Vec<Value> = names
+            .iter()
+            .map(|name| json!({"domain": quire_exact::NODE_KEY_DOMAIN, "digest": keys[name].to_string()}))
+            .collect();
+        ids.sort_by_key(|id| id["digest"].to_string());
+        Value::Array(ids)
+    };
+    let km = node("km");
+    assert_eq!(km["semantic_form"], json!("unit"));
+    assert_eq!(km["dependencies"], ids(&["Length", "metre"]));
+    let km_preimage = &km["nominal_identity_preimage"];
+    assert_eq!(
+        km_preimage["target_unit_node_id"]["digest"],
+        json!(keys["metre"].to_string())
+    );
+    assert_eq!(
+        km_preimage["scale"],
+        json!({"numerator": "1000", "denominator": "1"})
+    );
+    assert_eq!(node("metre")["dependencies"], ids(&["Length"]));
+    let velocity = node("Velocity");
+    assert_eq!(velocity["semantic_form"], json!("dimension"));
+    assert_eq!(velocity["dependencies"], ids(&["Length", "Time"]));
+    let terms = velocity["nominal_identity_preimage"]["terms"]
+        .as_array()
+        .expect("Velocity's terms");
+    assert_eq!(terms.len(), 2);
+    assert_eq!(
+        node("mps")["semantic_type"]["digest"],
+        json!(keys["Velocity"].to_string())
+    );
+    for base in ["Length", "Time"] {
+        assert_eq!(node(base)["dependencies"], json!([]));
+    }
+    let (ir_id, _) = declared(&wire, "Trip");
+    let lowering = ir_lowering(&package, &ir_id);
+    assert!(
+        matches!(
+            lowering,
+            CompleteLoweringRecordV2::Lowered { .. }
+                | CompleteLoweringRecordV2::RequiresBound { .. }
+        ),
+        "{lowering:?}"
+    );
+}
+
+/// TC-440: agreement over the quantity record `Measure{len: metre}`. Its
+/// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
+/// unboundable (ADR-014 §4), and IR must require a bound for it.
+#[trace("TC-440", "FR-097-AC-6")]
+#[test]
+#[ignore = "IR's requires_bound treats unit and compound-unit types as needing no bound, so IR lowers Measure while QSL classifies it Unbounded"]
+fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
+    let (types, measure, wire, package, _) = emitted_measure();
     let (ir_id, wire_id) = declared(&wire, "Measure");
     let checked_type = ValueType::Composite(measure.key());
     let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();

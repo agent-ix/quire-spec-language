@@ -522,17 +522,17 @@ tags as they exist in the delivered code today:
   every node that names an omitted node, with
   `OmissionCause::NamesOmittedNode`, and `emit_package` returns an
   `EmitRefusal` with no bytes when an occurrence cannot be placed.
-  `a_compound_unit_is_omitted_only_for_its_absent_unit`
+  `a_compound_unit_is_omitted_only_for_its_omitted_unit`
   (`qsl-package/src/emit/tests.rs`) asserts the exact omitted set of the
-  `q`/`t` fixture (the compound unit and the parameter for their absent
-  `metre`, `q`'s two applications and `q` itself with `NamesOmittedNode`),
+  `q`/`t` fixture (the definition-owned `metre` unit and `Length` dimension
+  nodes with `UnlockedOwner`; the compound unit, the parameter, `q`'s two
+  applications and `q` itself with `NamesOmittedNode`),
   that none of `t`'s nodes is omitted, and that the I2 read is Verified and
   exports `t` and not `q`;
   `the_q_and_t_package_with_an_unplaced_occurrence_refuses` refuses the same
   package with `EmitRefusal::UnlocatedOccurrence` when the conversion places
   nothing; `an_unplaced_occurrence_refuses` covers the refusal half under
-  FR-093-AC-9. The fixture's omission relies on lowering not building the
-  `metre` unit node.
+  FR-093-AC-9.
 - FR-062-AC-10: backed (`TC-166`), implemented and tested. The `replay`
   facade selects by a typed `QualifiedName` (`ReplayRequestWire::selected_function`):
   a `compile_fail` doctest on `replay` shows a bare `&str` selection does not

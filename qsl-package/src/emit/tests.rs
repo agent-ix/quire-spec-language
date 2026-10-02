@@ -1726,16 +1726,34 @@ pub(super) const METRE: [u8; 32] = [
     0x9d, 0x41, 0xe4, 0xec, 0xc4, 0xe8, 0x00, 0xb4, 0xd7, 0xee, 0x91, 0x0a, 0x3e, 0xaf, 0x23, 0xa4,
 ];
 
-/// QSpec's `dimension-length` node key (FR-094's vector key).
-const LENGTH: &str = "b6cc14ab93b670cb0fc74a80dd18131ef7b06e3eee6a730e5ca092266314e22b";
-
 /// The `metre` unit of dimension `Length`, owned by a definition, as the
-/// quantity table `check` types a `Length` quantity against.
+/// quantity table `check` types a `Length` quantity against. Its keys are
+/// QSpec's vector keys ([`METRE`] and `dimension-length`).
 pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
-    use qsl_semantics::value::{
-        admit_unit_graph, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
-    };
     let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example-model"});
+    let (table, metre) = metre_units_owned_by(owner);
+    assert_eq!(metre, NodeKey::from_digest(METRE), "QSpec's unit-metre key");
+    table
+}
+
+/// The `metre` unit of dimension `Length`, declared by the fixture unit's
+/// own source, whose owner the emitted lock selects; and its unit id.
+pub(super) fn source_metre_units() -> (
+    quire_semantic_value::quantity::UnitTable,
+    quire_exact::UnitId,
+) {
+    let owner = json!({"kind": "source", "authority": "a", "identity": "u"});
+    let (table, metre) = metre_units_owned_by(owner);
+    (table, quire_exact::UnitId::declared(metre))
+}
+
+/// The root unit `metre` of the base dimension `Length` under `owner`,
+/// admitted under their recomputed keys, and the `metre` key.
+fn metre_units_owned_by(owner: Value) -> (quire_semantic_value::quantity::UnitTable, NodeKey) {
+    use qsl_semantics::value::{
+        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+        UnitPreimage,
+    };
     let length = DimensionPreimage::from_json(json!({
         "version": "quire.dimension-node/v1",
         "owner": owner,
@@ -1743,35 +1761,46 @@ pub(super) fn metre_units() -> quire_semantic_value::quantity::UnitTable {
         "terms": [],
     }))
     .expect("a base dimension");
+    let length_key = NodeKey::from_digest(length.digest().expect("the dimension digests"));
     let metre = UnitPreimage::from_json(json!({
         "version": "quire.unit-node/v1",
         "owner": owner,
         "qualified_declaration": ["Example", "metre"],
-        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": LENGTH},
+        "dimension_node_id": {"domain": NODE_KEY_DOMAIN, "digest": length_key.to_string()},
         "target_unit_node_id": null,
         "scale": {"numerator": "1", "denominator": "1"},
         "offset": {"numerator": "0", "denominator": "1"},
     }))
     .expect("a root unit");
-    let length_key: [u8; 32] = std::array::from_fn(|index| {
-        u8::from_str_radix(&LENGTH[2 * index..2 * index + 2], 16).unwrap()
-    });
+    let metre_key = NodeKey::from_digest(metre.digest().expect("the unit digests"));
+    let selection: NodeOwner = serde_json::from_value(owner).expect("an owner");
     let graph = admit_unit_graph(
-        [(length, NodeKey::from_digest(length_key))],
-        [(metre, NodeKey::from_digest(METRE))],
-        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
-            authority: "agent-ix".into(),
-            identity: "example-model".into(),
-        })]),
+        [(length, length_key)],
+        [(metre, metre_key)],
+        &OwnerSelection::new([selection]),
     )
-    .expect("the QSpec unit vectors admit");
-    quire_semantic_value::quantity::UnitTable::declared(&graph)
+    .expect("the unit graph admits");
+    (
+        quire_semantic_value::quantity::UnitTable::declared(&graph),
+        metre_key,
+    )
 }
 
 /// TC-160 step 8's package: `q(a: Length): Boolean { a * a == a * a }`,
-/// whose `metre^2` compound unit node names the `metre` unit node lowering
-/// names by key but does not build, beside `t`, which names no omitted node.
+/// whose `metre^2` compound unit node names the definition-owned `metre`
+/// unit node, which the emitted lock does not select, beside `t`, which
+/// names no omitted node.
 fn q_and_t_package() -> CheckedPackage {
+    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
+    q_and_t_package_over(metre_units(), metre)
+}
+
+/// TC-160 step 8's `q` and `t`, with `Length` the quantity of `metre` in
+/// `units`.
+pub(super) fn q_and_t_package_over(
+    units: quire_semantic_value::quantity::UnitTable,
+    metre: quire_exact::UnitId,
+) -> CheckedPackage {
     let square = || Expression::Binary {
         operator: BinaryOperator::Multiply,
         left: Box::new(name("a")),
@@ -1788,10 +1817,9 @@ fn q_and_t_package() -> CheckedPackage {
             right: Box::new(square()),
         },
     );
-    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
     CheckedPackage::link(
         PackageDeclarations {
-            types: TypeEnvironment::default().with_units(metre_units()),
+            types: TypeEnvironment::default().with_units(units),
             aliases: vec![("Length".to_owned(), ValueType::Quantity(metre))],
             functions: vec![q, t()],
             ..PackageDeclarations::new(source())
@@ -1804,19 +1832,20 @@ fn q_and_t_package() -> CheckedPackage {
 /// IR-280: IR's v2 vocabulary holds `scalar_type`/`compound_unit` (FR-094),
 /// so a compound unit node is never omitted for its form. `q(a: Length):
 /// Boolean { a * a == a * a }` forms the `metre^2` compound unit node; it is
-/// omitted only because it names the `metre` unit node, which lowering names
-/// by key but does not build.
+/// omitted only because it names the `metre` unit node, which lowering
+/// builds (FR-094) and the emission omits: its definition owner is no lock
+/// entry (`UnlockedOwner`), and so is the `Length` dimension node's.
 ///
 /// FR-062-AC-9 (TC-160 step 8, as amended): the emitter is
 /// all-or-nothing over the nodes a node names. `q`'s declaration node and
 /// each node on its path to the omitted unit are omitted with
 /// `NamesOmittedNode`; `t` and its body are written; QSL's I2 read is
 /// Verified and exports `t` and not `q`. Were the omission not to close over
-/// dependents, `q` and its `==`/`*` nodes would be written naming an absent
-/// node and the omitted set below would shrink to the two direct namers.
+/// dependents, `q` and its `==`/`*` nodes would be written naming an omitted
+/// node and the omitted set below would shrink to the direct namers.
 #[trace("TC-416", "TC-160", "FR-062-AC-9")]
 #[test]
-fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
+fn a_compound_unit_is_omitted_only_for_its_omitted_unit() {
     let package = q_and_t_package();
     let graph = package.graph().semantic_graph();
     let key_of = |form: &str| -> Vec<CheckedNodeId> {
@@ -1850,10 +1879,20 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
             .find(|omission| omission.node == *id)
             .map(|omission| &omission.cause)
     };
-    // The compound unit is omitted only for its absent unit.
+    // Lowering builds the unit and dimension nodes; their owner is unlocked.
+    let units: Vec<CheckedNodeId> = key_of("unit")
+        .into_iter()
+        .chain(key_of("dimension"))
+        .collect();
+    assert_eq!(units.len(), 2, "the metre unit and Length dimension nodes");
+    assert!(units.contains(&metre_id));
+    for id in &units {
+        assert_eq!(cause_of(id), Some(&OmissionCause::UnlockedOwner));
+    }
+    // The compound unit is omitted only for its omitted unit.
     assert_eq!(
         cause_of(&compound[0]),
-        Some(&OmissionCause::NamesAbsentNode(metre_id.clone()))
+        Some(&OmissionCause::NamesOmittedNode(metre_id.clone()))
     );
     assert!(
         !emission
@@ -1874,11 +1913,12 @@ fn a_compound_unit_is_omitted_only_for_its_absent_unit() {
             emission.omitted
         );
     }
-    // The omitted set is exactly the unit, the parameter (typed by the
-    // absent `metre`), and the nodes that reach them: `t`'s nodes are not in
-    // it.
+    // The omitted set is exactly the unit and dimension nodes, the compound
+    // unit, the parameter (typed by `metre`), and the nodes that reach them:
+    // `t`'s nodes are not in it.
     let expected: BTreeSet<CheckedNodeId> = compound
         .into_iter()
+        .chain(units)
         .chain(key_of("parameter"))
         .chain(binaries)
         .chain([q_key.clone()])

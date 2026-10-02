@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 use crate::stop::{outcome_from_stop, Stop};
-use crate::unit::{CompoundUnit, Dimension, Unit, UnitEdge, UnitGraph};
+use crate::unit::{CompoundUnit, Dimension, NominalUnitNode, Unit, UnitEdge, UnitGraph};
 use quire_exact::{rational_arithmetic_bits, Rational, RationalArithmetic};
 use quire_exact::{sbits, sdigits, DecimalLoss, DecimalResult, DecimalType, Placed, RoundingMode};
 use quire_exact::{
@@ -121,17 +121,30 @@ impl IdentifiedUnit {
 /// The unit graph over kernel [`UnitId`]s: each id's [`QuantityUnit`]. A
 /// kernel [`Quantity`] carries only its unit's id, so every FR-142 operation
 /// reads its operands through a table (ADR-013 T-6: the unit graph stays in
-/// `semantic_value`).
+/// `semantic_value`). A table read from an admitted graph also holds each
+/// admitted dimension's and unit's nominal preimage bytes, which lowering
+/// builds their nodes from (FR-094).
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct UnitTable(BTreeMap<UnitId, QuantityUnit>);
+pub struct UnitTable {
+    units: BTreeMap<UnitId, QuantityUnit>,
+    /// Each admitted dimension and unit node as lowering builds it, by its
+    /// key's 32 digest bytes.
+    nominal: BTreeMap<[u8; 32], NominalUnitNode>,
+}
 
 impl UnitTable {
-    /// Every admitted unit of `graph`, by its declared-arm id.
+    /// Every admitted unit of `graph`, by its declared-arm id, with every
+    /// admitted dimension's and unit's nominal preimage.
     pub fn declared(graph: &UnitGraph) -> Self {
-        graph
+        let mut table: Self = graph
             .units()
             .map(|unit| QuantityUnit::Declared(Box::new(unit.clone())))
-            .collect()
+            .collect();
+        table.nominal = graph
+            .nominal_nodes()
+            .map(|node| (*node.key.as_bytes(), node.clone()))
+            .collect();
+        table
     }
 
     /// Record `unit` under its id and return the id.
@@ -142,13 +155,19 @@ impl UnitTable {
     /// Record a unit whose id is already computed and return the id.
     fn insert_identified(&mut self, unit: IdentifiedUnit) -> UnitId {
         let IdentifiedUnit { id, unit } = unit;
-        self.0.entry(id).or_insert(unit);
+        self.units.entry(id).or_insert(unit);
         id
     }
 
     /// The unit with this id.
     pub fn get(&self, id: UnitId) -> Option<&QuantityUnit> {
-        self.0.get(&id)
+        self.units.get(&id)
+    }
+
+    /// The admitted dimension or unit node whose key's digest bytes are
+    /// `id`, as lowering builds it (FR-094).
+    pub fn nominal_node(&self, id: &[u8; 32]) -> Option<&NominalUnitNode> {
+        self.nominal.get(id)
     }
 
     /// `quantity` with its unit resolved, or `None` when this table has no
@@ -164,7 +183,7 @@ impl IntoIterator for UnitTable {
     type IntoIter = alloc::collections::btree_map::IntoValues<UnitId, QuantityUnit>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_values()
+        self.units.into_values()
     }
 }
 

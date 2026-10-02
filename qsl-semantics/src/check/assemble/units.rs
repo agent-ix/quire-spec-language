@@ -3,8 +3,9 @@
 //! unit declarations"): every source error is reported, the unit-graph
 //! topology checks run only when no other check found an error, and each
 //! dimension and unit is then keyed with `nominal_key` and admitted through
-//! `UnitGraph::admit`. The assembler stops at the admitted graph: retaining
-//! preimages and lowering unit and dimension nodes is QSL-238's unit half.
+//! `UnitGraph::admit`. The assembler stops at the admitted graph, which
+//! keeps each node's preimage bytes; lowering builds the unit and dimension
+//! nodes from them (FR-094).
 
 use std::collections::BTreeMap;
 

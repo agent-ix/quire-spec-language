@@ -708,7 +708,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-16 | The v2 emission arm writes `CheckedPackage::dependency_selections` as FR-322 `dependency_selections`: one `{identity, version, package_id}` entry per library identity, `package_id` in the `quire.package.semantic/v2` domain, in ascending UTF-8 byte order of `identity` (`test/\u{FF61}` before `test/\u{1F600}`, the reverse of UTF-16 order), identical in the lock and the identity preimage. A package linked with two imports reads back Verified through QSL's I2 read with exactly those entries in both members, and its `package_id` differs from the same graph linked with none. QSL's I2 read over QSpec's `dependency-selection-vectors.json` recomputes the recorded `package_id`, refuses each authored entry mutation at the mutated entry, and gives each order vector its recorded outcome at its last recorded locus, since IR's refusal carries one path (`make conformance`). | Test (TC-416) |
 | FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix` and identity `quire.native.diagnostics/v1`, and no other member, and IR's v2 reader admits the package. | Test (TC-416) |
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
-| FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`, with two exceptions. The emission writes an equality over a recursive compared type, and IR's reader refuses the package at that equality node (STD-129). The emission omits a `scalar_type`/`compound_unit` node over a declared unit, and every node that names it, because lowering names the declared unit node and does not build it; IR never reads that node (QSL-247, IR-450). | Test (TC-416) |
+| FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`, with one exception. The emission writes an equality over a recursive compared type, and IR's reader refuses the package at that equality node (STD-129). | Test (TC-416) |
 
 ## Dependencies
 
@@ -770,9 +770,10 @@ admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
 and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
 so a function with parameters and a recursive function are written whole
 and read back Verified. The emission omits a node whose form IR's v2
-vocabulary lacks, a node naming a node the checked graph does not hold
-(a declared unit node, so a compound unit over one), a nominal node whose
-owner the lock does not select, and every node that names an omitted one;
+vocabulary lacks, a node naming a node the checked graph does not hold,
+a nominal node whose owner the lock does not select (a definition-owned
+unit or dimension node, so a compound unit over one), and every node that
+names an omitted one;
 AC-7 and AC-12 are checked on every node the arm writes, omitted or not.
 AC-13 is backed:
 `conformance_emitted_application_nodes_match_qspec_positive_fixtures`
