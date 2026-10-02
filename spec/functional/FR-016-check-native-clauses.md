@@ -11,6 +11,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-015
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
 ---
 # FR-016: Check native types and prove guarded definedness
 
@@ -61,6 +63,14 @@ machine default occurs. size requires an explicit dimensionless integer whose
 bounds include every length through the authored sequence maximum. It is not
 implicitly converted from IR Length's different integer type.
 
+When a field of an admitted domain package is typed, the native checker shall
+read its optionality from the field's declared `presence` and never from its
+multiplicity, as [FR-056](FR-056-admit-domain-package-model-declarations.md)
+states (QSpec `model-complete.md` Presence row). Multiplicity `[1, 1]` gives
+the field's leaf type, multiplicity `[0, u]` gives a sequence of at most `u`
+leaf elements, and an `optional` presence wraps that type in an option. A
+multiplicity lower bound of `0` never gives an option.
+
 Definedness follows left-to-right short circuiting and selected conditional
 branches. Later guards cannot justify an earlier initializer or operand. At
 alternative joins the proof retains only consequences common to all alternatives;
@@ -95,6 +105,7 @@ and contains no healthy/violating assessment of an unsupplied population.
 | FR-016-AC-7 | Immutable let/quantifier scopes and unreachable-branch checks obey the native rules; repeated compound optional text does not create a shared guard fact. | Test (TC-050, TC-053) |
 | FR-016-AC-8 | Caller/hard budgets bound native checking, proof graph construction and actual IR expansion before work; exact and one-over controls return success or resource_exhausted respectively, with no partial package. | Test (TC-051) |
 | FR-016-AC-9 | Accepted reference, reachability and operation clauses expose their required population/observation/context validation without fabricating runtime values or an executable backend projection. | Test (TC-052) |
+| FR-016-AC-10 | A domain-package field declared `required` with multiplicity `[0, 1]` types as a sequence of at most one element, and `present(x.f)` refuses `ill_typed`; the field declared `optional` with multiplicity `[1, 1]` types as an option of its leaf, and `x.f` unwrapped under a `present` guard checks; the field declared `optional` with multiplicity `[0, 1]` types as an option of a sequence of at most one element. | Test (TC-895) |
 
 ## Dependencies
 
@@ -113,3 +124,7 @@ IR proofs. All caller budgets, deep expansion and independent guard
 assignments are exercised; nested and skipped runtime input requirements are
 retained. Task-010 owns final review/handoff. Population validation and execution
 remain downstream requirements, not results of this static qualification.
+
+## References
+
+- Linear QSL-254 (AC-10: a field's presence, not its multiplicity, decides optionality).

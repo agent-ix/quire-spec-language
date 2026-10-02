@@ -107,6 +107,20 @@ SHALL refuse it with an unproved-refinement cause naming the missing
 obligation kind. The model checker SHALL NOT admit a narrowing redefinition
 on the strength of its declared shape alone.
 
+### Presence and multiplicity are separate narrowing axes
+
+The model checker SHALL read a field's optionality from its declared
+`presence` ([FR-056](FR-056-admit-domain-package-model-declarations.md);
+QSpec `model-complete.md` Presence row) and never from its multiplicity.
+A field redefinition whose redefined field is `optional` and whose
+redefining field is `required` narrows presence, and SHALL engage QSpec
+FR-151's `field-presence` obligation whatever the two multiplicities are.
+A redefinition whose two fields declare the same presence engages no
+obligation through presence. Its multiplicity axis engages the obligation
+FR-151 gives a narrowed multiplicity, judged from the two declared bounds
+alone. An upper bound of `1` does not make a field optional for this
+check.
+
 ### Ancestor and conformance walks are bounded
 
 The model checker SHALL charge every `supertypes` edge an ancestor-chain or
@@ -195,6 +209,7 @@ give the same verdict the model gives at evaluation:
 | FR-082-AC-5 | Given a redefining operation whose parameter count differs from the redefined operation's, the checker's `Refused` outcome names exactly the arity failure with a type-mismatch cause and checks no per-parameter type or multiplicity axis for that pair; the result-type, result-multiplicity and effect axes are still independently checked and reported when they also fail. | Test (TC-239) |
 | FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` limit admits at both with the same answer to every conformance question; and a chain one edge past it refuses at check time with a stage limit (`LimitExceeded`, edge count) naming the limit, as the model's walk over it stops `Incomplete` at evaluation naming `ancestor_steps`. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
+| FR-082-AC-8 | Given a field `f` declared `optional` with multiplicity `[1, 1]`, redefined by a field declared `required` with multiplicity `[1, 1]` and written by an exposed operation whose postcondition establishes no presence fact, the checker refuses `unproved-refinement` with obligation `field-presence`; with `present(self.f)` established it admits the redefinition. Given `f` and its redefinition both declared `required` with multiplicity `[0, 1]`, or both `optional` with multiplicity `[1, 1]`, written by the same operation with no established fact, the checker admits the redefinition and engages no obligation. | Test (TC-896) |
 
 ## Dependencies
 
@@ -212,3 +227,7 @@ give the same verdict the model gives at evaluation:
   exactly the names FR-068-AC-9 and FR-068-CON-5 list. This requirement does
   not alter, widen or contradict that edge; it specifies conformance and
   redefinition behavior only.
+
+## References
+
+- Linear QSL-254 (AC-8: presence and multiplicity are separate narrowing axes).
