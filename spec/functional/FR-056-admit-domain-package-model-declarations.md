@@ -255,9 +255,8 @@ A `typeRef` under `ix://quire/native/` names one of QSL's closed native
 value types, spelled as QSpec's shared grammar spells it: `Boolean`,
 `Integer`, `Rational`, `Decimal`, `Float32`, `Float64` and `Text`. Text is
 `Text`, the QSpec grammar's `Text[min, max; profile]` and the native name
-QSpec's checked-package vectors write; QSL has no `String` native type and
-reads no other spelling as `Text`. If a `typeRef` names any other native
-name, `ix://quire/native/String` included, then intake SHALL refuse it with
+QSpec's checked-package vectors write. If a `typeRef` names any other native
+name, then intake SHALL refuse it with
 `invalid_model_binding`/`malformed-declaration` at the member, naming the
 `typeRef`. If it names a native type with a required parameter that the
 semantic-IR constraint vocabulary cannot carry (`Text`'s `profile`,
@@ -332,4 +331,4 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 
 ## References
 
-- Linear QSL-290 (AC-11: `Text` is the native text name; there is no `String`).
+- Linear QSL-290 (AC-11: `Text` is the native text name).

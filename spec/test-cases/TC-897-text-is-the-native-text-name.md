@@ -1,18 +1,18 @@
 ---
 id: TC-897
-title: "Text is the native text name and String is refused"
+title: "Text is the native text name and an undeclared native name is refused"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-056
     type: verifies
 ---
-# TC-897: Text is the native text name and String is refused
+# TC-897: Text is the native text name and an undeclared native name is refused
 
 ## Description
 
 Verify that model intake reads `ix://quire/native/Text` as QSL's native
-`Text`, refuses it for its unexpressible `profile` parameter, and refuses
-`ix://quire/native/String` as a name QSL does not declare. Scope:
+`Text`, refuses it for its unexpressible `profile` parameter, and refuses an
+undeclared native name, `ix://quire/native/String`. Scope:
 FR-056-AC-11.
 
 ## Test Procedure
