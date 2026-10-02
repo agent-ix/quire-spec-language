@@ -99,7 +99,7 @@ method reduces that cost.
 - [FR-185](../functional/FR-185-declare-random-parameters-workloads-and-rewards.md)
 - [FR-186](../functional/FR-186-check-probabilistic-claim-forms-at-s3.md)
 - [FR-187](../functional/FR-187-give-model-transitions-step-probabilities-and-rewards.md)
-- [FR-188](../functional/FR-188-draw-weighted-choices-with-the-revised-sampler.md)
+- [FR-188](../functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md)
 - [FR-189](../functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md)
 - [FR-190](../functional/FR-190-measure-a-long-run-fraction-by-regeneration.md)
 - [FR-191](../functional/FR-191-bound-and-reproduce-a-statistical-run.md)

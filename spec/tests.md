@@ -435,7 +435,7 @@ names different artifacts in each.
 | TC-890 | S2 builds random, reward and workload declaration forms | Unit | P1 | FR-311-AC-1, FR-311-AC-2, FR-311-AC-3 | 🚧 Planned |
 | TC-621 | S3 checks probabilistic claim forms, thresholds, units and confidence parameters | Unit | P1 | FR-186-AC-1, FR-186-AC-2, FR-186-AC-3, FR-186-AC-4 | 🚧 Planned |
 | TC-622 | ModelSystem gives actions, step probabilities and rewards, and reports NotMarkov | Integration | P1 | FR-187-AC-1, FR-187-AC-2, FR-187-AC-3, FR-187-AC-4 | 🚧 Planned |
-| TC-623 | The revised sampler draws weighted choices exactly and reproducibly | Integration | P1 | FR-188-AC-1, FR-188-AC-2, FR-188-AC-3 | 🚧 Planned |
+| TC-623 | The QSpec sampler draws weighted choices exactly and reproducibly | Integration | P1 | FR-188-AC-1, FR-188-AC-2, FR-188-AC-3 | 🚧 Planned |
 | TC-624 | EN-4 decides probabilistic claims with Okamoto and SPRT, with Bonferroni, symmetry and activation | Integration | P1 | FR-189-AC-1, FR-189-AC-2, FR-189-AC-3, FR-189-AC-4, FR-189-AC-5 | 🚧 Planned |
 | TC-625 | EN-4 measures a long-run fraction by regeneration with asymptotic coverage | Integration | P1 | FR-190-AC-1, FR-190-AC-2, FR-190-AC-3 | 🚧 Planned |
 | TC-626 | Statistical runs stop on caller-set budgets and reproduce from their provenance | Integration | P1 | FR-191-AC-1, FR-191-AC-2, FR-191-AC-3, FR-191-AC-4 | 🚧 Planned |

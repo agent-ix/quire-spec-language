@@ -171,7 +171,7 @@ the claim's form does not admit (FR-190, SPRT below).
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-186](FR-186-check-probabilistic-claim-forms-at-s3.md),
   [FR-187](FR-187-give-model-transitions-step-probabilities-and-rewards.md),
-  [FR-188](FR-188-draw-weighted-choices-with-the-revised-sampler.md).
+  [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md).
 - FR-190 adds the regenerative method, FR-191 the limits and
   reproducibility, FR-192 settlement, FR-193 sampled witnesses.
 

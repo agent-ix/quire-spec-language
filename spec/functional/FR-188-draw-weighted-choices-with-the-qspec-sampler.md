@@ -1,6 +1,6 @@
 ---
 id: FR-188
-title: "Draw weighted choices with the revised sampler"
+title: "Draw weighted choices with the QSpec sampler"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-022
@@ -14,7 +14,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-187
     type: depends_on
 ---
-# FR-188: Draw weighted choices with the revised sampler
+# FR-188: Draw weighted choices with the QSpec sampler
 
 ## Description
 

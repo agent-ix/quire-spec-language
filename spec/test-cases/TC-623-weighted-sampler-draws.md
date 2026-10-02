@@ -1,12 +1,12 @@
 ---
 id: TC-623
-title: "The revised sampler draws weighted choices exactly and reproducibly"
+title: "The QSpec sampler draws weighted choices exactly and reproducibly"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-188
     type: verifies
 ---
-# TC-623: The revised sampler draws weighted choices exactly and reproducibly
+# TC-623: The QSpec sampler draws weighted choices exactly and reproducibly
 
 ## Description
 

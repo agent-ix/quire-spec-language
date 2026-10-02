@@ -81,7 +81,7 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 ## Dependencies
 
 - ADR-024 PF-6, ST-7, ST-8, ST-9, SV-2, RU-1.
-- [FR-188](FR-188-draw-weighted-choices-with-the-revised-sampler.md),
+- [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md),
   [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md).
 
 ## References

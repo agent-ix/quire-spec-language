@@ -129,7 +129,7 @@ pub fn replay_sampled_witness(
 - ADR-024 SV-6 to SV-8; ADR-018 CX-1 to CX-3.
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-128](FR-128-replay-a-model-counterexample.md),
-  [FR-188](FR-188-draw-weighted-choices-with-the-revised-sampler.md),
+  [FR-188](FR-188-draw-weighted-choices-with-the-qspec-sampler.md),
   [FR-189](FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md).
 
 ## References
