@@ -88,6 +88,17 @@ Reviewed at 2120f55561c50e370f540db8a983acc1f0c4fde3 (`git diff 0ecfb9e9...2120f
 | FND-014 | low | Follow-up work is recorded as prose in the spec instead of as a ticket. FR-331's Description and References, and ADR-014 §10, say "a QSpec wire form ... is a follow-up against FR-364", with no ticket. That puts roadmap text in normative sections. FR-331's Status records a code deletion that belongs to FR-109, and FR-109's Status points to it. File Linear tickets (the QSpec wire form; deleting `ClauseRunProvenance` and `source_digest`), cite them in References, and remove the follow-up sentences from the Description and the ADR. | spec/functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md:46-49,137-143,148-150; spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md:466-469; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:173-177 |
 | FND-015 | low | TC-468 step 6 still expects a `compile`, `missing_import`/`missing-selection` result for the extracted missing-model run. The rewritten FR-109-AC-6 has no clause for that case. Add the clause to AC-6, or drop the expectation. | spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md:69-70; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:159 |
 
+## New findings (disposition pass 2)
+
+Reviewed at 92070da9804a6951c5b353c942042961d185cf3c (`git diff origin/spec/366-temporal-properties...92070da9`). First drafted at 5f8d712e, before the rebase onto #562's ed7bcc8b; each finding was re-checked at 92070da9 and is unchanged there.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-016 | medium | FR-331 defines the payload as `TemporalCounterexample{steps, fairness, interval, kind}` with `CounterexampleSteps::Observed{prefix, loop}`, says FR-128 and FR-331 "share the payload type", and calls `CounterexampleSteps::Model` "FR-128's step content". FR-128 and ADR-018 CX-2 now make `TemporalCounterexample` exactly QSpec FR-364's wire (`kind`, `initial_state`, `prefix`, `loop`, `over_binding`, `fairness`, `trace_position`), with no member list of its own and no `steps` or `interval` member. ADR-014 §10 gives a third shape, `TemporalCounterexample{prefix, loop, fairness, interval}`. One type cannot be all three. QSpec FR-364 at main aa031866 now has an observed arm (`trace: "observed"`, `{document}` steps, `interval` as `{lower, upper}` or `{lower, upper: null}` under every profile), so FR-331's "QSpec FR-364's wire carries model steps" and its `interval: Option<IntervalKey>`, `None` under infinite-trace, are both out of line with it. Read the observed payload as FR-364's observed arm, drop the shared-type sentences, and make ADR-014 §10 agree. | spec/functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md:41-48,61-71; spec/functional/FR-128-replay-a-model-counterexample.md:68-73; spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md:455-467 |
+| FND-017 | medium | FR-329's past-reach rule gives `R + b` for a past interval operator with upper bound `b`, and operand reach plus `L` for an unbounded past operator. It has no case for a past operator with an `[a,*]` interval (`once[a,*]`, `historically[a,*]`, `since[a,*]`, `triggered[a,*]`). ADR-018 IV-1 and FR-326 admit these under infinite-trace. For `once[2,*] p` the unroll count `m` is undefined, so the exact lasso evaluation that SM-1 makes the semantics has no rule. Add the case: operand reach plus `a + L`. | spec/functional/FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md:107-112 |
+| FND-018 | low | FR-328's safety fragment admits "interval operators" with no qualification. ADR-018 IV-4 admits every closed interval operator and `always[a,*]`, `release[a,*]` and the past `[a,*]` forms, and places `eventually[a,*]` and `until[a,*]` outside the fragment. Cite IV-4's fragment instead of restating it. | spec/functional/FR-328-evaluate-an-infinite-trace-clause-over-a-finite-prefix.md:69-73 |
+
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -103,3 +114,12 @@ Reviewed at 2120f55561c50e370f540db8a983acc1f0c4fde3 (`git diff 0ecfb9e9...2120f
 | FND-009 | fixed | 539b8e9e |
 | FND-010 | fixed | 539b8e9e |
 | FND-011 | fixed | 539b8e9e |
+
+Round 2, reviewed at 92070da9804a6951c5b353c942042961d185cf3c.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-012 | fixed | 479b8376 |
+| FND-013 | fixed | 2afd7b93 |
+| FND-014 | fixed | 2afd7b93 |
+| FND-015 | fixed | 2afd7b93 |
