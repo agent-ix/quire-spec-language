@@ -58,3 +58,15 @@ checked these by hand:
 EARS phrasing holds. Every AC has a behaviour TC, and the PR adds no pins,
 caps or compat paths. FND-001 needs a typed unfair-lasso refusal so that
 FR-127's two V-6 rows can be told apart. The rest are low.
+
+## Dispositions
+
+Round 1, reviewed at 1d248ff47b3f75cb334d1dd987939cb64f728b5d (stacked on 18a9c22b).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1d248ff4 |
+| FND-002 | fixed | 1d248ff4 |
+| FND-003 | fixed | 1d248ff4 |
+| FND-004 | fixed | 1d248ff4 |
+| FND-005 | fixed | 1d248ff4 |
