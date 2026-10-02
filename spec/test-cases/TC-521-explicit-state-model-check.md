@@ -33,8 +33,8 @@ universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
    under infinite-trace.
 4. The recovery-stability formula over `Health` and over `Restless`.
 5. The TP-4 claim with no granularity with `max_depth` 2, with `max_depth`
-   3, with `max_states` 2, with `max_transitions` 3, and with a poll that
-   returns `true`; `Counter` with an evaluation meter budget of zero.
+   3, with `max_states` 2, with `max_transitions` 3, and with a `Cancel`
+   handle already cancelled; `Counter` with an evaluation meter budget of zero.
 6. The `eventually[0,100]` formula over `Restless` with
    `max_automaton_states` 50 and with the default; a subject whose
    contract conjunction is refused, with no clause false and none

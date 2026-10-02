@@ -13,7 +13,7 @@ relationships:
 Verify the map from EN-1's outcomes and their replay results to
 `TerminalValue`, QSpec FR-360 labels, FR-243 bases and O-16 categories; the
 category of every `ProofBasis` and new inconclusive cause; each replay
-refusal path; a faulting replay; and the named limit of a stopped run.
+refusal path; a faulting replay; and the named budget of a run that reached it.
 
 Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
 
@@ -30,14 +30,10 @@ Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
 4. Settle FR-126-AC-6's `max_automaton_states` run and FR-126-AC-5's
    `max_depth` 2 and evaluation-meter runs.
 5. Settle FR-126-AC-3's deadlock-freedom violation with its replay.
-6. Closure certificates (FR-127-AC-7): check and settle the TP-1 proof
-   over ADR-018 §6's subject with its certificate; with the product state
-   for model state `(1, 0)` removed; and a closure of every reachable
-   `Counter` state offered for the deadlock-freedom item with no
-   `terminal` member.
-7. Component certificates (FR-127-AC-8): check FR-126-AC-1's weak `each`
-   proof with its certificate; with the witness of `{(*, 0, q1)}` naming
-   `upd(a)`; with the two accepting components listed first.
+6. Settle FR-338-AC-1's TP-1 proof with its certificate, and with
+   FR-338-AC-2's `(1, 0)`-removed certificate.
+7. Settle FR-339-AC-1's weak `each` proof with its certificate, and with
+   FR-339-AC-2's `upd(a)` witness.
 8. Read the label and category of `Proved{Checks{3}, Uncertified}`,
    `Proved{BoundedComplete{depth: 5}, Uncertified}` and
    `Proved{Inductive{depth: 2}, Uncertified}`, and the category of
@@ -49,23 +45,24 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 ## Expected Results
 
 - Step 1: each row exactly as FR-127's table; depth 2 and method
-  `explicit-state` on V-5; the stopped record names `max_states`, value 2.
+  `explicit-state` on V-5; the budget-reached record names `max_states`, value 2.
 - Step 2: inconclusive `KaniVacuousProof`; success four times; inconclusive
   four times.
 - Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
   `refuted`, `decisive-counterexample`, violation; `inconclusive`,
-  `ReplayRefused` three times; `inconclusive`, `ReplayParity`; `failed`,
-  category failed.
-- Step 4: `failed`, `resource-incomplete`, `unavailable`,
-  `Incomplete(ResourceExhausted)` naming `max_automaton_states`, value 50;
+  `ReplayRefused`; `inconclusive`, `ReplayParity` (the unfair lasso);
+  `inconclusive`, `ReplayRefused`; `inconclusive`, `ReplayParity`;
+  `failed`, category failed.
+- Step 4: `inconclusive`, `unsettled`,
+  `Inconclusive(BudgetReached{MaxAutomatonStates, 50})`, the record naming
+  `max_automaton_states`, value 50, and the three budgets used;
   `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth
-  `pending`; a stopped record naming `EvaluationMeter`, value 0.
+  `pending`; a budget-reached record naming `EvaluationMeter`, value 0.
 - Step 5: `refuted` with a counterexample of `kind: Deadlock`, and an
   obligation identity distinct from the authored claims'.
-- Step 6: accepted, `Proved{Exhaustive, Certified}`; rejected
-  `SuccessorMissing` at `(1, 0)`, `inconclusive`, `CertificateRejected`;
-  rejected `BadState` at value 3.
-- Step 7: accepted; rejected `WitnessFails` at `{(*, 0, q1)}`'s first
-  state; rejected `BackwardEdge`.
+- Step 6: `Proved{Exhaustive, Certified}`; `inconclusive`,
+  `CertificateRejected{SuccessorMissing, (1, 0)}`.
+- Step 7: `Proved{Exhaustive, Certified}`; `inconclusive`,
+  `CertificateRejected{WitnessFails}` at `{(*, 0, q1)}`'s first state.
 - Step 8: `proved`, `Uncertified`, success, three times; inconclusive.
 - Step 9: `inconclusive`, `ReplayParity`, written `replay-parity`.

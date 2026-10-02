@@ -37,7 +37,7 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness`, `trace_position` 2, value
   `UndefinedEvaluation{where: position 2, cause: division-by-zero}`.
-- Steps 2 and 3: `inconclusive`, `Verdicts`.
+- Steps 2 and 3: `inconclusive`, `ReplayParity`.
 - Step 4: `reproduced-with-evaluated-witness`, `trace_position` 3, value
   `UndefinedEvaluation{where: position 3, cause: division-by-zero}`.
 - Step 5: `reproduced-with-evaluated-witness`, value

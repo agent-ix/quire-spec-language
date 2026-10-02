@@ -1,6 +1,6 @@
 ---
 id: FR-101
-title: "Explore finite models with canonical order, typed state keys and the pinned sampler"
+title: "Explore finite models with canonical order, typed state keys and the QSpec sampler"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-003
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-201
     type: depends_on
 ---
-# FR-101: Explore finite models with canonical order, typed state keys and the pinned sampler
+# FR-101: Explore finite models with canonical order, typed state keys and the QSpec sampler
 
 ## Description
 
@@ -73,8 +73,8 @@ AC-14).
   `Outcome::Bounded`, and the caller raises it by setting that `Limits`
   member.
 - For sampling: a `u64` seed, a `u64` trace index, a `usize` step ceiling
-  and the sampler's `DefinitionRef` (`qsl_foundation::selection`) from the
-  ecosystem lock's `definitions`.
+  and the sampler's `DefinitionRef` (`qsl_foundation::selection`), whose
+  identity names the generator.
 
 ## Outputs
 
@@ -388,7 +388,7 @@ the JCS encoding of a `TransitionSystem`-supplied typed view, through
 hold `DigestRecord`s under `quire.simulation.state-key/v1`, and replay
 compares recomputed digests. Sampling runs the
 `quire.simulation.sampler/v1` generator under the preimage without
-`choice`, and checks the definition's version; the `choice` preimage
+`choice`; the `choice` preimage
 member, AC-3's vectors under it, and the identity-only check of AC-10 are
 not yet implemented. `CounterSampler` is deleted. `Outcome::BoundReached`
 and the removal of the depth member of `Limit` (AC-7) are not yet
@@ -405,34 +405,3 @@ instead of panicking. `NotSimulated` gives `catalog_code` and
 `RequiresBound` (a negotiation disposition, never a refusal).
 `qsl-eval/tests/it/finite_simulation.rs` traces to FR-101, TC-453, TC-454
 and TC-455, and carries none of QSpec's `TC-210` or `FR-181-AC-*` tags.
-
-Review round (SR-672, SR-673): fixed in this PR. `Outcome::Cancelled`
-gained its `cause` field (SR-672/SR-673 FND-001); `NotSimulated` gained
-`CatalogCoded` and `KeyEncoding` (SR-672 FND-002, SR-673 FND-002, this
-requirement's AC-11); the duplicate-transition replay test and TC-453
-step 1's fixture were fixed to discriminate what they claim to test (SR-672
-FND-003, FND-004); the sampler gained `n = 2`/`n = 7` byte-order vectors and
-a `U256` arithmetic unit test (SR-672 FND-005); `state_key` hashes its
-already-produced bytes once (SR-672 FND-006); the sampler's successor draw
-no longer has an `unreachable!` path (SR-672 FND-007); replay reports
-`KeyMismatch.actual` in canonical order (SR-672 FND-008); TC-455 step 4 and
-TC-453 step 4 are now tested as written, and AC-4's provenance is asserted
-literally with a replay (SR-673 FND-003 to FND-005); the FIFO-order test is
-retagged to AC-1 (SR-673 FND-006).
-
-Disposition-pass round (R1): fixed in this PR. `RequiresBound` is no longer
-`CatalogCoded`; no requires-bound catalog code or disposition exists on
-`main` (checked `qsl-route`'s `Disposition::RequiresBound`, which itself
-carries none), so `NotSimulated` gives `catalog_code`/`catalog_fields` as
-inherent `Option`-returning methods instead, `None` for `RequiresBound`
-(R1-FND-002). The sampler's acceptance test is split into `accepts`, tested
-at the real `n = 7` threshold `floor(2^256/7)*7` and one below it, and the
-`u256_divmod_and_mul_on_a_synthetic_value` comment no longer calls its
-synthetic `98` the sampler's rejection bound (R1-FND-001). `GeneratorMismatch`'s
-catalog code moved from AC-11 to AC-10 and TC-454 step 8's expected results;
-a new test asserts `catalog_code` and `catalog_fields` for every
-`NotSimulated` variant, including `Extent(Limit)`'s delegation to
-`LimitExceeded`'s fields (R1-FND-003).
-
-The ACs use no EARS keyword. They state behaviour declaratively, as FR-097
-does, and each names its oracle (SR-642 FND-002, no change).

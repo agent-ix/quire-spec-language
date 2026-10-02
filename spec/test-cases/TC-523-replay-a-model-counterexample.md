@@ -44,8 +44,8 @@ Tag the tests `#[trace("TC-523", "FR-128-AC-n")]`.
   `trace_position` 0; the `Branch` prefix reproduces with `trace_position`
   1; the other refuses `stale_dependency`/`content-mismatch` naming the
   step and the recorded digest.
-- Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `Verdicts`;
-  `inconclusive`, `Verdicts`.
+- Step 2: `reproduced-with-evaluated-witness`; `inconclusive`, `ReplayParity`;
+  `inconclusive`, `ReplayParity`.
 - Step 3: each refuses as FR-128-AC-3 states, with no result.
-- Step 4: `inconclusive`, `Verdicts`; FR-098's stale `package_id` refusal;
+- Step 4: `inconclusive`, `ReplayParity`; FR-098's stale `package_id` refusal;
   `stale_dependency`/`content-mismatch`; equal results.

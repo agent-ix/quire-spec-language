@@ -33,8 +33,9 @@ qualified core (ADR-018 LA-1), SHALL decide a temporal item over a model
 subject by exploring the product of the subject's state graph with the
 item's property automaton (ADR-018 EN-1). It runs at stage S6c over edge E10
 (ADR-011 §1, as amended by ADR-018). The product is a FR-101
-`TransitionSystem` explored by FR-101's canonical breadth-first engine,
-which retains every product edge it explores. A safety form needs the first
+`TransitionSystem` explored breadth-first by EN-1's own graph exploration,
+in FR-101's canonical successor order and with FR-101's state keys, which
+retains every product edge it explores (ADR-018 EN-1). A safety form needs the first
 phase only. A liveness form adds a second phase that decomposes the
 retained graph into strongly connected components (SCCs) and looks for a
 fair accepting cycle. The engine returns a `ModelCheckOutcome`
@@ -73,17 +74,20 @@ pub struct ModelCheckLimits {
 
 pub fn check_model(
     request: ModelCheckRequest<'_>,
-    poll: impl FnMut() -> bool,
+    cancel: &Cancel,                        // ADR-029 FR-276
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal>;
 ```
 
 `max_states`, `max_transitions` and `max_automaton_states` are
 caller-raisable ADR-014 B-5 budgets of QSL's own provider (ADR-018 §1,
-IV-6). `ModelCheckLimits::default()` publishes `max_states` 10,000,000,
-`max_transitions` 100,000,000 and `max_automaton_states` 1,048,576 (2^20),
-with `Limits` at FR-101's defaults. `max_depth` is the search horizon `k`
+IV-6). `ModelCheckLimits::default()` publishes `max_states` 1,000,000,
+`max_transitions` 10,000,000 and `max_automaton_states` 65,536. A request
+raises any of them; reaching one settles `inconclusive` (V-7, FR-127), and
+every terminal record states the values used and whether one was reached.
+`ModelCheckOutcome`, `ModelCheckLimits` and `ModelCheckLimit` are
+`qsl-replay` types (ADR-018 LA-5). `max_depth` is the search horizon `k`
 of a bounded search, a request member beside the limits and never one of
-them: a run that completes it settles V-5, not V-7, and the result states
+them: a run that completes it settles V-5, and the result states
 the `k` it used. `None` sets no horizon. The subject's
 FR-120 evaluation meter budget and `ExpansionLimits` travel in the
 `ModelSubject` (FR-125).
@@ -108,8 +112,8 @@ subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
 - `Undecided(InconclusiveCause)`: `UndecidedSuccessor` or `NoInitialState`
   (V-6);
 - `Stopped { cause: IncompleteCause, limit: Option<ReachedLimit> }`: a run
-  limit or cancellation stopped the run before it completed its method
-  (V-7). `ReachedLimit{limit: ModelCheckLimit, value: u64}` names the limit
+  budget or cancellation stopped the run before it completed its method
+  (a budget settles V-7; cancellation settles `failed`, FR-127). `ReachedLimit{limit: ModelCheckLimit, value: u64}` names the limit
   and its value. `ModelCheckLimit` is `MaxStates`, `MaxTransitions` or
   `MaxAutomatonStates` (members of `ModelCheckLimits`), or
   `EvaluationMeter` or `MaxCandidates` (members of the subject's FR-120
@@ -169,8 +173,9 @@ automaton states and the depth reached.
   each automaton state in the automaton's set of successors of its initial
   state on position 0; a deterministic monitor has one, a generalized Büchi
   automaton may have several (ADR-018 §6's `(0, 0, q0)` and `(0, 0, q1)`).
-- The engine SHALL explore the product with FR-101's canonical
-  breadth-first engine and retain every explored product edge.
+- The engine SHALL explore the product breadth-first in FR-101's
+  canonical successor order, keyed by FR-101's state keys, and retain
+  every explored product edge.
 - For each position the claim reads (FR-125), the engine SHALL read the
   position's letter when it creates the product state for that position,
   before it steps the automaton on it.
@@ -212,8 +217,9 @@ automaton states and the depth reached.
   Some({EvaluationMeter | MaxCandidates, value})}`.
 - When the exploration reaches `max_states` or `max_transitions`, the
   engine SHALL return `Stopped{cause: ResourceExhausted, limit:
-  Some({MaxStates | MaxTransitions, value})}`. When the poll returns
-  `true`, the engine SHALL return `Stopped{cause: Cancelled, limit: None}`.
+  Some({MaxStates | MaxTransitions, value})}`. When the `Cancel` handle is
+  cancelled, checked at every charge of the run's meter (ADR-029 FR-276),
+  the engine SHALL return `Stopped{cause: Cancelled, limit: None}`.
 - With `max_depth = Some(k)`, the engine SHALL expand every product state at
   depth below `k` and retain its edges. When it reaches depth `k` with no
   first-phase violation, a safety item SHALL return `BoundReached{depth:
@@ -307,10 +313,10 @@ automaton states and the depth reached.
 | FR-126-AC-2 | `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension, `on origin` (TP-2), over the example subject returns `Violated` with a five-step finite prefix for `c = b` on which `vb` is never 2. `always holds(c.versionNumber <= 1000)` (TP-1) returns `Holds{Exhaustive}`. Over the `Counter` subject (FR-124-AC-1, no `terminal` member), `eventually[0,3] holds(c.value = 3)` under event-position false-extension `on each` returns `Holds{Exhaustive}`, and `eventually[0,1] holds(c.value = 3)` `on each` returns `Violated` with the prefix `0 -inc-> 1`. | Test (TC-521) |
 | FR-126-AC-3 | Over the `Counter` subject with no `terminal` member, the `DeadlockFreedom` item returns `Violated` with `kind: Deadlock` and the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; with a `When` member covering value 3 it returns `Holds{Exhaustive}`. Under infinite-trace, `always eventually holds(c.value = 0)` returns `Violated` whose loop is the terminal stutter step at value 3, with the stutter marker set. | Test (TC-521) |
 | FR-126-AC-4 | Over the `Health` subject (object `s`, fields `healthy: Bool` and `failures: Int[0, 1]`; operation `fail` with precondition `self.failures = 0` setting `healthy` false and `failures` 1; operation `recover` with precondition `not self.healthy` setting `healthy` true; `terminal any`; initial `healthy` true and `failures` 0), the recovery-stability formula `always (holds(not s.healthy) implies eventually always[0,2] holds(s.healthy))` returns `Holds{Exhaustive}`. In the `Restless` variant, where `fail` has no precondition, it returns `Violated` with a lasso on which `healthy` never holds at three consecutive positions. | Test (TC-521) |
-| FR-126-AC-5 | Limits over the example subject and the TP-4 claim of AC-1 with no granularity: `max_depth` 2 returns `BoundReached{depth: 2}`, since the length-3 loop needs an edge out of depth 2; `max_depth` 3 returns `Violated` with the AC-1 loop, found by the second phase over the retained graph although depth 3 left a frontier; `max_states` 2 returns `Stopped{ResourceExhausted, {MaxStates, 2}}`; `max_transitions` 3 returns `Stopped{ResourceExhausted, {MaxTransitions, 3}}`; a `true` poll returns `Stopped{Cancelled, None}`. Over the `Counter` subject with an evaluation meter budget of zero, the `inc` precondition's evaluation stops the run with `Stopped{ResourceExhausted, {EvaluationMeter, 0}}`. | Test (TC-521) |
+| FR-126-AC-5 | Limits over the example subject and the TP-4 claim of AC-1 with no granularity: `max_depth` 2 returns `BoundReached{depth: 2}`, since the length-3 loop needs an edge out of depth 2; `max_depth` 3 returns `Violated` with the AC-1 loop, found by the second phase over the retained graph although depth 3 left a frontier; `max_states` 2 returns `Stopped{ResourceExhausted, {MaxStates, 2}}`; `max_transitions` 3 returns `Stopped{ResourceExhausted, {MaxTransitions, 3}}`; an already-cancelled `Cancel` handle returns `Stopped{Cancelled, None}`. Over the `Counter` subject with an evaluation meter budget of zero, the `inc` precondition's evaluation stops the run with `Stopped{ResourceExhausted, {EvaluationMeter, 0}}`. | Test (TC-521) |
 | FR-126-AC-6 | `always (holds(not s.healthy) implies eventually[0,100] holds(s.healthy))` over the `Restless` subject, where `fail` can repeat forever, with `max_automaton_states` 50 returns `Stopped{ResourceExhausted, {MaxAutomatonStates, 50}}` with an automaton-state count of 50 and no counterexample; with the default limit it returns `Violated`, a finite prefix with at least 101 consecutive unhealthy positions. A subject whose contract conjunction is refused, with no clause false and none undefined, returns `Undecided(UndecidedSuccessor)`; over FR-120-AC-9's `test/tallies` subject from `t1`, whose `pre Low` evaluates undefined, `always holds(true)` returns `Violated` with the empty prefix at `t1` and `kind: UndefinedEvaluation` with cause `SumOutOfDomain` at position 0; and one with an unbounded population root returns `RequiresBound` before exploring. | Test (TC-521) |
 | FR-126-AC-7 | Running AC-1's two requests twice each gives equal outcomes and byte-equal counterexamples. | Test (TC-521) |
-| FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 10,000,000, `max_transitions` 100,000,000, `max_automaton_states` 1,048,576, with no depth member; a request with `max_depth: None` sets no horizon. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
+| FR-126-AC-8 | `ModelCheckLimits::default()` is `max_states` 1,000,000, `max_transitions` 10,000,000, `max_automaton_states` 65,536, with no depth member; a request with `max_depth: None` sets no horizon. AC-1's requests with the default limits return the AC-1 outcomes. A run stopped by `max_states` 2 with the other members at their defaults returns `Stopped{ResourceExhausted, {MaxStates, 2}}`, naming the `ModelCheckLimits` member that raises it. | Test (TC-536) |
 | FR-126-AC-9 | Over the `Counter` subject (no `terminal` member), `always holds(6 / (2 - c.value) >= 0)` under infinite-trace returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`. The TP-4 claim `always eventually holds(6 / (2 - c.value) = 6)` returns the same counterexample, not the terminal stutter lasso. `always (holds(c.value <= 0) and holds(6 / (2 - c.value) >= 0))` returns `kind: Formula` with the prefix `0 -inc-> 1`, which violates before position 2. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, returns `Holds{Exhaustive}`. With a `terminal when 6 / (3 - c.value) = 0` member, the `DeadlockFreedom` item returns `Violated` with the prefix to value 3 and `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`. | Test (TC-537) |
 
 ## Dependencies
@@ -320,7 +326,7 @@ automaton states and the depth reached.
   and IV-6; ADR-011 §1 and §6.1 (S6c, E10, layer A `qsl-analyze` `model_check`) as amended
   by ADR-018; ADR-014 §1 B-5 as amended; ADR-016 §2 (the requires-bound
   pre-check).
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (engine, canonical order, state key, limits),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`, evaluation meter, `ExpansionLimits`),

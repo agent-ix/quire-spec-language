@@ -515,7 +515,7 @@ identity text of operation `op`.
   pre- and postconditions, conformance); QSpec `state-contract.md` and
   `shared-grammar.md` (anchor operations are caller-side);
   `native-diagnostics.md` revision `1-draft.8`.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md):
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md):
   the engine, its `TransitionSystem` trait, findings, `Outcome::Stopped`,
   `StopReason::Stopped` and replay.
 - [FR-056](FR-056-admit-domain-package-model-declarations.md): the spine

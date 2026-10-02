@@ -78,9 +78,10 @@ member of its own.
 
 - An FR-072 replay result on the `ModelTrace` arm, holding the evaluated
   value and the `trace_position`, or a typed `ReplayRefusal` with no
-  partial result. FR-072's `Verdicts` and `NoValue` causes settle the item
-  `inconclusive`, cause `ReplayParity`, written `replay-parity` (FR-127,
-  QSpec FR-364). The arm's value is `ModelTraceValue::{Truth(bool),
+  partial result. Where this requirement settles a replay `inconclusive`,
+  `ReplayParity`, the FR-072 result carries its `Verdicts` or `NoValue`
+  cause and the item settles cause `ReplayParity`, written
+  `replay-parity` (FR-127, QSpec FR-364). The arm's value is `ModelTraceValue::{Truth(bool),
   Undefined(UndefinedEvaluation)}`: `Truth` for a `Formula` or `Deadlock`
   counterexample, `Undefined` for an `UndefinedEvaluation` one. FR-072's
   no-value rule reads this arm so: an undefined letter reproduced at
@@ -128,7 +129,7 @@ member of its own.
   (ADR-014 A-4). It SHALL then evaluate the formula over the replayed trace
   by FR-125 under the `over` binding.
   - `false` SHALL settle `reproduced-with-evaluated-witness`.
-  - `true`, or no value, SHALL settle `inconclusive`, `Verdicts` or
+  - `true`, or no value, SHALL settle `inconclusive`, `ReplayParity` or
     `NoValue` (FR-072).
 - For `kind: UndefinedEvaluation{where, cause}` the executor SHALL
   evaluate the letters of the replayed positions in order by FR-125, and
@@ -148,7 +149,7 @@ member of its own.
     witness, not FR-072's `NoValue` case.
   - A defined letter at `where`, an undefined letter before `where`, a
     `where` past the replayed positions, or a different cause SHALL settle
-    `inconclusive`, `Verdicts`.
+    `inconclusive`, `ReplayParity`.
 - For `kind: Deadlock` the executor SHALL enumerate the transition
   identities enabled at the last replayed state through `ModelSystem`, and
   evaluate the state model's `terminal when` predicate there when it has
@@ -158,7 +159,7 @@ member of its own.
   `Undefined(UndefinedEvaluation{where, cause})` at that state, so the item
   settles `refuted` with cause `UndefinedEvaluation` (ADR-018 UE-6, DL-5).
   An enabled identity, or the predicate `true`, SHALL settle
-  `inconclusive`, `Verdicts`.
+  `inconclusive`, `ReplayParity`.
 - An internal fault SHALL refuse with an `InternalFault` and settle no
   result.
 - Replay SHALL read no path, environment variable, clock or search
@@ -170,10 +171,10 @@ member of its own.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-128-AC-1 | FR-126-AC-1's lasso under the weak constraint with no granularity replays to `reproduced-with-evaluated-witness` with `trace_position` 0. FR-126-AC-2's bounded prefix and FR-126-AC-3's stutter lasso each reproduce. Over the `Branch` subject (one object `x`, field `v: Int[0, 2]`, initial 0, and operation `step` with no precondition and postcondition `self.v != pre(self.v)`, so `step` from 0 has the two post-states 1 and 2 under one transition identity), for the clause `always holds(x.v != 2)`, a prefix whose one step records the digest of `v = 2` replays through that successor and reproduces with `trace_position` 1, and one recording a digest that no successor of `step` has refuses `stale_dependency`/`content-mismatch` naming the step and that digest. | Test (TC-523) |
-| FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `Verdicts`. The original payload truncated to end at value 2 settles `inconclusive`, `Verdicts`, since `inc` is enabled there. | Test (TC-523) |
+| FR-128-AC-2 | FR-126-AC-3's deadlock counterexample reproduces. The same payload, in an envelope carrying the `package_id` and the deadlock-freedom item's `clause_node` and `occurrence_key` of the `Counter` unit whose `When` member covers value 3, settles `inconclusive`, `ReplayParity`. The original payload truncated to end at value 2 settles `inconclusive`, `ReplayParity`, since `inc` is enabled there. | Test (TC-523) |
 | FR-128-AC-3 | Refusals settle no result: AC-1's lasso with its last step removed (the loop does not close); the same lasso in an envelope for the clause with the weak `each` constraint, carrying that clause's identities and fairness set (unfair); AC-1's envelope with its payload fairness set changed to `each` (`stale_dependency`/`content-mismatch` naming both sets); one post-state digest altered (`stale_dependency`/`content-mismatch` naming the step and the recorded digest); a step `upd(a)` replaced by `attemptUpdate` with receiver `z`, outside the universe (not enabled); an `initial_state` of 1 over a one-snapshot subject; a `terminal-stutter` loop on a non-terminal state. | Test (TC-523) |
-| FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `Verdicts`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`content-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
-| FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `Verdicts`. | Test (TC-539) |
+| FR-128-AC-4 | A lasso of `upd(a)` steps for `c = a` over ADR-018 §6's subject, which visits `a.versionNumber = 2`, settles `inconclusive`, `ReplayParity`. A source edit that changes the `package_id` refuses by FR-098's rule, and a `clause_node` naming another clause refuses `stale_dependency`/`content-mismatch`. Replaying one envelope twice gives equal results. | Test (TC-523) |
+| FR-128-AC-5 | FR-126-AC-9's undefined-evaluation counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 2 and the `UndefinedEvaluation{where: position 2, cause: division-by-zero}` value. The payload with `where` set to 1, or truncated to end at value 1, settles `inconclusive`, `ReplayParity`. | Test (TC-539) |
 | FR-128-AC-6 | FR-126-AC-9's deadlock-freedom counterexample under `terminal when 6 / (3 - c.value) = 0`, the prefix to value 3 with `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`, replays to `reproduced-with-evaluated-witness` with `trace_position` 3: the letter at the terminal state 3 holds the undefined `P`. The same prefix with `kind: Deadlock` also settles `reproduced-with-evaluated-witness` with value `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`, and the item settles `refuted`. Over FR-120-AC-9's `test/tallies` subject, FR-126-AC-6's empty-prefix counterexample at `t1` with `kind: UndefinedEvaluation{cause: SumOutOfDomain}` reproduces through the undefined `pre Low`. | Test (TC-539) |
 
 ## Dependencies
@@ -183,7 +184,7 @@ member of its own.
 - [FR-098](FR-098-execute-a-replay-request.md) (facade and refusal order),
   [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),
   [FR-072](FR-072-implement-typed-replay-result.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (`replay`), [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md).

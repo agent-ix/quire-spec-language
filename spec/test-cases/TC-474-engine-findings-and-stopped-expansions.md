@@ -23,7 +23,7 @@ Scope: FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 (`Stopped`).
 
 Integration tests in `qsl-eval/tests/it/` through `explore_request`,
 `sample_request` and `replay`, with an empty `domains` set, `Limits` of 100
-each and the `quire.simulation.sampler/v1` `1-draft.1` `DefinitionRef`. A
+each and the `quire.simulation.sampler/v1` `DefinitionRef`. A
 test system is an integer graph whose `successors` returns a configured
 `Expansion` or `ExpansionStop` per state.
 

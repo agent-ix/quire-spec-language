@@ -305,6 +305,8 @@ names different artifacts in each.
 | TC-522 | Model-check outcomes settle as FR-331 terminal records with their strength | Unit | P1 | FR-127-AC-1, FR-127-AC-2, FR-127-AC-3, FR-127-AC-4, FR-127-AC-5, FR-127-AC-7, FR-127-AC-8, FR-127-AC-9, FR-127-AC-10 | 🚧 Planned |
 | TC-523 | The replay facade replays a model counterexample through ModelSystem | Integration | P1 | FR-128-AC-1, FR-128-AC-2, FR-128-AC-3, FR-128-AC-4 | 🚧 Planned |
 | TC-524 | A checked temporal clause emits as a v2 temporal clause node and reads back | Integration | P1 | FR-337-AC-1, FR-337-AC-2, FR-337-AC-3, FR-337-AC-4 | 🚧 Planned |
+| TC-525 | An EN-1 closure certificate is accepted or rejected by the core checker | Unit | P1 | FR-338-AC-1, FR-338-AC-2, FR-338-AC-3 | 🚧 Planned |
+| TC-526 | An EN-1 component certificate is accepted or rejected by the core checker | Unit | P1 | FR-339-AC-1, FR-339-AC-2 | 🚧 Planned |
 | TC-536 | Exploration and model-check limits publish their defaults | Unit | P1 | FR-101-AC-15, FR-126-AC-8 | 🚧 Planned |
 | TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 Planned |
 | TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 Planned |
@@ -659,7 +661,7 @@ pass locally.
 
 ## Finite simulation (FR-101) coverage
 
-[FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+[FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
 is QSL's implementation of QSpec FR-181: canonical successor order, the
 typed state key and its `quire.simulation.state-key/v1` digest, the
 `quire.simulation.sampler/v1` generator, replay, the `cancelled`/`caller-cancelled`

@@ -153,7 +153,7 @@ reports.
 - [FR-120](FR-120-simulate-a-checked-package-s-state-family.md) (successor
   relation), [FR-106](FR-106-admit-snapshots-and-invocations.md) (initial
   snapshots), [FR-107](FR-107-evaluate-state-clauses-at-s6a.md) (clause
-  evaluation), [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  evaluation), [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
   (checked clause), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
   (terminal states).
