@@ -70,7 +70,7 @@ happens-before computation, so a summary bug cannot produce a false race.
   pre-state, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
 - When the recomputed memory component of a step differs from the carried
-  one, the executor SHALL refuse `stale_dependency`/`revision-mismatch`,
+  one, the executor SHALL refuse `stale_dependency`/`content-mismatch`,
   naming the step.
 - The executor SHALL check a lasso against the authored constraints, the
   scheduler constraints and the memory constraints (FR-228), and refuse an
@@ -90,8 +90,8 @@ happens-before computation, so a summary bug cannot produce a false race.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-227-AC-1 | `SB`'s `tso` counterexample carries, at each of its four positions, both buffers as in ADR-025 §10's table and names `SB::Both` resolved to `tso`; replay recomputes each buffer and settles `reproduced-with-evaluated-witness`. Replaying the same steps with the resolved model changed to `sc` refuses `stale_dependency`/`revision-mismatch` at the first step whose post-state differs. | Test (TC-672) |
-| FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`; changing a carried message view refuses `stale_dependency`/`revision-mismatch`. | Test (TC-672) |
+| FR-227-AC-1 | `SB`'s `tso` counterexample carries, at each of its four positions, both buffers as in ADR-025 §10's table and names `SB::Both` resolved to `tso`; replay recomputes each buffer and settles `reproduced-with-evaluated-witness`. Replaying the same steps with the resolved model changed to `sc` refuses `stale_dependency`/`content-mismatch` at the first step whose post-state differs. | Test (TC-672) |
+| FR-227-AC-2 | `SB`'s `ra` counterexample names `Lx`'s message by depth 1 and replays to `reproduced-with-evaluated-witness`. Changing that depth to 2 refuses `invalid_runtime_input`/`invalid-value`; changing a carried message view refuses `stale_dependency`/`content-mismatch`. | Test (TC-672) |
 | FR-227-AC-3 | FR-224-AC-2's race counterexample under `ra` replays to `reproduced-with-evaluated-witness`. An envelope whose `earlier` names the flag store, which is not an access to `data`, settles `inconclusive`, `ReplayParity`; so does the AC-1 shape of FR-224, whose `data` load runs only after its flag load read 1, with a `release`/`acquire` flag and a forged race on `data`. | Test (TC-672) |
 | FR-227-AC-4 | The lasso of FR-228-AC-2, in which `w`'s buffer stays `[x := 1]` through `r`'s repeated load of `x`, refuses `invalid_runtime_input`/`invalid-value` as unfair under `flush(w)`'s constraint. | Test (TC-672) |
 

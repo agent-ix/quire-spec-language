@@ -25,6 +25,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-229
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-309
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/StR-001
     type: traces_to
 ---

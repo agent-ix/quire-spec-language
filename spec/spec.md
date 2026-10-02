@@ -344,6 +344,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-229
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-309
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-205
@@ -774,6 +776,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-227](functional/FR-227-carry-and-replay-a-weak-memory-counterexample.md) | FR | Specified: weak-memory counterexamples with memory components and depth-named choices, their replay under the resolved models, and race replay by vector clocks (ADR-025 MK-1, MK-2, DR-6); not yet implemented -- TC-672 planned |
 | [FR-228](functional/FR-228-derive-memory-fairness-constraints.md) | FR | Specified: derived `fair weak each flush(b)` under `tso` and visibility fairness under `ra`, with a `memory` origin beside the scheduler constraints (ADR-025 MF-1 to MF-5); not yet implemented -- TC-673 planned |
 | [FR-229](functional/FR-229-carry-the-memory-component-through-the-protocol-system.md) | FR | Specified: `Tso` and `Ra` through ADR-027's `MemoryModel` seam: the state key's memory member, the thread observation, atoms over memory values, `memory` anchors, terminal states, and memory footprints and visibility (ADR-025 MA-5, MS-1 to MS-4, MR-1, MR-2); not yet implemented -- TC-674 planned |
+| [FR-309](functional/FR-309-build-the-memory-forms-at-s2.md) | FR | Specified: S2 forms for the `memory` clause of `parallel`, the `ordering` of an `attempt` and the `fence` control, citing QSpec's shared grammar (QSpec FR-434, FR-435); not yet implemented -- TC-888 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |

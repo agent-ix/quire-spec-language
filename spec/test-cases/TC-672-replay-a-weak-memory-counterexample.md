@@ -29,9 +29,9 @@ Tag the tests `#[trace("TC-672", "FR-227-AC-n")]`.
 ## Expected Results
 
 - Step 1: buffers match §10 and `reproduced-with-evaluated-witness`;
-  `stale_dependency`/`revision-mismatch`.
+  `stale_dependency`/`content-mismatch`.
 - Step 2: `reproduced-with-evaluated-witness`; `invalid_runtime_input`/
-  `invalid-value`; `stale_dependency`/`revision-mismatch`.
+  `invalid-value`; `stale_dependency`/`content-mismatch`.
 - Step 3: `reproduced-with-evaluated-witness`; `inconclusive`,
   `ReplayParity` twice.
 - Step 4: `invalid_runtime_input`/`invalid-value` as unfair.

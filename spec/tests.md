@@ -379,6 +379,7 @@ names different artifacts in each.
 | TC-672 | Weak-memory counterexamples carry memory components and replay | Integration | P1 | FR-227-AC-1, FR-227-AC-2, FR-227-AC-3, FR-227-AC-4 | 🚧 Planned |
 | TC-673 | Flush and visibility fairness join every infinite-trace fairness set | Integration | P1 | FR-228-AC-1, FR-228-AC-2, FR-228-AC-3, FR-228-AC-4 | 🚧 Planned |
 | TC-674 | The memory component, observations, atoms and footprints flow through the seam | Integration | P1 | FR-229-AC-1, FR-229-AC-2, FR-229-AC-3, FR-229-AC-4, FR-229-AC-5 | 🚧 Planned |
+| TC-888 | S2 builds the memory clause, access ordering and fence forms | Unit | P1 | FR-309-AC-1, FR-309-AC-2, FR-309-AC-3 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
