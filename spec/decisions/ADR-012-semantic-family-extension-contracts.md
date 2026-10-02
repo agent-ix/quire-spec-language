@@ -137,7 +137,7 @@ and the stage hooks it implements.
 | `SumCase` | sum types and `case` with its exhaustiveness obligation | `Value` | #221 | #187 |
 | `TemporalTrace` | temporal and trace semantics, and the control-to-temporal mapping (QSpec FR-300, PR #59) | `Value`, `StateModel`, `ProtocolClause` | #222 | #188, #189 |
 | `ProtocolClause` | protocols, clauses, frames, scoped anchors | `Value`, `StateModel` | #223 | #218 |
-| `Relation` | refinement and model-to-implementation relations | `StateModel`, `ProtocolClause` | #223 | #191, #192, #198 |
+| `Relation` | refinement and model-to-implementation relations. Amended by ADR-020 §1: the refinement declaration between two QSL models is a `Relation` declaration with `check` and `requirements` hooks at S3, checked into `CheckedRefinement` (ADR-020 RM-1 to RM-8, AX-1) | `StateModel`, `ProtocolClause` | #223 | #191, #192, #198 |
 
 The "Reads checked types of" column is a semantic ordering, and it is a DAG.
 It is carried by types in the layer-3 `check` core, not by module imports.

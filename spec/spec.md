@@ -194,6 +194,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-020
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-023
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-022
@@ -287,6 +289,36 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-135
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-136
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-137
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-138
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-139
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-140
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-141
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-142
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-143
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-144
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-145
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-146
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-147
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-148
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-018
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-163
     type: contains
@@ -624,6 +656,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-025](usecase/US-025-check-a-protocol-under-a-weak-memory-model.md) | US | Draft |
 | [US-020](usecase/US-020-state-that-something-is-possible-in-a-model.md) | US | Draft |
 | [US-021](usecase/US-021-compare-runs-over-every-behaviour-of-a-model.md) | US | Draft |
+| [US-018](usecase/US-018-prove-that-a-detailed-model-implements-an-abstract-one.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -852,6 +885,22 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-182](functional/FR-182-settle-a-hyper-verdict.md) | FR | Specified: Hyper verdicts onto V-1 to V-8 with `MatchUndetermined` and `VacuousMatch`, and `refuted` with cause `UndefinedEvaluation` naming the tuple for an undefined claim (ADR-023 HV-1 to HV-8); not yet implemented -- TC-607, TC-610, TC-611 planned |
 | [FR-183](functional/FR-183-replay-a-hyper-counterexample.md) | FR | Specified: `replay_model_trace_tuple` replays `HyperCounterexample` of kinds `Lockstep`, `WitnessExhausted`, `Projected` and `StepTuple` and an undefined evaluation reproduced at its tuple (ADR-023 HX-1 to HX-6, HV-8, PA-7); the product-closure certificate checker in `qsl-replay` (ADR-023 HX-7); not yet implemented -- TC-608, TC-610 planned |
 | [FR-184](functional/FR-184-bound-hyper-runs-with-caller-budgets.md) | FR | Specified: `max_witness_set` (default 2^16) and `max_relation_tuples` (default 2^24) as caller-set B-5 budgets settling V-7 with the limit named (ADR-023 HC-10); not yet implemented -- TC-609 planned |
+| [FR-135](functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md) | FR | Specified: S3 checks a refinement declaration as a `Relation` declaration: model aliases (local or dependency), the key-preserving population map, object and field rows typed with reference lifting, hidden fields, and the refinement node in the package identity (ADR-020 RM-1 to RM-4); not yet implemented -- TC-540 planned |
+| [FR-136](functional/FR-136-check-a-refinement-s-step-rows.md) | FR | Specified: S3 requires one written-out step row per concrete operation, and over a protocol subject per step class (node, template, channel, role, trigger, memory step), typing receivers, arguments, `_` and results (ADR-020 RM-5, ADR-027 PR-1); not yet implemented -- TC-541 planned |
+| [FR-137](functional/FR-137-check-a-refinement-s-fairness-rows.md) | FR | Specified: S3 checks `assume` rows into `F_C` and `ensure` rows into `F_A`, with the concrete protocol's scheduler constraints added to `F_C` (ADR-020 RM-6, ADR-027 PA-3); not yet implemented -- TC-542 planned |
+| [FR-138](functional/FR-138-check-and-compute-history-fields.md) | FR | Specified: history rows checked at S3 and computed along a behaviour, receiver-only, outside the concrete model, an out-of-type update settling `MappingUndetermined` without removing the step (ADR-020 AX-1, AX-3); an undefined update refuting (ADR-020 RE-5); not yet implemented -- TC-543, TC-554 planned |
+| [FR-139](functional/FR-139-type-and-evaluate-population-valued-expressions.md) | FR | Specified: a concrete population as a set and the `count`, `sum`, `exists`, `all`, `only` and `seq` forms inside refinement declarations only, typed at S3 and evaluated by the clause evaluator (ADR-020 RM-8); not yet implemented -- TC-544 planned |
+| [FR-140](functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md) | FR | Specified: `map_state`: the abstract state of a concrete state and its history, through the one clause evaluator, with hidden slots and `MappingUndetermined` (ADR-020 RM-7); `MappingFailure::Undefined` for an undefined row; not yet implemented -- TC-545, TC-555 planned |
+| [FR-141](functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md) | FR | Specified: `check_initial` and `check_step`, the one step semantics for the engine and replay: stutter, abstract-operation and `any` rules, bound results, `_` arguments, the hidden-field candidate set and protocol step-class rows (ADR-020 RS-1 to RS-6, AX-2); `Undefined` for an undefined mapping; not yet implemented -- TC-546, TC-554, TC-555 planned |
+| [FR-142](functional/FR-142-check-a-refinement-s-safety-half-on-the-explicit-state-product.md) | FR | Specified: the refinement product on EN-1's first phase over concrete state, history values and candidates, with derived abstract universes and the canonical failing prefix (ADR-020 RE-1, CO-1); an undefined mapping refuting with an `UndefinedEvaluation` counterexample; not yet implemented -- TC-547, TC-554 planned |
+| [FR-143](functional/FR-143-check-a-refinement-s-liveness-half-under-abstract-fairness.md) | FR | Specified: the second phase: `F_A` read through the mapping under the `F_C` filter, `Divergence` and `AbstractUnfair` lassos, concrete halts via the terminal stutter, `unsupported` with hidden fields (ADR-020 RS-7, RS-10, CO-2, AX-5); not yet implemented -- TC-548 planned |
+| [FR-144](functional/FR-144-request-and-settle-a-refinement-item.md) | FR | Specified: one `temporal-satisfaction` record with form TP-5 per refinement, the concrete deadlock-freedom item beside it, and settlement of both halves with `MappingUndetermined` (ADR-020 §5, RS-9); not yet implemented -- TC-549, TC-555, TC-556 planned |
+| [FR-145](functional/FR-145-replay-a-refinement-counterexample.md) | FR | Specified: replay through the `ModelTrace` arm: both packages recompiled, history, mapped states and candidate sets recomputed, `check_step` rerun, lasso closure and fairness checks, parity (ADR-020 RC-2, RC-3); the reproduced undefined mapping; not yet implemented -- TC-550, TC-554 planned |
+| [FR-146](functional/FR-146-write-per-step-simulation-records-for-a-refinement.md) | FR | Specified: one `operation-contract` record for RS-2 and per non-`any` step row of a refinement with no hidden or history field, the concrete invariants as hypotheses, SMT unrolling candidacy of the refinement record, and settlement that never refutes (ADR-020 RE-2, RE-3); not yet implemented -- TC-551 planned |
+| [FR-147](functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md) | FR | Specified: S3 admits an abstract protocol side: node targets as observation labels, `internal` rows, the protocol state hidden, one `refinement` record, liveness `unsupported` (ADR-020 MC-1, ADR-027 PR-2); not yet implemented -- TC-552 planned |
+| [FR-148](functional/FR-148-decide-steps-against-an-abstract-protocol.md) | FR | Specified: abstract protocol state sets closed under internal steps, visible steps matched by label, QSpec FR-177's further checks on the same product, replay through `ProtocolSystem` (ADR-027 PR-2, PR-3); not yet implemented -- TC-553 planned |
+| [FR-149](functional/FR-149-check-a-refinement-s-simulation-certificate.md) | FR | Specified: the simulation certificate EN-1 writes for a proved safety half and its checker in `qsl-replay`, which recomputes initial states, successors and `check_step` over the relation; certified, `uncertified` and `CertificateRejected` settlement (ADR-020 CT-1 to CT-4); not yet implemented -- TC-556 planned |
+| [FR-310](functional/FR-310-build-the-s2-form-of-a-refinement-declaration.md) | FR | Specified: the S2 `RefinementForm` for a `refinement` declaration, every row as written in source order with its span, no name resolved (ADR-020 RM-1, RM-9); not yet implemented -- TC-889 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -865,3 +914,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-025](decisions/ADR-025-weak-memory-models-for-parallel.md) | ADR | Proposed; compiler requirements FR-219 to FR-229; weak memory models for `parallel`: a source default with request selection of `sc`, x86-TSO or RC11 release-acquire with relaxed and `seq_cst` accesses, as operational models on the explicit-state engine; memory bounds as request budgets, memory fairness, the race-freedom item, reduction rows, counterexamples with buffer and view state, and the preconditions for transfer to code |
 | [ADR-022](decisions/ADR-022-possible-properties-and-state-graph-queries.md) | ADR | Proposed; possible properties and state-graph queries over a model: `possible` (EF), `always possible` (AG EF) and `unique path` as a property family beside temporal claims, their semantics over the explored state graph, witness sampling and backward reachability on the explicit-state engine, witness, trap and path-pair evidence that replays, and verdicts |
 | [ADR-023](decisions/ADR-023-hyperproperties-over-every-behaviour.md) | ADR | Proposed; hyperproperties over every behaviour of a model: trace variables bound to model aliases, lockstep or projection alignment with input matching, per-variable fairness, the admitted fragment (step relations on model and code, universal formulas, `∀∃` with safety bodies, single-existential claims routed to the possible family), the self-composition, projected and witness-set products on EN-1, compiler-verified copy-swap symmetry, tuple counterexamples and their replay, and the owner's rulings (§12) |
+| [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
