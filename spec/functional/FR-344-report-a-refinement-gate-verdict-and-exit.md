@@ -106,7 +106,7 @@ their exits.
 | FR-344-AC-4 | A case whose superseding run exceeds its `accounting` work budget names, in its entry, `work_units`, the budget's value and the member `accounting`. | Test (TC-865) |
 | FR-344-AC-5 | The seeded-regression test corpus of TC-864 reports verdict violation, exit 10, and exactly one `regression`, naming the seeded case. | Test (TC-864) |
 | FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
-| FR-344-AC-7 | `make ci` runs `refinement-versioning` and `refinement-layering`; a gate run over a corpus whose verdict is violation exits 10 from `cargo run --package xtask -- refinement …` and fails its make target, and a success run exits 0 and passes it. | Test (TC-866) |
+| FR-344-AC-7 | A gate run over a corpus whose verdict is violation exits 10 from `cargo run --package xtask -- refinement …` and fails its make target, and a success run exits 0 and passes it. | Test (TC-866) |
 
 ## Dependencies
 

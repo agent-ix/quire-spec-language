@@ -83,3 +83,20 @@ SR-1000 ran) and the `profile` production on QSpec #174 (open).
 | FND-010 | fixed | 3cfcf8e0: FR-343 and FR-345 state that QSpec FR-452/FR-453 own the results and rules, and their tables map FR-341/FR-342 classes onto them |
 | FND-011 | fixed | 3cfcf8e0: FR-345 "Compile seam": the core takes the compile function; the fault wrapper lives only in `#[cfg(test)]`; TC-868 injects only through it |
 | FND-012 | fixed | 3cfcf8e0: FR-340 refuses a corpus with no pair as one tool-failure result; FR-340-AC-2 tests it |
+| FND-013 | fixed | 6761813e (with 5a23cb6d): FR-345, ADR-017 RF-3 and TC-868 request the witness item with the layer's `witness_request` kind and extent once from each candidate backend by name, holding when at least one settles it `supported`, matching QSpec FR-453-AC-5 as amended in QSpec 3a894ac |
+| FND-014 | fixed | 5a23cb6d: ADR-017 RF-6 says a header profile carries only its identity; line 172 resolves a header by its identity |
+| FND-015 | fixed | 5a23cb6d: an empty corpus gives exactly one tool-failure result and no other result; missing-item results apply only to a non-empty corpus |
+| FND-016 | fixed | 5a23cb6d: FR-344 adds entry-level and missing-item tool-failure groups with names and byte order; FR-344-AC-6 and TC-866 step 4 cover them |
+| FND-017 | fixed | 5a23cb6d: FR-110 Lock rows cites QSpec FR-001's `package_selection.layer` / `without_layer` rule (QSpec #171) instead of defining it |
+| FND-018 | fixed | 5a23cb6d: FR-110-AC-5 and TC-490 step 4 state the grammar: any token after the identity string is a syntax error at that token |
+
+## New findings (disposition pass 2)
+
+Reviewed at f5ca01363818ae97c2d3c984802dd0cb4069ecff, against QSpec FR-001,
+FR-453 and `complete-value-lock.json` on QSpec branch
+`spec/wave-b-q7-adr017` at 3a894ac (QSpec #171, open).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-019 | low | TC-866's Scope line says FR-344-AC-1 to FR-344-AC-3, but its steps 4 and 5 back FR-344-AC-6 and FR-344-AC-7, and `spec/tests.md` maps TC-866 to AC-6 and AC-7. Scope and trace disagree. | spec/test-cases/TC-866-refinement-report-verdict-order-and-determinism.md:16; spec/tests.md:282 |
+| FND-020 | low | TC-866 step 5 asserts that the Makefile's `ci` prerequisites list `refinement-versioning` and `refinement-layering`. That checks structure, not behaviour. The behaviour half of FR-344-AC-7 (the gate's exit code makes its make target pass or fail) already has its own steps. Drop the prerequisite read, and drop FR-344-AC-7's "`make ci` runs …" clause, or test it by behaviour. | spec/test-cases/TC-866-refinement-report-verdict-order-and-determinism.md:32-35, :54; spec/functional/FR-344-report-a-refinement-gate-verdict-and-exit.md:109 |

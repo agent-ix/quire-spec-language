@@ -13,7 +13,7 @@ relationships:
 Verify FR-344's verdict precedence, that a regression is listed under any
 verdict, ordering by case name, and byte-equal reports across runs.
 
-Scope: FR-344-AC-1 to FR-344-AC-3.
+Scope: FR-344-AC-1 to FR-344-AC-3, FR-344-AC-6 and FR-344-AC-7.
 
 ## Test Procedure
 
@@ -29,8 +29,7 @@ Scope: FR-344-AC-1 to FR-344-AC-3.
    expected order. Add two entry-level tool failures (`b/entry.json`,
    `a/entry.json`) and two missing-item tool failures (E5 /
    `distinguishing`, state graph / `witness`), in that order.
-5. Read the `ci` prerequisites of the Makefile. Run
-   `cargo run --package xtask -- refinement versioning` over a test corpus
+5. Run `cargo run --package xtask -- refinement versioning` over a test corpus
    whose verdict is violation and over one whose verdict is success, each
    through a make target wrapping it, and read each exit code.
 
@@ -51,6 +50,5 @@ Each expected verdict and exit is a literal in the test. Tag the tests
   graph→model, queries→graph, value→model), each list written out as a
   literal. The four tool failures come first: `a/entry.json`,
   `b/entry.json`, then state graph / `witness`, then E5 / `distinguishing`.
-- Step 5: `ci` lists `refinement-versioning` and `refinement-layering`; the
-  violation run exits 10 and its make target fails; the success run exits
+- Step 5: the violation run exits 10 and its make target fails; the success run exits
   0 and its make target passes.
