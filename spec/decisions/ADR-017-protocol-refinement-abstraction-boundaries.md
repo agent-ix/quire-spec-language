@@ -637,6 +637,15 @@ a decimal integer with no leading zero. These are lexical keys (ADR-013 R-06
 contract-defined keys) and compare by bytes. QSL checks their syntax only and
 never resolves them against Rust code. CG's generator resolves them (§6).
 
+Amended by ADR-025 MX-2 to MX-4. For a subject with a weak `parallel`, a
+proof transfers to the code bound here under preconditions on these bindings:
+each shared location with an atomic access binds to a Rust atomic, and one
+with only non-atomic accesses to plain state; each attempted operation's
+function performs one access of its classified kind with at least the
+attempt's declared ordering; and the subject's race-freedom item is proved
+when it has non-atomic accesses. QSL checks the binding syntax only, as
+above, and states these as preconditions.
+
 #### AR-3 Checked form and refusals
 
 S3 builds `CheckedAbstractionRelation`, in the `check` core, holding at most

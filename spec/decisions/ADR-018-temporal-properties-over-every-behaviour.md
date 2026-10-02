@@ -133,7 +133,10 @@ value for, so a claim under either over a model subject settles
 `unsupported`, `unsupported-requested-capability`, at negotiation.
 
 Each model subject also gets one derived **deadlock-freedom** item, a TP-1
-invariant, unless its state model opts out (§10, DL-3).
+invariant, unless its state model opts out (§10, DL-3). Amended by ADR-025
+§14: a subject whose resolved memory model is weak and that has a
+non-atomic shared access also gets one derived race-freedom item, a TP-1
+invariant with no opt-out (ADR-025 DR-4).
 
 **Verdict kinds.** Each verdict is one QSpec FR-360 label
 with one QSpec FR-243 basis, carried by an existing `TerminalValue` variant.
@@ -214,7 +217,10 @@ reaches a budget before completing `k` settles V-7.
 **Scope.** A verdict holds for exactly its subject (§2): the checked package,
 the initial states, the universes and any substituted `ProofBound`s. The
 subject is part of the obligation identity (ADR-013 O-09), so a verdict over
-one universe is joined only to its own request (ADR-014 §8).
+one universe is joined only to its own request (ADR-014 §8). Amended by
+ADR-025 MM-5: over a protocol subject with a `parallel`, the obligation
+identity also binds the resolved memory model of each outermost `parallel`,
+whether the source default or the request's selection.
 
 ### 2. One semantics for traces and models
 

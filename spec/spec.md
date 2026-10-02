@@ -189,6 +189,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-018
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-019
+  - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
     type: contains
@@ -321,6 +322,29 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
+  - target: ix://agent-ix/quire-spec-language/FR-219
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-220
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-221
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-222
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-223
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-224
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-225
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-226
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-227
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-228
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-229
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-205
     type: contains
@@ -543,6 +567,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-016](usecase/US-016-prove-liveness-of-a-contended-model-under-strong-fairness.md) | US | Draft |
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
+| [US-025](usecase/US-025-check-a-protocol-under-a-weak-memory-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -738,6 +763,17 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-217](functional/FR-217-replay-a-protocol-counterexample.md) | FR | Specified: the protocol counterexample and its replay through `ProtocolSystem`, with lasso fairness over scheduler constraints and the deadlock check with recomputed blocked threads (ADR-027 PX-1, PX-2); not yet implemented -- TC-662 planned |
 | [FR-218](functional/FR-218-check-every-protocol-control-construct-at-s3.md) | FR | Specified: S3 checks of `parallel` and its join policy, `choice`, `repeat`, `await`, `check`, channel and event nodes, captures, compensation templates, replicated roles and activation, with the edge relation, binder readers and role regions in a `CheckedProtocolClause` (ADR-027 DS-1); not yet implemented -- TC-663 planned |
 | [FR-308](functional/FR-308-build-the-complete-protocol-forms-at-s2.md) | FR | Specified: S2 forms for the complete protocol productions (roles, channels, `parallel` join policies, `repeat` with optional maximum and loop proof, `await`, compensation, `terminal`, `scheduling`, `activation on each`), citing QSpec's shared grammar; not yet implemented -- TC-887 planned |
+| [FR-219](functional/FR-219-declare-and-select-the-memory-model-of-a-parallel.md) | FR | Specified: the `memory sc|tso|ra` clause of a `parallel` with its nesting and join-policy refusals, request selection of an outermost `parallel`'s model, and the resolved models in the obligation identity (ADR-025 MM-1 to MM-5); not yet implemented -- TC-664 planned |
+| [FR-220](functional/FR-220-check-access-orderings-fences-and-access-classification.md) | FR | Specified: access orderings and the `fence` control, load/store/RMW/local classification over shared footprints, admitted orderings and the single-location access shape (ADR-025 MM-6, MA-1 to MA-4); not yet implemented -- TC-665 planned |
+| [FR-221](functional/FR-221-explore-the-x86-tso-memory-model.md) | FR | Specified: `Tso: MemoryModel`: per-thread FIFO store buffers, `flush(b)`, locked accesses, fences and the fork, join and send gates (ADR-025 TSO-1 to TSO-8); not yet implemented -- TC-666 planned |
+| [FR-222](functional/FR-222-explore-the-release-acquire-memory-model.md) | FR | Specified: `Ra: MemoryModel`, RC11 as an operational model: message sequences in mo, thread and message views, fences, fork/join/channel synchronisation, depth-named choices and garbage collection (ADR-025 RA-1 to RA-8); not yet implemented -- TC-667 planned |
+| [FR-223](functional/FR-223-order-seq-cst-events-by-the-rc11-partial-sc-order.md) | FR | Specified: RC11's partial SC order under `ra`: the live SC event graph, happens-before frontiers, acyclicity pruning and collection with `F(ℓ)` summaries (ADR-025 PSC-1 to PSC-6); not yet implemented -- TC-668 planned |
+| [FR-224](functional/FR-224-derive-the-race-freedom-item-for-non-atomic-locations.md) | FR | Specified: non-atomic shared locations, the race summary, the derived race-freedom item per weak subject and its `Race` counterexample (ADR-025 DR-1 to DR-5, DR-7, DR-8); not yet implemented -- TC-669 planned |
+| [FR-225](functional/FR-225-bound-the-memory-component-by-modelchecklimits-budgets.md) | FR | Specified: `max_store_buffer` and `max_messages` as `ModelCheckLimits` method bounds, default 4, bound-limited boundary states, `MemoryBoundReached` and the bound stated in every terminal record (ADR-025 MB-2 to MB-4); not yet implemented -- TC-670 planned |
+| [FR-226](functional/FR-226-state-the-code-link-preconditions-of-a-weak-memory-verdict.md) | FR | Specified: the code-link preconditions MX-1 to MX-4 stated as preconditions, the `memory.load-buffering-shape` warning, EN-1's advertised memory models and routing by resolved model (ADR-025 §8); not yet implemented -- TC-671 planned |
+| [FR-227](functional/FR-227-carry-and-replay-a-weak-memory-counterexample.md) | FR | Specified: weak-memory counterexamples with memory components and depth-named choices, their replay under the resolved models, and race replay by vector clocks (ADR-025 MK-1, MK-2, DR-6); not yet implemented -- TC-672 planned |
+| [FR-228](functional/FR-228-derive-memory-fairness-constraints.md) | FR | Specified: derived `fair weak each flush(b)` under `tso` and visibility fairness under `ra`, with a `memory` origin beside the scheduler constraints (ADR-025 MF-1 to MF-5); not yet implemented -- TC-673 planned |
+| [FR-229](functional/FR-229-carry-the-memory-component-through-the-protocol-system.md) | FR | Specified: `Tso` and `Ra` through ADR-027's `MemoryModel` seam: the state key's memory member, the thread observation, atoms over memory values, `memory` anchors, terminal states, and memory footprints and visibility (ADR-025 MA-5, MS-1 to MS-4, MR-1, MR-2); not yet implemented -- TC-674 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -748,3 +784,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, deadlocks reported by default with intended terminal states (§10), interval operators inside infinite-trace formulas with their automaton cost and limit (§11), and the QSL sequencing |
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR | Proposed; compiler requirements FR-205 to FR-218; the protocol transition system for `parallel`: protocol subjects and states keyed canonically, step kinds with folded structural moves and atomic attempts, causal interleavings, the memory-model seam, fit with ADR-018's behaviours, deadlocks and fairness, `ProtocolSystem` on FR-101, footprints for partial-order reduction, protocol steps in refinement, compensation, replicated roles and activation on each; owner rulings RU-1 to RU-5 |
+| [ADR-025](decisions/ADR-025-weak-memory-models-for-parallel.md) | ADR | Proposed; compiler requirements FR-219 to FR-229; weak memory models for `parallel`: a source default with request selection of `sc`, x86-TSO or RC11 release-acquire with relaxed and `seq_cst` accesses, as operational models on the explicit-state engine; memory bounds as request budgets, memory fairness, the race-freedom item, reduction rows, counterexamples with buffer and view state, and the preconditions for transfer to code |

@@ -432,6 +432,11 @@ a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled
 run maps to incomplete with `Cancelled`, written `cancelled` (ADR-018 V-7).
 
+Amended by ADR-025 MV-1 (weak memory models). `InconclusiveCause` gains
+`MemoryBoundReached{bound, states}`, category inconclusive. The `Unsupported`
+causes gain `WeakAccessShape{site, transition, shape}`, category
+unsupported.
+
 Invariants: no category collapses into a boolean, string or another category
 through any conversion; missing anchors, exhausted limits and false predicates
 stay distinct (FR-323-AC-3); a timeout and a cancellation keep their cause. The
