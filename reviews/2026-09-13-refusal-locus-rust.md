@@ -3,7 +3,7 @@ id: SR-410
 title: "Rust review of protocol-role refusal loci"
 type: SpecReview
 analysis: code-review
-scope: "refusal-locus hunk; src/protocol_artifact/native/runtime.rs; tests/native_protocol_emission.rs; FR-042-AC-8; TC-121"
+scope: "a7911875 refusal-locus hunk; src/protocol_artifact/native/runtime.rs; tests/native_protocol_emission.rs; FR-042-AC-8; TC-121"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-042
@@ -28,11 +28,11 @@ reviewed slice.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | No issues found | runtime.rs:581; native_protocol_emission.rs:332 |
+| FND-001 | low | No issues found | a7911875; runtime.rs:581; native_protocol_emission.rs:332 |
 
 ## Review evidence
 
-The review isolated the five-line refusal-locus change; the same commit's unrelated
+The review isolated the five-line refusal-locus change in `a7911875`; the same commit's unrelated
 state-evaluator cleanup was not attributed to issue #68. The new assignment is private,
 single-threaded diagnostic state and introduces no API, unsafe code, integer conversion, panic,
 allocation, loop, wire field, or error variant. Its `layout.locus(role.span)?` failure remains a

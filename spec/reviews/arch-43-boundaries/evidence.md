@@ -13,8 +13,8 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` against
-QSpec `origin/main`. For each
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (QSL
+`main` at `99e9b6c7`) against QSpec `origin/main` at `4634f5f`. For each
 decision (PF-1 to PF-8, RF-1 to RF-7, AR-1 to AR-6, TK-1 to TK-4), the review
 checked three things. Does it have a verification method and a named
 evidence artifact? Can its oracle be computed from the types the code

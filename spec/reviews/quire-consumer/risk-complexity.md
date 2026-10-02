@@ -10,7 +10,7 @@ review_set: all
 
 FR-030 and amended FR-011 each have medium technical risk and high volatility because they consume Quire's evolving source contract. The exact optional producer pin, disabled default features and real cross-boundary tests contain this risk. Byte/scalar coordinates and CRLF were the concrete hazards and are covered. Source size and line ceilings bound extraction input without claiming a producer latency guarantee. See failure-domain.md.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `55649b3`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

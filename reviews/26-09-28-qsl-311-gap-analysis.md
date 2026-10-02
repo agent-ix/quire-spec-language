@@ -3,7 +3,7 @@ id: SR-771
 title: "QSL-311 gap analysis of PR 511 (TC-466 step 3 reaches over a probe invocation and charge denial)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; qsl-replay/src/spine/clause/tests.rs; spec/test-cases/TC-466-s6a-evaluates-state-clauses.md (unchanged); spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (checks 8 and 10, unchanged); spec/tests.md (unchanged); qsl-semantics/src/model/observation/document.rs (check_population_closure, admit_parameters_and_result, unchanged)"
+scope: "agent-ix/quire-spec-language@6307caf29145a05eedf251a428f6e40b0a8b069d; qsl-replay/src/spine/clause/tests.rs; spec/test-cases/TC-466-s6a-evaluates-state-clauses.md (unchanged); spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (checks 8 and 10, unchanged); spec/tests.md (unchanged); qsl-semantics/src/model/observation/document.rs (check_population_closure, admit_parameters_and_result, unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-107
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-311. PR: quire-spec-language#511.
+Ticket: QSL-311. PR: quire-spec-language#511 at 6307caf2, base f8b89a9b.
 There is no plan bundle, so the scope is the ticket's asks, checked against
 TC-466 step 3 as written (TC-466 lines 29-42 and 52-56) and FR-107-AC-3.
 

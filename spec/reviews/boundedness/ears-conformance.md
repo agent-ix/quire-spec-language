@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed branch `spec/17-boundedness-adr`. `quire validate
+Reviewed commit `bbe92fec` (branch `spec/17-boundedness-adr`). `quire validate
 --summary` over FR-082, FR-057 and ADR-014 reports 3/3 docs grammar-clean with
 0 findings, so every finding below is semantic. The FR-057 row is clean. The
 dominant defect is in FR-082: the new stage-dependent SHALL paragraph (lines

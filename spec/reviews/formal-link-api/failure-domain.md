@@ -5,6 +5,7 @@ type: SpecReview
 analysis: failure-domain
 scope: "FR-013, formal-environment-linking.md, TC-020–024, TC-030–034 and IT-005 linking seam"
 review_set: all
+evaluated_revision: "c78792a"
 review_date: "2026-09-08"
 ---
 
@@ -37,10 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
-IT-005 consistency re-review: PASS for the corrected specification.
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
 The unsigned fixture was a qualification-input mismatch, not an accepted alternate numeric policy. Preserve the selected signed domain and reject silent fixture substitution.
 
 
-Evaluated before continuing the corrected qualification implementation.
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 This correction does not admit URI coercion or reserved field names. Invalid fixture setup remains a failing setup, never a successful missing-import/name control.

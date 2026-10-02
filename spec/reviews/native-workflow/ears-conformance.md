@@ -10,7 +10,7 @@ review_set: all
 
 The primary requirement uses an event-driven When/shall form; admitted-language, clause-count, cause retention and mapping behavior have named compiler subjects and observable shall statements. Caller and C ownership paragraphs are explanatory boundary statements. Acceptance rows are measurable checks rather than additional ambiguous obligations.
 
-PR-readiness review of implementation baseline; the owner's selected
+PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

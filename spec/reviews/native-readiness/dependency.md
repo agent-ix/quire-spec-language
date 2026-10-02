@@ -5,6 +5,7 @@ type: SpecReview
 analysis: dependency
 scope: "FR-002/003/010, NFR-001/005 refinements and TM-002/Plan-002"
 review_set: all
+evaluated_revision: "afeeb20 (requirement changes a10ec80)"
 ---
 
 ## Summary
@@ -14,10 +15,10 @@ owner-selected base plus all seven QUOIN analyses. The reviewed boundary is expl
 
 ## Verdict
 
-### Compatibility amendment review
+### Compatibility amendment reviewed at 5d0c9de
 
 **PASS** for the FR-010/NFR-005 native Error implementation exception.
-Inspected thiserror-impl src/prop.rs source_field: the field named source is unconditionally inferred after explicit source/from attributes. No opt-out exists there. Direct standard trait impls require no dependency or lock change; audit errors retain thiserror.
+Inspected pinned thiserror-impl 2.0.20 src/prop.rs source_field: the field named source is unconditionally inferred after explicit source/from attributes. No opt-out exists there. Direct standard trait impls require no dependency or lock change; audit errors retain thiserror.
 The initial derive attempt failed to compile. This amendment review precedes
 the corrected runtime implementation; other in-progress readiness edits are
 preserved under the earlier reviewed contract.
@@ -38,10 +39,11 @@ Task-003's boundary/test implementation precedes Task-004's local checks and cod
 
 ## Provenance and validation
 
-Used the installed Quoin specify/spec-review and the actual catalog
+Used the installed Quoin 0.20.0 specify/spec-review and the actual catalog
 skeletons/schema pack (org agent-ix). The owner retained the full review set
 and declined the optional semantic gap comparison. No additional agent was
-spawned.
+spawned. Native runtime source remains unchanged at this reviewed revision.
+The source merge at 8751eff reconciles only upstream owner-policy documentation.
 74/74 requirement/TC/plan documents were grammar-clean before these eight reports;
 all reports are validated before implementation. The six known installed
 registry diagnostics and functional-table status-header disagreement remain

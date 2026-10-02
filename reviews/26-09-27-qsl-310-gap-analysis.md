@@ -3,7 +3,7 @@ id: SR-769
 title: "QSL-310 gap analysis of PR 507 (TC-466 step 1 VersionUnchanged and step 2 postcondition terms)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; qsl-replay/src/spine/clause/tests.rs; spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (frame check, unchanged); spec/test-cases/TC-466-s6a-evaluates-state-clauses.md (unchanged); spec/tests.md (unchanged)"
+scope: "agent-ix/quire-spec-language@6200370a44f5521e3b4618739a95535980cee603; qsl-replay/src/spine/clause/tests.rs; spec/functional/FR-107-evaluate-state-clauses-at-s6a.md (unchanged); spec/functional/FR-106-admit-snapshots-and-invocations.md (frame check, unchanged); spec/test-cases/TC-466-s6a-evaluates-state-clauses.md (unchanged); spec/tests.md (unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-107
@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-310, the first slice of the canceled QSL-308. PR:
-quire-spec-language#507. There is no plan
+quire-spec-language#507 at 6200370a, base f17c2d4f. There is no plan
 bundle, so the scope is the ticket's own asks: TC-466 step 1's
 `VersionUnchanged` sub-case, TC-466 step 2's three postcondition terms, and
 an invocation-selection helper like `run_config_version_current`.

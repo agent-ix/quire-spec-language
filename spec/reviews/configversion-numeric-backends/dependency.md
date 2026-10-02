@@ -19,7 +19,7 @@ dependency graph is acyclic, ordered and pinned; no unresolved implementation pr
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Closed: the draft eliminates the former two-IR executable graph. | IT-010-SC-01 |
+| FND-001 | medium | Closed: the draft now selects codegen `5e2a6a9`, IR `04eb6f8`, runtime `8a4d02b` and cargo-kani 0.67.0 by exact identity, eliminating the former two-IR executable graph. | IT-010-SC-01 |
 | FND-002 | low | No dependency cycle found; the object/graph IR design is an explicit excluded future capability rather than a hidden prerequisite for ConfigVersion scalar parity. | IT-010-SC-06 |
 
 ## Classification

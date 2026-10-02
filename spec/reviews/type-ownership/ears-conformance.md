@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed branch `task/211-type-ownership`:
+Reviewed commit `660aa25` (branch `task/211-type-ownership`):
 `spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md` and its
 index row in `spec/spec.md` (line 398, plus the `contains` edge at line 167).
 The index row matches the ADR Status ("Proposed", #211).
@@ -42,8 +42,8 @@ Verdict: ACCEPT WITH FINDINGS
 ## Method
 
 1. Ran the deterministic engine check:
-   `quire validate --scope /home/peter/dev/worktrees/qsl-arch12 spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md --strict --summary`.
-   Result: grammar-clean.
+   `quire validate --scope /home/peter/dev/worktrees/qsl-arch12 spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md --strict --summary`
+   (quire 0.32.0, engine 0.46.0). Result: grammar-clean.
 2. Decided the scope. EARS pattern rules apply only to `shall` requirement
    statements; ADR-013 has none, so those rules are recorded as not applicable.
    The applicable checks are: singular statement, named subject, concrete and
@@ -89,9 +89,9 @@ Applicability per rule:
 | FND-011 | low | Current-state and no-fallback program rule. The O-13 paragraph that starts "The AD-016 fallback rule … applies only if the owner withdraws Owner decision 2. It is inactive while that decision stands" records a conditional fallback. Fix: state only the decision: "OBS-005 is decided: `quire-exact` is the canonical owner (AD-016 Owner decision 2). Its crate creation and dependency direction are decided in #209; its types are built in #213." Change the §9 OBS-005 cell "fallback inactive" to match. | ADR-013 O-13, §9 OBS-005 |
 | FND-012 | low | Transitional wording. §6 Digests row: "`state::input::CanonicalDigest` (until #213 folds it)". Other §6 rows state the lane-private status without a time clause, and O-18 already assigns the fold to #213. Fix: drop "(until #213 folds it)". | ADR-013 §6, O-18 |
 
-## Round 2
+## Round 2 (commit 0042691)
 
-I re-checked ADR-013. The EARS pattern checks still do not
+I re-checked ADR-013 at `0042691`. The EARS pattern checks still do not
 apply (the record has no `shall` statement). R-01, R-04, R-05, R-06, R-07,
 R-09 and §5 were reworded. `quire validate --strict --summary` on the ADR is
 still grammar-clean.
@@ -124,10 +124,10 @@ Round-2 verdict: ACCEPT WITH FINDINGS. All twelve round-1 findings are
 resolved, seven as proposed and five by a different fix; the residuals of FND-001, FND-004 and FND-007 are carried as FND-013, FND-014 and FND-016. The four new findings
 are low, and none blocks.
 
-## Round 3
+## Round 3 (commit 4152eb8)
 
-PR #236 re-review of the delta, against ADR-011 and ADR-012. The full
-finding table is in
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
 [base.md](base.md) Round 3.
 
 - The new local ids QC-18 and QC-19 run in sequence, are each defined once,

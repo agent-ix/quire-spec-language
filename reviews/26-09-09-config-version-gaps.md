@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-021–031 are done. The named ConfigVersion model executes actual
+Task-021–031 are done at 53431cb. The named ConfigVersion model executes actual
 parent, graph, identity and update cases through native/Markdown files.
 The complete LC05 integration and assurance effort remains open.
 

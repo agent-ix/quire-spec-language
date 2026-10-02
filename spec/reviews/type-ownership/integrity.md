@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed `task/211-type-ownership`
+Reviewed commit 660aa25 on `task/211-type-ownership`
 (agent-ix/quire-spec-language): ADR-013 and its index row in `spec/spec.md`.
 The working tree later added one paragraph that scopes the local id prefixes;
 it changes no finding below. ADR-013 is the Layer 1 design for #211. This pass
@@ -43,7 +43,7 @@ What holds:
 - **Verified claims.** Spot-checked claims hold: the FR-322 `OperationMember`
   union, the revision `1-draft.4` catalog held as a copy under
   `resources/complete-value`, the 10 `KaniOutcomeKind` kinds, and the IR PR
-  #139.
+  #139 head `417ec86`.
 
 The two blocking defects are in the identity layer that #211 exists to fix:
 
@@ -118,7 +118,7 @@ are medium and should be fixed before the #212 gate).
   OQ- reference resolves. §7 was cross-checked against the Implementing-ticket
   rows (FND-009). Ticket titles were checked with `gh issue view` for #131,
   #185, #186, #209, #210, #212, #213, #215, #222, #226, #229 and #231, and for
-  IR #137. IR PR #139 is open.
+  IR #137. IR PR #139's head is `417ec869` (open).
 - **QSpec sources** (`git -C quire-specification show origin/main:`):
   - AD-016: arrows 1–7, Replay ownership, Shared-type strategy, Owner decisions.
   - FR-201, FR-321, FR-322, FR-323, FR-331, FR-351 and FR-352.
@@ -139,9 +139,10 @@ are medium and should be fixed before the #212 gate).
   OBS-026 (FND-011).
 - **Not verified.** RT, CG and FCD code claims; IR code beyond the PR #139 head.
 
-## Round 2
+## Round 2 (commit 0042691)
 
-This pass re-checked each round-1 finding against ADR-013. It also re-checked the id kinds the revision adds:
+This pass re-checked each round-1 finding against ADR-013 at 0042691, read with
+`git show 0042691:`. It also re-checked the id kinds the revision adds:
 
 - S-1..S-6, QC-1..QC-7, Q209-1..7, Q210-1..4, Q222-1..2, Q229-1 and
   OQ-1..OQ-4 are sequential and unique, and every in-text reference resolves.
@@ -218,10 +219,11 @@ New findings introduced by the revision:
 Round-2 verdict: ACCEPT WITH FINDINGS. No high finding remains. FND-020 and
 FND-021 are medium and should be fixed before the #212 gate; FND-022 is low.
 
-## Round 3
+## Round 3 (commit 4152eb8)
 
-PR #236 re-review of the delta, against ADR-011 and ADR-012. The full
-finding table is in [base.md](base.md) Round 3.
+PR #236 re-review of the delta 5609e3a..4152eb8, against ADR-011 at 22fa948
+and ADR-012 at 10664aa. The full finding table is in
+[base.md](base.md) Round 3. ADR-013 line numbers are at 4152eb8.
 
 - FND-020 to FND-022 stay resolved. The delta adds no new category collapse.
   The O-16 rows for the `Input`-sourced replay (`reproduced-without-witness`)
@@ -233,8 +235,8 @@ New identity findings:
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| PR2-H1 | high | No named check enforces `NodeKey` minting. ADR-011 T-12 checks only CG's use of the `replay` facade and the backend direction. RT and CG also need `NodeKey`s for kernel enum and sum values but can only read `WireNodeId`s. | ADR-013 166, 178, 314, 654, 676 · ADR-011 383, 865 |
-| PR2-M1 | medium | `PackageNodeKey.node` is a `WireNodeId` in ADR-013 T-3 and a `NodeKey` in ADR-011 E3 and I2. | ADR-013 168, 651 · ADR-011 185, 297 |
+| PR2-H1 | high | No named check enforces `NodeKey` minting. ADR-011 T-12 checks only CG's use of the `replay` facade and the backend direction. RT and CG also need `NodeKey`s for kernel enum and sum values but can only read `WireNodeId`s. | ADR-013 166, 178, 314, 654, 676 · ADR-011@22fa948 383, 865 |
+| PR2-M1 | medium | `PackageNodeKey.node` is a `WireNodeId` in ADR-013 T-3 and a `NodeKey` in ADR-011 E3 and I2. | ADR-013 168, 651 · ADR-011@22fa948 185, 297 |
 | PR2-M3 | medium | `FamilyNotNativelyEvaluable` is a family-dispatch cause placed in the kernel `Refusal`, which carries only kernel causes. | ADR-013 366-368, 401-402, 654 |
 
 Round-3 verdict: CHANGES (PR2-H1).

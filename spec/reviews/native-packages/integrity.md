@@ -5,6 +5,8 @@ type: SpecReview
 analysis: integrity
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
+evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
+supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -19,7 +21,7 @@ reconstruction, with one common representation contract and explicit limits.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-004 | medium | Resolved wrong fixture requirement that escaped the initial review: the positive header-only unit contradicted the adopted import-plus-clause grammar. | TC-078; TC-087; TC-090 |
-| FND-001 | low | Corrected canonical control-escape spelling from ambiguous double backslash to the exact single JSON escape. | FR-021-AC-1; docs/native-linked-packages.md |
+| FND-001 | low | Corrected canonical control-escape spelling from ambiguous double backslash at 9a80805 to the exact single JSON escape at the evaluated revision. | FR-021-AC-1; docs/native-linked-packages.md |
 | FND-002 | low | Draft accounting overclaim repaired: only actually exposed upstream usage is retained; package passes record their own measured work and absent passes explicitly. | NFR-007; FR-020-AC-9 |
 | FND-003 | low | Source-bound static identity, exact artifact identity and projection metadata now have consistent inclusion/exclusion rules across requirements, schema, cases and matrix. | FR-019-AC-9; FR-021 |
 
@@ -61,25 +63,25 @@ qualification. Generic numeric recognition is not canonicalization.
 
 ## Admitted source setup correction — 2026-09-09
 
-Re-reviewed the specification using this
+Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
 installed QUOIN lens, superseding the initial review's header-only positive
-fixture assumption. The original PASS and its missed precondition
-remain visible. Escape cause: wrong-requirement.
+fixture assumption at 41da6e5. The original PASS and its missed precondition
+remain visible at 69588ad. Escape cause: wrong-requirement.
 
-Inspected src/parser.rs:161–180 and the adopted profile.md. Both require one import and one clause. The correction aligns TC-078/090 and the wire prose without changing FR-002 or language meaning.
+Inspected src/parser.rs:161–180 and profile.md at adopted e897f81. Both require one import and one clause. The correction aligns TC-078/090 and the wire prose without changing FR-002 or language meaning.
 
 Task-016 began under the original completed review gate. Its initial API-red
 run is followed by a first implementation run with one passing nonempty case
 and three parser setup failures. Further implementation paused for this
 specification correction and all-eight re-review; no parser behavior was
-relaxed.
+relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
 No claim of executed full package, schema or canonical-vector qualification is
 made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 
 PASS for planning and implementing this producer/reader slice. Agent A applied
-the installed QUOIN skills serially under the owner's existing all-review
+the installed QUOIN 0.22.5 skills serially under the owner's existing all-review
 selection; no required AssuranceProfile applies. This is the author's recorded
 review, not independent B/C acceptance. All package cases remain planned.
 Changes to the reviewed requirements or interface reopen specify/spec-review.

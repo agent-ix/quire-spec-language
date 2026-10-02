@@ -3,7 +3,7 @@ id: SR-781
 title: "QSL-317 gap analysis of PR 517 (qsl-replay call-site facade and request-type re-exports)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; qsl-replay/src/call_site.rs; qsl-replay/src/lib.rs; ticket QSL-317 and upstream IR-309 (acceptance text); quire-contract-codegen tests/it/skeleton_spine.rs (read, the consumer this replaces)"
+scope: "agent-ix/quire-spec-language@5a233b04000b2447b723400fcfbfe570c5a83505; qsl-replay/src/call_site.rs; qsl-replay/src/lib.rs; ticket QSL-317 and upstream IR-309 (acceptance text); quire-contract-codegen@23dcc3d tests/it/skeleton_spine.rs (read, the consumer this replaces)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-011
@@ -13,11 +13,11 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-317. PR: quire-spec-language#517. There is no plan
+Ticket: QSL-317. PR: quire-spec-language#517 at 5a233b04. There is no plan
 bundle and no FR for this ticket. The ticket body is the acceptance text, so
 this analysis checks the diff against QSL-317's two work items and against
 the consumer they exist for: CG's `tests/it/skeleton_spine.rs`
-(`compile_native_twin` and `request`) in quire-contract-codegen.
+(`compile_native_twin` and `request`) at quire-contract-codegen `23dcc3d`.
 
 | Ticket item | Delivered | Evidence |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ empty model map, `DependencyInput::default()` and `SpineLimits::default()`.
 package and limits parameters matches the real need. It is neither
 under- nor over-scoped on inputs. On outputs, see FND-001.
 
-Expiry: once CG depends on a QSL with this change, CG can drop its
+Expiry: once a QSL rev with this change is pinned in CG, CG can drop its
 `qsl_replay::spine` import and both dev-dependencies. That depends on
 FND-001: without names, CG still pairs parameters by position.
 
@@ -45,5 +45,5 @@ FND-001: without names, CG still pairs parameters by position.
 
 Both ticket items are delivered, and the input scope matches CG's real
 call. FND-001 is a real fit gap against the consumer and against ADR-013
-O-25. Fix it before CG takes this change, or CG ends up joining by position.
+O-25. Fix it before CG pins this rev, or CG ends up joining by position.
 FND-002 is traceability only.

@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Recheck after the correction of the base checklist over FR-042 and the
+Recheck at `89bc4e3` of the base checklist over FR-042 and the
 `docs/compiled-protocol-v1.md` / `README.md` prose it incorporates by reference.
 Base set only, no optional analysis lenses, per the owner's selection; the
 optional semantic gap extension was declined. Both correctable findings are
@@ -72,7 +72,7 @@ compound for now and this review records the consequence rather than acting on i
 - Claim check: `README.md:44-48` still states that real source-to-reader tests
   exercise native predicate, state, temporal and protocol emission, and still
   lists general decision proofs, recovery admission, unavailable producer exports
-  and the producer-to-B handoff as open. Both halves remain accurate after the correction:
+  and the producer-to-B handoff as open. Both halves remain accurate at `89bc4e3`:
   the fifteen tests take real source through `admit`, `emit` and an independent
   `read`, none substitutes a manually authored wire fixture, and the open list
   matches what the code refuses through `Unsupported`.

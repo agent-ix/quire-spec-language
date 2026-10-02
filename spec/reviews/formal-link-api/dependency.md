@@ -5,6 +5,7 @@ type: SpecReview
 analysis: dependency
 scope: "FR-013, formal-environment-linking.md, TC-020–024, TC-030–034 and IT-005 linking seam"
 review_set: all
+evaluated_revision: "c78792a"
 review_date: "2026-09-08"
 ---
 
@@ -37,10 +38,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
-IT-005 consistency re-review: PASS for the corrected specification.
-The correction uses the same IR IntegerDomain::Signed constructor. No dependency, profile version, source mapping or ownership boundary changes.
+IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+The correction uses the same pinned IR IntegerDomain::Signed constructor. No dependency, profile version, source mapping or ownership boundary changes.
 
 
-Evaluated before continuing the corrected qualification implementation.
+Evaluated ecaf4cf before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
-The available IR PackageId constructor and existing native identifier grammar supply the correction. No producer change, new dependency or external blocker is introduced.
+The available pinned IR PackageId constructor and existing native identifier grammar supply the correction. No producer change, new dependency or external blocker is introduced.

@@ -13,13 +13,13 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-014 on `spec/17-boundedness-adr`, and its
+Reviewed ADR-014 on `spec/17-boundedness-adr` at commit `bbe92fec`, and its
 amendments to ADR-012 §1.1, ADR-013 (Q222 table, O-20, O-21, S-6), FR-057,
 FR-082 and `spec/spec.md`. The review checked four things:
 
 - completeness against Linear QSL-17 (#222), read as data;
 - consistency with ADR-011, ADR-012 and ADR-013;
-- consistency with QSpec `main`;
+- consistency with QSpec `main` at `eb4234f`;
 - the QSL code claims, each opened at its file and line.
 
 What holds:
@@ -29,7 +29,7 @@ What holds:
   (outcomes), §8 (bounded runtime) and §9 (versions).
 - All five change scenarios are in §10. The M-6c exit criterion is cited.
 - §11 names the interfaces that QSL-140, QSL-42 and QSL-43 build.
-- The QSpec facts in Context check out. These are FR-144-AC-9,
+- The QSpec facts in Context check out on `eb4234f`. These are FR-144-AC-9,
   AC-12 and AC-13, FR-153-AC-9, FR-228-AC-5, FR-090-AC-7, FR-161-AC-2 and
   AC-7, the FR-341 rows, the FR-290 advertised-mode table, the value and
   model root definitions at `1-draft.2`, and the diagnostics catalog at

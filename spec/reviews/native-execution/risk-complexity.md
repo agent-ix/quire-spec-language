@@ -10,7 +10,7 @@ review_set: all
 
 The internal validator now returns failed request ownership to the combined entry point; the existing public validator still returns its original error type. Evaluation observations move after the temporary context borrow ends. This avoids copied runtime state and self-referential ownership without new concurrency or a new wire reader.
 
-Author PR-readiness review, following implementation as directed.
+Author PR-readiness review of `9c3e5ff`, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

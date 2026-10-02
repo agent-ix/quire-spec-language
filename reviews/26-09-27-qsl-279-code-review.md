@@ -3,7 +3,7 @@ id: SR-763
 title: "QSL-279 code review (with rust-review lane) of PR 504"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; examples/config-version/cases.rs; qsl-package/src/emit.rs; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/check/identity.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/node_key/mod.rs; qsl-semantics/src/check/node_key/tests.rs; qsl-semantics/src/value/member.rs; tests/it/config_version.rs; qsl-semantics/src/model/intake.rs (resolve_frame_array; unchanged); quire-contract-ir crates/quire-contract-model/src/checked_package/v2/{vocabulary.rs,mod.rs} (dependency, unchanged)"
+scope: "agent-ix/quire-spec-language@852cf4015fb4408ceaef67cc0a10c90600350af7; examples/config-version/cases.rs; qsl-package/src/emit.rs; qsl-replay/src/spine/clause/tests.rs; qsl-semantics/src/check/identity.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/node_key/mod.rs; qsl-semantics/src/check/node_key/tests.rs; qsl-semantics/src/value/member.rs; tests/it/config_version.rs; qsl-semantics/src/model/intake.rs (resolve_frame_array; unchanged); quire-contract-ir@48ab5dc crates/quire-contract-model/src/checked_package/v2/{vocabulary.rs,mod.rs} (dependency, unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-279. PR: quire-spec-language#504.
+Ticket: QSL-279. PR: quire-spec-language#504 at 852cf401, base 68f2dfed.
 Methods: code-review with the rust-review lane folded in.
 
 The dispatcher asked for eight checks. Results:
@@ -37,7 +37,7 @@ The dispatcher asked for eight checks. Results:
    `from_node_tag_and_semantic_form` had no other callers, including PR #503.
 3. The `UnlocatedOccurrence` fix. The bug was pre-existing: the SR-751
    round-2 comment on QSL-278 and `reviews/26-09-27-qsl-278-gap-analysis.md`
-   FND-003 reproduced it on main. The ordinal is still fixed by
+   FND-003 reproduced it on main at 0b7bc758. The ordinal is still fixed by
    the `(DeclarationKey, name)` sort in `register_frame_occurrences`.
    `anchor.location` is used only for `declaration_key_of`/`insert` fault
    locations and for the occurrence's region. The first clause in source
@@ -59,7 +59,7 @@ The dispatcher asked for eight checks. Results:
    `parent` being in the frame. All of them pass at head.
 7. The `#[ignore]` is justified. I ran it with `--ignored`. The refusal is
    `InvalidSemanticGraph` at `/semantic_graph/nodes/3/body`, from IR's
-   reader. In IR, `ApplicationOperator` has no
+   pinned reader. In IR 48ab5dc, `ApplicationOperator` has no
    `state_clause` (vocabulary.rs:345-366). That blocker is external. The
    doc text is partly wrong (FND-003).
 8. The `BodyNames` Frame arm is correct against FR-340's dependency rule.
@@ -73,7 +73,7 @@ does not call the removed `CheckedClauseKind` decoders and does not match on
 `SemanticTerm`/`Member`. There is no semantic conflict. A rebase may need a
 trivial merge.
 
-Gates, all re-run by me with a fresh `CARGO_TARGET_DIR`
+Gates, all re-run by me at 852cf401 with a fresh `CARGO_TARGET_DIR`
 (scratchpad):
 - `make ci` exited 0. The log has 93 `test result: ok` lines and 0
   `FAILED`. `ci-docs` (`RUSTDOCFLAGS=-D warnings cargo doc`) passed. That run

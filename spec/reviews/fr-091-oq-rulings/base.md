@@ -3,8 +3,9 @@ id: SR-509
 title: "base review of PR #354 (FR-091 OQ rulings)"
 type: SpecReview
 analysis: base
-scope: "git diff origin/main...HEAD: ADR-011, ADR-012, ADR-013, FR-062, FR-091, spec.md, TC-259, TC-392 to TC-396, TC-400, TC-401, TC-405, TC-406, TC-412, tests.md"
+scope: "git diff origin/main...HEAD at a0e00cf9: ADR-011, ADR-012, ADR-013, FR-062, FR-091, spec.md, TC-259, TC-392 to TC-396, TC-400, TC-401, TC-405, TC-406, TC-412, tests.md"
 review_set: subset
+evaluated_revision: "a0e00cf90cadc3cb5bd5cccec787aaa557105932"
 review_date: "2026-09-22"
 ---
 

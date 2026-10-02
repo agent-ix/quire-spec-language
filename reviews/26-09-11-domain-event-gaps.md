@@ -38,7 +38,8 @@ or hollow implementation was found in the changed scope.
 
 ## Coverage
 
-Reconciliation: actual `quire coverage --scope /home/peter/dev/worktrees/quire-language-domain-event-choices --json`: 374/383 rows
+Reconciliation: actual `quire coverage --scope /home/peter/dev/worktrees/quire-language-domain-event-choices --json`, quire 0.31.0, engine 0.46.0@ca7362d4.
+The retained report is `/tmp/quire-domain-event-coverage.json`: 374/383 rows
 backed, six raw unbacked rows of which two are method exemptions, zero reported
 status lies, twenty untracked symbols, and FR-042 9/10. Additional diagnostics
 include unmatched sections/archetypes, uncatalogued verification methods and
@@ -54,9 +55,10 @@ proof/admit/emit/read interfaces; the qualified event includes an admitted
 no-choice baseline. No runtime activation or effect is manufactured.
 Optional semantic review was explicitly not selected.
 
-Parent evidence records 41 focused tests
+Parent evidence `/tmp/quire-domain-event-gates.log` records 41 focused tests
 passed (18+4+4+15). Its initial unused-helper Clippy failure was corrected;
-both strict Clippy phases subsequently finished. Parent terminal reconciliation subsequently records 597 minimal
+`/tmp/quire-domain-event-full-gates.log` subsequently records both strict Clippy
+phases finished. Parent terminal reconciliation subsequently records 597 minimal
 and 614 all-feature tests passed, five doctests each and four inherited ignores
 each. The latest commit-record negative also passed in a focused five-test
 minimal run and the all-feature full run; both strict Clippy configurations

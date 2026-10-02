@@ -13,12 +13,12 @@ relationships:
 
 ## Summary
 
-Reviewed ADR-016 on `spec/19-arch40-mapping`, and its
+Reviewed ADR-016 on `spec/19-arch40-mapping` at commit `47b1b806`, and its
 amendments to the ADR-012 Status paragraph, the ADR-013 §6 Outcomes row, the
 FR-089 Status paragraph and `spec/spec.md`. The review applied the four
 failure-domain checks: extension points, entity identity, evaluation purity
 and topological robustness. Each code claim was opened at its file and line
-on the worktree, which is QSL `main` plus the ADR commit.
+on the worktree, which is QSL `main` `99e9b6c7` plus the ADR commit.
 
 What holds:
 

@@ -3,7 +3,7 @@ id: SR-742
 title: "Code and Rust review of embedded-body check locations"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/region.rs"
+scope: "agent-ix/quire-spec-language@09e9d18585d4aed678ce681ef824a24b19a24b27; qsl-semantics/src/check/check.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/region.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -11,9 +11,9 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493.
-Code review with the rust-review lane, scoped to `git diff origin/main...HEAD`:
-three Rust files.
+Ticket: QSL-293 (blocks QSL-160). PR: quire-spec-language#493 at 09e9d185.
+Code review with the rust-review lane, scoped to `git diff origin/main...HEAD`
+(main 2df75ab6): three Rust files.
 
 Sound: `PackageDeclarations::embedding` is set to `None` in the only
 constructor (`PackageDeclarations::new`, check.rs:357). It is moved into
@@ -44,6 +44,6 @@ SR-743.
 
 | ID | Disposition |
 | --- | --- |
-| FND-001 | fixed: `region()` now resolves `embedding.filter(|map| map.body().reference() == source)` before trusting it; a map for a different body falls through to the non-embedded resolution. `an_embedding_for_a_different_body_is_ignored` (region.rs) proves it. |
-| FND-002 | fixed: `PackageDeclarations::embedding` and `DeclarationRegions::embedding` are `Option<Arc<SourceMap>>`; `regions()` clones the `Arc`, not the map. |
-| FND-003 | fixed: `region()`'s exactly-one-region check is `match map.map_regions(...)?.as_slice() { [region] => Some(region.clone()), _ => None }`; the test uses one `u64::try_from(k).expect(...)` conversion throughout. |
+| FND-001 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `region()` now resolves `embedding.filter(|map| map.body().reference() == source)` before trusting it; a map for a different body falls through to the non-embedded resolution. `an_embedding_for_a_different_body_is_ignored` (region.rs) proves it. |
+| FND-002 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `PackageDeclarations::embedding` and `DeclarationRegions::embedding` are `Option<Arc<SourceMap>>`; `regions()` clones the `Arc`, not the map. |
+| FND-003 | fixed aea25ff46537b3d00ca787cd55d2c09290960fa6: `region()`'s exactly-one-region check is `match map.map_regions(...)?.as_slice() { [region] => Some(region.clone()), _ => None }`; the test uses one `u64::try_from(k).expect(...)` conversion throughout. |

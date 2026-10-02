@@ -37,7 +37,8 @@ artifacts; production behavior is unchanged.
 - `include_str!` is appropriate here because the requirement governs committed
   plan artifacts with no runtime API. Both tests execute real parsing and exact
   assertions; neither substitutes a behavioral implementation with a double.
-- The fixture is an offline projection of QSpec PR #64; changing any capability,
+- The fixture is an offline projection of QSpec PR #64 merge
+  `5a5f0d5f7598fccafcc2a4ddb84c2241a617274e`; changing any capability,
   requirement, primary ticket, selected test or qualification owner fails.
 - All new test symbols carry TC-144 and FR-055 criterion tags. Non-binding
   IT success-condition tags were removed rather than left as false traces.

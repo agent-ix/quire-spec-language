@@ -24,13 +24,13 @@ increment needed most — per-occurrence element identity and per-occurrence fil
 guards — are explicit in the code and directly tested. The gaps are unstated
 constraints: an arithmetic-cost bound nobody wrote down, an availability oracle
 with two candidate authorities, and a normative non-simplification promise with no
-control behind it. Rechecked after the correction: all three are closed, and the reworked
+control behind it. Rechecked at `baf93f5`: all three are closed, and the reworked
 sum abstraction was re-derived from the code rather than accepted from its
 comments.
 
 ## Verdict
 
-**CONDITIONAL** (recheck) — all three mediums resolved after the correction; two low
+**CONDITIONAL** (recheck) — all three mediums resolved at `baf93f5`; two low
 unstated constraints remain (template nesting limit, mixed-denominator sum). No
 missing failure mode that admits an unsound proof or an executable artifact.
 
@@ -38,9 +38,9 @@ missing failure mode that admits an unsound proof or an executable artifact.
 
 | ID      | Severity | Summary                                                                              | Refs                                                        | Escape Cause                    |
 | ------- | -------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------- |
-| FND-001 | medium   | RESOLVED by the correction — no requirement bounds sum proof cost against declared capacity; exhaustion is the only outcome past it | spec/functional/FR-040-check-composed-values.md:143; src/checking/composed/proofs/engine/queries.rs:274 | missing-requirement             |
-| FND-002 | medium   | RESOLVED by the correction — binder availability has two candidate authorities in the wire — scope handle and scope locus | docs/compiled-protocol-v1.md:533; src/protocol_artifact/native/layout.rs:462 | wrong-requirement               |
-| FND-003 | medium   | RESOLVED by the correction — the normative "no witness, constant or unrolled graph" promise has no emission control for a statically empty query | docs/compiled-protocol-v1.md:535; tests/composed_query_proofs.rs:467 | correct-requirement-no-evidence |
+| FND-001 | medium   | RESOLVED at `baf93f5` — no requirement bounds sum proof cost against declared capacity; exhaustion is the only outcome past it | spec/functional/FR-040-check-composed-values.md:143; src/checking/composed/proofs/engine/queries.rs:274 | missing-requirement             |
+| FND-002 | medium   | RESOLVED at `baf93f5` — binder availability has two candidate authorities in the wire — scope handle and scope locus | docs/compiled-protocol-v1.md:533; src/protocol_artifact/native/layout.rs:462 | wrong-requirement               |
+| FND-003 | medium   | RESOLVED at `baf93f5` — the normative "no witness, constant or unrolled graph" promise has no emission control for a statically empty query | docs/compiled-protocol-v1.md:535; tests/composed_query_proofs.rs:467 | correct-requirement-no-evidence |
 | FND-004 | low      | Template reinstantiation depth is bounded only by the generic Depth high-water mark; no requirement states the nesting limit or its cause | src/checking/composed/proofs/engine/queries.rs:55; src/checking/composed/proofs/work.rs:72 | missing-requirement             |
 | FND-005 | low      | A mixed-denominator sum (projection 1 into total 2) is reachable, refused as `SumDomainTransfer`, and still has no control | spec/functional/FR-040-check-composed-values.md:163; src/checking/composed/solver/validation.rs:163 | missing-requirement             |
 
@@ -142,7 +142,7 @@ checks that run first, the mixed case may be unreachable — which is itself wor
 recording, because an unreachable arm in the sum domain check is currently
 indistinguishable from an untested one.
 
-### Recheck after the correction
+### Recheck at `baf93f5`
 
 **FND-001 resolved, and the failure domain of the sum abstraction changed.** The
 per-prefix loop is gone; `sum_prefixes` now emits exactly two endpoint goals and

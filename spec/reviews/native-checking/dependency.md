@@ -5,6 +5,7 @@ type: SpecReview
 analysis: dependency
 scope: "FR-015/016, FR-006 judgments, docs/native-model-checking.md, IT-005, TC-025–029/040–053 and TM-003"
 review_set: all
+evaluated_revision: "ceccabb564b61742597ad356eb1019ab0c8d1544"
 review_date: "2026-09-08"
 ---
 
@@ -46,7 +47,7 @@ graph TD
 
 NFR-005 applies across every new implementation/qualification task; StR-001 is the owning outcome, not a cyclic implementation dependency. FR-006 is refined in executable detail by FR-016 without a prerequisite edge between two implementations.
 
-Topological order: retain FR-013/014; implement and qualify FR-015 plus producer; implement FR-016 and unchanged FR-006 cases; run remaining qualification, actual Rust/code review and non-semantic gap reconciliation. Continue the full runtime/backend/Quire assignment afterwards. All work is serial in Agent A's compiler worktree. Contract IR provides DeclarationEnvironment and check_expression. A consumes that interface; B/C/TL and Filament changes are outside this task.
+Topological order: retain FR-013/014; implement and qualify FR-015 plus producer; implement FR-016 and unchanged FR-006 cases; run remaining qualification, actual Rust/code review and non-semantic gap reconciliation. Continue the full runtime/backend/Quire assignment afterwards. All work is serial in Agent A's compiler worktree. Contract IR pin 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f provides DeclarationEnvironment and check_expression. A consumes that interface; B/C/TL and Filament changes are outside this task.
 
 ## Verdict and provenance
 

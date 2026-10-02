@@ -2,7 +2,7 @@
 id: SR-663
 title: "QSL-273 object review of state clause, anchor, frame and observation objects"
 type: SpecReview
-scope: "agent-ix/quire-spec-language; spec/functional/FR-102 to FR-109; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§15.2 to §15.5); spec/test-cases/TC-461, TC-463, TC-466; code qsl-cst/src/grammar.rs, qsl-semantics/src/model/domain_package.rs, qsl-semantics/src/model/population.rs, qsl-eval/src/value/expression/mod.rs"
+scope: "agent-ix/quire-spec-language@d8b74aba7d349ccb3989583cc4e608aad301c38b; spec/functional/FR-102 to FR-109; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§15.2 to §15.5); spec/test-cases/TC-461, TC-463, TC-466; code qsl-cst/src/grammar.rs, qsl-semantics/src/model/domain_package.rs, qsl-semantics/src/model/population.rs, qsl-eval/src/value/expression/mod.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -47,13 +47,13 @@ readings.
 
 ## Dispositions
 
-Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a49`, "QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main 5e7a2615). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | One node per distinct clause node id, with one `claim` occurrence per declaration in source order; FR-105-AC-4 adds `ParentOrder2` (no new node, a second occurrence at ordinal 1). |
-| FND-002 | fixed | One anchor and one frame per (declaring object type, operation name); FR-105-AC-4 adds the `Sub` case. |
-| FND-003 | fixed | FR-104 refuses a clause named like another clause or a function with `ambiguous_declaration`/`ambiguous-name`, and FR-109 resolves one shared name table (AC-3). |
-| FND-004 | fixed | FR-102 refuses a multi-segment edge with `UnrepresentedConstruct` (AC-3). |
-| FND-005 | fixed | FR-107's Outputs is `Result<Evaluation, CallFailure>`. |
-| FND-006 | fixed | FR-103 refuses relationship `modifies` and process `creates`/`deletes` entries as `unknown_required_feature`/`unsupported-feature` (AC-2). |
+| FND-001 | fixed c35a6a49 | One node per distinct clause node id, with one `claim` occurrence per declaration in source order; FR-105-AC-4 adds `ParentOrder2` (no new node, a second occurrence at ordinal 1). |
+| FND-002 | fixed c35a6a49 | One anchor and one frame per (declaring object type, operation name); FR-105-AC-4 adds the `Sub` case. |
+| FND-003 | fixed c35a6a49 | FR-104 refuses a clause named like another clause or a function with `ambiguous_declaration`/`ambiguous-name`, and FR-109 resolves one shared name table (AC-3). |
+| FND-004 | fixed c35a6a49 | FR-102 refuses a multi-segment edge with `UnrepresentedConstruct` (AC-3). |
+| FND-005 | fixed c35a6a49 | FR-107's Outputs is `Result<Evaluation, CallFailure>`. |
+| FND-006 | fixed c35a6a49 | FR-103 refuses relationship `modifies` and process `creates`/`deletes` entries as `unknown_required_feature`/`unsupported-feature` (AC-2). |

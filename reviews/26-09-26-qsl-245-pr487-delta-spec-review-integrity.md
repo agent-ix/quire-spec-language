@@ -3,7 +3,7 @@ id: SR-729
 title: "QSL-245 delta integrity analysis of PR 487 fix round"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; fix delta; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-428, TC-444; read-only context spec/functional/FR-100-run-a-named-function-through-the-spine.md; code src/complete/edit.rs, src/complete/editor.rs, qsl-cst/src/cst.rs"
+scope: "agent-ix/quire-spec-language@e0d028afd95e05baf23062ffe7d22b9bc5f251a2; delta 913375e2..e0d028af; spec/functional/FR-001-read-exact-source.md; spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md; spec/spec.md; spec/tests.md; spec/test-cases/TC-424, TC-428, TC-444; read-only context spec/functional/FR-100-run-a-named-function-through-the-spine.md; code src/complete/edit.rs, src/complete/editor.rs, qsl-cst/src/cst.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -15,7 +15,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-245 (PR agent-ix/quire-spec-language#487). This reviews only the
-new content in the fix commit. The merge of main (#484) is not in scope.
+new content in fix commit e0d028af. The merge of main (#484) is not in scope.
 
 - New FR-001-AC-12 and the "Edit and binding refusals" section match the
   catalog. The catalog keeps `invalid_source_map` as a retained host code,
@@ -27,7 +27,7 @@ new content in the fix commit. The merge of main (#484) is not in scope.
   region at byte 0 today, and the PR marks the fix as planned.
 - FR-001-AC-12 collides with nothing on origin/main or in open PRs #485 and
   #486.
-- `quire validate` exits 0 on every file touched in the fix delta.
+- `quire validate` exits 0 on every file touched in 913375e2..e0d028af.
 - The five committed SR files are byte-identical to the reviewer's.
 
 ## Findings

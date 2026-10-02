@@ -5,6 +5,7 @@ type: SpecReview
 analysis: base
 scope: "FR-015/016, FR-006 judgments, docs/native-model-checking.md, IT-005, TC-025–029/040–053 and TM-003"
 review_set: all
+evaluated_revision: "ceccabb564b61742597ad356eb1019ab0c8d1544"
 review_date: "2026-09-08"
 ---
 
@@ -16,7 +17,7 @@ The specified model and checker interfaces are ready for implementation. All 15 
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Resolved: initial matrix IDs TC-40–52 were not the actual TC-040–052 identities; a follow-up commit corrected them. | TM-003; TC-040–052 |
+| FND-001 | medium | Resolved: initial matrix IDs TC-40–52 were not the actual TC-040–052 identities; commit 8957c8c corrected them. | TM-003; TC-040–052 |
 | FND-002 | low | Resolved at the evaluated revision: TC-025–029 now name both owning criterion sets, and historical linker coverage is explicitly dated to PR8. | TM-003; FR-006; FR-016 |
 
 ## Checklist and coverage

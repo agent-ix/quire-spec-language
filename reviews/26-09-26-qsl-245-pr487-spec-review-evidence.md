@@ -3,7 +3,7 @@ id: SR-726
 title: "QSL-245 evidence analysis of PR 487 (catalog 1-draft.8 adoption)"
 type: SpecReview
 analysis: evidence
-scope: "agent-ix/quire-spec-language; FR-001-AC-6, FR-001-AC-11, FR-010-AC-11, FR-018-AC-8, FR-026-AC-6, FR-096-AC-8, FR-096-AC-13, FR-096-AC-14; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500"
+scope: "agent-ix/quire-spec-language@913375e2255351626fdcb6f318b130938d351df9; FR-001-AC-6, FR-001-AC-11, FR-010-AC-11, FR-018-AC-8, FR-026-AC-6, FR-096-AC-8, FR-096-AC-13, FR-096-AC-14; spec/test-cases/TC-424, TC-425, TC-428, TC-430, TC-431, TC-500"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096

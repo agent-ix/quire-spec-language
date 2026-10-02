@@ -20,7 +20,7 @@ IDs are unique and correctly formed; US-002 states user value, priority and two 
 
 The six coverage rules have planned controls: profile permutations; numeric/wrapper/work boundaries; typed failures; source→draft→admission→binding transitions; and source, capture, graph and dependency edge cases. This establishes test-design coverage, not executed coverage. FR-040's full proof/runtime obligations remain planned; FR-041 supplies only the explicit producer prerequisite. Code/Rust and execution-evidence reviews remain separate.
 
-Quire validated the explicit repository scope: both review artifacts and all 386 specification documents were grammar-clean, with zero grammar findings. Installed-module duplicate-registration warnings were advisory.
+Quire 0.31.0 validated the explicit repository scope: both review artifacts and all 386 specification documents were grammar-clean, with zero grammar findings. Installed-module duplicate-registration warnings were advisory.
 
 ## Findings
 

@@ -9,9 +9,9 @@ review_set: subset
 ## Summary
 
 Current recheck scope is narrowed: the correction-only base analysis of the two
-edited spec artifacts against the integrated baseline. The
+edited spec artifacts at `09c50a5` against integrated baseline `87b35ea`. The
 selected QUOIN recheck subset is base plus failure-domain, not all seven optional
-analyses. The earlier all-set review is retained as
+analyses. The earlier all-set review of revision `b789eed` is retained as
 historical context; its PASS is not carried forward as the current verdict. No
 AssuranceProfile document exists in the repository.
 

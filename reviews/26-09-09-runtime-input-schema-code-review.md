@@ -3,7 +3,7 @@ id: SR-284
 title: "Code and Rust review of the runtime input schema"
 type: SpecReview
 analysis: code-review
-scope: "schema, runtime_reading schema tests and FR-024"
+scope: "f4679ef against 6d7de6a; schema, runtime_reading schema tests and FR-024"
 review_set: subset
 ---
 ## Summary
@@ -59,7 +59,7 @@ Locked/offline Cargo reused target, nice 10, one job and one test thread:
 | Cached minimal binaries/config_version_fixtures build | Pass |
 | Formatting | Pass |
 
-No deny.toml is installed. Optional ignored
+No deny.toml is installed. Logs: /tmp/agent-a-runtime-schema-*. Optional ignored
 assurance lanes were not claimed as executed; no hosted CI ran. SR-276–283 carry
 the all-set specification review. The advisor failure and pending installed
 catalog adoption do not negate the actual Rust run results.

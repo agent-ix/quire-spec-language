@@ -10,7 +10,7 @@ review_set: all
 
 FR-028 traces to US-002 and references FR-020/026; TC-106 and all four matrix rows retain matching trace attributes. Package selection adds one behavior to the existing run request. Compile retains its closed source-only request. Raw artifact identity and reconstructed static identity are distinct, and neither is substituted for the external program or model authority.
 
-Author PR-readiness review of the implementation and the FR-028 corrections.
+Author PR-readiness review of implementation `4f15f0f` and the FR-028 corrections.
 The owner-selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

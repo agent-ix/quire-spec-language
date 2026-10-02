@@ -3,7 +3,7 @@ id: SR-631
 title: "Failure-domain review of ADR-015 compile and replay against dependencies"
 type: SpecReview
 analysis: failure-domain
-scope: "qsl-255-dep-design: ADR-015, FR-099, TC-446, and the amendments to FR-001, FR-027, FR-071, FR-098, TC-186, TC-444, ADR-011, ADR-013, spec/spec.md and spec/tests.md; checked against QSpec qspec-dep-design (FR-307, FR-322, FR-323) and QSL PR #445"
+scope: "git diff origin/main...6874dc53 on qsl-255-dep-design: ADR-015, FR-099, TC-446, and the amendments to FR-001, FR-027, FR-071, FR-098, TC-186, TC-444, ADR-011, ADR-013, spec/spec.md and spec/tests.md; checked against QSpec qspec-dep-design at 076a2fd (FR-307, FR-322, FR-323) and QSL PR #445 at 5f13e891"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-015
@@ -15,13 +15,13 @@ relationships:
 
 ## Summary
 
-Reviewed the QSL-255 part (b) change on branch
+Reviewed the QSL-255 part (b) change at commit 6874dc53 on branch
 `qsl-255-dep-design`. The review set is the base checklist plus the
 failure-domain analysis. The change adds ADR-015, FR-099 and TC-446, and
 amends FR-001, FR-027, FR-071, FR-098, TC-186, TC-444, ADR-011 and ADR-013.
-QSL was compared with the matching QSpec change (FR-307, FR-322
-`dependency_reference`, FR-323 `package.dependencies`) and with PR #445,
-which lands first.
+QSL was compared with the matching QSpec change at 076a2fd (FR-307, FR-322
+`dependency_reference`, FR-323 `package.dependencies`) and with PR #445 at
+5f13e891, which lands first.
 
 Base checklist: the IDs are well formed and unused (FR-099, TC-446,
 FR-027-AC-10, FR-071-AC-9, FR-098-AC-7). Every new or rewritten criterion has

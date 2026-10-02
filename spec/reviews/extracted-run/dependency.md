@@ -10,7 +10,7 @@ review_set: all
 
 FR-026 bounded file intake and runtime execution plus FR-030 actual extraction enable FR-031's user-visible Markdown run feature. These are implemented prerequisites, with no cycle or new producer API. The generator uses the existing native parser to select its first fixture clause. C's installed-module/wire adoption and wider backend work remain independent follow-on tasks.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `0d3d294`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

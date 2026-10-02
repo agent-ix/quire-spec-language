@@ -13,7 +13,8 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` and its pointer amendments. The review asked four
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (QSL
+`main` at `99e9b6c7`) and its pointer amendments. The review asked four
 questions:
 
 - Does the record stay inside Layer 4, coordination and conformance
@@ -22,7 +23,7 @@ questions:
 - Does it reach into QSpec-owned grammar or wire?
 - Does it invent gates or ceremony?
 
-The review read QSpec at `origin/main` (FR-353, AD-003, FR-290
+The review read QSpec at `origin/main` `4634f5f` (FR-353, AD-003, FR-290
 context, V1-TOOL-011/012, V1-BACK-021/022) and ADR-011 FB-05 and T-12.
 Linear ticket text was not relied on.
 

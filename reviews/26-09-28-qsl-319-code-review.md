@@ -3,7 +3,7 @@ id: SR-782
 title: "QSL-319 code review (with rust-review lane) of PR 520"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/claims.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/lowering/state.rs (unchanged, context); qsl-semantics/src/check/family.rs (unchanged, context); spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md (unchanged); spec/test-cases/TC-416-emission-writes-the-nodes-check-lowered.md (unchanged); spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (unchanged)"
+scope: "agent-ix/quire-spec-language@00e411c88065195926487cb5b0b8e1f4343fb598; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/claims.rs; qsl-package/src/emit/tests.rs; qsl-semantics/src/check/lowering/state.rs (unchanged, context); qsl-semantics/src/check/family.rs (unchanged, context); spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md (unchanged); spec/test-cases/TC-416-emission-writes-the-nodes-check-lowered.md (unchanged); spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-093
@@ -11,12 +11,12 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-319. PR: quire-spec-language#520, base origin/main.
+Ticket: QSL-319. PR: quire-spec-language#520 at 00e411c8, base origin/main.
 Methods: code-review with the rust-review lane folded in.
 
 What the PR changes: `parameter()` in `lowering.rs` now records a
 `value`/`parameter` node's own occurrence as `expression`, not `anchor`
-(QSpec FR-341-AC-10: "every occurrence has role `expression`").
+(QSpec FR-341-AC-10 at e56756f: "every occurrence has role `expression`").
 `key_claims` in `claims.rs` skips the `(node, location)` pairs that the
 `binders` map names as a binder's own declaration site. The emit round-trip
 test now asserts role `expression` on every parameter occurrence.
@@ -59,7 +59,7 @@ Checks the dispatcher asked for, with results:
    check, link, `emit_checked`, the wire `source_map`. Mutation M3: I
    reverted only the role change. The test failed on parameter `b`'s
    ordinal-0 entry with role `anchor`.
-6. Gates. I re-ran `make ci` myself and it exited 0. The log has
+6. Gates. I re-ran `make ci` at 00e411c8 myself and it exited 0. The log has
    93 `test result: ok` lines and 0 `FAILED`. qsl-semantics lib passed 410 and
    412 (default and all features), and qsl-package lib passed 92. The three
    named tests pass in every run.
@@ -88,16 +88,16 @@ rule. It can be settled in the same spec edit.
 
 ## New findings (disposition pass 1)
 
-Reviewed at the fix commit.
+Reviewed at agent-ix/quire-spec-language@9dd43d1d278dfd0f9b8782b4a7cdb6d7f82f2af3 (fix commit 9dd43d1d).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-003 | medium | The FND-002 fix adds: "A binder's declaration occurrence is recorded before its reads, so it is always ordinal 0 of that sequence." That is false whenever two binders share one parameter node. Parameter nodes are content-addressed on (name, level, type) (`insert_node` dedups, and `parameter()` records one `expression` occurrence per call), so AC-7's own package shares P1 between `both`'s `a` and `nb`'s `a`. Measured with a scratch probe over `both` + `nb`: P1 has ordinal 0 at 234..241 (`both`'s binder site), 1 at 234..235 (read `a`), 2 at 292..305 (`nb`'s binder site), 3 at 297..298 (read `a`). `nb`'s binder site is ordinal 2, not 0. The insertion-order rule itself is correct. Only the "always ordinal 0" claim is wrong. Fix: say that each binder's site is recorded before that binder's own reads, and that binders sharing a parameter node share one ordinal sequence in lowering order, so only the first binder's site is ordinal 0. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:74-78; qsl-semantics/src/check/lowering.rs:2147-2170; qsl-semantics/src/check/lowering.rs:1407-1428 |
+| FND-003 | medium | The FND-002 fix adds: "A binder's declaration occurrence is recorded before its reads, so it is always ordinal 0 of that sequence." That is false whenever two binders share one parameter node. Parameter nodes are content-addressed on (name, level, type) (`insert_node` dedups, and `parameter()` records one `expression` occurrence per call), so AC-7's own package shares P1 between `both`'s `a` and `nb`'s `a`. Measured at 9dd43d1d with a scratch probe over `both` + `nb`: P1 has ordinal 0 at 234..241 (`both`'s binder site), 1 at 234..235 (read `a`), 2 at 292..305 (`nb`'s binder site), 3 at 297..298 (read `a`). `nb`'s binder site is ordinal 2, not 0. The insertion-order rule itself is correct. Only the "always ordinal 0" claim is wrong. Fix: say that each binder's site is recorded before that binder's own reads, and that binders sharing a parameter node share one ordinal sequence in lowering order, so only the first binder's site is ordinal 0. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:74-78; qsl-semantics/src/check/lowering.rs:2147-2170; qsl-semantics/src/check/lowering.rs:1407-1428 |
 | FND-004 | low | Pre-existing, not caused by this PR, but in text the fix round rewrote. The FR-093 binder bullet ("a binder's site (a parameter's `name: T`, ...)"), FR-093-AC-9 ("an `expression` occurrence over `a: Boolean`") and TC-416 step 4 ("over its binder site") place a function parameter's own occurrence at `a: Boolean`. The code records it at `function.location`, which the emitted source map puts at the function body. The same probe gives 234..241 = `a and b` for `both`'s binder site, and 292..305 = `both(a, true)` for `nb`'s. Round 1 measured the same on the spine fixture (322..329, the body root). The role is now right, but the region the spec names is not the one emitted. Fix: either say the site of a function parameter is the function body's region, or record the occurrence at the parameter's own span. Deferring this to a follow-up ticket is fine, since it predates QSL-319. | spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:81-84; spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:693; spec/test-cases/TC-416-emission-writes-the-nodes-check-lowered.md:71-74; qsl-semantics/src/check/lowering.rs:2479 |
 
 ## Dispositions
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | all four spots now say `expression` and cite QSpec FR-341-AC-10 (FR-093 binder bullet and AC-9, TC-416 step 4, ADR-013 QC-24). No residual `anchor` occurrence wording for parameter nodes remains in FR-092, FR-093 or TC-416. The remaining `anchor` occurrences in FR-105/FR-114 belong to `operation_anchor` nodes, which is correct. |
-| FND-002 | fixed | FR-093 now says ordinals follow insertion order, which matches `OccurrenceMap::record` (family.rs:1220-1235: ordinal = length of the (identity, role) vec before push). The extra "always ordinal 0" sentence added with it is wrong for shared parameter nodes. That is recorded separately as FND-003. |
+| FND-001 | fixed | 9dd43d1d: all four spots now say `expression` and cite QSpec FR-341-AC-10 (FR-093 binder bullet and AC-9, TC-416 step 4, ADR-013 QC-24). No residual `anchor` occurrence wording for parameter nodes remains in FR-092, FR-093 or TC-416. The remaining `anchor` occurrences in FR-105/FR-114 belong to `operation_anchor` nodes, which is correct. |
+| FND-002 | fixed | 9dd43d1d: FR-093 now says ordinals follow insertion order, which matches `OccurrenceMap::record` (family.rs:1220-1235: ordinal = length of the (identity, role) vec before push). The extra "always ordinal 0" sentence added with it is wrong for shared parameter nodes. That is recorded separately as FND-003. |

@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR review using the actual agent-skills code-review,
+Author PR review of `22d4e9a` using the actual agent-skills code-review,
 rust-review and rust-style skills. Existing repository idioms and typed
 `#[trace(...)]` attributes apply. No applicable AssuranceProfile was found.
 

@@ -5,6 +5,7 @@ type: SpecReview
 analysis: gap-analysis
 scope: "plan/Plan-007-native-packages/, spec/native-packages/tests.md, src/package*, tests/package*"
 review_set: subset
+evaluated_revision: "eb97a871f107eecebf49b1a53cc46e23ddc1d7ae"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-007
     type: reviews
@@ -38,7 +39,8 @@ TM-005 at `spec/native-packages/tests.md`, using the
 
 - Tasks done: **3/3**, with satisfied producer → reader → qualification
   dependencies and reconciled plan checkboxes.
-- Reconciliation: **`quire coverage --scope . --json`**; no grep fallback.
+- Reconciliation: **`quire coverage --scope . --json`**, Quire 0.31.0,
+  CLI 4f6ed024, engine 0.46.0@ca7362d4; no grep fallback.
 - Targeted test cases: **14/14 backed**. FR-019/020/021 criteria:
   **10/10, 11/11, 6/6 backed**, respectively.
 - Repository census: **263/263 Rust candidates bound**, no status lies.

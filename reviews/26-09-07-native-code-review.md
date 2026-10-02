@@ -5,6 +5,7 @@ type: SpecReview
 analysis: code-review
 scope: "src/, tests/, tools/, Cargo/toolchain/CI and corresponding current requirements"
 review_set: subset
+evaluated_revision: "a80a17d1dd303b91712df2023fdba8aba83e89c1"
 review_date: "2026-09-07"
 ---
 
@@ -20,10 +21,10 @@ The current Rust syntax implementation has real bounded parser/source-map behavi
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Non-UTF-8 OS argument/path panics before usage validation: byte FF produces exit 101 instead of a deliberate input/I/O outcome. Use OS-string arguments and specify encoding separately for labels and paths. | src/main.rs:22; FR-010 |
+| FND-001 | medium | Non-UTF-8 OS argument/path panics before usage validation: byte FF produces exit 101 instead of a deliberate input/I/O outcome. Use OS-string arguments and specify encoding separately for labels and paths. | src/main.rs:22; FR-010; [actual probe](../spec/reviews/data/cli-nonutf8.json) |
 | FND-002 | medium | Formatter cannot accept the selected output budget described by FR-003, and appends before checking the hardcoded default with >=. Reconcile the API and inclusive ceiling, then check prospective growth before allocation. | src/format.rs:8; src/format.rs:46; src/format.rs:55; FR-003; NFR-001 |
 | FND-003 | medium | Diagnostic does not implement Display/std::error::Error. A caller using a conventional Error-based Result cannot propagate a parser Diagnostic with ?. The portable Rust-style error-envelope idiom is not satisfied. | src/diagnostic.rs:59; src/parser.rs:8; agent-skills/rust-style: Error Envelopes |
-| FND-004 | medium | All 21 Rust integration tests lack recognized TC/FR trace tags. They execute real code, but none binds the authored obligations; matrix/TC setup is also absent. Add real TC identities and resolving tags after specifying the evidence plan. | tests/cli.rs:5; tests/parser.rs; tests/source_map.rs |
+| FND-004 | medium | All 21 Rust integration tests lack recognized TC/FR trace tags. They execute real code, but none binds the authored obligations; matrix/TC setup is also absent. Add real TC identities and resolving tags after specifying the evidence plan. | tests/cli.rs:5; tests/parser.rs; tests/source_map.rs; [binding census](../spec/reviews/data/coverage.json) |
 | FND-005 | medium | The CLI suite checks success and an empty-identity refusal, but does not assert usage/I/O exit 2, resource exit 3, or the emitted digest against actual bytes. A change to these branches/field could escape the current CLI suite. | tests/cli.rs:5; src/main.rs:23; src/main.rs:36; FR-010-AC-3/4/5 |
 | FND-006 | low | Style note: the code enum has as_str but no all/from_code or owned stable-code catalog. Record code stability before downstream consumers depend on spellings. | src/diagnostic.rs:28; agent-skills/rust-style: Error Envelopes |
 | FND-007 | low | Style note: public items and several modules lack required documentation, including coordinate/identity and diagnostic contracts. Apply the default public-item/module-header idiom. | src/source.rs:13; src/syntax.rs:10; src/diagnostic.rs:5; agent-skills/rust-style: Ergonomics & Headers |
@@ -32,9 +33,9 @@ The current Rust syntax implementation has real bounded parser/source-map behavi
 
 ## Scope and skill provenance
 
-Reviewed `quire-spec-language`: all Rust source, the three Rust integration-test files, Cargo/toolchain/CI configuration, and four optional Python helper scripts. No applicable AssuranceProfile or repository-specific Rust idiom document was present. AGENTS.md, LICENSE-DECISION.md and the documented commands were read first.
+Reviewed `quire-spec-language@a80a17d1dd303b91712df2023fdba8aba83e89c1`: all Rust source, the three Rust integration-test files, Cargo/toolchain/CI configuration, and four optional Python helper scripts. No applicable AssuranceProfile or repository-specific Rust idiom document was present. AGENTS.md, LICENSE-DECISION.md and the documented commands were read first.
 
-The actual shared Agent-IX `agent-skills/code-review/SKILL.md` dispatches Rust review to `agent-skills/rust-review/SKILL.md`; its default idioms come from `agent-skills/rust-style/SKILL.md`. The initially loaded `/home/peter/dev/agent_skills/` Rust review/style copies were verified byte-for-byte identical to the owner's named `/home/peter/dev/agent-skills/` paths.
+The actual shared Agent-IX `agent-skills/code-review/SKILL.md` dispatches Rust review to `agent-skills/rust-review/SKILL.md`; its default idioms come from `agent-skills/rust-style/SKILL.md`. The initially loaded `/home/peter/dev/agent_skills/` Rust review/style copies were verified byte-for-byte identical to the owner's named `/home/peter/dev/agent-skills/` paths. Rust review SHA-256: `bec67626edf3944397fa6c2c83c1164278c9f86db3efdcc67cf91b2152b2d85a`; Rust style SHA-256: `1ed18f352d8a9235e04ea293e94c1ee0cf5e541f4da5908c8ee3af40032b6e69`.
 
 This is code-review plus the discovery phase of implementation-gap-analysis. Python checks apply to the optional scripts only; Rust tests are not judged by Python class/mocker conventions. The owner declined the separate optional gap-analysis intent↔test↔code semantic pass. The current-code boundary/faithfulness checks below do not claim that optional pass ran. No code, test assertions, compiler flags or dependency was changed during this review.
 

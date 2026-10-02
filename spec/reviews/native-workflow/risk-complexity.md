@@ -10,7 +10,7 @@ review_set: all
 
 The change composes existing bounded stages without a new parser, wire contract, dependency or evidence store. Identity confusion is controlled by exact native clause matching and immutable original/body correspondence. Producer availability and actual extraction remain explicit integration risks outside this delivered slice.
 
-PR-readiness review of implementation baseline; the owner's selected
+PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

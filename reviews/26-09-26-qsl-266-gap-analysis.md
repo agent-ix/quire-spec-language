@@ -3,7 +3,7 @@ id: SR-671
 title: "QSL-266 gap analysis of per-occurrence requirement records"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md; spec/functional/FR-097-classify-claim-extent-and-write-bounded-requests.md; spec/test-cases/TC-160-checked-family-contract-shape.md; spec/test-cases/TC-440-qsl-extent-agrees-with-ir-requires-bound.md; spec/test-cases/TC-449-request-builder-writes-one-item-per-requirement-record.md; spec/tests.md; qsl-semantics/src/check/claims.rs; qsl-route/src/request.rs; qsl-package/src/emit/extent_agreement.rs; tests/it/request_builder.rs"
+scope: "agent-ix/quire-spec-language@ba8b2f82ae99bb898bb6b33d6b1dd9b8bdfb708d; spec/functional/FR-062-implement-checked-family-contract.md; spec/functional/FR-075-compute-candidates-from-registered-backends.md; spec/functional/FR-097-classify-claim-extent-and-write-bounded-requests.md; spec/test-cases/TC-160-checked-family-contract-shape.md; spec/test-cases/TC-440-qsl-extent-agrees-with-ir-requires-bound.md; spec/test-cases/TC-449-request-builder-writes-one-item-per-requirement-record.md; spec/tests.md; qsl-semantics/src/check/claims.rs; qsl-route/src/request.rs; qsl-package/src/emit/extent_agreement.rs; tests/it/request_builder.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-062
@@ -20,7 +20,7 @@ Ticket: QSL-266 (PR quire-spec-language#459). There is no plan bundle
 under `plan/` for QSL-266. The ticket and the TC steps it names are the
 plan: TC-160 steps 5, 10 and 11, TC-440 step 4, and TC-449 steps 1-6.
 
-Matrix: `quire coverage --scope . --json` reports no
+Matrix: `quire coverage --scope . --json` at `ba8b2f82` reports no
 unbacked row, status lie or no-symbol row for TC-160, TC-440, TC-449,
 FR-062-AC-4, FR-062-AC-13, FR-075-AC-8 or FR-097-AC-6. The one unbacked
 FR-062 row is FR-062-AC-10 (TC-166). It predates this PR and is out of
@@ -75,14 +75,14 @@ low status-text defects.
 
 ## Dispositions
 
-Disposition pass
+Disposition pass at `agent-ix/quire-spec-language@27fa6f87c744677df61c0cfacfe0549425ec4800`
 (renumbered from SR-642).
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | TC-160 step 11 and its expected result now describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed application, and two sites of one node in both orders. Each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. The `None`-identity clause is gone. Step 10 adds the guard, scope and `fold`/`reduce`/`flatMap` units, each matching a test. |
-| FND-002 | fixed | FR-062 now reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three … partly". The TC-160 row in `spec/tests.md` is separated correctly. |
-| FND-003 | fixed | RR-14 is `all_positive`, and `tc_160_rr_14_query_binder_roots` backs it with extents keyed by the binder `v` (not `s`), result bounds `Integer`/`Boolean` and no guard. The "does not parse" text is gone from FR-062 and `spec/tests.md`. FR-062-AC-13 is backed. |
+| FND-001 | fixed 0872c86a | TC-160 step 11 and its expected result now describe location-based pairing: a paired site, a `generated`-only site, a site with no occurrence, an unclaimed application, and two sites of one node in both orders. Each clause maps to `tc_160_an_unpaired_site_or_application_faults_instead_of_dropping` or `tc_160_two_sites_of_one_node_pair_by_location_not_order`. The `None`-identity clause is gone. Step 10 adds the guard, scope and `fold`/`reduce`/`flatMap` units, each matching a test. |
+| FND-002 | fixed 0872c86a | FR-062 now reads "Seven … are backed (AC-2, AC-4, AC-5, AC-7, AC-8, AC-12 and AC-13); three … partly". The TC-160 row in `spec/tests.md` is separated correctly. |
+| FND-003 | fixed 0872c86a | RR-14 is `all_positive`, and `tc_160_rr_14_query_binder_roots` backs it with extents keyed by the binder `v` (not `s`), result bounds `Integer`/`Boolean` and no guard. The "does not parse" text is gone from FR-062 and `spec/tests.md`. FR-062-AC-13 is backed. |
 
 Extra edits checked:
 

@@ -3,7 +3,7 @@ id: SR-684
 title: "QSL-271 code review of PR 481 (spec only)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md"
+scope: "agent-ix/quire-spec-language@63370c5584ad49440e997e889b457652f342b09a; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/TC-452

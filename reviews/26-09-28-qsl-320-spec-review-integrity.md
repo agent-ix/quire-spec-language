@@ -3,7 +3,7 @@ id: SR-780
 title: "QSL-320 spec review (integrity) of PR 518 ADR-013 replay-type ownership"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (Status, Context, O-16 families, O-24, O-25, O-26, O-27, §4 flowchart, C-09 to C-11, #231 row, QC-20, Q209-5, OQ-H, TK-04, OBS-027, IR#137 row); spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md (FB-05, OBS-029, context only); agent-ix/quire-specification AD-016 (Packet owner rows, context only)"
+scope: "agent-ix/quire-spec-language@4a4f1c286339abf7e86969800989f2da295d3467; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md (Status, Context, O-16 families, O-24, O-25, O-26, O-27, §4 flowchart, C-09 to C-11, #231 row, QC-20, Q209-5, OQ-H, TK-04, OBS-027, IR#137 row); spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md (FB-05, OBS-029, context only); agent-ix/quire-specification AD-016 (Packet owner rows, context only)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-013

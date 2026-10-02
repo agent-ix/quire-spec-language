@@ -3,7 +3,7 @@ id: SR-756
 title: "QSL-295 gap analysis of PR 502 (FR-109 I3 input, TC-468 step 6)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/clause/tests.rs; qsl-replay/Cargo.toml; Cargo.toml"
+scope: "agent-ix/quire-spec-language@6a78d6c9843c419b5a94eed41654a22e4b11bbcc; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md; qsl-replay/src/spine/clause.rs; qsl-replay/src/spine/clause/tests.rs; qsl-replay/Cargo.toml; Cargo.toml"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-109
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-295. PR: quire-spec-language#502.
+Ticket: QSL-295. PR: quire-spec-language#502 at 6a78d6c9.
 
 Trace:
 - FR-109 Inputs :49-51 (I3 source "with its original document identity"):
@@ -49,8 +49,8 @@ Request changes on FND-001 only. AC-6 is fully traced and tested otherwise.
 
 ## Dispositions
 
-Round 2.
+Round 2, reviewed 39837943e97327e49c203501188a556651439211.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `run_clause_refuses_an_extracted_fence_that_is_not_ix_native` (qsl-replay/src/spine/clause/tests.rs:2546-2581, feature-gated, traced to TC-468 and FR-109-AC-6) extracts the same unit from an `ix:formal` fence. It asserts `UnknownLanguage { language: "ix:formal" }`, stage `compile`, `Refusal`, no truth, exit 20, no `package_id`, the body as the source, the original identity and digest as the extraction, and no documents. It passed in qsl-295-ci-r2.log. |
+| FND-001 | fixed | 39837943. `run_clause_refuses_an_extracted_fence_that_is_not_ix_native` (qsl-replay/src/spine/clause/tests.rs:2546-2581, feature-gated, traced to TC-468 and FR-109-AC-6) extracts the same unit from an `ix:formal` fence. It asserts `UnknownLanguage { language: "ix:formal" }`, stage `compile`, `Refusal`, no truth, exit 20, no `package_id`, the body as the source, the original identity and digest as the extraction, and no documents. It passed in qsl-295-ci-r2.log. |

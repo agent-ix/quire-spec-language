@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Failure-domain recheck of the correction, selected alongside the base
+Failure-domain recheck at source commit `84aec59`, selected alongside the base
 review (SR-338) because this change is almost entirely about which identity a
 requirement is attached to. Four of the five initial findings are closed: the
 unguarded direction of the reader's trust boundary is now guarded in code and

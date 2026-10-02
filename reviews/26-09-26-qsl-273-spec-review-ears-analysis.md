@@ -3,7 +3,7 @@ id: SR-661
 title: "QSL-273 EARS review of state clauses on the spine"
 type: SpecReview
 analysis: ears-conformance
-scope: "agent-ix/quire-spec-language; spec/functional/FR-102 to FR-109 (focus FR-103, FR-105, FR-106, FR-107); quire validate grammar warnings over the changed files"
+scope: "agent-ix/quire-spec-language@d8b74aba7d349ccb3989583cc4e608aad301c38b; spec/functional/FR-102 to FR-109 (focus FR-103, FR-105, FR-106, FR-107); quire validate grammar warnings over the changed files"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-106
@@ -51,10 +51,10 @@ report.
 
 ## Dispositions
 
-Disposition pass. Each outcome was re-checked against the spec and code. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
+Disposition pass at `agent-ix/quire-spec-language@c35a6a49` (fix commit `c35a6a49`, "QSL-273 spec: fix SR-660 to SR-664 review findings", rebased onto main 5e7a2615). Each outcome was re-checked against the spec and code at that head, not taken from the commit message. `quire validate` over the changed spec files and these reviews exits 0 with no EARS warnings.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | Checks 1 and 6 are split into ordered If/then sub-conditions (1.1 to 1.8, 6.1 to 6.5). |
-| FND-002 | fixed | Check 7 is an If/then statement, and "required population" is defined by the references read from `self`'s population, with TC-465 row 25 as its adverse case. |
-| FND-003 | fixed | Each statement names its actor, and FR-106's Description is event-driven. `quire validate` reports no EARS warnings on FR-102 to FR-109. |
+| FND-001 | fixed c35a6a49 | Checks 1 and 6 are split into ordered If/then sub-conditions (1.1 to 1.8, 6.1 to 6.5). |
+| FND-002 | fixed c35a6a49 | Check 7 is an If/then statement, and "required population" is defined by the references read from `self`'s population, with TC-465 row 25 as its adverse case. |
+| FND-003 | fixed c35a6a49 | Each statement names its actor, and FR-106's Description is event-driven. `quire validate` reports no EARS warnings on FR-102 to FR-109. |

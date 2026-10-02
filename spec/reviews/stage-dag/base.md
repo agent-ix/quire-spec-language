@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed `task/209-stage-dag` against the quoin spec-review
+Reviewed commit 944a1c8 on `task/209-stage-dag` against the quoin spec-review
 checklist. ADR-011 is an architecture decision record with no US, FR, AC, TC,
 option or constraint rows, so the user-story, functional-requirement and six
 test-coverage rules have no subject. The applicable gates are ID format and
@@ -48,7 +48,7 @@ Verdict: ACCEPT WITH FINDINGS (no blocking findings).
 | FND-001 | low | The checklist rules for US, FR and TC quality and the six test-coverage rules do not apply, because the ADR carries no acceptance criteria. This is recorded as not applicable, not as passed. Its decisions are verified by #212 (change scenarios) and #226 (drift gates). | ADR-011 |
 | FND-002 | low | The local id schemes (`S`, `E`, `FB-`, `SEAM-`, `X-`, `M-`) are not catalog id kinds. Other records should cite them as `ADR-011 FB-03` and so on, following ADR-010 Decision 5. Fix: state the citation form in the Decision section. | ADR-011 Decision |
 
-## Round 2
+## Round 2 (HEAD 5cbd853)
 
 Re-ran the applicable base gates on the revision.
 
@@ -82,7 +82,7 @@ and where it is now resolved.
 | SR-470 FND-004, FND-009, FND-016 | Direction and lock checks become Owner question 9; census check moves to #219. |
 | SR-468 FND-010, FND-012, FND-016, FND-020 | M-5 after M-3; M-4 ticket in Owner question 6; native-linked-package/1 submodules in SEAM-1; #29, #133, #131, #132 in the ticket table; Terms names three producers. |
 
-Superseded by later revisions. The rows above
+Superseded by later revisions (eeabc76, 102c8bb, f781e32). The rows above
 record the round-2 state. The current ADR-011 text governs these rows:
 
 - SR-472 FND-009, SR-469 FND-015: there is no shared crate. Routing crosses
@@ -106,20 +106,20 @@ record the round-2 state. The current ADR-011 text governs these rows:
 Coordinator input folded into the same pass: the answers to ADR-012 §13.1,
 consistency with ADR-012 L1-D1 ticket edges, and "the #134 vocabulary".
 
-## Round 3
+## Round 3 (HEAD 22fa948)
 
 Independent single-reviewer pass for the #205 coordinator, in two steps. The
-first step reviewed the record in full. The second checked only the delta,
-plus consistency with ADR-012 (QSL PR #234) and
-ADR-013 (QSL PR #236), read with `git show`.
+first step reviewed f781e32 in full. The second checked only the delta
+f781e32 → 22fa948, plus consistency with ADR-012 at 10664aa (QSL PR #234) and
+ADR-013 at 4152eb8 (QSL PR #236), read with `git show`.
 
-Findings from the first step, and their state after the delta:
+Findings from the f781e32 review, and their state at 22fa948:
 
-| Finding | Severity | State |
+| Finding | Severity | State at 22fa948 |
 | --- | --- | --- |
 | H-1: `library` (layer 3) converted a layer-4 `VerifiedPackage`, a 3 → 4 cycle | high | Resolved. `VerifiedPackage`, the §4 binding and `ImportView` are in layer-3 `library`. The layer-4 reader calls down (§1 I2, §4, §6.1). Matches ADR-013 T-1 and O-15. |
 | M-1: the replay entry had no layer, and E9 ownership differed from ADR-013 O-26, C-13 and TK-01 | medium | Resolved. The layer-6 `replay` facade is the TK-01 executor entry and the only CG-callable API (FB-05, T-12, §6.1). ADR-013 TK-01 names it. |
-| M-2: X-1 owner differed from #213 S-1, and the QC-15 blocker was unrecorded | medium | Resolved. X-1 is #213 S-1, gated by TK-10 and QC-15. Matches ADR-013 S-1. IR #139 is merged, as ADR-011 says. |
+| M-2: X-1 owner differed from #213 S-1, and the QC-15 blocker was unrecorded | medium | Resolved. X-1 is #213 S-1, gated by TK-10 and QC-15. Matches ADR-013 S-1. IR #139 is merged at 954c2f2, as ADR-011 says. |
 | M-3: S6a over a package with imports had no admitted input | medium | Resolved. S4 closure carries checked dependency packages compiled from source, and E6 admits the closure. `ImportView` serves E3 only. See SR-467 FND-014 for the remaining binding rule. |
 | L-1: scenario 9 named the I2 reader | low | Resolved |
 | L-2: scenario 7 and §1 said `BackendDescriptor` | low | Resolved in ADR-011. ADR-012 §12.3 still says it (SR-468 FND-025). |
@@ -128,7 +128,7 @@ Findings from the first step, and their state after the delta:
 | L-5: `state` and `temporal` were listed as layer-5 modules | low | Resolved |
 | L-6: `NodeKey` minting versus "K is a leaf" | low | Resolved in ADR-013 O-04: one kernel constructor from a digest, which only `check` calls. Its enforcer is SR-470 FND-017. |
 
-Coordinator checklist:
+Coordinator checklist at 22fa948:
 
 - `VerifiedPackage` and the §4 binding are in layer-3 `library`, and the
   `package` reader calls down: yes.
@@ -183,9 +183,10 @@ Applied in one pass under the #205 coordinator's rulings.
 | SR-472 FND-011 (low) | The skeleton spine (T-2) lands the layer-6 `replay` facade, and #214 widens it per family (§6.1, §6.2, ticket table, T-2). ADR-013 TK-01 is fixed separately to cite T-2. |
 | ADR-012 reviewer: relation arm and S1 wording | Questions §Family hooks: the ADR-012 seam S2 and S3 matches have one arm per family, and the seam S1 stage-participation table has one entry per family. At S6a a family that sits out returns `FamilyOutcome::Refused` (for `Relation`, `FamilyRefusal::FamilyNotNativelyEvaluable`, category `refusal`); `FamilyOutcome` and `FamilyRefusal` are listed in the §6.1 layer-3 `check` core, and the kernel `Refusal` stays kernel-only; at lowering and proof stages it returns `unsupported`. Matches ADR-012 §5.1 and ADR-013 O-16. |
 
-## Round 4
+## Round 4 (HEAD 1666d02)
 
-Delta review, checked against ADR-012 and ADR-013.
+Delta 38f811a..1666d02, checked against ADR-012 at eecf825 and ADR-013 at
+02a504f.
 
 ### Round-4 fix check
 
@@ -194,7 +195,7 @@ Delta review, checked against ADR-012 and ADR-013.
 | SR-467 FND-014, FND-015 | Resolved: §4 dependency binding, E4 and E9; E8 and E9 use `ReplaySource` (ADR-013 O-25, QC-20). |
 | SR-470 FND-017 | Resolved: T-12 parts (a) to (c) match ADR-013 O-04 and O-05 word for word. |
 | SR-468 FND-021 | Resolved: §1 I2 and §2.2 E3 match ADR-013 T-3. |
-| SR-468 FND-022 to FND-024 | Resolved in ADR-013: Q209-5 quotes the current FB-05, O-04 cites §1 S4 and E4/I2, IR #139 merged. |
+| SR-468 FND-022 to FND-024 | Resolved in ADR-013: Q209-5 quotes the current FB-05, O-04 cites §1 S4 and E4/I2, IR #139 merged at 954c2f2. |
 | SR-468 FND-025 | Resolved in ADR-012 §12.3. |
 | SR-472 FND-011 | Resolved: T-2 lands `replay`, #214 widens it; ADR-013 TK-01 agrees. |
 | Relation arm, S1 wording | Resolved: matches ADR-012 §5.1 and §13.5 and ADR-013 O-16. |
@@ -227,9 +228,10 @@ CHANGES: one medium (R4-1). R4-2 and R4-3 can land in the same revision.
 | R4-2 (low) | `DependencyIdentityMismatch` carries catalog code `stale_dependency` everywhere ADR-011 names it (§2.1 E9, §2.3 E4 and E9, §4). ADR-013 adds it to O-26 and C-13. |
 | R4-3 (low) | The §2.3 E6 failure row lists `FamilyOutcome::Refused(FamilyRefusal)` beside the kernel `Outcome` refusals. |
 
-## Round 5
+## Round 5 (HEAD a4ce336)
 
-Delta review, checked against ADR-012 and ADR-013.
+Delta c31ebbf..a4ce336, checked against ADR-012 at e71986a and ADR-013 at
+ea89294.
 
 ### Round-5 fix check
 
@@ -245,7 +247,7 @@ keying that conflicts with ADR-013 O-26 (`WireNodeId`).
 ### Round-5 new findings
 
 - **R5-1 (low).** ADR-011 says each `capability_report` entry holds
-  capability "kinds" (§2.2 E3 :307, Questions :846). ADR-012 says
+  capability "kinds" (§2.2 E3 :307, Questions :846). ADR-012 at e71986a says
   each item has exactly one capability kind (:189, :858, FR-057). Fix: "the
   item's one capability kind" in both places.
 

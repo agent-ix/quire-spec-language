@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review using actual code-review, rust-review and
+Author PR-readiness review of f0cfe7b using actual code-review, rust-review and
 portable rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -37,7 +37,7 @@ command-specific usage, file-group exhaustion and actual Linux /dev/full output.
 The reported ENOSPC-success defect did not reproduce: non-BrokenPipe errors exit
 2. The documented quiet BrokenPipe policy is retained.
 
-The full local suite passed 300 tests and three compile-fail doctests,
+At f0cfe7b the full local suite passed 300 tests and three compile-fail doctests,
 with four existing assurance tests ignored. All 17 focused command tests,
 formatting, strict all-targets/all-features Clippy, cached no-default-features
 build and warnings-denied rustdoc passed. Cargo phases ran serially with one

@@ -18,14 +18,15 @@ was declined. No `AssuranceProfile` exists in `spec/`, so no profile-driven
 not delivered; the one substantive issue is a narrative claim the fixture does not
 support.
 
-**Updated 2026-09-11 (recheck):** the integrated correction rechecked against the recorded findings. The `medium` finding is resolved; two `low` residuals remain.
+**Updated 2026-09-11 (recheck):** correction `b34ab8c` rechecked against `549dd81`,
+integrated at `485573b`. The `medium` finding is resolved; two `low` residuals remain.
 
 ## Verdict
 
 **CONDITIONAL** — the `medium` unsupported capability claim is resolved; two `low`
 items remain open. No `high` finding at any point.
 
-## Recheck disposition
+## Recheck disposition (b34ab8c vs 549dd81)
 
 | Finding | Disposition | Evidence |
 | ------- | ----------- | -------- |
@@ -88,11 +89,11 @@ recorded rather than pressed.
 
 | ID      | Severity | Summary                                                                            | Refs                                                             | Escape Cause      |
 | ------- | -------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------- |
-| FND-001 | medium   | RESOLVED by the correction — TC-121, the example README and the source comment now say "bounded `sum`/`size`" | spec/test-cases/TC-121-publish-compiled-protocol-artifacts.md:39 | wrong-requirement |
+| FND-001 | medium   | RESOLVED in b34ab8c — TC-121, the example README and the source comment now say "bounded `sum`/`size`" | spec/test-cases/TC-121-publish-compiled-protocol-artifacts.md:39 | wrong-requirement |
 | FND-002 | low      | OPEN — root README still does not distinguish default-suite evidence from the named release lane | README.md:48                                                     | wrong-requirement |
 | FND-003 | low      | OPEN — "static compensation registration, activation, retries" reads as new capability, not composition | README.md:48                                                     | wrong-requirement |
 
-### FND-001 — "ordered queries" (resolved by the correction)
+### FND-001 — "ordered queries" (as recorded at 549dd81; resolved in b34ab8c)
 
 TC-121 step 1 and the example README both say the recipe exercises "ordered queries".
 The emitted package contains three aggregate sites: one `size` in `Healthy` and three
@@ -109,7 +110,7 @@ demonstrates. The same overstatement appears in the authored source comment
 is not observed. Suggested wording: "a bounded `sum` aggregate and a `size` over the
 declared receipt sequence".
 
-### FND-002 — delivered evidence, lane not named (see disposition above)
+### FND-002 — delivered evidence, lane not named (as recorded at 549dd81; see disposition above)
 
 `README.md` now presents the Rust producer recipe alongside "Real source-to-reader
 tests exercise native predicate, state, temporal and protocol emission". The tests
@@ -135,6 +136,7 @@ Base checklist only. The seven optional analyses (failure-domain, integrity,
 dependency, evidence, risk-complexity, scope-boundary, ears-conformance) were not
 selected and were not run; the optional semantic gap extension remains declined at the
 recheck. Spec grammar was validated by the root's completed integrated gate — 398/398
-documents grammar-clean, 0 grammar findings — and was not re-run for ceremony.
+documents grammar-clean, 0 grammar findings
+(`/tmp/quire-native-ecosystem-integrated-spec.log`) — and was not re-run for ceremony.
 The three review artifacts were revalidated here with
 `quire validate --scope /home/peter/dev/worktrees/quire-language-native-ecosystem-handoff "reviews/26-09-11-native-ecosystem-*.md"`.

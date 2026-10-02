@@ -10,7 +10,7 @@ review_set: all
 
 FR-030 belongs to A's compiler integration (core); FR-011 describes the compiler-side join (core). Quire owns Markdown recognition, extraction availability and its schemas. Its selected body/coordinate contract is checked by actual IT-003 tests; the caller's original-source and context selection remain explicit assumptions. C retains producer and existing-repository adoption, B retains portable verification. No C/B repository or new wire schema is changed.
 
-Author PR-readiness review, using the owner-selected all set.
+Author PR-readiness review of `55649b3`, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ClausesOutcome and SemanticContext are deliberate pinned upstream re-exports.

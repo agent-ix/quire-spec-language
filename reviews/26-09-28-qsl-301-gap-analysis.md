@@ -3,7 +3,7 @@ id: SR-777
 title: "QSL-301 gap analysis of PR 514 (FR-116 against TC-515)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-116-replay-a-frame-counterexample.md; spec/test-cases/TC-515-replay-a-frame-counterexample.md; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md (read); spec/functional/FR-106-admit-snapshots-and-invocations.md check 11 (read); spec/decisions/ADR-012-semantic-family-extension-contracts.md §12.2 (read); spec/tests.md; qsl-replay/src/spine/clause/tests/frame_replay.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/execute/frame.rs"
+scope: "agent-ix/quire-spec-language@611da08ee299621e328b0fd56f9f70d9c896dd79; spec/functional/FR-116-replay-a-frame-counterexample.md; spec/test-cases/TC-515-replay-a-frame-counterexample.md; spec/functional/FR-115-run-an-operation-frame-over-an-invocation.md (read); spec/functional/FR-106-admit-snapshots-and-invocations.md check 11 (read); spec/decisions/ADR-012-semantic-family-extension-contracts.md §12.2 (read); spec/tests.md; qsl-replay/src/spine/clause/tests/frame_replay.rs; qsl-replay/src/witness/frame.rs; qsl-replay/src/execute/frame.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-116
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-301. PR: quire-spec-language#514. This review maps
+Ticket: QSL-301. PR: quire-spec-language#514 at 611da08e. This review maps
 each FR-116 acceptance criterion and Behavior bullet to TC-515's tests
 (`qsl-replay/src/spine/clause/tests/frame_replay.rs`) and to the code.
 
@@ -53,7 +53,7 @@ weaknesses, not missing behaviour. Both are fixed in-PR.
 
 ## Dispositions
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | `a_stale_envelope_package_id_refuses_by_the_stale_package_rule`: the request's `package_id` is current and the envelope's is the parent-modifying package's; asserts `PackageIdMismatch{requested: envelope's, recompiled: current}` |
-| FND-002 | fixed | the end-to-end test asserts `of_witness(witness) == child_change("parent")` before replaying |
+| FND-001 | fixed | 975993fd: `a_stale_envelope_package_id_refuses_by_the_stale_package_rule`: the request's `package_id` is current and the envelope's is the parent-modifying package's; asserts `PackageIdMismatch{requested: envelope's, recompiled: current}` |
+| FND-002 | fixed | 975993fd: the end-to-end test asserts `of_witness(witness) == child_change("parent")` before replaying |

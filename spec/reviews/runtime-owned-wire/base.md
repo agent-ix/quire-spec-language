@@ -3,12 +3,12 @@ id: SR-265
 title: "Base review of owned runtime decoding"
 type: SpecReview
 analysis: base
-scope: "FR-024 amendment; TC-099/100; Task-035"
+scope: "FR-024 amendment; TC-099/100; Task-035; implementation 3c6a0e6"
 review_set: all
 ---
 ## Summary
 
-Reviewed the FR-024/TC-100 amendment and Task-035 at PR readiness, using the owner-selected all set. No required AssuranceProfile is installed.
+Reviewed the FR-024/TC-100 amendment and Task-035 at PR readiness against 3c6a0e6, using the owner-selected all set. No required AssuranceProfile is installed.
 
 ## Findings
 

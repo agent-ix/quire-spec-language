@@ -14,11 +14,11 @@ relationships:
 
 ## Summary
 
-Recheck of the `/code-review` findings previously recorded, now
-against the frozen correction commit, using the Rust lane at
+Recheck of the `/code-review` findings previously recorded at `c7275f5`, now
+against the frozen correction commit `b7aafe1`, using the Rust lane at
 `/home/peter/dev/agent-skills/skills/rust-review/SKILL.md` and the portable
 `rust-style` defaults (this repo publishes no Rust idiom doc of its own). This
-is a finding recheck over the correction diff plus the code it touches,
+is a finding recheck over the `c7275f5..b7aafe1` diff plus the code it touches,
 not a re-review of the whole increment. All four previously open code findings
 are resolved and demonstrated: the effect identity gate now dispatches on
 `kind`, the recovery half of the chain is fully pinned, the typed-effect lane is
@@ -41,16 +41,17 @@ a genuine package and a set of newly load-bearing refusals with no adverse case.
 | FND-002 | medium   | The clock's activation edge and temporal-profile authority, the snapshot's type/model and recovery-anchor back-reference, and the effect's retry-anchor checks are newly load-bearing with no adverse case | src/protocol_artifact/validate/control.rs:686; src/protocol_artifact/validate/control.rs:908           | correct-requirement-no-evidence     |
 | FND-003 | low      | `Graph::value_edges` is implicit per-declaration state; `compensation_recovery` reads the right declaration's graph only because `values(owner)` precedes `body(owner)` in one driver loop | src/protocol_artifact/validate.rs:179; src/protocol_artifact/validate.rs:1127; src/protocol_artifact/validate.rs:1522 | missing-requirement                 |
 | FND-004 | low      | `binding.scope != snapshot.scope` on progress/closure cannot fail: `compensation_subject` already pins scope index 0 and `local()` pins the declaration | src/protocol_artifact/validate/control.rs:975                                                          | correct-requirement-no-evidence     |
-| FND-005 | low      | Compensation anchors have the lowest precedence in `evaluation_anchor`; four later loops overwrite them unconditionally (unchanged from the reviewed commit) | src/protocol_artifact/native/layout.rs:734                                                             | missing-requirement                 |
+| FND-005 | low      | Compensation anchors have the lowest precedence in `evaluation_anchor`; four later loops overwrite them unconditionally (unchanged from `c7275f5`) | src/protocol_artifact/native/layout.rs:734                                                             | missing-requirement                 |
 
-## Dispositions of the SR-347 findings
+## Dispositions of the SR-347 findings recorded at c7275f5
+
 | Prior   | Disposition                                                                                                                                |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| FND-001 | **Resolved.** `validate.rs:620` dispatches on `kind` alone. `compensation_effect_identity` runs the full operation/subject/slot/attempt/retry-anchor chain first and only then returns `Unsupported::Export` for a non-null type. Red-then-green: the pre-correction build fails this exact assertion. |
+| FND-001 | **Resolved.** `validate.rs:620` dispatches on `kind` alone. `compensation_effect_identity` runs the full operation/subject/slot/attempt/retry-anchor chain first and only then returns `Unsupported::Export` for a non-null type. Red-then-green: `/tmp/quire-native-compensation-review-red.log` fails this exact assertion on the pre-correction build. |
 | FND-002 | **Resolved.** `compensation_recovery` (control.rs:898) pins clock, snapshot, progress, closure and exact `recovery_bindings` membership. Residual is FND-001/FND-002 above. |
 | FND-003 | **Resolved.** `adding_a_payload_type_cannot_bypass_compensation_effect_authority` covers both directions; TC-121 step 6 now names the mutations. |
 | FND-004 | **Resolved.** `compensations.rs:44` sets the locus before `visit()` and restores the declaration locus after the loop; an early `Err` correctly keeps the control locus. |
-| FND-005 | **Open**, unchanged — `layout.rs` is untouched by the correction. Carried above as FND-005. |
+| FND-005 | **Open**, unchanged — `layout.rs` is untouched by `b7aafe1`. Carried above as FND-005. |
 
 ### FND-001 — one rule, two implementations
 
@@ -106,7 +107,7 @@ states which construction is authoritative and the other validates against it.
 
 ### FND-002 — what the new refusals do and do not prove
 
-Load-bearing and mutation-tested at the correction: the clock selection (both the
+Load-bearing and mutation-tested at `b7aafe1`: the clock selection (both the
 one-sided and exchanged swaps), cross-obligation substitution of Snapshot,
 Progress and Closure, removal of each genuine Full population/closure member,
 insertion of the genuine Partial-only pair sorted and unique, and each of the
@@ -130,15 +131,16 @@ condition here is exactly the kind that refuses a genuine package silently.
 
 ### What the corrections establish
 
-- Three new tests, ten compensation tests total, all passing.
-- Two of the three are genuine regressions: the pre-correction build
-  records `7 passed; 2 failed`, failing at
+- Three new tests, ten compensation tests total, all passing
+  (`/tmp/quire-native-compensation-corrections-focused.log`).
+- Two of the three are genuine regressions: `/tmp/quire-native-compensation-review-red.log`
+  records `7 passed; 2 failed` on the pre-correction build, failing at
   `native_compensation_emission.rs:1036` (`Some(Unsupported(Export))` expected,
   `None` observed) and `:1145` (`Some(Invalid(Binding))` expected, `None`
   observed). That is the previous FND-001 and FND-002 reproduced before the fix.
 - The third, `compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond`,
   is not in the red log and is not a regression test: `i64::MAX` attempts were
-  already accepted at the reviewed commit. It is a characterization test of the authored
+  already accepted at `c7275f5`. It is a characterization test of the authored
   bound, and its refusal half exercises the existing wire decoder. Recorded
   honestly rather than counted as red-then-green evidence.
 - That test does run a real source→`admit`→`emit`→independent `read` case: it
@@ -158,7 +160,7 @@ condition here is exactly the kind that refuses a genuine package silently.
   feature flag, no forged admission report. The `serde_json` reseals are
   decoder-boundary probes of the public reader.
 
-The positive evidence recorded for the reviewed commit stands unchanged and is not
+The positive evidence recorded for `c7275f5` stands unchanged and is not
 restated: every positive case still runs actual source through `with_proofs` →
 `discharged` → `native::admit` → `native::emit` → independent `read` with
 `read.package() == package` and digest equality, and the adverse cases still
@@ -194,24 +196,27 @@ authored literals.
 
 ### Gates inspected
 
-Frozen root logs read, not rerun; no new Cargo reproduction was needed.
+Frozen root logs read, not rerun; no new Cargo reproduction was needed, so
+`/tmp/quire-heavy-check.lock` was not taken.
 
-- fmt — empty.
-- Clippy minimal and all-features — both `Finished`, no warning lines.
-- Focused — 58 cases, all
+- `/tmp/quire-native-compensation-corrections-fmt.log` — empty.
+- `/tmp/quire-native-compensation-corrections-clippy-minimal.log` and
+  `-clippy-all.log` — both `Finished`, no warning lines.
+- `/tmp/quire-native-compensation-corrections-focused.log` — 58 cases, all
   passing: 10 `native_compensation_emission`, 5 `native_population_emission`,
   15 `native_protocol_emission`, 4 `native_query_emission`, 24
   `protocol_artifact`.
-- Tests minimal — 55 `test
+- `/tmp/quire-native-compensation-corrections-test-minimal.log` — 55 `test
   result` lines, **557 passed, 0 failed**, 4 ignored.
-  All features — 55 lines, **573 passed, 0 failed**, 4 ignored (3 ×
+  `-test-all.log` — 55 lines, **573 passed, 0 failed**, 4 ignored (3 ×
   `fixture_audit` IT-004, 1 × `required_generated_activation_parity` LC04). Both
   include the 5 `Doc-tests quire_spec_language` compile-fail cases.
-- Pre-correction baseline — `7 passed; 2 failed`.
+- `/tmp/quire-native-compensation-review-red.log` — pre-correction baseline,
+  `7 passed; 2 failed`.
 - No `deny.toml` in this repo, so no `cargo deny` lane.
 - `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-compensation --json`
   re-run here: 367/376 backed, 0 status lies, 20 untracked symbols, 3 unmatched
-  tags — byte-identical to the reviewed commit apart from the fifth suspicion above.
+  tags — byte-identical to `c7275f5` apart from the fifth suspicion above.
 
 No `AssuranceProfile` is installed in this repository — `^type: AssuranceProfile`
 matches nothing under the worktree — so no `## Assurance Context` section

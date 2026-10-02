@@ -3,7 +3,7 @@ id: SR-765
 title: "QSL-313 code review of PR 508 (FR-105-AC-6 emission fault-injection seam)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-package/src/emit.rs; qsl-package/src/emit/tests.rs; qsl-package/src/lib.rs; qsl-package/Cargo.toml; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause/tests.rs; .cargo/config.toml; Makefile; Cargo.toml"
+scope: "agent-ix/quire-spec-language@b0da45cc4b99b37a32b0f025b1e7881b0933369b; qsl-package/src/emit.rs; qsl-package/src/emit/tests.rs; qsl-package/src/lib.rs; qsl-package/Cargo.toml; qsl-replay/src/spine.rs; qsl-replay/src/spine/clause/tests.rs; .cargo/config.toml; Makefile; Cargo.toml"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Ticket: QSL-313 (titled "QSL-308d: FR-105 AC-6 fault-injected all-or-nothing
-emission hook"). PR: quire-spec-language#508, diff scope
+emission hook"). PR: quire-spec-language#508 at b0da45cc, diff scope
 `origin/main...task/313-fr105-ac6-fault-injection` (two files). This review
 includes the rust-review lane.
 

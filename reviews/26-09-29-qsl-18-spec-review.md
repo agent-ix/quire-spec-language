@@ -3,7 +3,7 @@ id: SR-786
 title: "Spec review of QSL-18 sum/case mapping (ADR-012 §16)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§16 and the QSL-18 amendments to Status, §2, §3, §12.1, §14.1, Consequences); context read: ADR-011 §6.1 and §7.3, ADR-013, FR-057, FR-091, FR-092, docs/family-migration-recipe.md, the cited QSL code at HEAD, and QSpec origin/main (AD-015, FR-141, FR-143, FR-144, FR-146, TC-262 to TC-265, shared-grammar.md, native-diagnostics.md, value-accounting.md, checked-package-v2/schema.json)"
+scope: "agent-ix/quire-spec-language@c6e1e5ac; spec/decisions/ADR-012-semantic-family-extension-contracts.md (§16 and the QSL-18 amendments to Status, §2, §3, §12.1, §14.1, Consequences); context read: ADR-011 §6.1 and §7.3, ADR-013, FR-057, FR-091, FR-092, docs/family-migration-recipe.md, the cited QSL code at HEAD, and QSpec origin/main (AD-015, FR-141, FR-143, FR-144, FR-146, TC-262 to TC-265, shared-grammar.md, native-diagnostics.md, value-accounting.md, checked-package-v2/schema.json)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-012
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-18 (#221, ARCH-41). Branch `spec/18-arch41-mapping`.
+Ticket: QSL-18 (#221, ARCH-41). Branch `spec/18-arch41-mapping` at c6e1e5ac.
 The review subset is the base checklist adapted to an ADR section, plus the
 object, integrity, failure-domain, interface/scope-boundary and evidence
 analyses. Claims were measured against the tree at HEAD and QSpec
@@ -90,7 +90,7 @@ Per analysis:
 | FND-007 | medium | The migration recipe contradicts §16.6. Its "Required conversions" item 2, the text FR-066-AC-2 checks, requires every family except `Relation` to add an evaluator and an `S6aFamilyKind` variant. §16.6 and §16.7 forbid both for `SumCase`. The recipe is neither amended nor in the change set. Failure: #187 cannot satisfy both the recipe (FR-066-AC-2) and §16.7. Fix: amend the recipe in this PR, keying item 2 on "families whose declarations S6a calls or selects" as the new §2 row does. | docs/family-migration-recipe.md:52-60; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1620-1632; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1660-1662 |
 | FND-008 | medium | Behaviour before SC-G5 has no owner. §16.7 has #187 add the forced union arm in `quire-exact` `key.rs`, but FR-144 defines no union key. §16.10 says only that set, bag and map use "depends on" SC-G5. Nothing says what S3 does with `Set<U>`, `Bag<U>`, `OrderedSet<U>` or `Map<U, _>` before then. Failure: the forced kernel arm panics, or invents a canonical order that QSpec later contradicts. That is a wrong result in collection algebra. Fix: have #187 refuse union element and key types at S3 with a named cause (owner `SumCase` or `Value`, stated) until SC-G5 lands. The kernel arm is then an explicit refusal. Add one adverse test. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1646; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1731; QSpec spec/functional/type-model/FR-144-preserve-complete-collection-algebra.md:105-120 |
 | FND-009 | medium | SC-R2 gives "an arm order that keeps the arm set" as a presentation-only edit, but asserts only that union node ids and `VariantId`s are unchanged. The `case` node is content-keyed (FR-093), and nothing decides whether its preimage orders arms by source position or canonically by member identity. Arm order does not affect meaning: there is no wildcard, and selection is by member. Under source ordering, reordering arms changes the `case` node id, every enclosing function node id and `package_id`. So SC-R2's example silently fails for the nodes a reader would expect it to cover. Fix: put a canonical arm order (by member identifier) into the SC-G1 proposal and assert the `case` node id in SC-R2. Otherwise remove arm order from the presentation-only examples. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1480; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1497 |
-| FND-010 | low | Citation slips. (1) §16.1 titles: FR-143 is "Evaluate records, tuples and finite recursive values" (FR-143:3), and "Declarations and identity" is its section at :67. FR-146 is "Check total pure functions and recursion" (FR-146:3), and "Case exhaustiveness" is its section at :66. (2) The cited QSpec change is PR #121, which closes #115. (3) `checked_in_locations()` has 15 entries, not 16. (4) `S6aFamilyKind::family` maps `S6aFamilyKind` to `FamilyKind`; it is not a match over `FamilyKind`. `FamilyKind`'s only match is `catalog_code_prefix`, plus the const prefix assertion at :198-219. (5) `CheckedTypeNode::Sum` is at identity.rs:538, not :541. (6) `emit.rs:319-330` is the `SemanticTerm::Frame` arm; `BodyNames::of` is at :279. (7) The owner-absent keying rule is FR-092:87, not FR-093. Fix: correct these. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1399-1409; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1480; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1594; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1605; xtask/src/seam_probe.rs:179-251; qsl-eval/src/value/expression/s6a/mod.rs:121-137; qsl-semantics/src/check/identity.rs:538; qsl-package/src/emit.rs:279 |
+| FND-010 | low | Citation slips. (1) §16.1 titles: FR-143 is "Evaluate records, tuples and finite recursive values" (FR-143:3), and "Declarations and identity" is its section at :67. FR-146 is "Check total pure functions and recursion" (FR-146:3), and "Case exhaustiveness" is its section at :66. (2) `d70cd64` is QSpec PR #121, which closes #115. (3) `checked_in_locations()` has 15 entries, not 16. (4) `S6aFamilyKind::family` maps `S6aFamilyKind` to `FamilyKind`; it is not a match over `FamilyKind`. `FamilyKind`'s only match is `catalog_code_prefix`, plus the const prefix assertion at :198-219. (5) `CheckedTypeNode::Sum` is at identity.rs:538, not :541. (6) `emit.rs:319-330` is the `SemanticTerm::Frame` arm; `BodyNames::of` is at :279. (7) The owner-absent keying rule is FR-092:87, not FR-093. Fix: correct these. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1399-1409; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1480; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1594; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1605; xtask/src/seam_probe.rs:179-251; qsl-eval/src/value/expression/s6a/mod.rs:121-137; qsl-semantics/src/check/identity.rs:538; qsl-package/src/emit.rs:279 |
 | FND-011 | low | Two §16.9 claims have no source. (1) The profiles bullet says a union is admitted wherever records and tuples are. No QSpec profile names `union`, and `quire.value.complete/v1` does not list it, so this is QSL's inference and is not stated as one. (2) "with QSpec's named code": QSpec has no unknown-node-kind code. The named-code rule is the owner ruling recorded at ADR-012:848 and :952. Fix: cite the ruling. Mark the profile sentence as an inference, or file it with the SC-G items. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1704-1716; spec/decisions/ADR-012-semantic-family-extension-contracts.md:848 |
 | FND-012 | low | SC-Q1 is correctly left open, with two gaps. First, ADR-013's Status lets a "#209, #210, #222 or #229 decision" reopen a cell. #221 is not in that list, so "a #210-line decision" needs the ADR-013 owner to accept that reading. Second, parts of §16 depend on the answer and are not marked: §16.4 S6a admission, SC-R3's key check (FND-003), the §16.7 `quire-exact` row, and whether unions enter `TypeEnvironment.composites` (FND-001 item 6). Fix: list the dependents in SC-Q1, and state the ADR-013 Status basis as the owner's call. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1758; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:23-24 |
 | FND-013 | low | The §16.8 test plan is bounded but misses some §16.5 rows and cases: "duplicate member name in one union" (:1557); "stage limit or meter exhaustion" (:1558); the scrutinee-refused behaviour (FND-004); an unknown-member arm whose body is not checked (only indirectly, through TC-264 E03); and the parser rule that a scrutinee admits no top-level `record-value` (shared-grammar.md:405-408). SC-R3's foreign-key refusal half can be tested in process but is deferred with its wire half. Fix: add one case per item. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1557-1558; spec/decisions/ADR-012-semantic-family-extension-contracts.md:1676-1690 |
@@ -98,15 +98,15 @@ Per analysis:
 
 ## Verdict
 
-Accept after the second fix. FND-001 to FND-017 are verified fixed (see
-"First re-review" and "Second re-review"). The mapping meets the
+Accept at 15eb3f70. FND-001 to FND-017 are verified fixed (see
+"Re-review (c49eea84)" and "Re-review (15eb3f70)"). The mapping meets the
 ticket's acceptance criteria. One new low finding remains: FND-018, a
 wording contradiction in the §16.2 enum case. It does not block the mapping.
 Fix it in this PR if convenient, or as #187's first clarification.
 
-Verdict after the first fix: changes requested, for FND-015.
+Verdict at c49eea84: changes requested, for FND-015.
 
-Original verdict: changes requested. The family assignment,
+Original verdict at c6e1e5ac: changes requested. The family assignment,
 identity rows, S6a treatment and QSpec gap list were sound and measured. But
 the ticket's first acceptance criterion was not met: "#187 can implement …
 without inventing a new owner or bypass". FND-001 meant #187 would reopen
@@ -134,11 +134,11 @@ Every finding is fixed in ADR-012 (and in the recipe for FND-007).
 | FND-013 | §16.8 adds the missing rows: declaration duplicate member, limits, parse scrutinee, unknown-member body not checked, and admission. |
 | FND-014 | The scrutinee refusal reuses `CheckCause::IllTyped`, and `SumCaseCause` holds only the exhaustiveness refusal. The obligation reading cites TC-264 E03 and E04. |
 
-## First re-review
+## Re-review (c49eea84)
 
-Scope: the first fix diff (ADR-012 and
-`docs/family-migration-recipe.md`). Each fix was measured against the fixed tree
-and QSpec `origin/main`, not taken from the dispositions table.
+Scope: `git diff c6e1e5ac c49eea84` (ADR-012 and
+`docs/family-migration-recipe.md`). Each fix was measured against the tree
+at c49eea84 and QSpec `origin/main`, not taken from the dispositions table.
 
 Measured for the new text:
 - `typing.rs:646-656` is the `Expression::If` arm calling
@@ -184,10 +184,10 @@ Measured for the new text:
 | FND-016 | new, low | The §16.5 limit row's oracle is "limit kind work budget" (ADR-012:1615). The new §16.8 Limits test (ADR-012:1767) drives the checking depth bound on the FR-062-AC-7 pattern, which yields a nesting-depth limit. The row and the test name different limit kinds. Fix: have the row name both limit kinds (nesting depth from the `Typer`'s depth bound, work budget from a family meter charge), or make the test match the row. |
 | FND-017 | new, low | Two wording slips. (1) In the SC-Q1 recommendation cell (ADR-012:1854), "It reopens one O-14 cell ("…"), ADR-013's Status lets …" is a comma splice that joins two sentences, so it reads as garbled. (2) §16.7 (ADR-012:1719) names the host of the new seam function only as "the `check` core module that hosts `Typer`'s dispatch". Name the file (`check/check/typing.rs` or `check/check.rs`) so the change set is concrete. |
 
-## Second re-review
+## Re-review (15eb3f70)
 
-Scope: the second fix diff, the ADR-012 lines only. I measured the
-touched lines against the fixed tree.
+Scope: `git diff c49eea84 15eb3f70`, the ADR-012 lines only. I measured the
+touched lines against the tree at 15eb3f70.
 
 | ID | Status | Note |
 | --- | --- | --- |

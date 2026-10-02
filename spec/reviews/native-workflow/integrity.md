@@ -10,7 +10,7 @@ review_set: all
 
 The five criteria separate successful correspondence, input refusal, failure correspondence, stage exhaustion and runtime integration. Existing SourceMap, ClauseBinding and NativePackage remain the authorities; a language tag alone does not establish compilation or producer conformance.
 
-PR-readiness review of implementation baseline; the owner's selected
+PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

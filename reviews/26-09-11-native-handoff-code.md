@@ -14,8 +14,9 @@ relationships:
 
 ## Summary
 
-Recheck of the example at the correction source, which merges PR-54's
-separately reviewed source into the handoff branch. Skills applied: the actual
+Recheck of the example at correction source `56c1621`, which merges PR-54's
+separately reviewed `84aec59` into the handoff branch; the example correction
+itself is `fa73912..915f479`. Skills applied: the actual
 `/home/peter/dev/agent-skills/code-review/SKILL.md`, which dispatches the Rust
 lane to `/home/peter/dev/agent-skills/rust-review/SKILL.md`, with
 `/home/peter/dev/agent-skills/rust-style/SKILL.md` as the portable idiom default
@@ -36,7 +37,7 @@ one construction-order sentinel.
 
 | Prior | Disposition | Evidence |
 | --- | --- | --- |
-| FND-001 `main` returns `Result`, `#[error]` messages dead | resolved | `native_protocol_handoff.rs:7-17` returns `ExitCode` and prints `{error}`; controls re-executed here print `usage: native_protocol_handoff <new-output-directory>` and `cannot access …: File exists (os error 17)`, both exit 1, no `Debug` variant |
+| FND-001 `main` returns `Result`, `#[error]` messages dead | resolved | `native_protocol_handoff.rs:7-17` returns `ExitCode` and prints `{error}`; controls re-executed here print `usage: native_protocol_handoff <new-output-directory>` and `cannot access /tmp/quire-native-producer-fixture-reviewed-20260911: File exists (os error 17)`, both exit 1, no `Debug` variant |
 | FND-002 model reference asserts the semantic requirement-revision namespace with a literal `"1"` | resolved | `producer.rs:510-521` derives it from `model.environment().owner().revision().get()`; `producer.rs:478-486` likewise derives the source-artifact label from `sources[0].identity().revision`. Remaining literals (`compiled-protocol-contract`, `selected-rule-source`, `example-output`, `crate-version`) are producer-owned source-artifact labels, not owner-derived semantic revisions |
 | FND-003 362-line `write` with a doubly derived index↔filename coupling | resolved | Split into `Inputs`, `DefinitionInputs`, `SelectedInputs`, `compile`, `emit_and_read`, `write_files`; `dependencies/{index}.bin` is assigned once at `producer.rs:663-666`, carried on `Dependency.file`, and consumed by both the sidecar (`producer.rs:565-573`) and publication (`producer.rs:1026-1028`). Verified on the fixture: all 67 dependency files hash to the digest recorded beside their carried filename |
 | FND-004 `Error::Stage` Debug-stringified whole namespace/proof reports | resolved | `producer.rs:62-70,90-123` now carry `stage`, `completed/expected`, issue count, an `incomplete` flag and one `Copy` `StageIssue` holding first kind/supplied/span/code or declaration/disposition/site/cause. No report, source body or diagnostic list is retained |
@@ -46,8 +47,10 @@ one construction-order sentinel.
 
 ## Re-verified, not asserted
 
-- `dependencies/0.bin` is the actual stripped ELF 64-bit PIE example binary,
-  byte-identical to the built `native_protocol_handoff` example.
+- `dependencies/0.bin` in `/tmp/quire-native-producer-fixture-reviewed-20260911`
+  is the actual stripped ELF 64-bit PIE example binary: SHA-256
+  `b0fb9184…c91d`, byte-identical to
+  `/tmp/formalization-a-language-target/release/examples/native_protocol_handoff`.
   No synthetic producer or hand-authored package.
 - All 67 dependency files recompute to the digests recorded in `expected.json`
   against their carried `file` names, and `compiled-protocol.ref.json` carries
@@ -135,12 +138,12 @@ unwrap) states the invariant in the type.
 
 | Gate | Result |
 | --- | --- |
-| `cargo fmt --check` | pass, no output |
-| `cargo clippy` all-targets, minimal features, `-D warnings` | pass |
-| `cargo clippy` all-targets, all features, `-D warnings` | pass |
-| `cargo run --release --example native_protocol_handoff -- <new dir>` | pass, package + 67 dependencies |
+| `cargo fmt --check` | pass, no output (`/tmp/quire-native-handoff-corrections-fmt.log`) |
+| `cargo clippy` all-targets, minimal features, `-D warnings` | pass (`/tmp/quire-native-handoff-corrections-clippy-minimal.log`) |
+| `cargo clippy` all-targets, all features, `-D warnings` | pass (`/tmp/quire-native-handoff-corrections-clippy-all.log`) |
+| `cargo run --release --example native_protocol_handoff -- <new dir>` | pass, package + 67 dependencies in `/tmp/quire-native-producer-fixture-reviewed-20260911` (`/tmp/quire-native-handoff-corrections-run.log`) |
 | Refusal controls: no arguments, existing directory | `usage: …` and `cannot access …: File exists (os error 17)`, exit 1, re-executed in this recheck |
 | Fixture re-verification | 67/67 dependency digests, package↔reference digest, binary↔`release/examples/native_protocol_handoff` identity, source/model digests and declaration spans recomputed in this recheck |
-| `quire validate --scope <worktree> "spec/**/*.md"` / grammar | 398/398 docs grammar-clean, only module-registry first-wins notices |
+| `quire validate --scope <worktree> "spec/**/*.md"` / grammar | 398/398 docs grammar-clean, only module-registry first-wins notices (`/tmp/quire-native-handoff-corrections-spec.log`) |
 | `cargo deny` | not applicable, no `deny.toml` in this repository |
-| Parent library/spec suites | 533/549 pass, 0 fail, 4 inherited ignored, 52 suites including doctests; production source identical to PR-54's, not rerun for example-only fixes |
+| Parent library/spec suites | 533/549 pass, 0 fail, 4 inherited ignored, 52 suites including doctests (`/tmp/quire-native-populations-corrections-test-{minimal,all}.log`); production source identical to `84aec59`, not rerun for example-only fixes |

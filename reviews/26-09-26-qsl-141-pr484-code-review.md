@@ -3,7 +3,7 @@ id: SR-707
 title: "Code and Rust review of the value.rs module-edge scan"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language; qsl-forms/tests/it/identity_free_forms.rs; qsl-forms/src/value.rs; qsl-forms/src/lib.rs"
+scope: "agent-ix/quire-spec-language@5a51beb0e6ccd69b5086c2510cf22d89ed907e15; qsl-forms/tests/it/identity_free_forms.rs; qsl-forms/src/value.rs; qsl-forms/src/lib.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-091
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-141. PR: quire-spec-language#484. Code review with the
+Ticket: QSL-141. PR: quire-spec-language#484 at 5a51beb0. Code review with the
 rust-review lane, scoped to `git diff origin/main...HEAD`. The only Rust change
 is the new test `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates`
 and its `ModuleEdges` visitor in `qsl-forms/tests/it/identity_free_forms.rs`.
@@ -20,7 +20,7 @@ Sound: the allow-list matches `value.rs`'s real imports (lines 17-29:
 `qsl_cst`, `qsl_foundation`, `quire_exact`, `super::dispatch`, `super::spans`,
 `super::syntax`), and its seven inline paths are `self::items`, which the
 visitor admits. The test passes at this head. It is not tautological: in a
-scratch worktree, adding `use crate::dispatch::FormsLimits as _Mut;`
+scratch worktree at 5a51beb0, adding `use crate::dispatch::FormsLimits as _Mut;`
 to `value.rs` made it fail with `"20: crate::dispatch::FormsLimits"`. The
 closing assertion (`use qsl_cst::` and `use super::syntax::` present) guards
 against scanning the wrong file. Unrooted third-party inline paths are not
@@ -43,14 +43,14 @@ lets a real layering break through today.
 
 Transcribed verbatim from the reviewer's Linear comment https://linear.app/agent-ix/issue/QSL-141/adr-011-m-3b-per-family-parsed-form-types-incremental-with-m-6a-m-6e#comment-19403785 (SR-707 dispositions).
 
-<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public id=SR-707 pr=quire-spec-language#484 date=2026-09-26 -->
+<!-- reviewer-dispositions repo=agent-ix/quire-spec-language visibility=public quoin=0.24.1 module=spec-artifacts-process@v0.26.0 id=SR-707 pr=quire-spec-language#484 reviewed=bee599c7a2f174864f0e90ed3911b2aec5d39e6c date=2026-09-26 -->
 
-| FND | Outcome |
-| --- | --- |
-| FND-001 | fixed |
-| FND-002 | fixed |
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bee599c7 |
+| FND-002 | fixed | bee599c7 |
 
-Verified by mutation in a scratch worktree: appending `type _T = crate::syntax::TypeForm;` and `stringify!(crate::syntax::TypeForm)` to `qsl-forms/src/value.rs` keeps `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates` green (FND-001). Appending `const _M: &str = stringify!(crate::build_unit);` makes it fail with `"1627: crate::build_unit"`, so macro-body paths are judged (FND-002).
+Verified by mutation in a scratch worktree at bee599c7: appending `type _T = crate::syntax::TypeForm;` and `stringify!(crate::syntax::TypeForm)` to `qsl-forms/src/value.rs` keeps `value_module_has_edges_only_to_the_forms_core_and_the_lower_crates` green (FND-001). Appending `const _M: &str = stringify!(crate::build_unit);` makes it fail with `"1627: crate::build_unit"`, so macro-body paths are judged (FND-002).
 
 +++ [reviewer data]
 
@@ -58,6 +58,7 @@ Verified by mutation in a scratch worktree: appending `type _T = crate::syntax::
 dispositions:
   - fnd: FND-001
     outcome: fixed
+    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
     path: qsl-forms/tests/it/identity_free_forms.rs
     lines: "224-226"
     after_excerpt: |-
@@ -67,6 +68,7 @@ dispositions:
     evidence: "mutation: crate::syntax::TypeForm (inline and in stringify!) appended to value.rs -> test passes"
   - fnd: FND-002
     outcome: fixed
+    fix_sha: bee599c7a2f174864f0e90ed3911b2aec5d39e6c
     path: qsl-forms/tests/it/identity_free_forms.rs
     lines: "283-325"
     after_excerpt: |-

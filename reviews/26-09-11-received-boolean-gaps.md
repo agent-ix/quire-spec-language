@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` examined the diff from `origin/main` for the received-Boolean
+QUOIN `gap-analysis` examined `origin/main...cefc34e` for the received-Boolean
 choice increment. Plan completion is not applicable: `plan/` has Plan-001
 through Plan-009 but no protocol-artifact-emission bundle, consistent with
 SR-355. Current `quire coverage --scope` reports 374/383 backed rows, six raw
@@ -79,7 +79,8 @@ is not a Boolean implementation blocker.
 ## Coverage
 
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-boolean-choices
---json` reports 374/383 raw backed rows. Four
+--json` (quire 0.31.0, engine `ca7362d4`; raw report
+`/tmp/quire-boolean-coverage.json`) reports 374/383 raw backed rows. Four
 non-exempt source-backed-required rows remain unbacked: TC-115 and
 FR-036-AC-5/-AC-6/-AC-8. TC-010 is Manual and FR-017-AC-2 is Inspection, so
 they are `no_source_symbol` vocabulary exemptions rather than test-backing

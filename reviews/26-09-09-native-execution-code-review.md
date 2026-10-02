@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author review using actual agent-skills code-review, rust-review
+Author review of `9c3e5ff` using actual agent-skills code-review, rust-review
 and rust-style. No applicable AssuranceProfile was found. Existing trace
 attributes and public integration-test fixture conventions apply.
 

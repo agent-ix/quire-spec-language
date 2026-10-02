@@ -3,7 +3,7 @@ id: SR-283
 title: "EARS review of the runtime input schema amendment"
 type: SpecReview
 analysis: ears-conformance
-scope: "Two new normative FR-024 statements"
+scope: "Two new normative FR-024 statements at f4679ef"
 review_set: all
 ---
 ## Summary

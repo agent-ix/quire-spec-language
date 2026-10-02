@@ -14,14 +14,14 @@ relationships:
 
 ## Summary
 
-QUOIN `gap-analysis` recheck over the correction commit, re-running
+QUOIN `gap-analysis` recheck over the correction commit `b7aafe1`, re-running
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-compensation
---json`. Scope is the correction diff
+--json` (quire 0.31.0, engine `ca7362d4`). Scope is the `c7275f5..b7aafe1` diff
 and the requirements it touches; the rest of the increment is not re-analysed.
 Step 1 (plan completion) remains not applicable — `plan/` holds Plan-001..009,
 none covering protocol-artifact emission — so matrix reconciliation is the
 operative gate. The optional semantic review (Step 4) remains declined by the
-requester. The corpus reconciliation is unchanged from the reviewed commit: 367/376 rows
+requester. The corpus reconciliation is unchanged from `c7275f5`: 367/376 rows
 backed, the same six unbacked rows, twenty untracked symbols and three unmatched
 tags, all inherited and all outside this change. The previously high typed-effect
 gap is closed in both directions. One new reverse gap replaces it: FR-042 now
@@ -49,7 +49,8 @@ debt, not this change.
 | FND-004 | low      | The protocol `relationships` explicit-Unsupported branch still has no test                                     | src/protocol_artifact/native/runtime.rs:563                                                                  | correct-requirement-no-evidence     |
 | FND-005 | low      | FR-042-AC-9 still has no compensation work-dimension vector, and the correction adds further charged dimensions without one | spec/functional/FR-042-publish-compiled-protocol-artifacts.md:206; src/protocol_artifact/validate/control.rs:1029 | correct-requirement-no-evidence     |
 
-## Dispositions of the SR-348 findings
+## Dispositions of the SR-348 findings recorded at c7275f5
+
 | Prior   | Disposition                                                                                                                          |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | FND-001 | **Resolved.** TC-121 step 6 now names both typed-effect mutations and FR-042 states the `Unsupported::Export` obligation; `adding_a_payload_type_cannot_bypass_compensation_effect_authority` backs both, tagged `TC-121`/`FR-042-AC-6/7/8`. |
@@ -95,7 +96,7 @@ mode.
   the private-packet lane. `binding_census`: 1.
 - `untracked_symbols`: 20, all `NFR-007-M-*` on `src/package/encoding/tests.rs`
   and `tests/package_construction_cases/limits.rs`. Inherited.
-- `suspicions`: 5, one more than at the reviewed commit and the same item throughout — the
+- `suspicions`: 5, one more than at `c7275f5` and the same item throughout — the
   `integer` helper resembles `integer_value` in
   `tests/native_protocol_emission.rs` (similarity 0.86). The new occurrence is
   the attempt-bound test calling that helper. It unwraps a checked wire number
@@ -105,7 +106,7 @@ mode.
 ### Matrix backing for this increment
 
 The ten compensation tests all carry `#[trace("TC-121", ...)]` with resolving
-ACs; the three added by the correction carry FR-042-AC-3/6/7/8. No new untracked test
+ACs; the three added by `b7aafe1` carry FR-042-AC-3/6/7/8. No new untracked test
 symbol appeared and `status_lies` is still 0, so every cited id resolves.
 FR-042-AC-6 remains backed. TC-121 step 6 as rewritten — typed-effect insert,
 typed insert plus foreign operation, clock/snapshot/progress/closure swaps, each
@@ -139,13 +140,13 @@ that is recorded as FND-002 in SR-347, not as a matrix gap.
 - **FR-042-AC-10** — the real producer-to-B handoff is still open. The library
   fixtures here use an explicitly synthetic producer/baseline; the landed
   producer recipe in PR55 does not close the consumer side. Untouched by
-  the correction.
+  `b7aafe1`.
 - **FR-042-AC-6, relationships/correspondence half** — protocol `relationships`
   remain `Unsupported::Export` (`runtime.rs:563`), and general family proof
   support stays Unsupported. Explicit and intended; FND-004 is only that the
   refusal has no test.
 - **FR-042-AC-9** — still no compensation-specific work-dimension vector, and
-  the correction adds charged dimensions rather than removing the gap:
+  `b7aafe1` adds charged dimensions rather than removing the gap:
   `Entries` for the three fixed recovery records and one per admitted population
   member, `References` for each `requires` comparison and for the sorted
   progress/closure triple, plus `Entries` per visited value node and per pushed

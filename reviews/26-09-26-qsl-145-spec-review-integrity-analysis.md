@@ -3,7 +3,7 @@ id: SR-711
 title: "Spec review of the FR-064, TC-162, ADR-012 and tests.md edits for the string-edge gate"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/tests.md; spec/spec.md; docs/family-migration-recipe.md"
+scope: "agent-ix/quire-spec-language@9686fc5f872dc1e3fc7317f12fc7de44bec0707c; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; spec/decisions/ADR-012-semantic-family-extension-contracts.md; spec/tests.md; spec/spec.md; docs/family-migration-recipe.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -15,8 +15,8 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485.
-Spec review (integrity and consistency) of the Status, deferral
+Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485 at
+9686fc5f. Spec review (integrity and consistency) of the Status, deferral
 and test-case edits this PR makes.
 
 These edits are clean:
@@ -43,11 +43,11 @@ against their own decision text.
 
 ## Dispositions
 
-Disposition pass.
+Disposition pass at 5f573711.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | TC-162 step 3/6/7 procedure and expected results rewritten to the current tests. |
-| FND-002 | fixed | FR-064 Status is 'Partial' and names the unbuilt string-value clause with known instances. |
-| FND-003 | fixed | ADR-012 §9 rows record what was done per site (clock row says partly done); the QSL-145 deferral row names the literal-only limit. |
-| FND-004 | fixed | Filename rule dropped in code; FR-064 Inputs now says a file is never out of scope by name alone. |
+| FND-001 | fixed | 5f573711: TC-162 step 3/6/7 procedure and expected results rewritten to the current tests. |
+| FND-002 | fixed | 5f573711: FR-064 Status is 'Partial' and names the unbuilt string-value clause with known instances. |
+| FND-003 | fixed | 5f573711: ADR-012 §9 rows record what was done per site (clock row says partly done); the QSL-145 deferral row names the literal-only limit. |
+| FND-004 | fixed | 39bd09e2, 5f573711: Filename rule dropped in code; FR-064 Inputs now says a file is never out of scope by name alone. |

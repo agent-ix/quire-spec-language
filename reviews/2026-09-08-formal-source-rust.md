@@ -3,8 +3,9 @@ id: SR-064
 title: "Rust code review — native formal source correspondence"
 type: SpecReview
 analysis: code-review
-scope: "src/formal_source.rs, src/lib.rs, tests/formal_source.rs and FR-014"
+scope: "7464c9a: src/formal_source.rs, src/lib.rs, tests/formal_source.rs and FR-014"
 review_set: subset
+evaluated_revision: "7464c9a"
 ---
 
 ## Summary
@@ -66,7 +67,7 @@ is justified by this scoped review.
 
 ## Verification
 
-Cargo runs used nice 10,
+Actual exit-zero logs are in reviews/data/formal-source. Cargo runs used nice 10,
 offline locked dependencies, the existing target caches and -j 1; tests used
 --test-threads=1. The first focused run records the expected missing-module
 compiler error before implementation, followed by five passing new tests.

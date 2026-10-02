@@ -16,7 +16,7 @@ relationships:
 
 ## Summary
 
-Gap analysis of the composed type-admission slice. The engine
+Gap analysis of the composed type-admission slice at 621205d. The engine
 reports 350/359 matrix rows backed with **zero status lies**, and the spec
 correctly keeps every FR-040 row 🚧 Planned. Type admission genuinely
 implements the profile/type/query/provenance portions of TC-119 — nine of ten
@@ -125,8 +125,8 @@ sentence in TC-119 so the distinction is deliberate rather than incidental.
 
 - **Plan completion:** not applicable — no plan bundle covers FR-040 and the
   owner's bookkeeping directive forbids inventing one. Recorded, not scored.
-- **Matrix verification:** `quire coverage --scope <worktree> --json`
-  — **350/359 backed**, **0 status lies**, 243 criteria. Six unbacked
+- **Matrix verification:** `quire coverage --scope <worktree> --json` at
+  621205d — **350/359 backed**, **0 status lies**, 243 criteria. Six unbacked
   rows, all inherited and outside this scope: TC-115 (FR-036-AC-5/6/8), TC-010
   (NFR-005-M-1, Manual), FR-017-AC-2 (Inspection), and the three FR-036 rows
   TC-115 owns. Three unmatched tags (IT-004, `tests/fixture_audit.rs`) and 20

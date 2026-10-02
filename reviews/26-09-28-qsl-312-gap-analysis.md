@@ -3,7 +3,7 @@ id: SR-773
 title: "QSL-312 gap analysis of PR 512 (FR-105 AC-2/AC-4 test remainder)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language; spec/functional/FR-105-emit-state-nodes.md; spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/tests.md; spec/spec.md (unchanged); qsl-replay/src/spine/clause/tests.rs"
+scope: "agent-ix/quire-spec-language@5247a61078b8ee67283cbaf82af46c561dad71ca; spec/functional/FR-105-emit-state-nodes.md; spec/test-cases/TC-462-s4-emits-state-nodes.md; spec/test-cases/TC-463-s4-state-package-reads-back-and-is-stable.md; spec/tests.md; spec/spec.md (unchanged); qsl-replay/src/spine/clause/tests.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-105
@@ -15,14 +15,14 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-312. PR: quire-spec-language#512. There is no plan
+Ticket: QSL-312. PR: quire-spec-language#512 at 5247a610. There is no plan
 bundle. The scope is the FR-105-AC-2 and FR-105-AC-4 remainder. The spec edits
 are status and traceability rows only, and no requirement statement changed.
 `spec-review` sub-analyses therefore do not apply, and this file covers the
 trace check.
 
-Coverage below is measured against the code, with my own `make ci` run
-(exit 0; 6433 `ok` lines and 0 FAILED; all 11 new tests pass under both the
+Coverage below is measured against the code, with my own `make ci` run at
+5247a610 (exit 0; 6433 `ok` lines and 0 FAILED; all 11 new tests pass under both the
 default and the all-features runs):
 
 | AC part | Test(s) | Status |

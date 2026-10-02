@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021 and Task-022 are done; the native execution scope is implemented.
-Plan-009 remains in progress for standalone intake and actual extraction.
+Task-021 and Task-022 are done; the implemented native execution scope is
+9c3e5ff. Plan-009 remains in progress for standalone intake and actual extraction.
 
 ## Verdict
 

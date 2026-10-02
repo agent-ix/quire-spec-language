@@ -8,13 +8,13 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness re-review using the actual code-review, rust-review
+Author PR-readiness re-review of fbdf687 using the actual code-review, rust-review
 and portable rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
 
 **CONDITIONAL** — independent review findings 1–6 and 8 are addressed;
-the IR resource-classification follow-up remains below.
+the pinned IR resource-classification follow-up remains below.
 
 ## Findings
 
@@ -23,9 +23,9 @@ the IR resource-classification follow-up remains below.
 | FND-001 | low | Resolved 1/8: the exact-source borrow contract is documented, owned matching RawValue is refused, and public reads require an explicit ceiling. | src/located_json.rs; tests/located_json.rs |
 | FND-002 | low | Resolved 2/3: duplicate/unknown scalars and each resource category carry typed context; AC-3/4 and independent adverse controls own the behavior. | src/model_source.rs; tests/model_source.rs; FR-025 |
 | FND-003 | low | Resolved 4/5/6: wire/decode/lower modules are separate, one budget helper charges before group decoding, and drafts/errors retain effective limits. | src/model_source/; src/model_source.rs |
-| FND-004 | medium | The IR has no resource-classification helper. The existing two-code mapping remains coupled to it; request a producer-owned predicate before expanding it. | src/model_source.rs; quire-contract-ir; issue #27 |
+| FND-004 | medium | The pinned IR has no resource-classification helper. The existing two-code mapping remains coupled to that revision; request a producer-owned predicate before expanding it. | src/model_source.rs; quire-contract-ir 690bde7; issue #27 |
 
-The full suite passed after the correction. The focused model/occurrence
+The full suite at fbdf687 passed after the correction. The focused model/occurrence
 suite passed 11 tests, including all seven entry categories and unchanged frozen
 model bytes. Source-only public API changes add no I/O, unsafe code, dependency
 or workflow change. The earlier baseline checks below remain historical evidence.

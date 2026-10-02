@@ -17,7 +17,7 @@ relationships:
 ## Summary
 
 Gap analysis of the composed static-binding slice on
-`agent-a/composed-native-binding`. The engine reports 332/340 matrix
+`agent-a/composed-native-binding` (92313b7). The engine reports 332/340 matrix
 rows backed with zero status lies, and the spec correctly keeps every FR-036 row
 Planned. The binding stage genuinely implements the definition/model/scope
 portions of TC-114, but neither TC-114 nor TC-115 is discharged: TC-115 has no
@@ -30,17 +30,17 @@ causes are unverified.
 with no backing tagged test, and FND-001/FND-004 are high. This is the expected
 gate result for an intentionally partial slice of compiler #35, not a regression.
 
-**Current verdict (re-verified after the first correction, 2026-09-10): FAIL, unchanged.**
+**Current verdict (re-verified at 9aa788a, 2026-09-10): FAIL, unchanged.**
 The full-ticket gap is still open: TC-115 has no backing tagged test and IT-009
 is untouched, so FND-001 stands and the skill's verdict rule mandates FAIL.
 This is distinct from the correction status of FND-004 (scale/budget), which is
-**resolved** by the first correction and re-verified by a gate-run test. FND-005 through
+**resolved** at 9aa788a and re-verified by a gate-run test. FND-005 through
 FND-008 are also resolved; FND-002, FND-003 and FND-009 remain as recorded.
 Compiler #35/#40 remains open by the owner's explicit decision to deliver this
 binding slice while TC-115, type/profile/runtime/family checking and D's IT-009
 correspondence continue; nothing here claims those ACs.
 
-**Current verdict (re-verified after the second correction, 2026-09-10): FAIL, unchanged.**
+**Current verdict (re-verified at 5381672, 2026-09-10): FAIL, unchanged.**
 The full-ticket gap is exactly where it was: TC-115 has no backing tagged test,
 IT-009 is untouched, and `spec/` is unchanged by this commit, so FND-001 stands
 and the skill's verdict rule mandates FAIL. The SR-319 code corrections being
@@ -156,7 +156,7 @@ claimed complete here. This review neither advances nor verifies it.
 ## Coverage
 
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-composed-binding --json`,
-run in this session.
+engine 0.46.0 (quire 0.31.0), run in this session.
 
 | Measure | Value |
 | --- | --- |
@@ -187,13 +187,13 @@ full, and IT-009's real producer integration. Issue #40 artifact delivery is
 untouched. Local gates are green and the historical package path is unaffected;
 no result of this stage is a checked or executable package.
 
-## Correction re-review (first correction, 2026-09-10)
+## Correction re-review (9aa788a, 2026-09-10)
 
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-binding-fixes
---json`, re-run in this session against the
-remediation commit. The rollup is byte-for-byte the same picture as originally.
+--json`, engine 0.46.0 (quire 0.31.0), re-run in this session against the
+remediation commit. The rollup is byte-for-byte the same picture as at 92313b7.
 
-| Measure | Original | First correction |
+| Measure | 92313b7 | 9aa788a |
 | --- | --- | --- |
 | Matrix rows backed | 332 / 340 | 332 / 340 |
 | Unbacked rows | 6 | 6 — TC-115, FR-036-AC-5/6/8, plus pre-existing TC-010 and FR-017-AC-2 |
@@ -211,7 +211,7 @@ and unmatched-tag counts did not move.
 
 | ID | Disposition | Evidence |
 | --- | --- | --- |
-| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three matching `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by the first correction, so the matrix still records these rows Planned — an honest open gap, and the owner has explicitly permitted delivering the binding slice while it stands. Not softened, not claimed. |
+| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three matching `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by 9aa788a, so the matrix still records these rows Planned — an honest open gap, and the owner has explicitly permitted delivering the binding slice while it stands. Not softened, not claimed. |
 | FND-002 | open as an analysis limitation, not a defect | Still no plan bundle for compiler #35; the owner has confirmed no new Plan bundle is required to reformat the existing issue/FR scope, so Step 1 stays unexecutable and FR-036 plus TC-114 remain the target of record. |
 | FND-003 | open, unchanged | The engine still counts FR-036-AC-1/2/3/4/7 backed through `#[trace]` tags while `spec/model-linking/tests.md:124-131` keeps all eight rows Planned, with zero status lies. `backed` measures tag binding, not AC discharge; the spec's Planned status remains the correct reading. |
 | FND-004 | **resolved** | The missing control was a scale test, and it now exists. `tests/composed_binding.rs:93-135` binds 100 declarations over a 39 900-node expression arena through the full `binding::bind` path, asserts `report.complete()` and `Disposition::NamesResolved` for every declaration, and caps `usage().references` below 200 000 — where the per-declaration whole-arena rescan needed 3 990 000 against an unraisable ceiling of 2 000 000. `tests/composed_binding.rs:139-187` does the same for the definition stage over 200 protocols and 10 200 controls (2 040 000 under the old scan). Both were run green in this session. This closes the FR-036-AC-7 hole that let SR-319 FND-001 ship: the combined path's reference budget is now exercised against a realistically sized unit. |
@@ -233,13 +233,13 @@ artifact delivery is untouched. Local gates are green and the historical package
 path is unaffected; no result of this stage is a checked or executable package.
 The optional semantic review (Step 4) remains declined and was not run here.
 
-## Correction re-review (second correction, 2026-09-10)
+## Correction re-review (5381672, 2026-09-10)
 
 `quire coverage --scope /home/peter/dev/worktrees/quire-language-binding-fixes
---json`, re-run in this session against the second
+--json`, engine 0.46.0 (quire 0.31.0), re-run in this session against the second
 remediation commit. The rollup is unchanged from both earlier runs.
 
-| Measure | Original | First correction | Second correction |
+| Measure | 92313b7 | 9aa788a | 5381672 |
 | --- | --- | --- | --- |
 | Matrix rows backed | 332 / 340 | 332 / 340 | 332 / 340 |
 | Unbacked rows | 6 | 6 | 6 — TC-115, FR-036-AC-5/6/8, plus pre-existing TC-010 and FR-017-AC-2 |
@@ -255,15 +255,15 @@ are `#[cfg(test)]` unit tests inside `src/linking/composed/arena.rs` and one is
 an integration test; all three carry resolving `#[trace]` tags, so neither the
 untracked-symbol nor the unmatched-tag count moved.
 
-### Disposition after the second correction
+### Disposition at 5381672
 
 | ID | Disposition | Evidence |
 | --- | --- | --- |
-| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by the second correction. The completed SR-319 corrections do not touch this gap, and it is not softened here. |
+| FND-001 | open, unchanged | `quire coverage` still reports `spec/model-linking/tests.md:107` (TC-115 → FR-036-AC-5/6/8) and the three `verification` rows at `spec/functional/FR-036-link-composed-native-packages.md:129,130,132` as unbacked. No test carries a `TC-115` tag; `spec/integration/IT-009-composed-package-boundary.md` is untouched and no producer integration exists. `spec/` is unchanged by 5381672. The completed SR-319 corrections do not touch this gap, and it is not softened here. |
 | FND-002 | closed as an analysis limitation | The owner has dispositioned the absent #35 plan bundle; creating one is not a task. Step 1 stays unexecutable and FR-036 plus TC-114 remain the target of record. |
 | FND-003 | open, unchanged | The engine still counts FR-036-AC-1/2/3/4/7 backed through `#[trace]` tags while `spec/model-linking/tests.md:124-131` keeps all eight rows Planned, with zero status lies. `backed` measures tag binding, not AC discharge. |
-| FND-004 | resolved, and strengthened | Beyond the two arena-scale tests of the first correction, `tests/composed_binding.rs:143-245` now exercises the combined path against a **real admitted** model — 1 500 records through `model_source::read` + `admit(ModelLimits::default())` — with 400 declarations of four typed parameters each, asserting per-occurrence resolution as well as the reference cap. FR-036-AC-7's "exact-limit expectations derivable from a controlled input" is exercised at scale on References. |
-| FND-005 | resolved, unchanged | The eleven producible typed causes retain their tagged tests from the first correction. |
+| FND-004 | resolved, and strengthened | Beyond the two arena-scale tests at 9aa788a, `tests/composed_binding.rs:143-245` now exercises the combined path against a **real admitted** model — 1 500 records through `model_source::read` + `admit(ModelLimits::default())` — with 400 declarations of four typed parameters each, asserting per-occurrence resolution as well as the reference cap. FR-036-AC-7's "exact-limit expectations derivable from a controlled input" is exercised at scale on References. |
+| FND-005 | resolved, unchanged | The eleven producible typed causes retain their tagged tests from 9aa788a. |
 | FND-006, FND-007, FND-008 | resolved, unchanged | `resources/` and the module headers are untouched by this commit. |
 | FND-009 | open, unchanged | The engine still flags the `id` helper shared by `tests/composed_scopes.rs` and `tests/composed_linking.rs:252` at token similarity 1.00. Unremediated and still low. |
 | FND-010 | open, unchanged | Nothing in the tree references issue #40; artifact delivery is neither started nor claimed here. |
@@ -284,7 +284,7 @@ a new stage: bind a multi-model inventory and assert the Bindings budget the way
 `large_admitted_model_resolves_repeated_nominal_parameters_at_defaults` asserts
 the References budget.
 
-### Remaining work for compiler #35 after the second correction
+### Remaining work for compiler #35 at 5381672
 
 Unchanged, and explicitly permitted to remain open by the owner: expression and
 type checking, profile/family admission, complete typed runtime-role derivation,

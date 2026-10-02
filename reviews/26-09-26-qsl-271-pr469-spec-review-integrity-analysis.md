@@ -3,7 +3,7 @@ id: SR-678
 title: "QSL-271 PR 469 integrity review of FR-100's refusal-record mapping"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; consistency against spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md, spec/functional/FR-109-run-a-state-clause-through-the-spine.md, spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md, spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md O-16/O-17/T-4, QSpec spec/functional/tooling/FR-301-expose-complete-cli.md (origin/main), Linear STD-110, qsl-foundation/src/diagnostic.rs, src/command.rs"
+scope: "agent-ix/quire-spec-language@ceb5d905; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; consistency against spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md, spec/functional/FR-109-run-a-state-clause-through-the-spine.md, spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md, spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md O-16/O-17/T-4, QSpec spec/functional/tooling/FR-301-expose-complete-cli.md (origin/main), Linear STD-110, qsl-foundation/src/diagnostic.rs, src/command.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -18,7 +18,7 @@ Ticket: QSL-271 (PR agent-ix/quire-spec-language#469). This review checks
 consistency with FR-096, ADR-013, QSpec FR-301 and the specs that consume
 FR-100's mapping.
 
-Every claim about FR-096 and the #465 code is correct on main:
+Every claim about FR-096 and the #465 code is correct on main 9425dd82:
 
 - `Evaluation::refusal_record` dispatches to the family cause's
   `refusal_record` or to `kernel_refusal_record` (`qsl-eval/src/value/expression/evaluate.rs:86-102`).
@@ -60,17 +60,17 @@ FND-002 contradicts itself on the exit status.
 
 ## Dispositions
 
-Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60cc` and `bec5791c`, on main 9425dd82). I checked each outcome against the spec at that head and the code on main 9425dd82, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | FR-109 adds category `internal-failure` (stage `evaluate`, the fault's stage and invariant, no `outcome` member), an If statement, and an `exit_code()` arm, and FR-109-AC-5 covers it. TC-468 step 5 constructs `CheckedInvariant` and `CallFailure::Fault` with that oracle. |
-| FND-002 | fixed | The row moved to a new "Internal failure at S6a" section with `details` `{"stage", "invariant"}` and exit 30. The second fix states that the path exits 30 directly and not through `Code::exit_code`. That `Code::RuntimeInvariant.exit_code()` is 20 elsewhere is ruled out of scope by the team leader and routed to the core lane. |
-| FND-003 | fixed | FR-100 now says each category is O-16's except `CheckedInvariant`, which is internal failure by FR-096 (T-4 `InternalFault`). |
-| FND-004 | fixed | Status separates the eight causes STD-110 names from the two IEEE causes, which it cites "pending confirmation that it covers them". |
-| FND-005 | fixed | Status cites QSL-281 (verified in Linear, Backlog: "Refusal::ForeignReference carries its universes so FR-096 builds a foreign_reference record"). |
-| FND-006 | fixed | The exit is `Code::exit_code` of `Code::from_code(code)`, which exists on main (`qsl-foundation/src/diagnostic.rs:277`, `Code::all()` matched by `as_str`). An unmapped code exits 20. |
+| FND-001 | fixed e71e60cc | FR-109 adds category `internal-failure` (stage `evaluate`, the fault's stage and invariant, no `outcome` member), an If statement, and an `exit_code()` arm, and FR-109-AC-5 covers it. TC-468 step 5 constructs `CheckedInvariant` and `CallFailure::Fault` with that oracle. |
+| FND-002 | fixed bec5791c | The row moved to a new "Internal failure at S6a" section (e71e60cc) with `details` `{"stage", "invariant"}` and exit 30. bec5791c states that the path exits 30 directly and not through `Code::exit_code`. That `Code::RuntimeInvariant.exit_code()` is 20 elsewhere is ruled out of scope by the team leader and routed to the core lane. |
+| FND-003 | fixed e71e60cc | FR-100 now says each category is O-16's except `CheckedInvariant`, which is internal failure by FR-096 (T-4 `InternalFault`). |
+| FND-004 | fixed e71e60cc | Status separates the eight causes STD-110 names from the two IEEE causes, which it cites "pending confirmation that it covers them". |
+| FND-005 | fixed e71e60cc | Status cites QSL-281 (verified in Linear, Backlog: "Refusal::ForeignReference carries its universes so FR-096 builds a foreign_reference record"). |
+| FND-006 | fixed e71e60cc | The exit is `Code::exit_code` of `Code::from_code(code)`, which exists on main (`qsl-foundation/src/diagnostic.rs:277`, `Code::all()` matched by `as_str`). An unmapped code exits 20. |
 
 New finding (low, non-blocking): FR-109:118-121 still maps "every other S6a outcome" to "category `refusal`, `undefined` or `incomplete` by its ADR-013 O-16 category". `CheckedInvariant` is an O-16 refusal, so this overlaps the new internal-failure If statement at :124. Add "other than FR-100's internal failures".
 
-Fixed: FR-109 now maps "every other S6a outcome other than FR-100's internal failures" by FR-100's mapping, so it no longer overlaps the internal-failure If statement.
+Fixed in 720308d3: FR-109 now maps "every other S6a outcome other than FR-100's internal failures" by FR-100's mapping, so it no longer overlaps the internal-failure If statement.

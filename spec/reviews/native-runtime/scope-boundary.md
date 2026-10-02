@@ -5,6 +5,7 @@ type: SpecReview
 analysis: scope-boundary
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
+evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -35,11 +36,11 @@ Agent A owns the native payload, population validator and source-AST evaluator. 
 | --- | --- | --- |
 | Caller draft data and completeness | Assumed assertions; validated internal consistency | FR-007/018, no deployment-completeness proof |
 | Caller cancellation poll | Assumed prompt termination; guaranteed true/panic handling | NFR-006, TC-065/075 |
-| Contract IR | Guaranteed native consumption through contract tests | Landed IT-005; IT-006 reuses actual declarations/proof API |
+| Contract IR at 690bde7 | Guaranteed native consumption through contract tests | Landed IT-005; IT-006 reuses actual declarations/proof API |
 | Native source-derived model | Guaranteed reviewed source correspondence | Landed FR-015/016; runtime mutation setup retains it |
 | serde_json and SHA-256 encoding | Guaranteed selected emitted representation via tests | FR-018, TC-056; existing dependency grants retained |
-| Adopted state profile | Assumed normative meaning, implemented behavior tested | FR-008 and independent reference vectors |
-| B's portable references/results | External owner; not consumed by this implementation packet | Inspected shared_reference.rs; future adapter handoff |
+| Adopted state profile at e897f81 | Assumed normative meaning, implemented behavior tested | FR-008 and independent reference vectors |
+| B's portable references/results | External owner; not consumed by this implementation packet | Inspected shared_reference.rs at d577486; future adapter handoff |
 | Existing backend binder and Quire adapter | External/downstream; not qualified here | LC04/LC05 and IT-002/003 remain required |
 
 ## Context
@@ -69,7 +70,7 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed the setup correction. TC-055–057 now explicitly
+Reviewed dc63f337fcdaee1320d221383eca38599239f62c. TC-055–057 now explicitly
 exercise A's constructor boundary with existing IR identities. They confer no
 model validity, population closure, runtime Boolean or portable result authority.
 The model/checker owns static admission and later validation consumes it; no

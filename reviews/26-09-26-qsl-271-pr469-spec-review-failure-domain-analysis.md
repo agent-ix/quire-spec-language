@@ -3,7 +3,7 @@ id: SR-679
 title: "QSL-271 PR 469 failure-domain review of FR-100's refusal-record mapping"
 type: SpecReview
 analysis: failure-domain
-scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; evidence quire-exact/src/outcome.rs, qsl-foundation/src/diagnostic.rs, qsl-eval/src/value/expression/evaluate.rs, qsl-eval/src/value/expression/causes.rs, qsl-eval/src/value/expression/mod.rs, qsl-semantics/src/value/model_query.rs, qsl-semantics/src/model/population.rs, qsl-semantics/src/model/refusal.rs, spec/functional/FR-109-run-a-state-clause-through-the-spine.md"
+scope: "agent-ix/quire-spec-language@ceb5d905; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; evidence quire-exact/src/outcome.rs, qsl-foundation/src/diagnostic.rs, qsl-eval/src/value/expression/evaluate.rs, qsl-eval/src/value/expression/causes.rs, qsl-eval/src/value/expression/mod.rs, qsl-semantics/src/value/model_query.rs, qsl-semantics/src/model/population.rs, qsl-semantics/src/model/refusal.rs, spec/functional/FR-109-run-a-state-clause-through-the-spine.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -46,15 +46,15 @@ catalog code that is available.
 
 ## Dispositions
 
-Disposition pass. I checked each outcome against the spec and the code on main. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
+Disposition pass at `agent-ix/quire-spec-language@bec5791c` (fix commits `e71e60cc` and `bec5791c`, on main 9425dd82). I checked each outcome against the spec at that head and the code on main 9425dd82, not against the commit message. `quire validate` over FR-100, FR-109, TC-452, TC-468 and these reviews exits 0.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | A family cause with no record renders `code`/`cause` from `catalog_code()` with no `fields` member and exits by that code (`AncestorSteps` 22). The bare form is now kernel-only. |
-| FND-002 | fixed | `locus` and `location` are rendered. The shapes match the types on main. `Evaluation.location` is `qsl_semantics::check::Location {origin, path: Vec<usize>}`, and `Origin` is `Body{function, index}`, `Measure{function, index}`, `Expression` or `TypeDeclaration{name}`, which is exactly FR-100's four `origin` kinds. `Evaluation::refusal_record` builds only `Locus::Region`. `SourceRegion` is `{RawSourceRef, start, end}` (bytes), and the `RawSourceRef` digest (`quire.source.bytes/v1`) holds the raw SHA-256 of the bytes, so `sha256:` is derivable. The byte/line/column span form is `LocatedSpan`, computed by `Source::locate`. |
-| FND-003 | fixed | Status records the loss (eleven causes indistinguishable, payloads and `Refusal::code()` spellings not rendered, `location` the only position). |
-| FND-004 | fixed | `CheckedInvariant` becomes `InternalFault` stage `S6a`, invariant `checked-program-invariant`. `CallFailure::Fault` carries the fault's own ids. Both are in `details`, and both have Behavior statements and AC-9/TC-452 cases (`InternalFault::new("S6a", "checked-identity-not-resolved-by-package")` exists at `qsl-eval/src/value/expression/family.rs:195`). |
+| FND-001 | fixed e71e60cc | A family cause with no record renders `code`/`cause` from `catalog_code()` with no `fields` member and exits by that code (`AncestorSteps` 22). The bare form is now kernel-only. |
+| FND-002 | fixed e71e60cc | `locus` and `location` are rendered. The shapes match the types on main. `Evaluation.location` is `qsl_semantics::check::Location {origin, path: Vec<usize>}`, and `Origin` is `Body{function, index}`, `Measure{function, index}`, `Expression` or `TypeDeclaration{name}`, which is exactly FR-100's four `origin` kinds. `Evaluation::refusal_record` builds only `Locus::Region`. `SourceRegion` is `{RawSourceRef, start, end}` (bytes), and the `RawSourceRef` digest (`quire.source.bytes/v1`) holds the raw SHA-256 of the bytes, so `sha256:` is derivable. The byte/line/column span form is `LocatedSpan`, computed by `Source::locate`. |
+| FND-003 | fixed e71e60cc | Status records the loss (eleven causes indistinguishable, payloads and `Refusal::code()` spellings not rendered, `location` the only position). |
+| FND-004 | fixed e71e60cc | `CheckedInvariant` becomes `InternalFault` stage `S6a`, invariant `checked-program-invariant`. `CallFailure::Fault` carries the fault's own ids. Both are in `details`, and both have Behavior statements and AC-9/TC-452 cases (`InternalFault::new("S6a", "checked-identity-not-resolved-by-package")` exists at `qsl-eval/src/value/expression/family.rs:195`). |
 
 New finding (low, non-blocking): `SourceRegion` carries only bytes and its `RawSourceRef`. Line and column need the `Source` text, and a location can fall in a supplied library's source, not the program's. FR-100 does not say to resolve the span with the `Source` whose `reference()` equals the region's `RawSourceRef` (the program or a supplied library). State it.
 
-Fixed: FR-100 states that the locus's line and column come from the supplied `Source` (the program's or a library's) whose reference equals the region's, and that a locus naming no supplied source is an internal failure (`spine-run`/`locus-source-supplied`, exit 30), with a Behavior SHALL.
+Fixed in 720308d3: FR-100 states that the locus's line and column come from the supplied `Source` (the program's or a library's) whose reference equals the region's, and that a locus naming no supplied source is an internal failure (`spine-run`/`locus-source-supplied`, exit 30), with a Behavior SHALL.

@@ -35,7 +35,7 @@ gap remains.
 
 ## Coverage and reverse trace
 
-Quire reports 489/504 repository rows backed. FR-052 contributes eight
+Quire 0.32.0 reports 489/504 repository rows backed. FR-052 contributes eight
 of eight backed acceptance criteria, with no targeted unmatched tag or status
 lie. The fifteen inherited repository gaps are outside FR-052 and are not
 claimed by this change.

@@ -3,7 +3,7 @@ id: SR-085
 title: "Code and Rust review of complete native model qualification"
 type: SpecReview
 analysis: code-review
-scope: "FR-015 / TC-040–045"
+scope: "FR-015 / TC-040–045 at 0cd679c7b8491d002ad96524e59155073b52b048"
 review_set: subset
 ---
 
@@ -26,8 +26,8 @@ checking and the remaining state workflow are still unimplemented milestones.
 
 ## Review context
 
-Reviewed source against FR-015 and
-docs/native-model-checking.md, previously reviewed in SR-066–073.
+Reviewed source 0cd679c7b8491d002ad96524e59155073b52b048 against FR-015 and
+docs/native-model-checking.md, previously reviewed at ceccabb in SR-066–073.
 The production admission and artifact implementation is unchanged; native
 linkage retains its SR-084 inspection and reran in the full suite. Applied the
 actual /home/peter/dev/agent-skills/code-review/SKILL.md and rust-review/SKILL.md,
@@ -83,7 +83,9 @@ indexing are confined to qualification setup and assertions.
 Strict Clippy initially rejected a complex tuple/function-pointer table. A
 named Dimension structure resolved it without warning suppression. Inspection
 also strengthened an unused-field control and replaced serialized-text searches
-with structured bounds/unused-value assertions before the final run.
+with structured bounds/unused-value assertions before the final run. The first
+16-test run and initial Clippy failure remain in the evidence directory;
+model-qualification-tests.txt is the authoritative final 17-new-test run.
 
 Discovery found no new hidden contract or source stub in the implemented model
 scope. Planned checking remains explicitly absent rather than a passing stub.
@@ -95,26 +97,28 @@ AGPL-3.0-only; Cargo.lock, dependency grants and manual-only CI are unchanged.
 
 Every final command below exited 0. Cargo phases ran one at a time at nice 10,
 locked/offline with one job and one test thread, using existing target caches.
+Logs are under reviews/data/native-checking/; only terminal blank lines may be
+normalized for repository whitespace conformance.
 
-| Command | Result |
-| --- | --- |
-| `nice -n 10 cargo fmt --all -- --check` | Passed |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 86 passed; 3 named private cases ignored |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private cases passed |
-| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests passed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed |
-| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted |
+| Command | Result | Log |
+| --- | --- | --- |
+| `nice -n 10 cargo fmt --all -- --check` | Passed | model-qualification-fmt.txt |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | model-qualification-clippy.txt |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 86 passed; 3 named private cases ignored | model-qualification-tests.txt |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private cases passed | model-qualification-private-audits.txt |
+| `nice -n 10 cargo build --locked --offline --no-default-features -j 1 --target-dir target/clean` | Passed using existing cache | model-qualification-minimal-build.txt |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target --no-deps -j 1` | Passed | model-qualification-rustdoc.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- self-test` | 6 negative controls and duplicate-key refusal passed | model-qualification-audit-self-test.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 --bin fixture-audit -- model-bytes tests/fixtures` | 5 digests and exact producer pin passed | model-qualification-audit-model-bytes.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- parse test:parent fixture:1 tests/fixtures/parent.native` | Parsed | model-qualification-cli-parse.txt |
+| `nice -n 10 cargo run --locked --offline --target-dir target -j 1 -- format test:parent fixture:1 tests/fixtures/parent.native` | Formatted | model-qualification-cli-format.txt |
 
-Quire spec/plan/review validation exited 0 with the six existing registry
-duplicate notices. Coverage binds all 89
+Quire spec/plan/review validation exited 0; the six existing registry duplicate
+notices remain in model-qualification-*-validation.txt. Coverage binds all 89
 Rust test symbols, with no status lies or untracked symbols. FR-015 has 6/6
 backed criteria; TM-003 has 22/35 backed cases, matching the 22 qualified and
-13 planned checker cases. The 18 existing classifier/catalog diagnostics remain.
-Execution and the criterion inspection
+13 planned checker cases. The 18 existing classifier/catalog diagnostics remain
+in model-qualification-coverage.json. Execution and the criterion inspection
 above establish qualification; trace presence alone does not.
 
 Task-008 is complete and Task-009 is next. Draft PR #10 remains open for checking

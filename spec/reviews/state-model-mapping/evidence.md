@@ -3,7 +3,7 @@ id: SR-790
 title: "Evidence analysis of ADR-016 state, model and finite execution mapping"
 type: SpecReview
 analysis: evidence
-scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md (new); its amendments to ADR-012 Status, ADR-013 §6 Outcomes row, FR-089 Status and spec/spec.md, on spec/19-arch40-mapping"
+scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md (new); its amendments to ADR-012 Status, ADR-013 §6 Outcomes row, FR-089 Status and spec/spec.md, at 47b1b806 on spec/19-arch40-mapping"
 review_set: all
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-016
@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed `spec/19-arch40-mapping`. ADR-016 has no AC
+Reviewed commit `47b1b806` on `spec/19-arch40-mapping`. ADR-016 has no AC
 rows of its own. Its evidence claims are the §10 oracles (OR-1 to OR-8), the
 §12 list of implemented behavior, and the Test column of the §9 gap table
 (G-1 to G-7). Linear QSL-19 (#220) was read as data. Its acceptance asks for

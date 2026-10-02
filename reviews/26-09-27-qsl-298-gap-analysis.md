@@ -3,7 +3,7 @@ id: SR-762
 title: "QSL-298 gap analysis of PR 503 (FR-113; TC-511, TC-512)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/test-cases/TC-511-s3-resolves-scoped-anchors-in-nested-scopes.md; spec/test-cases/TC-512-s3-refuses-ambiguous-and-shadowing-names.md; qsl-semantics/src/check/protocol_clause.rs; qsl-forms/src/protocol_clause.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/assemble.rs"
+scope: "agent-ix/quire-spec-language@cc535653df24672b569727cf4bcd7d7a5ef11a50; spec/functional/FR-113-resolve-scoped-anchors-in-nested-control-scopes.md; spec/test-cases/TC-511-s3-resolves-scoped-anchors-in-nested-scopes.md; spec/test-cases/TC-512-s3-refuses-ambiguous-and-shadowing-names.md; qsl-semantics/src/check/protocol_clause.rs; qsl-forms/src/protocol_clause.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/assemble.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-113
@@ -15,7 +15,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-298. PR: quire-spec-language#503. There is no plan
+Ticket: QSL-298. PR: quire-spec-language#503 at cc535653. There is no plan
 bundle for QSL-298. This analysis checks each FR-113 acceptance criterion
 and TC-511/TC-512 against the tests and the code. The team-leader decision
 on QSL-298 moves binder no-shadowing (FR-113-AC-5, and the shadowing half of

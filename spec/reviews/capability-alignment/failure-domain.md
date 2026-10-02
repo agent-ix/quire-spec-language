@@ -12,7 +12,7 @@ relationships:
 
 ## Summary
 
-Reviewed the #229 change
+Reviewed the #229 change at quire-spec-language commit cd4f71a
 (`origin/main...HEAD`): new FR-057, amendments to FR-036, TC-115,
 `spec/model-linking/tests.md` and `spec/spec.md`, and new TC-153, TC-154 and
 TC-155. Checked against the #229 acceptance bullets, QSpec FR-290, AD-010,
@@ -73,7 +73,7 @@ changing an owner or a ruling.
   point, QSL `Capability` as language admission only, refusal of any other
   version or unknown kind with no mapping, and the #213, #185, #222, #210 and
   #211 ownership split.
-- Evidence read: `git diff origin/main...HEAD`; FR-057, FR-036,
+- Evidence read: `git diff origin/main...HEAD` at cd4f71a; FR-057, FR-036,
   TC-115, TC-153, TC-154 and TC-155 at HEAD; `src/linking/composed/requests.rs`
   (current four-member `Capability` at :36 and caller-declared `Backend`);
   QSpec `origin/main` FR-290, AD-016 (capability rows) and
@@ -83,21 +83,21 @@ changing an owner or a ruling.
 
 ## Round 2 dispositions
 
-Checked against the current tree, including the uncommitted edits. The
-upstream is quire-specification.
+Checked against the current tree: cd4f71a plus the uncommitted edits. The
+upstream is quire-specification `046d1bd`.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |
 | FND-001 | resolved | Matching runs on the decoded UTF-8 bytes (FR-057:95-96). A missing label or JSON `null` is `absent-kind` (FR-057:141-143); FR-290 fixes the `null` case, and FR-057 follows it. `""` and non-string values are `unknown-kind` (FR-057:147-150). Received bytes are charged to the FR-036 supplied-bytes limit (FR-057:114-115). TC-153 step 3 includes `""` and the number `1` (TC-153:25-27). |
 | FND-002 | resolved | Duplicate pairs stay at their own indices with their own flags and are never merged (FR-057:109-112, AC-4 at FR-057:309). TC-153 step 5 covers this (TC-153:31-33, 53-55). A carrier that repeats a label is a carrier-format question for #211 (FR-057:136-137). |
 | FND-003 | resolved | A refused pair stays at its index (FR-057:73-74). A refused carrier produces no request report (FR-057:76-77). A required refusal makes admission unavailable; an optional one does not (FR-057:155-157). TC-153 step 3 marks one refused pair required and one not (TC-153:27, 49-52). |
-| FND-004 | resolved | `invalid_capability` and its causes are catalogued at `1-draft.5` (FR-057:87-91, 327-329), which matches `native-diagnostics.md`. `unsupported_projection` is never produced at admission (FR-057:89-91). |
+| FND-004 | resolved | `invalid_capability` and its causes are catalogued at `1-draft.5` (FR-057:87-91, 327-329), which matches `native-diagnostics.md` at `046d1bd`. `unsupported_projection` is never produced at admission (FR-057:89-91). |
 | FND-005 | resolved | The registry admits advertised kinds under the same rules as a requested pair. It refuses an absent kind, an unknown kind, an unknown mode or a duplicate identity, and the refused backend advertises nothing (FR-057:212-219). TC-155 step 3 covers this (TC-155:31-33, 51-54). |
 | FND-006 | resolved | Candidates are computed from one immutable snapshot, which is retained as provenance. A registration made during a request affects only later requests (FR-057:221-228). |
 | FND-007 | resolved | There is no preference order. Several candidates with no named backend settle `ambiguous-backend` (FR-057:243, 252-253). TC-155 step 4 covers two capable backends (TC-155:34-36, 55-57). |
 | FND-008 | resolved | Each backend-absence item gets one warning naming its kind and any named backend (FR-057:264). The typed payload, request index and kind are the FR-272 `unsupported-requested-capability` payload that FR-057 cites (FR-057:327-329). |
 | FND-009 | resolved | "Hold" is now defined, and no stage produces one (FR-057:271-274). |
-| FND-010 | resolved | `quire.capability-kind/v1` is the FR-290 Values table (FR-057:38-40, 319-320). |
+| FND-010 | resolved | `quire.capability-kind/v1` is the FR-290 Values table at quire-specification `046d1bd` (FR-057:38-40, 319-320). |
 
 No new failure-domain defects.
 

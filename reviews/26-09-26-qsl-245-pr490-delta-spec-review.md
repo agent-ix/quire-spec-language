@@ -3,7 +3,7 @@ id: SR-741
 title: "PR 490 fix-round delta spec review"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; fix-round delta; spec/spec.md; FR-093; FR-096; qsl-eval/tests/it/kernel_refusal_payloads.rs; qsl-eval/tests/it/collection_queries.rs; qsl-semantics/tests/it/quantities.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-foundation/src/diagnostic/stage.rs; reviews/26-09-26-qsl-245-pr490-*.md"
+scope: "agent-ix/quire-spec-language@94e49221c3de22bd167de06a2e02e195efaf75c7; delta 985e0d01..94e49221; spec/spec.md; FR-093; FR-096; qsl-eval/tests/it/kernel_refusal_payloads.rs; qsl-eval/tests/it/collection_queries.rs; qsl-semantics/tests/it/quantities.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-foundation/src/diagnostic/stage.rs; reviews/26-09-26-qsl-245-pr490-*.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-245. PR: quire-spec-language#490. This covers the fix round only.
+Ticket: QSL-245. PR: quire-spec-language#490. This covers the fix round only, 985e0d01..94e49221.
 
 The new tests are sound:
 

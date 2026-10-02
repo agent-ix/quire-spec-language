@@ -3,7 +3,7 @@ id: SR-097
 title: "Code and Rust review of native runtime validation"
 type: SpecReview
 analysis: code-review
-scope: "FR-007 / Task-013"
+scope: "FR-007 / Task-013 at 45ed1b4d11eb162ac6bab9d94e2dca6113545037"
 review_set: subset
 ---
 
@@ -28,11 +28,11 @@ remain required work. TC-061's evaluation/captured-read portion remains planned.
 
 ## Review scope and sequence
 
-Evaluated source, including the
-validation checkpoint, against FR-007, NFR-006-M-6..11,
-NFR-003/NFR-005 and docs/native-runtime-inputs.md. The initial specification
-received the eight actual QUOIN reviews SR-088–095 before runtime
-implementation; their dispositions remain in Plan-006. No new
+Evaluated source 45ed1b4d11eb162ac6bab9d94e2dca6113545037, including the
+c4f7c74 validation checkpoint, against FR-007, NFR-006-M-6..11,
+NFR-003/NFR-005 and docs/native-runtime-inputs.md. Initial specification
+045025f received the eight actual QUOIN reviews SR-088–095 before runtime
+implementation; their commits and dispositions remain in Plan-006. No new
 requirement, snapshot encoding, model role or frame permission is introduced
 by the qualification fixes.
 
@@ -124,20 +124,23 @@ A completeness flag remains an input assumption, not a deployment guarantee.
 
 ## Actual local gates
 
-The following commands completed successfully. Cargo phases were serial,
-nice 10, locked/offline, one job and one test thread, with the existing
-explicit caches.
+The following commands completed successfully for the evaluated source/test
+bytes. Cargo phases were serial, nice 10, locked/offline, one job and one test
+thread, with the existing explicit caches. Evidence is under
+reviews/data/native-runtime/.
 
-| Command | Result |
-| --- | --- |
-| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 166 ordinary tests, including all 35 runtime validation tests, and 1 compile-fail doctest passed; 3 named private tests ignored in this lane |
-| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed |
-| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed |
-| `nice -n 10 cargo fmt --all -- --check` | Passed |
-| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using the existing cache |
-| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private audits passed |
+| Command | Result | Evidence |
+| --- | --- | --- |
+| `nice -n 10 cargo test --locked --offline --target-dir target -j 1 --no-default-features -- --test-threads=1` | 166 ordinary tests, including all 35 runtime validation tests, and 1 compile-fail doctest passed; 3 named private tests ignored in this lane | validation-qualified-full-tests.txt |
+| `nice -n 10 cargo clippy --locked --offline --target-dir target -j 1 --workspace --all-targets --all-features -- -D warnings` | Passed | validation-final-clippy.txt |
+| `RUSTDOCFLAGS='-D warnings' nice -n 10 cargo doc --locked --offline --target-dir target -j 1 --no-default-features --no-deps` | Passed | validation-qualified-rustdoc.txt |
+| `nice -n 10 cargo fmt --all -- --check` | Passed | validation-qualified-fmt.txt |
+| `nice -n 10 cargo build --locked --offline --target-dir target/clean -j 1 --no-default-features` | Passed using the existing cache | validation-qualified-minimal-build.txt |
+| `QUIRE_STATE_CORE=/home/peter/dev/worktrees/formalization-a-spec/proposals/state-core nice -n 10 cargo test --locked --offline --target-dir target -j 1 --test fixture_audit -- --ignored --test-threads=1` | 3 selected private audits passed | validation-qualified-private-audits.txt |
 
-No failed gate was waived.
+The earlier validation-complete-cases.txt is an unsuccessful setup run, not
+the final qualification result. The complete passing 35-test run is included
+in validation-qualified-full-tests.txt. No failed gate was waived.
 
 ## Traceability and remaining work
 

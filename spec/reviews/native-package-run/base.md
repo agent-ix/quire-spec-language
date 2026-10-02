@@ -10,7 +10,7 @@ review_set: all
 
 FR-028 names the optional package selection, required external source/model authority, existing reader defaults and no-fallback behavior. Its four acceptance criteria map to TC-106 and real binary tests covering state/operation truth, refusal, alternate layout, malformed selections and stopped/retried requests. Omitted selection is exercised alongside the existing compile/run tests.
 
-Author PR-readiness review of the implementation and the FR-028 corrections.
+Author PR-readiness review of implementation `4f15f0f` and the FR-028 corrections.
 The owner-selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021–023 are done; runtime intake and its typed-error correction are implemented.
-The broader
+Task-021–023 are done; runtime intake and its typed-error correction are implemented
+at 0016103. The broader
 Plan-009 and LC05 remain open for standalone model intake/command and extraction.
 
 ## Verdict

@@ -3,7 +3,7 @@ id: SR-731
 title: "QSL-291 gap analysis of PR 488 (FR-100/FR-106 follow catalog 1-draft.8)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-106-admit-snapshots-and-invocations.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md; qsl-replay/src/spine/call.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-eval/src/value/expression/evaluate.rs; quire-exact/src/outcome.rs"
+scope: "agent-ix/quire-spec-language@18d10c06702eb3d9c823f2a2b30ae2753af6e739; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/functional/FR-106-admit-snapshots-and-invocations.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/test-cases/TC-465-admission-refuses-each-input-defect.md; qsl-replay/src/spine/call.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-eval/src/value/expression/evaluate.rs; quire-exact/src/outcome.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -35,9 +35,9 @@ follow-up ticket under QSL-291's parent.
 
 ## Dispositions
 
-Round 2.
+Round 2, reviewed at a62cb0d00170598b9c66ad346d3ae274ac36314d.
 
-| FND | Outcome | reason |
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | TC-452 step 4 gives each of the ten refusals a concrete payload and step 4's expected results give each exact `fields` object |
+| FND-001 | fixed | a62cb0d0: TC-452 step 4 gives each of the ten refusals a concrete payload and step 4's expected results give each exact `fields` object |
 | FND-002 | deferred | QSL-292, a code ticket blocked by QSL-291 |

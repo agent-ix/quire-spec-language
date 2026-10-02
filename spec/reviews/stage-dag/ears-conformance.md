@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed branch `task/209-stage-dag`:
+Reviewed commit `944a1c8` (branch `task/209-stage-dag`):
 `spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md` and its index
 row in `spec/spec.md` (line 388). ADR-011 is a Layer 1 design ADR for #209, not
 an FR, NFR or StR, so the EARS scope is empty. The record has no `shall`
@@ -48,7 +48,7 @@ Verdict: ACCEPT WITH FINDINGS
 | FND-006 | low | "Questions handed to sibling tickets" asks #210 about `capability_report` "now that composed `requests` disposition leaves QSL". "Now that" describes a change over time instead of the decided state. Fix: "given that capability disposition lives outside QSL (FB-12)". | ADR-011 Questions handed to sibling tickets |
 | FND-007 | low | SEAM-1 quotes "#205 Layer 2: No deprecated producer path remains reachable", and Alternatives Considered cites "#205's Layer 2 gate". #205's body has no such sentence. The rule is in gate #216 Required evidence ("Old producer/bypass paths are unreachable") and its Failure rule ("Do not pass while two authoritative producer paths coexist"). Fix: cite #216 and quote it exactly, for example "(#216: 'Old producer/bypass paths are unreachable')". Use the same wording in the native-v1 alternative. | ADR-011 §6.2 SEAM-1, Alternatives Considered |
 
-## Round 3
+## Round 3 (HEAD 22fa948)
 
-Delta review. The delta adds no requirement statements. The
+Delta review f781e32 → 22fa948. The delta adds no requirement statements. The
 Mermaid blocks contain no `;`. No new findings.

@@ -3,7 +3,7 @@ id: SR-628
 title: "Risk and complexity review of ADR-014 temporal, trace and boundedness architecture"
 type: SpecReview
 analysis: risk-complexity
-scope: "spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (new); amendments to ADR-012 §1.1, ADR-013 (O-20, O-21, S-6, Q222 table), FR-057, FR-082 and spec/spec.md against origin/main"
+scope: "spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md (new); amendments to ADR-012 §1.1, ADR-013 (O-20, O-21, S-6, Q222 table), FR-057, FR-082 and spec/spec.md at bbe92fec against origin/main"
 review_set: all
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-014
@@ -13,8 +13,8 @@ relationships:
 
 ## Summary
 
-Reviewed branch `spec/17-boundedness-adr` against
-`origin/main` and QSpec. The QSL code claims in ADR-014
+Reviewed commit `bbe92fec` (branch `spec/17-boundedness-adr`) against
+`origin/main`, with QSpec read at `eb4234f`. The QSL code claims in ADR-014
 Context and §1 hold on inspection. These are `CardinalityBound` (mandatory min
 and max), `ValueType::Population(u64)`, the mandatory `[uint, uint]` grammar
 bound, `WitnessEnvelope.proof_bounds: ScalarLimits` at `witness.rs:346`,
