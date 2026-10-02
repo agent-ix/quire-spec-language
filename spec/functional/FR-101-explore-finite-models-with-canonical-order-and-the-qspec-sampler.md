@@ -109,6 +109,23 @@ pub trait TransitionSystem {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop>;
+
+    // Reduction hooks (ADR-021 EI-4; FR-162 states their behaviour; the
+    // types are FR-151's, FR-152's, FR-155's, FR-158's and FR-159's).
+    // `offered_reductions` says which hooks the system implements; the
+    // pre-check reads it before any expansion.
+    fn offered_reductions(&self) -> OfferedReductions { OfferedReductions::NONE }
+    fn canonical(
+        &self,
+        state: &Self::State,
+        group: &SymmetryGroup,
+    ) -> Option<(Self::State, Permutation)> { None }
+    fn footprint(&self, transition: &Self::TransitionId) -> Option<Footprint> { None }
+    fn holds_constraint(
+        &self,
+        state: &Self::State,
+        constraint: &CheckedStateClause,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> { None }
 }
 
 pub struct Expansion<T, S, F> {

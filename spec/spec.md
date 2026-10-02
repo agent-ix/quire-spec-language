@@ -204,6 +204,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-022
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-021
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-026
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
@@ -295,6 +297,34 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-150
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-151
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-152
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-153
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-154
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-155
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-156
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-157
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-158
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-159
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-160
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-161
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-162
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-019
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-135
     type: contains
@@ -764,6 +794,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-022](usecase/US-022-measure-a-probabilistic-property-of-a-model-or-a-live-system.md) | US | Draft |
 | [US-023](usecase/US-023-prove-a-probabilistic-property-exactly-over-every-scheduler.md) | US | Draft |
 | [US-026](usecase/US-026-check-timing-claims-over-a-timed-model.md) | US | Draft |
+| [US-019](usecase/US-019-check-a-larger-model-with-state-space-reduction.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -1054,6 +1085,19 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-252](functional/FR-252-hand-timing-obligations-to-code-generation.md) | FR | Specified: timing obligations QSL hands CG: monitor agreement, tick arithmetic, timestamp contracts; elapsed-time and WCET obligations unsupported (ADR-026 KG-1 to KG-4); not yet implemented -- TC-707 planned |
 | [FR-253](functional/FR-253-check-delay-distributions-and-define-the-race.md) | FR | Specified: delay distributions, exact windows and the race of a stochastic timed model, free delays as the scheduler's choice, `NotStochastic` (ADR-026 SD-1 to SD-5); not yet implemented -- TC-708 planned |
 | [FR-254](functional/FR-254-sample-timed-runs-for-statistical-checking.md) | FR | Specified: statistical sampling of timed runs with exact delays on a `2^-q` grid, timed events and measures, witness replay, the exact route (ADR-026 SS-1 to SS-7); not yet implemented -- TC-709 planned |
+| [FR-150](functional/FR-150-check-the-symmetric-population-annotation.md) | FR | Specified: S3 carries the `symmetric` population annotation into the checked package and refuses identity-observing forms (order-sensitive traversals, reference conversions, key literals) in every clause that reads an annotated population (ADR-021 SYM-3, SYM-8); not yet implemented -- TC-565, TC-566 planned |
+| [FR-151](functional/FR-151-admit-a-request-s-symmetry-declarations.md) | FR | Specified: pre-check admission of request `SymmetryDeclaration`s on annotated populations, generator closure of the initial states (`SymmetryBroken`), and one `over` instance per orbit under its stabiliser (ADR-021 SYM-1, SYM-2, SYM-4 to SYM-6); not yet implemented -- TC-567, TC-568 planned |
+| [FR-152](functional/FR-152-canonicalise-a-model-state-by-sorting-its-symmetry-classes.md) | FR | Specified: the sort canonicaliser: each class sorted by key-free encoding, keys reassigned in order, returning the representative and its permutation (ADR-021 SYM-7); not yet implemented -- TC-569 planned |
+| [FR-153](functional/FR-153-decide-each-fairness-on-the-annotated-quotient.md) | FR | Specified: weak and strong `each` fairness decided on the annotated quotient by per-SCC cycle groups and witness orbits (ADR-021 AQ-1 to AQ-6, AQ-8); not yet implemented -- TC-570, TC-571 planned |
+| [FR-154](functional/FR-154-scope-a-modifies-entry-to-the-receiver.md) | FR | Specified: receiver-scoped `modifies self.f` entries through intake, S4 emission, FR-120 `check_frame`, candidate generation and FR-106 check 11 (ADR-021 POR-3, RU-1); not yet implemented -- TC-572, TC-573 planned |
+| [FR-155](functional/FR-155-derive-and-enforce-read-and-write-footprints.md) | FR | Specified: read, write and enabling footprints derived at S3 and instantiated per transition, with independence, and reads and writes enforced on every reduced step (ADR-021 POR-1, POR-2, POR-4); not yet implemented -- TC-574, TC-575, TC-589 planned |
+| [FR-156](functional/FR-156-expand-ample-sets-with-the-breadth-first-proviso.md) | FR | Specified: ample sets C0 to C3 from stubborn-set candidates with the breadth-first revisit proviso, and atom visibility (ADR-021 POR-5 to POR-9); not yet implemented -- TC-576, TC-577, TC-589 planned |
+| [FR-157](functional/FR-157-make-fairness-enabling-writes-visible.md) | FR | Specified: fairness visibility: under a non-empty fairness set, writes to another class's enabling footprint are visible (ADR-021 POR-10, POR-11); not yet implemented -- TC-578, TC-579, TC-617 planned |
+| [FR-158](functional/FR-158-cut-the-search-with-a-state-constraint.md) | FR | Specified: the `constraint` state clause, boundary states that are stored but never expanded, stutter-extended or deadlocked, and the constraint as a method parameter (ADR-021 SC-1 to SC-3); not yet implemented -- TC-580, TC-581 planned |
+| [FR-159](functional/FR-159-pre-check-selected-reductions-against-the-preservation-table.md) | FR | Specified: `Reductions` on the model-check request, the normative preservation table, the pre-check order, no substitution, capability routing and obligation identity (ADR-021 RD-1 to RD-3, PT-1, PT-2, EI-1, RV-2, RV-6, RV-8, RV-9); not yet implemented -- TC-582, TC-583 planned |
+| [FR-160](functional/FR-160-settle-reduced-verdicts-and-reduction-causes.md) | FR | Specified: `ProofBasis::Reduced`, `ReductionNotPreserving`, `SymmetryBroken`, `ConstraintReached`, `ReductionHorizon` for a partial-order run to its horizon, and unreduced refutations (ADR-021 RV-1 to RV-5, RV-7); an undefined evaluation refuting unreduced (RV-7); reduced-versus-unreduced agreement over the corpus (RV-10); not yet implemented -- TC-584, TC-588, TC-886 planned |
+| [FR-161](functional/FR-161-concretise-a-reduced-counterexample.md) | FR | Specified: concretisation of a symmetry-reduced counterexample, loop closure by repetition and AQ-7 `each` loops, replaying as an ordinary trace (ADR-021 EI-6, EI-7, AQ-7); not yet implemented -- TC-585, TC-586 planned |
+| [FR-162](functional/FR-162-offer-reductions-through-transition-system-hooks.md) | FR | Specified: the `canonical`, `footprint` and `holds_constraint` `TransitionSystem` hooks, product delegation and the reduced expansion, with simulation unreduced (ADR-021 RD-2, EI-2 to EI-5); not yet implemented -- TC-587 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -1071,3 +1115,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |
 | [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
 | [ADR-026](decisions/ADR-026-dense-time.md) | ADR | Proposed; dense time: real-valued clocks with strict and non-strict constraints, time invariants and urgency, timed-automata semantics over ADR-018's positions with time stamps, time divergence and the time-lock-freedom item, the `model-time` and `model-steps` clock bindings with their defaults, timed MITL forms and their decidability boundary, timed counterexamples with exact rational delays, stochastic delay distributions with statistical checking, the native zone engine EN-6 with checkable zone certificates, task sets with native closed-form schedulability (EN-7), hybrid dynamics through QSpec FR-193's solvers, tick-based embedded monitors and Kani obligations |
+| [ADR-021](decisions/ADR-021-state-space-reduction.md) | ADR | Proposed; state-space reduction for explicit-state model checking: checked symmetry over population universes, partial-order reduction from enforced read and write footprints, state constraints, the normative preservation table, concrete counterexamples, and reduced proofs as their own technique |
