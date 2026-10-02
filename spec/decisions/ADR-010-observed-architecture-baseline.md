@@ -331,7 +331,7 @@ execution/proof → typed witness → replay`.
 | X4 | source → `value::expression::Expression` producer | #209 program flow (CST → checked semantic graph) | absent: `LoweredSourceGraph` in `src` excluding `src/complete` (producer `QSL:complete/package.rs:625`) |
 | X5 | composed → IR lowering | #209 program flow (package form → backend IR) | absent: `crate::lowering` and `EXECUTABLE_PROJECTION` in `src/linking/composed`, `src/checking/composed`, `src/protocol_artifact`, `src/state`, `src/temporal` |
 | X6 | typed witness decode and non-native replay | AD-016; #209 program flow (typed witness → replay) | absent: `kani` in `src/`; only `QSL:tests/configversion_backends.rs:252,843-857` |
-| X7 | native-run-result/2 | AD-014 / FR-352 | absent: `native-run-result/2` in `src/`; /1 at `QSL:wire_format.rs:31` |
+| X7 | native-run-result/2 | AD-014 / QSpec FR-352 | absent: `native-run-result/2` in `src/`; /1 at `QSL:wire_format.rs:31` |
 
 ## 3. Dependency views
 
@@ -562,7 +562,7 @@ graph LR
 | Format | Direction | Evidence |
 |---|---|---|
 | native-run/1, native-compile/1, native-run-result/1 | emit | `QSL:wire_format.rs:27,29,31` |
-| native-run-result/2 | absent (AD-014 / FR-352 name /2) | absent: `native-run-result/2` in `src/` |
+| native-run-result/2 | absent (AD-014 / QSpec FR-352 name /2) | absent: `native-run-result/2` in `src/` |
 | native-rule-model/1,2 | read | `QSL:wire_format.rs:33-35` |
 | native-state-model/1,2 | read | `QSL:native_model.rs:27-28` |
 | native-state-input/1 | read | `QSL:wire_format.rs:37` |
@@ -980,7 +980,7 @@ Each item has one owner. The owner ticket decides it; this record decides none.
 | OBS-022 | The package view hard-codes two revision literals, `ir_revision "690bde7f…"` and `STANDARD "e897f810…"`, while Cargo pins IR at 53cc03c, which is 26 commits behind IR 553b6d1. | `QSL:package/view.rs:39,46` · `QSL:Cargo.toml:36` | #211 |
 | OBS-023 | The code claims two catalog revisions (1-draft.1 and 1-draft.3). | `QSL:linking/composed/definition_source.rs:240` · `QSL:complete/diagnostic.rs:13` | #211 |
 | OBS-025 | Two accounting systems: `value::accounting` and `model::accounting` have the same shape with independent counters, and four other budget formats exist. | `QSL:value/accounting.rs:143,392,465` · `QSL:model/accounting.rs:127,201,244` | #211 |
-| OBS-026 | native-run-result/2 (AD-014 / FR-352) is absent; QSL emits /1 only. | `QSL:wire_format.rs:31` · absent: `native-run-result/2` in `src/` | #211 |
+| OBS-026 | native-run-result/2 (AD-014 / QSpec FR-352) is absent; QSL emits /1 only. | `QSL:wire_format.rs:31` · absent: `native-run-result/2` in `src/` | #211 |
 | OBS-027 | IR `CounterexamplePacket.witness` is `String`, not AD-016's `Option<Witness>`, and replay reads it only to check that it is non-empty. `src/kani/witness.rs` is absent on IR main and present only in open IR PR #139@64982f1. PR-sensitive. | `IR:src/kani/replay.rs:13-20,41` | #211 |
 | OBS-028 | IR performs native replay itself: `replay_with_native_runtime` calls QSL `runtime::execute` on a native-v1 `NativePackage`, and its sole caller is the IR integration test `IR:tests/kani_replay.rs:240`. CG `replay_codegen_counterexample` (`src/bounded_kani_replay.rs:11`) is a one-line delegation to IR `replay_counterexample` with a caller-supplied executor; no CG call site supplies a real native executor, so no CG replay path reaches QSL. Every `replay_counterexample` call site (CG, and IR tests `IR:tests/kani_replay.rs:208-221`) injects a stub returning the expected verdict: the #205 non-goal "predetermined verdicts, mocked witnesses". Neither IR replay function reads the witness content; disagreement is reported as `Inconclusive` (`kani_native_replay_disagreement`). AD-016 states IR holds the packet type only and CG owns the executor call. | `IR:src/kani/replay.rs:41,55-67,80-97` · `IR:tests/kani_replay.rs:240` · `CG:src/bounded_kani_replay.rs:11,57-60` · `CG:tests/bounded_kani_corpus.rs:204-210,376` · #205 Non-goals | #209 |
 | OBS-029 | Repository cycle: IR root has a normal dependency on QSL (rev f1700a9, 78 commits behind) while QSL depends on IR's model crate. AD-016 describes the IR→QSL edge as "outside this pipeline"; the edge carries the Kani replay path and the predicate and temporal projections. Those typed handoffs take QSL f1700a9 types, so QSL main cannot reach them without serialization. | `IR:Cargo.toml:24,38` · `QSL:Cargo.toml:36` · `IR:src/kani/replay.rs:3-6,80` · `IR:src/predicate/admission.rs:91-92` | #209 |

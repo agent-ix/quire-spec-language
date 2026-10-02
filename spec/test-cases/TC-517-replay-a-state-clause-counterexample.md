@@ -59,14 +59,14 @@ Tag the tests `#[trace("TC-517", "FR-122-AC-n")]`.
 
 - Step 1: `reproduced-with-evaluated-witness`,
   `reproduced-without-witness`, `reproduced-with-evaluated-witness`. Each
-  `Witness`-arm result's FR-351 record holds `false` as deciding element,
+  `Witness`-arm result's QSpec FR-351 record holds `false` as deciding element,
   index 0, an empty value path and no trace position; the `Input`-arm
-  result holds `false` and no FR-351 record. Each
+  result holds `false` and no QSpec FR-351 record. Each
   result holds the source digest, `package_id`, the payload's `clause`, the
   envelope's `clause_node` and `occurrence_key`, and the identities and digests of the
   invocation and both snapshots, or of the one current snapshot.
 - Step 2: `inconclusive`, `Verdicts` (`violation`, `success`) twice, each
-  holding the evaluated `true` and no FR-351 record;
+  holding the evaluated `true` and no QSpec FR-351 record;
   `inconclusive`, `NoValue`.
 - Step 3: `stale_dependency`/`revision-mismatch` naming the envelope's and
   the recompiled clause node, then both occurrences, then both clause

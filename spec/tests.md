@@ -336,6 +336,17 @@ names different artifacts in each.
 | TC-866 | The refinement report orders every result, lists every regression, and gives FR-301's verdict and exit | Unit | P1 | FR-344-AC-1, FR-344-AC-2, FR-344-AC-3, FR-344-AC-6, FR-344-AC-7 | 🚧 Planned |
 | TC-867 | The layering comparison returns the table's result for every parent and child class | Unit | P1 | FR-345-AC-1, FR-345-AC-2, FR-345-AC-3 | 🚧 Planned |
 | TC-868 | A seeded profile-layering regression fails the gate naming the case and its edge | Integration | P1 | FR-345-AC-4, FR-345-AC-5, FR-345-AC-6, FR-345-AC-7, FR-345-AC-8, FR-345-AC-9 | 🚧 Planned |
+| TC-875 | The conformance runner executes vectors through public entry points and compares typed results | Integration | P1 | FR-350-AC-1, FR-350-AC-2 | 🚧 Planned |
+| TC-876 | The conformance runner reports unsupported, incomplete and tool-failure vectors on their own | Integration | P1 | FR-350-AC-3, FR-350-AC-4, FR-350-AC-5 | 🚧 Planned |
+| TC-877 | Each capability settles from its vectors in the stated precedence, and an empty capability is uncovered | Integration | P1 | FR-351-AC-1, FR-351-AC-2 | 🚧 Planned |
+| TC-878 | Capability outcomes come only from vectors executed in the run, over the scope the caller selects | Integration | P1 | FR-351-AC-3, FR-351-AC-4 | 🚧 Planned |
+| TC-879 | The conformance report gives outcome counts, coverage and each failing vector, in a stable order | Integration | P1 | FR-352-AC-1, FR-352-AC-2, FR-352-AC-3 | 🚧 Planned |
+| TC-880 | The verdict is complete-V1 qualified only when every in-scope capability passes | Integration | P1 | FR-353-AC-1, FR-353-AC-2 | 🚧 Planned |
+| TC-881 | A scoped run's verdict names its scope, and a refused run has no verdict | Integration | P1 | FR-353-AC-3, FR-353-AC-4 | 🚧 Planned |
+| TC-882 | An extension's declaration form parses, checks against its typed-node schema and packages as a typed node | Unit | P1 | FR-354-AC-1, FR-354-AC-2 | 🚧 Planned |
+| TC-883 | Malformed, colliding, cyclic and unselected extensions refuse with the definitions involved | Unit | P1 | FR-354-AC-3, FR-354-AC-4 | 🚧 Planned |
+| TC-884 | An extension changes no other unit's identity, backends change no admission, and a reader without it refuses | Unit | P1 | FR-354-AC-5 | 🚧 Planned |
+| TC-885 | Formatting keeps the checked package identity of every complete-V1 fixture unit | Integration | P1 | FR-003-AC-9 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

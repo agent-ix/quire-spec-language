@@ -128,7 +128,7 @@ admits.
   owns `Witness`, its admission rule and its `decode` types); QSpec
   [FR-331](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/interfaces/FR-331-backend-provider-envelope.md)
   AC-9 (`counterexamples` entry shape) and
-  [FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)
+  [QSpec FR-351](https://github.com/agent-ix/quire-specification/blob/main/spec/objects/protocol/FR-351-separating-witness-record.md)
   (separating-witness record; QSpec status **Draft** as of this writing —
   fully specified with acceptance criteria, cited here as the normative
   shape this envelope's `Input`-arm and #217/#186 consumers read).
@@ -141,4 +141,4 @@ admits.
 - **Downstream**: [FR-071](FR-071-implement-typed-replay-request.md) carries
   this envelope's members into the replay request;
   [FR-072](FR-072-implement-typed-replay-result.md)'s per-item result embeds
-  the FR-351 record this envelope's `Witness` arm decodes.
+  the QSpec FR-351 record this envelope's `Witness` arm decodes.

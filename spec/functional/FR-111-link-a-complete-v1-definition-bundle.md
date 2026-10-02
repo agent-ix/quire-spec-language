@@ -21,8 +21,7 @@ relationships:
 QSL SHALL link a set of root definition selections, against a
 caller-supplied definition catalog, into a dependency-closed complete-V1
 bundle, or refuse with a catalogued code and cause (QSpec FR-131, and
-FR-339-AC-3's backend-independence; QSpec V1-SRC-003 and V1-SRC-004,
-which QSpec's delivery manifest assigns to QSL).
+FR-339-AC-3's backend-independence).
 
 This is the closure, cycle, facet and bundle capability of
 `complete::resolve_source_package`, kept when `ResolvedSourcePackage`
@@ -34,13 +33,15 @@ no stage of the S1 to S4 spine calls it.
 
 ## Inputs
 
-- `roots: &[DefinitionRef]`: the root selections, each an exact
-  identity/version/raw-byte digest (`qsl_foundation::selection`).
+- `roots: &[DefinitionRef]`: the root selections, each a definition
+  identity: its authority and identity (`qsl_foundation::selection`).
 - `catalog: &DefinitionCatalog`: the caller's definitions. Each
-  `Definition` holds its exact `DefinitionRef` computed from its bytes, its
+  `Definition` holds its identity (authority and identity), its
   `DefinitionRole` (which gives its facet), its dependency edges
-  (`DefinitionRef`s), its `CapabilityId`s and its exact bytes. A
-  `Definition` is built with a `ReaderAuthority`.
+  (definition identities), its `CapabilityId`s and its exact bytes. An
+  extension definition also holds the grammar schema and typed-node schema
+  QSpec defines for it, which QSL reads (FR-354). A `Definition` is built
+  with a `ReaderAuthority`.
 - `limits: PackageLimits`.
 
 ## Outputs
@@ -58,10 +59,13 @@ no stage of the S1 to S4 spine calls it.
 ### Closure
 
 - `link_bundle` SHALL close the roots over their dependency edges, depth
-  first, and refuse a root or a reached definition that the catalog does
-  not hold exactly.
-- If two selections of one identity differ, among the roots or anywhere in
-  the closure, then `link_bundle` SHALL refuse
+  first, over an explicit heap stack whose growth is charged against
+  `dependency_edges`, and refuse a root or a reached definition that the
+  catalog does not hold. A dependency chain of any length within the limits
+  closes (ADR-030 D-1).
+- A root or edge SHALL resolve by definition identity alone.
+- If two selections of one identity name different authorities, among the
+  roots or anywhere in the closure, then `link_bundle` SHALL refuse
   `ambiguous_declaration`/`conflicting-authority`, naming both.
 - If the dependency edges form a cycle, then `link_bundle` SHALL refuse
   `invalid_package`/`definition-cycle`, naming the cycle's definitions in
@@ -92,26 +96,25 @@ no stage of the S1 to S4 spine calls it.
 | Case | Code | Cause |
 | --- | --- | --- |
 | a root's identity is in no catalog definition | `unknown_profile` | `unsupported-selection` |
-| a root's identity is held at another version | `stale_dependency` | `revision-mismatch` |
-| a root's identity and version are held with other bytes | `stale_dependency` | `byte-digest-mismatch` |
 | a dependency edge names a definition the catalog does not hold | `missing_import` | `missing-selection` |
-| two selections of one identity differ | `ambiguous_declaration` | `conflicting-authority` |
+| two selections of one identity name different authorities | `ambiguous_declaration` | `conflicting-authority` |
 | a dependency cycle | `invalid_package` | `definition-cycle` |
 | a missing facet | `invalid_package` | `feature-set-mismatch` |
 | a missing inventory capability | `unknown_required_feature` | `unsupported-feature` |
 | a capability outside the inventory | `unknown_required_feature` | `unknown-feature` |
-| a catalog holding one exact definition twice | `invalid_package` | `duplicate-member` |
-| dependency-chain depth above `limits.depth` | `stage_limit_exceeded` | `nesting-depth-exceeded` |
-| any other `PackageLimits` ceiling | `resource_exhausted` | `insufficient-next-charge` |
+| a catalog holding one definition identity twice | `invalid_package` | `duplicate-member` |
+| any `PackageLimits` ceiling | `resource_exhausted` | `insufficient-next-charge` |
 
 ### Limits
 
 Every `PackageLimits` field applies, exactly as the caller supplies it:
 `definitions` (catalog size and closed definitions), `dependency_edges`
-(catalog edges and traversed edges), `depth` (the active chain),
+(catalog edges and traversed edges),
 `artifact_bytes` (total bytes of the catalog and of the closure) and
 `single_artifact_bytes` (each definition). `DefinitionCatalog::with_limits`
-applies them to the catalog and `link_bundle` to the closure.
+applies them to the catalog and `link_bundle` to the closure. A refusal
+names the field, its bound, the count reached and its setting
+([FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md)).
 
 ## Constraints
 
@@ -124,17 +127,18 @@ applies them to the catalog and `link_bundle` to the closure.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-111-AC-1 | Roots whose closure covers the nine facets and the 176 capabilities link. The `LinkedBundle` holds every closed definition and the nine facets, and its identity is unchanged when the caller's known-backend set is broader or narrower (`CompleteBundle::validate_known_capabilities` alone refuses an unknown capability). | Test (TC-491) |
-| FR-111-AC-2 | A root whose identity the catalog lacks refuses `unknown_profile`/`unsupported-selection`; one held at another version refuses `stale_dependency`/`revision-mismatch`; one held with other bytes refuses `stale_dependency`/`byte-digest-mismatch`; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each names the root's index. | Test (TC-491) |
-| FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity at two exact selections refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
+| FR-111-AC-2 | A root whose identity the catalog lacks refuses `unknown_profile`/`unsupported-selection`; a root whose identity the catalog holds resolves whatever revision label or bytes the catalog's definition carries; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each refusal names the root's index. | Test (TC-491) |
+| FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity under two authorities refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
 | FR-111-AC-4 | Removing the definitions of one facet refuses `invalid_package`/`feature-set-mismatch` naming that facet; removing one capability refuses `unknown_required_feature`/`unsupported-feature`. | Test (TC-491) |
 | FR-111-AC-5 | The bundle identity matches the `quire.complete.resolved-graph/2` golden vector (preimage `{"capabilities":[…],"definitions":[],"models":[]}`), and changing one definition's role, dependencies, capabilities or bytes changes it. | Test (TC-491) |
 | FR-111-AC-6 | Each `PackageLimits` field admits at its bound and refuses one past it, at catalog construction and at link, with the table's code and cause; a caller-raised `definitions` ceiling admits a catalog the default refuses, and the link records the limits it ran under. | Test (TC-491) |
-| FR-111-AC-7 | Every refusal's (code, cause) pair is one `quire.native.diagnostics/v1` revision `1-draft.7` lists. | Test (TC-491) |
+| FR-111-AC-7 | Every refusal's (code, cause) pair is one `quire.native.diagnostics/v1` lists. | Test (TC-491) |
 
 ## Dependencies
 
-- QSpec FR-131 (AC-1 to AC-3), FR-339 (AC-3), `docs/v1-delivery-ticket-manifest.md`
-  (V1-SRC-003, V1-SRC-004) and `native-diagnostics.md`.
+- QSpec FR-131 (AC-1 to AC-3), FR-339 (AC-3) and `native-diagnostics.md`.
+- QSpec FR-133: an extension definition's grammar and typed-node schema
+  members are QSpec's definition format (STD-146).
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md) §6.1, §6.2 (`complete::package` → layer-3 `library`).
 - [FR-087](FR-087-typestate-and-cross-package-node-key.md), whose AC-7 moves this capability here when `ResolvedSourcePackage` retires.
 
@@ -150,3 +154,10 @@ backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
 (the root list's ceiling, the closed definitions' bytes, the capabilities,
 the facets, the identity) carries no root index: `BundleRefusal::root` is
 `None`.
+
+Remaining work: resolution by definition identity alone replaces the
+revision and byte comparisons, which `library::bundle` and
+`library::bundle_tests` still make; the `depth` field of `PackageLimits` is
+deleted. QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
+typed-node schema member of an extension definition yet; FR-354 reads them
+once QSpec does.

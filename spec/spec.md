@@ -291,6 +291,15 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-345
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-034
+  - target: ix://agent-ix/quire-spec-language/FR-350
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-351
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-352
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-353
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-354
     type: contains
 ---
 # Master Requirements Specification
@@ -477,6 +486,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-015](usecase/US-015-check-a-temporal-property-over-every-behaviour-of-a-model.md) | US | Draft |
 | [US-033](usecase/US-033-write-unbounded-temporal-claims-and-unbounded-declarations.md) | US | Draft |
 | [US-034](usecase/US-034-catch-a-refinement-regression-across-revisions-and-profiles.md) | US | Draft |
+| [US-035](usecase/US-035-qualify-qsl-against-the-complete-v1-conformance-corpus.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -646,6 +656,11 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-343](functional/FR-343-compare-prior-and-superseding-classes-per-case.md) | FR | Specified (ADR-017 RF-2): the per-case comparison of the prior and superseding classes into holds, regression, unresolved, not applicable or tool failure; not yet implemented -- TC-863 to TC-865 planned |
 | [FR-344](functional/FR-344-report-a-refinement-gate-verdict-and-exit.md) | FR | Specified (ADR-017 RF-4): the refinement gate report, ordered and byte-deterministic, every regression listed, the verdict and QSpec FR-301 exit code; not yet implemented -- TC-864 to TC-866 planned |
 | [FR-345](functional/FR-345-run-the-profile-layering-refinement-gate.md) | FR | Specified (ADR-017 RF-3): `xtask refinement layering` compares a parent and child layer's compile classes per two-unit case over all five QSpec AD-003 `requires` edges, and checks each layer admits its witness and prohibits its child's distinguishing form (QSpec FR-453); not yet implemented -- TC-867 and TC-868 planned |
+| [FR-350](functional/FR-350-run-the-conformance-corpus-against-qsl.md) | FR | Specified: the conformance runner executes every QSpec corpus vector whose applicability names a QSL consumer type (`language`, `runtime`, `tool`) through that subject's public entry point and compares the typed result (code and cause for a refusal); `unsupported`, `incomplete` and `tool-failure` stay separate; not yet implemented -- TC-875, TC-876 planned |
+| [FR-351](functional/FR-351-settle-each-capability-from-its-executed-vectors.md) | FR | Specified: each in-scope capability settles from the vectors executed in the run, `uncovered` when it has none; not yet implemented -- TC-877, TC-878 planned |
+| [FR-352](functional/FR-352-report-capability-coverage.md) | FR | Specified: the run report gives outcome counts, capability coverage and each failing vector in a stable order; not yet implemented -- TC-879 planned |
+| [FR-353](functional/FR-353-settle-the-complete-v1-qualification-verdict.md) | FR | Specified: the `qualify` xtask repository gate: complete-V1 qualified when every capability of the default scope passes; gate exit 0, 1 or 2; not yet implemented -- TC-880, TC-881 planned |
+| [FR-354](functional/FR-354-admit-extensions-from-declarative-grammar-and-typed-node-schemas.md) | FR | Specified: an extension's declaration forms are admitted from its grammar and typed-node schemas and packaged as typed nodes; malformed, colliding, cyclic and unselected extensions refuse; not yet implemented -- TC-882 to TC-884 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
