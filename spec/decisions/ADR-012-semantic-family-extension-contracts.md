@@ -47,8 +47,8 @@ Amended 2026-10-01 (sum/case FR pass): §16.5's limit row and §16.8's Limits
 row no longer name a nesting-depth limit for `case`. Nesting of any depth is
 admitted, bounded only by caller-configured checking ceilings (QSpec FR-146;
 owner ruling 2026-10-01 that depth is never a limit kind). FR-315 to FR-324
-implement §16. §16.10's gaps SC-G1 to SC-G7 are closed by QSpec FR-440,
-FR-441, FR-143, FR-144 and FR-146.
+implement §16. §16.10 states the QSpec rules SC-G1 to SC-G7 that §16 relies
+on: QSpec FR-440, FR-441, FR-143, FR-144 and FR-146.
 
 ## Context
 
@@ -1532,7 +1532,7 @@ Every identity below follows an ADR-013 row. None needs a new identity scheme.
 | Union member | (union node id, member identifier) (FR-143) | declared | O-06 |
 | Kernel member identity | a `VariantId` (QC-15: "`VariantId` (enum and sum)"), computed by QSL from the member identity. Its preimage is SC-G3 (§16.10). | normalized | O-14, C-26, C-30 |
 | Union value | the pair (active member identity, payload values in declared position order). Two union values are equal exactly when their active members are equal and each payload position compares equal (FR-143-AC-12). Values of different unions are never equal, even with the same member shape. | semantic | O-13 |
-| `case` expression, union construction | an undeclared `expression` node, or a `value` node, keyed by content with no owner (FR-092, FR-093). An admitted `case` has exactly one arm per member of `U`. It lowers its arms in `U`'s declared member order, not in source order, so the arm order in source does not reach the preimage. The SC-G1 proposal carries this rule. Each source occurrence is keyed by (node id, role, ordinal). | normalized | O-04, O-07 |
+| `case` expression, union construction | an undeclared `expression` node, or a `value` node, keyed by content with no owner (FR-092, FR-093). An admitted `case` has exactly one arm per member of `U`. It lowers its arms in `U`'s declared member order, not in source order, so the arm order in source does not reach the preimage. QSpec FR-440 states this rule (SC-G1). Each source occurrence is keyed by (node id, role, ordinal). | normalized | O-04, O-07 |
 | Arm binder | a parameter-like binder scoped to its arm's body. It has no declaration and no wire node beyond its uses. | not an identity | none |
 
 The checked union type node is new. It is a `CheckedTypeNode` variant beside
@@ -1617,9 +1617,8 @@ node (AD-016 arrow 1).
 
 **Result type.** The grammar gives `case` no result annotation
 (shared-grammar.md `case` production). FR-146 checks each arm body against
-"the `case` expression's declared result type" without defining where that
-type comes from (SC-G6). QSpec FR-146 "Case result type" defines it, and
-QSL types `case` by that rule (FR-318): the expected type the `case`'s
+"the `case` expression's declared result type", which QSpec FR-146 "Case
+result type" defines (SC-G6), and QSL types `case` by that rule (FR-318): the expected type the `case`'s
 position supplies when that is unique, and otherwise the type inferred from
 the arm bodies (one shared type, or `Integer` when every arm body is
 `Integer` or an `Int[..]` type). The arm bodies are checked against it in
@@ -1801,7 +1800,7 @@ to the named cases.
 | Adverse, admission | one supplied union argument for each SC-R3 refusal case: a foreign union key, a non-member `VariantId`, a wrong payload count, and a payload of the wrong type; and a union payload holding a dangling reference, refused by the reference walk | argument admission | `invalid_runtime_input`/`wrong-value-kind` before any charge |
 | Builder | out-of-order clause submission refuses with a clause-order refusal, and in-order submission admits (recipe item 2); diagnostic order by builder state, then source position | S3 | §4.2 |
 | Evaluation | `case` on each member with payload binding (FR-146-AC-11); a scrutinee that evaluates `Undefined` propagates `Undefined`; an injected invariant break yields `InternalFault` (§16.4 S6a row), not a refusal | S6a | O-16 categories |
-| Identity | SC-R2 (including the `case` node id under arm reordering), SC-R4, SC-R5 and SC-R3's admission half in process; SC-R1 and SC-R3's wire half once SC-G1 and SC-G2 land and the pinned IR decodes them | S3, S4, E9 | §16.3 |
+| Identity | SC-R2 (including the `case` node id under arm reordering), SC-R4, SC-R5 and SC-R3's admission half in process; SC-R1 and SC-R3's wire half over the QSpec FR-440 spelling (SC-G1, SC-G2) | S3, S4, E9 | §16.3 |
 | Seam probe | `xtask seam-probe` passes with the §16.6 additions | build | FR-063 |
 | Wire totality | every new `NodeKind` variant has a lowering and emitter arm; every `SumCaseCause` variant has a catalog code with no `_` arm (recipe item 4) | S3, S4 | C-03, C-15 |
 | QSpec cases | the cases of QSpec TC-262 (construction and equality), TC-263 (recursion), TC-264 (exhaustiveness obligations) and TC-265 (evaluation). Where QSpec publishes vectors for them, they run over `QSPEC_DIR` like the existing conformance targets (`Makefile:120-181`). Otherwise they are QSL tests citing those TCs. | S3, S6a | QSpec |
@@ -1830,46 +1829,28 @@ disposition: none"; ADR-013 R-08 and §5).
 - **Editions.** Unions and `case` are `1-draft` forms (`qsl_cst::EDITION`,
   `qsl-cst/src/lib.rs:38`). The `0-draft` native lane gets nothing; it
   retires under M-6c. There is no per-feature edition gate.
-- **Profiles.** This bullet is QSL's inference, not a QSpec statement. AD-015
-  extends AD-005's complete value system inside the same record, tuple and
-  union composite family, so QSL admits a union under the value-profile
-  selections that admit records and tuples today. No QSpec profile names
-  `union` explicitly (SC-G7). There is no new profile identity and no profile
+- **Profiles.** QSpec FR-143 "Value profile" admits a union under the
+  value-profile selections that admit records and tuples (SC-G7), and QSL
+  uses exactly those selections, with the same profile identity and profile
   version.
 - **Catalog.** `unproved-exhaustiveness` is in revision `1-draft.4`, which is
   earlier than the revision QSL claims (`1-draft.8`). No catalog re-pin is
   needed.
 
-### 16.10 Gaps outside #187
+### 16.10 QSpec rules §16 relies on
 
-SC-G1 to SC-G5 block the parts of #187 named in §16.3 and §16.4. SC-G6 and
-SC-G7 block nothing: QSL states its reading of each. None needs a new
-QSL owner or a bypass. Each belongs to QSpec, which owns the wire and the
-language text (ADR-013 R-02). Each gap is closed by the QSpec FR in its
-"Closed by" column; FR-315 to FR-324 cite those FRs.
+QSpec owns the wire and the language text (ADR-013 R-02). §16 relies on
+these QSpec rules; FR-315 to FR-324 cite them.
 
-| ID | Gap | Blocks | Closed by |
-| --- | --- | --- | --- |
-| SC-G1 | The v2 schema has no union node spelling: no `union` in `CompositeTypeNode.semantic_form`, no union construction in `ValueNode` or `ExpressionNode`, and no `case` in `ExpressionNode` (QSpec `proposals/checked-package-v2/schema.json`). The IR (tag, form) decode, IR#141, follows it. | S3 lowering, S4 emission, SC-R1, a downstream `case` item settling `unsupported` | QSpec FR-440 |
-| SC-G2 | The v2 `OperationMember` union has no union-member kind. It has only `field`, `position`, `element`, `relationship_end`, `operation`, `type_argument`, `profile_operator` and `state_clause`. v2 literals and QSpec FR-323 typed values have no union `value_kind`. | the O-06 union member on the wire, C-18 for unions, SC-R3 | QSpec FR-440 |
-| SC-G3 | No preimage for a union member's `VariantId`. FR-143 makes member identity the declared pair (union node key, member identifier). QC-15 and O-14 make the kernel carrier a `VariantId`. FR-141 defines a preimage for enum members only (`quire.enum-member-node/v1`). | the kernel carrier of member identity (SC-R4) | QSpec FR-441 |
-| SC-G4 | `value-accounting.md` has no charge point for union construction (its "composite construction" row names record fields and tuple arguments) and none for `case` selection. | the exact S6a meter charges for construction and `case` | QSpec FR-143, FR-146 |
-| SC-G5 | FR-144's canonical-key table has no union row, although FR-143 gives unions `=` and FR-144-AC-6 requires a key for every type with `=`. | union values as set, bag or ordered-set elements, admitted under FR-323 with the FR-144 union key (§16.4) | QSpec FR-144 |
-| SC-G6 | FR-146 checks arm bodies against "the `case` expression's declared result type", but the grammar has no annotation that declares it. | nothing in #187: QSL decides the result type by QSpec FR-146 "Case result type" (§16.5). | QSpec FR-146 "Case result type" |
-| SC-G7 | No QSpec value-profile definition names `union` among the forms it admits. | nothing in #187: QSL admits unions wherever records and tuples are admitted (§16.9). | QSpec FR-143 "Value profile" |
-
-Node ids are minted at S3 lowering over the node's (tag, form) spelling
-(FR-093), so SC-G1 to SC-G3 are needed before any union node has an id. They
-are not needed only for emission. §15 set the precedent (§15.4 "Wire
-changes"): QSL proposed its state spellings to QSpec as STD-111, minted over
-the proposed spelling, and only the emission and read-back criteria waited
-for STD-111 to merge. #187 follows it:
-
-- #187 files SC-G1 to SC-G3 in QSpec as one proposal.
-- #187 mints with the proposed spelling.
-- #187 lands S1 to S3, the S6a arms, the in-process identity tests (SC-R2,
-  SC-R4, SC-R5) and the refusal corpus against the in-process
-  `CheckedPackage`.
+| ID | QSpec rule | Used by |
+| --- | --- | --- |
+| SC-G1 | QSpec FR-440 spells the union type node (`composite_type`/`union`), the union construction (`value`/`union_value`) and the `case` expression (`expression`/`case`) in `quire.checked-semantic-graph/v2`. | S3 lowering, S4 emission, SC-R1, a downstream `case` item settling `unsupported` |
+| SC-G2 | QSpec FR-440 carries a union value as a `union_value` node naming its active member; the `case` application's operation has `member: null`. | the union member on the wire, C-18 for unions, SC-R3 |
+| SC-G3 | QSpec FR-441 keys a union member by the `quire.union-member-node/v1` preimage over the union declaration's node id and the member identifier, in domain `quire.checked-semantic-node/v1`. | the kernel carrier of member identity, a retyped `VariantId` (SC-R4) |
+| SC-G4 | QSpec FR-143 charges one `composite.result-retain` for a union construction after its payload arguments; QSpec FR-146 makes `case` selection and payload binding charge nothing. | the exact S6a meter charges for construction and `case` |
+| SC-G5 | QSpec FR-144's canonical-key table has a union row: the active member's identifier, then the payload keys in position order. | union values as set, bag or ordered-set elements (FR-323, §16.4) |
+| SC-G6 | QSpec FR-146 "Case result type" decides a `case`'s result type: the expected type its position supplies, or the type inferred from its arm bodies. | the `case` result type (FR-318, §16.5) |
+| SC-G7 | QSpec FR-143 "Value profile" admits unions under the value-profile selections that admit records and tuples. | union admission under the value profile (FR-324, §16.9) |
 
 Where the IR cannot decode the QSpec FR-440 spelling, S4 omits each union
 node with `UnsupportedForm`, together with every node that names it (§2
