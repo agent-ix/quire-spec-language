@@ -508,8 +508,8 @@ names different artifacts in each.
 | TC-589 | Complete enabling footprints and membership locations keep safety violations under partial-order reduction | Integration | P1 | FR-155-AC-5, FR-155-AC-6, FR-156-AC-5, FR-156-AC-6 | 🚧 Planned |
 | TC-617 | Complete enabling footprints and membership keep fair violations under partial-order reduction | Integration | P1 | FR-157-AC-5, FR-157-AC-6 | 🚧 Planned |
 | TC-886 | Reduced and unreduced runs agree over the model-check corpus | Integration | P1 | FR-160-AC-6 | 🚧 Planned |
-| TC-815 | S1 and S2 build union declaration and case forms | Unit | P1 | FR-315-AC-1, FR-315-AC-2 | 🚧 Planned |
-| TC-816 | S1 parses a case scrutinee without a top-level record and keeps protocol case apart | Unit | P1 | FR-315-AC-3 | 🚧 Planned |
+| TC-815 | S1 and S2 build union declaration and case forms | Unit | P1 | FR-313-AC-1, FR-313-AC-2 | 🚧 Planned |
+| TC-816 | S1 parses a case scrutinee without a top-level record and keeps protocol case apart | Unit | P1 | FR-313-AC-3 | 🚧 Planned |
 | TC-817 | S3 admits union declarations, including an escaping recursive union | Unit | P1 | FR-316-AC-1, FR-316-AC-2 | 🚧 Planned |
 | TC-818 | S3 refuses ill-formed union declarations and bounds them only by checking ceilings | Unit | P1 | FR-316-AC-2, FR-316-AC-3, FR-316-AC-4 | 🚧 Planned |
 | TC-819 | S3 checks union construction and refuses FR-143's four construction errors | Unit | P1 | FR-317-AC-1, FR-317-AC-2, FR-317-AC-4 | 🚧 Planned |
@@ -987,8 +987,6 @@ with the gate's classification or comparison code. The seeds and controls
 live in a test-only corpus the gate's real run over
 `tests/fixtures/refinement/versioning/` does not read. TC-868's corpus
 covers all five QSpec AD-003 `requires` edges (QSpec FR-453).
-## Sum types and `case` (FR-315 to FR-324) coverage
-TC-815 to TC-834 back every AC of FR-315 to FR-324 and FR-046-AC-9. All are
 ## Sum types and `case` (FR-313 and FR-316 to FR-324) coverage
 TC-815 to TC-834 back every AC of FR-313 and FR-316 to FR-324 and FR-046-AC-9. All are
 `🚧 Planned`. QSpec TC-262 to TC-265 run inside TC-817 to TC-819, TC-822,
