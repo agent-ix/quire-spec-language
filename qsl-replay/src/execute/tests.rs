@@ -124,14 +124,11 @@ fn request(
 ) -> ReplayRequestWire {
     let digest = source_digest(bytes);
     ReplayRequestWire {
-        contract_version: "quire.native-runtime/v1".to_owned(),
-        capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
         profile_selections: vec![],
         package_id: (
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        package_contract_version: "quire.checked-package/v2".to_owned(),
         source_digests: vec![(
             AUTHORITY.to_owned(),
             IDENTITY.to_owned(),
@@ -143,7 +140,7 @@ fn request(
         dependencies: Vec::new(),
         selected_function: function,
         source,
-        originating_counterexample_identity: [2; 32],
+        obligation_identity: [2; 32],
         backend: (
             "kani-backend-1".to_owned(),
             Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -262,7 +259,7 @@ fn tc_444_a_witness_decodes_by_parameter_node_id() {
     // The decode refusal names the obligation the request replays, so a
     // batch of replays reports which one failed.
     let mut wire = witness(String::new());
-    wire.originating_counterexample_identity = [7; 32];
+    wire.obligation_identity = [7; 32];
     let refused = replay(wire).unwrap_err();
     let ReplayRefusal::Witness { obligation, .. } = &refused else {
         panic!("expected a witness refusal, got {refused:?}");
@@ -484,21 +481,6 @@ fn tc_444_a_domain_package_comes_from_the_byte_provision() {
     };
     assert_eq!(refusal.stage(), SpineStage::Intake);
     assert_eq!(refusal.code(), Code::MissingImport);
-}
-
-/// FR-098-AC-4: an unknown contract version refuses before anything is
-/// recompiled.
-#[trace("TC-444", "FR-098-AC-4")]
-#[test]
-fn tc_444_an_unknown_version_refuses() {
-    let mut unknown = small(7);
-    unknown.contract_version = "quire.native-runtime/v2".to_owned();
-    assert!(matches!(
-        replay(unknown),
-        Err(ReplayRefusal::Request(
-            ReplayRequestRefusal::UnknownContractVersion(version)
-        )) if version == "quire.native-runtime/v2"
-    ));
 }
 
 /// FR-098-AC-4, TC-166 step 3: a well-formed selection naming no function
@@ -1141,7 +1123,7 @@ fn call_site_with_a_dependency_input_keys_a_request_replay_accepts() {
     let refusal = locate(&crate::DependencyInput::default())
         .expect_err("no library is supplied as test/units");
     assert!(
-        matches!(*refusal, crate::CallSiteRefusal::Import(_)),
+        matches!(*refusal, crate::CallSiteRefusal::Import { .. }),
         "an unsupplied import refuses Import, got {refusal:?}"
     );
 }
@@ -1218,6 +1200,130 @@ fn call_site_refuses_a_library_that_does_not_compile_as_dependency() {
     };
     let path: Vec<&str> = path.iter().map(|library| library.as_str()).collect();
     assert_eq!(path, ["test/units"]);
+}
+
+/// FR-121-AC-14 (TC-516 step 14): `CallSiteRefusal::code` gives each
+/// function-selection, import and dependency refusal the code `replay`
+/// gives the same unit, dependency input and selection.
+#[trace("TC-516", "FR-121-AC-14")]
+#[test]
+fn call_site_refusal_codes_are_the_replay_refusal_codes() {
+    let unit_source = SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION);
+
+    // AC-2's `UnknownFunction`: `missing_declaration`, as `replay` gives
+    // a selection naming no function of the same package.
+    let proved_source = proved();
+    let compiled = spine(&proved_source, &BTreeMap::new());
+    let refusal = crate::call_site(
+        unit_source.clone(),
+        IDENTITY,
+        proved_source.as_bytes(),
+        [],
+        &crate::DependencyInput::default(),
+        &name(&["large"]),
+    )
+    .expect_err("large is not declared");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::UnknownFunction { .. }),
+        "{refusal:?}"
+    );
+    let mut wire = small(7);
+    wire.selected_function = name(&["large"]);
+    let replayed = replay(wire).expect_err("large is not declared");
+    assert_eq!(refusal.code(), Code::MissingDeclaration);
+    assert_eq!(refusal.code(), replayed.code());
+
+    // A unit with a syntax error: `Compile` carries the recompile's code.
+    let broken = format!("language \"ix:native\" edition \"1-draft\";\n{PROFILE}function {{\n");
+    let refusal = crate::call_site(
+        unit_source.clone(),
+        IDENTITY,
+        broken.as_bytes(),
+        [],
+        &crate::DependencyInput::default(),
+        &name(&["small"]),
+    )
+    .expect_err("the unit does not parse");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::Compile { .. }),
+        "{refusal:?}"
+    );
+    let replayed = replay(request(
+        broken.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&["small"]),
+        input(parameter(&compiled, "small", 0), 7),
+    ))
+    .expect_err("the unit does not parse");
+    assert!(
+        matches!(replayed, ReplayRefusal::Recompile(_)),
+        "{replayed:?}"
+    );
+    assert_eq!(refusal.code(), replayed.code());
+
+    let importing = Importing::new();
+    let units_bytes = importing.units.as_bytes();
+
+    // AC-4's `Import`: no dependency input, and no `dependencies` entry.
+    let refusal = crate::call_site(
+        unit_source,
+        IDENTITY,
+        importing.unit.as_bytes(),
+        [],
+        &crate::DependencyInput::default(),
+        &name(&["q"]),
+    )
+    .expect_err("no library is supplied as test/units");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::Import { .. }),
+        "{refusal:?}"
+    );
+    let replayed = replay(importing.request(Vec::new(), &[])).expect_err("test/units is absent");
+    assert_eq!(refusal.code(), Code::MissingImport);
+    assert_eq!(refusal.code(), replayed.code());
+
+    // AC-10's `DependencyInput`: the library's source has the unit's owner.
+    let refusal = locate_q_with_units(
+        &importing,
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        units_bytes,
+    )
+    .expect_err("test/units has the unit's own owner");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::DependencyInput(_)),
+        "{refusal:?}"
+    );
+    let mut shared = importing.units_entry();
+    shared.sources = vec![source_ref(IDENTITY, REVISION, units_bytes)];
+    let replayed =
+        replay(importing.request(vec![shared], &[units_bytes])).expect_err("a shared owner");
+    assert!(
+        matches!(replayed, ReplayRefusal::DependencyInput(_)),
+        "{replayed:?}"
+    );
+    assert_eq!(refusal.code(), replayed.code());
+
+    // AC-11's `Dependency`: the library's source does not parse.
+    let unparsed: &[u8] = b"language \"ix:native\" edition \"1-draft\";\nfunction {\n";
+    let refusal = locate_q_with_units(
+        &importing,
+        SourceIdentity::new(AUTHORITY, UNITS_IDENTITY, NAMESPACE, REVISION),
+        unparsed,
+    )
+    .expect_err("test/units does not parse");
+    assert!(
+        matches!(*refusal, crate::CallSiteRefusal::Dependency { .. }),
+        "{refusal:?}"
+    );
+    let mut broken_units = importing.units_entry();
+    broken_units.sources = vec![source_ref(UNITS_IDENTITY, REVISION, unparsed)];
+    let replayed = replay(importing.request(vec![broken_units], &[unparsed]))
+        .expect_err("test/units does not parse");
+    assert!(
+        matches!(replayed, ReplayRefusal::Recompile(_)),
+        "{replayed:?}"
+    );
+    assert_eq!(refusal.code(), replayed.code());
 }
 
 /// FR-098-AC-7 (TC-444 step 7): the `dependencies` entries' order, extent

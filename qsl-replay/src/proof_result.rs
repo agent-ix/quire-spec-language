@@ -222,34 +222,21 @@ impl ProofResultEnvelope {
 /// [`read_backend_provider_envelope`]'s structured refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProofResultRefusal {
-    /// `contract_version` is not exactly `quire.backend-provider/v1`.
-    #[error("unknown_wire/unsupported-wire: {0:?} is not quire.backend-provider/v1")]
-    UnknownContractVersion(String),
-    /// `capability_vocabulary` is absent, or not exactly
-    /// `quire.capability-kind/v1`.
-    #[error("invalid_capability/unsupported-version: capability_vocabulary is not quire.capability-kind/v1")]
-    UnknownCapabilityVocabulary,
     /// The encoded envelope exceeds the configured reader bound.
     #[error(transparent)]
     BoundExceeded(#[from] BoundExceeded),
 }
 
-const CONTRACT_VERSION: &str = "quire.backend-provider/v1";
-const CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
-
 /// A minimal, already-parsed representation of one FR-331
 /// `quire.backend-provider/v1` envelope: exactly the members FR-069's
 /// Inputs section names (`results`, `manifest`), enough to build
 /// and round-trip a [`ProofResultEnvelope`] per item. This is not a general
-/// FR-331 wire reader; it is the input shape FR-069's reader consumes.
+/// FR-331 wire reader; it is the input shape FR-069's reader consumes. It
+/// is never read from bytes, so it carries no contract version or
+/// vocabulary member: the version check belongs to a byte reader, and none
+/// exists yet.
 #[derive(Clone, Debug)]
 pub struct BackendProviderSource {
-    /// The envelope's `contract_version` member; must equal
-    /// `quire.backend-provider/v1` or the reader refuses.
-    pub contract_version: String,
-    /// The envelope's `capability_vocabulary` member; must equal
-    /// `quire.capability-kind/v1` or the reader refuses.
-    pub capability_vocabulary: Option<String>,
     /// The provider identity, as the FR-331 manifest states it.
     pub backend_identity: String,
     /// The FR-331 manifest's digest (ADR-013 O-19), always domain
@@ -265,9 +252,7 @@ pub struct BackendProviderSource {
 /// terminal-value tag -- never a caller-declared number a source could
 /// understate to launder an oversized item list past the bound (B3).
 fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
-    source.contract_version.len()
-        + source.capability_vocabulary.as_deref().map_or(0, str::len)
-        + source.backend_identity.len()
+    source.backend_identity.len()
         + source.manifest_digest.record().as_bytes().len()
         + source
             .items
@@ -278,28 +263,17 @@ fn measured_encoded_bytes(source: &BackendProviderSource) -> usize {
 
 /// FR-069's reader: read every item of `source` into its
 /// [`ProofResultEnvelope`], refusing before any `results`/`dispositions`/
-/// `counterexamples`/`accounting` member is read if `contract_version` or
-/// `capability_vocabulary` mismatch, or if the encoded size is over the
-/// configured reader bound (FR-069-AC-2, FR-069-AC-4).
+/// `counterexamples`/`accounting` member is read if the encoded size is over
+/// the configured reader bound (FR-069-AC-4).
 #[qsl_attrs::string_edge]
 pub fn read_backend_provider_envelope(
     source: &BackendProviderSource,
 ) -> Result<Vec<ProofResultEnvelope>, ProofResultRefusal> {
-    // Bound, version and vocabulary checks happen strictly first: nothing
-    // below this point touches `source.items` until every one of these
-    // three checks has passed.
+    // The bound check happens strictly first: nothing below this point
+    // touches `source.items` until it has passed.
     let measured = measured_encoded_bytes(source);
     if measured > MAX_ENCODED_BYTES {
         return Err(BoundExceeded { actual: measured }.into());
-    }
-    if source.contract_version != CONTRACT_VERSION {
-        return Err(ProofResultRefusal::UnknownContractVersion(
-            source.contract_version.clone(),
-        ));
-    }
-    match source.capability_vocabulary.as_deref() {
-        Some(CAPABILITY_VOCABULARY) => {}
-        _ => return Err(ProofResultRefusal::UnknownCapabilityVocabulary),
     }
 
     let backend = Backend::new(source.backend_identity.clone(), source.manifest_digest);
@@ -327,8 +301,6 @@ impl ProofResultEnvelope {
     pub fn to_source(envelopes: &[Self]) -> Result<BackendProviderSource, EmptyEnvelopeSet> {
         let first = envelopes.first().ok_or(EmptyEnvelopeSet)?;
         Ok(BackendProviderSource {
-            contract_version: CONTRACT_VERSION.to_owned(),
-            capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             backend_identity: first.backend.identity().to_owned(),
             manifest_digest: first.backend.manifest_digest(),
             items: envelopes.iter().map(|e| e.record.clone()).collect(),
@@ -353,8 +325,6 @@ mod tests {
 
     fn source(items: Vec<TerminalRecord>) -> BackendProviderSource {
         BackendProviderSource {
-            contract_version: CONTRACT_VERSION.to_owned(),
-            capability_vocabulary: Some(CAPABILITY_VOCABULARY.to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
             manifest_digest: manifest_digest(),
             items,
@@ -463,33 +433,11 @@ mod tests {
         assert_eq!(produced, all);
     }
 
-    /// FR-069-AC-2/AC-4 (TC-178): an unknown `contract_version`, a mismatched
-    /// or absent `capability_vocabulary`, and an oversized encoding each
-    /// refuse before any item is read, with no partial envelope returned.
-    #[trace("TC-178", "FR-069-AC-2", "FR-069-AC-4")]
+    /// FR-069-AC-4 (TC-178): an oversized encoding refuses before any item
+    /// is read, with no partial envelope returned.
+    #[trace("TC-178", "FR-069-AC-4")]
     #[test]
-    fn tc_178_refuses_unknown_version_vocabulary_or_oversized_envelope() {
-        let mut bad_version = source(vec![TerminalRecord::new("x", TerminalValue::Tested)]);
-        bad_version.contract_version = "quire.backend-provider/v2-draft".to_owned();
-        assert!(matches!(
-            read_backend_provider_envelope(&bad_version),
-            Err(ProofResultRefusal::UnknownContractVersion(_))
-        ));
-
-        let mut bad_vocab = source(vec![TerminalRecord::new("x", TerminalValue::Tested)]);
-        bad_vocab.capability_vocabulary = Some("quire.capability-kind/v2-draft".to_owned());
-        assert!(matches!(
-            read_backend_provider_envelope(&bad_vocab),
-            Err(ProofResultRefusal::UnknownCapabilityVocabulary)
-        ));
-
-        let mut absent_vocab = source(vec![TerminalRecord::new("x", TerminalValue::Tested)]);
-        absent_vocab.capability_vocabulary = None;
-        assert!(matches!(
-            read_backend_provider_envelope(&absent_vocab),
-            Err(ProofResultRefusal::UnknownCapabilityVocabulary)
-        ));
-
+    fn tc_178_refuses_an_oversized_envelope() {
         // B3: the bound check measures the source's own content -- there is
         // no `encoded_bytes` field a caller could understate -- so an
         // oversized source has to actually carry oversized content.

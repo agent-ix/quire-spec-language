@@ -154,7 +154,7 @@ pub enum ReplayRefusal {
     /// O-25), so a caller replaying many obligations knows which failed.
     #[error("the witness for obligation {obligation} does not decode: {refusal}")]
     Witness {
-        /// The request's originating counterexample identity.
+        /// The request's obligation identity (ADR-013 O-09).
         obligation: ObligationIdentity,
         /// The decode's cause.
         refusal: DecodeRefusal,
@@ -341,14 +341,11 @@ pub enum DependencySelectionsCause {
 /// # };
 /// let wire = ReplayRequestWire {
 ///     selected_function: "small",
-/// #   contract_version: "quire.native-runtime/v1".to_owned(),
-/// #   capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   package_contract_version: "quire.checked-package/v2".to_owned(),
 /// #   source_digests: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -362,7 +359,7 @@ pub enum DependencySelectionsCause {
 /// #       parameter: site.site.parameters[0].1,
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
-/// #   originating_counterexample_identity: [0; 32],
+/// #   obligation_identity: [0; 32],
 /// #   backend: (
 /// #       "kani-backend-1".to_owned(),
 /// #       Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -422,14 +419,11 @@ pub enum DependencySelectionsCause {
 /// # };
 /// let wire = ReplayRequestWire {
 ///     selected_function: small,
-/// #   contract_version: "quire.native-runtime/v1".to_owned(),
-/// #   capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
 /// #   profile_selections: vec![],
 /// #   package_id: (
 /// #       Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
 /// #       site.package_id.hex(),
 /// #   ),
-/// #   package_contract_version: "quire.checked-package/v2".to_owned(),
 /// #   source_digests: vec![(
 /// #       "a".to_owned(),
 /// #       "u".to_owned(),
@@ -443,7 +437,7 @@ pub enum DependencySelectionsCause {
 /// #       parameter: site.site.parameters[0].1,
 /// #       value: WitnessValue::Integer(7),
 /// #   }]),
-/// #   originating_counterexample_identity: [0; 32],
+/// #   obligation_identity: [0; 32],
 /// #   backend: (
 /// #       "kani-backend-1".to_owned(),
 /// #       Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -471,7 +465,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
         package,
         &call,
         request.source(),
-        request.originating_counterexample_identity(),
+        request.obligation_identity(),
     )?;
     let mut meter = Meter::new(request.accounting_limits());
     let evaluation = package

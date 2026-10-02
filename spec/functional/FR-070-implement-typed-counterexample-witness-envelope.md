@@ -138,6 +138,4 @@ admits.
 
 ## Status
 
-Remaining work (implementation A1, QSL-470): `qsl-replay/src/witness.rs`
-still checks the packet's `package_contract_version` and traces the deleted
-FR-070-AC-8 and TC-445. The member, its check and those traces are deleted.
+Implemented: `qsl_replay::WitnessEnvelope`, verified by TC-180 to TC-186.

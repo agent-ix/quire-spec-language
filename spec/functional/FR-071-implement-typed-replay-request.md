@@ -48,7 +48,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 ## Outputs
 
 - A typed replay request carrying exactly the members above, or a
-  structured refusal when the input is malformed, unversioned, or names an
+  structured refusal when the input is malformed or names an
   out-of-domain digest or profile identifier.
 
 ## Behavior
@@ -102,6 +102,11 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   requiring it to equal the request's declared `package_id` — needs an
   actual compile and is #243's (TK-01 executor, ADR-013 C-13), not this
   requirement's.
+- When a semantic profile selection names a profile outside the closed
+  known set, the reader SHALL refuse the request at decode with
+  `unknown_profile`/`unsupported-selection`, keeping the supplied selection
+  and the role it was supplied for, and SHALL read no byte-provision entry
+  for it.
 - The reader SHALL refuse a request whose encoded size exceeds the
   configured reader bound, and SHALL NOT return a truncated or
   partially-populated request in that case.
@@ -121,6 +126,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-6 | A byte-provision entry whose stored bytes do not hash to its own declared digest, under its declared digest domain's algorithm, refuses at construction with cause `stale_dependency`/`byte-digest-mismatch`; this is this requirement's own decode-time half of "stale package identity" and is distinct from #243's execution-time recompiled-`package_id` check. | Test (TC-186) |
 | FR-071-AC-7 | A request whose encoded size exceeds the configured reader bound refuses, and no truncated or partially-populated request is returned. | Test (TC-186) |
 | FR-071-AC-9 | A request whose package reference carries two `dependencies` entries round-trips them exactly, in order; an entry whose source digest has no byte-provision entry refuses at construction, as AC-5 states; an entry with an empty identity or an empty version, or a `package_id` in the `quire.source.bytes/v1` domain, refuses at decode. | Test (TC-186) |
+| FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
 
 ## Dependencies
 
@@ -143,13 +149,6 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   byte-vs-declared-digest integrity check (AC-6).
 
 ## Status
-
-Remaining work (implementation A1, QSL-470): `qsl-replay/src/request.rs`
-still carries the `contract_version`, vocabulary and `package_contract_version`
-members, checks them, traces the deleted FR-071-AC-4, FR-071-AC-8, TC-188 and
-TC-445, and names the identity member `originating_counterexample_identity`.
-The members, their checks and those traces are deleted, and the member is
-renamed `obligation_identity` (FR-098, ADR-013 O-26).
 
 Remaining work (implementation, Linear QSL-381): each package-reference source entry still
 carries the revision namespace and revision; it carries the two labels and

@@ -93,7 +93,5 @@ an FR-331 terminal value.
 
 ## Status
 
-Remaining work (implementation A1, QSL-470): `qsl-replay/src/proof_result.rs`
-still carries the `contract_version` and `capability_vocabulary` members,
-checks them, and traces the deleted FR-069-AC-2 and TC-178's version cases.
-The members, their checks and those traces are deleted.
+Implemented: `qsl_replay::read_backend_provider_envelope`, verified by
+TC-177 to TC-179.

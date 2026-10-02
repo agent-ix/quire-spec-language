@@ -27,11 +27,14 @@ use qsl_foundation::bound::{DomainKey, FiniteBound, ProofBound};
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, ManifestDigest, WireNodeId};
 use quire_exact::Identifier;
 
-/// ADR-013 O-09: the CG-computed digest identifying one Kani obligation --
-/// the digest over every `KaniObligationIdentity` member except
-/// `source_span` (QC-14). QSL never mints this digest; CG does (AD-016
-/// arrow 5), so this type only wraps and compares it, performing no hashing
-/// and holding no preimage knowledge -- the same shape as
+/// ADR-013 O-09: the CG-computed digest identifying one obligation. Its
+/// preimage is the RFC 8785 encoding, through ADR-013 §2's one encoder, of
+/// the clause node id, the clause occurrence key, the obligation kind and the
+/// arguments (each a parameter node id and its declared domain); the source
+/// span is excluded (QC-14). The occurrence key is part of the preimage, so
+/// two occurrences of one clause never collide. QSL never mints this digest;
+/// CG does (AD-016 arrow 5), so this type only wraps and compares it,
+/// performing no hashing -- the same shape as
 /// `quire_exact`'s QC-15 opaque identities. Its digest domain is not in the
 /// closed FR-201 set (QC-4), so it is not a `qsl_foundation::digest::DigestRecord`.
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]

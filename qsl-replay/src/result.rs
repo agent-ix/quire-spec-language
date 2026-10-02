@@ -657,8 +657,6 @@ mod tests {
 
         // FR-069: a proof-result envelope for a `Counterexample` Kani run.
         let proof_source = BackendProviderSource {
-            contract_version: "quire.backend-provider/v1".to_owned(),
-            capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             backend_identity: "kani-backend-1".to_owned(),
             manifest_digest: qsl_foundation::digest::ManifestDigest::from_digest([1; 32]),
             items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
@@ -699,7 +697,6 @@ mod tests {
                         )
                         .hex(),
                     )),
-                    package_contract_version: Some("quire.checked-package/v2".to_owned()),
                     source_digests: Some(vec![]),
                     profile_selections: Some(vec![]),
                     run_limits: Some(charges()),
