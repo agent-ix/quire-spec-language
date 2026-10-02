@@ -51,8 +51,8 @@
 //! Neither wraps its members as `crate::value::Value::Reference`
 //! (`ObjectReference`): that type's identity components
 //! (kernel [`quire_exact::UniverseId`]/[`quire_exact::ObjectId`],
-//! `crate::model::object_environment`) belong to FR-143's own closed object
-//! environment, so this rung's typed wrappers stay in `crate::model`'s own
+//! `quire_semantic_value::object_closure`) belong to FR-143's own closed object
+//! closure, so this rung's typed wrappers stay in `crate::model`'s own
 //! identity domain rather than constructing that type themselves.
 //! `crate::value::model_query` is the documented canonical encoding this
 //! module's own module docs once called for: FR-143 defines a reference's

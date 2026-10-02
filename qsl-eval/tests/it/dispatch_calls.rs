@@ -50,6 +50,7 @@ use quire_semantic_value::call::InputRefusal;
 use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::object_closure::ObjectClosure;
 
 const SCALAR_UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: u64::MAX,
@@ -163,11 +164,13 @@ fn receiver_reference(receiver_type: EffectiveId, identity: &str) -> ObjectRefer
 fn objects(receiver_type: EffectiveId, identity: &str) -> ObjectEnvironment {
     let types = types(receiver_type);
     ObjectEnvironment::new(
-        &types,
-        [(receiver_reference(receiver_type, identity), vec![])],
-        &[],
+        ObjectClosure::new(
+            &types,
+            [(receiver_reference(receiver_type, identity), vec![])],
+            &[],
+        )
+        .unwrap(),
     )
-    .unwrap()
 }
 
 /// Unwraps a completed kernel evaluation, panicking with the actual shape on
@@ -628,7 +631,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
     .check(CheckingLimits::default())
     .expect("a single clause-kind function with no dispatch table checks cleanly");
     let package = CheckedPackage::link(graph);
-    let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
+    let objects = ObjectEnvironment::default();
     let mut meter = Meter::new(SCALAR_UNLIMITED);
     let refusal = package
         .call(
@@ -1904,14 +1907,16 @@ fn bridge_links_a_real_family_and_evaluates_through_the_built_table() {
     let package = declarations.check(CheckingLimits::default()).unwrap();
 
     let objects = ObjectEnvironment::new(
-        &types,
-        [
-            (receiver_reference(a_type, "a1"), vec![]),
-            (receiver_reference(b_type, "b1"), vec![]),
-        ],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types,
+            [
+                (receiver_reference(a_type, "a1"), vec![]),
+                (receiver_reference(b_type, "b1"), vec![]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
 
     let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
     let checked = package

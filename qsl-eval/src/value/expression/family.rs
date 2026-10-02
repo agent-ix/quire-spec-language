@@ -294,7 +294,6 @@ mod family_contract_tests {
     use qsl_semantics::model::object_environment::ObjectEnvironment;
     use quire_exact::Meter;
     use quire_semantic_value::checking::CheckingLimits;
-    use quire_semantic_value::declaration::TypeEnvironment;
 
     /// `Value`'s function-declaration family is a real `FamilyContract`
     /// implementation, reachable through the trait, not a free-standing
@@ -419,7 +418,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
+        let objects = ObjectEnvironment::default();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         ValueFunctionFamily::evaluate(&identity, &mut env, &mut meter)
@@ -474,7 +473,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
+        let objects = ObjectEnvironment::default();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let exhausted_limits = quire_exact::ScalarLimits {
             work_units: 0,
@@ -552,7 +551,7 @@ mod family_contract_tests {
             .function_identity("exact")
             .expect("exact is declared in this package");
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
+        let objects = ObjectEnvironment::default();
         let decimal = |coefficient: i64| {
             Value::Decimal(quire_exact::Decimal::new(
                 quire_exact::Integer::from(coefficient),
@@ -643,7 +642,7 @@ mod family_contract_tests {
         // ADR-013 T-1 (FR-087): the S4 link step, over an
         // empty dependency closure -- this fixture declares no import.
         let package = qsl_package::CheckedPackage::link(graph);
-        let objects = ObjectEnvironment::new(&TypeEnvironment::default(), [], &[]).unwrap();
+        let objects = ObjectEnvironment::default();
         let mut env = EvaluationEnv::new(&package, &objects, Vec::new());
         let mut meter = Meter::new(quire_exact::ScalarLimits {
             work_units: 1,

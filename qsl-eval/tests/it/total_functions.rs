@@ -31,6 +31,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
+use quire_semantic_value::object_closure::ObjectClosure;
 
 use sha2::{Digest, Sha256};
 
@@ -979,11 +980,13 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         )
         .unwrap();
     let objects = ObjectEnvironment::new(
-        &types,
-        [(object(), vec![("n", FieldValue::Present(int(7)))])],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types,
+            [(object(), vec![("n", FieldValue::Present(int(7)))])],
+            &[],
+        )
+        .unwrap(),
+    );
     // ADR-013 T-1 (FR-087): the S4 link step, over an empty
     // dependency closure -- this fixture declares no import. `converted`
     // above is checked against `admitted` (S3, `CheckedGraph`) directly;

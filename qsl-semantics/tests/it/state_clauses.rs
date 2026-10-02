@@ -2158,7 +2158,7 @@ fn a_subtype_object_binds_a_supertype_parameter() {
     assert_eq!(target.object().as_str(), "k");
     let pre = observations.pre.as_ref().expect("one pre observation");
     assert_eq!(
-        pre.environment.find(target.universe(), "k"),
+        pre.environment.objects().find(target.universe(), "k"),
         Some(target),
         "target is archive's k, typed by k's own type"
     );
@@ -2557,7 +2557,7 @@ fn a_creation_of_a_subtype_of_a_creates_grant_admits() {
     assert_eq!(admitted.created.len(), 1);
     assert_eq!(admitted.created[0].object().as_str(), "s1");
     let post = admitted.post.as_ref().expect("post observation");
-    assert!(post.environment.contains(&admitted.created[0]));
+    assert!(post.environment.objects().contains(&admitted.created[0]));
 }
 
 /// SR-750 FND-007 round 3: check 11 authorizes a field write through the
@@ -4045,14 +4045,16 @@ fn a_field_reference_to_an_admitted_subtype_object_admits() {
         .attribute(child.object_type(), "parent")
         .expect("ConfigVersion declares parent");
     let field = quire_semantic_value::declaration::FieldRef::new(parent.owner(), "parent");
-    let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) =
-        current.environment.attribute(types, child, &field)
+    let Some(quire_exact::FieldValue::Present(quire_exact::Value::Reference(target))) = current
+        .environment
+        .objects()
+        .attribute(types, child, &field)
     else {
         panic!("child.parent is a present reference");
     };
     assert_eq!(target.object().as_str(), "k");
     assert_eq!(
-        current.environment.find(target.universe(), "k"),
+        current.environment.objects().find(target.universe(), "k"),
         Some(target),
         "child.parent is archive's k, typed by k's own type"
     );
@@ -4131,7 +4133,7 @@ fn a_reference_into_an_unlisted_population_refuses_dangling_reference() {
 /// names a key (`missing`) absent from `archive` itself -- nothing else
 /// requires `archive`, so this must admit, not refuse `dangling_reference`.
 /// `finish_populations` passes exactly this reference to
-/// `ObjectEnvironment::new` as a tolerated dangling target.
+/// `ObjectClosure::new` as a tolerated dangling target.
 #[trace("TC-465", "FR-106-AC-4")]
 #[test]
 fn a_dangling_reference_into_an_incomplete_population_still_admits() {

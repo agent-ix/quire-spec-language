@@ -1,69 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Closed object environments over the kernel [`ObjectReference`] (FR-143).
+//! The object environment S6a evaluates over: SV's core object closure plus
+//! FR-089's populations map (ADR-011 §6.2).
 //!
-//! A reference is terminal: its identity is the snapshot-supplied FR-009/FR-204
-//! triple (universe, object-type declaration identity, object identity), and
-//! equality never inspects the referenced state. No source form creates one.
-//! Cycles between objects are representable only through references resolved
-//! in an [`ObjectEnvironment`].
-//!
-//! The identity triple itself -- [`quire_exact::UniverseId`],
-//! [`quire_exact::EffectiveId`], [`quire_exact::ObjectId`] and
-//! [`quire_exact::ObjectReference`] -- is the kernel's own (ADR-013 T-6, §8
-//! OQ-C and OQ-E rulings): this module no longer defines a QSL-local
-//! `UniverseIdentity`/`ObjectIdentity`/`ObjectReference`.
-//! `ObjectEnvironment` (a closed reference graph checked against a
-//! `TypeEnvironment`) stays a QSL type: it is a declaration-registry
-//! concern, layer 3 per ADR-013 O-15, not the kernel.
-//!
-//! This module is layer-3 `model`, not `semantic_value`: an
-//! `ObjectEnvironment` also records FR-089's `PopulationId` ->
-//! [`PopulationBinding`] correspondence, and the `PopulationBinding` a
-//! `PopulationId` names is `model`'s (ADR-011 §6.1, "K is a leaf"). ADR-011
-//! §6.1 orders layer 3 `semantic_value < model`, so the module sits in
-//! `model`, above SV's `declaration` registry it reads, instead of
-//! importing `model` upward from `semantic_value`.
+//! The closure -- the admitted objects and the reference closure between
+//! them, keyed by kernel ids -- is SV's
+//! [`ObjectClosure`].
+//! This module holds only what SV cannot: FR-089's recorded `PopulationId`
+//! -> [`PopulationBinding`] correspondence. `PopulationBinding` is `model`'s
+//! (ADR-011 §6.1, "K is a leaf"), and §6.1's order `semantic_value < model`
+//! forbids the upward import, so the populations map stays in `model`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::model::population::PopulationBinding;
-use quire_exact::ObjectReference;
 use quire_exact::PopulationId;
-use quire_exact::{FieldValue, Value};
-use quire_semantic_value::declaration::{
-    fill_slots, ConstructionRefusal, FieldRef, TypeEnvironment,
-};
-
-/// Why an object environment is not closed.
-///
-/// `object` is boxed: `ObjectReference` grew past a fixed-size 32-byte
-/// `UniverseId` (ADR-013 §8 OQ-C ruling, replacing the previous
-/// pointer-sized `UniverseIdentity`), which pushed this refusal's stack size
-/// over `clippy::result_large_err`'s threshold on the cold refusal path
-/// (mirroring `crate::value::model_query::ModelQueryHalt::Refused`'s
-/// identical boxing, for the identical reason).
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("object environment refused at {object:?}: {cause:?}")]
-pub struct ObjectEnvironmentRefusal {
-    /// The object where the refusal originates.
-    pub object: Box<ObjectReference>,
-    /// The typed cause.
-    pub cause: ObjectEnvironmentCause,
-}
-
-/// The typed cause of an [`ObjectEnvironmentRefusal`].
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ObjectEnvironmentCause {
-    /// Two objects share one identity triple.
-    DuplicateObject,
-    /// The object type is not a model object type of the environment.
-    UnknownObjectType,
-    /// An attribute does not match its declaration.
-    Attribute(ConstructionRefusal),
-    /// A contained reference names no object of the environment.
-    DanglingReference(Box<ObjectReference>),
-}
+use quire_semantic_value::object_closure::ObjectClosure;
 
 /// [`ObjectEnvironment::with_population`]'s refusal: `population_id` is
 /// already recorded under a binding that does not equal the one this call
@@ -75,63 +27,31 @@ pub struct PopulationConflict {
     pub population_id: PopulationId,
 }
 
-/// A closed object environment: every reference held by any attribute
-/// resolves to an object of the environment. Also carries FR-089's
-/// recorded `PopulationId` -> `PopulationBinding` correspondence: `model`
+/// An object environment: SV's closed object closure, plus FR-089's
+/// recorded `PopulationId` -> `PopulationBinding` correspondence. `model`
 /// mints a `PopulationId` at binding-admission time
 /// (`admit_binding`/`admit_invocation`), and the caller records the pair
 /// here, in the same environment already threaded through
 /// `CheckedPackage::call`/`evaluate` and `Machine`, before constructing the
-/// `Value::Population(population_id)` argument that names it -- one
-/// existing threaded parameter rather than a second one, since neither
-/// binding correspondence needs to change mid-evaluation and both are
-/// closed once evaluation begins.
+/// `Value::Population(population_id)` argument that names it.
 #[derive(Clone, Debug, Default)]
 pub struct ObjectEnvironment {
-    objects: BTreeMap<ObjectReference, Box<[FieldValue]>>,
+    objects: ObjectClosure,
     populations: BTreeMap<PopulationId, Arc<PopulationBinding>>,
 }
 
 impl ObjectEnvironment {
-    /// Admit `objects` as `(reference, attributes)` pairs against the model
-    /// object types of `types`. An omitted `?` attribute is `absent`.
-    ///
-    /// Every reference any attribute holds must name an object of the
-    /// environment, except a reference in `tolerated_dangling`: the exact
-    /// targets a caller has already decided may dangle. FR-106 admission
-    /// passes the references its check 8 skipped, because they name an
-    /// incomplete population nothing requires; every other caller passes
-    /// `&[]`.
-    pub fn new<'n>(
-        types: &TypeEnvironment,
-        objects: impl IntoIterator<Item = (ObjectReference, Vec<(&'n str, FieldValue)>)>,
-        tolerated_dangling: &[ObjectReference],
-    ) -> Result<Self, ObjectEnvironmentRefusal> {
-        let mut admitted = BTreeMap::new();
-        for (reference, attributes) in objects {
-            let refuse = |cause| ObjectEnvironmentRefusal {
-                object: Box::new(reference.clone()),
-                cause,
-            };
-            let Some(declared) = types.attributes(reference.object_type()) else {
-                return Err(refuse(ObjectEnvironmentCause::UnknownObjectType));
-            };
-            let slots = fill_slots(types, declared, attributes)
-                .map_err(|refusal| refuse(ObjectEnvironmentCause::Attribute(refusal)))?;
-            if admitted.contains_key(&reference) {
-                return Err(refuse(ObjectEnvironmentCause::DuplicateObject));
-            }
-            admitted.insert(reference, slots);
-        }
-        let environment = Self {
-            objects: admitted,
+    /// The environment over `objects`, with no population recorded yet.
+    pub fn new(objects: ObjectClosure) -> Self {
+        Self {
+            objects,
             populations: BTreeMap::new(),
-        };
-        let tolerated: BTreeSet<&ObjectReference> = tolerated_dangling.iter().collect();
-        for (owner, slots) in &environment.objects {
-            environment.check_closed(owner, slots, &tolerated)?;
         }
-        Ok(environment)
+    }
+
+    /// The environment's core object closure.
+    pub fn objects(&self) -> &ObjectClosure {
+        &self.objects
     }
 
     /// Records `binding`'s admission under its own
@@ -178,94 +98,4 @@ impl ObjectEnvironment {
     pub fn resolve_population(&self, population_id: PopulationId) -> Option<&PopulationBinding> {
         self.populations.get(&population_id).map(Arc::as_ref)
     }
-
-    /// The environment's own reference whose universe is `universe` and
-    /// declared key is `object`, whatever its most-specific type is (FR-109:
-    /// a `Function` selection's object argument names an object by
-    /// population and key alone, with no declared type of its own to
-    /// narrow the search). `None` when no admitted object matches, or more
-    /// than one does (an object identity is unique within one universe, so
-    /// more than one match is a broken admission invariant, not a real
-    /// ambiguity).
-    pub fn find(
-        &self,
-        universe: quire_exact::UniverseId,
-        object: &str,
-    ) -> Option<&ObjectReference> {
-        let mut found = self.objects.keys().filter(|reference| {
-            reference.universe() == universe && reference.object().as_str() == object
-        });
-        let first = found.next()?;
-        match found.next() {
-            None => Some(first),
-            Some(_) => None,
-        }
-    }
-
-    /// Whether `reference` names an object of the environment.
-    pub fn contains(&self, reference: &ObjectReference) -> bool {
-        self.objects.contains_key(reference)
-    }
-
-    /// The referenced object's slot for `field`, the field `deref(r).f`
-    /// resolved to in `r`'s static type. The object's own type
-    /// conforms to that static type, so its effective attribute set has
-    /// exactly one attribute standing for `field`: `field` itself when
-    /// inherited unchanged, or the field that redefines it.
-    pub fn attribute(
-        &self,
-        types: &TypeEnvironment,
-        reference: &ObjectReference,
-        field: &FieldRef,
-    ) -> Option<&FieldValue> {
-        let position = types
-            .attributes(reference.object_type())?
-            .iter()
-            .position(|attribute| attribute.stands_for(field))?;
-        self.objects.get(reference)?.get(position)
-    }
-
-    fn check_closed(
-        &self,
-        owner: &ObjectReference,
-        slots: &[FieldValue],
-        tolerated: &BTreeSet<&ObjectReference>,
-    ) -> Result<(), ObjectEnvironmentRefusal> {
-        let mut pending: Vec<&Value> = present(slots).collect();
-        while let Some(value) = pending.pop() {
-            match value {
-                Value::Reference(reference)
-                    if !self.objects.contains_key(reference) && !tolerated.contains(reference) =>
-                {
-                    return Err(ObjectEnvironmentRefusal {
-                        object: Box::new(owner.clone()),
-                        cause: ObjectEnvironmentCause::DanglingReference(Box::new(
-                            reference.clone(),
-                        )),
-                    });
-                }
-                Value::Option(option) => pending.extend(option.payload()),
-                Value::Composite(composite) => pending.extend(present(composite.slots())),
-                Value::Collection(collection) => pending.extend(collection.elements()),
-                Value::Reference(_)
-                | Value::Boolean(_)
-                | Value::Integer(_)
-                | Value::Rational(_)
-                | Value::Decimal(_)
-                | Value::Float(_)
-                | Value::Quantity(_)
-                | Value::Text(_)
-                | Value::Enum(_)
-                | Value::Population(_) => {}
-            }
-        }
-        Ok(())
-    }
-}
-
-fn present(slots: &[FieldValue]) -> impl Iterator<Item = &Value> {
-    slots.iter().filter_map(|slot| match slot {
-        FieldValue::Present(value) => Some(value),
-        FieldValue::Absent | FieldValue::Null => None,
-    })
 }

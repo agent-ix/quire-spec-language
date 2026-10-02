@@ -31,6 +31,7 @@ use quire_exact::{
     ObjectReference, Outcome, UniverseId, Value,
 };
 use quire_semantic_value::call::InputRefusal;
+use quire_semantic_value::object_closure::ObjectClosure;
 use serde_json::json;
 
 use super::{
@@ -320,7 +321,9 @@ fn node_environment(
             vec![("next", next.unwrap_or(FieldValue::Absent))],
         ));
     }
-    ObjectEnvironment::new(types, objects, &[]).expect("the chain is internally closed")
+    ObjectEnvironment::new(
+        ObjectClosure::new(types, objects, &[]).expect("the chain is internally closed"),
+    )
 }
 
 fn no_cycle_observations(
@@ -432,26 +435,28 @@ fn no_cycle_completes_false_over_a_cycle() {
     let types = graph.scope().types();
     // A two-node cycle: `a`'s `next` is `b`, `b`'s `next` is `a`.
     let environment = ObjectEnvironment::new(
-        types,
-        vec![
-            (
-                node_reference(node_effective, "a"),
-                vec![(
-                    "next",
-                    FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
-                )],
-            ),
-            (
-                node_reference(node_effective, "b"),
-                vec![(
-                    "next",
-                    FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
-                )],
-            ),
-        ],
-        &[],
-    )
-    .expect("the two-node cycle is internally closed");
+        ObjectClosure::new(
+            types,
+            vec![
+                (
+                    node_reference(node_effective, "a"),
+                    vec![(
+                        "next",
+                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
+                    )],
+                ),
+                (
+                    node_reference(node_effective, "b"),
+                    vec![(
+                        "next",
+                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
+                    )],
+                ),
+            ],
+            &[],
+        )
+        .expect("the two-node cycle is internally closed"),
+    );
     let observations = no_cycle_observations(
         clause.identity(),
         environment,
@@ -582,26 +587,34 @@ fn evaluate_clause_is_deterministic() {
     );
     let cycle = || {
         ObjectEnvironment::new(
-            types,
-            vec![
-                (
-                    node_reference(node_effective, "a"),
-                    vec![(
-                        "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "b"))),
-                    )],
-                ),
-                (
-                    node_reference(node_effective, "b"),
-                    vec![(
-                        "next",
-                        FieldValue::Present(Value::Reference(node_reference(node_effective, "a"))),
-                    )],
-                ),
-            ],
-            &[],
+            ObjectClosure::new(
+                types,
+                vec![
+                    (
+                        node_reference(node_effective, "a"),
+                        vec![(
+                            "next",
+                            FieldValue::Present(Value::Reference(node_reference(
+                                node_effective,
+                                "b",
+                            ))),
+                        )],
+                    ),
+                    (
+                        node_reference(node_effective, "b"),
+                        vec![(
+                            "next",
+                            FieldValue::Present(Value::Reference(node_reference(
+                                node_effective,
+                                "a",
+                            ))),
+                        )],
+                    ),
+                ],
+                &[],
+            )
+            .expect("the two-node cycle is internally closed"),
         )
-        .expect("the two-node cycle is internally closed")
     };
     assert_eq!(run(cycle(), "a"), run(cycle(), "a"));
 }
@@ -895,7 +908,7 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
 }
 
 /// TC-468 (FR-109-AC-4): a `Function` selection over a `Reference` argument
-/// resolves it in the current snapshot (`ObjectEnvironment::find`,
+/// resolves it in the current snapshot (`ObjectClosure::find`,
 /// `population_universe`) and evaluates `hasNext`.
 #[trace("TC-468", "FR-109-AC-4")]
 #[test]

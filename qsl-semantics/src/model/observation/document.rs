@@ -17,9 +17,12 @@ use super::{
     SnapshotValue,
 };
 use crate::model::key::DeclarationKey;
-use crate::model::object_environment::{ObjectEnvironment, ObjectEnvironmentCause};
+use crate::model::object_environment::ObjectEnvironment;
 use crate::model::operation::OperationDeclaration;
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::object_closure::{
+    ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
+};
 
 /// Which wire format a document is read as (FR-106 "Document forms").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1432,8 +1435,9 @@ pub(super) fn finish_populations(
         objects: values.objects_admitted,
         values: values.values_admitted,
     };
-    let environment = ObjectEnvironment::new(types, values.objects, &tolerated)
-        .map_err(map_environment_refusal)?;
+    let environment = ObjectEnvironment::new(
+        ObjectClosure::new(types, values.objects, &tolerated).map_err(map_environment_refusal)?,
+    );
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -1466,18 +1470,20 @@ pub(super) fn admit_populations(
     finish_populations(types, values)
 }
 
-fn map_environment_refusal(
-    error: crate::model::object_environment::ObjectEnvironmentRefusal,
-) -> AdmissionFailure {
+fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
     match error.cause {
-        ObjectEnvironmentCause::DanglingReference(target) => refuse(
+        ObjectClosureCause::DanglingReference(target) => refuse(
             admission_record(
                 Code::DanglingReference,
                 "absent-target-in-complete-population",
             )
             .with("object", target.object().as_str().to_owned()),
         ),
-        _ => fault("object-environment-refused-after-admission-checks"),
+        ObjectClosureCause::DuplicateObject
+        | ObjectClosureCause::UnknownObjectType
+        | ObjectClosureCause::Attribute(_) => {
+            fault("object-environment-refused-after-admission-checks")
+        }
     }
 }
 
@@ -1491,10 +1497,10 @@ fn map_environment_refusal(
 /// Resolving by conformance, not exact type, is FR-106 check 9's own rule,
 /// not an approximation of it: `context_name`'s effective type only locates
 /// the population's universe (every type in one population's hierarchy
-/// shares a universe, `ObjectEnvironment::find`'s own doc comment), and
+/// shares a universe, `ObjectClosure::find`'s own doc comment), and
 /// `self_object.key` alone -- not a caller-narrowed type -- names the
 /// object within it, the same way FR-109's `Function`-selection object
-/// argument does (`ObjectEnvironment::find`, `population_universe`).
+/// argument does (`ObjectClosure::find`, `population_universe`).
 pub(super) fn resolve_self(
     views: &[ModelView],
     types: &TypeEnvironment,
@@ -1518,6 +1524,7 @@ pub(super) fn resolve_self(
         ))
     };
     let reference = environment
+        .objects()
         .find(universe, &self_object.key)
         .ok_or_else(wrong_role_mapping)?;
     if types.conforms(reference.object_type(), context_effective) {

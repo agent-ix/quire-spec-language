@@ -15,6 +15,9 @@ quire-canonical = { workspace = true }
 serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
 thiserror = { version = "2.0.20", default-features = false }
 
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

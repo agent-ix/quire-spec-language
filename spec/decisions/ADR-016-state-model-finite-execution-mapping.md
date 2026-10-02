@@ -124,9 +124,9 @@ untrusted data, recorded as found.
 - Population data at S6a. `PopulationBinding` (`model/population.rs:551`),
   `admit_binding` (`:806`), `admit_invocation` (`:1259`), `all_instances`
   (`:1718`) and `lookup` (`:1888`). `mint_population_id` (`:749`) mints the
-  only `PopulationId`. `ObjectEnvironment` (`model/object_environment.rs:88`)
-  records the `PopulationId` → `PopulationBinding` correspondence and refuses
-  a second, unequal record with `PopulationConflict` (`:156`).
+  only `PopulationId`. `ObjectEnvironment` records the `PopulationId` →
+  `PopulationBinding` correspondence, and `ObjectEnvironment::with_population`
+  refuses a second, unequal record with `PopulationConflict`.
 - State clauses (ADR-012 §15, FR-102 to FR-109): forms
   (`qsl-forms/src/protocol_clause.rs:61`), the checker `check::state_clause`
   with `ProtocolClauseFamily` (`check/state_clause.rs:275`, `:331`),

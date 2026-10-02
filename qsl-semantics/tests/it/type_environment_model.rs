@@ -28,9 +28,6 @@ use qsl_semantics::model::key::{DeclarationKey, EffectiveId};
 use qsl_semantics::model::normalize::{
     normalize, EffectiveView, ModelRefusalCause, NormalizeOutcome,
 };
-use qsl_semantics::model::object_environment::{
-    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-};
 use qsl_semantics::model::population::{
     admit_binding, lookup, AdmissionMeter, AdmissionOutcome, LookupKey, LookupOutcome,
     PopulationAdmissionLimits, PopulationBinding, PopulationDocument,
@@ -44,6 +41,9 @@ use quire_semantic_value::declaration::{
     Admission, Component, CompositeDeclaration, CompositeShape, ConstructionCause,
     ConstructionRefusal, DeclarationCause, FieldDeclaration, FieldRef, ObjectTypeDeclaration,
     TypeEnvironment, TypeEnvironmentLimits, DEFAULT_WORK_UNITS,
+};
+use quire_semantic_value::object_closure::{
+    ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
 };
 use sha2::{Digest, Sha256};
 
@@ -497,7 +497,7 @@ fn an_inherited_field_is_flattened_into_the_subtype() {
     assert_eq!(inherited.identity(), field_ref("M::A", "x"));
 
     let b1 = reference("M::B", "b1");
-    let objects = ObjectEnvironment::new(
+    let objects = ObjectClosure::new(
         &environment,
         [(b1.clone(), vec![("x", int(7)), ("y", int(8))])],
         &[],
@@ -513,10 +513,10 @@ fn an_inherited_field_is_flattened_into_the_subtype() {
     );
     // The inherited field is a required slot of `B`'s storage.
     assert_eq!(
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(8))])], &[]).unwrap_err(),
-        ObjectEnvironmentRefusal {
+        ObjectClosure::new(&environment, [(b1.clone(), vec![("y", int(8))])], &[]).unwrap_err(),
+        ObjectClosureRefusal {
             object: Box::new(b1),
-            cause: ObjectEnvironmentCause::Attribute(ConstructionRefusal {
+            cause: ObjectClosureCause::Attribute(ConstructionRefusal {
                 component: Component::Field("x".to_owned()),
                 cause: ConstructionCause::MissingField,
             }),
@@ -555,7 +555,7 @@ fn a_redefined_field_is_hidden_and_its_redefiner_takes_its_slot() {
 
     let b1 = reference("M::B", "b1");
     let objects =
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(3))])], &[]).unwrap();
+        ObjectClosure::new(&environment, [(b1.clone(), vec![("x", int(3))])], &[]).unwrap();
     assert_eq!(
         slot_integer(objects.attribute(&environment, &b1, &field_ref("M::A", "x"))),
         Integer::from(3_i64)
@@ -624,7 +624,7 @@ fn a_diamond_shares_one_slot_and_orders_supertypes_by_declaration() {
     );
 
     let d1 = reference("M::D", "d1");
-    let objects = ObjectEnvironment::new(
+    let objects = ObjectClosure::new(
         &environment,
         [(
             d1.clone(),
@@ -833,16 +833,16 @@ fn a_renamed_redefinition_replaces_the_inherited_name() {
 
     let b1 = reference("M::B", "b1");
     let objects =
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("y", int(5))])], &[]).unwrap();
+        ObjectClosure::new(&environment, [(b1.clone(), vec![("y", int(5))])], &[]).unwrap();
     assert_eq!(
         slot_integer(objects.attribute(&environment, &b1, &field_ref("M::A", "x"))),
         Integer::from(5_i64)
     );
     assert_eq!(
-        ObjectEnvironment::new(&environment, [(b1.clone(), vec![("x", int(5))])], &[]).unwrap_err(),
-        ObjectEnvironmentRefusal {
+        ObjectClosure::new(&environment, [(b1.clone(), vec![("x", int(5))])], &[]).unwrap_err(),
+        ObjectClosureRefusal {
             object: Box::new(b1),
-            cause: ObjectEnvironmentCause::Attribute(ConstructionRefusal {
+            cause: ObjectClosureCause::Attribute(ConstructionRefusal {
                 component: Component::Field("x".to_owned()),
                 cause: ConstructionCause::UndeclaredField,
             }),
