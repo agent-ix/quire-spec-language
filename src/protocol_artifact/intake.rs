@@ -444,15 +444,8 @@ pub(super) fn definitions(
         let mut found = None;
         for candidate in Registered::all() {
             work.visit()?;
-            work.bytes(
-                definition
-                    .identity
-                    .len()
-                    .saturating_add(definition.revision.value.len()),
-            )?;
-            if definition.identity == candidate.identity()
-                && definition.revision.value == candidate.revision()
-            {
+            work.bytes(definition.identity.len())?;
+            if definition.identity == candidate.identity() {
                 found = Some(*candidate);
                 break;
             }

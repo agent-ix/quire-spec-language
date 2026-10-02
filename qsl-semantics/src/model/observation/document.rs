@@ -169,7 +169,7 @@ fn first_blank_label(identity: &DocumentRef) -> Option<&'static str> {
 }
 
 /// FR-106 check 1: read one document from `provision` under `selected`'s
-/// digest, running the eight ordered conditions.
+/// digest, running the seven ordered conditions.
 pub(super) fn read_document(
     kind: DocumentKind,
     provision: &BTreeMap<[u8; 32], Vec<u8>>,
@@ -276,7 +276,7 @@ pub(super) fn read_document(
         }
     }
 
-    // 1.7/1.8: the document's own four labels.
+    // 1.7: the document's own four labels.
     let identity_member = object
         .member("identity")
         .and_then(|value| value.as_object())

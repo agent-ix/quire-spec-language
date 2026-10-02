@@ -57,3 +57,18 @@ Changes requested: one low cleanup finding.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | Revision and digest wording, plus one cause mapping, are left behind by the deletions. (1) `Refusal::AuthorityRevision` no longer has anything to do with a revision; its doc now says "identities or digests are malformed". Rename it. (2) `CompleteCause::ByteDigestMismatch::is_cause_of` still admits `StaleDependency`, but its only producer is now `SourceReadCause::DigestMismatch` (`source_digest_mismatch`), so the closed cause relation admits a pair nothing emits. Narrow it to `SourceDigestMismatch`. (3) Stale comments: the `NotSimulated::GeneratorMismatch` doc still says "`1-draft.1`"; the `FIXTURE_F` doc still says "237 bytes" and "byte 233 to 234"; `value-format.native` line 2 still says "the profile digest is a placeholder". | src/state/input.rs:466; qsl-cst/src/diagnostic.rs:166-169; qsl-eval/src/simulation/not_simulated.rs:34-35; qsl-replay/src/spine/call/tests.rs:293-297; tests/fixtures/value-format.native:2 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The label-match deletion leaves stale comments in `read_document`. Its doc still says "running the eight ordered conditions", and the label block is still headed "// 1.7/1.8". FR-106 check 1 now has seven conditions, and condition 8 was the deleted label match. | qsl-semantics/src/model/observation/document.rs:172; qsl-semantics/src/model/observation/document.rs:279 |
+| FND-003 | low | Deleting both `ProfileRevision` comparisons left `ClockBinding::profile_revision` ("Asserted registered temporal profile revision") with no reader anywhere in `src` or the crates. It is now an input field that nothing checks; only test support writes it. Delete the field, and its writes in tests/support/temporal/mod.rs and tests/it/compiled_protocol_v2.rs. | src/temporal/trace.rs:23-24 |
+
+## Dispositions
+
+Round 1, reviewed at `cd999fc8badbaad0450286a92e2b90838091357b` (diff `d1ae0de9..cd999fc8`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |

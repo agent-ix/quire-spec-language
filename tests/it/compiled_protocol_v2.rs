@@ -712,7 +712,6 @@ fn trace_input(name: &str, profile_identity: &str, parameters: &[(&str, &str)]) 
         clock: temporal::ClockBinding {
             name: name.into(),
             profile_identity: profile_identity.into(),
-            profile_revision: "1-draft.3".into(),
             parameters: parameters
                 .iter()
                 .map(|(name, value)| ((*name).into(), (*value).into()))
@@ -2533,7 +2532,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // length. The typed `clock_name` field on each
             // `temporal_bindings` entry moves `entries`, `byte_work`
             // and `output_bytes` but not `references`.
-            (4_825, 2_581, 1_174_347, 85_462)
+            (4_825, 2_581, 1_173_402, 85_462)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),

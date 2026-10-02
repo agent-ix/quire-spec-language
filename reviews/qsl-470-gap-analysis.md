@@ -57,3 +57,21 @@ Trace:
 ## Verdict
 
 Changes requested: FND-001, FND-002 and FND-004 are medium. FND-003 is low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | high | The fix round deleted the temporal profile-revision refusal and the `Dimension::ProfileRevision` cases from the FR-043-AC-3 tests, but FR-043 still requires that refusal. FR-043:138 says "The evaluator SHALL refuse a trace whose asserted profile identity or revision differs", and FR-043-AC-3 says "a trace whose asserted profile identity, profile revision or clock binding name differs ... refuses ... and names that dimension". TC-122 step 2 (line 49) still lists the asserted profile revision. The code now admits such a trace. Amend FR-043's Behavior and AC-3, and TC-122, to identity and clock only. Also decide whether FR-043-AC-2's retained "revisions" premise stays. | spec/functional/FR-043-evaluate-bounded-native-temporal.md:138; spec/functional/FR-043-evaluate-bounded-native-temporal.md:259; spec/test-cases/TC-122-evaluate-bounded-native-temporal.md:49 |
+| FND-006 | medium | One definition selection path still compares a revision, and it is not among the three sites FND-002 named or the ruling placed. Protocol-artifact intake recognizes a compiled artifact's definition only when `definition.identity == candidate.identity() && definition.revision.value == candidate.revision()`. This is the same identity-plus-revision match the round removed from `composed/definitions.rs`. Place it, either in this PR or in a named ticket, as FND-002 asked for each site. | src/protocol_artifact/intake.rs:453-455 |
+
+## Dispositions
+
+Round 1, reviewed at `cd999fc8badbaad0450286a92e2b90838091357b` (diff `d1ae0de9..cd999fc8`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
+| FND-002 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
+| FND-003 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |
+| FND-004 | fixed | 9d20823cf0eb43b49e0ee20c63c224cb9d13671d |

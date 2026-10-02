@@ -595,7 +595,6 @@ mod tests {
             clock: ClockBinding {
                 name: "orders".into(),
                 profile_identity: Profile::EventPosition.identity().into(),
-                profile_revision: "test".into(),
                 parameters: BTreeMap::new(),
             },
             positions: Vec::new(),
