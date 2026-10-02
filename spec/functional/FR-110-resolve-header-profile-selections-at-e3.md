@@ -199,12 +199,12 @@ edge therefore compile to distinct packages.
 ## Status
 
 Implemented, apart from the remaining work below, and backed by the
-TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
-`qsl-replay/src/spine.rs`).
+TC-490 tests (`a_header_profile_resolves_by_identity_against_the_root_row`
+and `a_token_after_a_header_profile_identity_is_a_syntax_error`,
+`qsl-replay/src/spine.rs`). A header profile is
+`profile <alias> = "<identity>";` and resolves by identity alone.
 
-Remaining work (implementation ticket A1): the implementation still parses a header's `version` and
-`digest` and compares them with the `root` row. AC-5 states the behavior: a
-header profile is `profile <alias> = "<identity>";` and resolves by identity
-alone. Layer
-selection (AC-7, AC-8) and AC-1's layer-closure lock rows are not yet
-implemented.
+Remaining work: layer selection (AC-7, AC-8) and AC-1's layer-closure lock
+rows are not yet implemented. `DefinitionLock` still reads its catalog from
+the `quire-specification` crate's compiled-in lock bytes, because the
+emitted lock rows still carry a revision and digest.

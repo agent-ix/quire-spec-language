@@ -131,7 +131,10 @@ mod tests {
                 root,
                 cause,
             };
-            let pair = (refusal.code().as_str().to_owned(), refusal.cause().to_owned());
+            let pair = (
+                refusal.code().as_str().to_owned(),
+                refusal.cause().to_owned(),
+            );
             assert!(listed.contains(&pair), "QSpec does not list {pair:?}");
         }
         println!(

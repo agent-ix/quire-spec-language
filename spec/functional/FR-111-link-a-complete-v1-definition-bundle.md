@@ -155,9 +155,9 @@ backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
 the facets, the identity) carries no root index: `BundleRefusal::root` is
 `None`.
 
-Remaining work: resolution by definition identity alone replaces the
-revision and byte comparisons, which `library::bundle` and
-`library::bundle_tests` still make; the `depth` field of `PackageLimits` is
-deleted. QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
+Roots and edges resolve by definition identity alone; a `DefinitionRef`
+is `{authority, identity}`.
+
+Remaining work: the `depth` field of `PackageLimits` is deleted. QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
 typed-node schema member of an extension definition yet; FR-354 reads them
 once QSpec does.

@@ -345,9 +345,7 @@ pub(super) fn validate_catalog_profiles(
     catalog: &ProfileCatalog,
 ) -> Result<(), Box<CompleteDiagnostic>> {
     for selection in &parsed.selections().profiles {
-        let Some((code, cause, message)) =
-            profile_refusal(catalog, &selection.identity)
-        else {
+        let Some((code, cause, message)) = profile_refusal(catalog, &selection.identity) else {
             continue;
         };
         return Err(qsl_cst::diagnostic::error(

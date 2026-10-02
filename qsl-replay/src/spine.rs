@@ -1440,7 +1440,10 @@ mod tests {
             both.iter()
                 .map(|r| (r.alias.as_str(), r.cause()))
                 .collect::<Vec<_>>(),
-            [("w", "wrong-selection-role"), ("x", "unsupported-selection")]
+            [
+                ("w", "wrong-selection-role"),
+                ("x", "unsupported-selection")
+            ]
         );
         compile_header(&format!(
             "{}{}",
@@ -1469,7 +1472,11 @@ mod tests {
             let unit = format!("language \"ix:native\" edition \"1-draft\";\n{header}");
             let region = refusal.region().expect("the refusal is located");
             let start = usize::try_from(region.start()).unwrap();
-            assert_eq!(start, unit.find(trailing.trim_start()).unwrap(), "{trailing}");
+            assert_eq!(
+                start,
+                unit.find(trailing.trim_start()).unwrap(),
+                "{trailing}"
+            );
         }
     }
 

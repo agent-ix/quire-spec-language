@@ -702,7 +702,8 @@ fn tc_450_step_2_zero_draft_requests_are_unaffected() {
 #[test]
 #[trace("TC-450", "FR-100-AC-3")]
 fn tc_450_step_6_libraries_and_models_both_present_runs() {
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
+    const HEADER: &str =
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
     const LIBRARY: &str = "function f using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
     let library = format!("{HEADER}{LIBRARY}").into_bytes();
     let library_digest = qsl_replay::spine::compile(

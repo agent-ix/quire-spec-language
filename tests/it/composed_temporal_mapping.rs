@@ -457,9 +457,7 @@ fn a_supported_classification_names_its_target_baseline_and_premises() {
         |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Supported {
-                target,
-                premises,
-                ..
+                target, premises, ..
             } = &classified.support
             else {
                 panic!("an event-position future formula is supported: {classified:?}");

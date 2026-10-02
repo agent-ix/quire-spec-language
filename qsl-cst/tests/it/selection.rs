@@ -57,9 +57,8 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
                 }
                 _ => unreachable!("closed declaration-kind test table"),
             };
-            let valid_profile = (declaration_kind != "profile").then(|| {
-                "profile Complete = \"acme/profile\";\n".to_owned()
-            });
+            let valid_profile = (declaration_kind != "profile")
+                .then(|| "profile Complete = \"acme/profile\";\n".to_owned());
             let source = format!(
                 "language \"ix:native\" edition \"1-draft\";\n{}{declaration}\nrecord R {{ datum: Integer; }}",
                 valid_profile.as_deref().unwrap_or_default(),
