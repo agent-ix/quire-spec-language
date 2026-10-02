@@ -16,6 +16,7 @@ use quire_exact::{Meter, NodeKey, Outcome, Value};
 use quire_semantic_value::location::Location;
 
 use super::super::causes::ProtocolClauseFrameRefusal;
+use super::separation::Trail;
 
 /// What one `ProtocolClause` S6a call evaluates: a state clause over its
 /// admitted observations (FR-107), or an operation frame over one admitted
@@ -56,6 +57,9 @@ pub(crate) struct ProtocolClauseEnv<'a> {
     /// found a change outside the frame. Set exactly when that call's
     /// outcome is `Completed(false)`.
     pub(crate) witness: Option<Box<FrameWitness>>,
+    /// FR-265: a state clause's trail, given before the call and holding
+    /// what the call recorded after it; `None` for a frame.
+    pub(crate) trail: Option<Trail>,
 }
 
 impl<'a> ProtocolClauseEnv<'a> {
@@ -65,15 +69,18 @@ impl<'a> ProtocolClauseEnv<'a> {
         current: &'a ObjectEnvironment,
         pre: Option<&'a ObjectEnvironment>,
         bindings: Vec<Value>,
+        trail: Trail,
     ) -> Self {
-        Self::with_input(
+        let mut env = Self::with_input(
             graph,
             ProtocolClauseInput::Clause {
                 current,
                 pre,
                 bindings: Some(bindings),
             },
-        )
+        );
+        env.trail = Some(trail);
+        env
     }
 
     /// An operation frame's environment (FR-115).
@@ -88,6 +95,7 @@ impl<'a> ProtocolClauseEnv<'a> {
             location: None,
             losses: Vec::new(),
             witness: None,
+            trail: None,
         }
     }
 }
@@ -177,7 +185,10 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
             .reads()
             .map(|(location, observation)| (location.clone(), observation))
             .collect();
-        let evaluation = super::super::evaluate::Machine::with_pre(
+        let trail = env.trail.take().ok_or_else(|| {
+            InternalFault::new("S6a", "clause-evaluation-environment-carries-a-trail")
+        })?;
+        let (evaluation, trail) = super::super::evaluate::Machine::with_pre(
             env.graph.scope(),
             env.graph,
             current,
@@ -186,7 +197,9 @@ impl super::ReferenceEvaluation for ProtocolClauseFamily {
             meter,
             env.graph.dispatch_tables(),
         )
-        .run(clause.body(), clause.slots(), bindings)?;
+        .with_trail(trail)
+        .run_traced(clause.body(), clause.slots(), bindings)?;
+        env.trail = Some(trail);
         env.location = evaluation.location;
         env.losses = evaluation.losses;
         match evaluation.outcome {

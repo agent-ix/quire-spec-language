@@ -13,6 +13,7 @@
 use quire_exact::Identifier;
 
 use super::FamilyPayload;
+use crate::result::SeparatingWitnessRecord;
 use qsl_semantics::model::observation::ClauseSelectionInput;
 
 /// FR-122: the state-clause counterexample payload (FR-070-AC-5). Every
@@ -27,6 +28,20 @@ pub struct StateClauseCounterexample {
     /// invariant. Its documents are read from the replay request's byte
     /// provision by their `sha256-jcs` digests.
     pub observation: ClauseSelectionInput,
+    /// FR-268 (ADR-031 SW-8): the clause's separating witness record,
+    /// present exactly when the producing run's settlement basis was
+    /// decisive (FR-265).
+    pub witness: Option<SeparatingWitnessRecord>,
 }
 
-impl FamilyPayload for StateClauseCounterexample {}
+impl FamilyPayload for StateClauseCounterexample {
+    /// The inline size plus the witness record's own measured size
+    /// (ADR-031 SW-14), so an oversized record refuses at decode.
+    fn measured_bytes(&self) -> usize {
+        std::mem::size_of_val(self)
+            + self
+                .witness
+                .as_ref()
+                .map_or(0, SeparatingWitnessRecord::measured_bytes)
+    }
+}

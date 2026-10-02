@@ -28,7 +28,7 @@ use crate::identity::RawSourceRef;
 use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
-    EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, Verdict,
+    EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessCheck,
     WitnessArmResult,
 };
 use crate::spine::{
@@ -323,18 +323,10 @@ pub fn replay_frame(
             proved,
             Verdict::from_category(replayed),
             replayed,
-            // As in FR-098: the verdict's whole value decides it.
-            value.map(|value| {
-                (
-                    value,
-                    SeparatingWitnessRecord {
-                        deciding_element: value,
-                        index: 0,
-                        value_path: Vec::new(),
-                        trace_position: None,
-                    },
-                )
-            }),
+            value,
+            // ADR-031 SW-7: a function call's or a frame check's result
+            // has no decisive occurrence, so it carries no record.
+            WitnessCheck::Agrees(None),
             Vec::new(),
             charges,
         )),
@@ -343,6 +335,7 @@ pub fn replay_frame(
             Verdict::from_category(replayed),
             replayed,
             value,
+            &WitnessCheck::Agrees(None),
             Vec::new(),
             charges,
         )),

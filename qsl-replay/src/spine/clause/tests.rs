@@ -394,7 +394,8 @@ fn no_cycle_completes_true_with_the_expected_reaches_charge_log() {
     let name = QualifiedName::unqualified("NoCycle").unwrap();
     let evaluation = package
         .evaluate_clause(&name, &observations, &mut meter)
-        .expect("NoCycle evaluates");
+        .expect("NoCycle evaluates")
+        .evaluation;
     assert!(boolean_outcome(evaluation), "a -> b -> c never reaches a");
     let graph_charges: Vec<_> = meter
         .admitted_charges()
@@ -462,7 +463,8 @@ fn no_cycle_completes_false_over_a_cycle() {
     let name = QualifiedName::unqualified("NoCycle").unwrap();
     let evaluation = package
         .evaluate_clause(&name, &observations, &mut meter)
-        .expect("NoCycle evaluates");
+        .expect("NoCycle evaluates")
+        .evaluation;
     assert!(!boolean_outcome(evaluation), "a -> b -> a reaches a");
 }
 
@@ -559,7 +561,8 @@ fn evaluate_clause_is_deterministic() {
         let name = QualifiedName::unqualified("NoCycle").unwrap();
         let evaluation = package
             .evaluate_clause(&name, &observations, &mut meter)
-            .unwrap();
+            .unwrap()
+            .evaluation;
         (
             boolean_outcome(evaluation),
             meter.admitted_charges().to_vec(),
@@ -632,7 +635,8 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let mut exhausted_meter = Meter::new(default_accounting(0));
     let exhausted = package
         .evaluate_clause(&name, &observations, &mut exhausted_meter)
-        .expect("an exhausted meter is a kernel outcome, not a fault");
+        .expect("an exhausted meter is a kernel outcome, not a fault")
+        .evaluation;
     match exhausted.outcome {
         FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
             assert_eq!(
@@ -647,7 +651,8 @@ fn evaluate_clause_reports_incomplete_when_the_meter_is_exhausted() {
     let mut default_meter = Meter::new(default_accounting(1_000_000));
     let completed = package
         .evaluate_clause(&name, &observations, &mut default_meter)
-        .expect("the default budget evaluates cleanly");
+        .expect("the default budget evaluates cleanly")
+        .evaluation;
     assert!(
         boolean_outcome(completed),
         "a -> b -> c never reaches a, with the default budget"
@@ -2456,6 +2461,8 @@ fn report_for(disposition: ClauseDisposition) -> super::ClauseRunReport {
             frame: None,
         },
         usage: super::ClauseRunUsage::default(),
+        basis: crate::SettlementBasis::Unavailable,
+        witness: None,
     }
 }
 
@@ -3229,6 +3236,7 @@ fn evaluate_step3_case_a_with_meter(meter: &mut Meter) -> qsl_eval::value::Evalu
     package
         .evaluate_clause(&name, &observations, meter)
         .expect("ReachesTarget evaluates")
+        .evaluation
 }
 
 /// FR-107: a clause reads its own observation by its kind -- `current`

@@ -497,7 +497,7 @@ fn a_frame_respecting_invocation_is_inconclusive_by_verdicts() {
     assert_eq!(arm.settlement(), WitnessSettlement::Inconclusive);
     assert_eq!(
         arm.disagreement(),
-        Some(DisagreementCause::Verdicts {
+        Some(&DisagreementCause::Verdicts {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Success),
         })
@@ -547,7 +547,7 @@ fn a_disagreeing_declared_delta_is_inconclusive_with_no_value() {
     assert_eq!(arm.settlement(), WitnessSettlement::Inconclusive);
     assert_eq!(
         arm.disagreement(),
-        Some(DisagreementCause::NoValue {
+        Some(&DisagreementCause::NoValue {
             proved: Verdict::from_category(ProofCategory::Violation),
             replayed: Verdict::from_category(ProofCategory::Refusal),
         })

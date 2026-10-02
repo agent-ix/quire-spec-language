@@ -1,0 +1,646 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-269: the [`DisagreementCause`] wire codec and its strict reader.
+//!
+//! A `Witness` cause's `given` and `derived` records are each present in
+//! full or absent (QSpec FR-351 has no partial record). An absent member is
+//! an absent JSON member, never `null` or a default (QSpec FR-352-AC-7).
+//! The record's members follow QSpec FR-352's `witness` table and its value
+//! path QSpec FR-207's `runtime_value` form. The reader refuses an unknown
+//! member, an unknown tag, a `null` member and a record missing a component
+//! its family assigns.
+
+use std::collections::BTreeMap;
+
+use qsl_eval::value::{
+    ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
+};
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use quire_exact::{
+    EffectiveId, Integer, ObjectId, ObjectReference, Origin, Role, UniverseId, Value,
+};
+use quire_semantic_value::location::{Location, Origin as Declaration};
+use serde::{Deserialize, Deserializer, Serialize};
+
+use super::{
+    DisagreementCause, SeparatingWitnessRecord, SeparationReason, SeparationRefusal, Verdict,
+    WitnessFailure,
+};
+use crate::identity::TracePosition;
+use crate::proof_result::ProofCategory;
+
+/// Why a [`DisagreementCause`] did not encode or read.
+#[derive(Debug, thiserror::Error)]
+pub enum CauseCodecError {
+    /// The document is not a cause this reader admits: malformed JSON, an
+    /// unknown or missing member, an unknown tag, or a `null` member.
+    #[error("the cause document does not read: {0}")]
+    Malformed(#[from] serde_json::Error),
+    /// A digest member is not 64 lowercase hexadecimal digits.
+    #[error("the member {0} is not a 32-byte lowercase hex digest")]
+    Digest(&'static str),
+    /// An integer member is not a decimal integer.
+    #[error("the member {0} is not a decimal integer")]
+    Integer(&'static str),
+    /// An identity member is empty.
+    #[error("the member {0} is empty")]
+    Empty(&'static str),
+    /// A catalog code the diagnostics catalog does not define.
+    #[error("the refusal code {0:?} is not a catalog code")]
+    UnknownCode(String),
+    /// A record naming a deciding quantifier carries no index: a collection
+    /// quantifier's family assigns one (QSpec FR-351).
+    #[error("a record naming a deciding quantifier carries no index")]
+    MissingIndex,
+    /// A deciding element of a kind this codec has no encoding for.
+    #[error("the deciding element's kind has no encoding")]
+    UnsupportedElement,
+}
+
+impl DisagreementCause {
+    /// FR-269: this cause's JSON document.
+    pub fn to_json(&self) -> Result<String, CauseCodecError> {
+        Ok(serde_json::to_string(&CauseWire::of(self)?)?)
+    }
+
+    /// FR-269: read a cause from `text`, refusing any document that is not
+    /// exactly a cause this codec writes.
+    pub fn from_json(text: &str) -> Result<Self, CauseCodecError> {
+        serde_json::from_str::<CauseWire>(text)?.read()
+    }
+}
+
+/// An optional member that must be absent rather than `null`: present, it
+/// reads as `T` (so `null` refuses); absent, `#[serde(default)]` gives
+/// `None`.
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "cause", rename_all = "kebab-case", deny_unknown_fields)]
+enum CauseWire {
+    Verdicts {
+        proved: VerdictWire,
+        replayed: VerdictWire,
+    },
+    NoValue {
+        proved: VerdictWire,
+        replayed: VerdictWire,
+    },
+    Witness {
+        proved: VerdictWire,
+        replayed: VerdictWire,
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        given: Option<RecordWire>,
+        #[serde(
+            default,
+            deserialize_with = "present",
+            skip_serializing_if = "Option::is_none"
+        )]
+        derived: Option<RecordWire>,
+        failure: FailureWire,
+    },
+}
+
+impl CauseWire {
+    fn of(cause: &DisagreementCause) -> Result<Self, CauseCodecError> {
+        Ok(match cause {
+            DisagreementCause::Verdicts { proved, replayed } => Self::Verdicts {
+                proved: VerdictWire::of(*proved),
+                replayed: VerdictWire::of(*replayed),
+            },
+            DisagreementCause::NoValue { proved, replayed } => Self::NoValue {
+                proved: VerdictWire::of(*proved),
+                replayed: VerdictWire::of(*replayed),
+            },
+            DisagreementCause::Witness {
+                proved,
+                replayed,
+                given,
+                derived,
+                failure,
+            } => Self::Witness {
+                proved: VerdictWire::of(*proved),
+                replayed: VerdictWire::of(*replayed),
+                given: given.as_deref().map(RecordWire::of).transpose()?,
+                derived: derived.as_deref().map(RecordWire::of).transpose()?,
+                failure: FailureWire::of(failure),
+            },
+        })
+    }
+
+    fn read(self) -> Result<DisagreementCause, CauseCodecError> {
+        Ok(match self {
+            Self::Verdicts { proved, replayed } => DisagreementCause::Verdicts {
+                proved: proved.read(),
+                replayed: replayed.read(),
+            },
+            Self::NoValue { proved, replayed } => DisagreementCause::NoValue {
+                proved: proved.read(),
+                replayed: replayed.read(),
+            },
+            Self::Witness {
+                proved,
+                replayed,
+                given,
+                derived,
+                failure,
+            } => DisagreementCause::Witness {
+                proved: proved.read(),
+                replayed: replayed.read(),
+                given: given.map(RecordWire::read).transpose()?.map(Box::new),
+                derived: derived.map(RecordWire::read).transpose()?.map(Box::new),
+                failure: failure.read()?,
+            },
+        })
+    }
+}
+
+/// ADR-013 O-16's category labels, which a verdict presently is.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum VerdictWire {
+    Success,
+    Violation,
+    Refusal,
+    Unsupported,
+    Incomplete,
+    Inconclusive,
+    InternalFailure,
+}
+
+impl VerdictWire {
+    fn of(verdict: Verdict) -> Self {
+        match verdict.category() {
+            ProofCategory::Success => Self::Success,
+            ProofCategory::Violation => Self::Violation,
+            ProofCategory::Refusal => Self::Refusal,
+            ProofCategory::Unsupported => Self::Unsupported,
+            ProofCategory::Incomplete => Self::Incomplete,
+            ProofCategory::Inconclusive => Self::Inconclusive,
+            ProofCategory::InternalFailure => Self::InternalFailure,
+        }
+    }
+
+    fn read(self) -> Verdict {
+        Verdict::from_category(match self {
+            Self::Success => ProofCategory::Success,
+            Self::Violation => ProofCategory::Violation,
+            Self::Refusal => ProofCategory::Refusal,
+            Self::Unsupported => ProofCategory::Unsupported,
+            Self::Incomplete => ProofCategory::Incomplete,
+            Self::Inconclusive => ProofCategory::Inconclusive,
+            Self::InternalFailure => ProofCategory::InternalFailure,
+        })
+    }
+}
+
+/// QSpec FR-352's `witness` record.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecordWire {
+    quantifier: OccurrenceWire,
+    deciding_element: ValueWire,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    index: Option<u64>,
+    value_path: PathWire,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    trace_position: Option<String>,
+}
+
+impl RecordWire {
+    fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
+        if record.index.is_none() {
+            return Err(CauseCodecError::MissingIndex);
+        }
+        Ok(Self {
+            quantifier: OccurrenceWire::of(&record.quantifier),
+            deciding_element: ValueWire::of(&record.deciding_element)?,
+            index: record.index,
+            value_path: PathWire::of(&record.value_path),
+            trace_position: record
+                .trace_position
+                .as_ref()
+                .map(|position| position.as_str().to_owned()),
+        })
+    }
+
+    fn read(self) -> Result<SeparatingWitnessRecord, CauseCodecError> {
+        // The record names a deciding quantifier, so its family is a
+        // collection quantifier's, which assigns an index (QSpec FR-351).
+        let index = self.index.ok_or(CauseCodecError::MissingIndex)?;
+        Ok(SeparatingWitnessRecord {
+            quantifier: self.quantifier.read()?,
+            deciding_element: self.deciding_element.read()?,
+            index: Some(index),
+            value_path: self.value_path.read()?,
+            trace_position: self.trace_position.map(TracePosition::new),
+        })
+    }
+}
+
+/// An occurrence key: `node_id`, `role`, `ordinal` (QSpec FR-322).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OccurrenceWire {
+    node_id: String,
+    role: String,
+    ordinal: u64,
+}
+
+impl OccurrenceWire {
+    fn of(occurrence: &OccurrenceKey) -> Self {
+        Self {
+            node_id: hex(occurrence.node().as_bytes()),
+            role: occurrence.origin().role().as_str().to_owned(),
+            ordinal: occurrence.origin().ordinal(),
+        }
+    }
+
+    fn read(self) -> Result<OccurrenceKey, CauseCodecError> {
+        Ok(OccurrenceKey::new(
+            WireNodeId::from_digest(digest(&self.node_id, "node_id")?),
+            Origin::new(Role::new(self.role), self.ordinal),
+        ))
+    }
+}
+
+/// A deciding element, by its value kind.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum ValueWire {
+    Boolean {
+        value: bool,
+    },
+    Integer {
+        decimal: String,
+    },
+    Reference {
+        universe: String,
+        #[serde(rename = "type")]
+        object_type: String,
+        object_identity: String,
+    },
+}
+
+impl ValueWire {
+    fn of(value: &Value) -> Result<Self, CauseCodecError> {
+        Ok(match value {
+            Value::Boolean(value) => Self::Boolean { value: *value },
+            Value::Integer(integer) => Self::Integer {
+                decimal: integer.to_string(),
+            },
+            Value::Reference(reference) => Self::Reference {
+                universe: hex(reference.universe().as_bytes()),
+                object_type: hex(reference.object_type().as_bytes()),
+                object_identity: reference.object().as_str().to_owned(),
+            },
+            Value::Rational(_)
+            | Value::Decimal(_)
+            | Value::Float(_)
+            | Value::Quantity(_)
+            | Value::Text(_)
+            | Value::Enum(_)
+            | Value::Population(_)
+            | Value::Option(_)
+            | Value::Composite(_)
+            | Value::Collection(_) => return Err(CauseCodecError::UnsupportedElement),
+        })
+    }
+
+    fn read(self) -> Result<Value, CauseCodecError> {
+        Ok(match self {
+            Self::Boolean { value } => Value::Boolean(value),
+            Self::Integer { decimal } => Value::Integer(
+                decimal
+                    .parse::<Integer>()
+                    .map_err(|_| CauseCodecError::Integer("decimal"))?,
+            ),
+            Self::Reference {
+                universe,
+                object_type,
+                object_identity,
+            } => Value::Reference(ObjectReference::new(
+                UniverseId::from_digest(digest(&universe, "universe")?),
+                EffectiveId::from_digest(digest(&object_type, "type")?),
+                ObjectId::new(object_identity).map_err(|_| CauseCodecError::Empty("object_identity"))?,
+            )),
+        })
+    }
+}
+
+/// QSpec FR-207's `runtime_value` wire form.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PathWire {
+    kind: PathKind,
+    root: RootWire,
+    steps: Vec<StepWire>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PathKind {
+    RuntimeValue,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RootWire {
+    observation: ObservationWire,
+    subject: SubjectWire,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ObservationWire {
+    authority: String,
+    identity: String,
+    revision_namespace: String,
+    revision: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
+enum SubjectWire {
+    Object {
+        universe: String,
+        #[serde(rename = "type")]
+        object_type: String,
+        object_identity: String,
+    },
+    Built {
+        occurrence: OccurrenceWire,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
+enum StepWire {
+    Member { name: String },
+    Index { index: u64 },
+}
+
+impl PathWire {
+    fn of(path: &RuntimeValuePath) -> Self {
+        let observation = &path.observation;
+        Self {
+            kind: PathKind::RuntimeValue,
+            root: RootWire {
+                observation: ObservationWire {
+                    authority: observation.authority.clone(),
+                    identity: observation.identity.clone(),
+                    revision_namespace: observation.revision_namespace.clone(),
+                    revision: observation.revision.clone(),
+                },
+                subject: match &path.subject {
+                    ValuePathSubject::Object(object) => SubjectWire::Object {
+                        universe: hex(object.universe().as_bytes()),
+                        object_type: hex(object.object_type().as_bytes()),
+                        object_identity: object.object().as_str().to_owned(),
+                    },
+                    ValuePathSubject::Built(occurrence) => SubjectWire::Built {
+                        occurrence: OccurrenceWire::of(occurrence),
+                    },
+                },
+            },
+            steps: path
+                .steps
+                .iter()
+                .map(|step| match step {
+                    ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
+                    ValuePathStep::Index(index) => StepWire::Index { index: *index },
+                })
+                .collect(),
+        }
+    }
+
+    fn read(self) -> Result<RuntimeValuePath, CauseCodecError> {
+        let PathKind::RuntimeValue = self.kind;
+        let observation = self.root.observation;
+        Ok(RuntimeValuePath {
+            observation: ObservationIdentity {
+                authority: observation.authority,
+                identity: observation.identity,
+                revision_namespace: observation.revision_namespace,
+                revision: observation.revision,
+            },
+            subject: match self.root.subject {
+                SubjectWire::Object {
+                    universe,
+                    object_type,
+                    object_identity,
+                } => ValuePathSubject::Object(ObjectReference::new(
+                    UniverseId::from_digest(digest(&universe, "universe")?),
+                    EffectiveId::from_digest(digest(&object_type, "type")?),
+                    ObjectId::new(object_identity)
+                        .map_err(|_| CauseCodecError::Empty("object_identity"))?,
+                )),
+                SubjectWire::Built { occurrence } => ValuePathSubject::Built(occurrence.read()?),
+            },
+            steps: self
+                .steps
+                .into_iter()
+                .map(|step| match step {
+                    StepWire::Member { name } => ValuePathStep::Member(name),
+                    StepWire::Index { index } => ValuePathStep::Index(index),
+                })
+                .collect(),
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "failure", rename_all = "kebab-case", deny_unknown_fields)]
+enum FailureWire {
+    Mismatch,
+    Separation { step: StepName, reason: ReasonWire },
+}
+
+/// FR-268's step names.
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum StepName {
+    Quantifier,
+    Domain,
+    Element,
+    Body,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "reason", rename_all = "kebab-case", deny_unknown_fields)]
+enum ReasonWire {
+    Unmet,
+    UndefinedEvaluation {
+        expression: LocationWire,
+        cause: String,
+    },
+    Refused {
+        code: String,
+        cause: String,
+        fields: BTreeMap<String, String>,
+    },
+}
+
+impl FailureWire {
+    fn of(failure: &WitnessFailure) -> Self {
+        match failure {
+            WitnessFailure::Mismatch => Self::Mismatch,
+            WitnessFailure::Separation { step, reason } => Self::Separation {
+                step: match step {
+                    SeparationStep::Quantifier => StepName::Quantifier,
+                    SeparationStep::Domain => StepName::Domain,
+                    SeparationStep::Element => StepName::Element,
+                    SeparationStep::Body => StepName::Body,
+                },
+                reason: match reason {
+                    SeparationReason::Unmet => ReasonWire::Unmet,
+                    SeparationReason::UndefinedEvaluation { expression, cause } => {
+                        ReasonWire::UndefinedEvaluation {
+                            expression: LocationWire::of(expression),
+                            cause: cause.clone(),
+                        }
+                    }
+                    SeparationReason::Refused(refusal) => ReasonWire::Refused {
+                        code: refusal.code.as_str().to_owned(),
+                        cause: refusal.cause.clone(),
+                        fields: refusal.fields.clone(),
+                    },
+                },
+            },
+        }
+    }
+
+    fn read(self) -> Result<WitnessFailure, CauseCodecError> {
+        Ok(match self {
+            Self::Mismatch => WitnessFailure::Mismatch,
+            Self::Separation { step, reason } => WitnessFailure::Separation {
+                step: match step {
+                    StepName::Quantifier => SeparationStep::Quantifier,
+                    StepName::Domain => SeparationStep::Domain,
+                    StepName::Element => SeparationStep::Element,
+                    StepName::Body => SeparationStep::Body,
+                },
+                reason: match reason {
+                    ReasonWire::Unmet => SeparationReason::Unmet,
+                    ReasonWire::UndefinedEvaluation { expression, cause } => {
+                        SeparationReason::UndefinedEvaluation {
+                            expression: expression.read(),
+                            cause,
+                        }
+                    }
+                    ReasonWire::Refused {
+                        code,
+                        cause,
+                        fields,
+                    } => SeparationReason::Refused(SeparationRefusal {
+                        code: Code::from_code(&code).ok_or(CauseCodecError::UnknownCode(code))?,
+                        cause,
+                        fields,
+                    }),
+                },
+            },
+        })
+    }
+}
+
+/// An expression location: its declaration and child-index path.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocationWire {
+    declaration: DeclarationWire,
+    path: Vec<usize>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum DeclarationWire {
+    Body { function: String, index: usize },
+    Measure { function: String, index: usize },
+    Expression,
+    TypeDeclaration { name: String },
+    StateClause { clause: String, index: usize },
+    ProtocolAttempt { protocol: usize, attempt: usize },
+}
+
+impl LocationWire {
+    fn of(location: &Location) -> Self {
+        Self {
+            declaration: match &location.origin {
+                Declaration::Body { function, index } => DeclarationWire::Body {
+                    function: function.clone(),
+                    index: *index,
+                },
+                Declaration::Measure { function, index } => DeclarationWire::Measure {
+                    function: function.clone(),
+                    index: *index,
+                },
+                Declaration::Expression => DeclarationWire::Expression,
+                Declaration::TypeDeclaration { name } => {
+                    DeclarationWire::TypeDeclaration { name: name.clone() }
+                }
+                Declaration::StateClause { clause, index } => DeclarationWire::StateClause {
+                    clause: clause.clone(),
+                    index: *index,
+                },
+                Declaration::ProtocolAttempt { protocol, attempt } => {
+                    DeclarationWire::ProtocolAttempt {
+                        protocol: *protocol,
+                        attempt: *attempt,
+                    }
+                }
+            },
+            path: location.path.clone(),
+        }
+    }
+
+    fn read(self) -> Location {
+        Location {
+            origin: match self.declaration {
+                DeclarationWire::Body { function, index } => Declaration::Body { function, index },
+                DeclarationWire::Measure { function, index } => {
+                    Declaration::Measure { function, index }
+                }
+                DeclarationWire::Expression => Declaration::Expression,
+                DeclarationWire::TypeDeclaration { name } => Declaration::TypeDeclaration { name },
+                DeclarationWire::StateClause { clause, index } => {
+                    Declaration::StateClause { clause, index }
+                }
+                DeclarationWire::ProtocolAttempt { protocol, attempt } => {
+                    Declaration::ProtocolAttempt { protocol, attempt }
+                }
+            },
+            path: self.path,
+        }
+    }
+}
+
+/// `bytes` as 64 lowercase hexadecimal digits.
+fn hex(bytes: &[u8; 32]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// A 32-byte digest from exactly 64 lowercase hexadecimal digits.
+fn digest(text: &str, member: &'static str) -> Result<[u8; 32], CauseCodecError> {
+    WireNodeId::from_hex(text)
+        .map(|id| *id.as_bytes())
+        .ok_or(CauseCodecError::Digest(member))
+}
