@@ -42,7 +42,7 @@ Tag the tests `#[trace("TC-595", "FR-170-AC-n")]`.
 - Step 2: the first explores 9 nodes and reproduces; the second re-executes
   `play, lose`, explores `{Lost}` and reproduces; the third reproduces.
 - Step 3: each settles `inconclusive`, `Verdicts`.
-- Step 4: four refusals with no result; `stage_limit_exceeded` naming
-  `max_states`; equal results.
+- Step 4: four refusals with no result; a stopped replay result naming
+  `max_states` and 2; equal results.
 - Step 5: the lasso replays its loop; the moved loop entry refuses; the
   product trap goes to FR-181's replay.

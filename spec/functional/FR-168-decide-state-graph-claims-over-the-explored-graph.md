@@ -192,7 +192,7 @@ Each carries its instance's `over` binding.
   (the explored graph and open nodes),
   [FR-166](FR-166-sample-witnesses-for-possible-claims.md) (sampled
   witnesses), [FR-165](FR-165-check-state-graph-claims-at-s3.md) (forms),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (canonical discovery order).
 - FR-169 settles the outcome; FR-170 replays its evidence.
 - QSpec FR-390 and FR-391 own the graph semantics and which evidence is

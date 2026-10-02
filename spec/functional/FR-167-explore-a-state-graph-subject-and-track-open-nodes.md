@@ -153,7 +153,7 @@ pub enum RunEnd {
 - ADR-022 §2 GM-1, GM-2, GM-6, GM-8; §3 GE-1 and "Placement in
   negotiation"; §6 GR-1 and GR-4; ADR-011 §1 and §6.1 (S6c, E10, layer A
   `model_check`) as amended by ADR-018.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md),
   [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)

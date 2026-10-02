@@ -38,5 +38,5 @@ Tag the tests `#[trace("TC-614", "<AC id>")]`.
 - Step 2: `inconclusive`, `unsettled`,
   `Inconclusive(WellDefinednessUnchecked{sources})` with `Sampled` sources,
   naming `max_states` and its value; not `proved`.
-- Step 3: `NoDecision` with the same `end`; `failed`, `resource-incomplete`,
+- Step 3: `NoDecision` with the same `end`; `incomplete`, `LimitReached`,
   naming `max_states`.

@@ -41,8 +41,8 @@ Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 - Step 3: `refuted`, `closed-scope`; `proved`, `closed-scope`,
   `Exhaustive`, `Certified`; `refuted`, `decisive-counterexample`.
 - Step 4: `refuted` (V-10); `inconclusive`, `BoundReached{depth: 3}`,
-  execution `completed`, truth `pending`; `failed`, `resource-incomplete`,
+  execution `completed`, truth `pending`; `incomplete`, `LimitReached`,
   naming `max_states` and its value; `inconclusive`, `UndecidedSuccessor`;
   `inconclusive`, `NoInitialState`.
-- Step 5: `inconclusive`, `ReplayParity`; `inconclusive`, `ReplayRefused`,
+- Step 5: `inconclusive`, `ReplayParity`; `incomplete`, `LimitReached`,
   naming the limit.

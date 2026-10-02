@@ -146,9 +146,9 @@ pub enum GraphEvidence {
   `inconclusive`, `Verdicts`. A node of the closure where the target
   evaluates `Undefined` SHALL settle `inconclusive`, `Verdicts`: the engine
   would have reported it as `Undefined` evidence (QSpec FR-391), not as a
-  trap. Exploration a limit stops SHALL refuse with `stage_limit_exceeded`
-  naming the limit and its value, as FR-098 refuses a replay that reaches a
-  stage limit, and FR-169 settles the refusal V-6 `ReplayRefused`.
+  trap. Exploration a limit stops SHALL return the replay result stopped, naming
+  the limit, its value and its setting, which FR-169 settles V-7
+  `incomplete`, `LimitReached` (ADR-018 V-7).
 
 ### Path pair
 
@@ -184,7 +184,7 @@ pub enum GraphEvidence {
 | FR-170-AC-1 | ADR-022 §7.1's `ReachesTwo` witnesses replay to `reproduced-with-evaluated-witness`, for a `Sampled` witness and an `Explored` one alike, with no sampler in the replay request. | Test (TC-595) |
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
-| FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 refuses `stage_limit_exceeded` naming `max_states` and 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
+| FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
 | FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 
@@ -195,7 +195,7 @@ pub enum GraphEvidence {
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),
   [FR-072](FR-072-implement-typed-replay-result.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (`replay`, `explore_request`),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-128](FR-128-replay-a-model-counterexample.md) (shared refusals and

@@ -152,7 +152,7 @@ pub struct ModelCheckRequest<'a> {
 
 - ADR-022 §3 GE-2 and "Determinism", §4 GV-1, §10 RU-4 and RU-5; ADR-014 TR-1
   (`SampleProvenance`).
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md)
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md)
   (`sample_request`, `SampleProvenance`),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`), [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
