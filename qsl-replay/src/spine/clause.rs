@@ -318,11 +318,11 @@ impl ClauseDisposition {
 
     /// FR-109 Outputs' `category` (ADR-013 O-16, `qsl_foundation::
     /// diagnostic::Category`). A compile refusal, an argument refusal and an
-    /// admission refusal take their code's [`Code::category`]
+    /// admission refusal take their code's
+    /// [`Code::category`](qsl_foundation::diagnostic::Code::category)
     /// (`unknown_required_feature` is unsupported); an admission
-    /// `Incomplete` is incomplete and a `Fault` an internal failure.
-    ///
-    /// [`Code::category`]: qsl_foundation::diagnostic::Code::category The run's exit code is this category's
+    /// `Incomplete` is incomplete and a `Fault` an internal failure. The
+    /// run's exit code is this category's
     /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
     /// (FR-285).
     pub fn category(&self) -> qsl_foundation::diagnostic::Category {
