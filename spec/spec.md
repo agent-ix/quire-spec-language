@@ -193,6 +193,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-020
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-023
