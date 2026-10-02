@@ -56,6 +56,7 @@ use quire_exact::{
 use super::check::{EnumBinding, Scope};
 use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
+use super::identity::ModelCorrespondence;
 use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
@@ -65,7 +66,6 @@ use super::node_key::{
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
 };
-use crate::model::key::DeclarationKey;
 use crate::value::definition::DefinitionReference;
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
@@ -385,11 +385,11 @@ pub(crate) struct FunctionGroup {
     pub(crate) recursive: bool,
 }
 
-/// What lowering yields: the graph, its model correspondence entries `(node
-/// key, DeclarationKey)` and each function's node key by index.
+/// What lowering yields: the graph, its model correspondence and each
+/// function's node key by index.
 pub(crate) struct Lowered {
     pub(crate) graph: SemanticGraph,
-    pub(crate) correspondence: Vec<(NodeKey, DeclarationKey)>,
+    pub(crate) correspondence: ModelCorrespondence,
     pub(crate) functions: Vec<Option<NodeKey>>,
     /// Each binder's parameter node, by the binding node's location and
     /// the slot it binds: the roots a claim's extent is keyed by.
@@ -409,8 +409,9 @@ pub(crate) struct Lowering<'a> {
     models: &'a [AdmittedModel],
     /// The package's units and every compound unit the check stage formed.
     units: UnitTable,
-    /// Each model declaration node keyed, by its `DeclarationKey`.
-    correspondence: BTreeMap<DeclarationKey, NodeKey>,
+    /// Each model declaration node keyed, one-to-one with its
+    /// `DeclarationKey` (FR-303).
+    correspondence: ModelCorrespondence,
     lock: &'a LockEvidence,
     depth_limit: u64,
     graph: SemanticGraph,
@@ -1211,7 +1212,7 @@ impl<'a> Lowering<'a> {
             owner: Owner::Source(owner.clone()),
             models,
             units,
-            correspondence: BTreeMap::new(),
+            correspondence: ModelCorrespondence::default(),
             lock,
             depth_limit,
             graph: SemanticGraph::default(),
@@ -1264,7 +1265,7 @@ impl<'a> Lowering<'a> {
         charge_work(self.meter, work).map_err(|refusal| preimage_refusal(location, refusal))
     }
 
-    /// The finished graph, its model correspondence entries and each
+    /// The finished graph, its model correspondence and each
     /// function's key. Every node that no region denotes gets its one
     /// `generated` occurrence (FR-093), at `root`.
     pub(crate) fn finish(self, root: &Location) -> Lowered {
@@ -1278,7 +1279,7 @@ impl<'a> Lowering<'a> {
         }
         Lowered {
             graph: self.graph,
-            correspondence: model::correspondence_entries(self.correspondence),
+            correspondence: self.correspondence,
             functions: self.functions,
             binders: self.binders,
         }

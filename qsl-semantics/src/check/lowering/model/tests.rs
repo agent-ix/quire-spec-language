@@ -801,6 +801,62 @@ fn unmappable_model_inputs_are_internal_faults() {
     assert_eq!(refusal.cause(), Some("established-invariant-broken"));
 }
 
+/// TC-796 step 4 (FR-303-AC-4), at the S3 lowering: when lowering keys a
+/// model declaration `d2` to node `n` while the correspondence already
+/// holds `(n, d1)`, keying refuses `runtime_invariant`/
+/// `established-invariant-broken` in category internal failure, naming
+/// `n`, `d1` and `d2`; `n` still resolves to `d1`. The first entry is
+/// seeded straight into the lowering's correspondence: no admitted input
+/// keys two declarations to one node.
+#[trace("TC-796", "FR-303-AC-4")]
+#[test]
+fn keying_a_second_declaration_onto_a_recorded_node_refuses() {
+    let acme = admitted("1.0.0");
+    let models = std::slice::from_ref(&acme.model);
+    let location = generated_location();
+    let (d1, d2) = (key("Invoice"), key("Order"));
+    let (n, _) = lower(models, Default::default(), |lowering| {
+        lowering.model_node(&d2, &location)
+    });
+    let n = n.expect("`Order` keys");
+    let ((keyed, resolved), _) = lower(models, Default::default(), |lowering| {
+        assert_eq!(lowering.correspondence.record(n, d1.clone()), Ok(()));
+        let keyed = lowering.model_node(&d2, &location);
+        (keyed, lowering.correspondence.resolve(n).cloned())
+    });
+    let Err(CheckRefusal {
+        cause: CheckCause::InternalFault(fault),
+        ..
+    }) = keyed
+    else {
+        panic!("expected an internal fault, got {keyed:?}");
+    };
+    assert_eq!(
+        *fault,
+        KeyFault::CorrespondenceConflict(Box::new(
+            crate::check::CorrespondenceConflict::NodeRebound {
+                node: n,
+                recorded: d1.clone(),
+                offered: d2,
+            }
+        ))
+    );
+    let cause = CheckCause::InternalFault(fault);
+    assert_eq!(
+        cause.code(),
+        qsl_foundation::diagnostic::Code::RuntimeInvariant
+    );
+    assert_eq!(cause.cause(), Some("established-invariant-broken"));
+    assert_eq!(
+        qsl_foundation::diagnostic::category_of(&qsl_foundation::diagnostic::CatalogCode::new(
+            cause.code().as_str(),
+            "established-invariant-broken",
+        )),
+        Some(qsl_foundation::diagnostic::Category::InternalFailure)
+    );
+    assert_eq!(resolved, Some(d1));
+}
+
 /// TC-417 step 8, TC-418 step 6, TC-419 step 4 (FR-094-CON-1): the
 /// record-kind, clause-kind and unit-domain matches have no `_` arm.
 #[trace("FR-094-CON-1", "TC-417", "TC-418", "TC-419")]

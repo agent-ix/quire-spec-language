@@ -654,6 +654,10 @@ pub enum KeyFault {
     /// composite the type environment does not hold, or the body reads a
     /// slot no binder bound (FR-097-AC-2).
     UnclassifiedExtent(qsl_foundation::InternalFault),
+    /// A model correspondence entry would give a node a second declaration
+    /// or a declaration a second node (FR-303): names the recorded pair and
+    /// the offered one.
+    CorrespondenceConflict(Box<super::identity::CorrespondenceConflict>),
 }
 
 impl KeyFault {
@@ -678,6 +682,7 @@ impl KeyFault {
             Self::UncheckedLimitKind(_) => "family-limit-is-a-checking-limit",
             Self::UnkeyableRequirements => "requirements-item-keyed",
             Self::UnclassifiedExtent(fault) => fault.invariant(),
+            Self::CorrespondenceConflict(_) => "model-correspondence-one-to-one",
         }
     }
 }

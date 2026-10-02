@@ -295,7 +295,9 @@ impl<'a> Lowering<'a> {
                 members: Vec::new(),
             },
         )?;
-        self.correspondence.insert(declaration.clone(), key);
+        self.correspondence
+            .record(key, declaration.clone())
+            .map_err(|conflict| fault(location, KeyFault::CorrespondenceConflict(conflict)))?;
         Ok(key)
     }
 
@@ -458,16 +460,6 @@ fn mismatch(location: &Location) -> CheckRefusal {
         location,
         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
     )
-}
-
-/// Every model correspondence entry, `(node key, DeclarationKey)`.
-pub(super) fn correspondence_entries(
-    correspondence: BTreeMap<DeclarationKey, NodeKey>,
-) -> Vec<(NodeKey, DeclarationKey)> {
-    correspondence
-        .into_iter()
-        .map(|(declaration, key)| (key, declaration))
-        .collect()
 }
 
 #[cfg(test)]
