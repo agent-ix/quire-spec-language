@@ -1,12 +1,12 @@
 ---
-id: TC-557
+id: TC-889
 title: "S2 builds the refinement form with every row in source order"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-164
+  - target: ix://agent-ix/quire-spec-language/FR-310
     type: verifies
 ---
-# TC-557: S2 builds the refinement form with every row in source order
+# TC-889: S2 builds the refinement form with every row in source order
 
 ## Description
 
@@ -14,7 +14,7 @@ Verify that S2 builds one `RefinementForm` per `refinement` declaration with
 every row as written, open arguments and population-valued forms included,
 and resolves no name.
 
-Scope: FR-164-AC-1 to FR-164-AC-3.
+Scope: FR-310-AC-1 to FR-310-AC-3.
 
 ## Test Procedure
 
@@ -26,7 +26,7 @@ FR-147's `CasTwice`.
 3. Build the forms of a declaration whose abstract alias names no model and
    of one with a duplicate `population` row, then run S3 on them.
 
-Tag the tests `#[trace("TC-557", "<AC id>")]`.
+Tag the tests `#[trace("TC-889", "<AC id>")]`.
 
 ## Expected Results
 

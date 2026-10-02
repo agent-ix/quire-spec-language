@@ -57,7 +57,7 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. §11 records the rulings on every question; the
-QSL compiler requirements that implement it are FR-135 to FR-149 and FR-164, exercised
+QSL compiler requirements that implement it are FR-135 to FR-149 and FR-310, exercised
 by US-018. It builds on ADR-018, itself a draft. ADR-027 (the protocol
 transition system) amends RM-5, RM-6, CO-4, MC-1, RC-1 and RC-2 for
 protocol subjects; each amended item says so. The plan lead's rulings on the draft's open questions

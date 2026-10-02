@@ -430,7 +430,7 @@ names different artifacts in each.
 | TC-554 | An undefined mapping row or history update refutes a refinement and replays | Integration | P1 | FR-138-AC-5, FR-141-AC-6, FR-142-AC-8, FR-145-AC-5 | 🚧 Planned |
 | TC-555 | A refused or incomplete mapping row or argument leaves the refinement undetermined, and an undefined argument refutes | Unit | P1 | FR-140-AC-5, FR-141-AC-7, FR-144-AC-6 | 🚧 Planned |
 | TC-556 | The simulation certificate checker accepts a true relation and rejects a false one | Integration | P1 | FR-149-AC-1, FR-149-AC-2, FR-149-AC-3, FR-149-AC-4, FR-144-AC-7 | 🚧 Planned |
-| TC-557 | S2 builds the refinement form with every row in source order | Unit | P1 | FR-164-AC-1, FR-164-AC-2, FR-164-AC-3 | 🚧 Planned |
+| TC-889 | S2 builds the refinement form with every row in source order | Unit | P1 | FR-310-AC-1, FR-310-AC-2, FR-310-AC-3 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

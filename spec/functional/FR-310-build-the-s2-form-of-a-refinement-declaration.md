@@ -1,5 +1,5 @@
 ---
-id: FR-164
+id: FR-310
 title: "Build the S2 form of a refinement declaration"
 type: FR
 relationships:
@@ -10,7 +10,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-135
     type: depends_on
 ---
-# FR-164: Build the S2 form of a refinement declaration
+# FR-310: Build the S2 form of a refinement declaration
 
 ## Description
 
@@ -86,9 +86,9 @@ pub enum StepTargetForm {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-164-AC-1 | ADR-020 §8's `CasRefinesCounter` builds one `RefinementForm` with abstract side `Model(Spec)`, concrete `Impl`, and its population, object, seven step, `assume` and `ensure` rows in source order, each with its span; the `ensure` row's granularity is `each` as written. | Test (TC-557) |
-| FR-164-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice` builds abstract side `Protocol(Spec, Twice)` and an `Internal` row naming `Spec::Twice::finish`. | Test (TC-557) |
-| FR-164-AC-3 | A declaration whose abstract alias names no model, and one with a duplicate `population` row, both build forms; the refusals come from S3 (FR-135-AC-2). | Test (TC-557) |
+| FR-310-AC-1 | ADR-020 §8's `CasRefinesCounter` builds one `RefinementForm` with abstract side `Model(Spec)`, concrete `Impl`, and its population, object, seven step, `assume` and `ensure` rows in source order, each with its span; the `ensure` row's granularity is `each` as written. | Test (TC-889) |
+| FR-310-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice` builds abstract side `Protocol(Spec, Twice)` and an `Internal` row naming `Spec::Twice::finish`. | Test (TC-889) |
+| FR-310-AC-3 | A declaration whose abstract alias names no model, and one with a duplicate `population` row, both build forms; the refusals come from S3 (FR-135-AC-2). | Test (TC-889) |
 
 ## Dependencies
 
