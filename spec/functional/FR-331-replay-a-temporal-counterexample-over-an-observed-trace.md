@@ -133,6 +133,15 @@ formula is false on it.
   [FR-328](FR-328-evaluate-an-infinite-trace-clause-over-a-finite-prefix.md),
   [FR-329](FR-329-evaluate-an-infinite-trace-clause-exactly-over-a-lasso.md).
 
+## Status
+
+Specified; not yet implemented. Code follow-up: delete
+`ClauseRunProvenance` (`qsl-replay/src/spine/clause.rs`, the struct and
+the `ClauseRunReport::provenance` member) and `ClauseRunReport::source_digest`,
+so the clause-run report carries the disposition, the `package_id` and the
+usage only (FR-109, FR-330), and the replay result carries the decoded
+position and the evaluated value only.
+
 ## References
 
 - Linear QSL-384 (spec ticket); QSL-43 (implementation).

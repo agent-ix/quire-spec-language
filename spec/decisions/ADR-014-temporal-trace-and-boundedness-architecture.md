@@ -475,7 +475,11 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    hook then re-evaluates the formula over the lasso at the decoded
    `TemporalPosition` (A-4). Agreement settles
    `reproduced-with-evaluated-witness`. Disagreement settles `inconclusive`
-   with a typed cause (O-27).
+   with a typed cause (O-27). The replay result holds the decoded position
+   and the evaluated value, and the spine clause-run report (FR-109,
+   FR-330) holds the disposition, the compiled `package_id` and the usage:
+   each carries only what replay and the verdict read, and neither keeps a
+   provenance record of its inputs.
 
 ### 11. Named interfaces for the dependent tickets
 

@@ -34,7 +34,7 @@ spine (S1 to S4, the same `spine::compile` CLI `compile` and FR-100 use),
 selects one state clause, or one Boolean function run as a claim, by name,
 admits the supplied observations (FR-106), evaluates through S6a (FR-107 or
 `CheckedPackage::call`) and returns one `ClauseRunReport`: a typed
-disposition with the provenance of every input. It is the spine replacement
+disposition, the compiled `package_id` and the usage. It is the spine replacement
 for native-run/1 clause execution (ADR-011 §5, the paragraph that says it has
 no spine equivalent before M-6c) and for FR-023's in-process `execute`.
 
@@ -79,10 +79,7 @@ selection, admission or evaluation result is a report.
   refusal, undefined or incomplete, FR-100's `outcome` member for that S6a
   outcome; for `evaluate` `internal-failure`, the `InternalFault`'s stage
   and invariant, as FR-100's internal-failure section gives them;
-- provenance: the source identity and byte digest, the extraction's original
-  identity and digest when I3 was used, the `package_id`, each model
-  selection, the selection as given, and the identity and digest of every
-  snapshot and invocation admission read;
+- `package_id`: the compiled package's identity, when compile completed;
 - usage: the admission work and the evaluation meter charges, separately.
 
 ## Behavior
@@ -154,12 +151,12 @@ selection, admission or evaluation result is a report.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-109-AC-1 | The healthy-parent request reports stage `evaluate`, `success`, `truth: true`, exit code 0, with the source digest, `package_id`, model selection, selection and the one snapshot's identity and digest in its provenance; violating-parent reports `violation`, `truth: false`, exit 10. | Test (TC-468) |
-| FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no snapshot in its provenance; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test (TC-468) |
+| FR-109-AC-1 | The healthy-parent request reports stage `evaluate`, `success`, `truth: true`, exit code 0, with the compiled `package_id`; violating-parent reports `violation`, `truth: false`, exit 10. | Test (TC-468) |
+| FR-109-AC-2 | missing-model (no package supplied) reports stage `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20, with no `package_id`; an expected `package_id` of another unit reports stage `compile`, `stale_dependency`, naming both; a `Clause` selection naming `Absent`, and one naming the function `sameIdentity`, each report stage `select`, `missing_declaration`/`missing-name`. | Test (TC-468) |
 | FR-109-AC-3 | dangling-parent reports stage `admit`, `refusal`, `dangling_reference`, exit 20; incomplete-population reports stage `admit`, `incomplete`, `incomplete_population`, exit 22; exhausted-work (budget zero) reports stage `evaluate`, `incomplete`, FR-100's `{"kind": "incomplete", "limit": "work_units"}`, exit 22; none carries `truth`. | Test (TC-468) |
 | FR-109-AC-4 | A `Function` selection of `sameIdentity` with arguments `{b: child, a: root}` (given in that order) over the distinct-identities snapshot reports `violation`, `truth: false`; with `a` = `b` = `child`, `success`; with `b` naming `ghost`, stage `admit`, `invalid_runtime_input`/`wrong-role-mapping`; with an argument naming `c`, stage `admit`, FR-100's refusal for an unknown parameter; a function returning `Integer` reports stage `select`, `ill_typed`/`type-mismatch`, before any call. | Test (TC-468) |
 | FR-109-AC-5 | Running one request twice gives equal reports, including usage; a request whose snapshot bytes change after the selection digest was taken reports stage `admit`, `stale_dependency`/`byte-digest-mismatch`. For each S6a outcome other than `Completed`, the report's `outcome` member and exit code equal what FR-100's mapping gives for the same outcome (checked over the outcomes FR-100-AC-9 constructs); for the kernel `CheckedInvariant` and a `CallFailure::Fault`, which FR-100 handles as an internal failure, the report is stage `evaluate`, category `internal-failure`, carrying the fault's stage and invariant, with no `outcome` member and FR-100's internal-failure exit status. | Test (TC-468) |
-| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to, the body's identity and digest as the source in its provenance, and the original document's identity and digest as the extraction's; violating-parent over the same source reports `violation`, exit 10; a compile refusal over it still carries the extraction's original identity and digest; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id` and the extraction's original identity and digest. A request with a program source carries no extraction. | Test (TC-468) |
+| FR-109-AC-6 | The healthy-parent request whose unit is an I3 extracted source reports `success`, exit 0, with the `package_id` its extracted body compiles to; violating-parent over the same source reports `violation`, exit 10; the same unit in an `ix:formal` fence reports stage `compile`, `refusal`, `unknown_language`, exit 20, with no `package_id`. | Test (TC-468) |
 
 ## Dependencies
 
@@ -174,6 +171,9 @@ selection, admission or evaluation result is a report.
 
 ## Status
 
-Implemented. The I3 extracted-source input is
+Implemented, except that the code still carries the deleted provenance
+record: `ClauseRunProvenance` and `ClauseRunReport::source_digest` in
+`qsl-replay/src/spine/clause.rs` are to be removed (follow-up recorded in
+FR-331's Status). The I3 extracted-source input is
 `ClauseRunSource::Extracted`, behind `qsl-replay`'s `quire-extraction`
-feature; its provenance is `ClauseRunProvenance::extraction`.
+feature.

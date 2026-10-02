@@ -57,9 +57,11 @@ FR-109's `ClauseRunRequest`, with the selection
 
 ## Outputs
 
-FR-109's `ClauseRunReport`, whose `category` adds `inconclusive` (a pending
-result) and `unsupported` (a missing fairness premise), and whose
-`disposition` for a `violation` carries the failing `TemporalPosition`.
+FR-109's `ClauseRunReport`: the disposition, the compiled `package_id` and
+the usage, with no provenance record of the source, the selection or the
+observations read. Its `category` adds `inconclusive` (a pending result)
+and `unsupported` (a missing fairness premise), and its `disposition` for a
+`violation` carries the failing `TemporalPosition`.
 
 ## Behavior
 

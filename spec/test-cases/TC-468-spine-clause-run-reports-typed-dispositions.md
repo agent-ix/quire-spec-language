@@ -1,17 +1,18 @@
 ---
 id: TC-468
-title: "The spine clause run entry reports typed dispositions with provenance and exit codes"
+title: "The spine clause run entry reports typed dispositions and exit codes"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-109
     type: verifies
 ---
-# TC-468: The spine clause run entry reports typed dispositions with provenance and exit codes
+# TC-468: The spine clause run entry reports typed dispositions and exit codes
 
 ## Description
 
 Verify `qsl_replay::spine::run_clause` over one case per stage and category,
-its provenance, its FR-100-aligned function selection and its exit codes.
+its compiled `package_id`, its FR-100-aligned function selection and its
+exit codes.
 
 Scope: FR-109-AC-1 to FR-109-AC-6.
 
@@ -45,11 +46,10 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `evaluate`, `success`, `truth: true`, exit 0, provenance holding the
-  source digest, `package_id`, model selection, selection and the snapshot's
-  identity and digest; then `violation`, `truth: false`, exit 10.
+- Step 1: `evaluate`, `success`, `truth: true`, exit 0, with the compiled
+  `package_id`; then `violation`, `truth: false`, exit 10.
 - Step 2: `compile`, `refusal`, `missing_import`/`missing-selection`, exit 20,
-  no snapshot in provenance; `compile`, `stale_dependency`, naming both
+  no `package_id`; `compile`, `stale_dependency`, naming both
   identities; `select`, `missing_declaration`/`missing-name`, twice.
 - Step 3: `admit`, `refusal`, `dangling_reference`, exit 20; `admit`,
   `incomplete`, `incomplete_population`, exit 22; `evaluate`, `incomplete`,
@@ -66,12 +66,9 @@ Tag the tests `#[trace("TC-468", "FR-109-AC-n")]`.
   `CheckedInvariant`, `S6a` and `checked-program-invariant`), no `outcome`
   member, and FR-100's internal-failure exit status.
 - Step 6: `success`, exit 0, the `package_id` of compiling the extracted
-  body alone, the body's identity and digest as the source and the
-  original document's identity and digest as the extraction; `violation`,
-  exit 10; `compile` with the extraction still in provenance; `compile`,
-  `refusal`, `unknown_language`, exit 20, no `package_id`, the extraction
-  still in provenance. Step 1's
-  program-source report carries no extraction.
+  body alone; `violation`, exit 10; `compile`, `missing_import`/
+  `missing-selection`; `compile`, `refusal`, `unknown_language`, exit 20,
+  no `package_id`.
 
 ## Status
 
