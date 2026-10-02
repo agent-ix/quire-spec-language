@@ -623,7 +623,7 @@ has no S6a arm (ADR-012 §2). S3 refuses, naming the key:
   parameter; or an `ObjectBinding` whose `fields` map names a field the type
   does not declare: `invalid_model_binding`/`malformed-declaration`, naming
   the entry;
-- a malformed `RustPath` or `RustField` segment: `invalid_model_binding`/
+- a malformed `RustPath`, `RustField` or `RustReceiver` segment: `invalid_model_binding`/
   `malformed-declaration`, naming the segment and its span.
 
 S3 does not refuse a relation that leaves elements unbound. QSpec FR-353

@@ -61,3 +61,21 @@ G-8. FR-300 replaces G-2a's inspection with behaviour tests, which is
 stronger. FR-306 and FR-307 match ADR-017 AR-4 to AR-6 and QSpec FR-451 and
 FR-353-AC-3/AC-5. Merge order: FR-304 cites ADR-020 §7, which is on open PR
 #564, in prose only (no `ix://` edge), so either order validates.
+
+## Dispositions
+
+Round 1, reviewed at c608c0a26baab69d95c7461046544f3e1c9172d8 (fix commit c608c0a2).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c608c0a2 |
+| FND-002 | fixed | c608c0a2 |
+| FND-003 | fixed | c608c0a2 |
+| FND-004 | fixed | c608c0a2. A few stale ADR-017 lines remain and are merge follow-ups: :687 (AR-6 "Q-2 relation node"), :697 (§4 "Q-1, Q-2"), :789-790 (§8 "Q-1 and Q-2 block #198's feature slice") and :801 (Consequences). #583 and #586 edit the same lines. Also :626, where the AR-3 malformed-segment bullet does not name `RustReceiver`. FR-304 is normative and cites QSpec FR-450, so none of these changes behaviour. |
+| FND-005 | fixed | c608c0a2 |
+| FND-006 | fixed | c608c0a2 |
+| FND-007 | fixed | c608c0a2 |
+| FND-008 | fixed | c608c0a2 |
+| FND-009 | fixed | c608c0a2 |
+| FND-010 | fixed | c608c0a2 |
+| FND-011 | fixed | c608c0a2 |
