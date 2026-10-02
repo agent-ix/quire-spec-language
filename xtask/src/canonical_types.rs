@@ -22,9 +22,12 @@
 //!   `enum`, `union`, `trait` or `type` alias with a canonical type's
 //!   identifier, other than its tagged definition, whatever its visibility or
 //!   shape, when the canonical definition is in a workspace member.
-//! - `re-export` (DT-2): in a workspace member other than the owner crate, a
-//!   `pub use` of a canonical identifier whose path does not start at the
-//!   owner crate, or that renames it with `as`.
+//! - `re-export` (DT-2): in a workspace member other than the owner crate,
+//!   for a canonical type a workspace member owns, a `pub use` of its
+//!   identifier rooted at another scanned crate, or that renames it with
+//!   `as`, and a `pub use v::*` from another workspace crate that defines or
+//!   re-exports the identifier. A path rooted at anything but a scanned
+//!   crate is the crate's own, and its item is a namesake.
 //! - `copy` (DT-3): across a repository boundary (the workspace and an
 //!   ecosystem repository, or two ecosystem repositories), a definition with
 //!   the canonical identifier, the same item kind and the same member names
@@ -223,8 +226,10 @@ struct Definition {
 /// One `pub use` leaf.
 #[derive(Clone, Debug)]
 struct Reexport {
-    /// The original identifier.
+    /// The original identifier; empty for a glob.
     ident: String,
+    /// Whether it is a glob (`pub use v::*`).
+    glob: bool,
     /// The path's first segment.
     root: String,
     renamed: bool,
@@ -390,7 +395,17 @@ impl FileScan<'_> {
                     self.reexport(ident, prefix, true, &rename.ident);
                 }
             }
-            syn::UseTree::Glob(_) => {}
+            syn::UseTree::Glob(glob) => {
+                let site = self.site(glob);
+                self.reexports.push(Reexport {
+                    ident: String::new(),
+                    glob: true,
+                    root: prefix.first().cloned().unwrap_or_default(),
+                    renamed: false,
+                    site,
+                    package: self.package,
+                });
+            }
             syn::UseTree::Group(group) => {
                 for item in &group.items {
                     self.use_tree(item, prefix);
@@ -404,6 +419,7 @@ impl FileScan<'_> {
         let site = self.site(at);
         self.reexports.push(Reexport {
             ident,
+            glob: false,
             root,
             renamed,
             site,
@@ -596,6 +612,8 @@ impl<'ast> Visit<'ast> for FileScan<'_> {
 pub struct Report {
     /// The scanned packages.
     pub packages: Vec<Package>,
+    /// The canonical set: each tagged identifier and its definition.
+    pub canonical: BTreeMap<String, Site>,
     /// Every finding, sorted.
     pub findings: Vec<Finding>,
 }
@@ -683,19 +701,59 @@ pub fn scan(workspace_root: &Path, packages: Vec<Package>) -> Result<Report> {
         }
     }
 
+    // A re-export's root is a crate only when it names a scanned package;
+    // any other root (`crate`, `self`, `super`, a child module) is local, so
+    // the item is the crate's own namesake, which the `identifier` rule
+    // reports at its definition. DT-2 applies inside the owning repository
+    // only: a canonical type owned by an ecosystem crate is reached through
+    // that repository's facade, never reported here (DT-5).
+    let crates: BTreeMap<&str, usize> = packages
+        .iter()
+        .enumerate()
+        .map(|(index, package)| (package.crate_name.as_str(), index))
+        .collect();
+    let in_workspace = |package: usize| packages[package].repository == Repository::Workspace;
     for reexport in &reexports {
+        let Some(&root) = crates.get(reexport.root.as_str()) else {
+            continue;
+        };
+        if !in_workspace(reexport.package) {
+            continue;
+        }
+        if reexport.glob {
+            // `pub use v::*`: every canonical identifier `v` defines or
+            // re-exports by name comes through it.
+            for (ident, owner) in &canonical {
+                if !in_workspace(owner.package)
+                    || owner.package == reexport.package
+                    || owner.package == root
+                {
+                    continue;
+                }
+                let carried = definitions
+                    .iter()
+                    .any(|d| d.package == root && d.ident == *ident)
+                    || reexports
+                        .iter()
+                        .any(|r| r.package == root && !r.glob && r.ident == *ident);
+                if carried {
+                    findings.insert(Finding {
+                        rule: Rule::Reexport,
+                        ident: (*ident).to_owned(),
+                        canonical: Some(owner.site.clone()),
+                        other: reexport.site.clone(),
+                    });
+                }
+            }
+            continue;
+        }
         let Some(owner) = canonical.get(reexport.ident.as_str()) else {
             continue;
         };
-        // A crate re-exporting its own item re-exports a namesake, which
-        // the `identifier` rule reports at its definition.
-        if packages[reexport.package].repository != Repository::Workspace
-            || reexport.package == owner.package
-            || is_local_root(&reexport.root)
-        {
+        if !in_workspace(owner.package) || reexport.package == owner.package {
             continue;
         }
-        if reexport.renamed || reexport.root != packages[owner.package].crate_name {
+        if reexport.renamed || root != owner.package {
             findings.insert(Finding {
                 rule: Rule::Reexport,
                 ident: reexport.ident.clone(),
@@ -705,16 +763,15 @@ pub fn scan(workspace_root: &Path, packages: Vec<Package>) -> Result<Report> {
         }
     }
 
+    let canonical = canonical
+        .into_iter()
+        .map(|(ident, definition)| (ident.to_owned(), definition.site.clone()))
+        .collect();
     Ok(Report {
         packages,
+        canonical,
         findings: findings.into_iter().collect(),
     })
-}
-
-/// A path root naming the current crate.
-#[qsl_attrs::string_edge]
-fn is_local_root(root: &str) -> bool {
-    matches!(root, "" | "crate" | "self" | "super")
 }
 
 /// `cargo xtask canonical-types [<workspace>]`: every finding over the
@@ -962,6 +1019,10 @@ mod tests {
                 vec![finding(Rule::Reexport, "Value", k_value(), site(w, 1))],
             ),
             ("pub use k::Value;\n", vec![]),
+            (
+                "pub use v::*;\n",
+                vec![finding(Rule::Reexport, "Value", k_value(), site(w, 1))],
+            ),
         ] {
             let mut fixture = k_fixture();
             fixture
@@ -969,6 +1030,21 @@ mod tests {
                 .member("w", source);
             assert_eq!(fixture.findings(), expected, "{source}");
         }
+        // A crate re-exporting its own namesake from a child module: the
+        // namesake is the finding, not the re-export.
+        let mut fixture = k_fixture();
+        fixture
+            .member("w", "mod m;\npub use m::Value;\n")
+            .file("w/src/m.rs", "pub struct Value;\n");
+        assert_eq!(
+            fixture.findings(),
+            vec![finding(
+                Rule::Identifier,
+                "Value",
+                k_value(),
+                site("w/src/m.rs", 1)
+            )]
+        );
         let mut fixture = k_fixture();
         fixture.file("tool/main.rs", "struct Outcome;\nfn main() {}\n");
         fixture.package("tool", None, "bin", "tool/main.rs");
@@ -1043,8 +1119,8 @@ mod tests {
     }
 
     /// TC-747 step 3: a backend run finds the backend's copy of a QSL
-    /// canonical type; over the QSL workspace, IR's same-named wire types
-    /// are not copies.
+    /// canonical type and not its re-export through the QSL facade; over the
+    /// QSL workspace, IR's wire `ValueType` is not a copy.
     #[test]
     #[trace("TC-747", "FR-272-AC-3")]
     fn tc_747_backend_run_and_ir_boundary_types() {
@@ -1055,7 +1131,12 @@ mod tests {
                 QSL_SOURCE,
                 "/// quire:canonical\npub enum Value {\n    A,\n    B,\n}\n",
             )
-            .member("backend", "pub enum Value {\n    A(u8),\n    B,\n}\n");
+            // QSL's facade re-exports it; the backend reaches it there.
+            .dependency("qsl-replay", QSL_SOURCE, "pub use quire_exact::Value;\n")
+            .member(
+                "backend",
+                "pub enum Value {\n    A(u8),\n    B,\n}\npub use qsl_replay::Value as Kernel;\n",
+            );
         assert_eq!(
             fixture.findings(),
             vec![finding(
@@ -1075,17 +1156,13 @@ mod tests {
             package.name == "quire-contract-model"
                 && package.repository == Repository::Ecosystem("quire-contract-ir")
         }));
-        let boundary = [
-            "CollectionType",
-            "ComparisonOperator",
-            "EnumDeclaration",
-            "IntegerDomain",
-            "ValueType",
-        ];
+        // IR's wire `ValueType` is a boundary type: same name as the tagged
+        // kernel `ValueType`, different members.
+        assert!(report.canonical.contains_key("ValueType"));
         let copies: Vec<&Finding> = report
             .findings
             .iter()
-            .filter(|f| f.rule == Rule::Copy && boundary.contains(&f.ident.as_str()))
+            .filter(|f| f.rule == Rule::Copy && f.ident == "ValueType")
             .collect();
         assert_eq!(copies, Vec::<&Finding>::new());
     }
