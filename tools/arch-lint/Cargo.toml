@@ -10,6 +10,13 @@ description = "FR-059/FR-060/FR-061/FR-284 and ADR-013 §2 architecture-conforma
 # A workspace member of its own, like `xtask`, so its `syn`/`proc-macro2`
 # dependencies stay out of the `quire-spec-language` library's dependency
 # graph.
+# The library holds what other workspace tools share: FR-059's
+# `graph::classify`, which `xtask canonical-types` uses to find ecosystem
+# packages (ADR-032 DT-4).
+[lib]
+name = "arch_lint"
+path = "lib.rs"
+
 [[bin]]
 name = "arch-lint"
 path = "main.rs"

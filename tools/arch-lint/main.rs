@@ -18,9 +18,10 @@ mod api_surface;
 mod canonical_encoder;
 mod duplicate_revisions;
 mod error;
-mod graph;
 mod metadata;
 mod qualified_core;
+
+use arch_lint::graph;
 
 use std::{
     ffi::OsString,

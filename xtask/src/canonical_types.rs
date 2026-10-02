@@ -43,14 +43,10 @@ use std::process::Command;
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
+use arch_lint::graph;
+
 use crate::error::{Error, Result};
 use crate::typestate_scan::shipped_files;
-
-/// FR-059's ecosystem classification, the one definition `arch-lint` uses.
-/// Only `classify` is called here; the rest of the module is `arch-lint`'s.
-#[allow(dead_code, reason = "xtask calls only `classify` and `Repo`")]
-#[path = "../../tools/arch-lint/graph.rs"]
-mod graph;
 
 /// The doc line that marks a canonical type.
 const TAG: &str = "quire:canonical";

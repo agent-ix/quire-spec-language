@@ -8,6 +8,8 @@ license = "AGPL-3.0-or-later"
 description = "Workspace developer tooling: cargo xtask seam-probe / string-edge."
 
 [dependencies]
+# FR-059's `graph::classify` (ecosystem packages, ADR-032 DT-4).
+arch-lint = { path = "../tools/arch-lint" }
 qsl-attrs = { path = "../qsl-attrs" }
 serde_json = { version = "1.0.151" }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
