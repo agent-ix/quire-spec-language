@@ -194,6 +194,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-022
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -283,6 +285,20 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-336
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-033
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-165
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-166
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-167
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-168
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-169
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-170
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-020
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-129
     type: contains
@@ -572,6 +588,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
 | [US-025](usecase/US-025-check-a-protocol-under-a-weak-memory-model.md) | US | Draft |
+| [US-020](usecase/US-020-state-that-something-is-possible-in-a-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -779,6 +796,12 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-228](functional/FR-228-derive-memory-fairness-constraints.md) | FR | Specified: derived `fair weak each flush(b)` under `tso` and visibility fairness under `ra`, with a `memory` origin beside the scheduler constraints (ADR-025 MF-1 to MF-5); not yet implemented -- TC-673 planned |
 | [FR-229](functional/FR-229-carry-the-memory-component-through-the-protocol-system.md) | FR | Specified: `Tso` and `Ra` through ADR-027's `MemoryModel` seam: the state key's memory member, the thread observation, atoms over memory values, `memory` anchors, terminal states, and memory footprints and visibility (ADR-025 MA-5, MS-1 to MS-4, MR-1, MR-2); not yet implemented -- TC-674 planned |
 | [FR-309](functional/FR-309-build-the-memory-forms-at-s2.md) | FR | Specified: S2 forms for the `memory` clause of `parallel`, the `ordering` of an `attempt` and the `fence` control, citing QSpec's shared grammar (QSpec FR-434, FR-435); not yet implemented -- TC-888 planned |
+| [FR-165](functional/FR-165-check-state-graph-claims-at-s3.md) | FR | Specified: S2 and S3 check the state-graph claim forms `possible`, `always possible` with optional `from`, and `unique path`, refuse non-state predicates, temporal operators and fairness, record the form beside a (`temporal-satisfaction`, `Unbounded`) record, and the request writer adds the deadlock-freedom item for their subjects (ADR-022 SG-1 to SG-4, GM-3, GM-7, GM-8); not yet implemented -- TC-590 planned |
+| [FR-166](functional/FR-166-sample-witnesses-for-possible-claims.md) | FR | Specified: EN-1 phase 0: `witness_samples` seeded FR-101 walks per initial state for each `possible` item, published default 64, 0 turns it off, trace index `i × witness_samples + r`, the run's seed recorded (ADR-022 GE-2); sampling only finds witnesses, and `proved` waits for a completed exploration (RU-5); walks bounded by `max_walk_steps`; not yet implemented -- TC-591, TC-613, TC-614, TC-618 planned |
+| [FR-167](functional/FR-167-explore-a-state-graph-subject-and-track-open-nodes.md) | FR | Specified: EN-1 phase 1 exploration: one edge-retaining exploration per subject for every state-graph item and its deadlock-freedom item, predicate labels, open nodes with their causes, the reduction pre-check and the manifest forms (ADR-022 GE-1, GM-6, GR-1); not yet implemented -- TC-592 planned |
+| [FR-168](functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md) | FR | Specified: Backward reachability for `possible` and `always possible`, saturating path counting for `unique path`, witnesses, traps and path pairs decisive on partial runs, canonical evidence (ADR-022 §3); an undefined predicate refuting (ADR-022 GV-7); witnesses on a partial run are `WitnessedUnchecked` (RU-5); not yet implemented -- TC-593, TC-612, TC-613, TC-614, TC-619 planned |
+| [FR-169](functional/FR-169-settle-a-state-graph-verdict-with-its-settlement-method.md) | FR | Specified: State-graph verdicts V-9 and V-10 beside V-1 and V-4 to V-8, `ProofBasis::Witness{sources}`, and the settlement method and seed in the terminal record (ADR-022 GV-1 to GV-6); `refuted` with cause `UndefinedEvaluation`; `inconclusive`, `WellDefinednessUnchecked` (RU-5); the state-graph certificate and `check_state_graph`, `Certified` and `Uncertified` (ADR-022 GC-1 to GC-4); not yet implemented -- TC-594, TC-612, TC-613, TC-614, TC-643, TC-644 planned |
+| [FR-170](functional/FR-170-replay-state-graph-evidence.md) | FR | Specified: `replay_model_graph` replays `GraphEvidence` (witness, trap, path pair) through `ModelSystem`, re-exploring a trap's closure (ADR-022 GX-1 to GX-5); undefined-evaluation evidence; not yet implemented -- TC-595, TC-612 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -790,3 +813,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-019](decisions/ADR-019-strong-fairness.md) | ADR | Proposed; strong fairness of operations: the `strong` kind beside `weak` with `whole`/`each` granularity, Streett semantics, recursive SCC refinement on the explicit-state product, back ends, verdicts and a contended-mutex example |
 | [ADR-027](decisions/ADR-027-protocol-transition-system-for-parallel.md) | ADR | Proposed; compiler requirements FR-205 to FR-218; the protocol transition system for `parallel`: protocol subjects and states keyed canonically, step kinds with folded structural moves and atomic attempts, causal interleavings, the memory-model seam, fit with ADR-018's behaviours, deadlocks and fairness, `ProtocolSystem` on FR-101, footprints for partial-order reduction, protocol steps in refinement, compensation, replicated roles and activation on each; owner rulings RU-1 to RU-5 |
 | [ADR-025](decisions/ADR-025-weak-memory-models-for-parallel.md) | ADR | Proposed; compiler requirements FR-219 to FR-229; weak memory models for `parallel`: a source default with request selection of `sc`, x86-TSO or RC11 release-acquire with relaxed and `seq_cst` accesses, as operational models on the explicit-state engine; memory bounds as request budgets, memory fairness, the race-freedom item, reduction rows, counterexamples with buffer and view state, and the preconditions for transfer to code |
+| [ADR-022](decisions/ADR-022-possible-properties-and-state-graph-queries.md) | ADR | Proposed; possible properties and state-graph queries over a model: `possible` (EF), `always possible` (AG EF) and `unique path` as a property family beside temporal claims, their semantics over the explored state graph, witness sampling and backward reachability on the explicit-state engine, witness, trap and path-pair evidence that replays, and verdicts |

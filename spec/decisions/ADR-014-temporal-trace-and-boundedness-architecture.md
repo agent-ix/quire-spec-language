@@ -316,7 +316,8 @@ No new capability kind, flag or mode is added. QSL records; CG settles.
    including `finite_bound_available` (§4).
 4. CG `negotiate_*` applies the QSpec FR-290 advertised-mode table, then the
    candidate's arm decides whether it discharges the IR obligation form
-   (quantifier, induction, composition, infinite-trace formula). An arm that
+   (quantifier, induction, composition, infinite-trace formula, and, amended
+   by ADR-022 SG-4, a state-graph form). An arm that
    does not discharge the form settles `unsupported`, warned,
    `unsupported_projection`/`unsupported-requested-capability`, naming the
    required capability. CG's `negotiate_kani` settles on modes alone today; the
