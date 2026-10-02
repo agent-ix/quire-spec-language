@@ -135,7 +135,7 @@ public outputs differ.
   (MCHyper's method); ADR-018 §3 EN-1, FA-4, CX-5; ADR-011 §1 (S6c, E10).
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (EN-1's phases, fairness filter and canonical lasso),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-173](FR-173-classify-hyper-clauses-into-forms.md),
   [FR-175](FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md),

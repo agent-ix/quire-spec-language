@@ -34,5 +34,5 @@ Tag the tests `#[trace("TC-616", "FR-181-AC-6")]`.
   with `end` `Stopped(ResourceExhausted, MaxStates)`; `inconclusive`,
   `unsettled`, `WellDefinednessUnchecked`, naming `max_states`; not
   `proved`.
-- Step 2: `NoDecision`; `failed`, `resource-incomplete`, naming
+- Step 2: `NoDecision`; `incomplete`, `LimitReached`, naming
   `max_states`.

@@ -204,7 +204,7 @@ pub struct HyperTrace {
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),
   [FR-072](FR-072-implement-typed-replay-result.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-128](FR-128-replay-a-model-counterexample.md) (shared refusals),
   [FR-175](FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md),

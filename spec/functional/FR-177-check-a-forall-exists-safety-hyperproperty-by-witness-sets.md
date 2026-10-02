@@ -129,7 +129,7 @@ partner has failed.
   (SCC phase), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
   (pre-check, scoped fairness), [FR-173](FR-173-classify-hyper-clauses-into-forms.md),
   [FR-184](FR-184-bound-hyper-runs-with-caller-budgets.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md).
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md).
 - QSpec owns the forms and HP-3's evidence (ADR-023 QS-3, QS-6).
 
 ## References

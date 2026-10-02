@@ -94,7 +94,7 @@ each with a path from an initial state to its pre-state.
 ## Dependencies
 
 - ADR-023 §2 HM-9, §4 HC-3, HC-9, HC-10; HV-3; §12 RU-2.
-- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
+- [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-107](FR-107-evaluate-state-clauses-at-s6a.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),
   [FR-173](FR-173-classify-hyper-clauses-into-forms.md),

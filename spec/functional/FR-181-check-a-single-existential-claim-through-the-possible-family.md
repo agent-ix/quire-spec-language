@@ -58,13 +58,13 @@ that no trace exists.
   initial state and its source, `WitnessedUnchecked` with the same lassos,
   `Trapped` naming an initial state with an empty stem, `Undefined`,
   `NoDecision`, or `NoInitialState`; settled by FR-169's map.
-- `GraphEvidence::Witness` whose paths are FR-170 `ModelPath`s with a loop
-  entry set, so each is a lasso in ADR-018 CX-2's step and loop shape; a
-  state-graph witness has no loop entry.
-- `GraphEvidence::Trap` with scope `Product`, naming the initial state whose
-  part of the body-automaton product is closed and holds no fair accepting
-  cycle; a state-graph trap has scope `Model` (FR-170). Replay re-explores
-  the product for scope `Product` and the model closure for scope `Model`.
+- `GraphEvidence::Witness` whose paths are FR-170's `WitnessPath::Lasso`
+  (`ModelLasso`), each a lasso in ADR-018 CX-2's step and loop shape; a
+  state-graph witness is a `WitnessPath::Path`.
+- `GraphEvidence::Trap` with FR-170's `TrapClosure::Product`, naming the
+  initial state whose part of the body-automaton product is closed and
+  holds no fair accepting cycle; a state-graph trap is
+  `TrapClosure::StateGraph`. FR-170 routes a `Product` trap's replay here.
   Each is replayed as stated below.
 
 ## Behavior
@@ -152,7 +152,7 @@ that no trace exists.
 | FR-181-AC-3 | Over the secure vault with FR-176-AC-3's `reset` operation, `exists trace b of V fair { weak V::Vault::reset } { eventually always holds(v.l @ b = 1) }` settles `refuted`, `closed-scope`, and the same clause with no fairness set settles `proved`. | Test (TC-606) |
 | FR-181-AC-4 | AC-1's claim with `max_depth` 1 and `witness_samples` 0 returns `NoDecision` and settles `inconclusive`, `BoundReached{depth: 1}`. AC-1's witness with its loop's last step removed refuses as FR-128 refuses a loop that does not close. | Test (TC-606) |
 | FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0) }`, whose division is evaluated first and has no value at `l = 1`, has a witness lasso looping `step(0)` at `(h, 0)` for each initial state, and still returns `Undefined` at the first product state with `l = 1`, cause `division-by-zero`, settling `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
-| FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `failed`, `resource-incomplete`, naming `max_states`. | Test (TC-616) |
+| FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `incomplete`, `LimitReached`, naming `max_states`. | Test (TC-616) |
 
 ## Dependencies
 

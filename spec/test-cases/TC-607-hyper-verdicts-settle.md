@@ -31,7 +31,7 @@ Tag the tests `#[trace("TC-607", "FR-182-AC-n")]`.
 
 - Step 1: each row as the table states; `MatchUndetermined` and `VacuousMatch` inconclusive.
 - Step 2: `refuted`, `decisive-counterexample` after replay; `proved`, `Exhaustive` and `Reduced` naming `CopySwap`; `refuted`, `decisive-counterexample`.
-- Step 3: `inconclusive`, `VacuousMatch`; `failed`, `resource-incomplete` naming each limit and value; `unsupported`, `unsupported-requested-capability`.
+- Step 3: `inconclusive`, `VacuousMatch`; `incomplete`, `LimitReached` naming each limit and value; `unsupported`, `unsupported-requested-capability`.
 - Step 4: `inconclusive`, `BoundReached{depth: 1}`, `completed`, `pending`, with the HP-1 reading.
 - Step 5: `proved`, `Certified`; `inconclusive`, `CertificateRejected`; `proved`, `decisive-witness`, `Uncertified`.
 - Step 6: `refuted`, `decisive-counterexample`, `UndefinedEvaluation` naming `a` and `b`; `inconclusive`, `MatchUndetermined` twice.

@@ -126,7 +126,7 @@ clause is proved.
   [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md)
   (pre-check, product keys), [FR-173](FR-173-classify-hyper-clauses-into-forms.md),
   [FR-184](FR-184-bound-hyper-runs-with-caller-budgets.md),
-  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md).
+  [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md).
 - QSpec owns projection alignment and its prefix reading (ADR-023 QS-2) and
   the `Projected` counterexample (QS-6).
 
