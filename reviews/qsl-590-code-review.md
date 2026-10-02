@@ -101,3 +101,9 @@ Round 2, reviewed at db2fb6d116502873bb9fb1718a0ddb9e2758bee7 (fix commit db2fb6
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-004 | fixed | db2fb6d11: FR-109's disposition category list now reads "`success`, `violation`, `undefined`, `refusal`, `unsupported`, `incomplete` or `internal-failure`". The per-category record list covers "an `evaluate` refusal, unsupported or incomplete", and the evaluate mapping says "category `refusal`, `unsupported` or `incomplete`". |
+
+Round 3, reviewed at db8b11c19bc99fb74f328270a81f71c7fb0fd24a (fix commit db8b11c19).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | db8b11c19: FR-109's undefined bullet now reads "category `undefined` (FR-285) with `UndefinedEvaluation{cause}`, and exit 10 (ADR-018 RU-5, QSpec FR-301)". FR-285 backs the category, and RU-5 and FR-301 back only the exit. QSpec FR-301's clause-run label is left to STD-141 in Linear. |
