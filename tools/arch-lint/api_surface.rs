@@ -192,8 +192,8 @@ pub(crate) struct Rule {
     pub(crate) debt_list: &'static [DebtEntry],
 }
 
-/// today's five T-12 rules (ADR-011 §3 FB-05; ADR-013 O-04, O-05, O-13/QC-21,
-/// T-1).
+/// today's six T-12 rules (ADR-011 §3 FB-05, T-12; ADR-013 O-04, O-05,
+/// O-13/QC-21, T-1).
 pub(crate) const RULES: &[Rule] = &[
     Rule {
         id: "T12-A",
@@ -366,6 +366,36 @@ pub(crate) const RULES: &[Rule] = &[
              the one direct call in `read_checked_package_v2`'s `AdmittedV2` arm, across every \
              workspace crate's `src/`; the allowed caller is `qsl-package`'s `checked_v2` \
              since X-7",
+        ),
+        shipped_only: true,
+        debt_list: &[],
+    },
+    Rule {
+        id: "T12-F",
+        description: "only layer-4 `qsl-package`'s `checked_v2` decodes an admitted \
+                      `NodeKey` (ADR-011 T-12, \"Decoding an admitted key\")",
+        role: Role::Qsl,
+        // `quire_exact::NodeKey::decode_admitted` re-reads a key `check`
+        // minted from the bytes of a package that already passed the
+        // admitted-package identity check. The bare path matches it called
+        // or passed as a function value (`.map(NodeKey::decode_admitted)`);
+        // `Self::decode_admitted` inside `impl NodeKey` is quire-exact's own,
+        // which this scan excludes.
+        call_patterns: &["NodeKey::decode_admitted"],
+        forbidden_patterns: &[],
+        forbidden_modules: &[],
+        // The I2 reader, which holds an admitted package only after
+        // `read_checked_package_v2`'s identity checks (IR's I04 admission,
+        // the `package_id` recompute-and-match and the pinned lock).
+        allowed_callers: &[AllowedCaller {
+            crate_src: "qsl-package/src",
+            module_prefix: "checked_v2",
+        }],
+        requires_path: None,
+        pending_reason: "",
+        scope_note: Some(
+            "scoped to QSL's own tree; a backend names its own admitted-package reader in its \
+             own run of the check",
         ),
         shipped_only: true,
         debt_list: &[],
@@ -1176,7 +1206,7 @@ pub(crate) fn evaluate(
 /// (layer SV), a consumer of the kernel that calls none of these
 /// constructors: it resolves node ids by lookup among admitted keys. A module path is relative to its own crate's
 /// `src/`, so `check` (T12-B), `model` (T12-C, T12-D) and `library` name
-/// `qsl-semantics`' modules, and `checked_v2` (T12-E) `qsl-package`'s. Each later layer crate joins this list when it is
+/// `qsl-semantics`' modules, and `checked_v2` (T12-E, T12-F) `qsl-package`'s. Each later layer crate joins this list when it is
 /// extracted. `quire-exact` and `qsl-attrs` are excluded: `quire-exact` is the kernel these rules'
 /// constructors are defined *in*, never a caller of them (T12-B/T12-C/T12-D's
 /// own scope notes already exclude checking a copy of the constructor
@@ -2646,6 +2676,93 @@ mod tests {
             .unwrap();
         assert_is_qsl_root(&qsl_root).unwrap();
         let rule = RULES.iter().find(|rule| rule.id == "T12-E").unwrap();
+        let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
+        assert!(outcome.passed());
+    }
+
+    /// tc_arch_lint_api_surface_027 (T12-F, TC-157, FR-060-AC-3; ADR-011
+    /// T-12): a `NodeKey::decode_admitted` call from any module but
+    /// `qsl-package`'s `checked_v2` -- `library`, another `qsl-package`
+    /// module, the root crate, or a `checked_v2` module in another crate --
+    /// is a violation, called or passed as a value. The call in
+    /// `qsl-package`'s `checked_v2` is not, and it is not a T12-B mint,
+    /// while a `from_digest` mint in `checked_v2` still fails T12-B.
+    #[trace("TC-157", "FR-060-AC-3")]
+    #[test]
+    fn tc_arch_lint_api_surface_027_decode_admitted_outside_the_reader_is_a_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_qsl_roots(dir.path());
+        write(
+            dir.path(),
+            "qsl-package/src/checked_v2.rs",
+            "fn read(bytes: [u8; 32]) {\n    let _ = NodeKey::decode_admitted(bytes);\n}\n\
+             fn mint(bytes: [u8; 32]) {\n    let _ = NodeKey::from_digest(bytes);\n}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-package/src/emit.rs",
+            "fn emit() {\n    let decode = NodeKey::decode_admitted;\n}\n",
+        );
+        write(
+            dir.path(),
+            "qsl-semantics/src/library/mod.rs",
+            "fn resolve(bytes: [u8; 32]) {\n    let _ = quire_exact::NodeKey::decode_admitted(bytes);\n}\n",
+        );
+        write(
+            dir.path(),
+            "src/checked_v2.rs",
+            "fn read(bytes: [u8; 32]) {\n    let _ = NodeKey::decode_admitted(bytes);\n}\n",
+        );
+        let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
+        let outcome = evaluate(rule, dir.path(), Some(dir.path())).unwrap();
+        assert_eq!(outcome.status, RuleStatus::Live);
+        let found: Vec<(&str, usize, &str)> = outcome
+            .violations
+            .iter()
+            .map(|site| (site.module.as_str(), site.line, site.function.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                ("emit", 2, "emit"),
+                ("library", 2, "resolve"),
+                ("checked_v2", 2, "read"),
+            ],
+            "{:?}",
+            outcome.violations
+        );
+        assert!(!outcome.passed());
+
+        let t12b = RULES.iter().find(|rule| rule.id == "T12-B").unwrap();
+        let minted = evaluate(t12b, dir.path(), Some(dir.path())).unwrap();
+        let mints: Vec<(&str, usize, &str)> = minted
+            .violations
+            .iter()
+            .map(|site| (site.module.as_str(), site.line, site.function.as_str()))
+            .collect();
+        assert_eq!(
+            mints,
+            vec![("checked_v2", 5, "mint")],
+            "{:?}",
+            minted.violations
+        );
+    }
+
+    /// tc_arch_lint_api_surface_028 (T12-F on this repository's own tree):
+    /// no shipped module outside `qsl-package`'s `checked_v2` decodes an
+    /// admitted `NodeKey`. This is the CI gate for the rule: it runs in
+    /// `cargo test --workspace` (`make ci`).
+    #[trace("TC-157", "FR-060-AC-2")]
+    #[test]
+    fn tc_arch_lint_api_surface_028_decode_admitted_live_tree_has_no_other_caller() {
+        let qsl_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        assert_is_qsl_root(&qsl_root).unwrap();
+        let rule = RULES.iter().find(|rule| rule.id == "T12-F").unwrap();
         let outcome = evaluate(rule, &qsl_root, Some(&qsl_root)).unwrap();
         assert_eq!(outcome.status, RuleStatus::Live);
         assert!(outcome.violations.is_empty(), "{:?}", outcome.violations);
