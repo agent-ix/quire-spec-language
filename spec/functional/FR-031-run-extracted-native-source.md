@@ -26,8 +26,8 @@ source. Exactly one authored clause binding selects the Quire heading and native
 clause. Omission preserves ordinary native-source execution. Supplied null or
 positional extraction/body records, duplicate and unknown fields refuse.
 The body and original-source records share one closed wire identity definition;
-the decoded native/formal pair is explicit, and each identity keeps the revision
-its own record states.
+the decoded native/formal pair is explicit, and each identity is a document
+identity plus the content digest of that document's bytes.
 That identity definition carries the four source labels of
 [FR-001](FR-001-read-exact-source.md) ([FR-026](FR-026-run-standalone-native-workflow.md)).
 
