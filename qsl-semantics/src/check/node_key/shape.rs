@@ -117,7 +117,7 @@ impl Encode for Shape<'_> {
         while let Some(task) = tasks.pop() {
             match task {
                 Task::Value(node) => {
-                    let top = std::mem::replace(&mut at_root, false);
+                    let top = std::mem::take(&mut at_root);
                     match node.node() {
                         Node::Object(members) => {
                             writer.begin_object()?;

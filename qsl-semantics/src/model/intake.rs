@@ -58,7 +58,6 @@ use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::{LocatedSpan, Position};
 use quire_canonical::Node;
 use quire_exact::Presence;
-use quire_semantic_value::semantic_node::IDENTITY_LIMITS as LIMITS;
 
 mod unit;
 pub use unit::{admit_unit, package_input, SelectedModel, UnitIntakeCause, UnitIntakeRefusal};
@@ -2576,7 +2575,8 @@ mod tests {
     fn canonical(value: &Value) -> Vec<u8> {
         let text = serde_json::to_vec(value).expect("the test value serializes");
         let document = quire_canonical::read(&text, u64::MAX).expect("the test value reads");
-        quire_canonical::to_vec(&document, LIMITS).expect("the test value has an RFC 8785 encoding")
+        quire_canonical::to_vec(&document, INTAKE_DIGEST_LIMITS)
+            .expect("the test value has an RFC 8785 encoding")
     }
 
     /// Test document bytes through intake's one parse.
