@@ -16,6 +16,7 @@
 //! no caller skips the requires-bound check or the sampler's
 //! `GeneratorMismatch` check.
 
+mod expansion;
 mod explore;
 mod frontier;
 mod key;
@@ -24,7 +25,8 @@ mod order;
 mod sample;
 mod trace;
 
-pub use explore::{explore_request, Limits, Outcome, Stats, TransitionSystem};
+pub use expansion::{Expansion, ExpansionStop, StateFindings};
+pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound};

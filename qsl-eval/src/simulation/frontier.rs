@@ -9,13 +9,33 @@ use qsl_foundation::digest::DigestRecord;
 /// digest, never the full key bytes (FR-101).
 pub type Frontier = Vec<DigestRecord>;
 
-/// Which explicit bound stopped a run before its frontier went empty.
+/// Which resource limit stopped a run before its frontier went empty, with
+/// the value it was set to. The search horizon `max_depth` is not a limit
+/// (FR-101-AC-7): reaching it is `Outcome::BoundReached`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Limit {
-    /// The distinct-state ceiling (`Limits::max_states`).
-    States,
-    /// The breadth-first depth ceiling (`Limits::max_depth`).
-    Depth,
-    /// The explored-transition ceiling (`Limits::max_transitions`).
-    Transitions,
+    /// The distinct-state limit (`Limits::max_states`) and its value.
+    States(usize),
+    /// The explored-transition limit (`Limits::max_transitions`) and its
+    /// value.
+    Transitions(usize),
+}
+
+impl Limit {
+    /// The setting name that raises this limit (FR-255): `explore.states`
+    /// or `explore.transitions`. The library raises it by setting the
+    /// matching `Limits` member.
+    pub const fn setting(self) -> &'static str {
+        match self {
+            Self::States(_) => "explore.states",
+            Self::Transitions(_) => "explore.transitions",
+        }
+    }
+
+    /// The value the limit was set to when the run reached it.
+    pub const fn value(self) -> usize {
+        match self {
+            Self::States(value) | Self::Transitions(value) => value,
+        }
+    }
 }

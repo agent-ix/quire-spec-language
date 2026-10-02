@@ -10,14 +10,19 @@ use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
 use serde::Serialize;
 
+use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{plain_digest, EncodingRefusal};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
-use crate::simulation::order::{ordered_successors, sorted_initial};
+use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
 
 /// The one generator `sample_request` runs (FR-101).
 const SAMPLER_IDENTITY: &str = "quire.simulation.sampler/v1";
+
+/// The choice index of a step's one uniform choice over its enabled
+/// successors, as its decimal preimage spelling (QSpec FR-181).
+const STEP_CHOICE: &str = "0";
 
 /// A source of draws for sampled exploration.
 ///
@@ -79,8 +84,9 @@ impl U256 {
     }
 }
 
-/// The `quire.simulation.sampler/v1` generator: a
-/// counter-mode SHA-256 rejection sampler over `{seed, trace, step, draw}`.
+/// The `quire.simulation.sampler/v1` generator: a counter-mode SHA-256
+/// rejection sampler over `{choice, draw, seed, step, trace}`. Each step
+/// makes one uniform choice, choice index 0 (QSpec FR-181).
 pub(crate) struct PinnedSampler {
     seed: u64,
     trace: u64,
@@ -94,10 +100,12 @@ pub(crate) struct PinnedSampler {
     digests_computed: u64,
 }
 
-/// One draw's JCS preimage: `{"draw":"<decimal>","seed":"<decimal>",
-/// "step":"<decimal>","trace":"<decimal>"}`.
+/// One draw's JCS preimage: `{"choice":"<decimal>","draw":"<decimal>",
+/// "seed":"<decimal>","step":"<decimal>","trace":"<decimal>"}` (QSpec
+/// FR-181).
 #[derive(Serialize)]
 struct DrawPreimage {
+    choice: String,
     draw: String,
     seed: String,
     step: String,
@@ -143,6 +151,7 @@ impl Sampler for PinnedSampler {
         let mut draw: u64 = 0;
         loop {
             let preimage = DrawPreimage {
+                choice: STEP_CHOICE.to_owned(),
                 draw: draw.to_string(),
                 seed: self.seed.to_string(),
                 step: step.to_string(),
@@ -177,8 +186,10 @@ fn accepts(v: U256, quotient: U256, n64: u64, always_accepts: bool) -> bool {
 
 /// Draw one sampled run from `system`, starting at trace `trace_index mod m`
 /// among `system`'s `m` distinct initial states (no draw selects the
-/// start), stopping after `max_steps` transitions or at the first state
-/// with no successors, whichever comes first.
+/// start). Every state on the trace is expanded, the last included, and its
+/// findings recorded at its step index. The run ends at the first state
+/// whose expansion stops, after `max_steps` transitions, or at the first
+/// state with no successors, checked in that order.
 ///
 /// Returns `Ok(None)` when `system.initial()` returns no states.
 ///
@@ -192,7 +203,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     seed: u64,
     trace_index: u64,
     max_steps: usize,
-) -> Result<Option<Trace<S::TransitionId>>, EncodingRefusal> {
+) -> Result<Option<Trace<S::TransitionId, S::Finding>>, EncodingRefusal> {
     let mut initial = sorted_initial(system)?;
     if initial.is_empty() {
         return Ok(None);
@@ -202,16 +213,32 @@ pub(crate) fn sample<S: TransitionSystem>(
     // `start < m == initial.len()`, so `swap_remove` never panics.
     let chosen = initial.swap_remove(start);
     let mut current = chosen.state;
+    let mut current_digest = chosen.digest;
     let initial_digest = chosen.digest;
 
     let mut generator = PinnedSampler::new(seed, trace_index);
     let mut steps = Vec::new();
-    let mut stopped = StopReason::StepLimit;
-    for _ in 0..max_steps {
-        let mut successors = ordered_successors(system, &current)?;
+    let mut findings = Vec::new();
+    let stopped = loop {
+        let (mut successors, state_findings) = match expand(system, &current)? {
+            Expanded::Successors {
+                successors,
+                findings,
+            } => (successors, findings),
+            Expanded::Stopped(stop) => break StopReason::Stopped(stop.cause),
+        };
+        if !state_findings.is_empty() {
+            findings.push(StateFindings {
+                state: current_digest,
+                depth: steps.len(),
+                findings: state_findings,
+            });
+        }
+        if steps.len() >= max_steps {
+            break StopReason::StepLimit;
+        }
         if successors.is_empty() {
-            stopped = StopReason::NoSuccessors;
-            break;
+            break StopReason::NoSuccessors;
         }
         let n = successors.len();
         // `next_index(n)` always returns an index `< n` (its own contract),
@@ -219,15 +246,17 @@ pub(crate) fn sample<S: TransitionSystem>(
         let index = generator.next_index(n);
         let chosen = successors.swap_remove(index);
         current = chosen.state;
+        current_digest = chosen.digest;
         steps.push(Step {
             transition: chosen.transition,
             key: chosen.digest,
         });
-    }
+    };
 
     Ok(Some(Trace {
         initial: initial_digest,
         steps,
+        findings,
         provenance: Some(SampleProvenance {
             seed,
             trace: trace_index,
@@ -274,7 +303,7 @@ pub fn sample_request<S: TransitionSystem>(
     seed: u64,
     trace: u64,
     max_steps: usize,
-) -> Result<Trace<S::TransitionId>, NotSimulated> {
+) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
     if !is_pinned_sampler(sampler) {
         return Err(NotSimulated::GeneratorMismatch {
             supplied: sampler.clone(),
@@ -290,12 +319,14 @@ mod tests {
 
     use super::*;
 
-    /// TC-454 step 1b: the pinned sampler's step-0 preimage bytes and digest
-    /// at seed 424242, trace 0, `n = 5` -- QSpec TC-210's own vector.
+    /// TC-454 step 1b: the sampler's step-0 preimage bytes and digest at
+    /// seed 424242, trace 0, choice 0, `n = 5` -- QSpec TC-210's vector
+    /// under FR-181's `choice` preimage member.
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
     fn tc_454_step_0_preimage_and_digest_match_the_pinned_vector() {
         let preimage = DrawPreimage {
+            choice: "0".to_owned(),
             draw: "0".to_owned(),
             seed: "424242".to_owned(),
             step: "0".to_owned(),
@@ -306,13 +337,13 @@ mod tests {
         let bytes = quire_canonical::to_vec(&preimage, limits).expect("a draw preimage encodes");
         assert_eq!(
             bytes,
-            br#"{"draw":"0","seed":"424242","step":"0","trace":"0"}"#
+            br#"{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}"#
         );
         let digest = plain_digest(&preimage);
         let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
         assert_eq!(
             hex,
-            "cb7d4b3b8b8491d8310ccc1e07c3ee236d3fe86cf713d1851533a85ef6682622"
+            "d5160380d7495443315376de306a5d3613f3e010df74a5db92853829205995f2"
         );
     }
 
@@ -340,18 +371,20 @@ mod tests {
     /// under byte reversal for those two moduli specifically. `n = 2` and
     /// `n = 7` do not share that property, and a little-endian reading
     /// gives a different sequence at each (recomputed independently in
-    /// Python with `hashlib`): seed 424242, trace 0, `n = 2` is
-    /// `0, 0, 0, 0, 1`, and `n = 7` is `0, 2, 6, 2, 4`.
+    /// Python with `hashlib`, under the `choice` preimage member): seed
+    /// 424242, trace 0, `n = 2` is `0, 1, 0, 1, 1` (little-endian
+    /// `1, 0, 1, 1, 0`), and `n = 7` is `6, 2, 6, 6, 1` (little-endian
+    /// `1, 5, 6, 5, 2`).
     #[trace("TC-454", "FR-101-AC-3")]
     #[test]
     fn tc_454_n2_and_n7_vectors_distinguish_byte_order() {
         let mut two = PinnedSampler::new(424_242, 0);
         let indices: Vec<usize> = (0..5).map(|_| two.next_index(2)).collect();
-        assert_eq!(indices, vec![0, 0, 0, 0, 1]);
+        assert_eq!(indices, vec![0, 1, 0, 1, 1]);
 
         let mut seven = PinnedSampler::new(424_242, 0);
         let indices: Vec<usize> = (0..5).map(|_| seven.next_index(7)).collect();
-        assert_eq!(indices, vec![0, 2, 6, 2, 4]);
+        assert_eq!(indices, vec![6, 2, 6, 6, 1]);
     }
 
     /// SR-672 FND-005: `divmod_u64` and `mul_u64` on synthetic values whose
