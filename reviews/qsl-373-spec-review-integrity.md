@@ -45,3 +45,18 @@ Ticket: QSL-373 (PR #573). This review covers ADR-026, FR-230 to FR-254, TC-685 
 ## Verdict
 
 ADR-026 and FR-230 to FR-254 agree with each other on structure, ids and index rows. They disagree with the QSpec counterpart on refusal codes: FR-230's timed-model refusals (high) and FR-233's untimed `model-time` refusal. TV-1's `where` is narrower than QSpec FR-416's, and the ADR omits the qualified-core placement of the checker. Not mergeable until FND-001 is fixed.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-245 (lines 125-126), FR-248 (line 101) and FR-239 (lines 186-187) still cite 'ADR-029 CB-2 … (draft)'. Cite ADR-029 with its owning ticket, QSL-390, and drop '(draft)'. | spec/functional/FR-245-check-a-zone-certificate-in-the-qualified-core.md:125-126 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 41f6943a |
+| FND-002 | fixed | 41f6943a |
+| FND-003 | fixed | 41f6943a |
+| FND-004 | fixed | 41f6943a |

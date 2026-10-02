@@ -43,3 +43,10 @@ Ticket: QSL-373 (PR #573). This review covers ADR-026, FR-230 to FR-254, TC-685 
 ## Verdict
 
 Lane and ownership boundaries are kept: QSpec owns grammar and wire, CG and the runtime own harnesses and monitors, and ticket ids stay in References. Two FRs restate QSpec semantics normatively (FR-234's pointwise meaning, FR-253's race) instead of citing QSpec FR-416 and FR-420.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 41f6943a |
+| FND-002 | fixed | 41f6943a |

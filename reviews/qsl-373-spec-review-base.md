@@ -64,3 +64,27 @@ Ticket: QSL-373 (PR #573). This review covers ADR-026, FR-230 to FR-254, TC-685 
 ## Verdict
 
 The design follows every owner ruling and the delay decision, and the arithmetic in the examples is right. Two problems are semantic: an undefined value or violation reached only through a time-locked state is refuted, against TS-4/TD-1 and QSpec FR-416 (FND-001 high, FND-002), and vacuity is missing from the TT-1/TT-2/deadlock proof path (FND-005). The digitization path choice is unspecified, so four ACs disagree on one item's outcome (FND-003), and time-lock replay picks its arm by the wrong test (FND-004). The branch needs a rebase onto the current #366 (FND-009). Not mergeable as it stands.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | medium | The fix routes a non-probabilistic TT-1 or deadlock-freedom item to EN-5 when it names `exact` evidence. `exact` evidence is a setting of probabilistic claims (ADR-024 SV-9), and EN-5's digital route reads only probabilistic claims (ADR-028 TA-1: 'A probabilistic claim over a timed subject'; QSpec FR-421: 'a probabilistic-satisfaction item'). A temporal-satisfaction item has no `exact` evidence kind and EN-5 has no reading for it. Either define that route in ADR-028 and QSpec FR-421, or drop it: EN-6 decides every non-probabilistic timed item, and `HoldsDigitized` comes only from EN-5 over probabilistic claims (FR-243-AC-1/AC-2, FR-235-AC-2 and TC-698 change with it). | spec/functional/FR-243-digitize-a-closed-timed-subject-for-explicit-state-checking.md:22-35, 49-51 |
+| FND-013 | medium | For a miss by job `q > 0`, the checker recomputes job `q`'s iterates but never checks that jobs 0 to `q - 1` keep the level-`i` busy period open (each earlier job's completion `w_p` exceeds the next release, `w_p > (p + 1) · T_i − J_i`). Past the end of the busy period, the job-`q` recurrence overstates the completion time, so evidence naming such a `q` could refute a schedulable set. Add that check (or have the evidence carry the earlier jobs' completions) to FR-248 and RT-7. | spec/functional/FR-248-settle-a-closed-form-verdict-after-recomputing-its-evidence.md:59-64 |
+| FND-014 | low | FR-235's Inputs name only `ZoneCheckOutcome` (FR-239), which no longer has `HoldsDigitized`, while its table maps `HoldsDigitized` (FR-243). Add FR-243's `DigitalOutcome` to the inputs, or drop the row with FND-012. | spec/functional/FR-235-settle-a-timed-verdict-as-a-terminal-record.md:48, 77 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 41f6943a |
+| FND-002 | fixed | 41f6943a |
+| FND-003 | fixed | 41f6943a |
+| FND-004 | fixed | 41f6943a |
+| FND-005 | fixed | 41f6943a |
+| FND-006 | fixed | 41f6943a |
+| FND-007 | fixed | 41f6943a |
+| FND-008 | fixed | 41f6943a |
+| FND-009 | fixed | 41f6943a |
+| FND-010 | fixed | 41f6943a |
+| FND-011 | fixed | 41f6943a |

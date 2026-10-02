@@ -44,3 +44,11 @@ Ticket: QSL-373 (PR #573). This review covers ADR-026, FR-230 to FR-254, TC-685 
 ## Verdict
 
 Statements are EARS-conformant apart from the three quire warnings in FR-253 and FR-254 and one sentence in ADR-026 RT-2 that states what QSL does not do. All low.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 41f6943a |
+| FND-002 | fixed | 41f6943a |
+| FND-003 | fixed | 41f6943a |
