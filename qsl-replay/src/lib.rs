@@ -172,14 +172,11 @@ mod redaction_tests {
 
         let source_digest_record = DigestRecord::mint(DigestDomain::SourceBytesV1, correct_digest);
         let wire = ReplayRequestWire {
-            contract_version: "quire.native-runtime/v1".to_owned(),
-            capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
             ),
-            package_contract_version: "quire.checked-package/v2".to_owned(),
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
@@ -194,7 +191,7 @@ mod redaction_tests {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
             }]),
-            originating_counterexample_identity: [2; 32],
+            obligation_identity: [2; 32],
             backend: (
                 "kani-backend-1".to_owned(),
                 Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -223,14 +220,11 @@ mod redaction_tests {
         // mismatch) still returns the full content through the typed
         // accessor.
         let valid_wire = ReplayRequestWire {
-            contract_version: "quire.native-runtime/v1".to_owned(),
-            capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, [1; 32]).hex(),
             ),
-            package_contract_version: "quire.checked-package/v2".to_owned(),
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
@@ -245,7 +239,7 @@ mod redaction_tests {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: WitnessValue::Integer(1),
             }]),
-            originating_counterexample_identity: [2; 32],
+            obligation_identity: [2; 32],
             backend: (
                 "kani-backend-1".to_owned(),
                 Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),

@@ -251,14 +251,11 @@ pub(super) fn request(
         ..unlimited()
     };
     ReplayRequestWire {
-        contract_version: "quire.native-runtime/v1".to_owned(),
-        capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
         profile_selections: Vec::new(),
         package_id: (
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         ),
-        package_contract_version: "quire.checked-package/v2".to_owned(),
         source_digests: vec![(
             AUTHORITY.to_owned(),
             IDENTITY.to_owned(),
@@ -273,7 +270,7 @@ pub(super) fn request(
         ])
         .unwrap(),
         source: witness_source(),
-        originating_counterexample_identity: [2; 32],
+        obligation_identity: [2; 32],
         backend: (
             "kani-backend-1".to_owned(),
             Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -346,7 +343,6 @@ pub(super) fn packet<P: FamilyPayload>(
             Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
             package_id.hex(),
         )),
-        package_contract_version: Some("quire.checked-package/v2".to_owned()),
         source_digests: Some(vec![(
             AUTHORITY.to_owned(),
             IDENTITY.to_owned(),

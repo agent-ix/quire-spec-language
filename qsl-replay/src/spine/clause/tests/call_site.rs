@@ -359,3 +359,59 @@ fn call_site_refuses_an_unsupplied_domain_package_as_model_intake() {
     };
     assert_eq!(alias, "Config");
 }
+
+/// FR-121-AC-14 (TC-516 step 14): AC-5's `UnknownOperation` and AC-8's
+/// `UnknownClause` give `missing_declaration`, and AC-9's `ModelIntake`
+/// gives the code `replay` gives the same unit with no domain package.
+#[trace("TC-516", "FR-121-AC-14")]
+#[test]
+fn call_site_refusal_codes_for_operations_clauses_and_intake() {
+    let refusal = operation_site(operation("Config", "ConfigVersion", "nope"))
+        .expect_err("the selection names no operation frame");
+    assert!(
+        matches!(*refusal, CallSiteRefusal::UnknownOperation { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
+
+    let (unit, document) = two_operation_unit(true);
+    let refusal = locate(&unit, &document, &ClauseName(identifier("Absent")))
+        .expect_err("Absent declares no state clause");
+    assert!(
+        matches!(*refusal, CallSiteRefusal::UnknownClause { .. }),
+        "{refusal:?}"
+    );
+    assert_eq!(refusal.code(), qsl_foundation::Code::MissingDeclaration);
+
+    let refusal = call_site(
+        source(),
+        "call-site.native",
+        unit.as_bytes(),
+        [],
+        &DependencyInput::default(),
+        &ClauseName(identifier("ParentOrder")),
+    )
+    .expect_err("no domain package is supplied");
+    assert!(
+        matches!(*refusal, CallSiteRefusal::ModelIntake { .. }),
+        "{refusal:?}"
+    );
+    let mut wire = super::frame_replay::request(
+        unit.as_bytes(),
+        &document,
+        qsl_foundation::digest::DigestRecord::mint(
+            qsl_foundation::digest::DigestDomain::PackageSemanticV2,
+            [4; 32],
+        ),
+        &[],
+    );
+    wire.byte_provision.retain(|(domain, _, _)| {
+        domain.as_deref() != Some(qsl_foundation::digest::DigestDomain::Sha256Jcs.as_str())
+    });
+    let replayed = crate::replay(wire).expect_err("no domain package is provided");
+    assert!(
+        matches!(replayed, crate::ReplayRefusal::Recompile(_)),
+        "{replayed:?}"
+    );
+    assert_eq!(refusal.code(), replayed.code());
+}

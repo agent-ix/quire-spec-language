@@ -144,13 +144,6 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 
 ## Status
 
-Remaining work (implementation A1, QSL-470): `qsl-replay/src/request.rs`
-still carries the `contract_version`, vocabulary and `package_contract_version`
-members, checks them, traces the deleted FR-071-AC-4, FR-071-AC-8, TC-188 and
-TC-445, and names the identity member `originating_counterexample_identity`.
-The members, their checks and those traces are deleted, and the member is
-renamed `obligation_identity` (FR-098, ADR-013 O-26).
-
 Remaining work (implementation, Linear QSL-381): each package-reference source entry still
 carries the revision namespace and revision; it carries the two labels and
 the digest (QSpec STD-150).

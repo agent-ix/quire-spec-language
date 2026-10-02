@@ -148,13 +148,12 @@ pub struct DependencyEntryWire {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplayRequest {
     package_id: DigestRecord,
-    package_contract_version: String,
     source_digests: Vec<RawSourceRef>,
     dependencies: Vec<DependencyEntry>,
     selected_function: QualifiedName,
     source: ReplaySource,
     profile_selections: Vec<ProfileSelection>,
-    originating_counterexample_identity: ObligationIdentity,
+    obligation_identity: ObligationIdentity,
     backend: Backend,
     state_environment: StateEnvironment,
     accounting_limits: ScalarLimits,
@@ -166,10 +165,6 @@ impl ReplayRequest {
     /// The package this request replays against.
     pub fn package_id(&self) -> DigestRecord {
         self.package_id
-    }
-    /// The package's declared contract version.
-    pub fn package_contract_version(&self) -> &str {
-        &self.package_contract_version
     }
     /// The package's declared source references.
     pub fn source_digests(&self) -> &[RawSourceRef] {
@@ -194,13 +189,14 @@ impl ReplayRequest {
     /// The semantic profile selections in effect for the proving run
     /// (ADR-013 O-25/QC-8: one of the #231 envelope members O-26 carries
     /// into the request). Each was validated against the closed known set
-    /// at decode time (FR-071-AC-4).
+    /// at decode time.
     pub fn profile_selections(&self) -> &[ProfileSelection] {
         &self.profile_selections
     }
-    /// The counterexample this request replays.
-    pub fn originating_counterexample_identity(&self) -> ObligationIdentity {
-        self.originating_counterexample_identity
+    /// The obligation this request replays: the ADR-013 O-09 obligation
+    /// digest, as on the frame and state-clause paths (ADR-013 O-26).
+    pub fn obligation_identity(&self) -> ObligationIdentity {
+        self.obligation_identity
     }
     /// The backend that produced the originating counterexample.
     pub fn backend(&self) -> &Backend {
@@ -225,23 +221,17 @@ impl ReplayRequest {
     }
 }
 
-/// The wire shape [`ReplayRequest::decode`] reads: exactly the FR-323
-/// `quire.native-runtime/v1` members (`package`, `selection`,
-/// `state_environment`, `limits`, `replay`) plus the QC-1 byte provision.
+/// The in-process shape [`ReplayRequest::decode`] reads: the FR-323
+/// members (`package`, `selection`, `state_environment`, `limits`,
+/// `replay`) plus the QC-1 byte provision. It is never read from bytes, so
+/// it carries no contract version or vocabulary member: the version check
+/// belongs to a byte reader, and none exists yet.
 pub struct ReplayRequestWire {
-    /// Must equal `REQUEST_CONTRACT_VERSION` (`"quire.native-runtime/v1"`)
-    /// or decoding refuses.
-    pub contract_version: String,
-    /// Must equal `KNOWN_CAPABILITY_VOCABULARY`
-    /// (`"quire.capability-kind/v1"`) or decoding refuses.
-    pub capability_vocabulary: Option<String>,
     /// The semantic profile selections; each must name a known profile.
     pub profile_selections: Vec<ProfileSelection>,
     /// `(digest domain, digest hex)` naming the package this request
     /// replays against.
     pub package_id: (Option<String>, String),
-    /// The package's declared contract version.
-    pub package_contract_version: String,
     /// `(authority, identity, revision namespace, revision, digest domain,
     /// digest hex)` per declared source reference.
     pub source_digests: Vec<SourceDigestWire>,
@@ -252,8 +242,9 @@ pub struct ReplayRequestWire {
     pub selected_function: QualifiedName,
     /// The witness or input replay source.
     pub source: ReplaySource,
-    /// The counterexample this request replays.
-    pub originating_counterexample_identity: [u8; 32],
+    /// The obligation this request replays: the ADR-013 O-09 obligation
+    /// digest.
+    pub obligation_identity: [u8; 32],
     /// `(identity, manifest digest domain, manifest digest hex)` for the
     /// backend that produced the originating counterexample.
     pub backend: (String, Option<String>, String),
@@ -267,14 +258,6 @@ pub struct ReplayRequestWire {
     pub byte_provision: Vec<(Option<String>, String, Vec<u8>)>,
 }
 
-const REQUEST_CONTRACT_VERSION: &str = "quire.native-runtime/v1";
-/// The one package contract version this reader admits for
-/// `package_contract_version` (ADR-013 O-22): the layer-4 `package` byte
-/// reader's own `quire.checked-package/v2` wire (QSpec FR-322). A request
-/// naming any other version refuses -- this reader never negotiates or
-/// infers a version from content.
-const PACKAGE_CONTRACT_VERSION: &str = "quire.checked-package/v2";
-const KNOWN_CAPABILITY_VOCABULARY: &str = "quire.capability-kind/v1";
 const KNOWN_SEMANTIC_PROFILES: &[&str] = &["quire.profile.v1"];
 /// The role a semantic-profile selection fills in a replay request.
 const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
@@ -282,21 +265,9 @@ const SEMANTIC_PROFILE_ROLE: &str = "replay.semantic_profile_selections";
 /// [`ReplayRequest::decode`]'s structured refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ReplayRequestRefusal {
-    /// `contract_version` is not exactly `quire.native-runtime/v1`.
-    #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.native-runtime/v1 contract version")]
-    UnknownContractVersion(String),
-    /// `package_contract_version` is not exactly `quire.checked-package/v2`
-    /// (ADR-013 O-22): the catalog's unsupported-wire refusal,
-    /// naming the actual version the request carried.
-    #[error("unknown_wire/unsupported-wire: {0:?} is not the admitted quire.checked-package/v2 package contract version")]
-    UnknownPackageContractVersion(String),
-    /// `capability_vocabulary` is absent, or not exactly
-    /// `quire.capability-kind/v1`.
-    #[error("invalid_capability/unsupported-version: capability_vocabulary is not the admitted quire.capability-kind/v1")]
-    UnknownCapabilityVocabulary,
     /// A profile selection names a semantic profile outside the closed
     /// known set: catalog `unknown_profile`/`unsupported-selection`
-    /// (revision `1-draft.3`), not a capability-vocabulary refusal. It
+    /// (revision `1-draft.3`). It
     /// retains the supplied selection and the role it was supplied for, as
     /// that catalog row requires.
     #[error(
@@ -370,14 +341,9 @@ fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayReque
 }
 
 impl ReplayRequestRefusal {
-    /// The catalog code of this refusal. The native catalog has no
-    /// `invalid_capability` code, so an unknown capability vocabulary
-    /// reports `unknown_wire`, the code of an unadmitted wire version.
+    /// The catalog code of this refusal.
     pub fn code(&self) -> Code {
         match self {
-            Self::UnknownContractVersion(_)
-            | Self::UnknownCapabilityVocabulary
-            | Self::UnknownPackageContractVersion(_) => Code::UnknownWire,
             Self::UnknownSemanticProfile { .. } => Code::UnknownProfile,
             Self::DigestDomainMismatch(_) | Self::ByteDigestMismatch(_) => Code::StaleDependency,
             Self::MalformedDigest(_) | Self::IneligibleByteProvisionDomain(_) => {
@@ -408,15 +374,11 @@ fn classify_digest_error(err: InvalidDigestRecord) -> ReplayRequestRefusal {
 /// caller-declared number a request could understate to launder an
 /// oversized byte provision past the bound (B3).
 fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
-    wire.contract_version.len()
-        + wire.capability_vocabulary.as_deref().map_or(0, str::len)
-        + wire
-            .profile_selections
-            .iter()
-            .map(|p| p.profile().len() + p.value().len())
-            .sum::<usize>()
+    wire.profile_selections
+        .iter()
+        .map(|p| p.profile().len() + p.value().len())
+        .sum::<usize>()
         + wire.package_id.1.len()
-        + wire.package_contract_version.len()
         + wire
             .source_digests
             .iter()
@@ -460,23 +422,13 @@ fn measured_encoded_bytes(wire: &ReplayRequestWire) -> usize {
 }
 
 impl ReplayRequest {
-    /// Decode a request from `wire`. Version, capability-vocabulary and
-    /// semantic-profile checks, and the size-bound check, all happen before
-    /// the byte provision or package reference is read at all
-    /// (FR-071-AC-4, FR-071-AC-8): no recompilation, package lookup or
-    /// byte-provision access is observed before any of these refusals.
+    /// Decode a request from `wire`. The size-bound and semantic-profile
+    /// checks happen before the byte provision or package reference is read
+    /// at all: no package lookup or byte-provision access is observed
+    /// before either refusal.
     #[qsl_attrs::string_edge]
     pub fn decode(wire: ReplayRequestWire) -> Result<Self, ReplayRequestRefusal> {
         BoundExceeded::check(measured_encoded_bytes(&wire))?;
-        if wire.contract_version != REQUEST_CONTRACT_VERSION {
-            return Err(ReplayRequestRefusal::UnknownContractVersion(
-                wire.contract_version,
-            ));
-        }
-        match wire.capability_vocabulary.as_deref() {
-            Some(KNOWN_CAPABILITY_VOCABULARY) => {}
-            _ => return Err(ReplayRequestRefusal::UnknownCapabilityVocabulary),
-        }
         for selection in &wire.profile_selections {
             if !KNOWN_SEMANTIC_PROFILES.contains(&selection.profile()) {
                 return Err(ReplayRequestRefusal::UnknownSemanticProfile {
@@ -484,15 +436,6 @@ impl ReplayRequest {
                     required_role: SEMANTIC_PROFILE_ROLE,
                 });
             }
-        }
-        // ADR-013 O-22: the package's own declared contract
-        // version is checked here too, before the package reference or byte
-        // provision is read, exactly like the request envelope's own
-        // `contract_version` above.
-        if wire.package_contract_version != PACKAGE_CONTRACT_VERSION {
-            return Err(ReplayRequestRefusal::UnknownPackageContractVersion(
-                wire.package_contract_version,
-            ));
         }
 
         // Only past this point does decoding touch the package reference or
@@ -582,15 +525,12 @@ impl ReplayRequest {
 
         Ok(Self {
             package_id,
-            package_contract_version: wire.package_contract_version,
             source_digests,
             dependencies,
             selected_function: wire.selected_function,
             source: wire.source,
             profile_selections: wire.profile_selections,
-            originating_counterexample_identity: ObligationIdentity::from_digest(
-                wire.originating_counterexample_identity,
-            ),
+            obligation_identity: ObligationIdentity::from_digest(wire.obligation_identity),
             backend: Backend::new(backend_identity, backend_digest),
             state_environment: wire.state_environment,
             accounting_limits: wire.accounting_limits,
@@ -604,14 +544,11 @@ impl ReplayRequest {
     /// read round trip).
     pub fn to_wire(&self) -> ReplayRequestWire {
         ReplayRequestWire {
-            contract_version: REQUEST_CONTRACT_VERSION.to_owned(),
-            capability_vocabulary: Some(KNOWN_CAPABILITY_VOCABULARY.to_owned()),
             profile_selections: self.profile_selections.clone(),
             package_id: (
                 Some(self.package_id.domain().as_str().to_owned()),
                 self.package_id.hex(),
             ),
-            package_contract_version: self.package_contract_version.clone(),
             source_digests: self
                 .source_digests
                 .iter()
@@ -632,9 +569,7 @@ impl ReplayRequest {
                 .collect(),
             selected_function: self.selected_function.clone(),
             source: self.source.clone(),
-            originating_counterexample_identity: *self
-                .originating_counterexample_identity
-                .as_bytes(),
+            obligation_identity: *self.obligation_identity.as_bytes(),
             backend: (
                 self.backend.identity().to_owned(),
                 Some(self.backend.manifest_digest().domain().as_str().to_owned()),
@@ -699,8 +634,6 @@ mod tests {
         let source_bytes = source_bytes(0xAB, 64);
         let source_digest = ByteDigest::of(&source_bytes).as_bytes();
         ReplayRequestWire {
-            contract_version: REQUEST_CONTRACT_VERSION.to_owned(),
-            capability_vocabulary: Some(KNOWN_CAPABILITY_VOCABULARY.to_owned()),
             profile_selections: vec![ProfileSelection::new(
                 "quire.profile.v1".to_owned(),
                 "finite-state".to_owned(),
@@ -709,7 +642,6 @@ mod tests {
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 DigestRecord::mint(DigestDomain::PackageSemanticV2, [4; 32]).hex(),
             ),
-            package_contract_version: "quire.checked-package/v2".to_owned(),
             source_digests: vec![(
                 "registry".to_owned(),
                 "pkg-a".to_owned(),
@@ -728,7 +660,7 @@ mod tests {
                 parameter: WireNodeId::from_digest([9; 32]),
                 value: crate::witness::WitnessValue::Integer(42),
             }]),
-            originating_counterexample_identity: [1; 32],
+            obligation_identity: [1; 32],
             backend: (
                 "kani-backend-1".to_owned(),
                 Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
@@ -985,7 +917,8 @@ mod tests {
         // understate -- so an oversized request has to actually carry
         // oversized content.
         let mut oversized = wire(1);
-        oversized.package_contract_version = "x".repeat(MAX_ENCODED_BYTES + 1);
+        oversized.state_environment =
+            StateEnvironment::new(vec![("x".repeat(MAX_ENCODED_BYTES + 1), String::new())]);
         assert!(matches!(
             ReplayRequest::decode(oversized),
             Err(ReplayRequestRefusal::BoundExceeded(_))
@@ -1061,29 +994,19 @@ mod tests {
         );
     }
 
-    /// FR-071-AC-4 (TC-188): an unknown `contract_version`, an
-    /// out-of-closed-set semantic-profile identifier, and an unknown
-    /// capability vocabulary each refuse at decode, before the byte
-    /// provision or package reference is ever read.
-    #[trace("TC-188", "FR-071-AC-4")]
+    /// A semantic-profile identifier outside the closed set refuses at
+    /// decode with the catalog's profile-selection refusal, before the byte
+    /// provision is read: a malformed byte-provision entry alongside it
+    /// would otherwise refuse `ByteDigestMismatch`. FR-071's Outputs name
+    /// this refusal; no acceptance criterion traces it.
     #[test]
-    fn tc_188_refuses_unknown_version_or_profile_before_recompilation() {
-        let mut bad_version = wire(1);
-        bad_version.contract_version = "quire.native-runtime/v2-draft".to_owned();
-        // A malformed byte-provision entry alongside the bad version: if the
-        // reader ever touched the byte provision before checking the
-        // version, this would refuse with `ByteDigestMismatch` instead.
-        bad_version.byte_provision[0].2 = source_bytes(0xFF, 4);
-        assert!(matches!(
-            ReplayRequest::decode(bad_version),
-            Err(ReplayRequestRefusal::UnknownContractVersion(_))
-        ));
-
+    fn refuses_an_unknown_semantic_profile_before_the_byte_provision() {
         let mut bad_profile = wire(1);
         bad_profile.profile_selections = vec![ProfileSelection::new(
             "quire.profile.unknown/v1".to_owned(),
             "x".to_owned(),
         )];
+        bad_profile.byte_provision[0].2 = source_bytes(0xFF, 4);
         // The refusal reports the catalog's profile-selection code and
         // cause, and retains the supplied selection and its required role.
         let refused = ReplayRequest::decode(bad_profile).map(|_| ()).unwrap_err();
@@ -1097,48 +1020,10 @@ mod tests {
         assert_eq!(selection.profile(), "quire.profile.unknown/v1");
         assert_eq!(selection.value(), "x");
         assert_eq!(*required_role, "replay.semantic_profile_selections");
+        assert_eq!(refused.code(), Code::UnknownProfile);
         assert_eq!(
             refused.to_string(),
             "unknown_profile/unsupported-selection: semantic profile \"quire.profile.unknown/v1\" (value \"x\") is outside the closed set for role replay.semantic_profile_selections"
-        );
-
-        let mut bad_capability = wire(1);
-        bad_capability.capability_vocabulary = Some("quire.capability-kind/v2-draft".to_owned());
-        assert!(matches!(
-            ReplayRequest::decode(bad_capability),
-            Err(ReplayRequestRefusal::UnknownCapabilityVocabulary)
-        ));
-    }
-
-    /// FR-071-AC-8 (TC-445, ADR-013 O-22): a real, otherwise
-    /// well-formed request wire mutated to an unknown
-    /// `package_contract_version` refuses with the catalog's
-    /// unsupported-wire refusal, naming the actual version supplied, before
-    /// the package reference or byte provision is read -- a malformed
-    /// byte-provision entry alongside the bad version proves the ordering,
-    /// exactly like `tc_188` proves it for `contract_version`.
-    #[trace("TC-445", "FR-071-AC-8")]
-    #[test]
-    fn tc_445_refuses_an_unknown_package_contract_version() {
-        let mut bad_package_version = wire(1);
-        bad_package_version.package_contract_version = "quire.checked-package/v3".to_owned();
-        bad_package_version.byte_provision[0].2 = source_bytes(0xFF, 4);
-        assert_eq!(
-            ReplayRequest::decode(bad_package_version),
-            Err(ReplayRequestRefusal::UnknownPackageContractVersion(
-                "quire.checked-package/v3".to_owned()
-            ))
-        );
-        assert_eq!(
-            ReplayRequestRefusal::UnknownPackageContractVersion(
-                "quire.checked-package/v3".to_owned()
-            )
-            .to_string(),
-            "unknown_wire/unsupported-wire: \"quire.checked-package/v3\" is not the admitted quire.checked-package/v2 package contract version"
-        );
-        assert_eq!(
-            ReplayRequestRefusal::UnknownPackageContractVersion("x".to_owned()).code(),
-            Code::UnknownWire
         );
     }
 

@@ -218,5 +218,5 @@ Implemented: `qsl_replay::call_site`, sharing its parameter node-key
 derivation with `qsl_replay::replay`'s own selection
 (`callable_parameter_keys`) and its operation resolution with FR-115's
 `Frame` selection and its clause lookup with FR-106's clause selection,
-verified by TC-516. Remaining work: `CallSiteRefusal::code` (FR-121-AC-14); each
-variant other than `Fault` keeps the code of the refusal it carries.
+and `CallSiteRefusal::code` giving each refusal the code `replay` gives
+it, verified by TC-516.

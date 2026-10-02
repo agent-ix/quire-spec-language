@@ -7,8 +7,8 @@
 //! `super::state_clause::CheckedOperationFrame` (what S6a compares) and
 //! `SemanticTerm::Frame` (what S4 emits and keys). FR-088's own scope note
 //! applies throughout: this module builds the identity and resolution shapes
-//! S-3b owns; it does not build `KaniObligationIdentity` (CG conformance
-//! work, FR-088-CON-1), FR-340's frame semantics (#210, FR-088-CON-2), the
+//! S-3b owns; it does not build the ADR-013 O-09 obligation identity (CG
+//! computes that digest, FR-088-CON-1), FR-340's frame semantics (#210, FR-088-CON-2), the
 //! occurrence-key-keyed source map (S-4, FR-088-CON-3) or the `replay`
 //! facade's E9 lookup (FR-088-CON-4).
 //!

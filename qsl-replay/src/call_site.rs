@@ -21,7 +21,7 @@
 use qsl_foundation::diagnostic::InternalFault;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::SourceIdentity;
+use qsl_foundation::{Code, SourceIdentity};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedGraph, CheckedOperationFrame, CheckedStateClause};
 use qsl_semantics::library::LibraryName;
@@ -142,17 +142,24 @@ pub struct ClauseSite {
 pub enum CallSiteRefusal {
     /// The unit's own source did not compile: S1, S2, a header profile, the
     /// assembler, the checker, the link step or the emitter refused it.
-    /// Carries the refusal's own rendered message; the stage and region
-    /// detail live only in `qsl_replay::spine`, which this facade does not
-    /// expose.
-    #[error("the source did not compile: {0}")]
-    Compile(String),
+    /// Carries the refusal's catalog code and rendered message; the stage
+    /// and region detail live only in `qsl_replay::spine`, which this
+    /// facade does not expose.
+    #[error("the source did not compile: {message}")]
+    Compile {
+        /// The compile refusal's catalog code.
+        code: Code,
+        /// The compile refusal's rendered message.
+        message: String,
+    },
     /// A `model` declaration of the unit selects a domain package that the
     /// supplied `packages` do not admit (I1).
     #[error("domain package intake refused `model {alias}`: {message}")]
     ModelIntake {
         /// The `model` declaration's alias.
         alias: String,
+        /// The intake refusal's catalog code.
+        code: Code,
         /// The intake refusal's rendered message.
         message: String,
     },
@@ -163,9 +170,15 @@ pub enum CallSiteRefusal {
     /// One of the unit's own `import`s did not resolve against the supplied
     /// `dependencies` (ADR-015 D-1): no library is supplied under its
     /// identity, its version or digest disagrees, or the imports form a
-    /// cycle or a diamond. Carries the resolution's rendered message.
-    #[error("{0}")]
-    Import(String),
+    /// cycle or a diamond. Carries the resolution's catalog code and
+    /// rendered message.
+    #[error("{message}")]
+    Import {
+        /// The import resolution refusal's catalog code.
+        code: Code,
+        /// The import resolution refusal's rendered message.
+        message: String,
+    },
     /// A supplied library, resolved through the unit's imports, did not
     /// compile.
     #[error("the library {} refused: {message}", display_path(.path))]
@@ -173,6 +186,8 @@ pub enum CallSiteRefusal {
         /// The library identities from the unit's import down to the
         /// library that refused, that library last.
         path: Vec<LibraryName>,
+        /// The library's own refusal's catalog code.
+        code: Code,
         /// The library's own refusal's rendered message.
         message: String,
     },
@@ -213,6 +228,27 @@ pub enum CallSiteRefusal {
     /// or clause name is not itself a valid `Identifier`.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
+}
+
+impl CallSiteRefusal {
+    /// The catalog code of this refusal, from the closed catalog
+    /// [`crate::ReplayRefusal::code`] draws on: the same code `replay`
+    /// gives the same refusal. A compile, intake, import or library refusal
+    /// keeps the code of the refusal it was built from, as
+    /// `ReplayRefusal::Recompile` does.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Compile { code, .. }
+            | Self::ModelIntake { code, .. }
+            | Self::Import { code, .. }
+            | Self::Dependency { code, .. } => *code,
+            Self::DependencyInput(refusal) => refusal.code(),
+            Self::UnknownFunction { .. }
+            | Self::UnknownOperation { .. }
+            | Self::UnknownClause { .. } => Code::MissingDeclaration,
+            Self::Fault(_) => Code::RuntimeInvariant,
+        }
+    }
 }
 
 /// Compile `bytes` (labelled `source`, displayed as `path`) through S1 to S4
@@ -300,15 +336,21 @@ impl From<CompileRefusal> for CallSiteRefusal {
     /// own source, the domain packages, the dependency input, an import, or
     /// a supplied library.
     fn from(refusal: CompileRefusal) -> Self {
+        let code = refusal.code();
         match refusal {
             CompileRefusal::Intake { refusal, .. } => Self::ModelIntake {
                 message: spine::intake_message(&refusal.cause),
                 alias: refusal.alias,
+                code,
             },
             CompileRefusal::DependencyInput(input) => Self::DependencyInput(input),
-            CompileRefusal::Import { refusal, .. } => Self::Import(refusal.to_string()),
+            CompileRefusal::Import { refusal, .. } => Self::Import {
+                code,
+                message: refusal.to_string(),
+            },
             CompileRefusal::Dependency { path, refusal } => Self::Dependency {
                 path,
+                code,
                 message: refusal.to_string(),
             },
             refusal @ (CompileRefusal::Source(_)
@@ -318,7 +360,10 @@ impl From<CompileRefusal> for CallSiteRefusal {
             | CompileRefusal::Check { .. }
             | CompileRefusal::Link(_)
             | CompileRefusal::Emit(_)
-            | CompileRefusal::Omitted(_)) => Self::Compile(refusal.to_string()),
+            | CompileRefusal::Omitted(_)) => Self::Compile {
+                code,
+                message: refusal.to_string(),
+            },
         }
     }
 }
@@ -556,14 +601,11 @@ mod tests {
             ByteDigest::of(bytes).as_bytes(),
         );
         ReplayRequestWire {
-            contract_version: "quire.native-runtime/v1".to_owned(),
-            capability_vocabulary: Some("quire.capability-kind/v1".to_owned()),
             profile_selections: vec![],
             package_id: (
                 Some(DigestDomain::PackageSemanticV2.as_str().to_owned()),
                 package_id.hex(),
             ),
-            package_contract_version: "quire.checked-package/v2".to_owned(),
             source_digests: vec![(
                 "a".to_owned(),
                 "u".to_owned(),
@@ -575,7 +617,7 @@ mod tests {
             dependencies: Vec::new(),
             selected_function: function,
             source: ReplaySource::Input(assignments),
-            originating_counterexample_identity: [0; 32],
+            obligation_identity: [0; 32],
             backend: (
                 "kani-backend-1".to_owned(),
                 Some(DigestDomain::ToolManifestJcsV1.as_str().to_owned()),
