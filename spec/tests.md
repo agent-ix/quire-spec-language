@@ -406,8 +406,10 @@ names different artifacts in each.
 | TC-606 | A single-existential claim is proved by a lasso witness and refuted by a trap | Integration | P1 | FR-181-AC-1, FR-181-AC-2, FR-181-AC-3, FR-181-AC-4 | 🚧 Planned |
 | TC-615 | A single-existential witness proves only after exploration rules out an undefined evaluation | Integration | P1 | FR-181-AC-5 | 🚧 Planned |
 | TC-616 | A single-existential witness on a stopped run settles well-definedness unchecked | Integration | P1 | FR-181-AC-6 | 🚧 Planned |
+| TC-645 | The product-closure certificate checker accepts the certificates of true hyper proofs | Integration | P1 | FR-163-AC-1 | 🚧 Planned |
+| TC-646 | The product-closure certificate checker rejects tampered and false certificates and stops at a limit | Integration | P1 | FR-163-AC-2, FR-163-AC-3, FR-163-AC-4 | 🚧 Planned |
 | TC-607 | Hyper and step-relation outcomes settle as terminal records with their causes | Unit | P1 | FR-182-AC-1, FR-182-AC-2, FR-182-AC-3, FR-182-AC-4, FR-182-AC-7, FR-182-AC-8 | 🚧 Planned |
-| TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4, FR-183-AC-7 | 🚧 Planned |
+| TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4 | 🚧 Planned |
 | TC-609 | max_witness_set and max_relation_tuples are caller budgets with published defaults | Unit | P1 | FR-184-AC-1, FR-184-AC-2, FR-184-AC-3 | 🚧 Planned |
 | TC-610 | An HP-1 relation whose first refuting tuple is undefined settles refuted with UndefinedEvaluation | Integration | P1 | FR-179-AC-4, FR-182-AC-5, FR-183-AC-5 | 🚧 Planned |
 | TC-611 | An HP-1 relation whose first refuting tuple is false settles refuted ahead of later undefined tuples | Integration | P1 | FR-179-AC-5, FR-182-AC-6 | 🚧 Planned |

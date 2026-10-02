@@ -47,8 +47,8 @@ PA-7). For a `WitnessExhausted` counterexample it recomputes the witness
 sets along the universal traces, so the absence of a matching existential
 run is checked with no engine present. Replay needs no model checker and no
 solver. The same crate, `qsl-replay` (ADR-029 CB-2), holds the
-product-closure certificate checker that an EN-1 `proved` must pass before
-it settles (ADR-023 HX-7).
+product-closure certificate checker of FR-163, which an EN-1 `proved` must
+pass before it settles (ADR-023 HX-7).
 
 ## Use case
 
@@ -92,16 +92,12 @@ pub struct HyperTrace {
 
 - `HyperCounterexample` implements `FamilyPayload` (FR-070-AC-5); its
   `trace_position` names the failing joint position (ADR-014 TR-2).
-- For a certificate check: FR-098's request and a
-  `ProductClosureCertificate` (below).
 
 ## Outputs
 
 - An FR-072 replay result on the `ModelTraceTuple` arm carrying the
   evaluated value and `trace_position`, as FR-128 does; or a typed
   `ReplayRefusal` with no partial result.
-- For a certificate check: `CertificateCheck::Accepted`, or
-  `CertificateCheck::Rejected(cause)` naming the first rule that failed.
 
 ## Behavior
 
@@ -157,8 +153,9 @@ pub struct HyperTrace {
 - `X_position` empty with every earlier `X` non-empty SHALL settle
   `reproduced-with-evaluated-witness`. A non-empty `X_position`, or an
   earlier empty `X`, SHALL settle `inconclusive`, `Verdicts`. Reaching
-  `max_witness_set` SHALL refuse, which FR-182 settles `inconclusive`,
-  `ReplayRefused`.
+  `max_witness_set` SHALL return the replay result stopped with that limit
+  and its value, which FR-182 settles V-7, as FR-170 settles a stopped trap
+  replay.
 
 ### Projected (HP-6)
 
@@ -180,43 +177,6 @@ pub struct HyperTrace {
   `false` SHALL settle `reproduced-with-evaluated-witness`; `true` SHALL
   settle `inconclusive`, `Verdicts`.
 
-### Product-closure certificate check
-
-- An EN-1 run that returns `Holds` for HP-1, HP-2, HP-3, HP-5 or HP-6 SHALL
-  write a `ProductClosureCertificate`, serialized with RFC 8785 JCS:
-
-```rust
-pub struct ProductClosureCertificate {
-    pub form: HyperForm,                  // HP-1, HP-2, HP-3, HP-5 or HP-6
-    pub instance: Vec<(Name, Key)>,
-    pub reduction: Option<CopySwap>,      // when FR-174 applied copy-swap
-    pub states: Vec<ProductStateKey>,     // sorted ascending, no duplicates;
-                                          // for HP-1, each subject's state keys
-}
-```
-
-- `qsl_replay::check_product_closure` SHALL recompile the package, resolve
-  the clause and build each alias's `ModelSystem` by FR-128's rules, and
-  SHALL read nothing from the engine but the certificate.
-- It SHALL accept exactly when all of these hold, checked with its own code:
-  - every recomputed initial product state is a member;
-  - every recomputed successor of every member is a member, canonicalised
-    by FR-174's copy-swap rule when `reduction` is set;
-  - no member's body letters, `μ_U` or `μ_E` evaluate undefined, refused or
-    incomplete;
-  - the closed set holds no violation by the form's rule: no fair accepting
-    SCC (HP-2), no empty `X` with a cycle fair for every universal variable
-    (HP-3), no rejecting monitor state (HP-6), no tuple of member
-    transitions on which the body is false (HP-1), and an accepting cycle
-    fair under the clause's fairness set in every initial state's part
-    (HP-5).
-- Otherwise it SHALL return `Rejected` naming the first failing rule, the
-  member and the recomputed state. A certificate whose `states` are
-  unsorted or duplicated SHALL be rejected before any recomputation.
-- The check SHALL count recomputed states and successors against the
-  request's `ModelCheckLimits`; reaching one SHALL stop the check, which
-  FR-182 settles `failed`, `resource-incomplete`.
-
 ### Engine independence
 
 - A counterexample from EN-2, or found under symmetry or copy-swap, SHALL
@@ -233,14 +193,13 @@ pub struct ProductClosureCertificate {
 | FR-183-AC-1 | ADR-023 §8.1's leaky `Lockstep` counterexample replays to `reproduced-with-evaluated-witness` with `trace_position` 1. §8.2's leaky `WitnessExhausted{position: 1}` replays, recomputing `X_0 = {((1, 0), g)}` and an empty `X_1`. | Test (TC-608) |
 | FR-183-AC-2 | FR-178-AC-2's `Projected` counterexample and FR-179-AC-2's `StepTuple` counterexample each reproduce. | Test (TC-608) |
 | FR-183-AC-3 | Refusals settle no result: §8.1's counterexample with one trace one step shorter; with `b`'s first input changed to 1 (`μ_U` false); with one post-state digest altered; a `Projected` counterexample with a `step` marked skipped. An HP-2 counterexample under `fair { weak V::Vault::reset }` on `a` whose loop never takes or disables `reset` refuses as unfair. | Test (TC-608) |
-| FR-183-AC-4 | A hand-built `Lockstep` envelope over the leaky vault with `a` and `b` both from `(0, 0)` taking `step(0)`, loop entry 1, on which `l` stays equal, settles `inconclusive`, `Verdicts`; a hand-built `WitnessExhausted{position: 1}` envelope for `Opaque` over the secure vault, with `a`'s lasso `(0, 0) -step(0)-> (0, 0)`, recomputes a non-empty `X_1` and settles `inconclusive`, `Verdicts`; §8.2's leaky counterexample replayed with `max_witness_set` 0 refuses. Replaying one envelope twice gives equal results. | Test (TC-608) |
+| FR-183-AC-4 | A hand-built `Lockstep` envelope over the leaky vault with `a` and `b` both from `(0, 0)` taking `step(0)`, loop entry 1, on which `l` stays equal, settles `inconclusive`, `Verdicts`; a hand-built `WitnessExhausted{position: 1}` envelope for `Opaque` over the secure vault, with `a`'s lasso `(0, 0) -step(0)-> (0, 0)`, recomputes a non-empty `X_1` and settles `inconclusive`, `Verdicts`; §8.2's leaky counterexample replayed with `max_witness_set` 0 returns the replay result stopped with `max_witness_set` and value 0. Replaying one envelope twice gives equal results. | Test (TC-608) |
 | FR-183-AC-5 | FR-179-AC-4's `Undefined` counterexample, with one path per execution variable, replays to `reproduced-with-evaluated-witness` with its `UndefinedEvaluation` as the value; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `Verdicts`. | Test (TC-610) |
 | FR-183-AC-6 | FR-177-AC-5's `Undefined` counterexample, whose traces include the existential variable's path to the state where `μ_E` has no value, replays to `reproduced-with-evaluated-witness`; with the existential trace removed the reader refuses it as `invalid_runtime_input`/`invalid-value` before replay. | Test (TC-602) |
-| FR-183-AC-7 | The certificate of §8.1's secure `NonInterference` proof (8 product states) is accepted. The same certificate with one member removed is rejected naming the closure rule and the missing successor; with a member added whose `l` components differ (an accepting state) it is rejected naming the violation rule; with its states unsorted it is rejected before recomputation. The copy-swap certificate (6 states) is accepted. | Test (TC-608) |
 
 ## Dependencies
 
-- ADR-023 §7 HX-1 to HX-7, §6 HV-1; ADR-029 CB-2 and RU-2; §13 PA-6 and PA-7, §16 CS-4; ADR-018 §5 CX-2 and
+- ADR-023 §7 HX-1 to HX-6, §6 HV-1; ADR-029 CB-2; §13 PA-6 and PA-7, §16 CS-4; ADR-018 §5 CX-2 and
   CX-3; ADR-014 TR-2 and A-4; ADR-013 O-25 to O-27.
 - [FR-098](FR-098-execute-a-replay-request.md),
   [FR-070](FR-070-implement-typed-counterexample-witness-envelope.md),

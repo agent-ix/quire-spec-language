@@ -30,9 +30,9 @@ QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL decide an HP-3 item
 witness-set product (ADR-023 HC-2): each state is a tuple of universal
 component states with the set `X` of (existential tuple, safety automaton
 state) pairs still consistent with it. An empty `X` from which a fair
-universal cycle exists is a violation. The construction is one `WitnessSet`
-component of `qsl-analyze`, which ADR-020's hidden-field refinement also
-uses. It needs no Büchi complementation.
+universal cycle exists is a violation. The `WitnessSet` step is one construction
+in `qsl-eval`, which ADR-020's hidden-field refinement and the core
+certificate checker (FR-163) also use. It needs no Büchi complementation.
 
 ## Use case
 

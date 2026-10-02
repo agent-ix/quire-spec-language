@@ -69,6 +69,10 @@ public outputs differ.
 
 ### Product
 
+- The product's state, key, initial states and successor function SHALL be
+  `qsl-eval`'s `HyperProduct` `TransitionSystem`, which the engine explores
+  and the core certificate checker (FR-163) expands with the same code
+  (ADR-018 LA-2).
 - The product state SHALL be the tuple of component states in quantifier
   order with an automaton state, keyed by the component FR-101 state keys
   in quantifier order and the automaton state index.

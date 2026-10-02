@@ -73,6 +73,9 @@ pub enum ModelCheckLimit {
 - For hyper items, `max_states` SHALL count product states,
   `max_transitions` joint steps or moves, and `max_automaton_states`
   automaton states, as FR-176 and FR-178 state.
+- Every terminal record SHALL state the value of `max_witness_set` and
+  `max_relation_tuples` the run used, and whether the request set it or the
+  published default applied, whatever the verdict (FR-182).
 - A stopped record SHALL name the limit, its value and the request member
   that raises it, and SHALL carry no counterexample.
 - `max_depth` SHALL stay a method parameter that settles V-5, never V-7.
@@ -81,7 +84,7 @@ pub enum ModelCheckLimit {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-184-AC-1 | A request that sets neither member runs with `max_witness_set` 65,536 and `max_relation_tuples` 16,777,216, and its terminal record reports those values for a stopped run. | Test (TC-609) |
+| FR-184-AC-1 | A request that sets neither member runs with `max_witness_set` 65,536 and `max_relation_tuples` 16,777,216, and its terminal record reports those values, marked as published defaults, for every run: a proved run, a refuted run and a stopped run alike. | Test (TC-609) |
 | FR-184-AC-2 | ADR-023 §8.2's leaky `Opaque` with `max_witness_set` 0 stops `Stopped(ResourceExhausted, MaxWitnessSet)` with value 0, count 1 and no counterexample; with `max_witness_set` 1 it completes with FR-177-AC-1's outcome. | Test (TC-609) |
 | FR-184-AC-3 | FR-179-AC-1's `Det` with `max_relation_tuples` 63 stops `Stopped(ResourceExhausted, MaxRelationTuples)` with value 63 and count 63; with 64 it completes `Holds`. | Test (TC-609) |
 

@@ -41,7 +41,8 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-021 and FR-171 to FR-184, with TC-596 to TC-611, TC-615 and TC-616. It builds on
+US-021, FR-163 and FR-171 to FR-184, with TC-596 to TC-611, TC-615, TC-616,
+TC-645 and TC-646. It builds on
 ADR-018, itself a draft, and follows the owner's rulings recorded there
 (ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
 fairness granularity is `whole` (ADR-018 FA-6); reachable deadlocks are
@@ -305,7 +306,7 @@ Every verdict is one of ADR-018 V-1 to V-8. No label, basis, category or
 | HX-4 | **What an HP-3 refutation proves.** It names a fair tuple of universal behaviours and a joint position by which every existential tuple matched with it has violated the body. `X` is a function of the universal prefix, the existential subjects and the body, so replay recomputes it with no engine present and checks the absence of a witness exhaustively over the existential subject, along a finite prefix. That is why the refutation's basis is `decisive-counterexample`: the evidence is the universal tuple, and the existential half is a closed computation over it. |
 | HX-5 | **Replay of `StepTuple`.** Replay re-executes each prefix, checks the final transition is enabled with the recorded post-state, and evaluates the body over the tuple of executions through the one clause evaluator. False reproduces; true settles `ReplayParity`. A counterexample whose `undefined` member is set replays, for every kind, by ADR-018 UE-5 over the tuple: it reproduces when the first undefined evaluation along the tuple is at `where` with an equal cause. |
 | HX-6 | **Engine independence.** EN-2 reads each component's transition identities from selector variables in its encoding and produces a `Lockstep` counterexample that replays by HX-2 with no solver present (ADR-018 CX-4). A counterexample found under symmetry is concretised by ADR-021 EI-6 per component with the one diagonal permutation, so no counterexample carries a canonical state. |
-| HX-7 | **Product-closure certificate.** An EN-1 `proved` for HP-1, HP-2, HP-3, HP-5 or HP-6 writes a product-closure certificate: the form, the instance, and the sorted list of reachable product-state keys the run stored (for HP-1, each subject's reachable state keys). The layer-6 checker in `qsl-replay` recompiles the package and rebuilds each subject's `ModelSystem`, as replay does, and reads nothing from the engine but the certificate. It accepts when the recomputed initial product states are members, every member's recomputed successors are members (canonicalised by CS-2 when the record names copy-swap), no member's letters or `μ` evaluate undefined, refused or incomplete, and the closed set holds no violation by the form's own rule, recomputed by the checker: no fair accepting SCC (HP-2), no reachable empty `X` with a fair universal cycle (HP-3), no rejecting monitor state (HP-6), no false tuple (HP-1), no fair accepting cycle missing from an initial state's part (HP-5). FR-183 states the format and the check (ADR-029 RU-2). |
+| HX-7 | **Product-closure certificate.** An EN-1 `proved` for HP-1, HP-2, HP-3, HP-5 or HP-6 writes a product-closure certificate: the form, the instance, and the sorted list of reachable product-state keys the run stored (for HP-1, each subject's reachable state keys). The layer-6 checker in `qsl-replay` recompiles the package and rebuilds each subject's `ModelSystem`, as replay does, and reads nothing from the engine but the certificate. It accepts when the recomputed initial product states are members, every member's recomputed successors are members (canonicalised by CS-2 when the record names copy-swap), no member's letters or `μ` evaluate undefined, refused or incomplete, and the closed set holds no violation by the form's own rule, recomputed by the checker: no fair accepting SCC (HP-2), no reachable empty `X` with a fair universal cycle (HP-3), no rejecting monitor state (HP-6), no false tuple (HP-1), no fair accepting cycle missing from an initial state's part (HP-5). FR-163 states the format and the check, reusing ADR-018 PC-3 and PC-4 (ADR-029 RU-2). |
 
 ### 8. Worked examples
 
@@ -435,15 +436,20 @@ the S4 package over E10; their refutations leave S6c over E11 as S7 typed
 witnesses, reach S8 through E9, and settle their terminal records only after
 replay, as ADR-018 §7 states for a model counterexample. A relation's code
 claim runs on the existing S5 → E7 → S6b Kani path (§14). Following ADR-029
-CB-3, layer A `qsl-analyze` holds the engines: the hyper product, the
-projected product, the witness-set product and tuple enumeration. Layer 6
-`qsl-replay` holds the verdict settlement, the facade entry
-`replay_model_trace_tuple` and the product-closure certificate checker
-(HX-7).
+CB-3 and ADR-018 LA-1 to LA-4, layer A `qsl-analyze` holds the engines:
+the exploration of the hyper, projected and witness-set products, the SCC
+phase, tuple enumeration and certificate emission. Layer 5 `qsl-eval` holds
+what the engines and the core checker both use: the products' successor
+functions and state numbering, the `WitnessSet` step, the property-automaton
+translation, component-scoped fairness enabledness and the copy-swap
+canonicaliser. Layer 6 `qsl-replay` holds the verdict types, the
+settlement map, the facade entry `replay_model_trace_tuple` and the
+product-closure certificate checker (HX-7, FR-163). Types CG reads live in
+`qsl-replay` or `quire-semantic-value` (ADR-018 LA-4).
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | S2: forms for `hyper` over `behaviours` and `relation` over model executions, in place of today's refusal. S3, in the `TemporalTrace` family: the HS-2 alias binding, object parameters, indexed atoms, step labels and the `μ` split, per-variable fairness, the execution-binding check, the `align skip` list (PA-1), the copy-swap test (CS-1), form classification HP-1 to HP-6, and the HP-1 code-claim requirement record (XC-1). Layer-5 evaluator: tuple-of-lassos evaluation (HM-4) and three-valued evaluation of a projected prefix tuple (PA-6). `qsl-analyze`: `HyperProduct` (HC-1), the projected product (PA-4), `WitnessSet` shared with ADR-020 (HC-2), tuple enumeration (HC-3), component-scoped fairness, the copy-swap canonicaliser (CS-2), the two new budgets, `VacuousMatch` detection; HP-5 reaches ADR-022's engine (SE-2). `qsl-replay`: `HyperCounterexample`, `ReplaySource::ModelTraceTuple` and its result arm, the verdict settlement with `MatchUndetermined` and `VacuousMatch`, and the product-closure certificate checker (HX-7). The request writer: one subject per alias and the deadlock-freedom item per subject. |
+| DS-1 | QSL | S2: forms for `hyper` over `behaviours` and `relation` over model executions, in place of today's refusal. S3, in the `TemporalTrace` family: the HS-2 alias binding, object parameters, indexed atoms, step labels and the `μ` split, per-variable fairness, the execution-binding check, the `align skip` list (PA-1), the copy-swap test (CS-1), form classification HP-1 to HP-6, and the HP-1 code-claim requirement record (XC-1). Layer-5 evaluator: tuple-of-lassos evaluation (HM-4) and three-valued evaluation of a projected prefix tuple (PA-6). `qsl-eval`: the successor functions and state numbering of `HyperProduct` (HC-1), the projected product (PA-4) and `WitnessSet` shared with ADR-020 (HC-2), component-scoped fairness enabledness and the copy-swap canonicaliser (CS-2). `qsl-analyze`: the exploration of those products, tuple enumeration (HC-3), the two new budgets, `VacuousMatch` detection and certificate emission; HP-5 reaches ADR-022's engine (SE-2). `qsl-replay`: `HyperCounterexample`, `ReplaySource::ModelTraceTuple` and its result arm, the verdict settlement with `MatchUndetermined` and `VacuousMatch`, and the product-closure certificate checker (HX-7). The request writer: one subject per alias and the deadlock-freedom item per subject. |
 | DS-2 | CG | The EN-1 `negotiate_*` arm reads the HP form; HP-4 settles V-8. The SMT arm takes HP-2 only. The two-call Kani harness for an HP-1 code claim (XC-2 to XC-5). Obligation identity per HV-7. |
 | DS-3 | IR | EN-2 and EN-3 over `n` copies of the transition relation with `μ_U` as a step constraint, after ADR-018 DS-3. Intake of the HP-1 code-claim obligation (XC-1). |
 | DS-4 | Driver | Supplies one subject per alias to S6c and to E9 replay. |
@@ -579,9 +585,12 @@ is CG's.
 - ADR-020 AX-2: the abstract-state set is the shared `WitnessSet` (HC-2).
 - ADR-013 O-16 and the `TerminalValue` row: `MatchUndetermined` and
   `VacuousMatch`, both inconclusive.
-- ADR-011 §6.1: layer 5 `model_check` holds the hyper product, the projected
-  product, the witness-set product and tuple enumeration; layer 6 `replay` the
-  facade entry `replay_model_trace_tuple`.
+- ADR-011 §6.1: layer A `qsl-analyze` `model_check` holds the exploration of
+  the hyper, projected and witness-set products and tuple enumeration; layer
+  5 `qsl-eval` their successor functions, the `WitnessSet` step, fairness
+  enabledness and the copy-swap canonicaliser; layer 6 `qsl-replay` the
+  facade entry `replay_model_trace_tuple`, the settlement map and the
+  product-closure certificate checker.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered

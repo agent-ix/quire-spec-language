@@ -58,9 +58,14 @@ that no trace exists.
   initial state and its source, `WitnessedUnchecked` with the same lassos,
   `Trapped` naming an initial state with an empty stem, `Undefined`,
   `NoDecision`, or `NoInitialState`; settled by FR-169's map.
-- `GraphEvidence::Witness` whose paths are ADR-018 CX-2 model lassos
-  (FR-128's `TemporalCounterexample` step and loop shape), and
-  `GraphEvidence::Trap`, each replayed as stated below.
+- `GraphEvidence::Witness` whose paths are FR-170 `ModelPath`s with a loop
+  entry set, so each is a lasso in ADR-018 CX-2's step and loop shape; a
+  state-graph witness has no loop entry.
+- `GraphEvidence::Trap` with scope `Product`, naming the initial state whose
+  part of the body-automaton product is closed and holds no fair accepting
+  cycle; a state-graph trap has scope `Model` (FR-170). Replay re-explores
+  the product for scope `Product` and the model closure for scope `Model`.
+  Each is replayed as stated below.
 
 ## Behavior
 
@@ -104,7 +109,7 @@ that no trace exists.
   reachable undefined evaluation of the body is then not ruled out
   (ADR-022 RU-5).
 - `Witnessed` SHALL carry the product-closure certificate of the explored
-  product (FR-183); the item SHALL settle `proved` only after its witnesses
+  product (FR-163); the item SHALL settle `proved` only after its witnesses
   replay and the certificate check accepts (FR-182, ADR-023 HX-7).
 - If a letter of the body evaluates `Undefined` at a reachable product
   state, the engine SHALL return `Undefined` with FR-126's canonical

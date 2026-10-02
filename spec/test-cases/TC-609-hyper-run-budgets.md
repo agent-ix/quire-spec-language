@@ -18,7 +18,8 @@ Scope: FR-184-AC-1 to FR-184-AC-3.
 
 Fixtures: §8.2's leaky `Opaque`; FR-179-AC-1's `Det`.
 
-1. Run a request that sets neither member and read the limits it used.
+1. Run a request that sets neither member, once to a proof (`Det`) and once
+   to a stop, and read the limits each terminal record states.
 2. `Opaque` with `max_witness_set` 0 and 1.
 3. `Det` with `max_relation_tuples` 63 and 64.
 
@@ -26,6 +27,7 @@ Tag the tests `#[trace("TC-609", "FR-184-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: 65,536 and 16,777,216.
+- Step 1: both records state 65,536 and 16,777,216, marked as published
+  defaults.
 - Step 2: `Stopped(ResourceExhausted, MaxWitnessSet)`, value 0, count 1, no counterexample; FR-177-AC-1's outcome.
 - Step 3: `Stopped(ResourceExhausted, MaxRelationTuples)`, value 63, count 63; `Holds`.
