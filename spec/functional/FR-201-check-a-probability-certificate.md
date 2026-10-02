@@ -99,6 +99,14 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
   on the claim's side of the threshold, and report the side; otherwise it
   SHALL reject and name the first failing condition and state in canonical
   order.
+- For a `quantile q of M >= c` claim over every scheduler, proved by an
+  `Upper` certificate `y` for `max E[Y]`, `Y = [activated] · ([M < c] − q)`
+  (ADR-028 XF-2, CE-4): when `y(s0) < 0` the checker SHALL accept with side
+  `AtLeast`. When `y(s0) = 0`, it SHALL compute the tight actions, those
+  with `Q_y(s, a) = y(s)` in exact rationals, and search the product graph
+  from the initial state using tight actions only; it SHALL accept when no
+  activated state is reachable, and otherwise reject, naming the first
+  reachable activated state in canonical order.
 - A checker run stopped by a budget SHALL return `Stopped` naming it.
 
 ### Verdict path
@@ -117,6 +125,7 @@ pub enum CertificateCheck { Accepted { bound_side: Bound }, Rejected(Certificate
 | FR-201-AC-2 | §15.3's `LongRun` certificate (component value `1800/1801`, reward `[up] − 1800/1801`, gain 0, bias 0 at `up` and `−2000/1801` at `down`) is accepted; with the bias at `down` changed to `−2001/1801` it is rejected. §15.1's dyadic `Lower` certificate at 64 bits, ranked by remaining horizon, is accepted with side `AtLeast`. | Test (TC-636) |
 | FR-201-AC-3 | A `Lower` certificate for §15.4 with its ranking omitted is rejected; one whose identity names a different claim is refused before any re-enumeration; §15.6's `FairTerminates` `Exact` certificate is accepted only after the checker recomputes that no fair end component exists, and the same certificate with its fairness set removed is rejected. | Test (TC-636) |
 | FR-201-AC-4 | A proof whose certificate the checker accepts settles `proved`; with a checker `max_states` of 2 the check stops and the item settles `Incomplete(ResourceExhausted)` naming `max_states`. | Test (TC-636) |
+| FR-201-AC-5 | An `Opt` model whose initial state has the actions `go`, which activates and then sets `M` to 1 with probability `1/4` and to 3 with `3/4`, and `skip`, which never activates. For `quantile 1/2 of M >= 3` over every scheduler, the `Upper` certificate with `y = 0` at the initial state and `−1/4` after `go` is accepted with side `AtLeast`: only `skip` is tight, and no activated state is reachable through it. The same claim over a variant whose `go` sets `M` to 1 and 3 with `1/2` each, with `y = 0` at both states, is rejected, naming the activated state after `go`, since `go` is tight. | Test (TC-636) |
 
 ## Dependencies
 

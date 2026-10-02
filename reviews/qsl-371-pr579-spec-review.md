@@ -74,3 +74,25 @@ Not mergeable as it stands. FND-001 lets EN-5 issue a certified proof of a
 false quantile claim. The PR also stacks on #572, which needs its own
 fixes and a rebase first (SR-1100). The ruling coverage, the worked-example
 arithmetic and the AC-to-TC coverage are otherwise sound.
+
+## New findings (disposition pass 1)
+
+Reviewed at d33028b7 (`git diff 67993855...d33028b7`). `quire validate` on
+the changed files exited 0, and so did the index check.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The checker side of FND-001's fix is not specified. CE-4 proves the strict `>=` quantile at `v = 0` with "an `Upper` certificate bounding by 0 the maximum activation probability over the actions that attain `v`". An `Upper` certificate gives a bound `y` on `v`, not the exact `v`, so the checker cannot tell from it which actions attain `v`. The sound reading takes the actions tight under the certificate, those with `Q_y(s, a) = y(s)`. A scheduler with `E[Y] = y(s0) = 0` has zero slack at every state it reaches, so it uses only tight actions. The checker then checks, by graph, that activation is unreachable under tight actions alone. State this in CE-4, and add it to FR-201's checking rules and an AC. FR-201 has no rule or AC for this proof shape today, so a correct EN-5 proof of a `>=` quantile has no defined check. | spec/decisions/ADR-028-exact-probabilistic-engine.md:262; spec/functional/FR-201-check-a-probability-certificate.md:85-101 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d33028b7 |
+| FND-002 | fixed | d33028b7 |
+| FND-003 | fixed | d33028b7 |
+| FND-004 | fixed | d33028b7 |
+| FND-005 | fixed | d33028b7 |
+| FND-006 | fixed | d33028b7 |
+| FND-007 | fixed | d33028b7 |
+| FND-008 | fixed | d33028b7 |

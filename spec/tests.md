@@ -448,7 +448,7 @@ names different artifacts in each.
 | TC-633 | Unbounded reachability and expected rewards are decided by graph precomputation, interval iteration and exact policy iteration | Integration | P1 | FR-198-AC-1, FR-198-AC-2, FR-198-AC-3, FR-198-AC-4, FR-198-AC-5 | 🚧 Planned |
 | TC-634 | Long-run fractions are decided exactly by bottom components and maximal end components | Integration | P1 | FR-199-AC-1, FR-199-AC-2, FR-199-AC-3 | 🚧 Planned |
 | TC-635 | Every-scheduler claims with a fairness set are decided over fair schedulers through fair end components | Integration | P1 | FR-200-AC-1, FR-200-AC-2, FR-200-AC-3, FR-200-AC-4 | 🚧 Planned |
-| TC-636 | check_probability_certificate accepts sound certificates and rejects flawed ones in exact rationals | Integration | P1 | FR-201-AC-1, FR-201-AC-2, FR-201-AC-3, FR-201-AC-4 | 🚧 Planned |
+| TC-636 | check_probability_certificate accepts sound certificates and rejects flawed ones in exact rationals | Integration | P1 | FR-201-AC-1, FR-201-AC-2, FR-201-AC-3, FR-201-AC-4, FR-201-AC-5 | 🚧 Planned |
 | TC-637 | replay_probabilistic_witness reproduces path-set and subsystem refutations and refuses altered witnesses | Integration | P1 | FR-202-AC-1, FR-202-AC-2, FR-202-AC-3, FR-202-AC-4 | 🚧 Planned |
 | TC-638 | Exact runs stop on caller-set budgets and settle with ExactValue or ValueBounds | Integration | P1 | FR-203-AC-1, FR-203-AC-2, FR-203-AC-3, FR-203-AC-4 | 🚧 Planned |
 | TC-639 | Closed probabilistic timed automata are decided exactly through digital clocks, with the workload resolving delays | Integration | P1 | FR-204-AC-1, FR-204-AC-2, FR-204-AC-3, FR-204-AC-4 | 🚧 Planned |
