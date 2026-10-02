@@ -2953,8 +2953,7 @@ mod tests {
                     artifact: None,
                     span: None,
                 },
-                detail: "package document bytes do not parse as JSON for \
-                          agent-ix-semantic-ir: an unrecognised literal at byte 0"
+                detail: "package document is malformed JSON at byte 0: unexpected character"
                     .to_owned(),
             }
         );
