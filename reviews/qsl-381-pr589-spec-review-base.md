@@ -48,3 +48,9 @@ Round 1, reviewed at 0070b74a9befe49bc29d2bc1c075da8fe506e3a4.
 | FND-004 | fixed | 0070b74a |
 | FND-005 | fixed | 0070b74a |
 | FND-006 | fixed | 0070b74a |
+
+Round 2, reviewed at 1a5e12d5566008074d77c0639fcb2f9a8edadeca.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-002 | fixed | 1a5e12d5 |
