@@ -7,7 +7,7 @@
 //! profile resolves in its clause family's catalog (ADR-012 §2), which no
 //! spine registers yet, so every header profile reaches this table.
 
-use qsl_foundation::selection::{DefinitionRef, ProfileSelection};
+use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
 
 use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock};
@@ -20,12 +20,6 @@ pub enum ProfileCause {
     /// The identity is a catalog row other than `root`:
     /// `unknown_profile`/`wrong-selection-role`.
     WrongSelectionRole,
-    /// `root`'s identity at another version:
-    /// `stale_dependency`/`revision-mismatch`.
-    RevisionMismatch,
-    /// `root`'s identity and version with another digest:
-    /// `stale_dependency`/`byte-digest-mismatch`.
-    ByteDigestMismatch,
 }
 
 /// One header profile E3 refused, retaining the supplied selection and the
@@ -36,8 +30,8 @@ pub struct ProfileRefusal {
     pub alias: String,
     /// The span of the selection's identity literal.
     pub identity_span: Span,
-    /// The selection the header supplied.
-    pub selected: DefinitionRef,
+    /// The definition identity the header selected.
+    pub selected: String,
     /// The role a header profile must select.
     pub required_role: CatalogRole,
     /// The `root` row the selection was compared with.
@@ -53,9 +47,6 @@ impl ProfileRefusal {
             ProfileCause::UnsupportedSelection | ProfileCause::WrongSelectionRole => {
                 Code::UnknownProfile
             }
-            ProfileCause::RevisionMismatch | ProfileCause::ByteDigestMismatch => {
-                Code::StaleDependency
-            }
         }
     }
 
@@ -64,13 +55,11 @@ impl ProfileRefusal {
         match self.cause {
             ProfileCause::UnsupportedSelection => "unsupported-selection",
             ProfileCause::WrongSelectionRole => "wrong-selection-role",
-            ProfileCause::RevisionMismatch => "revision-mismatch",
-            ProfileCause::ByteDigestMismatch => "byte-digest-mismatch",
         }
     }
 }
 
-/// Resolve each header profile against the `root` row of
+/// Resolve each header profile by identity against the `root` row of
 /// [`DefinitionLock::pinned`], in source order (FR-110). Every refusing
 /// profile is returned, in source order.
 pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<ProfileRefusal>> {
@@ -81,21 +70,13 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
     let refusals: Vec<ProfileRefusal> = profiles
         .iter()
         .filter_map(|profile| {
-            let selected = &profile.definition;
-            let cause = if selected.identity() == root.identity {
-                if selected.version() != root.revision_value {
-                    ProfileCause::RevisionMismatch
-                } else if selected.digest().digest().to_string()
-                    != format!("sha256:{}", root.digest)
-                {
-                    ProfileCause::ByteDigestMismatch
-                } else {
-                    return None;
-                }
+            let selected = profile.identity.as_str();
+            let cause = if selected == root.identity {
+                return None;
             } else if lock
                 .catalog()
                 .iter()
-                .any(|entry| entry.identity == selected.identity())
+                .any(|entry| entry.identity == selected)
             {
                 ProfileCause::WrongSelectionRole
             } else {
@@ -104,7 +85,7 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
             Some(ProfileRefusal {
                 alias: profile.alias.clone(),
                 identity_span: profile.identity_span,
-                selected: selected.clone(),
+                selected: selected.to_owned(),
                 required_role: CatalogRole::Root,
                 root,
                 cause,

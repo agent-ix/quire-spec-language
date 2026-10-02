@@ -268,8 +268,7 @@ impl CallSiteRefusal {
 /// ```compile_fail,E0277
 /// # use qsl_replay::{call_site, DependencyInput, Identifier, QualifiedName, SourceIdentity};
 /// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
-/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     profile v = \"quire.value.complete/v1\";\n\
 /// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
@@ -290,8 +289,7 @@ impl CallSiteRefusal {
 /// ```
 /// # use qsl_replay::{call_site, DependencyInput, Identifier, QualifiedName, SourceIdentity};
 /// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
-/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     profile v = \"quire.value.complete/v1\";\n\
 /// #     function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 /// let f = QualifiedName::new(vec![Identifier::new("f").unwrap()]).unwrap();
 /// let site = call_site(
@@ -525,8 +523,7 @@ mod tests {
 
     /// The TC-452 fixture unit `F`: one function `f` of one parameter `x`.
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-        \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
         function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 
     /// A unit of one Boolean predicate `p` of one parameter `x`. `f` above
@@ -534,8 +531,7 @@ mod tests {
     /// ever joins arguments, so it cannot exercise whether `call_site`'s
     /// node id is the one `replay` actually accepts; `p` can.
     const PREDICATE_UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-        \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
         function p using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 
     fn name(segment: &str) -> QualifiedName {
@@ -710,8 +706,7 @@ mod tests {
     #[test]
     fn tc_166_call_site_locates_each_case_variant_function() {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
             function f using v(x: Int[0, 9]): Integer pure { x + 5 }\n\
             function F using v(y: Int[0, 9]): Integer pure { y + 6 }\n";
         let lower = function_site(unit.as_bytes(), "f").expect("f is declared");

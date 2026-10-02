@@ -197,8 +197,7 @@ impl Fixture {
             Self::SystemsInterface => {
                 let unit = format!(
                     "language \"ix:native\" edition \"1-draft\";\n\
-                     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-                     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+                     profile v = \"quire.value.complete/v1\";\n\
                      model S = \"acme/systems\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
                      function keep using v(s: S::Sensor): S::Sensor pure {{ s }}\n",
                     document_digest(SYSTEMS_DOCUMENT)

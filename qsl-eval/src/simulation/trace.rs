@@ -37,8 +37,7 @@ pub struct SampleProvenance {
     pub seed: u64,
     /// The trace's 0-based index within the run.
     pub trace: u64,
-    /// The pinned sampler's exact identity, revision and digest, as
-    /// supplied to `sample_request`.
+    /// The sampler's `DefinitionRef`, as supplied to `sample_request`.
     pub sampler: DefinitionRef,
     /// Why the run stopped.
     pub stopped: StopReason,

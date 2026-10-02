@@ -8,15 +8,15 @@ use qsl_cst::{
     CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, NodeIdentity, ParsedSource,
     Production, TokenClass,
 };
-use qsl_foundation::selection::{DefinitionRef, ProfileCatalog, ProfileStatus, StaleProfile};
+use qsl_foundation::selection::ProfileCatalog;
 
 /// Exact document/profile tuple carried by every editor request and response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DocumentBinding {
     /// The document's four source labels (FR-001), exactly as admitted.
     pub source: SourceIdentity,
-    /// Exact selected formatting/language profile.
-    pub profile: DefinitionRef,
+    /// The selected formatting/language profile identity.
+    pub profile: String,
 }
 
 /// One deterministic source-outline symbol.
@@ -313,57 +313,31 @@ fn validate_binding(
     let selected = selected_profiles.is_empty()
         || selected_profiles
             .iter()
-            .any(|selection| selection.definition == binding.profile);
-    let status = catalog.profile_status(&binding.profile);
-    let refusal = match (status, selected) {
-        (ProfileStatus::Exact, true) => return Ok(()),
-        (ProfileStatus::Stale(stale), _) => (
-            CompleteCode::StaleDependency,
-            stale_cause(stale),
-            "editor request selected a stale complete-V1 profile",
-        ),
-        (ProfileStatus::Exact, false) | (ProfileStatus::Unknown, _) => (
-            CompleteCode::UnknownProfile,
-            CompleteCause::UnsupportedSelection,
-            "editor request did not select a known complete-V1 profile",
-        ),
-    };
-    let (code, cause, message) = refusal;
+            .any(|selection| selection.identity == binding.profile);
+    if selected && catalog.contains(&binding.profile) {
+        return Ok(());
+    }
     Err(qsl_cst::diagnostic::error(
         parsed.source(),
-        code,
-        cause,
+        CompleteCode::UnknownProfile,
+        CompleteCause::UnsupportedSelection,
         Phase::Profile,
         0,
         0,
-        message,
+        "editor request did not select a known complete-V1 profile",
     ))
 }
 
-fn stale_cause(stale: StaleProfile) -> CompleteCause {
-    match stale {
-        StaleProfile::Revision => CompleteCause::RevisionMismatch,
-        StaleProfile::ByteDigest => CompleteCause::ByteDigestMismatch,
-    }
-}
-
-/// The refusal of a profile selection with `status`, if it is not exact.
+/// The refusal of the profile `identity`, if `catalog` does not hold it.
 pub(super) fn profile_refusal(
-    status: ProfileStatus,
+    catalog: &ProfileCatalog,
+    identity: &str,
 ) -> Option<(CompleteCode, CompleteCause, &'static str)> {
-    match status {
-        ProfileStatus::Exact => None,
-        ProfileStatus::Stale(stale) => Some((
-            CompleteCode::StaleDependency,
-            stale_cause(stale),
-            "selected profile version or digest is stale for this consumer",
-        )),
-        ProfileStatus::Unknown => Some((
-            CompleteCode::UnknownProfile,
-            CompleteCause::UnsupportedSelection,
-            "selected profile definition is unknown to this consumer",
-        )),
-    }
+    (!catalog.contains(identity)).then_some((
+        CompleteCode::UnknownProfile,
+        CompleteCause::UnsupportedSelection,
+        "selected profile definition is unknown to this consumer",
+    ))
 }
 
 pub(super) fn validate_catalog_profiles(
@@ -372,7 +346,7 @@ pub(super) fn validate_catalog_profiles(
 ) -> Result<(), Box<CompleteDiagnostic>> {
     for selection in &parsed.selections().profiles {
         let Some((code, cause, message)) =
-            profile_refusal(catalog.profile_status(&selection.definition))
+            profile_refusal(catalog, &selection.identity)
         else {
             continue;
         };

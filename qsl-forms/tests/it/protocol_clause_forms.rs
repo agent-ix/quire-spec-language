@@ -17,8 +17,7 @@ use qsl_foundation::{SourceIdentity, Span};
 /// Every unit under test starts with this header (TC-456's own text): one
 /// profile and one model selection, neither of which S2 resolves.
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
     model Config = \"example/config-version\" version \"1\" digest \
     \"sha256-jcs:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
 

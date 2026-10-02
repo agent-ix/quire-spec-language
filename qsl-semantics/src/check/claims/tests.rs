@@ -14,8 +14,7 @@ use crate::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\";\n";
 
 /// A unit checked through S1, S2 and `check`, with its text.
 struct Checked {

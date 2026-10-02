@@ -24,8 +24,7 @@ use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\";\n";
 
 /// FR-062's RR-5.
 const SQ: &str = "function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }";

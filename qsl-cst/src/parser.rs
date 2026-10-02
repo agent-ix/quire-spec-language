@@ -15,9 +15,8 @@ use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::{
-    DefinitionDigest, DefinitionRef, ImportSelection, InvalidDefinitionComponent,
-    InvalidModelComponent, ModelDigest, ModelRef, ModelSelection, ProfileSelection,
-    SourceSelections,
+    valid_selection_identity, ImportSelection, InvalidModelComponent, ModelDigest, ModelRef,
+    ModelSelection, ProfileSelection, SourceSelections,
 };
 use qsl_foundation::{Phase, Source, Span, SyntaxLimit};
 
@@ -240,8 +239,8 @@ fn extract_selections(
     struct SelectionCapture<'a> {
         alias: Option<&'a Significant>,
         identity: &'a Significant,
-        version: &'a Significant,
-        digest: &'a Significant,
+        version: Option<&'a Significant>,
+        digest: Option<&'a Significant>,
     }
 
     #[qsl_attrs::string_edge]
@@ -295,8 +294,8 @@ fn extract_selections(
         (cursor == selected.len()).then_some(SelectionCapture {
             alias,
             identity: identity?,
-            version: version?,
-            digest: digest?,
+            version,
+            digest,
         })
     }
 
@@ -313,39 +312,17 @@ fn extract_selections(
         message: &'static str,
     }
 
-    fn definition<'a>(
-        identity: &'a Significant,
-        version: &'a Significant,
-        digest: &'a Significant,
-    ) -> Result<DefinitionRef, InvalidDefinition<'a>> {
-        let invalid_identity = || InvalidDefinition {
-            token: identity,
-            cause: HostCause::SelectionIdentity,
-            message: "profile identity must be non-empty and at most 512 bytes",
-        };
-        let invalid_version = || InvalidDefinition {
-            token: version,
-            cause: HostCause::SelectionVersion,
-            message: "profile version must be non-empty and at most 256 bytes",
-        };
-        let invalid_digest = || InvalidDefinition {
-            token: digest,
-            cause: HostCause::SelectionDigest,
-            message: "profile digest must be canonical SHA-256",
-        };
-        let identity_value = text(identity).ok_or_else(invalid_identity)?;
-        let version_value = text(version).ok_or_else(invalid_version)?;
-        let invalid_component = |component| match component {
-            InvalidDefinitionComponent::Identity => invalid_identity(),
-            InvalidDefinitionComponent::Version => invalid_version(),
-        };
-        // Components first, so an invalid identity or version is located
-        // before the digest is read.
-        DefinitionRef::validate_components(identity_value, version_value)
-            .map_err(invalid_component)?;
-        let digest_value = DefinitionDigest::parse(text(digest).ok_or_else(invalid_digest)?)
-            .map_err(|_| invalid_digest())?;
-        DefinitionRef::new(identity_value, version_value, digest_value).map_err(invalid_component)
+    /// A header profile's identity (QSpec shared grammar
+    /// `profile = 'profile', ident, '=', string, ';'`).
+    fn profile_identity(identity: &Significant) -> Result<String, InvalidDefinition<'_>> {
+        text(identity)
+            .filter(|value| valid_selection_identity(value))
+            .map(str::to_owned)
+            .ok_or(InvalidDefinition {
+                token: identity,
+                cause: HostCause::SelectionIdentity,
+                message: "profile identity must be non-empty and at most 512 bytes",
+            })
     }
 
     /// An `import` selection (ADR-015 D-2): the identity and version under
@@ -376,10 +353,10 @@ fn extract_selections(
         let version_value = text(version).ok_or_else(invalid_version)?;
         // Components first, so an invalid identity or version is located
         // before the digest is read.
-        DefinitionRef::validate_components(identity_value, version_value).map_err(|component| {
+        ModelRef::validate_components(identity_value, version_value).map_err(|component| {
             match component {
-                InvalidDefinitionComponent::Identity => invalid_identity(),
-                InvalidDefinitionComponent::Version => invalid_version(),
+                InvalidModelComponent::Identity => invalid_identity(),
+                InvalidModelComponent::Version => invalid_version(),
             }
         })?;
         let digest_value = DigestRecord::from_domain_and_hex(
@@ -457,10 +434,10 @@ fn extract_selections(
                 let Some(alias) = captured.alias else {
                     continue;
                 };
-                match definition(captured.identity, captured.version, captured.digest) {
-                    Ok(definition) => selections.profiles.push(ProfileSelection {
+                match profile_identity(captured.identity) {
+                    Ok(identity) => selections.profiles.push(ProfileSelection {
                         alias: alias.spelling.to_string(),
-                        definition,
+                        identity,
                         span: node.span,
                         identity_span: captured.identity.span,
                     }),
@@ -468,7 +445,10 @@ fn extract_selections(
                 }
             }
             Production::ImportDeclaration => {
-                match import(captured.identity, captured.version, captured.digest) {
+                let (Some(version), Some(digest)) = (captured.version, captured.digest) else {
+                    continue;
+                };
+                match import(captured.identity, version, digest) {
                     Ok((identity, version, digest)) => selections.imports.push(ImportSelection {
                         alias: captured.alias.map(|alias| alias.spelling.to_string()),
                         identity,
@@ -484,7 +464,10 @@ fn extract_selections(
                 let Some(alias) = captured.alias else {
                     continue;
                 };
-                match model(captured.identity, captured.version, captured.digest) {
+                let (Some(version), Some(digest)) = (captured.version, captured.digest) else {
+                    continue;
+                };
+                match model(captured.identity, version, digest) {
                     Ok(model) => selections.models.push(ModelSelection {
                         alias: alias.spelling.to_string(),
                         model,
@@ -1679,7 +1662,7 @@ mod tests {
     use super::*;
     use qsl_foundation::SourceIdentity;
 
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
     fn source(text: &str) -> Source {
         Source::read(

@@ -328,7 +328,7 @@ const SPINE_FIXTURE: &str = "tests/fixtures/spine-compile.native";
 
 /// The fixture's header and profile selection, which every stage-refusal
 /// body below follows.
-const SPINE_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n";
+const SPINE_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
 
 /// Write `program` as `program.native` under `directory` with a
 /// native-compile/1 request selecting it, no models and no clause bindings.

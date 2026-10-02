@@ -35,7 +35,7 @@ pub enum NotSimulated {
     /// `quire.simulation.sampler/v1` `1-draft.1`, the only one
     /// `sample_request` runs. Refused before any draw;
     /// `explore_request` never returns this.
-    #[error("sampler {supplied:?} is not the pinned quire.simulation.sampler/v1 generator")]
+    #[error("sampler {supplied:?} is not the quire.simulation.sampler/v1 generator")]
     GeneratorMismatch {
         /// The `DefinitionRef` the caller supplied.
         supplied: DefinitionRef,

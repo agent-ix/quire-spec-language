@@ -1225,8 +1225,7 @@ mod tests {
     #[test]
     fn a_family_depth_stop_is_reported_at_the_node_that_failed() {
         const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
             function f using v(): Boolean pure { not not not true }\n";
         let refusal = compile(
             SourceIdentity::new("a", "u", "git", "1"),
@@ -1264,8 +1263,7 @@ mod tests {
     #[test]
     fn a_protocol_naming_an_undeclared_model_does_not_compile_silently() {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
             function f using v(): Boolean pure { true }\n\
             protocol Flow using v over (input: Nope::Input) on origin {\n\
             role R on Nope::Actor;\n\
@@ -1310,8 +1308,7 @@ mod tests {
     #[test]
     fn a_protocol_with_unchecked_garbage_content_does_not_compile_silently() {
         let unit = "language \"ix:native\" edition \"1-draft\";\n\
-            profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-            \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+            profile v = \"quire.value.complete/v1\";\n\
             function f using v(): Boolean pure { true }\n\
             protocol Flow using v over (input: Nope::Input) on origin {\n\
             role R on Nope::Actor;\n\
@@ -1363,10 +1360,8 @@ mod tests {
         )
     }
 
-    fn profile_line(alias: &str, identity: &str, version: &str, digest: &str) -> String {
-        format!(
-            "profile {alias} = \"{identity}\" version \"{version}\" digest \"sha256:{digest}\";\n"
-        )
+    fn profile_line(alias: &str, identity: &str) -> String {
+        format!("profile {alias} = \"{identity}\";\n")
     }
 
     fn profile_refusals(refusal: &CompileRefusal) -> &[qsl_semantics::check::ProfileRefusal] {
@@ -1376,27 +1371,19 @@ mod tests {
         refusals
     }
 
-    /// FR-110 (TC-490): E3 admits a header profile only when it selects the
-    /// `DefinitionLock` catalog's `root` row exactly, and refuses every other
-    /// with its catalogued code and cause, all of them in source order.
-    #[trace(
-        "TC-490",
-        "FR-110-AC-1",
-        "FR-110-AC-2",
-        "FR-110-AC-3",
-        "FR-110-AC-4",
-        "FR-110-AC-5",
-        "FR-110-AC-6"
-    )]
+    /// FR-110 (TC-490): E3 resolves a header profile by identity alone. It
+    /// admits the `DefinitionLock` catalog's `root` row and refuses every
+    /// other identity with its catalogued code and cause, all of them in
+    /// source order.
+    #[trace("TC-490", "FR-110-AC-1", "FR-110-AC-2", "FR-110-AC-3", "FR-110-AC-6")]
     #[test]
-    fn a_header_profile_resolves_only_against_the_root_row() {
+    fn a_header_profile_resolves_by_identity_against_the_root_row() {
         let lock = DefinitionLock::pinned();
         let root = lock.entry(CatalogRole::Root).unwrap();
-        let exact =
-            |alias: &str| profile_line(alias, root.identity, root.revision_value, root.digest);
 
         // Step 1 (AC-1): compiles; the lock selects the root row once.
-        let compiled = compile_header(&exact("v")).expect("the exact root row resolves");
+        let compiled =
+            compile_header(&profile_line("v", root.identity)).expect("the root identity resolves");
         let wire: serde_json::Value = serde_json::from_slice(compiled.emitted.bytes()).unwrap();
         assert_eq!(wire["lock"]["profile_selections"], serde_json::json!([]));
         let selected: Vec<_> = wire["lock"]["definition_selections"]
@@ -1405,15 +1392,10 @@ mod tests {
             .iter()
             .filter(|row| row["identity"] == root.identity)
             .collect();
-        assert_eq!(selected, [&serde_json::to_value(root.reference()).unwrap()]);
+        assert_eq!(selected.len(), 1);
 
         // Step 2 (AC-2): an identity in no catalog.
-        let header = profile_line(
-            "v",
-            "test:unknown-profile",
-            root.revision_value,
-            root.digest,
-        );
+        let header = profile_line("v", "test:unknown-profile");
         let refusal = compile_header(&header).expect_err("an unknown identity refuses");
         assert_eq!(refusal.stage(), SpineStage::Assembly);
         assert_eq!(refusal.code(), Code::UnknownProfile);
@@ -1422,7 +1404,7 @@ mod tests {
         };
         assert_eq!(first.cause(), "unsupported-selection");
         assert_eq!(first.alias, "v");
-        assert_eq!(first.selected.identity(), "test:unknown-profile");
+        assert_eq!(first.selected, "test:unknown-profile");
         assert_eq!(first.required_role, CatalogRole::Root);
         let unit = format!("language \"ix:native\" edition \"1-draft\";\n{header}");
         let region = refusal.region().expect("the refusal is located");
@@ -1433,70 +1415,24 @@ mod tests {
         // Step 3 (AC-3): another catalog row's identity.
         for role in [CatalogRole::IeeeProfile, CatalogRole::Edition] {
             let row = lock.entry(role).unwrap();
-            let header = profile_line("v", row.identity, row.revision_value, row.digest);
-            let refusal = compile_header(&header).expect_err("another row's identity refuses");
+            let refusal = compile_header(&profile_line("v", row.identity))
+                .expect_err("another row's identity refuses");
             assert_eq!(refusal.code(), Code::UnknownProfile);
             let [first] = profile_refusals(&refusal) else {
                 panic!("expected one refusal");
             };
             assert_eq!(first.cause(), "wrong-selection-role");
-            assert_eq!(first.selected.identity(), row.identity);
+            assert_eq!(first.selected, row.identity);
             assert_eq!(first.required_role, CatalogRole::Root);
         }
 
-        // Step 4 (AC-4): root's identity at version "1".
-        let refusal = compile_header(&profile_line("v", root.identity, "1", root.digest))
-            .expect_err("a stale revision refuses");
-        assert_eq!(refusal.code(), Code::StaleDependency);
-        let [first] = profile_refusals(&refusal) else {
-            panic!("expected one refusal");
-        };
-        assert_eq!(first.cause(), "revision-mismatch");
-        assert_eq!(first.selected.identity(), root.identity);
-        assert_eq!(first.selected.version(), "1");
-        assert_eq!(
-            first.selected.digest().digest().to_string(),
-            format!("sha256:{}", root.digest)
-        );
-        assert_eq!(first.root.identity, root.identity);
-        assert_eq!(first.root.revision_value, root.revision_value);
-        assert_eq!(first.root.digest, root.digest);
-
-        // Step 5 (AC-5): root's identity and revision, another digest.
-        let other = "a".repeat(64);
-        let refusal = compile_header(&profile_line(
-            "v",
-            root.identity,
-            root.revision_value,
-            &other,
-        ))
-        .expect_err("a stale digest refuses");
-        assert_eq!(refusal.code(), Code::StaleDependency);
-        let [first] = profile_refusals(&refusal) else {
-            panic!("expected one refusal");
-        };
-        assert_eq!(first.cause(), "byte-digest-mismatch");
-        assert_eq!(first.selected.identity(), root.identity);
-        assert_eq!(first.selected.version(), root.revision_value);
-        assert_eq!(first.root.identity, root.identity);
-        assert_eq!(first.root.revision_value, root.revision_value);
-        assert_eq!(
-            first.selected.digest().digest().to_string(),
-            format!("sha256:{other}")
-        );
-        assert_eq!(first.root.digest, root.digest);
-
-        // Step 6 (AC-6): every refusing profile, in source order.
+        // Step 4 (AC-6): every refusing profile, in source order.
+        let ieee = lock.entry(CatalogRole::IeeeProfile).unwrap();
         let header = format!(
             "{}{}{}",
-            exact("v"),
-            profile_line("w", root.identity, "1", root.digest),
-            profile_line(
-                "x",
-                "test:unknown-profile",
-                root.revision_value,
-                root.digest
-            ),
+            profile_line("v", root.identity),
+            profile_line("w", ieee.identity),
+            profile_line("x", "test:unknown-profile"),
         );
         let refusal = compile_header(&header).expect_err("w and x refuse");
         let both = profile_refusals(&refusal);
@@ -1504,10 +1440,37 @@ mod tests {
             both.iter()
                 .map(|r| (r.alias.as_str(), r.cause()))
                 .collect::<Vec<_>>(),
-            [("w", "revision-mismatch"), ("x", "unsupported-selection")]
+            [("w", "wrong-selection-role"), ("x", "unsupported-selection")]
         );
-        compile_header(&format!("{}{}", exact("v"), exact("u")))
-            .expect("two exact root selections resolve");
+        compile_header(&format!(
+            "{}{}",
+            profile_line("v", root.identity),
+            profile_line("u", root.identity)
+        ))
+        .expect("two root selections resolve");
+    }
+
+    /// FR-110-AC-5 (TC-490): a header profile is
+    /// `profile <alias> = "<identity>";`. Any token after the identity, a
+    /// `version` or `digest` clause included, is a syntax error at that
+    /// token, at S1, before E3, and no package is produced.
+    #[trace("TC-490", "FR-110-AC-5")]
+    #[test]
+    fn a_token_after_a_header_profile_identity_is_a_syntax_error() {
+        for trailing in [
+            " version \"1-draft.2\"",
+            " digest \"sha256:aaaa\"",
+            " \"extra\"",
+        ] {
+            let header = format!("profile v = \"quire.value.complete/v1\"{trailing};\n");
+            let refusal = compile_header(&header).expect_err("a trailing token refuses");
+            assert_eq!(refusal.stage(), SpineStage::Source, "{trailing}");
+            assert_eq!(refusal.code(), Code::InvalidSyntax, "{trailing}");
+            let unit = format!("language \"ix:native\" edition \"1-draft\";\n{header}");
+            let region = refusal.region().expect("the refusal is located");
+            let start = usize::try_from(region.start()).unwrap();
+            assert_eq!(start, unit.find(trailing.trim_start()).unwrap(), "{trailing}");
+        }
     }
 
     /// FR-091-AC-24 (ADR-015 D-1): with no library supplied, the S4 source
@@ -1519,8 +1482,7 @@ mod tests {
     fn an_import_no_dependency_input_supplies_refuses() {
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-             \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
              import \"test/units\" version \"2\" digest \"{}\" as u;\n\
              function f using v(): Boolean pure {{ true }}\n",
             "b".repeat(64)

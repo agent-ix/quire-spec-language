@@ -458,7 +458,6 @@ fn a_supported_classification_names_its_target_baseline_and_premises() {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Supported {
                 target,
-                table,
                 premises,
                 ..
             } = &classified.support
@@ -466,14 +465,6 @@ fn a_supported_classification_names_its_target_baseline_and_premises() {
                 panic!("an event-position future formula is supported: {classified:?}");
             };
             assert_eq!(target.identity(), "mltl.closed-trace/v1");
-            assert!(
-                table.contains("782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f"),
-                "the source table's baseline revision is recorded: {table}",
-            );
-            assert!(
-                table.contains("FR-095"),
-                "the reviewed source table is named: {table}",
-            );
             for required in REQUIRED {
                 assert!(
                     premises.iter().any(|premise| premise.contains(required)),

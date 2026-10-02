@@ -37,9 +37,11 @@ fn inventory() -> BTreeSet<CapabilityId> {
     CapabilityId::complete_inventory().into_iter().collect()
 }
 
+/// The authority every fixture definition is published under.
+const AUTHORITY: &str = "agent-ix";
+
 fn definition(
     identity: &str,
-    version: &str,
     role: DefinitionRole,
     dependencies: BTreeSet<DefinitionRef>,
     capabilities: BTreeSet<CapabilityId>,
@@ -47,8 +49,8 @@ fn definition(
 ) -> Definition {
     Definition::from_exact_bytes(
         &READER_AUTHORITY,
+        AUTHORITY,
         identity,
-        version,
         role,
         dependencies,
         capabilities,
@@ -66,7 +68,6 @@ fn complete_definitions() -> Vec<Definition> {
         .map(|(index, (identity, role))| {
             definition(
                 identity,
-                "1",
                 role,
                 BTreeSet::new(),
                 if index == 0 {
@@ -88,7 +89,6 @@ fn reinterpret_definition(
 ) -> Definition {
     self::definition(
         definition.exact().identity(),
-        definition.exact().version(),
         role,
         dependencies,
         capabilities,
@@ -156,25 +156,6 @@ fn capability_inventory_round_trips_through_one_shared_family_authority() {
     }
 }
 
-#[trace("TC-491", "FR-111-AC-5", "QSpec-FR-131-AC-2")]
-#[test]
-fn definition_digest_is_the_exact_artifact_byte_digest() {
-    let bytes = b"exact definition bytes\n";
-    let definition = definition(
-        "fixed",
-        "1",
-        DefinitionRole::Runtime,
-        BTreeSet::new(),
-        BTreeSet::new(),
-        bytes,
-    );
-    assert_eq!(definition.exact_bytes(), bytes);
-    assert_eq!(
-        definition.exact().digest().digest().to_string(),
-        "sha256:8a942381b82e9165c44d9b427a128d53d1241c2353eb9fbb9bfe0c445b10ce72"
-    );
-}
-
 #[trace(
     "TC-491",
     "FR-111-AC-1",
@@ -198,7 +179,7 @@ fn roots_covering_the_facets_and_capabilities_link() {
 
 #[trace("TC-491", "FR-111-AC-2", "QSpec-FR-131-AC-2", "QSpec-FR-131-AC-3")]
 #[test]
-fn roots_the_catalog_does_not_hold_exactly_refuse_naming_their_index() {
+fn roots_resolve_by_identity_and_an_unknown_identity_refuses_naming_its_index() {
     let definitions = complete_definitions();
 
     // Unknown: the catalog lacks the root's identity (root 0).
@@ -214,47 +195,26 @@ fn roots_the_catalog_does_not_hold_exactly_refuse_naming_their_index() {
     assert!(matches!(unknown.cause, PackageError::MissingDefinition(_)));
     assert_catalogued(&unknown);
 
-    // Another version of the root's identity.
-    let mut stale_definitions = definitions.clone();
-    stale_definitions[1] = definition(
-        definitions[1].exact().identity(),
-        "2",
-        DefinitionRole::ValueModelExpression,
-        BTreeSet::new(),
-        BTreeSet::new(),
-        b"stale value definition artifact",
-    );
-    let stale = link_bundle(
-        &roots(&definitions),
-        &DefinitionCatalog::new(stale_definitions).unwrap(),
-        PackageLimits::default(),
-    )
-    .unwrap_err();
-    assert_eq!(stale.code, Code::StaleDependency);
-    assert_eq!(stale.cause_tag, ResolutionCause::RevisionMismatch);
-    assert_eq!(stale.root, Some(1));
-    assert_catalogued(&stale);
-
-    // The same version with other bytes.
+    // A root whose identity the catalog holds resolves by identity alone,
+    // whatever bytes the catalog's definition carries.
     let mut rebytes = definitions.clone();
     rebytes[2] = definition(
         definitions[2].exact().identity(),
-        definitions[2].exact().version(),
         DefinitionRole::Temporal,
         BTreeSet::new(),
         BTreeSet::new(),
-        b"same version, other definition bytes",
+        b"other definition bytes under the same identity",
     );
-    let digest_only = link_bundle(
+    let linked = link_bundle(
         &roots(&definitions),
         &DefinitionCatalog::new(rebytes).unwrap(),
         PackageLimits::default(),
     )
-    .unwrap_err();
-    assert_eq!(digest_only.code, Code::StaleDependency);
-    assert_eq!(digest_only.cause_tag, ResolutionCause::ByteDigestMismatch);
-    assert_eq!(digest_only.root, Some(2));
-    assert_catalogued(&digest_only);
+    .expect("a root resolves by identity alone");
+    assert_eq!(
+        linked.definitions()[definitions[2].exact()].exact_bytes(),
+        b"other definition bytes under the same identity"
+    );
 }
 
 #[trace("TC-491", "FR-111-AC-2", "QSpec-FR-131-AC-2")]
@@ -263,7 +223,6 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
     let mut definitions = complete_definitions();
     let absent = definition(
         "quire.absent.complete/v1",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -271,7 +230,6 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
     );
     definitions[3] = definition(
         definitions[3].exact().identity(),
-        "1",
         DefinitionRole::Observation,
         BTreeSet::from([absent.exact().clone()]),
         BTreeSet::new(),
@@ -287,41 +245,32 @@ fn a_dependency_edge_to_an_absent_definition_refuses_missing_selection() {
 
 #[trace("TC-491", "FR-111-AC-3", "QSpec-FR-131-AC-2")]
 #[test]
-fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
-    let left = definition(
+fn one_identity_selected_under_two_authorities_refuses_naming_both() {
+    let transitive = definition(
         "acme.transitive",
-        "2",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
-        b"earlier transitive definition version two",
+        b"transitive definition",
     );
-    let right = definition(
-        "acme.transitive",
-        "1",
-        DefinitionRole::MethodPlan,
-        BTreeSet::new(),
-        BTreeSet::new(),
-        b"later transitive definition version one",
-    );
+    let left = transitive.exact().clone();
+    let right = DefinitionRef::new("other-authority", "acme.transitive").unwrap();
     let mut definitions = complete_definitions();
     definitions[2] = definition(
         definitions[2].exact().identity(),
-        "1",
         DefinitionRole::Temporal,
-        BTreeSet::from([left.exact().clone()]),
+        BTreeSet::from([left.clone()]),
         BTreeSet::new(),
-        b"temporal root selecting earlier version two",
+        b"temporal root selecting the transitive identity under agent-ix",
     );
     definitions[3] = definition(
         definitions[3].exact().identity(),
-        "1",
         DefinitionRole::Observation,
-        BTreeSet::from([right.exact().clone()]),
+        BTreeSet::from([right.clone()]),
         BTreeSet::new(),
-        b"observation root selecting later version one",
+        b"observation root selecting it under another authority",
     );
-    definitions.extend([left.clone(), right.clone()]);
+    definitions.push(transitive);
 
     // A root and a reached definition.
     let conflict = link_roots(&definitions, 9, PackageLimits::default()).unwrap_err();
@@ -331,13 +280,13 @@ fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
     let PackageError::ConflictingDefinitions(details) = conflict.cause else {
         panic!("expected a typed transitive definition conflict")
     };
-    assert_eq!(details.first, *left.exact());
+    assert_eq!(details.first, left);
     assert_eq!(details.first_root, 2);
-    assert_eq!(details.second, *right.exact());
+    assert_eq!(details.second, right);
 
     // Two roots.
     let both = link_bundle(
-        &[left.exact().clone(), right.exact().clone()],
+        &[left.clone(), right.clone()],
         &DefinitionCatalog::new(definitions).unwrap(),
         PackageLimits::default(),
     )
@@ -348,9 +297,9 @@ fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
     let PackageError::ConflictingDefinitions(details) = &both.cause else {
         panic!("expected a typed two-root conflict")
     };
-    assert_eq!(details.first, *left.exact());
+    assert_eq!(details.first, left);
     assert_eq!(details.first_root, 0);
-    assert_eq!(details.second, *right.exact());
+    assert_eq!(details.second, right);
     assert_catalogued(&both);
 }
 
@@ -359,7 +308,6 @@ fn one_identity_selected_at_two_exact_selections_refuses_naming_both() {
 fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     let a_ref = definition(
         "acme.cycle.a",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -369,7 +317,6 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     .clone();
     let b_ref = definition(
         "acme.cycle.b",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -381,7 +328,6 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     // each other.
     let a = definition(
         "acme.cycle.a",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::from([b_ref.clone()]),
         BTreeSet::new(),
@@ -389,7 +335,6 @@ fn a_dependency_cycle_refuses_naming_the_cycle_in_path_order() {
     );
     let b = definition(
         "acme.cycle.b",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::from([a_ref.clone()]),
         BTreeSet::new(),
@@ -523,7 +468,6 @@ fn semantic_identity_binds_typed_definition_interpretation() {
     let mut bytes_variant = definitions.clone();
     bytes_variant[8] = definition(
         definitions[8].exact().identity(),
-        "1",
         DefinitionRole::ToolingEvidence,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -556,7 +500,6 @@ fn a_root_naming_a_compiled_models_identity_is_not_a_definition_root() {
     let definitions = complete_definitions();
     let model_named = definition(
         "acme.compiled-model/reading",
-        "1",
         DefinitionRole::ValueModelExpression,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -687,7 +630,6 @@ fn a_caller_raised_definitions_ceiling_admits_a_catalog_the_default_refuses() {
         .map(|i| {
             definition(
                 &format!("acme.bulk.{i}"),
-                "1",
                 DefinitionRole::MethodPlan,
                 BTreeSet::new(),
                 BTreeSet::new(),
@@ -732,7 +674,6 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
         .map(|i| {
             definition(
                 &format!("acme.bulk.{i}"),
-                "1",
                 DefinitionRole::MethodPlan,
                 BTreeSet::new(),
                 BTreeSet::new(),
@@ -765,7 +706,6 @@ fn reaching_a_caller_raised_definitions_ceiling_refuses_naming_the_kind_and_boun
 fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     let leaf = definition(
         "acme.chain.leaf",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -773,7 +713,6 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     );
     let middle = definition(
         "acme.chain.middle",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::from([leaf.exact().clone()]),
         BTreeSet::new(),
@@ -782,7 +721,6 @@ fn dependency_edge_and_depth_limits_admit_exactly_and_refuse_one_below() {
     let mut definitions = complete_definitions();
     definitions[0] = definition(
         definitions[0].exact().identity(),
-        "1",
         DefinitionRole::Source,
         BTreeSet::from([middle.exact().clone()]),
         inventory(),
@@ -913,8 +851,6 @@ macro_rules! resolution_causes {
 fn resolution_causes_match_the_complete_cause_catalog() {
     let pairs = resolution_causes![
         UnsupportedSelection,
-        RevisionMismatch,
-        ByteDigestMismatch,
         InsufficientNextCharge,
         MissingSelection,
         ConflictingAuthority,
@@ -958,14 +894,23 @@ fn resolution_causes_match_the_complete_cause_catalog() {
     }
 }
 
-/// A catalog holding one exact definition twice refuses at construction
+/// A catalog holding one definition identity twice refuses at construction
 /// (`invalid_package`/`duplicate-member`).
 #[trace("TC-491", "FR-111-AC-7", "QSpec-FR-131-AC-2")]
 #[test]
-fn a_catalog_holding_one_exact_definition_twice_refuses() {
+fn a_catalog_holding_one_definition_identity_twice_refuses() {
     let definitions = complete_definitions();
     let error =
         DefinitionCatalog::new(vec![definitions[0].clone(), definitions[0].clone()]).unwrap_err();
+    assert_eq!(error, PackageError::DuplicateDefinition);
+    let other_bytes = definition(
+        definitions[0].exact().identity(),
+        DefinitionRole::Source,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        b"the same identity with other bytes",
+    );
+    let error = DefinitionCatalog::new(vec![definitions[0].clone(), other_bytes]).unwrap_err();
     assert_eq!(error, PackageError::DuplicateDefinition);
 }
 
@@ -981,8 +926,8 @@ fn single_artifact_bytes_is_a_caller_limit_naming_its_bound() {
     let oversized = vec![b'x'; default.single_artifact_bytes + 1];
     let large = Definition::from_exact_bytes(
         &READER_AUTHORITY,
+        AUTHORITY,
         "acme.large",
-        "1",
         DefinitionRole::MethodPlan,
         BTreeSet::new(),
         BTreeSet::new(),
@@ -1022,7 +967,6 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
     let mut definitions = complete_definitions();
     definitions[0] = definition(
         definitions[0].exact().identity(),
-        "1",
         DefinitionRole::Source,
         BTreeSet::new(),
         inventory(),

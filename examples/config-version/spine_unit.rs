@@ -29,11 +29,6 @@ pub const PACKAGE_IDENTITY: &str = "example/config-version";
 /// The domain package's own declared `package.version`.
 pub const PACKAGE_VERSION: &str = "1.0.0";
 
-/// FR-100's own `quire.value.complete/v1` profile digest, reused verbatim
-/// (the same constant every other spine fixture in this repo uses).
-const PROFILE_DIGEST: &str =
-    "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
-
 /// FR-108's own `1-draft` unit text, selecting [`DOMAIN_PACKAGE`] by
 /// `model_digest_hex`, its `sha256-jcs` digest: one fixed unit, shared by
 /// every case (the corpus table selects different clauses and functions
@@ -42,7 +37,7 @@ pub fn unit_text(model_digest_hex: &str) -> String {
     format!(
         "// SPDX-License-Identifier: AGPL-3.0-only\n\
          language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          model Config = {PACKAGE_IDENTITY:?} version {PACKAGE_VERSION:?} digest \"sha256-jcs:{model_digest_hex}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
          present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }}\n\

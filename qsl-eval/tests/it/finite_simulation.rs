@@ -18,8 +18,8 @@ use qsl_eval::simulation::{
 };
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
-use qsl_foundation::selection::{DefinitionDigest, DefinitionRef};
-use qsl_foundation::{ByteDigest, CatalogCode, CatalogCoded, InternalFault};
+use qsl_foundation::selection::DefinitionRef;
+use qsl_foundation::{CatalogCode, CatalogCoded, InternalFault};
 use qsl_semantics::family::{ClassifyFailure, DomainKind};
 use quire_exact::{Integer, IntegerInterval, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
@@ -249,17 +249,10 @@ fn never_cancels() -> bool {
 
 const NO_DOMAINS: &[(WireNodeId, &ValueType)] = &[];
 
-/// The pinned `quire.simulation.sampler/v1` `1-draft.1` `DefinitionRef`
-/// TC-454's vectors run under. QSL pins no raw-byte digest of the
-/// definition file (FR-101); this digest is an arbitrary fixture value,
-/// recorded as given.
+/// The `quire.simulation.sampler/v1` `DefinitionRef` TC-454's vectors run
+/// under.
 fn sampler_ref() -> DefinitionRef {
-    DefinitionRef::new(
-        "quire.simulation.sampler/v1",
-        "1-draft.1",
-        DefinitionDigest::from_digest(ByteDigest::of(b"fixture-sampler-digest")),
-    )
-    .expect("a valid DefinitionRef")
+    DefinitionRef::new("agent-ix", "quire.simulation.sampler/v1").expect("a valid DefinitionRef")
 }
 
 // ---------------------------------------------------------------------------
@@ -1550,18 +1543,14 @@ fn sample_then_replay_round_trips_and_refuses_tampered_traces() {
 }
 
 /// TC-454 step 8, FR-101-AC-10: `sample_request` refuses a `DefinitionRef`
-/// naming a different identity or a different version, before any
+/// naming a different identity, before any
 /// `TransitionSystem` method and any draw, and the refusal's catalog code
 /// is `invalid_runtime_input`/`invalid-value` (FR-101 Behavior).
 #[trace("TC-454", "FR-101-AC-10")]
 #[test]
 fn sample_request_refuses_a_generator_mismatch_before_any_call() {
-    let wrong_identity = DefinitionRef::new(
-        "quire.simulation.sampler/v2",
-        "1-draft.1",
-        DefinitionDigest::from_digest(ByteDigest::of(b"fixture")),
-    )
-    .expect("a valid DefinitionRef");
+    let wrong_identity = DefinitionRef::new("agent-ix", "quire.simulation.sampler/v2")
+        .expect("a valid DefinitionRef");
     let system = RecordingSystem::new();
     let error = sample_request(
         &system,
@@ -1578,36 +1567,6 @@ fn sample_request_refuses_a_generator_mismatch_before_any_call() {
         error,
         NotSimulated::GeneratorMismatch {
             supplied: wrong_identity
-        }
-    );
-    assert_eq!(
-        error.catalog_code(),
-        Some(CatalogCode::new("invalid_runtime_input", "invalid-value"))
-    );
-    assert_eq!(system.calls(), 0);
-
-    let wrong_version = DefinitionRef::new(
-        "quire.simulation.sampler/v1",
-        "1-draft.2",
-        DefinitionDigest::from_digest(ByteDigest::of(b"fixture")),
-    )
-    .expect("a valid DefinitionRef");
-    let system = RecordingSystem::new();
-    let error = sample_request(
-        &system,
-        NO_DOMAINS,
-        &empty_types(),
-        1000,
-        &wrong_version,
-        0,
-        0,
-        5,
-    )
-    .expect_err("a different version refuses");
-    assert_eq!(
-        error,
-        NotSimulated::GeneratorMismatch {
-            supplied: wrong_version
         }
     );
     assert_eq!(

@@ -1,30 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Definition and model selection validation in the parser: each invalid
-//! identity, version or digest of a `profile`, `import` or `model`
-//! declaration is located at its own literal. Formerly in the root crate's
+//! identity of a `profile`, and each invalid identity, version or digest of
+//! an `import` or `model` declaration, is located at its own literal. Formerly in the root crate's
 //! `complete::package_tests`; it parses and never resolves, so it is
 //! layer 1's.
 use ix_trace_rs::trace;
 use qsl_cst::{parse, Limits};
-use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, InvalidDefinitionComponent};
+use qsl_foundation::selection::{DefinitionRef, InvalidDefinitionComponent};
 use qsl_foundation::{Code, SourceIdentity};
 
 #[trace("QSpec-TC-180", "QSpec-FR-131-AC-2")]
 #[test]
 fn selection_validation_locates_each_invalid_component_for_every_declaration_kind() {
     let valid_digest = format!("sha256:{}", "a".repeat(64));
-    let parsed_digest = DefinitionDigest::parse(&valid_digest).unwrap();
     assert_eq!(
-        DefinitionRef::new("", "1", parsed_digest).unwrap_err(),
+        DefinitionRef::new("agent-ix", "").unwrap_err(),
         InvalidDefinitionComponent::Identity
     );
     assert_eq!(
-        DefinitionRef::new("acme/definition", "", parsed_digest).unwrap_err(),
-        InvalidDefinitionComponent::Version
+        DefinitionRef::new("", "acme/definition").unwrap_err(),
+        InvalidDefinitionComponent::Authority
     );
 
-    for declaration_kind in ["profile", "import", "model"] {
-        for invalid_component in ["identity", "version", "digest"] {
+    for (declaration_kind, components) in [
+        ("profile", &["identity"][..]),
+        ("import", &["identity", "version", "digest"][..]),
+        ("model", &["identity", "version", "digest"][..]),
+    ] {
+        for &invalid_component in components {
             let identity = if invalid_component == "identity" {
                 ""
             } else {
@@ -45,9 +48,7 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
                 &valid_digest
             };
             let declaration = match declaration_kind {
-                "profile" => format!(
-                    "profile Complete = \"{identity}\" version \"{version}\" digest \"{digest}\";"
-                ),
+                "profile" => format!("profile Complete = \"{identity}\";"),
                 "import" => format!(
                     "import \"{identity}\" version \"{version}\" digest \"{digest}\" as Base;"
                 ),
@@ -57,9 +58,7 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
                 _ => unreachable!("closed declaration-kind test table"),
             };
             let valid_profile = (declaration_kind != "profile").then(|| {
-                format!(
-                    "profile Complete = \"acme/profile\" version \"1\" digest \"{valid_digest}\";\n"
-                )
+                "profile Complete = \"acme/profile\";\n".to_owned()
             });
             let source = format!(
                 "language \"ix:native\" edition \"1-draft\";\n{}{declaration}\nrecord R {{ datum: Integer; }}",
@@ -124,7 +123,7 @@ fn a_model_digest_keeps_the_slot_its_prefix_names() {
     assert!(ModelDigest::parse(&format!("sha256-jcs:{}", "C".repeat(64))).is_err());
 
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"acme/profile\" version \"1\" digest \"sha256:{hex}\";\nmodel M = \"acme/orders\" version \"1\" digest \"sha256-jcs:{hex}\";\nrecord R {{ datum: Integer; }}"
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"acme/profile\";\nmodel M = \"acme/orders\" version \"1\" digest \"sha256-jcs:{hex}\";\nrecord R {{ datum: Integer; }}"
     );
     let parsed = parse(
         SourceIdentity::new("test", "test:model-jcs", "test", "r1"),
@@ -145,11 +144,10 @@ fn a_model_digest_keeps_the_slot_its_prefix_names() {
 fn an_import_digest_is_bare_lowercase_hex() {
     use qsl_foundation::digest::{DigestDomain, DigestRecord};
     let hex = "d".repeat(64);
-    let profile_digest = "a".repeat(64);
     let parse_import = |digest: &str| {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:{profile_digest}\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
              import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
              record R {{ datum: Integer; }}\n"
         );

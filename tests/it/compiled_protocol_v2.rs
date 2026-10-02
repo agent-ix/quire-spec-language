@@ -28,7 +28,7 @@ use quire_spec_language::state::{
     EvaluationRequest, FieldInput, FieldValue, InputSlot, Limits as StateLimits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
     PopulationInput, Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
-    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
+    ValueKind as StateValueKind,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
@@ -301,12 +301,10 @@ fn state_authority(
         requirement: observation.clone(),
         producer: producer.clone(),
         observation: observation.clone(),
-        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         static_selection: static_selection.clone(),
         assessment_selection: assessment_selection.clone(),
     };
     AuthorityEvidence {
-        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         producer,
         observation,
         compiled,

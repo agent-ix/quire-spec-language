@@ -3363,8 +3363,7 @@ mod locus_tests {
     use quire_semantic_value::location::Origin as CheckOrigin;
 
     const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1\" digest \
-        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
         function f using v(): Boolean pure { not not not true }\n";
 
     /// [`UNIT`] through S1, S2 and the assembler.

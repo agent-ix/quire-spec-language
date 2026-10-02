@@ -16,7 +16,7 @@ fn identity(id: &str) -> SourceIdentity {
     }
 }
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
 /// Everything before a function body expression. The body's `{` is one
 /// bracket pair; the parameter list's `()` closes before it.

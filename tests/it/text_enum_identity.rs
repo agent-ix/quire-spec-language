@@ -167,7 +167,7 @@ fn t04_t05_profile_length_domains_admit_exact_bounds_and_refuse_one_over() {
 
 fn complete_source(declarations: &str) -> String {
     format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n{declarations}"
+        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n{declarations}"
     )
 }
 

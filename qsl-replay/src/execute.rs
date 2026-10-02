@@ -307,8 +307,7 @@ pub enum DependencySelectionsCause {
 /// ```compile_fail,E0308
 /// # use qsl_replay::*;
 /// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
-/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     profile v = \"quire.value.complete/v1\";\n\
 /// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(
@@ -385,8 +384,7 @@ pub enum DependencySelectionsCause {
 /// ```
 /// # use qsl_replay::*;
 /// # let unit = "language \"ix:native\" edition \"1-draft\";\n\
-/// #     profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-/// #     \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+/// #     profile v = \"quire.value.complete/v1\";\n\
 /// #     function small using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 /// # let small = QualifiedName::new(vec![Identifier::new("small").unwrap()]).unwrap();
 /// # let site = call_site(

@@ -23,10 +23,6 @@ use super::profile::Profile;
 use super::result::Subject;
 use super::trace::Closure;
 
-/// Reviewed correspondence source this table restates.
-pub const SUPPORT_TABLE: &str =
-    "quire-specification/FR-095 @ 782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f";
-
 /// A TL target named by the reviewed support table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Target {
@@ -77,10 +73,6 @@ pub enum Support {
     Supported {
         /// The TL target this request maps to.
         target: Target,
-        /// Reviewed source table this disposition was read from, so a later
-        /// revision of that table is a visible change rather than silent
-        /// staleness.
-        table: &'static str,
         /// Extra condition the fixed-sample row attaches, when it applies.
         total_sample_valuation: bool,
         /// Premises a supported mapping would still have to discharge.
@@ -280,7 +272,6 @@ pub fn classify(profile: Profile, operators: Operators, surrounding_execution: C
             Closure::Closed => Target::ClosedTrace,
             Closure::Open => Target::OnlinePrefix,
         },
-        table: SUPPORT_TABLE,
         // The fixed-sample row attaches its condition only where a bounded
         // future operator is reachable; a formula reaching no bounded operator
         // at all matches the last row instead and imposes no such obligation.

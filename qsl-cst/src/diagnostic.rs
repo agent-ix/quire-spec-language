@@ -26,9 +26,8 @@ pub enum CompleteCause {
     /// `unknown_language`, `unknown_edition` or `unknown_profile`: the
     /// selection is not supported by this consumer.
     UnsupportedSelection,
-    /// `stale_dependency`: the selected version differs from the known one.
-    RevisionMismatch,
-    /// `stale_dependency`: the selected version is known with another digest.
+    /// `source_digest_mismatch`: the source bytes do not hash to their
+    /// declared digest.
     ByteDigestMismatch,
     /// `resource_exhausted`: the next charge exceeds its limit.
     InsufficientNextCharge,
@@ -118,7 +117,6 @@ impl CompleteCause {
             Self::InvalidToken => "invalid-token",
             Self::InvalidEscape => "invalid-escape",
             Self::UnsupportedSelection => "unsupported-selection",
-            Self::RevisionMismatch => "revision-mismatch",
             Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::InsufficientNextCharge => "insufficient-next-charge",
             Self::MissingSelection => "missing-selection",
@@ -165,7 +163,7 @@ impl CompleteCause {
                     | CompleteCode::UnknownEdition
                     | CompleteCode::UnknownProfile
             ),
-            Self::RevisionMismatch | Self::ByteDigestMismatch => matches!(
+            Self::ByteDigestMismatch => matches!(
                 code,
                 CompleteCode::StaleDependency | CompleteCode::SourceDigestMismatch
             ),

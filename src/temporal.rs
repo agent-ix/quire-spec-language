@@ -34,7 +34,7 @@ use formula::{Evaluator, Tri};
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
     classify, AuthenticatedSelection, Classification, Operators, Retained, Support, Target,
-    Unmatched, OUTSTANDING_PREMISES, SUPPORT_TABLE,
+    Unmatched, OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};

@@ -12,8 +12,7 @@ use quire_exact::{Integer, Meter, Outcome, ScalarLimits, Value, ValueType};
 use quire_semantic_value::checking::CheckingLimits;
 
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
     type Digit = Int[0, 9];\n\
     function inc using v(x: Digit): Int[0, 10] pure { x + 1 }\n\
     function two using v(): Int[0, 10] pure { inc(1) }\n";
@@ -90,8 +89,7 @@ fn a_function_compiled_from_source_is_called_by_name() {
 fn package_of(declarations: &str) -> CheckedPackage {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1\" digest \
-         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          {declarations}\n"
     );
     let parsed = qsl_cst::parse(

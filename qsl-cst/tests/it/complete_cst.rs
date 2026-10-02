@@ -13,7 +13,7 @@ use qsl_foundation::SourceIdentity;
 const SOURCE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\r\n",
     "// exact trivia remains authored\r\n",
-    "profile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\r\n",
+    "profile Complete = \"quire.value.complete/v1\";\r\n",
     "import \"acme/base\" version \"1\" digest \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" as Base;\r\n",
     "model M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\r\n",
     "dimension Length = M::Length;\r\n",
@@ -248,7 +248,7 @@ fn large_single_lexeme_refuses_at_the_first_excess_leaf() {
 #[trace("QSpec-TC-222", "QSpec-FR-302-AC-2")]
 #[test]
 fn invalid_source_retains_bytes_and_exposes_recovery_without_admission() {
-    let source = "language \"ix:native\" edition \"1-draft\"; profile C = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"; record Broken { value: Integer }";
+    let source = "language \"ix:native\" edition \"1-draft\"; profile C = \"quire.value.complete/v1\"; record Broken { value: Integer }";
     let parsed = qsl_cst::parse(
         identity("broken"),
         "broken.native",
@@ -374,7 +374,7 @@ fn revision_bound_node_identity_includes_the_document_identity() {
 #[trace("QSpec-TC-188", "QSpec-FR-143-AC-10")]
 #[test]
 fn r04_a_sum_declaration_is_invalid_syntax_at_variant() {
-    let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nvariant V { A, B }";
+    let text = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nvariant V { A, B }";
     let parsed = qsl_cst::parse(
         SourceIdentity {
             authority: "test".into(),

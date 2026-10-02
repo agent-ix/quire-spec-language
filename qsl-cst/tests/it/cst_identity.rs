@@ -7,7 +7,7 @@ use ix_trace_rs::trace;
 use qsl_cst::{CstElement, CstNode, Limits, LosslessCst, NodeIdentity, Production, SourceChange};
 use qsl_foundation::{SourceIdentity, Span};
 
-const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
 fn parse(revision: &str, text: &str) -> qsl_cst::ParsedSource {
     let parsed = qsl_cst::parse(

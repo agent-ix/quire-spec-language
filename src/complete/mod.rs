@@ -36,7 +36,7 @@ pub fn parse_with_catalog(
     let source = qsl_cst::diagnostic::read_source(identity, path, bytes, limits.source_bytes)?;
     let mut base = qsl_cst::parse_source(source.clone(), limits)?;
     let refused = base.selections().profiles.iter().find_map(|selection| {
-        editor::profile_refusal(catalog.profile_status(&selection.definition))
+        editor::profile_refusal(catalog, &selection.identity)
             .map(|refusal| (selection.identity_span, refusal))
     });
     if let Some((identity_span, (code, cause, message))) = refused {
