@@ -139,10 +139,10 @@ section "Header-selectable layers" cites): `quire.state.core/v1`,
 
 E3 SHALL resolve each `model` declaration only against the domain package
 I1 admitted for it (FR-056; ADR-011 §2.4). A declaration naming no supplied
-package, a stale version or digest, or a `sha256:` compiled-model digest
+package, a stale digest, or a `sha256:` compiled-model digest
 refuses at I1 with FR-056's cause (FR-056-AC-2, FR-056-AC-7, FR-056-CON-4).
 The emitted `model_selections` are `CheckedGraph::model_selections`, one
-`{identity, version, sha256-jcs digest}` entry per admitted package.
+`{identity, sha256-jcs digest}` entry per admitted package.
 
 ### Lock rows
 
@@ -202,7 +202,7 @@ Implemented, apart from the remaining work below, and backed by the
 TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
 `qsl-replay/src/spine.rs`).
 
-Remaining work: the implementation still parses a header's `version` and
+Remaining work (implementation ticket A1): the implementation still parses a header's `version` and
 `digest` and compares them with the `root` row. AC-5 states the behavior: a
 header profile is `profile <alias> = "<identity>";` and resolves by identity
 alone. Layer

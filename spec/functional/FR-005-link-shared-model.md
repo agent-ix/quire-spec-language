@@ -31,7 +31,7 @@ a Filament reader or universal typed-model adapter. Filament defines archetype
 schemas and generates datatypes; those facts do not supply formal semantics.
 
 A owns native resolution and the explicit source-to-formal correspondence. It
-checks declaration identity, exact revisions, source loci and selected closure.
+checks declaration identity, source loci and selected closure.
 It does not infer formal meaning from Rust layouts, populations, bare names or
 successful datatype generation. Generic language linking/checking proceeds
 against the existing public IR constructors and validation interface.

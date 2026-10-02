@@ -63,7 +63,7 @@ can select an exact digest. Limits and accounting follow
 
 ## Status
 
-FR-018-AC-8 is implemented (ADR-013 §7 slice S-4b) and backed by TC-431. Its `invalid_source_identity` code, `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are backed.
+FR-018-AC-8 is implemented (ADR-013 §7 slice S-4b) and backed by TC-431. Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed.
 
 Qualified construction API at c8fa41f, reviewed in SR-096. TC-055–057 pass with
 21 public API tests and a role-separation compile-fail doctest. Model-aware

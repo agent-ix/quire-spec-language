@@ -66,7 +66,7 @@ independently of the runtime's traversal implementation.
    - IT-006-SC-05: incomplete outcomes retain actual usage/events with no Boolean; retry has fresh budgets.
 6. Run pre/post frames, captured parameter/result and removed-object cases.
    - IT-006-SC-06: evaluation follows the selected observation only after complete frame/delta validation.
-7. Record commands, exact revisions, source/model/input references and stage outcomes.
+7. Record commands, source/model/input references and stage outcomes.
    - IT-006-SC-07: no setup refusal, static proof, backend result or authored expectation substitutes for the requested reference observation.
 
 ## Expected Results

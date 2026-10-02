@@ -175,7 +175,7 @@ configured limit as bound, the actual count and the locus of the node whose
 entry failed ([FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md)),
 reported as `stage_limit_exceeded`/`node-count-exceeded`, including when
 each declaration alone is within the budget. The `CheckingLimits` ceilings
-are stage limits, not a caller work budget: the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6` covers a family `check`
+are stage limits, not a caller work budget: the `quire.native.diagnostics/v1` `stage_limit_exceeded` row covers a family `check`
 and compiler stages S1 to S4, and says that a semantic maximum is not a
 caller work budget, which `resource_exhausted` is.
 
@@ -536,7 +536,7 @@ tags as they exist in the delivered code today:
   Resolved by [FR-096](FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md).
   AC-7's nesting-depth limit is `Typer`'s `CheckingLimits`
   depth, the bound real recursive descent charges. It is a stage limit
-  (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.7`), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
+  (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row), so `ValueFunctionFamily::check` returns `Typer`'s depth refusal
   as `StageFailure::Limit` with kind nesting depth, carrying the
   `Locus::Region` of the node whose entry failed. No `CheckContext` is
   threaded through `Typer`. The `Locus` keeps the location PR #303

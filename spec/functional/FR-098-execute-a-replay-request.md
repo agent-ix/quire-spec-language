@@ -82,8 +82,7 @@ through it, or a crate alias or glob import that reaches it.
   `ReplayRefusal::Recompile`. A dependency whose source recompiles to a
   `package_id` other than its import's recorded digest refuses there as
   `DependencyIdentityMismatch` at that import, a removed entry as
-  `missing_import`/`missing-selection`, and an entry with a changed version
-  as `stale_dependency`/`revision-mismatch`; when that import is in a
+  `missing_import`/`missing-selection`; when that import is in a
   library, the refusal is wrapped in `CompileRefusal::Dependency` with the
   library's path.
 - When the recompiled `package_id` equals the request's, the executor SHALL
@@ -130,7 +129,7 @@ through it, or a crate alias or glob import that reaches it.
   refusal or stage limit (`stage_limit_exceeded`), a stale `package_id`, a
   selection naming no function node, an argument naming no parameter, a
   parameter bound twice or not at all, a witness that does not decode
-  (naming the request's originating obligation identity), an S6a
+  (naming the request's `obligation_identity`), an S6a
   admission refusal (wrong type, or a value outside the declared
   domain), and a selected function whose declared result is not
   `Boolean`. Each has a catalog code (`ReplayRefusal::code`).

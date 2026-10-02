@@ -91,8 +91,7 @@ The requirement carries testable criteria for decisions already taken:
   `quire.application-node/v1` preimage has no owner member. Aliases within
   one source unit are unique
   (`shared-grammar.md`).
-  `proposals/quire-v1/definitions/native-diagnostics.md` revision
-  `1-draft.6`: the catalog codes and causes this requirement names.
+  `proposals/quire-v1/definitions/native-diagnostics.md`: the catalog codes and causes this requirement names.
   `spec/functional/type-model/FR-141-evaluate-text-and-enumerations.md`:
   an enum declaration's key hashes
   `{version: "quire.enum-declaration-node/v1", owner, qualified_declaration,
@@ -667,7 +666,7 @@ occurrence key, so each assembler error names its location as a
 ### Catalog codes
 
 Each S2 and assembler cause has one exhaustive `catalog_code()` (ADR-013
-O-17). The codes come from the catalog revision `1-draft.6`, written as
+O-17). The codes come from the catalog, written as
 code or code/cause:
 
 | Cause | Code |
@@ -815,7 +814,7 @@ STD-112 publishes the causes and replaces it (FR-091-OQ-12).
 - Resolving a selection's definition reference against the library lock is
   the M-4 lock evidence.
 - FR-091-AC-17's code needs the QSpec catalog to name an alias cycle under
-  `definition-cycle`. Revision `1-draft.6` scopes that cause to definition
+  `definition-cycle`. The catalog scopes that cause to definition
   dependencies and to FR-151 dispatch cycles, and has no row for a type
   alias. The one-sentence catalog extension is proposed to
   `ix://agent-ix/quire-specification`.

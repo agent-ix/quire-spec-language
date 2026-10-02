@@ -20,12 +20,16 @@ expected result regardless of order. Scope: FR-075-AC-4, FR-075-AC-7.
 
 ## Test Procedure
 
-Build fixture `BackendDescriptor` values matching TC-282's own: `A1` and `A2`
-for identity `a`, two manifests with distinct digests `d1` and `d2`, both
-advertising (`value-validity`, `bounded`); `A1'`, identity `a` and digest
-`d1`, advertising (`value-validity`, `unbounded`) instead; `B`, identity `b`,
+Build fixture `BackendDescriptor` values for TC-282's roles. A QSL descriptor
+is the identity and its advertised (kind, mode) pairs, so where TC-282's `A2`
+differs from `A1` only in an option, this `A2` differs by one extra advertised
+pair: `A1` and `A2`
+for identity `a`, `A1` advertising (`value-validity`, `bounded`) and `A2`
+advertising (`value-validity`, `bounded`) and (`value-validity`,
+`unbounded`); `A1'`, identity `a`, advertising (`value-validity`,
+`unbounded`) instead; `B`, identity `b`,
 advertising (`value-validity`, `bounded`); and `M`, a registration for
-identity `a` with digest `d2` advertising the invalid mode `finite` (which
+identity `a` advertising the invalid mode `finite` (which
 `BackendDescriptor::admit` refuses before it becomes a descriptor, so it
 cannot itself enter a `Registry` permutation pool).
 
@@ -41,18 +45,19 @@ permuted pool.
 
 ## Vectors
 
-Same as quire-specification TC-282:
+quire-specification TC-282's vectors and expected results, over the fixtures
+above:
 
 | Vector | Registrations | Expected result |
 | --- | --- | --- |
-| DB-01 | `A1`, `A1` | `a` held once with `d1`; no refusal; the unnamed item's candidates are exactly (`a`, `d1`) |
+| DB-01 | `A1`, `A1` | `a` held once as `A1`; no refusal; the unnamed item's candidates are exactly `a` |
 | DB-02 | `A1`, `A1`, `A1`, `B` | As DB-01, with `b` also held; the unnamed item's candidates are `a` then `b` |
-| DB-03 | `A1`, `A2` | Two refusals, `invalid_capability`/`duplicate-backend` keyed (`a`, `d1`) then (`a`, `d2`); `a` is not held; the unnamed item's candidates are empty; the item naming `a` receives the unknown-backend mark |
+| DB-03 | `A1`, `A2` | One refusal, `invalid_capability`/`duplicate-backend` keyed `a`; `a` is not held; the unnamed item's candidates are empty; the item naming `a` receives the unknown-backend mark |
 | DB-04 | `A1`, `A2`, `B` | As DB-03 for `a`; `b` is held; the unnamed item's candidates are exactly `b` |
-| DB-05 | `A1`, `A2`, `A1` | As DB-03; the second `A1` is refused with the first, and no third refusal key is reported |
-| DB-06 | `A1`, `A1'` | One refusal keyed (`a`, `d1`); `a` is not held; the item naming `a` receives the unknown-backend mark |
-| DB-07 | `A1`, `M` | `M` refuses at admission as `invalid_capability`/`unknown-mode`; it never reaches the registry, so `a` is held once with `d1` and no `duplicate-backend` is reported |
-| DB-08 | Register `A1` and read the snapshot; register `A2` and read the snapshot again; repeat with `A2` first | The first snapshot holds `a` with the first registration's digest; the second equals DB-03's snapshot, with the first registration withdrawn and its refusal reported |
+| DB-05 | `A1`, `A2`, `A1` | As DB-03; the second `A1` is refused with the first, and no second refusal is reported |
+| DB-06 | `A1`, `A1'` | One refusal keyed `a`; `a` is not held; the item naming `a` receives the unknown-backend mark |
+| DB-07 | `A1`, `M` | `M` refuses at admission as `invalid_capability`/`unknown-mode`; it never reaches the registry, so `a` is held once as `A1` and no `duplicate-backend` is reported |
+| DB-08 | Register `A1` and read the snapshot; register `A2` and read the snapshot again; repeat with `A2` first | The first snapshot holds `a` as the first registration; the second equals DB-03's snapshot, with the first registration withdrawn and its refusal reported |
 
 ## Expected Results
 
@@ -60,6 +65,5 @@ Every ordering of a vector's registrations gives the same registry, the same
 refusals in the same reported order, and the same candidate set for every
 item. A repeat of an identical manifest is never refused (FR-075-AC-7). A
 conflicting identity is never held, contributes no candidate, and never
-refuses a registration of another identity (FR-075-AC-4). Each
-`duplicate-backend` refusal retains the repeated backend identity and its
-own manifest digest.
+refuses a registration of another identity (FR-075-AC-4). The
+`duplicate-backend` refusal retains the repeated backend identity.

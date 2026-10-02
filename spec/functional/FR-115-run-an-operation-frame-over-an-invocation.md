@@ -89,11 +89,11 @@ clause under test.
   inconsistent, so the frame cannot be evaluated over it.
 - The frame SHALL come only from the compiled package. The request carries no
   frame and no permission, so no caller can widen it (QSpec FR-013-AC-3).
-- A stale identity or version refuses before evaluation, by the rules FR-109
+- A stale identity refuses before evaluation, by the rules FR-109
   and FR-106 already state: an expected `package_id` that differs from the
   recompiled one (stage `compile`, `stale_dependency`); invocation or
-  snapshot labels or bytes that differ from the selection
-  (`stale_dependency`/`revision-mismatch` or `byte-digest-mismatch`); a
+  snapshot bytes that differ from the selection
+  (`stale_dependency`/`content-mismatch`, QSpec FR-272-AC-14); a
   document whose `model` differs from the package's selection
   (`invalid_model_binding`/`wrong-model-selection`).
 
@@ -103,7 +103,7 @@ clause under test.
 |----|----------|--------------|
 | FR-115-AC-1 | Over the ConfigVersion unit and package (FR-108 fixtures), `Frame { operation: Config::ConfigVersion::attemptUpdate, invocation: changed-version }`, whose post changes only `child.versionNumber`, reports `evaluate`, `success`, `truth: true`, exit 0, with the frame node's identity and the three document identities in its provenance. | Test (TC-514) |
 | FR-115-AC-2 | The forbidden-parent-change invocation (post sets `child.parent` absent) reports `evaluate`, `violation`, `truth: false`, exit 10, with a frame witness naming `child`, `parent` and the frame's `modifies` (`versionNumber`), cause `frame_violation`/`unauthorized-change`. A post that adds an object to `config_history` reports `violation` with a witness naming its creation. An invocation declaring `created: [child]` reports `evaluate`, `refusal`, `population_delta_mismatch`/`delta-disagreement`, exit 20. | Test (TC-514) |
-| FR-115-AC-3 | Stale identity and version: an expected `package_id` from another unit reports stage `compile`, `stale_dependency`, naming both; invocation bytes edited under their selected digest report stage `admit`, `stale_dependency`/`byte-digest-mismatch`; an invocation with another `revision` label reports `stale_dependency`/`revision-mismatch`; an invocation whose `model` digest differs reports `invalid_model_binding`/`wrong-model-selection`; an invocation of operation `probe` reports `wrong_snapshot`/`wrong-invocation`. None reaches `evaluate`. | Test (TC-514) |
+| FR-115-AC-3 | Stale identity: an expected `package_id` from another unit reports stage `compile`, `stale_dependency`, naming both; invocation bytes edited under their selected digest report stage `admit`, `stale_dependency`/`content-mismatch`; an invocation whose `model` digest differs reports `invalid_model_binding`/`wrong-model-selection`; an invocation of operation `probe` reports `wrong_snapshot`/`wrong-invocation`. None reaches `evaluate`. | Test (TC-514) |
 | FR-115-AC-4 | `Frame { operation: Config::ConfigVersion::missing }`, `Frame` on an operation no clause or attempt names, `Frame` on `Nope::ConfigVersion::attemptUpdate` (an alias no `model` declaration binds) and `Frame` on `Config::Missing::attemptUpdate` (a type the selected package does not declare) each report stage `select`, `missing_declaration`/`missing-name`. An invocation whose pre snapshot is absent from the provision reports `admit`, `incomplete`, `unavailable_observation`, not a violation. | Test (TC-514) |
 | FR-115-AC-5 | Running one `Frame` request twice gives equal reports, including usage. | Test (TC-514) |
 | FR-115-AC-6 | The entry resolves `M::T::op` once, to the object type's `DeclarationKey` in the package `M` selects and the operation's identifier, and selects by that resolution. Over a package where `Sub` specializes `ConfigVersion` and declares no operation, `Config::Sub::attemptUpdate` resolves to `Sub`'s key and selects `ConfigVersion`'s frame with `Sub` as context. In a unit selecting two packages that both declare `ConfigVersion`, as `Config` and `Copy`, each alias resolves `ConfigVersion` to its own package's key and selects that package's frame. | Test (TC-514) |

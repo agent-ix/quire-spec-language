@@ -57,9 +57,6 @@ requirement.
 
 ## Context
 
-Measured on QSpec `main` at `eb4234f`, QSL `main` at `fc27aacc` and
-quire-contract-codegen (CG) `main` at `e2a5671`.
-
 - **QSpec, unbounded declarations** (QSpec#113, merged as `5413ba6`). QSpec
   FR-144: the collection cardinality bound is optional, an absent bound means
   unbounded, and bound presence is part of collection type identity (QSpec
@@ -396,7 +393,7 @@ layer 5).
 | N-1 | The collection-type identity preimage is the one QSpec's root definitions state (QSpec FR-144, FR-153). QSL implements it in its own code and copies none of the definitions. |
 | N-2 | Every package with a collection type gets new node ids and a new `package_id` under the N-1 preimage, because the preimage changed. Bounded corpora keep their source spelling and meaning. Their expected identities are regenerated, not migrated. |
 | N-3 | The kernel change is a field shape, not a new type: `CollectionType.bound` becomes `Option<CardinalityBound>` and `ValueType::Population` carries `Option<u64>`. AD-016's kernel row keeps its type list, and ADR-011 §6.1's "`ValueType::Population` carries its count only" still holds. Under the bounded profiles the interval stays mandatory, as today. The v2 contract stays `quire.checked-package/v2`; while it is prerelease, QSpec revises its node and operation set in place (ADR-013 QC-19). |
-| N-4 | Compatibility: none is needed. This is pre-release with no users. There is one rule for absent bounds (§2) and no second spelling. There is no bounded-by-default reading of `K<T>` and no adapter. |
+| N-4 | Compatibility: none. This is pre-release with no users. There is one rule for absent bounds (§2) and one spelling: `K<T>` is unbounded. |
 
 A claim over an `Int` argument with no range has extent `Unbounded` (§4).
 That is the existing AD-016 rule (a value outside a declared domain is
@@ -464,7 +461,7 @@ wants a bounded claim declares a `bounded_domain` such as `Int[0, 9]`.
    ADR-011 E9 the
    layer-6 `replay` facade recompiles from digest-addressed source and
    resolves the occurrence key to the operator node. It refuses, with
-   `stale_dependency`/`content-mismatch`, when the recompiled clause's
+   `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics), when the recompiled clause's
    interval, the profile selection or the fairness set differs from the
    packet's. It refuses a malformed lasso (empty loop, position out of range)
    with `invalid_runtime_input`/`invalid-value`. The TemporalTrace evaluate

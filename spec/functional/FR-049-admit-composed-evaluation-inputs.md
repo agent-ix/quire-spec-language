@@ -179,10 +179,7 @@ criteria do not precede this requirement. The domain package and the
 observation system retain their own identities and meanings; this interface checks selected values
 against the compiled requirements they supply.
 
-The observation revision pin above selects a semantic contract, not a crate
-dependency or copied wire representation. The domain package is selected by
-identity and digest. A revision change must be
-reconciled explicitly before its values are admitted through `StateView`.
+The domain package is selected by identity and digest.
 
 `quire-protocol` [FR-003](ix://agent-ix/quire-protocol/FR-003) consumes the
 version-2 entry point for compensation assessment. QSL remains the sole owner of

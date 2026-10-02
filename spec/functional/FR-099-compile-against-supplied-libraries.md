@@ -40,10 +40,10 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 - The unit's source (FR-001 `SourceIdentity`, path, bytes), FR-056's
   package input and the stage limits, as today.
-- The dependency input: supplied libraries, each `{identity, version,
-  source}`, where `identity` is a non-empty library identity string,
-  `version` a version string and `source` a source unit with its four
-  FR-001 labels, path and bytes. At most one library per identity.
+- The dependency input: supplied libraries, each `{identity, source}`,
+  where `identity` is a non-empty library identity string and `source` a
+  source unit with its four FR-001 labels, path and bytes. At most one
+  library per identity.
 
 ## Outputs
 
@@ -66,7 +66,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   identity it already holds, or a library whose source has the authority
   and identity of the unit's or another library's source, with
   `invalid_package`/`conflicting-definition` naming both, and an empty
-  identity or version with `invalid_identifier`.
+  identity with `invalid_identifier`.
 - The S4 source resolution, which runs between S2 and E3, SHALL report its
   own refusals at stage `intake`.
 - The resolution SHALL apply ADR-015 D-1's steps to each import, depth
@@ -76,14 +76,13 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   resolution SHALL refuse `invalid_package`/`definition-cycle` naming the
   identity path, before comparing any digest.
 - When an import names an identity that an earlier import in the closure
-  named with a different version or digest, the resolution SHALL refuse
+  named with a different digest, the resolution SHALL refuse
   `invalid_package`/`conflicting-definition` naming both dependency paths.
 - When an import equals an earlier one, the resolution SHALL reuse that
   import's library once its compile has completed.
 - The resolution SHALL select the library supplied under the import's
   identity, refusing `missing_import`/`missing-selection` at the import's
-  identity string when none is, and `stale_dependency`/`revision-mismatch`
-  at the import when its version differs from the import's.
+  identity string when none is.
 - The resolution SHALL compile each selected library's source through S1 to
   S4 against the same dependency input, package input and stage limits, once
   per library within one compile, each charged the full stage limits as
@@ -127,9 +126,9 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-099-AC-1 | A unit declaring `import "test/geometry" version "1" digest "<d>" as g;`, and referencing nothing of it, compiled with `test/geometry` version `1` supplied from source that compiles to `package_id` `d`, emits a package whose lock and identity preimage each hold the one `DependencySelection` `{test/geometry, 1, d}`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
+| FR-099-AC-1 | A unit declaring `import "test/geometry" version "1" digest "<d>" as g;`, and referencing nothing of it, compiled with `test/geometry` supplied from source that compiles to `package_id` `d`, emits a package whose lock and identity preimage each hold the one `DependencySelection` `{test/geometry, 1, d}`, and QSL's I2 read admits it. The same unit with `test/geometry` and an unimported `test/other` supplied emits identical bytes. | Test (TC-446) |
 | FR-099-AC-2 | The import with `digest "sha256:<d>"`, with `d` in uppercase hex, and with 63 or 65 hex characters, each refuses at S1 with `invalid-digest` at the digest string. The library supplied from a source whose one declaration is changed refuses `DependencyIdentityMismatch` (`stale_dependency`/`byte-digest-mismatch`) at the import, naming `test/geometry`, `d` and the recompiled `package_id`, with no package. | Test (TC-446) |
-| FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with `test/geometry` supplied at version `2` it refuses `stale_dependency`/`revision-mismatch`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other under arbitrary digests, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with the unit declaring its `test/geometry` version `1` import before its `test/a` import, where `test/a` imports `test/geometry` version `2`, the compile refuses `invalid_package`/`conflicting-definition`, unwrapped, naming both dependency paths; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
+| FR-099-AC-3 | With no library supplied as `test/geometry` the import refuses `missing_import`/`missing-selection` at the import's identity string, stage `intake`; with two libraries supplied as `test/geometry`, or a library whose source has the unit's authority and identity, the dependency input refuses `invalid_package`/`conflicting-definition` naming both; with an empty identity it refuses `invalid_identifier`; with `test/a` and `test/b` supplied, each importing the other under arbitrary digests, the compile refuses `invalid_package`/`definition-cycle`, unwrapped, naming both identities, at `test/b`'s import of `test/a`; with the unit declaring its `test/geometry` version `1` import before its `test/a` import, where `test/a` imports `test/geometry` under another digest, the compile refuses `invalid_package`/`conflicting-definition`, unwrapped, naming both dependency paths; with `test/a` importing a `test/missing` no library supplies, the compile refuses `CompileRefusal::Dependency` with path `[test/a]` carrying `missing_import`/`missing-selection` in `test/a`'s source. None yields a package. | Test (TC-446) |
 | FR-099-AC-4 | `LibraryName` admits `test/geometry`, `a.b` and `L` and refuses only the empty string; two supplied libraries `test/b` and `test/a` import in either order into a closure listed `test/a` then `test/b`. | Test (TC-446) |
 | FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
 | FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, and the import's digest updated to the new `package_id`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
@@ -166,3 +165,7 @@ amended to expect the `Int[0, 9]` conversion node a local call also writes. D-1'
 replay supplier (D-4, FR-098-AC-6 and AC-7, TC-444 step 7) are implemented. The CLI renders a refusal against the source its
 region is in, a library's or the program's
 (`a_library_refusal_renders_over_the_library_source`).
+
+Remaining work: a supplied library carries no version. The code's
+`SuppliedLibrary` version, its empty-version refusal and the CLI and replay
+suppliers' version member are removed with it.

@@ -51,11 +51,11 @@ Tag the tests `#[trace("TC-515", "FR-116-AC-n")]`.
   `reproduced-with-evaluated-witness` holding the payload's change
   (`child`, `versionNumber`) and the replay's (`child`, `parent`);
   `inconclusive`, `NoValue`.
-- Step 3: `stale_dependency`/`revision-mismatch` naming both frame
+- Step 3: `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14 and native-diagnostics, quire-specification#174 and #176) naming both frame
   identities, with no admission; FR-098's stale `package_id` refusal;
   `missing_declaration`/`missing-name`; the consistent envelope refuses at
   the recompile, and the other two refuse `stale_dependency`/
-  `revision-mismatch` naming the envelope's and the payload's frame node,
+  `content-mismatch` naming the envelope's and the payload's frame node,
   then occurrence, with no recompile.
 - Step 4: a `ReplayRefusal` holding `unavailable_observation`; a
   `ReplayRefusal` holding `stale_dependency`/`byte-digest-mismatch`. Neither

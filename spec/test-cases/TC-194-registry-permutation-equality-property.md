@@ -28,7 +28,7 @@ sampled order; the resulting registries,
 registration-refusal lists (`Registry::refusals`, in reported order) and
 candidate sets must all agree, exactly as they do for a conflict-free set.
 The registry's own definition (a `BTreeMap` of held descriptors plus a
-`BTreeMap` of conflicted identities' recorded digests) is a function of the
+`BTreeMap` of conflicted identities) is a function of the
 admitted-registration set alone, so this is the same order-independence
 property FR-075-AC-2 already states, applied to a multiset that exercises
 FR-290's idempotent-repeat and conflict rules as well as its plain
@@ -36,8 +36,7 @@ one-registration-per-identity case.
 
 This is the centerpiece non-vacuous test named by the ticket. Catches an
 implementation that stores registrations in an insertion-ordered `Vec` and
-returns matches in that order rather than sorting by `(identity, manifest
-digest)`; an implementation using a `HashMap` whose iteration order is not
+returns matches in that order rather than sorting by identity; an implementation using a `HashMap` whose iteration order is not
 canonicalized before candidate-set construction; and an implementation that
 happens to pass on one hand-picked pair of orderings (e.g. only testing
 "forward" vs. "reversed") but fails on a third order the property generator
@@ -69,11 +68,10 @@ implementation that happens to pass on a simple forward/reverse check.
    registry and candidate-set sequences.
 6. Separately, run the same procedure against a mutant registry
    implementation that appends registrations to a `Vec` and returns
-   candidates in that `Vec`'s iteration order without sorting by
-   `(identity, manifest digest)`.
+   candidates in that `Vec`'s iteration order without sorting by identity.
 7. Construct a second descriptor multiset that repeats one identity's
    descriptor identically and gives a second identity two conflicting
-   descriptors (distinct manifest digests). Repeat steps 3-5 against it,
+   descriptors (distinct advertised pairs). Repeat steps 3-5 against it,
    additionally comparing every sampled ordering's registration-refusal list
    (in reported order) against the first ordering's.
 
@@ -90,7 +88,7 @@ reports a failure on that permutation, demonstrating the test is sensitive
 to order-dependent candidate computation rather than vacuously passing.
 
 Step 7: the repeat contributes no refusal and its identity is held once; the
-conflicting identity contributes no candidate, is unregistered, and its two
-refusals appear in every sampled ordering's refusal list, identically
+conflicting identity contributes no candidate, is unregistered, and its one
+refusal appears in every sampled ordering's refusal list, identically
 ordered. The registry, its refusals and its candidate sets agree across
 every sampled ordering, exactly as in steps 4-5.

@@ -48,7 +48,7 @@ to spine `compile` as FR-056's package input; the program's `model`
 declarations select from it by `sha256-jcs` digest, and the v2 lock's
 `model_selections` names each selected package by identity, version and that
 digest. A `1-draft` request may carry `libraries`: one
-`{identity, version, source}` object per supplied library, where `source` is
+`{identity, source}` object per supplied library, where `source` is
 the same source selection a model or the program uses (file, `sha256:` source
 digest and the FR-001 labels), read under its source digest. The command hands
 them to spine `compile` as its dependency input (FR-099, ADR-015 D-1). A

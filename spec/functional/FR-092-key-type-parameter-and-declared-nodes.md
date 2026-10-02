@@ -117,7 +117,7 @@ Building a type node and lowering a checked expression each walk a tree
 whose depth the check stage's depth limit bounds (`CheckingLimits`, at most
 `MAX_CHECKING_DEPTH`; ADR-011 §2.3). A walk that would pass the limit
 stops with a stage limit of kind nesting depth, reported as
-`stage_limit_exceeded`/`nesting-depth-exceeded` (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6`; FR-096), and yields
+`stage_limit_exceeded`/`nesting-depth-exceeded` (the `quire.native.diagnostics/v1` `stage_limit_exceeded` row; FR-096), and yields
 no key. A type node's
 walk uses stack that does not grow with the nesting of the options,
 collections and declared composites it follows; only the depth limit bounds

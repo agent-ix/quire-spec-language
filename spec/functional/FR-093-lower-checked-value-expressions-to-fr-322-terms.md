@@ -122,7 +122,7 @@ depth limit (`CheckingLimits`, at most `MAX_CHECKING_DEPTH`) bounds all
 nesting, that recursion included. Typing counts each expression it enters as one level
 and stops on a body nested past the limit with a stage limit of kind
 nesting depth, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`
-(the `quire.native.diagnostics/v1` `stage_limit_exceeded` row, revision `1-draft.6`; FR-096), before any node of it is lowered. The
+(the `quire.native.diagnostics/v1` `stage_limit_exceeded` row; FR-096), before any node of it is lowered. The
 walk that measures a declaration before typing (FR-062's input bytes, node
 count and work) and the syntactic checks of a `pre(…)` operand walk the
 parsed expression on a heap stack too, so a body nested past every limit

@@ -32,7 +32,7 @@ authored choreography fixture and balanced-but-incomplete refusal controls.
 5. Insert CRLF, comments, escaped quotes and multibyte string values. Check spans
    by slicing the original bytes at every selected declaration/reference/literal,
    including delimiters, rather than comparing decoded-character offsets.
-6. Run exact-limit and one-step-over token/node/nesting controls, then the frozen
+6. Run exact-limit and one-step-over token/node controls, then the frozen
    historical parse/format/refusal/package corpus through its original selection.
 
 ## Expected Results
@@ -40,6 +40,6 @@ authored choreography fixture and balanced-but-incomplete refusal controls.
 The composed forms produce typed, located syntax with no linked or checked claim.
 Malformed forms return their typed source-bound diagnostics; budget failures are
 `stage_limit_exceeded` with the budget's cause, a token budget
-`token-count-exceeded` (catalog revision `1-draft.7`). All historical expectations remain byte-for-byte unchanged.
+`token-count-exceeded`. All historical expectations remain byte-for-byte unchanged.
 Each step has unconditional assertions; a missing declaration or absent error
 object fails the test rather than skipping the check.

@@ -17,7 +17,7 @@ relationships:
 
 ## Statement
 
-When the next syntax-processing operation would exceed a selected resource ceiling, the compiler shall return a `stage_limit_exceeded` diagnostic naming the ceiling's kind (`quire.native.diagnostics/v1` revision `1-draft.7`) without performing that operation.
+When the next syntax-processing operation would exceed a selected resource ceiling, the compiler shall return a `stage_limit_exceeded` diagnostic naming the ceiling's kind (`quire.native.diagnostics/v1`) without performing that operation.
 
 ## Scope
 

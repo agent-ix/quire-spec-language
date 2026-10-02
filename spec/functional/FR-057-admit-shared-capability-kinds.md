@@ -87,7 +87,7 @@ carry the registry causes below, and family-checker refusals carry their own
 catalog codes.
 
 `invalid_capability` and its causes are catalogued in
-`quire.native.diagnostics/v1` revision `1-draft.5` (quire-specification FR-271
+`quire.native.diagnostics/v1` (quire-specification FR-271
 and FR-272). It is a refusal of the request, not an unsupported backend
 result, so `unsupported_projection` and `unimplemented_capability` are never
 produced at admission.
@@ -236,8 +236,8 @@ consumes this type and defines no second capability vocabulary.
 
 QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
 provider manifest, writes the FR-331 `manifest`, and registers the backend
-with four values from it: the backend identity, the manifest digest, the
-pinned tool identity and the advertised (kind, mode) labels exactly as stated
+with two values from it: the backend identity and the advertised (kind,
+mode) labels exactly as stated
 (ADR-013 C-28).
 
 When a backend registers, the registry SHALL admit each advertised kind under
@@ -251,9 +251,9 @@ contributes nothing, and any registration already held under that identity
 stands. A second registration under an identity the registry already holds
 is judged against the held descriptor (FR-075-AC-4, FR-075-AC-7,
 quire-specification FR-290 "Candidate set and negotiation"): an equal
-descriptor repeats harmlessly, and an unequal one conflicts, refusing every
-registration of that identity with `invalid_capability`/`duplicate-backend`
-and withdrawing the one already held -- unlike the kind/mode causes above,
+descriptor repeats harmlessly, and an unequal one conflicts, refusing the
+identity once with `invalid_capability`/`duplicate-backend` and withdrawing
+the registration already held -- unlike the kind/mode causes above,
 this refusal does not leave the earlier registration standing.
 
 For each admitted item, the registry SHALL compute the candidate set under the
@@ -263,8 +263,8 @@ mark carrying the named identity. That value is the item's `candidates` in the
 quire-specification FR-331 request. The FR-331 envelope writer serializes it
 under FR-331's member layout, which agent-ix/quire-specification#134 owns (ADR-013
 QC-12, C-29); QSL defines no candidate-set wire of its own. A
-candidate is a registered backend's (identity, manifest digest); candidates are
-ordered bytewise by identity, then digest. The FR-331 `manifest` the driver writes holds one
+candidate is a registered backend's identity; candidates are ordered bytewise
+by identity. The FR-331 `manifest` the driver writes holds one
 descriptor per backend in that snapshot. The snapshot is retained as assessment
 provenance; a registration made during the request affects only later
 requests. Each item also carries its extent and the extent classification
@@ -308,8 +308,7 @@ These cases are distinct. None of them is reported as another.
 | Unbounded extent on a bounded-only candidate, finite bound available | Negotiation | `requires-bound`; the extent and the available finite bound predicate are [ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) §4's (#222). |
 | Unbounded extent on a bounded-only candidate, no finite bound | Negotiation | `unsupported`, warned; `unsupported_projection`/`unbounded-extent`. |
 | Several candidates and no named backend, an unregistered or arm-less named backend, inconsistent candidates, or no extent classification | Negotiation | `invalid-request`, with its `invalid_capability` cause. |
-| Solver or tool absence: the routed backend's adapter probe finds its pinned tool missing or mismatched, errors or exceeds its limit | Run of a `supported` item | FR-331 result `unsupported`, warned, naming the kind, backend and expected and actual tool identity; `unsupported_projection`/`tool-unavailable`. |
-| Tool changed after a passing probe, before the run completes | Run of a `supported` item | FR-331 result `failed`, naming the expected and actual tool identity; `unsupported_projection`/`tool-unavailable`. The result `failed`, not the cause, distinguishes it from absence found at probe. |
+| Solver or tool absence: the routed backend's adapter probe finds its tool missing, errors or exceeds its limit | Run of a `supported` item | FR-331 result `unsupported`, warned, naming the kind, backend and tool; `unsupported_projection`/`tool-unavailable`. |
 | Timeout | Run of a `supported` item | A run result mapped by the IR outcome map, never a disposition. |
 | Hold | Nowhere | No stage produces a hold. |
 
@@ -374,9 +373,8 @@ checker's definition permissions. Their ownership is decided in #211.
 - quire-specification AD-010 and AD-016 fix the single registration contract,
   the single negotiation point, the four dispositions and the FR-331 accounting
   join. FR-331 carries the per-item `candidates`.
-- quire-specification FR-271 and FR-272 at catalog revision `1-draft.5` own
-  `invalid_capability` and the `unsupported_projection` causes. QSL's
-  reference moves to that revision before #213 lands.
+- quire-specification FR-271 and FR-272 own
+  `invalid_capability` and the `unsupported_projection` causes.
 - [FR-036](FR-036-link-composed-native-packages.md) consumes the admitted pairs.
 - #213 implements the canonical `Capability` value type, the admission rules
   and the removal of backend reading from `requests::report`. #185 implements

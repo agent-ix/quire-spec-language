@@ -121,4 +121,4 @@ including incomplete native, model, package and runtime input failures.
 
 ## Status
 
-FR-026-AC-6 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code, `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".
+FR-026-AC-6 is implemented (ADR-013 §7 slice S-4b) and backed by TC-430. Its `invalid_source_identity` code, `blank-label` cause and `label` field (FR-001) are backed; a run output's span for this region-less refusal is the native `Diagnostic`'s byte 0, the debt FR-001 records in "Where an S0 refusal is located".

@@ -170,6 +170,6 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 
 Passed locally. Step 4's `ForeignReference` row updated, now
 that the kernel variant carries both universes. Step 4's ten
-revision-`1-draft.8` kernel records, asserted by code, cause, exact fields and
+kernel records, asserted by code, cause, exact fields and
 locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a
 non-empty out-of-domain running total, passed.
