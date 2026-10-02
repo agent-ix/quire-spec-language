@@ -415,9 +415,9 @@ names different artifacts in each.
 | TC-611 | An HP-1 relation whose first refuting tuple is false settles refuted ahead of later undefined tuples | Integration | P1 | FR-179-AC-5, FR-182-AC-6 | 🚧 Planned |
 | TC-540 | S3 checks a refinement declaration's subjects, population map and object map | Unit | P1 | FR-135-AC-1, FR-135-AC-2, FR-135-AC-3, FR-135-AC-4 | 🚧 Planned |
 | TC-541 | S3 checks a refinement's step rows, over a model subject and a protocol subject | Unit | P1 | FR-136-AC-1, FR-136-AC-2, FR-136-AC-3, FR-136-AC-4 | 🚧 Planned |
-| TC-542 | S3 checks a refinement's assume and ensure rows into F_C and F_A | Unit | P1 | FR-137-AC-1, FR-137-AC-2, FR-137-AC-3 | 🚧 Planned |
+| TC-542 | S3 checks a refinement's assume and ensure rows into F_C and F_A | Unit | P1 | FR-137-AC-1, FR-137-AC-2, FR-137-AC-3, FR-137-AC-4 | 🚧 Planned |
 | TC-543 | History fields check at S3 and compute along a behaviour without changing the concrete model | Unit | P1 | FR-138-AC-1, FR-138-AC-2, FR-138-AC-3, FR-138-AC-4 | 🚧 Planned |
-| TC-544 | Population-valued expressions type and evaluate inside a refinement only | Unit | P1 | FR-139-AC-1, FR-139-AC-2, FR-139-AC-3, FR-139-AC-4 | 🚧 Planned |
+| TC-544 | Population-valued expressions type and evaluate inside a refinement only | Unit | P1 | FR-139-AC-1, FR-139-AC-2, FR-139-AC-3, FR-139-AC-4, FR-139-AC-5 | 🚧 Planned |
 | TC-545 | The refinement mapping builds the abstract state from a concrete state and its history | Unit | P1 | FR-140-AC-1, FR-140-AC-2, FR-140-AC-3, FR-140-AC-4 | 🚧 Planned |
 | TC-546 | check_step decides initial states and steps by the stutter, abstract-operation and any rules | Unit | P1 | FR-141-AC-1, FR-141-AC-2, FR-141-AC-3, FR-141-AC-4, FR-141-AC-5 | 🚧 Planned |
 | TC-547 | The refinement product proves, refutes, leaves undetermined and stops the safety half | Integration | P1 | FR-142-AC-1, FR-142-AC-2, FR-142-AC-3, FR-142-AC-4, FR-142-AC-5, FR-142-AC-6, FR-142-AC-7 | 🚧 Planned |
@@ -425,11 +425,12 @@ names different artifacts in each.
 | TC-549 | Refinement items request one temporal-satisfaction record and settle as one terminal record | Unit | P1 | FR-144-AC-1, FR-144-AC-2, FR-144-AC-3, FR-144-AC-4, FR-144-AC-5 | 🚧 Planned |
 | TC-550 | The replay facade replays a refinement counterexample and recomputes what the abstract model saw | Integration | P1 | FR-145-AC-1, FR-145-AC-2, FR-145-AC-3, FR-145-AC-4 | 🚧 Planned |
 | TC-551 | Per-step simulation records are written for functional refinements and never settle refuted | Unit | P1 | FR-146-AC-1, FR-146-AC-2, FR-146-AC-3, FR-146-AC-4 | 🚧 Planned |
-| TC-552 | S3 checks a refinement whose abstract side is a protocol and writes a refinement record | Unit | P1 | FR-147-AC-1, FR-147-AC-2, FR-147-AC-3 | 🚧 Planned |
+| TC-552 | S3 checks a refinement whose abstract side is a protocol and writes a refinement record | Unit | P1 | FR-147-AC-1, FR-147-AC-2, FR-147-AC-3, FR-147-AC-4 | 🚧 Planned |
 | TC-553 | Concrete steps are decided against an abstract protocol with internal closure and observation labels | Integration | P1 | FR-148-AC-1, FR-148-AC-2, FR-148-AC-3, FR-148-AC-4, FR-148-AC-5 | 🚧 Planned |
 | TC-554 | An undefined mapping row or history update refutes a refinement and replays | Integration | P1 | FR-138-AC-5, FR-141-AC-6, FR-142-AC-8, FR-145-AC-5 | 🚧 Planned |
 | TC-555 | A refused or incomplete mapping row or argument leaves the refinement undetermined, and an undefined argument refutes | Unit | P1 | FR-140-AC-5, FR-141-AC-7, FR-144-AC-6 | 🚧 Planned |
 | TC-556 | The simulation certificate checker accepts a true relation and rejects a false one | Integration | P1 | FR-149-AC-1, FR-149-AC-2, FR-149-AC-3, FR-149-AC-4, FR-144-AC-7 | 🚧 Planned |
+| TC-557 | S2 builds the refinement form with every row in source order | Unit | P1 | FR-164-AC-1, FR-164-AC-2, FR-164-AC-3 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

@@ -72,6 +72,8 @@ pub enum StepObligation {
 
 Each is written as a requirement record of kind `operation-contract`, keyed
 by an occurrence key derived from the refinement node and the obligation.
+`StepSimulationRecord` and `StepObligation` live in `quire-semantic-value`,
+since the compiler writes them and CG reads them.
 
 ## Behavior
 

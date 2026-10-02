@@ -48,9 +48,14 @@ with the reason.
 ## Inputs
 
 ```rust
+pub enum RefinementSubject<'a> {
+    Model(ModelSubject<'a>),           // FR-125
+    Protocol(ProtocolSubject<'a>),     // ADR-027 PS-1
+}
+
 pub struct RefinementCheckRequest<'a> {
     pub refinement: &'a CheckedRefinement,       // FR-135
-    pub concrete: ModelSubject<'a>,              // FR-125, or a protocol subject (ADR-027 PS-1)
+    pub concrete: RefinementSubject<'a>,         // Model(FR-125 ModelSubject) or Protocol(ADR-027 PS-1)
     pub abstract_package: &'a CheckedPackage,    // declaring package or dependency (ADR-020 RM-1)
     pub abstract_initial: Vec<DocumentRef>,      // the abstract subject's FR-106 snapshots
     pub limits: ModelCheckLimits,                // FR-126
@@ -58,7 +63,7 @@ pub struct RefinementCheckRequest<'a> {
 
 pub fn check_refinement(
     request: RefinementCheckRequest<'_>,
-    poll: impl FnMut() -> bool,
+    cancel: &Cancel,                             // ADR-029 FR-276
 ) -> Result<RefinementOutcome, ModelCheckRefusal>;
 ```
 
@@ -126,11 +131,12 @@ pub fn check_refinement(
   cause.
 - A concrete subject with no initial state SHALL return
   `Undecided(NoInitialState)`.
-- The checker SHALL apply FR-126's limits and poll with FR-126's outcomes:
+- The checker SHALL apply FR-126's limits, and check `cancel` at every
+  charge, with FR-126's outcomes:
   `BoundReached{depth}` at `max_depth` with no failure, and `Stopped`
   naming the limit and its value for `max_states`, `max_transitions`,
-  `max_candidates` or the evaluation meter, or `Cancelled` for a `true`
-  poll. `max_transitions` SHALL also count the abstract successors that
+  `max_candidates` or the evaluation meter, or `Cancelled` when `cancel`
+  is cancelled. `max_transitions` SHALL also count the abstract successors that
   `check_step` computes.
 - A phase that explores every reachable product state with no failure
   SHALL return `Holds{basis: Exhaustive}` for the safety half.

@@ -42,6 +42,6 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
 - Step 3: `Rejected(StepFails)` with `AbstractStepRejected{transition:
   inc(c), cause: Postcondition}`.
 - Step 4: `Stopped(ResourceExhausted, MaxTransitions)`;
-  `stale_dependency`/`revision-mismatch`; equal results.
+  `stale_dependency`/`content-mismatch`; equal results.
 - Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
   `CertificateRejected`.

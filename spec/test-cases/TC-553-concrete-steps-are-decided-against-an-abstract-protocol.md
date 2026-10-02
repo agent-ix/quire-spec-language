@@ -36,7 +36,7 @@ Tag the tests `#[trace("TC-553", "FR-148-AC-n")]`.
 
 - Step 1: one state at `a1`, `value` 0; the state at `a2`, `value` 1; the
   finished state with `value` 2.
-- Step 2: `proved`, `closed-scope`.
+- Step 2: `proved`, `closed-scope`, `Uncertified`.
 - Step 3: `refuted`, `NoAbstractMatch` at the commit that leaves `value`
   unchanged; `reproduced-with-evaluated-witness`.
 - Step 4: `refuted`, `NoAbstractMatch{position: 4}` at the second commit;

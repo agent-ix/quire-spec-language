@@ -30,8 +30,8 @@ makes the abstract subject a protocol subject (ADR-027 PS-1, PR-2; ADR-020
 RM-9, MC-1). This is QSpec FR-177's protocol refinement. The mapping rows define
 the abstract model's visible fields; the abstract protocol's rest points,
 binders, queues and instances are hidden. Each concrete step's explicit row
-states its observation, and the declaration's `internal` rows list the
-abstract steps that are internal. The relation's meaning, including
+states its observation, and the declaration's `internal` and `visible`
+rows classify every abstract step class that no step row targets. The relation's meaning, including
 divergence-freedom, refusal sets, terminal success and assumption
 weakening, is QSpec's (ADR-020 QS-8); this requirement covers QSL's S3
 checks and requirement record. FR-148 decides the steps.
@@ -47,7 +47,8 @@ rows at compile time and requests one protocol refinement claim.
 ## Inputs
 
 - The parsed refinement form, whose abstract side is written
-  `abstract <A>::<protocol>`, with `internal <A>::<protocol>::<node>` rows
+  `abstract <A>::<protocol>`, with `internal <A>::<protocol>::<node>` and
+  `visible <A>::<protocol>::<node>` rows
   (ADR-020 RM-9; the spelling is illustrative, and ADR-020 QS-11 asks QSpec
   FR-375 and FR-177 for these forms).
 - The abstract model's checked protocol clause and its step classes
@@ -95,7 +96,17 @@ rows at compile time and requests one protocol refinement claim.
 - An abstract node named both by an `internal` row and as the right side of
   a step row SHALL refuse `invalid_model_binding`/`conflicting-binding`,
   naming both rows.
-- An abstract step class that no `internal` row names SHALL be visible.
+- Each `visible` row SHALL name an abstract protocol node, or a channel or
+  memory step kind of the abstract protocol, refusing
+  `missing_declaration`/`missing-name` otherwise; a class named by both an
+  `internal` and a `visible` row SHALL refuse
+  `invalid_model_binding`/`conflicting-binding`.
+- Every abstract step class SHALL be named by an `internal` row, a
+  `visible` row or the right side of a step row; a class named by none
+  SHALL refuse `missing_declaration`/`missing-name` naming the class, since
+  no abstract step is visible or internal by rule (ADR-020 MC-1).
+- A class named by a `visible` row or by a step row's right side SHALL be
+  visible with its observation label.
 - An `internal` row while the abstract side is a model subject SHALL refuse
   `invalid_model_binding`/`malformed-declaration`.
 
@@ -109,7 +120,7 @@ rows at compile time and requests one protocol refinement claim.
 - Negotiation SHALL route it by its kind (FR-075); the explicit-state
   engine's provider manifest SHALL advertise `refinement` for a protocol
   abstract side.
-- With `F_A` non-empty, the record's liveness half SHALL settle
+- With `F_A` non-empty, the record's `F_A` liveness half SHALL settle
   `unsupported`, `unsupported-requested-capability`, naming liveness through
   hidden abstract fields, since the abstract control state is hidden
   (ADR-020 AX-5).
@@ -130,6 +141,7 @@ mapped `-> stutter`, and `internal Spec::Twice::finish`.
 | FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> Spec::Twice::a1` checks, naming node `a1`. | Test (TC-552) |
 | FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); `internal Spec::Twice::zz` (`missing_declaration`/`missing-name`); `internal Spec::Twice::a1` beside a row `-> Spec::Twice::a1` (`invalid_model_binding`/`conflicting-binding`); `-> Spec::Twice::a1` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); `internal Spec::Twice::finish` in `CasRefinesCounter` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
 | FR-147-AC-3 | `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
+| FR-147-AC-4 | `CasTwice` with its `internal Spec::Twice::finish` row removed refuses `missing_declaration`/`missing-name` naming the class `finish`; with `visible Spec::Twice::finish` in its place it checks, with `finish` visible; with both rows it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
 
 ## Dependencies
 

@@ -34,8 +34,8 @@ QSL SHALL write one requirement record for each refinement declaration and
 settle it as exactly one FR-331 terminal record (ADR-020 §5 "Claim kinds",
 "Strength" and "Negotiation", RE-4, RS-9). The record's kind is
 `temporal-satisfaction`, its property form is TP-5 `Refinement` with a
-safety half and, when `F_A` is non-empty, a liveness half. `model_check`
-owns the map from a `RefinementOutcome` (FR-142, FR-143) and the replay of
+safety half and, when `F_A` is non-empty, a liveness half. Layer 6,
+`qsl-replay`, owns the map from a `RefinementOutcome` (FR-142, FR-143) and the replay of
 its counterexample (FR-145) to `TerminalValue`, extending FR-127's map.
 
 ## Use case

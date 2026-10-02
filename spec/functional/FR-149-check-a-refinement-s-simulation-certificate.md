@@ -96,7 +96,7 @@ pub enum CertificateRejection {
   product position, each concrete initial state's position, and every
   retained edge with the `Taken` that `check_step` returned.
 - **Identity.** The checker SHALL refuse with `stale_dependency`/
-  `revision-mismatch`, naming both values, a certificate whose refinement
+  `content-mismatch`, naming both values, a certificate whose refinement
   node, either `package_id` or obligation identity differs from the item's
   recompile (FR-098).
 - **Initial states.** For each concrete initial state `i`, the checker SHALL
@@ -129,7 +129,7 @@ pub enum CertificateRejection {
 | FR-149-AC-1 | ADR-020 §8's `CasRefinesCounter` without its `ensure` row: the engine's certificate holds one position per stored product state, and the checker returns `Accepted`. | Test (TC-556) |
 | FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected(PostDiffers)` at that position and edge; with that edge's post index pointing at the initial position it returns `Rejected(PostDiffers)`; with one listed edge removed it returns `Rejected(SuccessorsDiffer)`. | Test (TC-556) |
 | FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected(StepFails)` with `AbstractStepRejected{transition: inc(c), cause: Postcondition}`, so a false relation is never accepted. | Test (TC-556) |
-| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(ResourceExhausted, MaxTransitions)`; a certificate naming another refinement node is refused `stale_dependency`/`revision-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
+| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(ResourceExhausted, MaxTransitions)`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
 
 ## Dependencies
 

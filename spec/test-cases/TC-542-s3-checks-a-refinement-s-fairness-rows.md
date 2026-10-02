@@ -26,6 +26,8 @@ Fixtures: `CasRefinesCounter` (ADR-020 §8); FR-136-AC-4's protocol subject.
 2. Check each row variant of FR-137-AC-2.
 3. Check the protocol subject with no `assume` row; with `assume fair weak
    each incA`; with `scheduling adversarial`.
+4. Check `CasRefinesCounter` with `ensure fair strong each
+   Spec::Counter::inc`, and with `assume fair strong Impl::Counter::retryA`.
 
 Tag the tests `#[trace("TC-542", "FR-137-AC-n")]`.
 
@@ -37,3 +39,4 @@ Tag the tests `#[trace("TC-542", "FR-137-AC-n")]`.
   same naming `Impl`; `missing_declaration`/`missing-name`; one constraint.
 - Step 3: three `Scheduler` constraints (branch `A`, branch `B`, root);
   those three and the authored one; the authored one only.
+- Step 4: `F_A` is `[Strong Each inc]`; `F_C` gains `Strong Whole retryA`.

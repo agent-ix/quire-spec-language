@@ -52,8 +52,9 @@ written again.
 ## Behavior
 
 - The checker SHALL check each row's kind and granularity by FR-123's
-  rules: the one kind is `weak`, a row with no granularity SHALL check as
-  `Whole`, and a row written `whole` or `each` SHALL check as written.
+  rules: a row written `fair weak` SHALL check as `Weak` and a row written
+  `fair strong` as `Strong` (ADR-019), a row with no granularity SHALL check
+  as `Whole`, and a row written `whole` or `each` SHALL check as written.
 - An `assume` row's operation SHALL resolve to an operation of the concrete
   model, and an `ensure` row's to an operation of the abstract model. If a row's
   operation resolves in neither model, or only in the other model, then the
@@ -81,6 +82,7 @@ written again.
 | FR-137-AC-1 | ADR-020 §8's `CasRefinesCounter` checks `F_C` as six `Weak` `Each` constraints in source order (`beginA`, `beginB`, `commitA`, `commitB`, `retryA`, `retryB`) and `F_A` as `[Weak Each Spec::Counter::inc]`. With the `ensure` row written `ensure fair weak Spec::Counter::inc`, `F_A` is `[Weak Whole inc]` and the node identity differs. With the `ensure` row removed, `F_A` is empty. | Test (TC-542) |
 | FR-137-AC-2 | `assume fair weak Spec::Counter::inc` refuses `missing_declaration`/`missing-name` naming `Spec`; `ensure fair weak Impl::Counter::peek` refuses the same naming `Impl`; `assume fair weak Impl::Counter::nope` refuses `missing_declaration`/`missing-name`. `assume fair weak each Impl::Counter::beginA` written twice checks as one constraint. | Test (TC-542) |
 | FR-137-AC-3 | Over FR-136-AC-4's concrete protocol subject with no `assume` row, `F_C` holds three `Weak Whole` constraints with origin `Scheduler`, for branch `A`, branch `B` and the root. With `assume fair weak each incA` added, `F_C` holds those three and the authored constraint. With `scheduling adversarial` on the protocol, `F_C` holds only the authored constraint. | Test (TC-542) |
+| FR-137-AC-4 | `CasRefinesCounter` with `ensure fair strong each Spec::Counter::inc` checks `F_A` as `[Strong Each inc]`, and with `assume fair strong Impl::Counter::retryA` adds `Strong Whole retryA` to `F_C`. | Test (TC-542) |
 
 ## Dependencies
 

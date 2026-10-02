@@ -44,7 +44,8 @@ one mapping row.
 ## Outputs
 
 - A checked population reference of type `Set<Reference<T>>[0, n]`, with `T`
-  the population's member type and `n` its universe size.
+  the population's member type and `n` its universe size, which S3 holds
+  symbolic and the request's subject fixes.
 - Checked forms: `count(x in P where c)`, `sum(x in P where c: e)`,
   `exists(x in P where c)`, `all(x in P where c)`, `only(x in P where c:
   e)` and `seq(i in lo .. hi: e)`, each with the type QSpec gives it.
@@ -56,7 +57,18 @@ one mapping row.
 ### S3
 
 - A concrete population name inside a refinement declaration SHALL check as
-  a population reference of type `Set<Reference<T>>[0, n]`.
+  a population reference of type `Set<Reference<T>>[0, n]` with `n` a
+  symbolic universe size. S3 SHALL check every typing rule that does not
+  depend on `n`, and SHALL record each bound that does (a `count` or `sum`
+  result, or a population reference, against the type of its use).
+
+### Subject admission
+
+- When a request admits the concrete subject's universes, before
+  exploration, the checker SHALL substitute each population's universe size
+  for `n` and check the recorded bounds, refusing
+  `ill_typed`/`type-mismatch` naming the row, the population and its
+  universe size when a result's bounds do not conform to its use.
 - A population name or one of the six forms in any other clause body SHALL
   refuse `unsupported_construct`/`expression-form` at its span.
 - Each form SHALL bind its variable to `Reference<T>` (for `x in P`) or to
@@ -89,10 +101,11 @@ Fixture: ADR-020 §8's `RingIsQueue` with universes `rings = {r}` and `slots
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-139-AC-1 | `RingIsQueue`'s `items` row checks, with `R::slots` typed `Set<Reference<R::Slot>>[0, 2]` and the `seq` form's declared maximum length 2, conforming to `Sequence<Int[0, 1]>[0, 2]`. `count(s in R::slots where s.ring = self)` checks as an integer and `exists(s in R::slots where s.value = 1)` as `Boolean`. | Test (TC-544) |
+| FR-139-AC-1 | `RingIsQueue`'s `items` row checks at S3 with `n` symbolic, and at subject admission with `slots = {s0, s1}` `R::slots` is typed `Set<Reference<R::Slot>>[0, 2]` and the `seq` form's declared maximum length 2, conforming to `Sequence<Int[0, 1]>[0, 2]`. `count(s in R::slots where s.ring = self)` checks as an integer and `exists(s in R::slots where s.value = 1)` as `Boolean`. | Test (TC-544) |
 | FR-139-AC-2 | An invariant of `R::Ring` reading `count(s in R::slots where s.ring = self)` refuses `unsupported_construct`/`expression-form`. `only(s in R::slots where s.index: s.value)` refuses `ill_typed`/`type-mismatch` at `s.index`. | Test (TC-544) |
 | FR-139-AC-3 | At the state `head = 1`, `size = 2`, `s0.value = 0`, `s1.value = 1`, `items` evaluates to `[1, 0]`; at `head = 0`, `size = 0` it evaluates to `[]`; `count(s in R::slots where s.ring = self)` evaluates to 2 and `all(s in R::slots where s.value = 1)` to `false`. | Test (TC-544) |
 | FR-139-AC-4 | `only(s in R::slots where s.ring = self: s.value)` is undefined at every state of the fixture (two slots satisfy it), and `only(s in R::slots where s.ring = self and s.index = self.head + 2: s.value)` is undefined (no slot satisfies it). | Test (TC-544) |
+| FR-139-AC-5 | A row `count(s in R::slots where s.ring = self)` mapped to an abstract field of type `Int[0, 2]` checks at S3 with `n` symbolic; a request whose subject admits `slots = {s0, s1}` admits it, and one that admits `slots = {s0, s1, s2}` refuses `ill_typed`/`type-mismatch` before exploration, naming the row, `R::slots` and universe size 3. | Test (TC-544) |
 
 ## Dependencies
 

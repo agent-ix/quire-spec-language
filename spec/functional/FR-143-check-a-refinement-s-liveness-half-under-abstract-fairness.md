@@ -109,7 +109,8 @@ the concrete subject with failure `Divergence{constraint}` or
   edge, so it violates `k` exactly when `k` is enabled at its mapped state
   (ADR-020 RS-10). Neither model's `terminal` member SHALL change this
   reading.
-- The phase SHALL respect FR-126's limits and poll and return `Stopped`
+- The phase SHALL respect FR-126's limits and FR-142's `cancel` handle and
+  return `Stopped`
   with the limit reached.
 
 ## Acceptance Criteria

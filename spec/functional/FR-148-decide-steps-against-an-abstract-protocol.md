@@ -44,7 +44,8 @@ often than the protocol allows, is refuted with a prefix that replays.
 ## Inputs
 
 - A `CheckedRefinement` with `AbstractSide::Protocol` (FR-147).
-- The abstract protocol subject's `ProtocolSystem` (ADR-027 TS-1), built
+- The abstract protocol subject's `ProtocolSystem` (ADR-027 TS-1), passed to
+  FR-141 as `AbstractSystem::Protocol`, built
   with the derived universes (ADR-020 RM-2) and the request's bindings.
 - FR-141's positions and steps.
 
@@ -90,11 +91,23 @@ often than the protocol allows, is refuted with a prefix that replays.
 
 ### Further checks
 
-- The product (FR-142) SHALL apply QSpec FR-177's divergence-freedom,
-  refusal-set, terminal-success and assumption-weakening checks to the same
-  product states and edges, as QSpec states them, and report a violation
-  with the failure kind QSpec gives it, as a prefix or lasso over concrete
-  steps.
+- **Divergence-freedom.** The product (FR-142) SHALL decide QSpec FR-177's
+  divergence-freedom on the safety product itself, with no fairness filter:
+  a cycle of concrete steps whose rows are `stutter`, at every position of
+  which every member of the candidate set enables a visible abstract step,
+  is an observable divergence. The first such cycle in canonical order
+  SHALL refute with a lasso and `RefinementFailure::Divergence` naming that
+  abstract step class (QSpec FR-379). This check reads no `F_A`, so it runs
+  with hidden abstract fields; FR-147's `unsupported` liveness half is the
+  `F_A` half only.
+- **Other checks.** The product SHALL apply QSpec FR-177's refusal-set,
+  terminal-success and assumption-weakening checks to the same product
+  states and edges, as QSpec states them, and report a violation with the
+  `refinement_failure` kind QSpec FR-379 gives it (ADR-020 QS-8), as a
+  prefix or lasso over concrete steps.
+- A `proved` protocol refinement SHALL be labelled `Uncertified` (ADR-018
+  PC-1, ADR-020 CT-4): FR-149 certifies the step rules only, and the further
+  checks have no core certificate checker.
 - Replay (FR-145) SHALL recompute the abstract sets with `ProtocolSystem`
   and rerun the same check at the failing position or over the loop.
 
@@ -105,7 +118,7 @@ Fixtures: `Twice` and `CasTwice` (FR-147).
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-148-AC-1 | `check_initial` on `CasTwice`'s concrete initial state gives one abstract state, at rest at `a1` with `value` 0. After `beginA`, `commitA` the set holds the state at rest at `a2` with `value` 1; after a second commit, the state with `value` 2 and the protocol finished, since the closure takes the internal `finish`. | Test (TC-553) |
-| FR-148-AC-2 | `CasTwice` settles `proved`, basis `closed-scope`, as QSpec FR-379 settles a completed explicit-state run with no failure, holding for the concrete initial states and universe `counters = {c}`. | Test (TC-553) |
+| FR-148-AC-2 | `CasTwice` settles `proved`, basis `closed-scope`, as QSpec FR-379 settles a completed explicit-state run with no failure, holding for the concrete initial states and universe `counters = {c}`, labelled `Uncertified` (ADR-018 PC-1), since the further checks of QSpec FR-177 have no core certificate checker (ADR-020 CT-4). | Test (TC-553) |
 | FR-148-AC-3 | The lost-update model (ADR-020 §8) with `peek` removed, against `Twice` with the same rows, settles `refuted` with `NoAbstractMatch` at the commit that leaves `value` unchanged, and the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-553) |
 | FR-148-AC-4 | `CasTwice` against the protocol `Once` (`a1` then `finish`) settles `refuted` with `NoAbstractMatch{position: 4}`, whose step is the second commit, and the counterexample replays. | Test (TC-553) |
 | FR-148-AC-5 | `CasTwice` with `peek` kept in the concrete model and mapped `-> stutter` settles `refuted`, basis `decisive-counterexample`, by QSpec FR-177's divergence-freedom check with divergence observable, with a lasso whose loop is one `peek` step at the initial state, where the abstract `a1` is enabled. It refutes with no `assume` or `ensure` row present, because QSpec FR-177-AC-6 refutes an observable internal loop under every fairness set, including an empty one. | Test (TC-553) |

@@ -47,21 +47,28 @@ replay.
 ## Inputs
 
 ```rust
+pub enum SideState { Model(ModelState), Protocol(ProtocolState) }  // ADR-027 PS-8
+
+pub enum AbstractSystem<'a> {
+    Model(&'a ModelSystem<'a>),        // FR-120
+    Protocol(&'a ProtocolSystem<'a>),  // ADR-027 TS-1, for FR-148
+}
+
 pub struct RefinementPosition {
-    pub concrete: ModelState,         // or a protocol state over a protocol subject
+    pub concrete: SideState,          // a model state, or a protocol state over a protocol subject
     pub history: HistoryValues,       // FR-138
-    pub abstract_states: Candidates,  // one state, or the AX-2 set with hidden fields
+    pub abstract_states: Vec<SideState>, // one state, or the AX-2 set, sorted by state key
 }
 
 pub fn check_initial(
     refinement: &CheckedRefinement,
-    abstract_system: &ModelSystem<'_>,
-    concrete_initial: &ModelState,
+    abstract_system: AbstractSystem<'_>,
+    concrete_initial: &SideState,
 ) -> StepVerdict;
 
 pub fn check_step(
     refinement: &CheckedRefinement,
-    abstract_system: &ModelSystem<'_>,
+    abstract_system: AbstractSystem<'_>,
     pre: &RefinementPosition,
     step: &ConcreteStep,              // transition identity, post-state, result
 ) -> StepVerdict;
@@ -79,6 +86,8 @@ pub enum StepVerdict {
 
 pub enum Taken { Stutter, Abstract(Vec<ModelTransition>) }  // abstract identities matched
 ```
+
+`ModelTransition` and `ProtocolTransition` are `quire-semantic-value` types.
 
 `RefinementFailure` is ADR-020 RC-1's: `InitialNotAbstract{initial}`,
 `StutterChanged{position}`, `AbstractStepRejected{position, transition,
