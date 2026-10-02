@@ -23,7 +23,7 @@ Scope: FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 (`Stopped`).
 
 Integration tests in `qsl-eval/tests/it/` through `explore_request`,
 `sample_request` and `replay`, with an empty `domains` set, `Limits` of 100
-each and the `quire.simulation.sampler/v1` `1-draft.1` `DefinitionRef`. A
+each and the `quire.simulation.sampler/v1` `DefinitionRef`. A
 test system is an integer graph whose `successors` returns a configured
 `Expansion` or `ExpansionStop` per state.
 
@@ -41,10 +41,10 @@ test system is an integer graph whose `successors` returns a configured
    `established-invariant-broken`.
 5. Sample the non-stopping chain with `max_steps` 1 and replay the trace
    against the stopping chain.
-6. Sample step 2's graph from `0` with seed `424243`, trace `0` and
+6. Sample step 2's graph from `0` with seed `424246`, trace `0` and
    `max_steps` 2, then replay the trace with `"f"` removed from its
-   findings. Seed `424243`'s step-0 draw preimage
-   `{"draw":"0","seed":"424243","step":"0","trace":"0"}` hashes to a digest
+   findings. Seed `424246`'s step-0 draw preimage
+   `{"choice":"0","draw":"0","seed":"424246","step":"0","trace":"0"}` hashes to a digest
    whose big-endian value is odd, so with `n = 2` it selects index 1, the
    successor `2` in canonical order.
 
@@ -58,7 +58,7 @@ categories, `#[trace("TC-474", "FR-097-AC-5")]`.
   With `runtime_invariant`: `Stopped`, same frontier, category internal
   failure.
 - Step 2: `Exploration.findings` is `[StateFindings { state: <2>, depth: 1,
-  findings: ["f"] }]`. With `max_depth` 1: `Bounded` at `Limit::Depth`
+  findings: ["f"] }]`. With `max_depth` 1: `BoundReached{depth: 1}`
   with frontier `[<1>, <2>]`, and `findings` is `[]`, since the frontier
   states are unexpanded. With the stopping system, `findings`
   holds no entry for `1`.

@@ -3,7 +3,7 @@ id: SR-789
 title: "Dependency review of ADR-016 state, model and finite execution mapping"
 type: SpecReview
 analysis: dependency
-scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md §9 (G-1 to G-7), §11 (PI-1 to PI-5), Open dependencies; spec/decisions/ADR-012-semantic-family-extension-contracts.md §15.8; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md §7.3 M-6c to M-6e; spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md"
+scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md §9 (G-1 to G-7), §11 (PI-1 to PI-5), Open dependencies; spec/decisions/ADR-012-semantic-family-extension-contracts.md §15.8; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md §7.3 M-6c to M-6e; spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md; spec/functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md"
 review_set: all
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-016

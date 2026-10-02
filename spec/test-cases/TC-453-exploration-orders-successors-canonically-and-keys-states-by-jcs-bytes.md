@@ -57,7 +57,7 @@ public entries; `explore` is `pub(crate)` (FR-101).
 - Step 2: the frontier lists `step(10)`'s post-state digest before
   `step(9)`'s.
 - Step 3: the frontier lists the smaller state key's digest first.
-- Step 4: `Bounded` at `Limit::Depth` with 3 states; the frontier is the
+- Step 4: `BoundReached{depth: 0}` with 3 states; the frontier is the
   three distinct initial states' digests in ascending key order. The
   duplicate is one state.
 - Step 5: `Cancelled`, frontier 3's digest then 4's: level-2 parents keep
@@ -82,6 +82,4 @@ Tag each test `#[trace("TC-453", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-✅ Implemented. FR-101's "Existing test disposition" table maps
-each existing test to its step here. Step 9 (FR-101-AC-11) was added in
-review (SR-672 FND-002, SR-673 FND-002).
+🚧 Implemented except step 4's `BoundReached`, not yet implemented.

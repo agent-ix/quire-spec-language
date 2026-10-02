@@ -24,7 +24,7 @@ Integration tests in `qsl-eval/tests/it/` through `ModelSystem::new`,
 `explore_model`, `sample_model` and FR-101's `replay`, with TC-471's package
 and compile path. Unless a step says otherwise, the meter budget is the
 FR-100 default, `max_candidates` is 1,000, FR-101's `Limits` are 100 each,
-and the sampler is the `quire.simulation.sampler/v1` `1-draft.1`
+and the sampler is the `quire.simulation.sampler/v1`
 `DefinitionRef`.
 
 1. `increment` with `pre CanInc { self.value < 2 }`, `post Inc` and

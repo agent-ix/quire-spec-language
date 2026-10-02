@@ -186,6 +186,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-032
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-018
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -235,6 +237,20 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-273
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-028
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-123
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-124
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-125
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-127
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-128
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-015
     type: contains
 ---
 # Master Requirements Specification
@@ -418,6 +434,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-013](usecase/US-013-receive-a-typed-family-evaluation-outcome.md) | US | Draft |
 | [US-014](usecase/US-014-compile-value-source-through-the-forms-stage.md) | US | Draft |
 | [US-028](usecase/US-028-trust-one-definition-per-canonical-type.md) | US | Draft |
+| [US-015](usecase/US-015-check-a-temporal-property-over-every-behaviour-of-a-model.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -526,7 +543,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-098](functional/FR-098-execute-a-replay-request.md) | FR | Implemented (ADR-013 TK-01, C-13): `qsl_replay::replay` recompiles through the spine, checks `package_id`, selects by `QualifiedName`, joins by parameter node id and calls S6a -- TC-444 passes locally for AC-1 to AC-5; AC-6 and AC-7 (replay against dependencies, ADR-015 D-4) implemented, TC-444 step 7 passes locally |
 | [FR-099](functional/FR-099-compile-against-supplied-libraries.md) | FR | Implemented (ADR-015 D-1 to D-5): spine `compile` resolves imports against supplied libraries, compiles each from source, types imported names from the library's checked graph and emits `dependency_reference` -- D-1's spine resolution, D-2, D-3 and D-5 implemented, D-1's CLI `libraries` (FR-027-AC-10) and replay (D-4) suppliers implemented; TC-446 steps 1 to 7 pass locally (AC-5's `g::f(3)` clause amended) |
 | [FR-100](functional/FR-100-run-a-named-function-through-the-spine.md) | FR | Implemented (ADR-011 §5 spine `run`, OQ-1): CLI `run` routes a native-run/1 request by the program's declared edition, and a `1-draft` program's named function runs through `qsl_replay::spine::run` (spine compile, then `CheckedPackage::call`) with name-keyed canonical integer arguments, the full FR-096 outcome mapping (record, family and kernel refusal rows, and the internal-failure path) and FR-301 exit codes -- TC-450 to TC-452 (see FR-100's Status for the kernel catalog codes still pending STD-110) |
-| [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md) | FR | Specified: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, pinned `quire.simulation.sampler/v1`, `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned; AC-12 to AC-14 (findings, `ExpansionStop`, `Outcome::Stopped`, stopped-trace replay) specified -- TC-474 planned |
+| [FR-101](functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md) | FR | Specified: `qsl_eval::simulation` implements QSpec FR-181's canonical successor order, typed state key, `quire.simulation.sampler/v1` (preimage with `choice`), `caller-cancelled` cause and pre-exploration `requires-bound` -- TC-453 to TC-455 planned; AC-12 to AC-14 (findings, `ExpansionStop`, `Outcome::Stopped`, stopped-trace replay) specified -- TC-474 planned; AC-15 (published `Limits` defaults) specified -- TC-536 planned |
 | [FR-102](functional/FR-102-build-state-clause-forms.md) | FR | Specified: S2 `invariant`/`pre`/`post` state clause forms and the `self`, `result` and `reaches` expressions (ADR-012 §15); not yet implemented -- TC-456, TC-457 planned |
 | [FR-103](functional/FR-103-admit-model-operations-and-frames-on-the-spine.md) | FR | Specified: I1 and E3 admit a domain package's operations and frames (amends FR-056's operation refusal); not yet implemented -- TC-458 planned |
 | [FR-104](functional/FR-104-check-state-clauses.md) | FR | Implemented: S3 `ProtocolClause` state clause check (resolution in the S2 assembler, typing, observations, definedness) and its `operation-contract` requirement records -- TC-459 to TC-461 pass locally |
@@ -558,6 +575,17 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-306](functional/FR-306-carry-the-abstraction-relation-in-the-checked-package.md) | FR | Specified: the relation is one v2 node (QSpec FR-451) entering the `package_id`, records no requirement record and is no S6a input; not yet implemented -- TC-804, TC-805 planned |
 | [FR-307](functional/FR-307-export-the-bindings-each-item-references.md) | FR | Specified: the layer-4 export returns each requested item's bindings or a per-item unbound-element refusal; not yet implemented -- TC-806, TC-807 planned |
 | [US-031](usecase/US-031-bind-model-elements-to-implementation-code.md) | US | Draft |
+| [FR-123](functional/FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md) | FR | Specified: S3 admits weak fairness constraints with `whole` (unmarked) or `each` granularity and closed interval operators nested under unbounded ones under infinite-trace, and records each clause's property form (ADR-018 TP-1 to TP-4); not yet implemented -- TC-518 planned |
+| [FR-124](functional/FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md) | FR | Specified: the `terminal when P` / `terminal any` state-model member and the request writer's derived deadlock-freedom item per model subject, with `terminal any` as the opt-out (ADR-018 DL-1 to DL-3); not yet implemented -- TC-519 planned |
+| [FR-125](functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md) | FR | Specified: the model subject, behaviours as maximal paths, positions and anchors, the closed reading under bounded profiles and the terminal stutter under infinite-trace, exact lasso reading with past operators (ADR-018 SM-1 to SM-5, SM-8, IV-2), the letter read at each position and an undefined claim evaluation (UE-1), citing QSpec for the model-subject rules; not yet implemented -- TC-520, TC-537 planned |
+| [FR-126](functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md) | FR | Specified: `qsl-analyze` `model_check` (layer A) (ADR-018 EN-1): the product with a bounded monitor, a bad-prefix safety monitor or a Büchi automaton (IV-3 counter construction) over FR-101's engine, SCC-based fair-cycle search including at `max_depth`, deadlock detection, the CX-5 canonical loop, and `ModelCheckLimits` with published defaults and each stopped run naming its limit and value, and an undefined claim evaluation as the first refuting evidence (UE-1 to UE-4); not yet implemented -- TC-521, TC-537 planned |
+| [FR-127](functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md) | FR | Specified: `qsl-replay`'s settlement map and certificate checkers (closure and component certificates, `certified`/`uncertified`/`trusted`, ADR-018 PC-1 to PC-5): the map from EN-1 outcomes and counterexample replay to `TerminalValue`, FR-360 labels, FR-243 bases and O-16 categories (ADR-018 V-1, V-4 to V-7), and the categories of every `ProofBasis` and new inconclusive cause, and `refuted` with cause `UndefinedEvaluation` (UE-2); not yet implemented -- TC-522, TC-538 planned |
+| [FR-338](functional/FR-338-check-an-en-1-closure-certificate.md) | FR | Specified: `qsl-replay`'s `check_closure` accepts an EN-1 safety proof's closure certificate (initial states, closure under expansion, no bad state) or rejects it with a rule and a state; not yet implemented -- TC-525 planned |
+| [FR-339](functional/FR-339-check-an-en-1-component-certificate.md) | FR | Specified: `qsl-replay`'s `check_components` accepts an EN-1 liveness proof's component certificate (topological SCC partition with a per-component witness) or rejects it; not yet implemented -- TC-526 planned |
+| [FR-314](functional/FR-314-check-an-smt-proof-certificate.md) | FR | Specified: `qsl-replay`'s `check_smt_proof` checks an SMT proof certificate (cvc5 Alethe) against the query QSL derives; accepted proofs lose the `uncertified` label; not yet implemented -- TC-893 planned |
+| [FR-315](functional/FR-315-encode-the-smt-lib-transition-relation.md) | FR | Specified: QSL's one SMT-LIB transition-relation encoding (`qsl-eval`, through the `qsl-replay` facade) for unrolling and k-induction queries, with its canonical printing; CG's SMT backend and FR-314 both use it; not yet implemented -- TC-900 planned |
+| [FR-128](functional/FR-128-replay-a-model-counterexample.md) | FR | Specified: `replay_model_trace` replays a `TemporalCounterexample` over a model subject through `ModelSystem`: loop closure, fairness, enabledness, the post-state digest as successor selector, formula evaluation, the deadlock check or the reproduced undefined evaluation (ADR-018 CX-3, DL-5, UE-5); not yet implemented -- TC-523, TC-539 planned |
+| [FR-337](functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md) | FR | Specified: the S4 emitter writes each checked temporal clause as QSpec FR-370's `temporal`/`temporal_clause` node (`quire.op.temporal.clause` body, per-operator identities, intervals, resolved fairness) and the I2 reader reads it back; not yet implemented -- TC-524 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -565,3 +593,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (#220) |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR | Proposed; protocol/frame, refinement and abstraction-relation boundary mapping: identities, entry selection, frame replay identity checks, spec-versioning and profile-layering gate comparison, abstraction relation keys, export and unbound refusal (#223) |
 | [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
+| [ADR-018](decisions/ADR-018-temporal-properties-over-every-behaviour.md) | ADR | Proposed; temporal properties over every behaviour of a model: property forms and verdict strength, one semantics for traces and models, the explicit-state and SMT engines, weak fairness, counterexamples as replayable QSL traces, deadlocks reported by default with intended terminal states (§10), interval operators inside infinite-trace formulas with their automaton cost and limit (§11), and the QSL sequencing |

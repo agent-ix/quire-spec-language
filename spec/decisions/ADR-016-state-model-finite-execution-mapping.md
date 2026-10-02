@@ -297,10 +297,10 @@ FR-181's sense), and an **exhaustive run** is one whose frontier emptied
 | EX-1 | Model population in a simulated state | A complete, closed population state per universe population (FR-120). A universe is a caller-chosen simulation input. It bounds no claim, so it is not an ADR-014 bound value, is not a `ProofBound` and is never converted into one. Its scope is EX-9's. |
 | EX-2 | State key | FR-120's typed canonical form over FR-101's encoder. The anchor is not in the key (ID-10). |
 | EX-3 | Seed | `SampleProvenance.seed` (TR-6). Exploration has no seed. Only `quire.simulation.sampler/v1` `1-draft.1` runs; any other refuses `GeneratorMismatch`. |
-| EX-4 | Frontier | FR-101 `Frontier`, in next-expansion order, on `Bounded`, `Cancelled` and (after G-1) `Stopped`. |
+| EX-4 | Frontier | FR-101 `Frontier`, in next-expansion order, on `BoundReached`, `Bounded`, `Cancelled` and (after G-1) `Stopped`. |
 | EX-5 | Trace positions | Three distinct concepts, never converted: (a) FR-101's step index inside a simulation `Trace`; (b) ADR-014 TR-2 `TemporalPosition`, carried as `qsl_replay::TracePosition`, owned by `TemporalTrace`; (c) the QSpec FR-351 separating-witness trace position. A state-family `WitnessEnvelope` carries `trace_position: None`. A simulation step index never becomes a `TracePosition`. |
 | EX-6 | Cancellation | Only exploration is cancellable. `poll` is called once before each state's expansion, so a cancellation takes effect within one expansion; the returned outcome is `Cancelled{cause: cancelled/caller-cancelled}`. S6a clause evaluation and admission are not cancellable (ADR-014 §7). Sampling is bounded by `max_steps` and is not cancellable. |
-| EX-7 | Bound exhaustion versus a clause meter | If the run reaches an exploration `Limits` field, it returns `Bounded{limit}`. If a clause meter runs out inside an expansion, the run is not bound-exhausted: an invariant evaluation records `InvariantUndetermined`, and a contract-clause evaluation or the `max_candidates` cap stops the expansion with `ExpansionStop` `resource_exhausted`/`insufficient-next-charge` (FR-120). |
+| EX-7 | Bound exhaustion versus a clause meter | If the run reaches `max_states` or `max_transitions`, it returns `Bounded{limit}`; a run that completes its `max_depth` search horizon returns `BoundReached{depth}`, which is inconclusive. If a clause meter runs out inside an expansion, the run is not bound-exhausted: an invariant evaluation records `InvariantUndetermined`, and a contract-clause evaluation or the `max_candidates` cap stops the expansion with `ExpansionStop` `resource_exhausted`/`insufficient-next-charge` (FR-120). |
 | EX-8 | Incomplete outcomes | `Bounded`, `Cancelled` and `Stopped` with `resource_exhausted` are ADR-013 O-16 incomplete. `Stopped` with `runtime_invariant` is internal failure. `NotSimulated::RequiresBound` is a disposition, not an outcome. FR-106 `incomplete_population` is incomplete at admission. `Exhaustive` is success of the exploration only (§6). |
 | EX-9 | Evidence scope | An exploration result is evidence only for its request: the `package_id`, the domain-package digests, the initial `DocumentRef`s, the universes, `Limits`, `ExpansionLimits` and the meter budget (ADR-014 §8). No type carries this set and no function compares results; this is a scope statement, verified by analysis. |
 | EX-10 | Clean run | A run is clean exactly when it is `Exhaustive`, expanded at least one state, and has no finding. An `Exhaustive` run over no initial state (FR-101-AC-9) is not clean. |
@@ -347,6 +347,12 @@ no `state` node, no backend proves one, and no state-clause proof evidence is
 claimed toward gate QSL-20 (#219). This record claims no proof evidence, so
 its dependency on QSL-20 in the ticket ("where proof evidence is claimed")
 does not apply.
+
+Amended by ADR-018 §3 and §5: these rules hold for `explore` and `sample`. A
+temporal model-check result (ADR-018 EN-1, layer A `qsl-analyze` `model_check`) is a
+negotiated backend result: it reaches proof accounting through negotiation
+and a QSpec FR-331 terminal record, and its counterexample is a
+`WitnessEnvelope` with a `ReplaySource::ModelTrace` source that enters E9.
 
 ### 7. Family placement of the model
 

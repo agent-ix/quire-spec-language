@@ -84,7 +84,9 @@ exemplar.
   evaluated value is a Boolean, a stand-in for the kernel `Value`, which
   has no structural equality. **Amended** (FR-098): the value and
   record used to be required, so a replay that completed no value could
-  not be represented.
+  not be represented. **Amended** (FR-128): on the `ModelTrace` arm, an
+  undefined evaluation reproduced at the counterexample's `where` is a
+  completed value, `ModelTraceValue::Undefined`, not the no-value case.
 - A construct → serialize → read round trip of a decisive `Witness`-arm
   result SHALL preserve the nested FR-351 record's deciding element, index,
   value path and trace position exactly.

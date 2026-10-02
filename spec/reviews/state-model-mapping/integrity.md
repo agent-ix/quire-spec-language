@@ -3,7 +3,7 @@ id: SR-787
 title: "Integrity review of ADR-016 state, model and finite execution mapping"
 type: SpecReview
 analysis: integrity
-scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md, spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md, spec/decisions/ADR-012-semantic-family-extension-contracts.md, spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md, spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md, spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md, spec/functional/FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md, spec/functional/FR-120-simulate-a-checked-package-s-state-family.md, spec/spec.md"
+scope: "spec/decisions/ADR-016-state-model-finite-execution-mapping.md, spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md, spec/decisions/ADR-012-semantic-family-extension-contracts.md, spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md, spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md, spec/functional/FR-089-carry-population-identity-across-the-kernel-boundary.md, spec/functional/FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md, spec/functional/FR-120-simulate-a-checked-package-s-state-family.md, spec/spec.md"
 review_set: all
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-016
