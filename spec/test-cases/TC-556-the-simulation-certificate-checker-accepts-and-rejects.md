@@ -43,5 +43,5 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
   inc(c), cause: Postcondition}`.
 - Step 4: `Stopped(ResourceExhausted, MaxTransitions)`;
   `stale_dependency`/`revision-mismatch`; equal results.
-- Step 5: `proved`, certified, naming the simulation certificate checker;
-  `proved`, `uncertified`; `inconclusive`, `CertificateRejected`.
+- Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
+  `CertificateRejected`.

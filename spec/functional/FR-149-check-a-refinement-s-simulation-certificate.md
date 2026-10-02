@@ -119,8 +119,8 @@ pub enum CertificateRejection {
   or search location, and its result SHALL be a function of the
   certificate, the byte provision and the limits.
 - **Settlement.** FR-144 SHALL settle the safety half `proved` only on
-  `Accepted`, V-6 `CertificateRejected` on `Rejected`, and V-7 on
-  `Stopped`.
+  `Accepted`, V-6 `CertificateRejected{rule, state}` (ADR-018 PC-2) on
+  `Rejected`, and V-7 on `Stopped`.
 
 ## Acceptance Criteria
 
@@ -141,8 +141,9 @@ pub enum CertificateRejection {
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md)
   (`ModelSystem`), [FR-098](FR-098-execute-a-replay-request.md) (recompile),
   [FR-144](FR-144-request-and-settle-a-refinement-item.md) (settlement).
-- QSpec owns the `uncertified` label and the `CertificateRejected` cause on
-  the terminal record (ADR-020 QS-12).
+- ADR-018 PC-1 and PC-2 give the certification label and the
+  `CertificateRejected` cause; QSpec carries them on the terminal record
+  (ADR-020 QS-12).
 
 ## References
 
