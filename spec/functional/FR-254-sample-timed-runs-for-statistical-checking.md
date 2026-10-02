@@ -77,7 +77,9 @@ server is available. Each estimate comes with its confidence and the grid
   published default.
 - **Regeneration.** The regenerative method SHALL cut a run at each return
   to the initial discrete state with every clock 0; a model that never
-  returns SHALL settle `undecided`, `NoRegeneration`.
+  returns SHALL stop when a cycle reaches `max_cycle_steps` and settle
+  `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`, as
+  ADR-024 ST-7 does.
 - **Witnesses.** A sampled witness SHALL carry each step's delay and replay
   by FR-237, plus recomputation of each draw from the seed, trace index,
   step, choice index and `q`.
@@ -93,7 +95,7 @@ server is available. Each estimate comes with its confidence and the grid
 |----|----------|--------------|
 | FR-254-AC-1 | `RareLate` (`probability <= 0.01 [eventually[0 ms, 3 ms] holds(c.late)]`) over FR-253-AC-1's model, whose exact event probability is `1/20`, settles `measured`, `Rejected`, with `q` 64 in its basis; with `reply` under `uniform` it settles `measured`, `Accepted`. Two runs with one seed give equal verdicts. | Test (TC-709) |
 | FR-254-AC-2 | Every sampled delay is an exact rational; a sampled witness replays by FR-237 and its draws recompute from the seed; the same witness with one delay changed fails draw recomputation. With `q` 8, the basis records 8 and each sampled `uniform` or `exponential` delay equals the rounded-up conditioned inverse distribution function at a multiple of `2^-8`. | Test (TC-709) |
-| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `undecided`, `NoRegeneration` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(ResourceExhausted)` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
+| FR-254-AC-3 | `elapsed from holds(c.phase = Waiting) until holds(c.phase != Waiting) within 3 ms` reads each sample's time-stamp difference; a model that never returns to its initial discrete state with every clock 0 settles `incomplete`, `limit-reached` naming `statistical.max_cycle_steps` under the regenerative method; an `exact` request over the strict-guard `Rpc` variant settles `unsupported`. `RareLate` with no `delay` member on `timeout` settles `unsupported`, `NotStochastic`, naming the state just after `send` and `timeout`. `RareLate` with `max_sample_steps` 1 stops `Incomplete(ResourceExhausted)` naming `max_sample_steps`, 1 and `TimedSampling.max_sample_steps`. | Test (TC-709) |
 
 ## Dependencies
 
