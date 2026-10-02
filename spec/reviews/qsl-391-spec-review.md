@@ -53,3 +53,26 @@ deliverable R-2 asks for, is incomplete and wrong in three rows, so
 FR-273-AC-1 cannot pass as written. FND-003 to FND-005 are real gaps. The
 checked-input gate (FR-270) and the tag and gate rules (FR-271, FR-272) are
 sound apart from FND-004 and FND-005.
+
+## New findings (disposition pass 1)
+
+Delta reviewed: dcf73683..1b844d36 (48804542 fixes SR-1085; 1b844d36 gives root SEAM namesakes delete verdicts citing M-6c, M-6d or M-6e, ADR-032 DT-7). Checked against quire-spec-language origin/main 9647e5a8.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | high | The keep rule cannot be met for quire-exact types. quire-exact declares `mod integer;` and `mod location;` as private modules and exports `Integer` and `Origin` only through crate-root `pub use` (quire-exact/src/lib.rs:117, :119, :190 on main 9647e5a8, a deliberate private-mod-behind-pub-use layout), so `pub use quire_exact::integer::Integer` and `pub use quire_exact::location::Origin` in qsl-replay do not compile. The existing `pub use quire_exact::{Origin, ...}` and `{..., Integer, ...}` (qsl-replay/src/lib.rs:88, :101) do not name the defining module, so FR-272's re-export rule (FR-272:53-56, ADR-032 DT-2) reports them and FR-273-AC-1 cannot pass. FR-272-AC-1 contradicts its own rule: it says `pub use k::Value` in W 'names K's defining module' and gives no finding, while K defines Value in `self::value` and re-exports it at its root (FR-272:73). State the rule as 'a path through the owner crate's public API, with no `as`' and make the keep rows name `quire_exact::Origin` and `quire_exact::Integer`. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:53-54, 110-111 |
+| FND-009 | medium | Three delete rows cite the wrong slice. On main, SEAM-2 code imports both modules: `checking::composed::proofs::engine` uses `crate::checking::proof::{self, facts, GraphId, Kind, Node, ValueKey}` (src/checking/composed/proofs/engine.rs:12) and `checking::composed::solver` matches `crate::linking::DeclarationKey::Value` (src/checking/composed/solver.rs:446). ADR-011's SEAM-1 row says code shared with SEAM-2 belongs to SEAM-2, so these items go with M-6e, not M-6c. FR-273's Behavior says a row citing a slice is an item 'that slice deletes with its module', which is false for these rows, and an M-6c implementer following the table would delete items the composed checker still uses. Cite M-6e for the three rows. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:73, 77, 100 |
+| FND-010 | medium | FR-273-AC-1, and with it FR-272's joining `make ci` (FR-272:23-25), waits on M-6d for the SEAM-3 rows (`protocol_artifact::*`, FR-273:72, :80, :89-90, :98, :103). ADR-011's SEAM-3 row ties the M-6d deletion to agent-ix/quire-contract-ir#141 (ADR-011:890), so a QSL gate's entry into `make ci` waits on a downstream repo, against the rule that QSL never waits on downstream repos. Give the SEAM-3 rows a verdict QSL can carry out alone (rename now, or delete with a QSL-only slice), or state the gate's `make ci` membership without that dependency. | spec/functional/FR-273-resolve-each-canonical-type-namesake.md:118 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 48804542 |
+| FND-002 | fixed | 1b844d36 |
+| FND-003 | fixed | 48804542 |
+| FND-004 | fixed | 48804542 |
+| FND-005 | fixed | 48804542 |
+| FND-006 | fixed | 48804542 |
+| FND-007 | fixed | 48804542 |
+

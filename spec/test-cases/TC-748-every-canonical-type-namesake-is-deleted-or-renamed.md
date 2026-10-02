@@ -18,14 +18,18 @@ Scope: FR-273-AC-1.
 
 ## Test Procedure
 
-1. With the M-6c, M-6d and M-6e deletions FR-273's `delete` rows cite landed,
+1. Before M-6d lands, run `cargo xtask canonical-types` on demand over the
+   QSL workspace.
+2. With the M-6c, M-6d and M-6e deletions FR-273's `delete` rows cite landed,
    run `cargo xtask canonical-types` over the QSL workspace.
-2. Run `make ci`.
+3. Run `make ci`.
 
 Tag the tests `#[trace("TC-748", "FR-273-AC-1")]`.
 
 ## Expected Results
 
-- Step 1: no finding and exit 0.
-- Step 2: `make ci` runs `canonical-types` among its prerequisites and
+- Step 1: the remaining namesakes are reported; `make ci` does not run the
+  gate.
+- Step 2: no finding and exit 0.
+- Step 3: `make ci` runs `canonical-types` among its prerequisites and
   passes.

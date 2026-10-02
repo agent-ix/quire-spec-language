@@ -50,8 +50,8 @@ items.
 - Each `rename` row's item SHALL carry the name the row gives, in its
   definition and every use.
 - No renamed item SHALL carry a canonical type's identifier.
-- Each `keep` row's `pub use` SHALL name the canonical type's owner crate
-  and defining module, with no `as` rename.
+- Each `keep` row's `pub use` SHALL name the canonical type by a path
+  through its owner crate's public API, with no `as` rename.
 
 ## Verdict table
 
@@ -70,11 +70,11 @@ type is named by its owner crate and module.
 | same | root `package::intake::Meter` | the package-intake pass budget | delete; removed with M-6c (ADR-011 §7.3) |
 | same | root `package::encoding::Meter` | the package-encoding pass budget | delete; removed with M-6c (ADR-011 §7.3) |
 | same | root `protocol_artifact::encoding::Meter` | the protocol-artifact encoding work budget | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
-| same | root `checking::proof::Meter` | the composed proof-check work budget | delete; removed with M-6c (ADR-011 §7.3) |
+| same | root `checking::proof::Meter` | the composed proof-check work budget | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | `quire_exact::value::Value` (the kernel value, ADR-013 O-13) | root `state::input::Value` | a state-input value carrying a nominal wire type index (`value_type: u32`) beside its kind (lane-private, ADR-013 §6) | delete; removed with M-6c (ADR-011 §7.3) |
 | same | root `runtime::evaluation::value::Value<'a>` | a borrowed arena view over IR value nodes, with `i64` integers, `&str` text and `quire_contract_model` references | delete; removed with M-6c (ADR-011 §7.3) |
 | same | root `model_source::wire::Value` | a value-declaration wire record (name, kind, type) | delete; removed with M-6c (ADR-011 §7.3) |
-| same | root `checking::proof::Value` | a proof-graph value node | delete; removed with M-6c (ADR-011 §7.3) |
+| same | root `checking::proof::Value` | a proof-graph value node | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | same | root `checking::composed::proofs::engine::Value` | a proof-graph value node | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
 | `quire_exact::value::ValueType` (O-14) | root `lowering::wire::ValueType` | the serialization form of an IR value type | delete; removed with M-6c (ADR-011 §7.3) |
 | `quire_exact::integer::Integer` (O-13) | root `protocol_artifact::wire::Integer` | an integer-only wire position | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
@@ -97,7 +97,7 @@ type is named by its owner crate and module.
 | `quire_exact::location::Origin` (an occurrence key within a node, O-07) | `quire_semantic_value::location::Origin` | the declaration a location belongs to | rename `ExpressionOwner` |
 | `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | root `protocol_artifact::occurrence::OccurrenceKey` | a validated runtime workflow key | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
 | `qsl_foundation::source::provenance::RawSourceRef` (O-07, digest domain `quire.source.bytes/v1`) | `qsl_replay::identity::RawSourceRef` | a definition-document reference whose digest is in any domain | rename `DefinitionSourceRef` |
-| `qsl_semantics::model::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | delete; removed with M-6c (ADR-011 §7.3) |
+| `qsl_semantics::model::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | delete; removed with M-6e, SEAM-2, which still imports it (ADR-011 §7.3 and the SEAM-1 row) |
 | `qsl_cst::ParsedSource` (O-15) | root `linking::composed::ParsedSource` | parsed evidence kept when namespace admission fails | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
 | `qsl_package::checked::CheckedPackage` (O-15) | root `checking::CheckedPackage<'a>` | native-v1 checked clauses that keep the linked AST (lane-private, ADR-013 §6) | delete; removed with M-6c (ADR-011 §7.3) |
 | `qsl_package::checked::EmittedPackage` (O-15) | root `protocol_artifact::native::EmittedPackage` | the bytes of a native protocol artifact | delete; removed with M-6d, SEAM-3 (ADR-011 §7.3) |
@@ -107,15 +107,15 @@ type is named by its owner crate and module.
 | same | root `syntax::composed::QualifiedName` | a model alias and a name, with their spans | delete; removed with M-6e, SEAM-2 (ADR-011 §7.3) |
 | `qsl_semantics::value::member::Member` (the O-06 member identity) | `qsl_semantics::check::termination::Member<'a>` | what termination checking needs of one checked function | rename `TerminationSubject` |
 | `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_foundation::source::provenance::OccurrenceKey` |
-| `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::location::Origin` |
-| `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::integer::Integer` |
+| `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Origin`, the owner crate's public path |
+| `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::Integer`, the owner crate's public path |
 | `qsl_semantics::model::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_semantics::model::key::DeclarationKey` |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-273-AC-1 | With the verdict table's canonical types tagged, every row carried out, and the M-6c, M-6d and M-6e deletions the `delete` rows cite landed, `cargo xtask canonical-types` over the QSL workspace reports nothing and exits 0, and `make ci`, with the gate among its prerequisites, passes. | Test (TC-748) |
+| FR-273-AC-1 | Until M-6d lands, `cargo xtask canonical-types` runs on demand over the QSL workspace and reports every remaining namesake, and no merge gate waits on it. With the verdict table's canonical types tagged, every row carried out, and the M-6c, M-6d and M-6e deletions the `delete` rows cite landed, the gate reports nothing and exits 0, and `make ci`, with the gate among its prerequisites from then on, passes. | Test (TC-748) |
 
 ## Dependencies
 
