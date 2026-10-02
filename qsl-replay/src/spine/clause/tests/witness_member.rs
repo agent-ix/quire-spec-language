@@ -16,14 +16,16 @@ const CLAUSES: &str = "\
     forall(n in self.history: n < 500) }\n\
     invariant ConvertedAll using v on Config::ConfigVersion at current { \
     forall(n in convert<Set<V>[0, 3]>(self.history): n < 500) }\n\
+    invariant MaybeAll using v on Config::ConfigVersion at current { \
+    present(self.maybeHistory) implies \
+    forall(n in value(self.maybeHistory): n < 500) }\n\
     pre MemberPre using v on Config::ConfigVersion::attemptUpdate { \
     forall(n in self.history: n < 500) }\n";
 
 /// `Config` with `ConfigVersion.history`, a required ordered member of up to
-/// three `VersionNumber`s.
+/// three `VersionNumber`s, and `maybeHistory`, an optional one.
 fn history_domain_document() -> Vec<u8> {
     let config_version = config_version_type();
-    let history = format!("{config_version}/history");
     let mut envelope: serde_json::Value =
         serde_json::from_slice(&config_version_domain_document()).expect("the document is JSON");
     let types = envelope["types"].as_array_mut().expect("types is an array");
@@ -31,25 +33,28 @@ fn history_domain_document() -> Vec<u8> {
         .iter_mut()
         .find(|record| record["identity"] == json!(config_version))
         .expect("ConfigVersion is declared");
-    object_type["fields"]
+    let fields = object_type["fields"]
         .as_array_mut()
-        .expect("fields is an array")
-        .push(json!({
-            "identity": history,
-            "name": "history",
+        .expect("fields is an array");
+    for (name, presence) in [("history", "required"), ("maybeHistory", "optional")] {
+        let identity = format!("{config_version}/{name}");
+        fields.push(json!({
+            "identity": identity,
+            "name": name,
             "typeRef": version_number_type(),
-            "presence": "required",
+            "presence": presence,
             "nullable": false,
             "defaultKind": "none",
             "multiplicity": {"lower": 0, "upper": 3, "ordered": true, "unique": false},
             "origin": {
                 "generated": {
-                    "generatorIdentity": history,
+                    "generatorIdentity": identity,
                     "generatorVersion": "1.0.0",
-                    "inputIdentities": [history],
+                    "inputIdentities": [identity],
                 }
             },
         }));
+    }
     envelope.to_string().into_bytes()
 }
 
@@ -76,7 +81,8 @@ fn unit_text() -> String {
     )
 }
 
-/// `self` (`mid`, version 1, parent absent) holding `history`.
+/// `self` (`mid`, version 1, parent absent) holding `history`, and holding
+/// it in `maybeHistory` too.
 fn snapshot(label: &DocumentRef, observation: &str, history: &[i64]) -> Vec<u8> {
     let items: Vec<_> = history
         .iter()
@@ -99,7 +105,8 @@ fn snapshot(label: &DocumentRef, observation: &str, history: &[i64]) -> Vec<u8> 
                 "fields": {
                     "versionNumber": {"integer": "1"},
                     "parent": {"absent": {}},
-                    "history": {"sequence": items},
+                    "history": {"sequence": items.clone()},
+                    "maybeHistory": {"present": {"sequence": items}},
                 },
             }],
         }],
@@ -242,4 +249,22 @@ fn tc_740_a_precondition_names_the_pre_observation_in_both_forms() {
     assert_eq!(witness.index, Some(1));
     assert_eq!(witness.value_path, history_path(&pre_call, "member-pre"));
     assert_eq!(invocation.witness, pre_call.witness);
+}
+
+/// TC-740 step 7 (FR-265-AC-7): a `forall` over `value(self.maybeHistory)`,
+/// a stored collection reached through a present optional member, names
+/// the member and then the option's payload (QSpec FR-207's option-value
+/// step), not a collection built in the claim.
+#[trace("TC-740", "FR-265-AC-7")]
+#[test]
+fn tc_740_an_optional_member_domain_records_the_option_value_step() {
+    let report = run_current("MaybeAll", &[0, 600, 700]);
+    let witness = report.witness.as_ref().expect("the forall is refuted");
+    assert_eq!(witness.index, Some(1));
+    let mut expected = history_path(&report, "member-current");
+    expected.steps = vec![
+        ValuePathStep::Member("maybeHistory".to_owned()),
+        ValuePathStep::OptionValue,
+    ];
+    assert_eq!(witness.value_path, expected);
 }

@@ -16,7 +16,8 @@ use super::causes::{
     ProtocolClauseUnsupported, StateModelUndefined,
 };
 use super::s6a::separation::{
-    occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail, WitnessClaim,
+    locatable, occurrence_at, Provenance, Separation, SeparationStep, StopReport, Trail,
+    WitnessClaim,
 };
 use qsl_foundation::diagnostic::{kernel_refusal_record, InternalFault, Locus, RefusalRecord};
 use qsl_semantics::check::{
@@ -1343,10 +1344,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                 let Value::Option(option) = self.pop()? else {
                     return Err(invariant());
                 };
-                option
+                let payload = option
                     .payload()
                     .cloned()
-                    .ok_or(Stop::Undefined(Undefined::NoneValue))?
+                    .ok_or(Stop::Undefined(Undefined::NoneValue))?;
+                self.note_unwrapped(&option, &payload);
+                payload
             }
             NodeKind::Call {
                 function,
@@ -2110,10 +2113,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// `node` on the claim's own level is stored there, in the observation
     /// the read observes.
     fn note_member(&mut self, node: &Node, object: &ObjectReference, member: &str, value: &Value) {
-        if !matches!(value, Value::Collection(_) | Value::Composite(_)) {
-            return;
-        }
-        if !self.on_claim_level() {
+        if !locatable(value) || !self.on_claim_level() {
             return;
         }
         let pre = self.reads.is_some_and(|reads| {
@@ -2134,7 +2134,7 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// selection). A tuple position has no field spelling and is not
     /// located.
     fn note_field(&mut self, composite: &Arc<CompositeValue>, index: usize, value: &Value) {
-        if !matches!(value, Value::Collection(_) | Value::Composite(_)) || !self.on_claim_level() {
+        if !locatable(value) || !self.on_claim_level() {
             return;
         }
         let Some(trail) = self.trail.as_mut() else {
@@ -2158,6 +2158,25 @@ impl<'a, 'm> Machine<'a, 'm> {
             return;
         };
         trail.record(value, provenance);
+    }
+
+    /// FR-265: the payload of a present optional value with a stored
+    /// location is stored at that location's option-value selection
+    /// (QSpec FR-207).
+    fn note_unwrapped(&mut self, option: &Arc<OptionValue>, payload: &Value) {
+        if !locatable(payload) || !self.on_claim_level() {
+            return;
+        }
+        let Some(trail) = self.trail.as_mut() else {
+            return;
+        };
+        let Some(provenance) = trail
+            .provenance(&Value::Option(Arc::clone(option)))
+            .and_then(Provenance::option_value)
+        else {
+            return;
+        };
+        trail.record(payload, provenance);
     }
 
     /// FR-265: a conversion of a collection with a recorded location keeps
@@ -2924,6 +2943,117 @@ mod tests {
             charges,
             [ChargePoint::ModelDeref, ChargePoint::ModelNavigate],
             "deref(r).x charges model.deref once, then model.navigate once"
+        );
+    }
+
+    /// FR-265 (QSpec FR-207's field and option-value selections): on the
+    /// claim's own level, a record read from a stored object locates its
+    /// field `items` at the record's path plus a `Field` step, and the
+    /// payload of a present optional value stored there at that path plus
+    /// an `OptionValue` step. A domain package declares no record-typed
+    /// member, so no admitted snapshot stores a record; this drives
+    /// `note_field` and `note_unwrapped` directly.
+    #[trace("TC-740", "FR-265-AC-7")]
+    #[test]
+    fn a_stored_record_locates_its_field_and_an_option_its_payload() {
+        use super::super::s6a::separation::{
+            ObservationIdentity, RuntimeValuePath, ValuePathStep, ValuePathSubject,
+        };
+        use quire_semantic_value::declaration::{
+            CompositeDeclaration, FieldDeclaration as DeclaredField, TypeEnvironment,
+        };
+        let items_type =
+            quire_exact::CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None);
+        let point = quire_exact::NodeKey::from_digest([4; 32]);
+        let record = CompositeDeclaration::new(
+            point,
+            "Holder",
+            CompositeShape::Record(vec![DeclaredField::new(
+                "items",
+                ValueType::collection(items_type.clone()),
+                quire_exact::Presence::Required,
+            )]),
+        );
+        let graph = PackageDeclarations {
+            types: TypeEnvironment::new([record], []).expect("one record admits"),
+            ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
+        }
+        .check(CheckingLimits::default())
+        .expect("the record checks");
+        let package = qsl_package::CheckedPackage::link(graph);
+        let objects = ObjectEnvironment::default();
+        let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
+        let observation = ObservationIdentity {
+            authority: "test".to_owned(),
+            identity: "current".to_owned(),
+            revision_namespace: "ns".to_owned(),
+            revision: "1".to_owned(),
+        };
+        let mut machine = Machine::new(
+            package.graph().scope(),
+            package.graph(),
+            &objects,
+            &mut meter,
+            &[],
+        )
+        .with_trail(Trail::new(observation.clone(), None));
+        machine.enter_frame(0, Vec::new());
+
+        let items = quire_exact::from_admitted(
+            items_type.clone(),
+            vec![Value::Integer(Integer::from(1_i64))],
+        );
+        let stored = quire_exact::from_admitted_slots(
+            point,
+            vec![FieldValue::Present(items.clone())].into(),
+        );
+        let Value::Composite(holder) = &stored else {
+            panic!("a record value");
+        };
+        let object = ObjectReference::new(
+            quire_exact::UniverseId::from_digest([1; 32]),
+            quire_exact::EffectiveId::from_digest([2; 32]),
+            quire_exact::ObjectId::new("o".to_owned()).unwrap(),
+        );
+        let trail = machine.trail.as_mut().unwrap();
+        trail.record(
+            &stored,
+            Provenance::member(observation.clone(), object.clone(), "holder".to_owned()),
+        );
+        machine.note_field(holder, 0, &items);
+        let path = |steps: Vec<ValuePathStep>| RuntimeValuePath {
+            observation: observation.clone(),
+            subject: ValuePathSubject::Object(object.clone()),
+            steps,
+        };
+        let trail = machine.trail.as_ref().unwrap();
+        assert_eq!(
+            trail.provenance(&items).map(|located| located.path(0)),
+            Some(path(vec![
+                ValuePathStep::Member("holder".to_owned()),
+                ValuePathStep::Field("items".to_owned()),
+            ]))
+        );
+
+        let option = OptionValue::present(ValueType::collection(items_type), items.clone())
+            .expect("the payload admits");
+        let Value::Option(maybe) = &option else {
+            panic!("an optional value");
+        };
+        let trail = machine.trail.as_mut().unwrap();
+        trail.record(
+            &option,
+            Provenance::member(observation.clone(), object.clone(), "maybe".to_owned()),
+        );
+        let payload = maybe.payload().cloned().unwrap();
+        machine.note_unwrapped(maybe, &payload);
+        let trail = machine.trail.as_ref().unwrap();
+        assert_eq!(
+            trail.provenance(&payload).map(|located| located.path(0)),
+            Some(path(vec![
+                ValuePathStep::Member("maybe".to_owned()),
+                ValuePathStep::OptionValue,
+            ]))
         );
     }
 }

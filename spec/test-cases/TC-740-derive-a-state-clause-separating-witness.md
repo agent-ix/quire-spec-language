@@ -37,7 +37,8 @@ reports and the observation to the derivation.
    over `low`.
 7. Run FR-265's member clauses through `run_clause` with `self` `mid`:
    `MemberAll` with `history` `[0, 600, 700]`; `ConvertedAll` with
-   `history` `[700, 0, 600]`; `MemberPre` over a pre-call observation with
+   `history` `[700, 0, 600]`; `MaybeAll` with `history` `[0, 600, 700]`;
+   `MemberPre` over a pre-call observation with
    `history` `[0, 600, 700]`, and over an invocation whose pre and post
    snapshots hold that `history`.
 
@@ -63,6 +64,7 @@ Tag the tests `#[trace("TC-740", "FR-265-AC-n")]`.
   occurrence key and ending in an index step for its index.
 - Step 6: `incomplete`, no basis, no record; `closed-scope`, no record.
 - Step 7: 600 at index 1 on the path `mid` / member `history` in the current
-  observation; 600 at index 2 on the same path; for `MemberPre`, equal
+  observation; 600 at index 2 on the same path; 600 at index 1 on the path
+  `mid` / member `maybeHistory` / option value; for `MemberPre`, equal
   records in both runs, 600 at index 1, the path naming the pre
   observation.

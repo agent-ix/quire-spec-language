@@ -38,6 +38,8 @@ pub enum ValuePathSubject {
 pub enum ValuePathStep {
     /// A declared field of a record, by its exact spelling.
     Field(String),
+    /// The payload of a present optional value.
+    OptionValue,
     /// A declared model member, by its exact spelling.
     Member(String),
     /// The element at this zero-based position of a collection.

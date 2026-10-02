@@ -1391,10 +1391,30 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         Err(crate::CauseCodecError::Unresolved("unit"))
     ));
 
-    // The witness unit declares no `Point`: the composite refuses there.
+    // Slots of another shape than `Point`'s refuse (QSpec FR-351-AC-5):
+    // absent and null for its two required fields, one slot too few, and a
+    // slot outside its field's type.
+    for slots in [
+        vec![FieldValue::Absent, FieldValue::Null],
+        vec![FieldValue::Present(int(1))],
+        vec![FieldValue::Present(int(1)), FieldValue::Present(int(10))],
+    ] {
+        let foreign = cause_deciding(&unit, quire_exact::from_admitted_slots(point, slots.into()))
+            .to_json()
+            .unwrap();
+        assert!(matches!(
+            DisagreementCause::from_json(&foreign, package),
+            Err(crate::CauseCodecError::Value("slots"))
+        ));
+    }
+
+    // The witness unit declares no `Point`: a well-shaped one refuses there.
     let composite = cause_deciding(
         &unit,
-        quire_exact::from_admitted_slots(point, vec![FieldValue::Absent, FieldValue::Null].into()),
+        quire_exact::from_admitted_slots(
+            point,
+            vec![FieldValue::Present(int(1)), FieldValue::Present(int(2))].into(),
+        ),
     )
     .to_json()
     .unwrap();
@@ -1403,6 +1423,135 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         DisagreementCause::from_json(&composite, &witness_unit().compiled.package),
         Err(crate::CauseCodecError::Unresolved("declaration"))
     ));
+}
+
+/// A checked package whose unit table holds the declared unit `metre` of
+/// dimension `Length`, both keyed from their QSpec FR-142 preimages, and
+/// that unit's id.
+fn metre_package() -> (qsl_package::CheckedPackage, quire_exact::UnitId) {
+    use qsl_semantics::value::{
+        admit_unit_graph, DimensionPreimage, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+        OwnerSubject, UnitPreimage,
+    };
+    let owner = json!({"kind": "definition", "authority": "agent-ix", "identity": "example"});
+    let length = DimensionPreimage::from_json(json!({
+        "version": "quire.dimension-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "Length"],
+        "terms": [],
+    }))
+    .expect("a base dimension");
+    let length_key = quire_exact::NodeKey::from_digest(length.digest().unwrap());
+    let metre = UnitPreimage::from_json(json!({
+        "version": "quire.unit-node/v1",
+        "owner": owner,
+        "qualified_declaration": ["Example", "metre"],
+        "dimension_node_id": {
+            "domain": quire_exact::NODE_KEY_DOMAIN,
+            "digest": hex(length_key.as_bytes()),
+        },
+        "target_unit_node_id": null,
+        "scale": {"numerator": "1", "denominator": "1"},
+        "offset": {"numerator": "0", "denominator": "1"},
+    }))
+    .expect("a root unit");
+    let metre_key = quire_exact::NodeKey::from_digest(metre.digest().unwrap());
+    let graph = admit_unit_graph(
+        [(length, length_key)],
+        [(metre, metre_key)],
+        &OwnerSelection::new([NodeOwner::Definition(OwnerSubject {
+            authority: "agent-ix".into(),
+            identity: "example".into(),
+        })]),
+    )
+    .expect("the unit graph admits");
+    let units = quire_semantic_value::quantity::UnitTable::declared(&graph);
+    let graph = qsl_semantics::check::PackageDeclarations {
+        types: quire_semantic_value::declaration::TypeEnvironment::default().with_units(units),
+        ..qsl_semantics::check::PackageDeclarations::new(qsl_semantics::check::fixture_source())
+    }
+    .check(quire_semantic_value::checking::CheckingLimits::default())
+    .expect("the unit table checks");
+    (
+        qsl_package::CheckedPackage::link(graph),
+        quire_exact::UnitId::declared(metre_key),
+    )
+}
+
+/// TC-744 step 3 (FR-269-AC-3): a quantity in a declared unit the package's
+/// unit table holds round-trips; the declared unit resolves by lookup.
+#[trace("TC-744", "FR-269-AC-3")]
+#[test]
+fn tc_744_a_declared_unit_quantity_round_trips() {
+    let unit = witness_unit();
+    let (package, metre) = metre_package();
+    let magnitude = quire_exact::Rational::new(
+        quire_exact::Integer::from(5_i64),
+        quire_exact::Integer::from(2_i64),
+    )
+    .unwrap();
+    let cause = cause_deciding(
+        &unit,
+        Value::Quantity(quire_exact::Quantity::new(magnitude, metre)),
+    );
+    let text = cause.to_json().unwrap();
+    let read = DisagreementCause::from_json(&text, &package).unwrap();
+    assert_eq!(read, cause);
+    assert_eq!(read.to_json().unwrap(), text);
+    assert!(matches!(
+        DisagreementCause::from_json(&text, &unit.compiled.package),
+        Err(crate::CauseCodecError::Unresolved("unit"))
+    ));
+}
+
+/// TC-744 step 3 (FR-269-AC-3): a value path with QSpec FR-207's member,
+/// option-value, field and index steps round-trips, each step in order;
+/// a field step and a member step of the same name read back distinct.
+#[trace("TC-744", "FR-269-AC-3")]
+#[test]
+fn tc_744_member_option_value_and_field_steps_round_trip() {
+    let unit = witness_unit();
+    let package = &unit.compiled.package;
+    let violation = Verdict::from_category(ProofCategory::Violation);
+    let mut record = all_below_record(&unit);
+    record.value_path.steps = vec![
+        ValuePathStep::Member("record".to_owned()),
+        ValuePathStep::OptionValue,
+        ValuePathStep::Field("items".to_owned()),
+        ValuePathStep::Index(1),
+    ];
+    let cause = DisagreementCause::Witness {
+        proved: violation,
+        replayed: violation,
+        given: Some(Box::new(record.clone())),
+        derived: None,
+        failure: WitnessFailure::Mismatch,
+    };
+    let text = cause.to_json().unwrap();
+    let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        document["given"]["value_path"]["steps"],
+        json!([
+            {"tag": "member", "name": "record"},
+            {"tag": "option_value"},
+            {"tag": "field", "name": "items"},
+            {"tag": "index", "index": 1},
+        ])
+    );
+    assert_eq!(DisagreementCause::from_json(&text, package).unwrap(), cause);
+
+    let mut renamed = record;
+    renamed.value_path.steps[2] = ValuePathStep::Member("items".to_owned());
+    assert_ne!(
+        cause,
+        DisagreementCause::Witness {
+            proved: violation,
+            replayed: violation,
+            given: Some(Box::new(renamed)),
+            derived: None,
+            failure: WitnessFailure::Mismatch,
+        }
+    );
 }
 
 /// TC-744 step 3 (FR-269-AC-3, QSpec FR-352-AC-7): a refused separation

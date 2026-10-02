@@ -45,3 +45,18 @@ short (FND-002).
 | --- | --- | --- | --- |
 | FND-001 | medium | No test exercises a domain that is not a built literal. Every `CLAUSES` domain is a collection literal passed through the identity functions `ints`/`refs`. So the `ValuePathSubject::Object` member path (`note_member`), the pre-observation selection inside it, and the no-provenance fallback (`provenance_of`) are all unexercised. That is FR-265's "value path SHALL be the QSpec FR-207 runtime value path" for a stored collection. Ruling 1 replaces the population, which a state clause cannot name; a model member of collection type can be named, and a fixture model with such a member would cover it. | qsl-eval/src/value/expression/evaluate.rs:2102 |
 | FND-002 | low | FR-269-AC-2 says FR-268-AC-3's failures map to `DisagreementCause::Witness { failure: Separation { step, reason } }`. The test asserts only the intermediate `SeparationOutcome`. The `compare_witness` arm that turns `SeparationOutcome::Failed` into `WitnessFailure::Separation`, with `given` and `derived` attached, has no test. | qsl-replay/src/execute/state_clause.rs:411 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The record-field path this round adds has no test. That covers `note_field`, `Provenance::field`, `ValuePathStep::Field` and the codec's `field` step. No fixture reads a collection through a field of a record stored on an object, and no codec test carries a `field` step. | qsl-eval/src/value/expression/evaluate.rs:2136 |
+
+## Dispositions
+
+Round 1, reviewed at `0a2609e8f64f4e7d05b634a4567b3b21120b216e` (diff `4fb4e69b..0a2609e8`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0a2609e8f64f4e7d05b634a4567b3b21120b216e |
+| FND-002 | fixed | 0a2609e8f64f4e7d05b634a4567b3b21120b216e |

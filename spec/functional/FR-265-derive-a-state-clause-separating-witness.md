@@ -119,17 +119,21 @@ claim:
   900): n < 0)`.
 
 The member criteria add to `ConfigVersion` the member `history`, an ordered
-sequence of up to three `VersionNumber`s, and use these clauses:
+sequence of up to three `VersionNumber`s, and the optional member
+`maybeHistory` of the same type, and use these clauses:
 
 - `MemberAll`: the invariant `forall(n in self.history: n < 500)`;
 - `ConvertedAll`: the invariant `forall(n in convert<Set<V>[0, 3]>(
   self.history): n < 500)`, where `V` is `Int[0, 1000]`;
+- `MaybeAll`: the invariant `present(self.maybeHistory) implies forall(n in
+  value(self.maybeHistory): n < 500)`;
 - `MemberPre`: the precondition of `attemptUpdate` with `MemberAll`'s body.
 
 Snapshots: `low` holds `root` (0) and `child` (1, parent `root`); `high`
 holds `root` (0), `mid` (600, parent `root`) and `leaf` (700, parent
 `mid`). `self` is `child` in `low` and `mid` in `high`. In the member
-criteria `self` is `mid`, and its `history` is given with each criterion.
+criteria `self` is `mid`, its `history` is given with each criterion, and
+`maybeHistory` holds the same sequence.
 
 ## Acceptance Criteria
 
@@ -141,7 +145,7 @@ criteria `self` is `mid`, and its `history` is given with each criterion.
 | FR-265-AC-4 | `NestedAll` over `high` is `false` (the outer element 0 fails at inner element 600); the record names the outer `forall`'s occurrence, `deciding_element` 0, `index` 0, and no inner occurrence. | Test (TC-740) |
 | FR-265-AC-5 | Computed domains: `FilteredAll` over `high` names 600 with `index` 2, its position in the built list, not the position 1 it holds in the filtered collection. `MappedAll` over `high` holds `deciding_element` 601, the mapped value, and `index` 1. Both value paths are rooted at the built list's occurrence and end in an index step for that index (QSpec FR-207-AC-9). | Test (TC-740) |
 | FR-265-AC-6 | No Boolean, no record: `AllBelow` over `high` with an evaluation budget of zero completes `incomplete`, and the derivation yields no basis and no record. `NoneSelected` over `low`, whose filtered domain is empty, derives `closed-scope`, no record. | Test (TC-740) |
-| FR-265-AC-7 | Member domains: `MemberAll` with `history` `[0, 600, 700]` names 600 at `index` 1, with a value path rooted at `mid` in the current observation whose one step selects the member `history`. `ConvertedAll` with `history` `[700, 0, 600]` names 600 at `index` 2, its position in the stored member, on the same path. `MemberPre` over a pre-call observation, and over an invocation, derives the same record, whose path names the pre observation, not the invocation's post one. | Test (TC-740) |
+| FR-265-AC-7 | Member domains: `MemberAll` with `history` `[0, 600, 700]` names 600 at `index` 1, with a value path rooted at `mid` in the current observation whose one step selects the member `history`. `ConvertedAll` with `history` `[700, 0, 600]` names 600 at `index` 2, its position in the stored member, on the same path. `MaybeAll` with `[0, 600, 700]` names 600 at `index` 1 on the path whose steps select the member `maybeHistory` and then the option's value. `MemberPre` over a pre-call observation, and over an invocation, derives the same record, whose path names the pre observation, not the invocation's post one. | Test (TC-740) |
 
 ## Dependencies
 

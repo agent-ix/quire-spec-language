@@ -14,11 +14,12 @@ use qsl_package::CheckedPackage;
 use quire_exact::{
     admit_text, form_collection, from_admitted_slots, CardinalityBound, CollectionKind,
     CollectionType, Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue,
-    FloatType, IeeeValue, IeeeWidth, Integer, IntegerInterval, Meter, NodeKey, ObjectId,
-    ObjectReference, OptionValue, Outcome, Quantity, Rational, RationalDomain, RoundingMode,
-    ScalarLimits, TextPayload, TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value,
-    ValueType, VariantId,
+    FloatType, IeeeValue, IeeeWidth, Integer, IntegerInterval, Meter, ObjectId, ObjectReference,
+    OptionValue, Outcome, Presence, Quantity, Rational, RationalDomain, RoundingMode, ScalarLimits,
+    TextPayload, TextProfile, TextType, UnitDomain, UnitId, UniverseId, Value, ValueType,
+    VariantId,
 };
+use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
 
 use super::{digest, hex, present, CauseCodecError};
@@ -52,16 +53,54 @@ impl<'a> Keys<'a> {
     }
 
     /// The admitted record or tuple declaration whose key is `text`.
-    fn composite(&self, text: &str, member: &'static str) -> Result<NodeKey, CauseCodecError> {
+    fn composite(
+        &self,
+        text: &str,
+        member: &'static str,
+    ) -> Result<&'a CompositeDeclaration, CauseCodecError> {
         let bytes = digest(text, member)?;
-        self.package
-            .graph()
-            .scope()
-            .types()
+        self.types()
             .composites()
-            .map(|declaration| declaration.key())
-            .find(|key| key.as_bytes() == &bytes)
+            .find(|declaration| declaration.key().as_bytes() == &bytes)
             .ok_or(CauseCodecError::Unresolved(member))
+    }
+
+    fn types(&self) -> &'a TypeEnvironment {
+        self.package.graph().scope().types()
+    }
+
+    /// `slots` as a value of `declaration`, refusing slots of another shape
+    /// (QSpec FR-351-AC-5): a record's slots are its fields in order, each
+    /// present and admitted by the field's type, or absent or null only for
+    /// an optional field; a tuple's are its positions, each present and
+    /// admitted.
+    fn shaped(
+        &self,
+        declaration: &CompositeDeclaration,
+        slots: Box<[FieldValue]>,
+    ) -> Result<Value, CauseCodecError> {
+        let types = self.types();
+        let fits = match declaration.shape() {
+            CompositeShape::Record(fields) => {
+                fields.len() == slots.len()
+                    && fields.iter().zip(slots.iter()).all(|(field, slot)| match slot {
+                        FieldValue::Present(value) => types.admits(field.value_type(), value),
+                        FieldValue::Absent | FieldValue::Null => {
+                            field.presence() == Presence::Optional
+                        }
+                    })
+            }
+            CompositeShape::Tuple(positions) => {
+                positions.len() == slots.len()
+                    && positions.iter().zip(slots.iter()).all(|(position, slot)| {
+                        matches!(slot, FieldValue::Present(value) if types.admits(position, value))
+                    })
+            }
+        };
+        if !fits {
+            return Err(CauseCodecError::Value("slots"));
+        }
+        Ok(from_admitted_slots(declaration.key(), slots))
     }
 
     /// The admitted object type whose effective identity is `text`.
@@ -492,7 +531,7 @@ impl TypeWire {
             }
             Self::Option { payload } => ValueType::option(payload.read(keys)?),
             Self::Composite { declaration } => {
-                ValueType::Composite(keys.composite(&declaration, "declaration")?)
+                ValueType::Composite(keys.composite(&declaration, "declaration")?.key())
             }
             Self::Collection { collection_type } => {
                 ValueType::collection(collection_type.read(keys)?)
@@ -697,7 +736,7 @@ impl ValueWire {
                         })
                     })
                     .collect::<Result<Box<[_]>, CauseCodecError>>()?;
-                from_admitted_slots(declaration, slots)
+                keys.shaped(declaration, slots)?
             }
             Self::Collection {
                 collection_type,

@@ -990,9 +990,15 @@ fn admit_object_field(
     if presence == quire_exact::Presence::Optional {
         return match raw {
             SnapshotValue::Absent => Ok(FieldValue::Absent),
-            SnapshotValue::Present(inner) => {
-                admit_scalar(references, inner, value_type).map(FieldValue::Present)
-            }
+            // A present value is admitted as a required one of the same
+            // type, so an optional collection-typed member admits its
+            // sequence.
+            SnapshotValue::Present(inner) => admit_object_field(
+                references,
+                inner,
+                value_type,
+                quire_exact::Presence::Required,
+            ),
             // `object_field_kind_matches` already refused every other raw
             // form for an optional field before this is called.
             SnapshotValue::Boolean(_)

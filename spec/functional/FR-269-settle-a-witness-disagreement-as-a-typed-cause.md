@@ -53,7 +53,8 @@ one side only, or fails the separation check (ADR-031 SW-12, SW-13). Like
 - The cause SHALL serialize and read back with `given` and `derived` each
   present in full or absent (QSpec FR-351 has no partial record), and a
   reader SHALL refuse a `Witness` cause whose `failure` is not one of the
-  values above.
+  values above, and a record whose deciding element is a record or tuple
+  whose slots do not fit its declaration's shape (QSpec FR-351-AC-5).
 - Two results that differ only in their `Witness` cause's `given` or
   `derived` record SHALL compare unequal.
 

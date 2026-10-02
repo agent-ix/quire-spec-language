@@ -76,3 +76,22 @@ The defects are at the edges:
 | FND-004 | medium | A precondition evaluated over an invocation gets `Trail.observation` from `ClauseSetup`, which picks `observations.post.or(pre)`. Built-domain value paths therefore name the post snapshot, which the clause never reads. The field doc says "`pre` for a precondition". The same precondition over the same pre snapshot gives different value paths in a pre-call run and in an invocation run. | qsl-eval/src/value/expression/mod.rs:434-435 |
 | FND-005 | low | `SeparatingWitnessRecord::from_stop` is `pub` on a type that qsl_replay re-exports, and its signature names `qsl_eval::value::StopReport`, which qsl_replay does not re-export. This puts qsl-eval on the facade surface that FR-100-AC-8 keeps free of it. The arch-lint check scans re-export items, not inherent methods of re-exported types, so it passes. The only caller is in-crate (`witness/derivation.rs`), so `pub(crate)` suffices. | qsl-replay/src/result.rs:281 |
 | FND-006 | low | The strict reader accepts any `code`, `cause` and field-name spelling in a `Refused` reason, including empty strings. The same reader refuses an empty `object_identity`. A document naming a code the catalog does not define reads back as a typed refusal. | qsl-replay/src/result.rs:181 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | The new deciding-element reader builds a composite with `quire_exact::from_admitted_slots`, whose contract is "checking nothing: the caller has already checked every slot against its own declared shape". It never checks the wire slots against the resolved declaration's shape: slot count, field types, or required fields being present. `tc_744_every_deciding_element_kind_round_trips` itself asserts that `Point { x: Int[0, 9]; y: Int[0, 9]; }` with slots `[Absent, Null]` reads back `Ok`. A strict reader (FR-269, QSpec FR-351-AC-5) refuses a record carrying a foreign shape. | qsl-replay/src/result/wire/value.rs:688-701 |
+
+## Dispositions
+
+Round 1, reviewed at `0a2609e8f64f4e7d05b634a4567b3b21120b216e` (diff `4fb4e69b..0a2609e8`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0a2609e8f64f4e7d05b634a4567b3b21120b216e |
+| FND-002 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
+| FND-003 | still-open | Member, record-field and `ConvertCollection` reads are now located. A stored collection reached through an option still falls back to `built`, because neither the member read of an `Option` nor the `NodeKind::Value` unwrap records provenance. Examples are `value(self.maybeItems)`, or an optional record field. FR-207's `option_value` step has no `ValuePathStep` variant. |
+| FND-004 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
+| FND-005 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |
+| FND-006 | fixed | 79b77d815b5d7886b1141684f0265da7728e011c |

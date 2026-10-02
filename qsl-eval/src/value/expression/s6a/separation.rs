@@ -153,11 +153,22 @@ impl Provenance {
     /// The provenance of `field` of the record stored here; `None` for a
     /// selection of elements, which has no fields.
     pub(crate) fn field(&self, field: &str) -> Option<Self> {
+        self.step(ValuePathStep::Field(field.to_owned()))
+    }
+
+    /// The provenance of the payload of the present optional value stored
+    /// here (QSpec FR-207's option-value selection); `None` for a selection
+    /// of elements.
+    pub(crate) fn option_value(&self) -> Option<Self> {
+        self.step(ValuePathStep::OptionValue)
+    }
+
+    fn step(&self, step: ValuePathStep) -> Option<Self> {
         if self.positions.is_some() {
             return None;
         }
         let mut steps = self.steps.clone();
-        steps.push(ValuePathStep::Field(field.to_owned()));
+        steps.push(step);
         Some(Self {
             steps,
             ..self.clone()
@@ -235,24 +246,39 @@ impl Trail {
         self.stops.insert(at.clone(), report);
     }
 
-    /// Record where `value`, a collection or a record, is stored; any other
-    /// value has no elements or fields to locate and is not recorded.
+    /// Record where `value`, a collection, a record or an optional value,
+    /// is stored; any other value has no elements, fields or payload to
+    /// locate and is not recorded.
     pub(crate) fn record(&mut self, value: &Value, provenance: Provenance) {
-        if matches!(value, Value::Collection(_) | Value::Composite(_)) {
+        if locatable(value) {
             self.located.push((value.clone(), provenance));
         }
     }
 
+    /// Where `value` is stored: its latest recorded location, since one
+    /// shared value can be read through more than one path and the claim
+    /// uses the one it read last.
     pub(crate) fn provenance(&self, value: &Value) -> Option<&Provenance> {
         self.located
             .iter()
+            .rev()
             .find(|(recorded, _)| match (recorded, value) {
                 (Value::Collection(left), Value::Collection(right)) => Arc::ptr_eq(left, right),
                 (Value::Composite(left), Value::Composite(right)) => Arc::ptr_eq(left, right),
+                (Value::Option(left), Value::Option(right)) => Arc::ptr_eq(left, right),
                 _ => false,
             })
             .map(|(_, provenance)| provenance)
     }
+}
+
+/// Whether a value can hold a stored collection: a collection, a record or
+/// an optional value.
+pub(crate) fn locatable(value: &Value) -> bool {
+    matches!(
+        value,
+        Value::Collection(_) | Value::Composite(_) | Value::Option(_)
+    )
 }
 
 /// The occurrence key of a node lowered at `location` (ADR-013 O-07): the

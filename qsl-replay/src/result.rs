@@ -316,6 +316,7 @@ impl SeparatingWitnessRecord {
             .map(|step| match step {
                 ValuePathStep::Field(name) | ValuePathStep::Member(name) => name.len(),
                 ValuePathStep::Index(_) => 8,
+                ValuePathStep::OptionValue => 1,
             })
             .sum();
         32 + self.quantifier.origin().role().as_str().len()

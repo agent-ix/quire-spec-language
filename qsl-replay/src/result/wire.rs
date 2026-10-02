@@ -357,6 +357,7 @@ enum SubjectWire {
 #[serde(tag = "tag", rename_all = "snake_case", deny_unknown_fields)]
 enum StepWire {
     Field { name: String },
+    OptionValue,
     Member { name: String },
     Index { index: u64 },
 }
@@ -389,6 +390,7 @@ impl PathWire {
                 .iter()
                 .map(|step| match step {
                     ValuePathStep::Field(name) => StepWire::Field { name: name.clone() },
+                    ValuePathStep::OptionValue => StepWire::OptionValue,
                     ValuePathStep::Member(name) => StepWire::Member { name: name.clone() },
                     ValuePathStep::Index(index) => StepWire::Index { index: *index },
                 })
@@ -424,6 +426,7 @@ impl PathWire {
                 .into_iter()
                 .map(|step| match step {
                     StepWire::Field { name } => ValuePathStep::Field(name),
+                    StepWire::OptionValue => ValuePathStep::OptionValue,
                     StepWire::Member { name } => ValuePathStep::Member(name),
                     StepWire::Index { index } => ValuePathStep::Index(index),
                 })
