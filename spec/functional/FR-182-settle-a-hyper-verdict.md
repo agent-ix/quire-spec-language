@@ -38,7 +38,7 @@ tuple (ADR-018 UE-1, UE-2). HP-5 items settle by the possible family's map
 (FR-181). Settlement is `qsl-replay`'s (ADR-029 CB-2): an EN-1 `proved`
 settles only after the product-closure certificate checker (FR-183)
 accepts its certificate, and a proof whose method has no certificate
-checker settles `proved` labelled `uncertified` (ADR-023 HV-1, HX-7).
+checker settles `proved` labelled `Uncertified` (ADR-023 HV-1, HX-7).
 
 ## Use case
 
@@ -81,7 +81,7 @@ FR-243 basis, O-16 category and method.
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with an `Undefined` counterexample (QSpec FR-400) whose replay reproduces the undefined value at `trace_position` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
-| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected`, ADR-029); SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected{rule, state}`, ADR-018 PC-2); SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(cause, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
@@ -102,10 +102,10 @@ FR-243 basis, O-16 category and method.
   raises it.
 - The record SHALL carry the method (`explicit-state`, `smt-unrolling` or
   `k-induction`).
-- A `proved` record SHALL carry its certification: `certified` when the
+- A `proved` record SHALL carry ADR-018 PC-1's certification label: `Certified` when the
   product-closure certificate checker accepted its certificate, and
-  `uncertified` for a proof whose method has no certificate checker, which
-  is V-3 from `k-induction`. An `uncertified` proof SHALL keep the label
+  `Uncertified` for a proof whose method has no certificate checker, which
+  is V-3 from `k-induction`. An `Uncertified` proof SHALL keep the label
   `proved`.
 - A certificate check that a limit stopped SHALL settle V-7 naming the
   limit.
@@ -122,7 +122,7 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-4 | FR-179-AC-3's `max_depth` run settles `inconclusive`, `BoundReached{depth: 1}`, execution `completed`, truth `pending`, with a record stating the HP-1 reading of the bound. | Test (TC-607) |
 | FR-182-AC-5 | FR-179-AC-4's outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-183 replay reproduces the undefined value at its tuple, with a record carrying `UndefinedEvaluation` naming that tuple, its two executions and the division-by-zero cause; it never settles `proved`. | Test (TC-610) |
 | FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, with no `UndefinedEvaluation`: the false tuple is the first refuting evidence, ahead of the undefined tuples. | Test (TC-611) |
-| FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `certified`, after FR-183-AC-7's certificate is accepted; with the certificate's member removed the item settles `inconclusive`, `CertificateRejected`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction` settles `proved`, `decisive-witness`, certification `uncertified`. | Test (TC-607) |
+| FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `Certified`, after FR-183-AC-7's certificate is accepted; with the certificate's member removed the item settles `inconclusive`, `CertificateRejected`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction` settles `proved`, `decisive-witness`, certification `Uncertified`. | Test (TC-607) |
 | FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 
 ## Dependencies
