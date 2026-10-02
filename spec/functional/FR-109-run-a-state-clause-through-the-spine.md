@@ -144,10 +144,12 @@ selection, admission or evaluation result is a report.
   (`Category::exit_code`) of the disposition's category: 0 and 10 as above,
   an undefined evaluation included; FR-100's exit status for an `evaluate`
   refusal or incomplete; FR-100's internal-failure exit status for
-  `evaluate` `internal-failure`; the category of the refusal's code for a
-  `compile` refusal or an `admit` argument refusal (20, 21 for an
-  unsupported code, 22 for an incomplete code); and FR-106's own split for
-  an `admit` failure (refused 20, incomplete 22).
+  `evaluate` `internal-failure`; refusal (20) for a `select` result
+  (`missing_declaration`, `ill_typed`); the category of the code for a
+  `compile` refusal, an `admit` argument refusal or an `admit` refusal
+  record (20, 21 for an unsupported code such as
+  `unknown_required_feature`, 22 for an incomplete code); and incomplete
+  (22) for an `admit` incomplete result.
 - Each call SHALL build fresh admission and evaluation meters from the
   request's limits. The entry SHALL read no path, environment variable,
   clock or search location: every byte arrives in the request.

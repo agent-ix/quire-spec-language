@@ -2430,24 +2430,35 @@ fn convert_outcome_drives_the_disposition_for_every_general_outcome_kind() {
     assert_eq!(disposition.category().exit_code(), 22);
 }
 
-/// FR-285: an admission failure exits by its FR-106 category, whatever
-/// typed `Code` its record carries: refused 20, incomplete 22.
+/// FR-285: an admission refusal exits by its record code's category, so
+/// `unknown_required_feature` (FR-106 check 6.2) exits 21; an admission
+/// `Incomplete` exits 22 whatever its code.
 #[test]
-fn admission_failure_exits_by_its_category() {
+fn admission_failure_exits_by_its_record_code_category() {
+    use qsl_foundation::diagnostic::Code;
     use qsl_semantics::model::observation::{AdmissionFailure, AdmissionRecord};
-    for code in qsl_foundation::diagnostic::Code::all() {
-        for (failure, exit) in [
-            (AdmissionFailure::Refused as fn(_) -> _, 20),
-            (AdmissionFailure::Incomplete, 22),
-        ] {
-            let record = AdmissionRecord {
-                code: *code,
-                cause: "any-cause",
-                fields: BTreeMap::new(),
-            };
-            let disposition = ClauseDisposition::Admit(failure(record));
-            assert_eq!(disposition.category().exit_code(), exit, "{code}");
-        }
+    let record = |code: Code| AdmissionRecord {
+        code,
+        cause: "any-cause",
+        fields: BTreeMap::new(),
+    };
+    let refused = |code| ClauseDisposition::Admit(AdmissionFailure::Refused(record(code)));
+    assert_eq!(
+        refused(Code::UnknownRequiredFeature).category().exit_code(),
+        21
+    );
+    assert_eq!(
+        refused(Code::InvalidRuntimeInput).category().exit_code(),
+        20
+    );
+    for code in Code::all() {
+        assert_eq!(
+            refused(*code).category().exit_code(),
+            code.category().exit_code(),
+            "{code}"
+        );
+        let incomplete = ClauseDisposition::Admit(AdmissionFailure::Incomplete(record(*code)));
+        assert_eq!(incomplete.category().exit_code(), 22, "{code}");
     }
 }
 

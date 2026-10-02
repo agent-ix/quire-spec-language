@@ -317,14 +317,12 @@ impl ClauseDisposition {
     }
 
     /// FR-109 Outputs' `category` (ADR-013 O-16, `qsl_foundation::
-    /// diagnostic::Category`): `AdmissionFailure`'s own `Incomplete`/
-    /// `Refused`/`Fault` split is read directly (FR-106's own Incomplete
-    /// result is not the catalog's generic `incomplete_population`
-    /// category row, which the catalog spells `Refusal` for every code but
-    /// `cancelled`/`runtime_invariant` -- FR-106's Incomplete/Refused split
-    /// is a QSL-specific distinction this method preserves, never
-    /// `category_of`'s catalog-wide default). A compile or argument refusal
-    /// takes its code's category. The run's exit code is this category's
+    /// diagnostic::Category`). A compile refusal, an argument refusal and an
+    /// admission refusal take their code's [`Code::category`]
+    /// (`unknown_required_feature` is unsupported); an admission
+    /// `Incomplete` is incomplete and a `Fault` an internal failure.
+    ///
+    /// [`Code::category`]: qsl_foundation::diagnostic::Code::category The run's exit code is this category's
     /// [`Category::exit_code`](qsl_foundation::diagnostic::Category::exit_code)
     /// (FR-285).
     pub fn category(&self) -> qsl_foundation::diagnostic::Category {
@@ -336,7 +334,7 @@ impl ClauseDisposition {
             | Self::StalePackage { .. }
             | Self::MissingName { .. }
             | Self::NotAPredicate { .. } => Category::Refusal,
-            Self::Admit(AdmissionFailure::Refused(_)) => Category::Refusal,
+            Self::Admit(AdmissionFailure::Refused(record)) => record.code.category(),
             Self::Admit(AdmissionFailure::Incomplete(_)) => Category::Incomplete,
             Self::Admit(AdmissionFailure::Fault(_)) | Self::EvaluateFault(_) => {
                 Category::InternalFailure
