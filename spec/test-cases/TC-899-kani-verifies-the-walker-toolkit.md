@@ -32,6 +32,8 @@ Scope: FR-356-AC-4.
   harnesses, one per parent array. Each harness runs the complete walk, a
   stop on entering and on exiting each node, and the arena's bottom-up
   computation, with a symbolic (`kani::any`) payload in every frame. The
+  arena check also proves that an id of another arena, at a position this
+  arena holds, reads as `None` from `Arena::get` and from the results view. The
   tree shape is not symbolic, since CBMC does not finish on a symbolic
   shape.
 

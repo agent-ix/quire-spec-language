@@ -288,26 +288,33 @@ fn tc_898_a_100k_node_arena_computes_subtree_sizes_in_one_forward_loop() {
     });
 }
 
-/// An id from another, longer arena of the same node type, whose position
-/// is not yet computed in this one, reads as `None` from the results view
-/// and from `Arena::get`, never as a panic or a result.
+/// An id from another arena of the same node type reads as `None` from
+/// `Arena::get` and from the results view, whether its position is in range
+/// or past the end, and so does an id of the arena a clone was made from.
 #[trace("TC-898", "FR-356-AC-3")]
 #[test]
-fn tc_898_a_foreign_id_past_the_computed_results_reads_as_none() {
+fn tc_898_a_foreign_id_reads_as_none_in_range_or_not() {
     let mut other: Arena<Term> = Arena::new();
-    let mut foreign = other.push(Term::Literal(0));
+    let foreign_in_range = other.push(Term::Literal(7));
+    let mut foreign_past_end = foreign_in_range;
     for value in 1..10 {
-        foreign = other.push(Term::Literal(value));
+        foreign_past_end = other.push(Term::Literal(value));
     }
     let mut arena = Arena::new();
     let literal = arena.push(Term::Literal(1));
     arena.push(Term::Negate(literal));
-    assert_eq!(arena.get(foreign), None);
+    assert_eq!(foreign_in_range.index(), literal.index());
+    assert_eq!(arena.get(literal), Some(&Term::Literal(1)));
+    assert_eq!(arena.get(foreign_in_range), None);
+    assert_eq!(arena.get(foreign_past_end), None);
+    assert_ne!(foreign_in_range, literal);
+
     let mut seen = Vec::new();
     let sizes = arena.bottom_up(|term, done| {
         seen.push((
             done.len(),
-            done.get(foreign).copied(),
+            done.get(foreign_in_range).copied(),
+            done.get(foreign_past_end).copied(),
             done.get(literal).copied(),
         ));
         match term {
@@ -317,6 +324,14 @@ fn tc_898_a_foreign_id_past_the_computed_results_reads_as_none() {
     });
     assert_eq!(sizes, [1, 2]);
     // The first node sees no result, not even its own; the second sees the
-    // literal's. The foreign id is never answered.
-    assert_eq!(seen, [(0, None, None), (1, None, Some(1))]);
+    // literal's. A foreign id is never answered.
+    assert_eq!(seen, [(0, None, None, None), (1, None, None, Some(1))]);
+
+    // A clone holds equal nodes under its own token.
+    let copy = arena.clone();
+    assert_eq!(copy, arena);
+    assert_eq!(copy.get(literal), None);
+    let (copy_literal, _) = copy.iter().next().expect("a first node");
+    assert_eq!(copy.get(copy_literal), Some(&Term::Literal(1)));
+    assert_eq!(arena.get(copy_literal), None);
 }

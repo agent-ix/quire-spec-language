@@ -226,13 +226,18 @@ struct Node {
 
 /// `Arena::bottom_up` over `tree`, stored children first, computes each
 /// node's subtree size in one forward loop: every child's result is there
-/// when its parent is computed, the node's own id is not yet computed, and
-/// the root's size is the node count.
+/// when its parent is computed, exactly the nodes before the current one
+/// have a result, and the root's size is the node count. An id of another
+/// arena, at a position this arena holds, is never answered.
 fn check_arena(tree: Tree) {
     let nodes = tree.nodes;
     // Tree nodes are pushed from the last to the first, since every child
     // has a larger index than its parent; `ids[i]` is tree node `i`'s id.
     let mut arena: Arena<Node> = Arena::new();
+    let mut other: Arena<Node> = Arena::new();
+    let foreign = other.push(Node {
+        children: [None; SLOTS],
+    });
     let mut ids: [Option<Id<Node>>; SLOTS] = [None; SLOTS];
     for slot in 0..MAX_NODES {
         if slot >= nodes {
@@ -250,7 +255,9 @@ fn check_arena(tree: Tree) {
         assert!(arena.get(id) == Some(&Node { children }));
         ids[usize::from(node)] = Some(id);
     }
+    assert!(arena.get(foreign).is_none(), "a foreign id reads as None");
     let sizes = arena.bottom_up(|node, done| {
+        assert!(done.get(foreign).is_none(), "a foreign id has no result");
         for slot in 0..SLOTS {
             if let Some(id) = ids[slot] {
                 assert!(
