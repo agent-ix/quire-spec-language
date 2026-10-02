@@ -11,7 +11,8 @@ relationships:
 ## Description
 
 Verify that model intake admits a scalar type bound to `Text` with each of
-QSpec FR-141's six profiles as `Text[min, max; profile]`, refuses a profile
+QSpec FR-141's six profiles as `Text[min, max; profile]`, refuses bounds
+outside `0 <= min <= max`, refuses a profile
 FR-141 does not define, refuses a bare `ix://quire/native/Text` that carries
 no profile, and refuses an undeclared native name,
 `ix://quire/native/String`. Scope: FR-056-AC-11.
@@ -24,7 +25,8 @@ Start from a domain package whose object type `Note` declares a field
 1. Add a scalar type `Label` bound to `Text` with bounds `0` and `64` and
    profile `nfc`, set `label`'s `typeRef` to `Label` and admit. Repeat with
    each of `unicode-scalars`, `nfd`, `nfkc`, `nfkd` and `binary-utf8`.
-2. Set `Label`'s profile to `nfx` and admit.
+2. Set `Label`'s profile to `nfx` and admit. Then restore `nfc` and admit
+   with `Label`'s bounds `-1` and `64`, then `65` and `64`.
 3. Set `label`'s `typeRef` to `ix://quire/native/Text` and admit.
 4. Set `label`'s `typeRef` to `ix://quire/native/String` and admit.
 5. Repeat steps 1 to 4 with `label` restored and the `typeRef` set on
@@ -35,7 +37,8 @@ Start from a domain package whose object type `Note` declares a field
 - Step 1: admitted each time; `label`'s value type is `Text[0, 64; p]` for
   the profile `p` set.
 - Step 2: refused `unsupported_construct`/`declaration-form` at `Label`,
-  naming `nfx`.
+  naming `nfx`; then, for each pair of bounds, refused
+  `unsupported_construct`/`declaration-form` at `Label`, naming the bounds.
 - Step 3: refused `unsupported_construct`/`declaration-form` at `label`,
   naming `profile`.
 - Step 4: refused `invalid_model_binding`/`malformed-declaration` at
