@@ -96,12 +96,12 @@ pub enum ReductionKind { Symmetry, PartialOrder, StateConstraint }
   cover a reduced graph, and no core checker for a reduced proof exists.
 - **Category.** `TerminalValue::category` SHALL map every `Reduced` basis to
   success.
-- **Budgets.** When a budget stops a run under any reduction before the run
+- **Limits.** When a limit stops a run under any reduction before the run
   completes its method (`max_states`, `max_transitions`,
-  `max_automaton_states` or the evaluation meter), the map SHALL settle it as
-  ADR-018 V-7 settles a reached budget, naming the budget, its value and the
-  request member that raises it, which QSpec FR-385 carries as cause
-  `limit-reached`; never `failed`. A cancelled run settles as V-7 states.
+  `max_automaton_states` or the evaluation meter), the map SHALL settle
+  ADR-018 V-7: `incomplete`, `Incomplete(LimitReached{limit, value,
+  setting})`, QSpec cause `limit-reached`, never `failed`. A cancelled run
+  settles as V-7 states.
 - **Precedence.** When a run completes with no counterexample, reached a
   boundary state and reached `max_depth`, it SHALL settle
   `ConstraintReached`.
@@ -143,7 +143,7 @@ pub enum ReductionKind { Symmetry, PartialOrder, StateConstraint }
 | FR-160-AC-4 | ADR-021 §7.1's `fair weak whole` refutation from the symmetry run settles `refuted`, `decisive-counterexample`, after replay, and its record names no reduction, and its counterexample, the three `upd(b)` steps from `(0,0,0)`, equals the unreduced run's counterexample byte for byte. | Test (TC-584) |
 | FR-160-AC-5 | Over ADR-021 §7.1's subject with the symmetry declaration, `always holds(2 / (2 - c.versionNumber) >= 1)` for `c = a` settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` with `cause` `division-by-zero` at a state where `a.versionNumber = 2`, after its concretised counterexample replays; its record names no reduction, and its prefix has the length of the unreduced run's, two steps. | Test (TC-588) |
 | FR-160-AC-6 | The differential test runs every model-check case of the corpus unreduced and under each selection of symmetry, partial-order reduction, or both, that its PT-2 rows admit, and every pair settles the same verdict with every counterexample replaying. It includes ADR-021 §7.1 to §7.6: §7.1's `fair weak each` instance `Holds` and `fair weak whole` instance `Violated` under symmetry and unreduced; §7.2's instances under partial-order reduction and unreduced; §7.4 `Holds` under its default scheduler constraints and `Violated` under `scheduling adversarial`; §7.5's `Gate` `Violated` under `fair weak go`; and each §7.6 vector `Violated`, each under partial-order reduction and unreduced. | Test (TC-886) |
-| FR-160-AC-7 | ADR-021 §7.2's TP-4 instance with partial-order reduction and `max_states` 3 stops before completing its method and settles as ADR-018 V-7 settles a reached budget, naming `max_states`, its value 3 and the request member that raises it, never `failed`. §7.2's completed partial-order proof settles `Proved{Reduced{[PartialOrder{BreadthFirstRevisit}]}, certification: Uncertified}`. | Test (TC-584) |
+| FR-160-AC-7 | ADR-021 §7.2's TP-4 instance with partial-order reduction and `max_states` 3 stops before completing its method and settles V-7, `incomplete`, `Incomplete(LimitReached{limit: max_states, value: 3, setting})` naming the request setting that raises it, never `failed`. §7.2's completed partial-order proof settles `Proved{Reduced{[PartialOrder{BreadthFirstRevisit}]}, certification: Uncertified}`. | Test (TC-584) |
 
 ## Dependencies
 

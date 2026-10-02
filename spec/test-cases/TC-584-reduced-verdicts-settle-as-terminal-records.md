@@ -32,4 +32,4 @@ Tag the tests `#[trace("TC-584", "FR-160-AC-n")]`.
 - Step 2: `Proved{Exhaustive}` with `Wide` in the method; `ConstraintReached`.
 - Step 3: `inconclusive`, `unsettled`, `ReductionHorizon{max_depth: 2}`; `BoundReached{depth: 1}`.
 - Step 4: `refuted`, `decisive-counterexample`, no reduction named, byte-equal counterexamples.
-- Step 5: the V-7 reached-budget settlement naming `max_states`, value 3 and its request member; never `failed`. Every `Reduced` proof in step 1 carries `Uncertified`.
+- Step 5: V-7, `incomplete`, `LimitReached{limit: max_states, value: 3, setting}`; never `failed`. Every `Reduced` proof in step 1 carries `Uncertified`.

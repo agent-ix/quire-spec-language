@@ -81,7 +81,7 @@ and, per run, the count of boundary states reached.
   counterexample ending there that replays (ADR-021 SC-2); that state is not
   a boundary state. A `Refused` evaluation SHALL stop the expansion with its
   refusal. An `Incomplete` evaluation is the run's meter running out, and the
-  engine SHALL stop the run as a reached budget (FR-160). A `CallFailure` SHALL
+  engine SHALL stop the run as a reached limit (FR-160). A `CallFailure` SHALL
   stop the expansion with `runtime_invariant`/`established-invariant-broken`.
 - **Resolution.** The pre-check SHALL resolve the request's constraint name
   to a checked `constraint` clause of the subject's package; a name that
