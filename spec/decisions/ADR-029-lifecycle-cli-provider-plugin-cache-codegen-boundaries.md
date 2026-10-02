@@ -856,8 +856,7 @@ except the ADR-011 amendment, which is applied in place.
   PR #573 (zone) and PR #579 (EN-5).
 - Implementation follow-ups this record states for code: one
   `qsl-foundation` `BackendId` replacing `qsl_route::BackendId` and
-  `qsl_replay::identity::Backend`, with `BackendDescriptor.tool` deleted
-  (FR-288); `ProofCategory` folded into `Category` (FR-285); `format` moved
+  `qsl_replay::identity::Backend` (FR-288); `ProofCategory` folded into `Category` (FR-285); `format` moved
   from root `src/format.rs` to `qsl_cst::format` (X-12).
 - Team-leader decision reconciling RU-1 with the QSL-366 ruling (an undefined
   claim evaluation settles `refuted` with cause `UndefinedEvaluation{where,
