@@ -106,3 +106,15 @@ Round 1, reviewed at 97bc6bfd014fe1c46cb1779b2205f10533153a2a. Checked against t
 | FND-002 | fixed | 97bc6bfd: `Expression::respelled` returns `Result<Self, ShapeChanged>` (syntax.rs:1323-1340), and the unit test asserts `Err(ShapeChanged(tree.root_id()))` for the rewired tree. |
 | FND-003 | fixed | 97bc6bfd: `ExpressionBuilder` tracks claimed children. `push` refuses `UnknownChild`, `ClaimedTwice` (another parent, or the same child twice in one node), and `build` refuses `Unclaimed` orphans and `Empty` (`TreeRefusal`, syntax.rs:1469-1555). `graft` marks grafted interior nodes claimed. `a_builder_builds_only_one_tree` covers both refusals. |
 | FND-004 | fixed | 97bc6bfd: the TC-169 test, the TC-169 file and its spec/tests.md row, FR-067-CON-3 and FR-067-AC-9 are deleted, and so are the qsl-eval `value_expression_syntax_is_absent_from_the_module_tree` test and its doctest. FR-068's three citations are reworded, and a grep at the head finds no remaining reference. |
+
+Round 2, reviewed at 734c512bc6d71a2ef893d8b460c0f5b604c857ae (fix commit 734c512b, on main 3cb91b40).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-005 | fixed | 734c512b: `Expression::respell_names(&self, FnMut(ExprId, Spellings<'_>)) -> Self` (syntax.rs:1447) hands the closure only the node id and `Spellings { reference: Option<&mut String>, binders: Vec<&mut String> }` (syntax.rs:1562), built by `ExprNode::spellings_mut` (an exhaustive match, :832). No child id is in reach, so the function cannot fail. `substitute_names` (checked_dispatch.rs:839-863) calls it and has no `.expect`. `binder_names` is deleted, and the `Bind` step reads `ExprNode::binders` (:788, exhaustive). The binder order is written twice, in `binders` for reading and in `spellings_mut` for writing, so `binders` is not literally the single source. The two agree, and an Accumulate swap would fail the existing `rename_parameters_reads_each_operand_in_its_binders_scope` (fold accumulator `y`, binder `x`). New test: `respell_names_rewrites_references_and_binders`. It passes in ~/dev/worktrees/logs/b1-make-ci-r4.log (make ci exit=0). |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | Round 1 inserted `the_rename_stack_grows_within_the_node_charge` inside `an_empty_rename_keeps_every_form`'s doc comment. The stack test now opens with that test's first two lines ("The rename walk, with nothing to rename, rewrites every form into exactly itself: each operand, binder and attribute in its own place."), and `an_empty_rename_keeps_every_form` lost them, so each test's doc misdescribes it. Fix: move those two lines back above `an_empty_rename_keeps_every_form`'s remaining doc. | qsl-semantics/src/check/checked_dispatch.rs:1731-1738; qsl-semantics/src/check/checked_dispatch.rs:1755-1758 |

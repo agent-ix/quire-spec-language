@@ -1728,8 +1728,6 @@ mod tests {
         }
     }
 
-    /// The rename walk, with nothing to rename, rewrites every form into
-    /// exactly itself: each operand, binder and attribute in its own place.
     /// The rename walk's task stack grows by at most a constant per
     /// expression node, each charged by S1 as a CST node: a 10,000-deep
     /// chain of `let` binders peaks within four tasks per node.
@@ -1751,6 +1749,8 @@ mod tests {
         assert!(peak <= 4 * nodes, "{peak} tasks for {nodes} nodes");
     }
 
+    /// The rename walk, with nothing to rename, rewrites every form into
+    /// exactly itself: each operand, binder and attribute in its own place.
     /// The forms [`one_of_each_form`] builds are exactly [`FORM_NAMES`], so
     /// a name added there without an expression here fails the test.
     #[trace("QSpec-FR-151-AC-7")]
