@@ -18,7 +18,8 @@ Scope: FR-273-AC-1.
 
 ## Test Procedure
 
-1. Run `cargo xtask canonical-types` over the QSL workspace.
+1. With the M-6c, M-6d and M-6e deletions FR-273's `delete` rows cite landed,
+   run `cargo xtask canonical-types` over the QSL workspace.
 2. Run `make ci`.
 
 Tag the tests `#[trace("TC-748", "FR-273-AC-1")]`.
