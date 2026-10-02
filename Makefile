@@ -232,6 +232,10 @@ CONFORMANCE_DEPENDENCY_TEST := checked_v2::tests::conformance_dependency_selecti
 # QSpec's `positive-operation-identities.json` and
 # `positive-control-operations.json`.
 CONFORMANCE_GOLDEN_TEST := emit::tests::golden::conformance_emitted_application_nodes_match_qspec_positive_fixtures
+# FR-110 and FR-111-AC-7: every header-profile and bundle refusal's
+# (code, cause) pair against QSpec's `native-diagnostics.md`.
+CONFORMANCE_PROFILE_CAUSES_TEST := check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics
+CONFORMANCE_BUNDLE_CAUSES_TEST := library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics
 conformance:
 	@if [ -z "$(QSPEC_DIR)" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
@@ -278,6 +282,16 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* emitted application nodes match QSpec.s positive fixtures$$' || { echo "conformance: the emitter golden check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_PROFILE_CAUSES_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* profile (code, cause) pairs listed by QSpec$$' || { echo "conformance: the profile cause check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --lib -- --exact $(CONFORMANCE_BUNDLE_CAUSES_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* bundle (code, cause) pairs listed by QSpec$$' || { echo "conformance: the bundle cause check did not run" >&2; exit 1; }
 
 # FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem.

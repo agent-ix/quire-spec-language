@@ -995,3 +995,43 @@ fn a_link_enforces_its_own_single_artifact_bytes() {
         raised
     );
 }
+
+/// FR-111-AC-7 against QSpec's own catalog: every (code, cause) pair a
+/// bundle refusal can carry is one `quire.native.diagnostics/v1` lists, read
+/// at run time from `$QSPEC_DIR`. Skipped (and passing) when `QSPEC_DIR` is
+/// unset; `make conformance` requires it. `StageLimit` is the
+/// `PackageLimits::depth` refusal, whose `nesting-depth-exceeded` cause the
+/// catalog no longer lists; deleting that limit is separate work.
+#[trace("TC-491", "FR-111-AC-7")]
+#[test]
+fn conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics() {
+    let Some(listed) = crate::qspec_diagnostics::listed_cause_pairs() else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let mut checked = 0_usize;
+    for cause in [
+        ResolutionCause::UnsupportedSelection,
+        ResolutionCause::InsufficientNextCharge,
+        ResolutionCause::MissingSelection,
+        ResolutionCause::ConflictingAuthority,
+        ResolutionCause::DuplicateMember,
+        ResolutionCause::InvalidValue,
+        ResolutionCause::DefinitionCycle,
+        ResolutionCause::FeatureSetMismatch,
+        ResolutionCause::UnknownFeature,
+        ResolutionCause::UnsupportedFeature,
+    ] {
+        let codes: Vec<_> = Code::all()
+            .iter()
+            .filter(|code| cause.is_cause_of(**code))
+            .collect();
+        assert!(!codes.is_empty(), "{cause:?} is a cause of no code");
+        for code in codes {
+            let pair = (code.as_str().to_owned(), cause.as_str().to_owned());
+            assert!(listed.contains(&pair), "QSpec does not list {pair:?}");
+            checked += 1;
+        }
+    }
+    println!("conformance: {checked} bundle (code, cause) pairs listed by QSpec");
+}

@@ -98,3 +98,45 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
         Err(refusals)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+
+    /// FR-110's table against QSpec's own catalog: every (code, cause) pair
+    /// a header profile refusal carries is one `quire.native.diagnostics/v1`
+    /// lists, read at run time from `$QSPEC_DIR`. Skipped (and passing) when
+    /// `QSPEC_DIR` is unset; `make conformance` requires it.
+    #[trace("TC-490", "FR-110-AC-2", "FR-110-AC-3")]
+    #[test]
+    fn conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics() {
+        let Some(listed) = crate::qspec_diagnostics::listed_cause_pairs() else {
+            println!("skipped: QSPEC_DIR not set");
+            return;
+        };
+        let lock = DefinitionLock::pinned();
+        let root = *lock.entry(CatalogRole::Root).unwrap();
+        let causes = [
+            ProfileCause::UnsupportedSelection,
+            ProfileCause::WrongSelectionRole,
+        ];
+        for cause in causes {
+            let refusal = ProfileRefusal {
+                alias: "v".to_owned(),
+                identity_span: Span { start: 0, end: 0 },
+                selected: String::new(),
+                required_role: CatalogRole::Root,
+                root,
+                cause,
+            };
+            let pair = (refusal.code().as_str().to_owned(), refusal.cause().to_owned());
+            assert!(listed.contains(&pair), "QSpec does not list {pair:?}");
+        }
+        println!(
+            "conformance: {} profile (code, cause) pairs listed by QSpec",
+            causes.len()
+        );
+    }
+}
