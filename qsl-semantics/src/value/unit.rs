@@ -22,8 +22,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use super::semantic_node::{
-    is_qualified_name, preimage_digest, refuse, retains, CanonicalOwner, CanonicalRational,
-    NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection, RationalDocument,
+    is_qualified_name, preimage_bytes, preimage_digest, refuse, retains, CanonicalOwner,
+    CanonicalRational, NodeIdDocument, NodeIdentityPreimage, NodeOwner, OwnerSelection,
+    RationalDocument,
 };
 use qsl_foundation::digest::WireNodeId;
 use quire_exact::{Integer, NodeKey, Rational, UnitId, COMPOUND_UNIT_DOMAIN};
@@ -31,7 +32,8 @@ use quire_semantic_value::semantic_node::{
     CanonicalNodeId, InvalidSemanticGraph, SemanticGraphCause,
 };
 use quire_semantic_value::unit::{
-    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, UnitGraph, UnitNode,
+    compound_unit_id, CompoundUnitCause, DimensionNode, InvalidCompoundUnit, NominalDeclaration,
+    UnitGraph, UnitNode,
 };
 
 const DIMENSION_VERSION: &str = "quire.dimension-node/v1";
@@ -159,9 +161,9 @@ impl DimensionPreimage {
     }
 }
 
-impl NodeIdentityPreimage for DimensionPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
-        preimage_digest(&CanonicalDimension {
+impl DimensionPreimage {
+    fn canonical(&self) -> CanonicalDimension<'_> {
+        CanonicalDimension {
             owner: self.owner.canonical(),
             qualified_declaration: &self.qualified_declaration,
             terms: self
@@ -173,7 +175,27 @@ impl NodeIdentityPreimage for DimensionPreimage {
                 })
                 .collect(),
             version: DIMENSION_VERSION,
+        }
+    }
+
+    /// The RFC 8785 bytes whose SHA-256 is the dimension's node key.
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+        preimage_bytes(&self.canonical())
+    }
+
+    /// The dimension's qualified name and preimage bytes, which lowering
+    /// builds its node from (FR-094).
+    fn nominal_declaration(&self) -> Result<NominalDeclaration, InvalidSemanticGraph> {
+        Ok(NominalDeclaration {
+            qualified_declaration: self.qualified_declaration.clone(),
+            preimage: self.preimage_bytes()?,
         })
+    }
+}
+
+impl NodeIdentityPreimage for DimensionPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&self.canonical())
     }
 }
 
@@ -298,11 +320,9 @@ impl UnitPreimage {
     pub fn target(&self) -> Option<WireNodeId> {
         self.target
     }
-}
 
-impl NodeIdentityPreimage for UnitPreimage {
-    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
-        preimage_digest(&CanonicalUnit {
+    fn canonical(&self) -> CanonicalUnit<'_> {
+        CanonicalUnit {
             dimension_node_id: CanonicalNodeId::from(*self.dimension.as_bytes()),
             offset: CanonicalRational::new(&self.offset.0, &self.offset.1),
             owner: self.owner.canonical(),
@@ -310,14 +330,47 @@ impl NodeIdentityPreimage for UnitPreimage {
             scale: CanonicalRational::new(&self.scale.0, &self.scale.1),
             target_unit_node_id: self.target.map(|id| CanonicalNodeId::from(*id.as_bytes())),
             version: UNIT_VERSION,
+        }
+    }
+
+    /// The edge's scale as spelled: `(numerator, denominator)`.
+    pub fn scale(&self) -> (&Integer, &Integer) {
+        (&self.scale.0, &self.scale.1)
+    }
+
+    /// The edge's offset as spelled: `(numerator, denominator)`.
+    pub fn offset(&self) -> (&Integer, &Integer) {
+        (&self.offset.0, &self.offset.1)
+    }
+
+    /// The RFC 8785 bytes whose SHA-256 is the unit's node key.
+    pub(crate) fn preimage_bytes(&self) -> Result<Vec<u8>, InvalidSemanticGraph> {
+        preimage_bytes(&self.canonical())
+    }
+
+    /// The unit's qualified name and preimage bytes, which lowering builds
+    /// its node from (FR-094).
+    fn nominal_declaration(&self) -> Result<NominalDeclaration, InvalidSemanticGraph> {
+        Ok(NominalDeclaration {
+            qualified_declaration: self.qualified_declaration.clone(),
+            preimage: self.preimage_bytes()?,
         })
+    }
+}
+
+impl NodeIdentityPreimage for UnitPreimage {
+    fn digest(&self) -> Result<[u8; 32], InvalidSemanticGraph> {
+        preimage_digest(&self.canonical())
     }
 }
 
 impl UnitPreimage {
     /// Refuse an unreduced rational, then a zero scale or a non-identity root
-    /// ([`UnitNode::checked`]).
-    fn check_semantics(&self) -> Result<UnitNode, SemanticGraphCause> {
+    /// ([`UnitNode::checked`]). The node keeps `declaration`.
+    fn check_semantics(
+        &self,
+        declaration: NominalDeclaration,
+    ) -> Result<UnitNode, SemanticGraphCause> {
         let reduced = |(numerator, denominator): &SpelledRational| {
             Rational::new(numerator.clone(), denominator.clone())
                 .ok()
@@ -332,6 +385,7 @@ impl UnitPreimage {
             self.target.map(|target| *target.as_bytes()),
             scale,
             offset,
+            declaration,
         )
     }
 }
@@ -370,6 +424,7 @@ pub fn admit_unit_graph(
                 .iter()
                 .map(|(id, exponent)| (*id.as_bytes(), exponent.clone()))
                 .collect(),
+            preimage.nominal_declaration()?,
         )
         .map_err(refuse)?;
         if !keys.insert(key) {
@@ -383,7 +438,9 @@ pub fn admit_unit_graph(
     }
     let mut admitted_units = BTreeMap::new();
     for (preimage, key) in units {
-        let node = preimage.check_semantics().map_err(refuse)?;
+        let node = preimage
+            .check_semantics(preimage.nominal_declaration()?)
+            .map_err(refuse)?;
         if !keys.insert(key) {
             return Err(refuse(SemanticGraphCause::DuplicateNode));
         }

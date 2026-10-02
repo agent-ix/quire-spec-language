@@ -44,7 +44,10 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-419")]` with the AC each backs.
 
 - Step 1: the semantic type is QSpec's `unit-metre` key,
   `79637623a46d29e884b62c6fa292aeb29d41e4ecc4e800b4d7ee910a3eaf23a4`, and the
-  graph holds no `compound_unit` node.
+  graph holds no `compound_unit` node. It holds the `metre` node, a
+  `scalar_type`/`unit` node carrying its `quire.unit-node/v1` preimage, whose
+  bytes hash to that key, typed by the `dimension-length` node, which it also
+  holds as a `scalar_type`/`dimension` node.
 - Step 2: `a * a`'s result type is U1; the three formed units key to U2
   (whose first term names metre), U3 and U4, byte for byte. U4 differs from
   the `metre` unit key.

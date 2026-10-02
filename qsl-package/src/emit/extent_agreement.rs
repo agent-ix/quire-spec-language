@@ -18,11 +18,11 @@
 //! group requires a bound, so the recursive `RangedTree`, which ADR-014 §4
 //! classifies as unbounded by depth, agrees too.
 //!
-//! One fixture cannot be compared: a quantity (`Measure{len: metre}`). QSL
-//! classifies it unbounded and unboundable (ADR-014 §4), but the emitter
-//! omits the record, because it names the declared unit node lowering does
-//! not build (`NamesAbsentNode`). It sits in an ignored test that asserts
-//! agreement.
+//! A quantity record (`Measure{len: metre}`) is emitted with the `metre`
+//! unit and `Length` dimension nodes lowering builds (FR-094), and IR reads
+//! and lowers it. QSL classifies it unbounded and unboundable (ADR-014 §4);
+//! IR's `requires-bound` treats a unit type as needing no bound, so the
+//! agreement test over it is ignored until IR requires one.
 //!
 //! **Operation-application records** (FR-097-AC-6). QSL's requirement
 //! record is the authority for an operation-application claim's extent.
@@ -51,7 +51,7 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
 };
 
-use super::tests::{metre_units, METRE};
+use super::tests::source_metre_units;
 use super::tests::{nodes, source, whole_unit, wire};
 use super::{emit_checked, emit_package, CheckedPackage, Emission, OmittedNode};
 
@@ -316,28 +316,85 @@ fn both_sides(name: &str) -> (ClaimExtent, CompleteLoweringRecordV2, Value) {
     (extent, ir_lowering(&package, &ir_id), wire)
 }
 
-/// TC-440: agreement over a quantity record, `Measure{len: metre}`. Its
-/// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
-/// unboundable (ADR-014 §4).
+/// `Measure{len: metre}`, whose `metre` unit the fixture unit's own source
+/// declares, checked, emitted and read by IR's v2 reader: the environment,
+/// the wire, IR's package and `Measure`'s ids.
+fn emitted_measure() -> (
+    TypeEnvironment,
+    CompositeDeclaration,
+    Value,
+    Box<CheckedPackageV2>,
+    quire_exact::UnitId,
+) {
+    let (units, metre) = source_metre_units();
+    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
+    let types = TypeEnvironment::new([measure.clone()], [])
+        .expect("FR-143 admits Measure")
+        .with_units(units);
+    let (wire, package, omitted) = emit_and_read(types.clone());
+    assert!(omitted.is_empty(), "{omitted:?}");
+    (types, measure, wire, package, metre)
+}
+
+/// TC-440 (FR-097-AC-6, FR-094 "Quantity type nodes"): a record with a
+/// quantity field reaches IR. Lowering builds the `metre` unit node and its
+/// `Length` dimension node, so the emission omits nothing: it writes
+/// `Measure`, the unit node with its `quire.unit-node/v1` preimage, typed
+/// by and depending on the dimension node, and IR's v2 reader admits the
+/// package and lowers `Measure`.
 #[trace("TC-440", "FR-097-AC-6")]
 #[test]
-#[ignore = "the emitter omits a record naming a declared unit: lowering does not build the unit node (NamesAbsentNode), so Measure is never written for IR to compare"]
-fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
-    let metre = quire_exact::UnitId::declared(NodeKey::from_digest(METRE));
-    let measure = record(10, "Measure", vec![("len", ValueType::Quantity(metre))]);
-    // `Flag` keeps the package non-empty when `Measure` is omitted.
-    let filler = record(11, "Flag", vec![("b", ValueType::Boolean)]);
-    let types = TypeEnvironment::new([measure.clone(), filler], [])
-        .expect("FR-143 admits Measure")
-        .with_units(metre_units());
-    let (wire, package, omitted) = emit_and_read(types.clone());
-    let written = nodes(&wire)
+fn tc_440_a_quantity_record_is_emitted_and_reaches_ir() {
+    let (_, _, wire, package, metre) = emitted_measure();
+    let metre_id = metre
+        .as_bytes()
         .iter()
-        .any(|node| node["declaration"]["qualified_name"] == json!(["Measure"]));
-    assert!(
-        written,
-        "Measure: not compared: the emitter omits it ({omitted:?})"
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let unit = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"]["digest"] == json!(metre_id))
+        .expect("the metre unit node is written");
+    assert_eq!(unit["node_tag"], json!("scalar_type"));
+    assert_eq!(unit["semantic_form"], json!("unit"));
+    let preimage = &unit["nominal_identity_preimage"];
+    assert_eq!(preimage["version"], json!("quire.unit-node/v1"));
+    assert_eq!(
+        preimage["qualified_declaration"],
+        json!(["Example", "metre"])
     );
+    let dimension = &preimage["dimension_node_id"];
+    assert_eq!(&unit["semantic_type"], dimension);
+    assert_eq!(unit["dependencies"], json!([dimension]));
+    let length = nodes(&wire)
+        .iter()
+        .find(|node| node["node_id"] == *dimension)
+        .expect("the Length dimension node is written");
+    assert_eq!(length["semantic_form"], json!("dimension"));
+    assert_eq!(
+        length["nominal_identity_preimage"]["version"],
+        json!("quire.dimension-node/v1")
+    );
+    let (ir_id, _) = declared(&wire, "Measure");
+    let lowering = ir_lowering(&package, &ir_id);
+    assert!(
+        matches!(
+            lowering,
+            CompleteLoweringRecordV2::Lowered { .. }
+                | CompleteLoweringRecordV2::RequiresBound { .. }
+        ),
+        "{lowering:?}"
+    );
+}
+
+/// TC-440: agreement over the quantity record `Measure{len: metre}`. Its
+/// magnitude is an unbounded `Rational`, so QSL classifies it unbounded and
+/// unboundable (ADR-014 §4), and IR must require a bound for it.
+#[trace("TC-440", "FR-097-AC-6")]
+#[test]
+#[ignore = "IR's requires_bound treats unit and compound-unit types as needing no bound, so IR lowers Measure while QSL classifies it Unbounded"]
+fn tc_440_quantity_extent_agrees_with_ir_requires_bound() {
+    let (types, measure, wire, package, _) = emitted_measure();
     let (ir_id, wire_id) = declared(&wire, "Measure");
     let checked_type = ValueType::Composite(measure.key());
     let extent = classify_extent(&[(wire_id, &checked_type)], &types, LIMIT).unwrap();

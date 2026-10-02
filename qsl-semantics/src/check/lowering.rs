@@ -69,6 +69,7 @@ use super::refusal::{
 use crate::value::definition::DefinitionReference;
 use crate::value::enumeration::{member_preimage_bytes, EnumDeclarationPreimage};
 use crate::value::member::Member;
+use crate::value::unit::{DimensionPreimage, UnitPreimage};
 use quire_semantic_value::declaration::{
     CompositeShape, EqualityOperator, FieldDeclaration, TypeEnvironment,
 };
@@ -153,8 +154,9 @@ pub struct SemanticNode {
     /// group member's names its group's members by their keys. A nominal
     /// node's key is its [`Self::nominal`] preimage's instead.
     content: NodeContent,
-    /// The QSpec nominal preimage an enum declaration or enum member node
-    /// is keyed by (FR-092 rule 1); `None` for every other node.
+    /// The QSpec nominal preimage an enum declaration, enum member,
+    /// dimension or unit node is keyed by (FR-092 rule 1); `None` for every
+    /// other node.
     nominal: Option<NominalNode>,
 }
 
@@ -171,6 +173,14 @@ pub enum NominalNode {
         /// The member's case identifier.
         case: String,
     },
+    /// `quire.dimension-node/v1` (FR-094). `None` for a dimension another
+    /// owner than the checked unit's own source declares: the check keys it
+    /// by its admitted preimage bytes ([`SemanticNode::preimage`]) and does
+    /// not read that owner back.
+    Dimension(Option<DimensionPreimage>),
+    /// `quire.unit-node/v1` (FR-094), `None` for a unit another owner than
+    /// the checked unit's own source declares, as for [`Self::Dimension`].
+    Unit(Option<UnitPreimage>),
 }
 
 impl SemanticNode {
@@ -223,7 +233,7 @@ impl SemanticNode {
     }
 
     /// The QSpec nominal preimage the node is keyed by, when it is an enum
-    /// declaration or enum member node (FR-092 rule 1).
+    /// declaration, enum member, dimension or unit node (FR-092 rule 1).
     pub fn nominal(&self) -> Option<&NominalNode> {
         self.nominal.as_ref()
     }

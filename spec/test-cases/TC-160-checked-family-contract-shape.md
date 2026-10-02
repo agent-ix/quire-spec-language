@@ -67,13 +67,11 @@ FR-057-AC-10's value-function row.
    node limit configured to N - 1. Check the identical fixture again with
    the limit configured to N, one greater and nothing else changed.
 8. Check a package holding `q(a: Length): Boolean { a * a == a * a }`,
-   whose `metre^2` compound unit node names the `metre` unit node lowering
-   does not build, and `t`, which names no omitted node. Emit it with
-   `emit_checked` and read the bytes back through QSL's I2 read. Emit the
-   same package again through `emit_package` with a region conversion that
-   places no occurrence. The fixture's omission relies on lowering not
-   building the `metre` unit node; when lowering builds it, this step
-   switches to another form the emitter omits.
+   whose `metre^2` compound unit node names the `metre` unit node, owned by
+   a definition the emitted lock does not select, and `t`, which names no
+   omitted node. Emit it with `emit_checked` and read the bytes back through
+   QSL's I2 read. Emit the same package again through `emit_package` with a
+   region conversion that places no occurrence.
 9. Check every family's evaluation hook for display-string reads. A
    "display string" is rendered text (`Display` or `Debug` output,
    diagnostic text, source spelling); a declared name carried on a checked
@@ -120,9 +118,10 @@ FR-057-AC-10's value-function row.
   the limit at N on the identical fixture, `check` checks it. Varying only
   the limit by one flips the result, showing the limit value, not the
   fixture's depth, is the proximate cause.
-- Step 8: the compound unit node is omitted with `NamesAbsentNode`; `q`'s
-  declaration node and every node on its path to the compound unit are
-  omitted with `NamesOmittedNode`; `t` and its body are written; the I2
+- Step 8: the `metre` unit node and its `Length` dimension node are omitted
+  with `UnlockedOwner`, and the compound unit node with `NamesOmittedNode`;
+  `q`'s declaration node and every node on its path to the compound unit
+  are omitted with `NamesOmittedNode`; `t` and its body are written; the I2
   read is Verified and exports `t` and not `q`. The second emission returns
   `EmitRefusal::UnlocatedOccurrence` and no bytes.
 - Step 9: (a) the scan finds no such path or call, and flags each forbidden

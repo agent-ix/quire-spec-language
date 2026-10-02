@@ -30,7 +30,9 @@ pub enum Origin {
     },
     /// A standalone checked expression.
     Expression,
-    /// A declared record, tuple or enum type, by its declared name. Its
+    /// A declared record, tuple, enum, dimension or unit type, by its
+    /// declared name (a dimension's or unit's qualified name joined by
+    /// `.`). Its
     /// `declaration` occurrence is located here (FR-322), and so is the
     /// `generated` occurrence of a node that no function body, measure,
     /// state clause or protocol attempt reaches, when this is the least

@@ -14,8 +14,8 @@
 //! that starts emitting an unclassified or not-emitted kind fails. A new IR
 //! kind fails until it is classified.
 //!
-//! Any refusal or omission other than the two known gaps fails the test: it
-//! is a bug, not a row.
+//! Any refusal other than the known gap, and any omission, fails the test:
+//! it is a bug, not a row.
 
 use qsl_forms::TypeFormHead;
 use quire_contract_model::{
@@ -70,8 +70,10 @@ enum Fixture {
     GoldenCases,
     /// The golden conformance test's `fadd` over `Float32[nearest-even]`.
     Float32Add,
-    /// TC-160 step 8: `q(a: Length)` beside `t`; `a * a`'s `metre^2`
-    /// compound unit names the `metre` unit node.
+    /// TC-160 step 8's `q(a: Length)` beside `t`, over a `metre` unit the
+    /// fixture unit's own source declares; `a * a`'s `metre^2` compound unit
+    /// names the `metre` unit node, which is typed by the `Length`
+    /// dimension node.
     QuantityAndT,
     /// [`FORMS_UNIT`].
     FormsUnit,
@@ -216,7 +218,10 @@ impl Fixture {
             )),
             Self::OrderedEnum => text(ORDERED_COMPARISON),
             Self::Float32Add => whole(golden::float_add_of(BuiltinType::Float32, "nearest-even")),
-            Self::QuantityAndT => whole(q_and_t_package()),
+            Self::QuantityAndT => {
+                let (units, metre) = source_metre_units();
+                whole(q_and_t_package_over(units, metre))
+            }
             Self::FormsUnit => text(FORMS_UNIT),
             Self::CyclicEquality => text(CYCLIC_EQUALITY),
         };
@@ -251,19 +256,14 @@ fn modelled(
     )
 }
 
-/// Why a row's family is not admitted today. These are the only two cases
-/// the corpus holds as rows of their own.
+/// Why a row's family is not admitted today. This is the only case the
+/// corpus holds as a row of its own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum KnownGap {
     /// STD-129: QSpec FR-322 says nothing about an equality over a cyclic
     /// compared type. The emitter writes the equality node, and the locked
     /// IR reader refuses the package at it as `operation-law-missing`.
     CyclicComparedType,
-    /// QSL-247/IR-450: lowering names a declared unit node by key and does
-    /// not build it, so the emitter omits a compound unit over one
-    /// (`NamesAbsentNode`), with everything that names it. IR never sees a
-    /// `scalar_type`/`compound_unit` node.
-    UndeclaredUnit,
 }
 
 /// What a row asserts about its family.
@@ -309,11 +309,9 @@ fn rows() -> Vec<Row> {
         row(K::ScalarType(S::Float64), F::GoldenCases, A),
         row(K::ScalarType(S::Text), F::Tc416Functions, A),
         row(K::ScalarType(S::Enum), F::OrderedEnum, A),
-        row(
-            K::ScalarType(S::CompoundUnit),
-            F::QuantityAndT,
-            Expect::Known(KnownGap::UndeclaredUnit),
-        ),
+        row(K::ScalarType(S::Dimension), F::QuantityAndT, A),
+        row(K::ScalarType(S::Unit), F::QuantityAndT, A),
+        row(K::ScalarType(S::CompoundUnit), F::QuantityAndT, A),
         row(K::CompositeType(C::Option), F::ConfigVersion, A),
         row(K::CompositeType(C::Sequence), F::Tree, A),
         row(K::CompositeType(C::Set), F::FormsUnit, A),
@@ -379,13 +377,10 @@ fn rows() -> Vec<Row> {
 /// Every IR node kind QSL's lowering never writes, each with the reason.
 const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
     use CheckedNodeKind as K;
-    const NO_UNIT: &str = "lowering names declared unit and dimension nodes by key and builds none";
     const NO_RECORD_FORM: &str =
         "lowering's record_form maps only object types and systems interfaces to model nodes";
     const NO_TAG: &str = "lowering builds no node of this tag";
     &[
-        (K::ScalarType(ScalarTypeForm::Dimension), NO_UNIT),
-        (K::ScalarType(ScalarTypeForm::Unit), NO_UNIT),
         (
             K::CompositeType(CompositeTypeForm::Alias),
             "an alias resolves to its target type's node",
@@ -537,30 +532,6 @@ impl Outcome {
             )
         })
     }
-
-    /// The unit nodes the compound unit `node` names in its `unit`
-    /// bindings.
-    fn units_named_by(&self, node: &CheckedNodeId) -> BTreeSet<CheckedNodeId> {
-        let mut units = BTreeSet::new();
-        let Some(SemanticTerm::Aggregate { members }) = self.node(node).map(SemanticNode::body)
-        else {
-            return units;
-        };
-        for term in members {
-            if let SemanticTerm::Aggregate { members } = term {
-                for binding in members {
-                    if let SemanticTerm::Binding { name, value } = binding {
-                        if let (true, SemanticTerm::Reference { target }) =
-                            (name == "unit", value.as_ref())
-                        {
-                            units.insert(node_id(target.0));
-                        }
-                    }
-                }
-            }
-        }
-        units
-    }
 }
 
 /// The checks of one row against its fixture's outcomes; each failure is a
@@ -584,31 +555,6 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
                 fail("IR admits no node of the family".to_owned());
             }
         }
-        Expect::Known(KnownGap::UndeclaredUnit) => {
-            if !outcomes
-                .iter()
-                .any(|outcome| outcome.families.contains_key(&family))
-            {
-                fail("the fixture builds no node of the family".to_owned());
-            }
-            for outcome in outcomes {
-                for node in outcome.families.get(&family).into_iter().flatten() {
-                    let units = outcome.units_named_by(node);
-                    let omitted = outcome.emitted.emission.omitted.iter().any(|omission| {
-                        omission.node == *node
-                            && matches!(
-                                &omission.cause,
-                                OmissionCause::NamesAbsentNode(absent) if units.contains(absent)
-                            )
-                    });
-                    if !omitted {
-                        fail(format!(
-                            "{node:?} is not omitted for a unit it names ({units:?})"
-                        ));
-                    }
-                }
-            }
-        }
         Expect::Known(KnownGap::CyclicComparedType) => {
             for outcome in outcomes {
                 match &outcome.read {
@@ -629,9 +575,7 @@ fn check_row(row: &Row, outcomes: &[Outcome], failures: &mut Vec<String>) {
 
 /// The checks of one fixture's packages: each is admitted at its own
 /// `package_id` unless a row says the fixture hits the cyclic compared type
-/// gap, and each omission roots in a row's undeclared unit gap: a node of
-/// that row's family, or another node naming the same absent unit, omitted
-/// for the absent unit, and the nodes naming either.
+/// gap, and none omits a node.
 fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures: &mut Vec<String>) {
     let backs = |expect: Expect| {
         rows.iter()
@@ -641,13 +585,6 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
         failures.push(format!("{fixture:?}: backs no row"));
     }
     let refused = backs(Expect::Known(KnownGap::CyclicComparedType));
-    let unit_gaps: BTreeSet<CheckedNodeKind> = rows
-        .iter()
-        .filter(|row| {
-            row.fixture == fixture && row.expect == Expect::Known(KnownGap::UndeclaredUnit)
-        })
-        .map(|row| row.family)
-        .collect();
     for outcome in outcomes {
         if !refused {
             let emitted_at = outcome.emitted.emission.package.package_id();
@@ -660,31 +597,8 @@ fn check_fixture(fixture: Fixture, rows: &[Row], outcomes: &[Outcome], failures:
                 Err(failure) => failures.push(format!("{fixture:?}: not admitted: {failure:?}")),
             }
         }
-        let omitted = &outcome.emitted.emission.omitted;
-        // The absent units the gap families' nodes name.
-        let absent_units: BTreeSet<&CheckedNodeId> = omitted
-            .iter()
-            .filter(|omission| {
-                outcome
-                    .family_of(&omission.node)
-                    .is_some_and(|family| unit_gaps.contains(&family))
-            })
-            .filter_map(|omission| match &omission.cause {
-                OmissionCause::NamesAbsentNode(unit) => Some(unit),
-                _ => None,
-            })
-            .collect();
-        for omission in omitted {
-            let accounted = match &omission.cause {
-                OmissionCause::NamesOmittedNode(_) => true,
-                OmissionCause::NamesAbsentNode(absent) => absent_units.contains(absent),
-                OmissionCause::UnsupportedForm { .. }
-                | OmissionCause::DeclarationOccurrenceMismatch
-                | OmissionCause::UnlockedOwner => false,
-            };
-            if !accounted {
-                failures.push(format!("{fixture:?}: unexpected omission {omission:?}"));
-            }
+        for omission in &outcome.emitted.emission.omitted {
+            failures.push(format!("{fixture:?}: unexpected omission {omission:?}"));
         }
     }
 }

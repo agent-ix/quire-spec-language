@@ -1124,6 +1124,30 @@ mod quantities {
         assert!(graph
             .nodes()
             .all(|node| node.semantic_form() != "compound_unit"));
+        // The type node is the unit's QSpec nominal node, built from its
+        // `quire.unit-node/v1` preimage and typed by its dimension's nominal
+        // node, which the graph holds too.
+        let metre = graph.node(node_key(METRE)).expect("the metre unit node");
+        assert_eq!(
+            (metre.node_tag(), metre.semantic_form()),
+            (NodeTag::ScalarType, "unit")
+        );
+        assert!(matches!(metre.nominal(), Some(NominalNode::Unit(None))));
+        assert_eq!(metre.semantic_type(), Some(node_key(LENGTH)));
+        assert_eq!(
+            Sha256::digest(metre.preimage()).as_slice(),
+            node_key(METRE).as_bytes(),
+            "the unit node's preimage is the one its key hashes"
+        );
+        let length = graph
+            .node(node_key(LENGTH))
+            .expect("the Length dimension node");
+        assert_eq!(length.semantic_form(), "dimension");
+        assert!(matches!(
+            length.nominal(),
+            Some(NominalNode::Dimension(None))
+        ));
+        assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
 
         let square = Expression::Binary {
             operator: BinaryOperator::Multiply,

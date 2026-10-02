@@ -248,7 +248,18 @@ domain:
 - **Declared unit.** The type node is the unit's QSpec nominal node
   (`scalar_type` / `unit`, `quire.unit-node/v1`, FR-092 rule 1). It is the
   quantity's `semantic_type`, `result_type` and literal `type` directly. No
-  other node stands for the quantity type.
+  other node stands for the quantity type. `check` builds it, and every
+  dimension and unit node it names (its dimension, that dimension's base
+  dimensions, its target units), from the admitted node the unit table
+  holds for each, keyed by its admitted preimage bytes, as QSpec's nominal
+  fixtures spell them: the preimage's qualified name as `declaration`, with
+  a `declaration` occurrence at the declared name, an empty `aggregate`
+  body, a unit typed by its dimension and a dimension self-typed. A
+  compound unit's root units are built the same way. The node carries its
+  nominal preimage when that preimage, rebuilt under the checked unit's own
+  `SourceOwner`, has the admitted bytes; a node another owner declares
+  carries none, and the emission omits it as a nominal node whose owner
+  the lock does not select.
 - **Compound unit.** The type node is `scalar_type` / `compound_unit`, its own
   semantic type, with no `declaration` and no `owner`. Its body is an
   `aggregate` of one term per compound-unit term, in the order of the unit's
@@ -284,6 +295,8 @@ yield no key for the node that needs it:
 - a `DeclarationKey` whose `package` is no admitted domain package's
   identity, or whose `node` is empty;
 - a compound `UnitId` that the check stage's unit scope does not hold;
+- a declared unit, or a dimension or unit a held unit names, whose nominal
+  preimage the unit table does not hold;
 - a domain package record kind that no checked node names.
 
 Type admission refuses an unknown `Reference` target for a source-compiled
@@ -719,7 +732,8 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 Specified, with C3's receiver (P9) and AC-6's quotient units
 corrected. Implemented (#384):
 `qsl-semantics/src/check/lowering/model.rs` keys the model declaration,
-`Reference`, `Population`, clause-function and quantity type nodes, `check`
+`Reference`, `Population`, clause-function and quantity type nodes, and
+builds each declared unit's and dimension's nominal node, `check`
 records the model correspondence, `check::checked_dispatch_operation` gives
 each clause function its `ModelOwner` and `DeclaredClauseKind`, and the unit
 scope keeps its formed units until lowering has keyed them. TC-417, TC-418
