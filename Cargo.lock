@@ -1354,6 +1354,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-analyze"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "quire-exact",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-attrs"
 version = "0.1.0"
 dependencies = [

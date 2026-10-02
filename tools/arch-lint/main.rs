@@ -420,6 +420,7 @@ mod tests {
             "qsl-package/src",
             "qsl-route/src",
             "qsl-eval/src",
+            "qsl-analyze/src",
             "quire-semantic-value/src",
         ] {
             fs::create_dir_all(root.join(relative)).unwrap();
