@@ -70,3 +70,16 @@ Round 1, reviewed at 1d248ff47b3f75cb334d1dd987939cb64f728b5d (stacked on 18a9c2
 | FND-003 | fixed | 1d248ff4 |
 | FND-004 | fixed | 1d248ff4 |
 | FND-005 | fixed | 1d248ff4 |
+
+Round 2, reviewed at 4feb9cbb43f1624f19734def2810148181fe5de9. No finding was open after round 1, so this round adds no row. It adds FND-006 to FND-009 below.
+
+## New findings (disposition pass 2)
+
+Reviewed at 4feb9cbb43f1624f19734def2810148181fe5de9 (`git diff origin/spec/366-temporal-properties...4feb9cbb`). First drafted at 4a9f4634, before the rebase onto #562's ed7bcc8b; each finding was re-checked at 4feb9cbb and is unchanged there.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | ADR-019 DS-1 still puts the strong-fairness engine work in "Layer 5 `model_check`". ADR-018 LA-1, as amended by #562, places `model_check` in `qsl-analyze` (layer A), and FR-130 says so. As written, ADR-019 contradicts the layer-A layout (SR-1170 FND-013). | spec/decisions/ADR-019-strong-fairness.md:234 |
+| FND-007 | medium | When a component fails FS-2 (c) for several strong constraints `B`, the refinement removes `R`, the states where *any* member of `B` is enabled. But the AM-7 `UnfairStrong{constraint, sub}` witness names one constraint, and FR-339 requires `sub` to partition *exactly* the states where that one constraint is not enabled. FR-130 has EN-1 emit "the refinement's sub-components", which are the SCCs of `S \ R`. For `|B| >= 2` they do not cover the states where only the named constraint is disabled, so `check_components` rejects a valid proof with `WitnessFails`, and the item settles `CertificateRejected` instead of `proved`. Either have EN-1 nest one `UnfairStrong` per member of `B`, or let the witness name the set `B` with `sub` = `S \ R`. Then add an AC with two strong constraints failing on one SCC. | spec/functional/FR-130-decide-strong-fairness-on-the-explicit-state-product.md:78-81,102-106; spec/functional/FR-339-check-an-en-1-component-certificate.md:85-89; spec/decisions/ADR-019-strong-fairness.md:308 |
+| FND-008 | low | Three places name `model_check` as the settlement owner: FR-131's Description ("The settlement in `model_check` SHALL settle"), FR-133's Behavior ("`model_check`'s settlement (FR-127)") and ADR-019 SV-6. ADR-018 LA-3 and FR-127 put the settlement map in `qsl-replay`, and FR-131's own Behavior says "the settlement map (FR-127)". | spec/functional/FR-131-replay-checks-strong-fairness-on-a-model-counterexample.md:27; spec/functional/FR-133-name-the-strong-constraint-that-would-exclude-a-refutation.md:76; spec/decisions/ADR-019-strong-fairness.md:151 |
+| FND-009 | low | ADR-019 FS-6 cites a bare "FR-181" for canonical breadth-first order. It means QSpec FR-181, which QSL implements as FR-101 (FR-130 cites FR-101). #571 adds a QSL FR-181, which would make the bare id resolve to the wrong artifact (the SR-1170 FND-035 pattern). Write "FR-101" or "QSpec FR-181". ADR-018:248 in #562 has the same form. | spec/decisions/ADR-019-strong-fairness.md:119 |
