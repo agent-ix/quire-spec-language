@@ -128,8 +128,8 @@ selection, admission or evaluation result is a report.
   claim, with `truth` set.
 - When a clause evaluates undefined (the kernel `Outcome::Undefined(u)` or
   a family's `FamilyResult::Undefined(u)`), the entry SHALL report stage
-  `evaluate`, category `undefined` with `UndefinedEvaluation{cause}` and
-  exit 10, FR-285's code for undefined (ADR-018 RU-5, QSpec FR-301).
+  `evaluate`, category `undefined` (FR-285) with
+  `UndefinedEvaluation{cause}`, and exit 10 (ADR-018 RU-5, QSpec FR-301).
 - The entry SHALL map every other S6a outcome other than FR-100's internal
   failures, kernel or family, by FR-100's outcome mapping, to FR-100's
   `outcome` member and FR-100's exit status, category `refusal`,

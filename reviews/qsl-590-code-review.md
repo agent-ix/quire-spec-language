@@ -77,6 +77,14 @@ Found at e4f2770ceef6ddfaed0c9b087f4028723026a5b9.
 | --- | --- | --- | --- |
 | FND-004 | medium | `ClauseDisposition::category` now returns `Unsupported` for a compile, argument, admission or evaluate refusal whose code is unsupported. `unknown_required_feature` at admission is the FND-001 case. On main every one of these reported `refusal`. FR-109 still lists the disposition categories as "`success`, `violation`, `refusal`, `incomplete` or `internal-failure`", and its evaluate bullet still says "category `refusal` or `incomplete`". So the code reports a category that FR-109 rules out. The exits are correct (21). Fix: add `unsupported` to both lists in FR-109. This is a spec-only edit. | qsl-replay/src/spine/clause.rs:331-346; spec/functional/FR-109-run-a-state-clause-through-the-spine.md:74-76, 133-136 |
 
+## New findings (disposition pass 2)
+
+Found at db2fb6d116502873bb9fb1718a0ddb9e2758bee7.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-109's undefined bullet now says category `undefined`, exit 10, which matches FR-285 and the code. But it still cites "(ADR-018 RU-5, QSpec FR-301)", and both sources say the opposite about the category. RU-5 settles an undefined claim as refuted (violation). QSpec FR-301 files "a claim whose evaluation is undefined" under violation, and gives `undefined` only to a value run. The citation supports only the exit 10. QSpec FR-301 now contradicts FR-109 on the clause-run label; before this round, the two agreed. The root of this is FR-285, which predates the PR and already names a clause run as undefined. Fix: cite FR-285 for the category, keep RU-5/FR-301 only for exit 10, and route the QSpec FR-301 clause-run label to its QSpec half (STD-141). | spec/functional/FR-109-run-a-state-clause-through-the-spine.md:129-132 |
+
 ## Dispositions
 
 Round 1, reviewed at e4f2770ceef6ddfaed0c9b087f4028723026a5b9 (fix commits bc464d1d6 and e4f2770ce).
@@ -86,3 +94,10 @@ Round 1, reviewed at e4f2770ceef6ddfaed0c9b087f4028723026a5b9 (fix commits bc464
 | FND-001 | fixed | bc464d1d6: `Admit(AdmissionFailure::Refused(record)) => record.code.category()`, so `unknown_required_feature` exits 21 again. `admission_failure_exits_by_its_record_code_category` asserts 21, 20, the code's own category for every `Code`, and 22 for every `Incomplete`. It passes at this head. FR-109's exit bullet now says the admit refusal record takes the category of its code. |
 | FND-002 | fixed | bc464d1d6: the `Code::category` doc names it as the only code-to-category map an exit comes from. The `CATALOG_CATEGORIES`/`category_of` docs call that table the refusal-record map, never an exit source, and name the six codes where the two differ. No exit path in the repo reads `category_of`; its only production caller is `explore::Outcome::category`, and nothing takes an exit from that. |
 | FND-003 | fixed | bc464d1d6: `VerdictWire(Category)` writes `Category::as_str` and refuses `undefined` and unknown labels on read. `verdict_labels_round_trip_and_undefined_is_refused` passes at this head. |
+
+
+Round 2, reviewed at db2fb6d116502873bb9fb1718a0ddb9e2758bee7 (fix commit db2fb6d11).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | db2fb6d11: FR-109's disposition category list now reads "`success`, `violation`, `undefined`, `refusal`, `unsupported`, `incomplete` or `internal-failure`". The per-category record list covers "an `evaluate` refusal, unsupported or incomplete", and the evaluate mapping says "category `refusal`, `unsupported` or `incomplete`". |
