@@ -1,0 +1,30 @@
+[package]
+name = "qsl-analyze"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "ADR-011 §6.1 layer A: the in-process analysis engines above the qualified core, starting with the zone engine's difference-bound matrices."
+
+# ADR-011 §6.1 layer A may depend on "6, 5, 4, 3, R, F, SV, K". The zone
+# engine's DBM needs only layer K's exact rationals (the constants it
+# scales) and arbitrary-precision integers for its bounds. It names no
+# `qsl-replay` item: the certificate checker's DBM there is separate code
+# (ADR-026 CF-6).
+[dependencies]
+quire-exact = { path = "../quire-exact" }
+num-bigint = "0.4.8"
+num-integer = "0.1.47"
+num-traits = "0.2.19"
+thiserror = "2.0.20"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

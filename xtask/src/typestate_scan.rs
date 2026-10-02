@@ -665,7 +665,7 @@ pub const LAYER_CRATES: [&str; 4] = [
 /// crate and every workspace library crate. Not scanned: `xtask` and
 /// `tools/arch-lint` (developer tooling) and `qsl-bench` (the benchmark
 /// harness, which builds its fixture keys directly and ships nothing).
-pub const QSL_CRATES: [&str; 12] = [
+pub const QSL_CRATES: [&str; 13] = [
     "src",
     "quire-exact/src",
     "qsl-attrs/src",
@@ -678,6 +678,7 @@ pub const QSL_CRATES: [&str; 12] = [
     "qsl-route/src",
     "qsl-eval/src",
     "qsl-replay/src",
+    "qsl-analyze/src",
 ];
 
 #[cfg(test)]

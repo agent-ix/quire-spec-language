@@ -71,7 +71,7 @@ missing_docs = "warn"
 # seam_probe_downstream --cfg seam_probe_eval_downstream`, which reports its
 # own seam, and the root crate adds `--cfg seam_probe_replay_downstream`,
 # which gives that seam its probe arm.
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)", "cfg(seam_probe_eval_downstream)", "cfg(seam_probe_replay_downstream)"] }
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)", "cfg(seam_probe_downstream)", "cfg(seam_probe_eval_downstream)", "cfg(seam_probe_replay_downstream)", "cfg(kani)"] }
 
 [lints.clippy]
 all = "deny"

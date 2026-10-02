@@ -611,7 +611,8 @@ fn scan_workspace(workspace_root: &Path, honor_marks: bool) -> Result<Vec<Occurr
 /// `qsl-forms` (ADR-011 §7.3 X-5), `qsl-semantics` (ADR-011 §7.3
 /// X-6), `qsl-package` (ADR-011 §7.3 X-7), `qsl-eval`
 /// (ADR-011 §7.3 X-8), `qsl-route` (ADR-011 §7.3 X-9), `qsl-replay` (ADR-011 §7.3 X-10
-/// -- each extracted §6.1 layer crate adds its own entry here the same way)
+/// -- each extracted §6.1 layer crate adds its own entry here the same way),
+/// `qsl-analyze` (ADR-011 §7.3 X-12)
 /// and `qsl-bench` (the benchmark harness).
 /// `qsl-attrs` is excluded -- it is a proc-macro identity transform with no
 /// string dispatch of any kind (its own module doc).
@@ -630,6 +631,7 @@ fn crate_roots(workspace_root: &Path) -> Vec<PathBuf> {
         "qsl-eval/src",
         "qsl-route/src",
         "qsl-replay/src",
+        "qsl-analyze/src",
         "qsl-bench/src",
     ]
     .into_iter()
@@ -1387,6 +1389,7 @@ mod tests {
             "qsl-eval/src",
             "qsl-route/src",
             "qsl-replay/src",
+            "qsl-analyze/src",
             "qsl-bench/src",
         ] {
             fs::create_dir_all(root.join(member)).expect("create a crate root");

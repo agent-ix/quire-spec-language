@@ -29,6 +29,7 @@
 
 mod bounds;
 mod call_site;
+pub mod certificate;
 mod execute;
 mod identity;
 mod proof_result;
