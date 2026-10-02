@@ -130,7 +130,7 @@ or a **measure** over one behaviour.
 
 | ID | Rule |
 | --- | --- |
-| ST-1 | **Engine EN-4.** Statistical model checking samples behaviours of the subject under the workload with FR-101's sampler, decides the claim's event or measure on each sample with the layer-5 evaluator (ADR-018 SM-1), and decides the claim from the counts with a statistical test. It lives in QSL layer 5, module `statistical`, after `simulation`, and runs in ADR-018's stage S6c over E10. It needs FR-120's `ModelSystem` and the bounded evaluator, and nothing from EN-1. |
+| ST-1 | **Engine EN-4.** Statistical model checking samples behaviours of the subject under the workload with FR-101's sampler, decides the claim's event or measure on each sample with the layer-5 evaluator (ADR-018 SM-1), and decides the claim from the counts with a statistical test. It lives in QSL layer A, crate `qsl-analyze`, module `statistical`, above the qualified core (ADR-029 CB-3), and runs in ADR-018's stage S6c over E10. It reads FR-120's `ModelSystem`, the sampler and the bounded evaluator from layer 5, `qsl-eval`, and nothing from EN-1. The verdict types, the witness replay arm and the settlement map live in layer 6, `qsl-replay`, as does every type CG reads. EN-4 issues no `proved`: its results are `measured` (SV-1), so the rule that a proof with no core certificate checker settles `proved` labelled `uncertified` does not arise for it. |
 | ST-2 | **Scheduler resolution while sampling.** At each step the sampler draws once for the scheduler (PM-2: operation by weight, then scheduled identity uniformly), then once per random parameter in declared order. Each draw selects by exact integer weights: rational weights are scaled by the least common multiple of their denominators. The sampler's preimage gains a choice index within the step, so draws within one step are independent. With unit weights and one choice per step the selection equals FR-101's uniform selection. This is a QSpec revision of `quire.simulation.sampler/v1` (QS-8). |
 | ST-3 | **Tests.** The claim holds for every initial state and every `over` binding (PM-4), so EN-4 runs one statistical test per pair, `m` tests in all. Each test uses `α' = α/m` and `β' = β/m` (Bonferroni), so the family-wise errors stay within the claim's `α` and `β` whatever the dependence between tests. Symmetry reduces `m` (RX-1). |
 | ST-4 | **Fixed-sample method (Okamoto).** For an event with true probability `p`, `N = ⌈ln(1/min(α', β')) / (2ι²)⌉` independent samples give an estimate `p̂` with `Pr(p̂ − p >= ι)` and `Pr(p − p̂ >= ι)` each at most `min(α', β')` (Okamoto's bound, a Chernoff–Hoeffding bound). The test reports the interval `[p̂ − ι, p̂ + ι]`. For a `>= θ` bound it is **accepted** when the interval lies at or above `θ` (wrong with probability at most `β'`), **rejected** when it lies below `θ` (wrong with probability at most `α'`), and **undecided** otherwise; `<= θ` is symmetric. The same bound with range 1 decides a mean of a fraction (PF-5), since a fraction lies in `[0, 1]` (Hoeffding). |
@@ -438,8 +438,10 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
 ## Amendments to make on acceptance
 
 - ADR-021 PT-2: the row of RX-2, and RX-1's symmetry condition beside SYM-6.
-- ADR-011 §1 and §6.1: S6c runs EN-4 as well as EN-1; layer 5 gains
-  `statistical` after `simulation`.
+- ADR-011 §1 and §6.1: S6c runs EN-4 as well as EN-1; layer A, crate
+  `qsl-analyze`, gains `statistical` (ADR-029 CB-3); layer 5, `qsl-eval`,
+  gains the weighted sampler; layer 6, `qsl-replay`, gains the `Measured`
+  settlement and `replay_sampled_witness`.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered
@@ -495,6 +497,10 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
 
 - Owning ticket: Linear QSL-371. Its QSpec half, QS-1 to QS-12, is Linear
   STD-137 (QSpec FR-405 to FR-414). The implementation ticket follows the merged spec.
+- Crate layout (layer A `qsl-analyze` for engines, `qsl-eval` for the
+  model system and sampler, `qsl-replay` for verdicts, replay and
+  settlement) and the uncertified-proof rule: ADR-029 CB-2 and CB-3, owner
+  ruling relayed by the plan lead; Linear QSL-390, on its own draft branch.
 - Exact probabilistic checking of Markov decision processes with PRISM or
   Storm: Linear RES-53.
 - Related: OBS-24 (SLO trace assertions kept apart from workload synthesis;

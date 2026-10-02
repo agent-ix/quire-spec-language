@@ -26,7 +26,8 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `statistical` module SHALL decide a probabilistic claim under
+QSL's `statistical` module in layer A, crate `qsl-analyze` (ADR-029
+CB-3), SHALL decide a probabilistic claim under
 a workload by sampling behaviours with FR-188's sampler, deciding the
 claim's event or measure on each sample with the layer-5 evaluator (ADR-018
 SM-1), and deciding the claim from the counts with the method the request
@@ -180,7 +181,7 @@ the claim's form does not admit (FR-190, SPRT below).
 ## Dependencies
 
 - ADR-024 ST-1 to ST-6, ST-9, ST-10, RX-1, RP-1; ADR-011 §1 and §6.1 (S6c,
-  E10, layer 5) as ADR-024 amends them on acceptance; ADR-018 SM-1.
+  E10, layer A) as ADR-024 and ADR-029 CB-3 amend them; ADR-018 SM-1.
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-186](FR-186-check-probabilistic-claim-forms-at-s3.md),
   [FR-187](FR-187-give-model-transitions-step-probabilities-and-rewards.md),
