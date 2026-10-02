@@ -67,9 +67,7 @@ relationships:
 
 ## Scope
 
-Adopt the QSpec complete-V1 baseline from QSpec `d49bbdc4a97ae0dca27b4f1eec2826446520fc28` (the QSpec PR #75 merge, which after PRs #73 and #74
-amended the QSpec #68 complete scalar contracts over the PR #64 baseline),
-then execute QSL #116 through #123 and `quire-wasm` #6. This is the single
+Adopt the QSpec complete-V1 baseline, then execute QSL #116 through #123 and `quire-wasm` #6. This is the single
 repository plan for Agent-A's complete source/package, type/expression, model,
 reference-runtime, tooling, WASM and qualification lane. Central QSpec retains
 semantic authority; this plan owns implementation order, local tests and honest

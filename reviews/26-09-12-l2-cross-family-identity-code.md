@@ -3,7 +3,7 @@ id: SR-405
 title: "Code and Rust review of L2 cross-family identity completion"
 type: SpecReview
 analysis: code-review
-scope: "71198c8; tests/producer_correspondence.rs; FR-036-AC-1; FR-036-AC-4; FR-036-AC-6; IT-009; TC-114; TC-115"
+scope: "tests/producer_correspondence.rs; FR-036-AC-1; FR-036-AC-4; FR-036-AC-6; IT-009; TC-114; TC-115"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-036
@@ -16,7 +16,7 @@ relationships:
 
 ## Summary
 
-PASS at `71198c8`. The actual code review dispatched through the Rust lane. The
+PASS. The actual code review dispatched through the Rust lane. The
 change exercises the public Producer 1.2 adapter and composed admission path
 with state, temporal and protocol declarations. It retains one exact producer
 and native-model selection, common nominal `Node` type identity, distinct

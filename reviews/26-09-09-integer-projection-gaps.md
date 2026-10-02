@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Task-032 is implemented with review corrections at b0c02c7.
+Task-032 is implemented with review corrections.
 Tasks 019/032 are done;
 Task-020 retains generated activation qualification. The owner permits this
 engineering delivery while preserving incomplete full-plan acceptance.
@@ -33,7 +33,7 @@ The integer IR PR is ready for review under the owner's delivery direction.
 ## Coverage
 
 Quire reports FR-033 5/5 criteria, TM-006 4/4 test cases and global 319/323.
-Ten new traced tests cover both pinned IR readers, actual command selection and
+Ten new traced tests cover both IR readers, actual command selection and
 filesystem failures, plus target-name/encoding checks and a private wire-domain
 refusal control. The correction's focused suite passes 60 tests; SR-243 records
 the full local feature lanes. Counts describe trace bindings, not execution.

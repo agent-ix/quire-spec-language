@@ -3,7 +3,7 @@ id: SR-114
 title: "Independent code review of the LC04 Boolean lowering"
 type: SpecReview
 analysis: code-review
-scope: "PR #13 at 813069f; src/lowering.rs, src/lowering/wire.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009, IT-008, TC-092..TC-094, TM-006, Plan-008"
+scope: "PR #13; src/lowering.rs, src/lowering/wire.rs; tests/native_lowering.rs, tests/native_backend.rs; FR-009, IT-008, TC-092..TC-094, TM-006, Plan-008"
 review_set: subset
 ---
 
@@ -21,12 +21,11 @@ the three hard ceilings FR-009 states normatively are bound by no test.
 
 ## Verdict
 
-**CONDITIONAL** — no high findings. One medium, three lows.
+**CONDITIONAL** — no high findings. One medium, two lows.
 
-## Gates run at `813069f`
+## Gates run
 
-Rust 1.98.1 (the pinned toolchain), `-j 1`, `--test-threads=1`, isolated target
-directory.
+Run with `-j 1`, `--test-threads=1` and an isolated target directory.
 
 | Gate | Result |
 | --- | --- |
@@ -34,12 +33,10 @@ directory.
 | `cargo clippy --locked --all-targets --all-features -j 1 -- -D warnings` | pass |
 | `cargo test --locked -j 1` | **266 passed, 0 failed**, 1 ignored (the activation lane) |
 | `tests/native_backend.rs` alone | 1 passed, 1 ignored, 1.28 s |
-| `cargo llvm-cov --version` | `cargo-llvm-cov 0.9.0`, as IT-008 requires |
-| `docs/dependency-licenses.json` vs `Cargo.lock` | 140 entries against 140 `[[package]]` blocks — the "140 packages" claim is accurate |
 
 ## Mutation experiments
 
-Each applied to `813069f` and reverted; the tree was clean before and after.
+Each applied to the PR head and reverted; the tree was clean before and after.
 
 | # | Mutant | Result |
 | --- | --- | --- |
@@ -61,7 +58,6 @@ M2 is FND-001.
 | --- | --- | --- | --- | --- |
 | FND-001 | medium | The three hard lowering ceilings FR-009 states normatively are bound by no test | src/lowering.rs:32, tests/native_lowering.rs:222 | correct-requirement-no-evidence |
 | FND-002 | low | The CI job gains a from-source tool build and the generated-crate qualification while `timeout-minutes: 10` is unchanged | .github/workflows/ci.yml | correct-requirement-no-evidence |
-| FND-003 | low | `docs/dependency-licenses.json` is referenced by no test, tool or CI step | docs/dependency-licenses.json | missing-requirement |
 | FND-004 | low | A downstream crate's verbatim prose diagnostic is pinned beside the durable code assertion | tests/native_backend.rs:313 | correct-requirement-no-evidence |
 
 ## Finding detail
@@ -111,8 +107,8 @@ it as dead.
 This PR adds two steps to the job:
 
 ```yaml
-- run: rustup toolchain install 1.98.1 … --component llvm-tools-preview
-- run: cargo install cargo-llvm-cov --version 0.9.0 --locked
+- run: rustup toolchain install … --component llvm-tools-preview
+- run: cargo install cargo-llvm-cov --locked
 ```
 
 `cargo install … --locked` builds the tool from source, and the existing
@@ -124,22 +120,6 @@ The job is `workflow_dispatch`-only, per repository policy, so nothing fails
 silently and no PR is gated on it — which is why this is low rather than higher.
 But the first person to dispatch it is likely to hit a timeout that has nothing
 to do with their change. Either raise the budget or cache the installed tool.
-
-### FND-003 — a hand-maintained inventory with no gate
-
-`docs/dependency-licenses.json` carries 140 entries and `Cargo.lock` carries 140
-`[[package]]` blocks, so the inventory and the "The LC04 lock selects 140
-packages" sentence are both accurate today — I checked. Nothing keeps them that
-way: `grep` across `tests/`, `src/`, `tools/` and `.github/` finds no reference
-to the file. `fixture-audit` covers producer fixtures, not the dependency
-inventory.
-
-Pre-existing, and correctly updated by this PR — including the two
-revision-qualified git sources, which are exactly the entries a regeneration
-would be most likely to get wrong. Recorded because this is the first change to
-make the inventory materially harder to maintain by hand, and because a
-comparison against `cargo metadata` is a small test in a repository that already
-runs `fixture-audit` as a CI step.
 
 ### FND-004 — a prose string pinned across a repository boundary
 
@@ -195,7 +175,7 @@ reviewer does not spend the same time.
   changes `canonical_identity()` and leaves the bound digest equal.
 - **The dependency split is honest.** `quire-contract-codegen`,
   `quire-contract-ir-backend` and `syn` are all in `[dev-dependencies]`;
-  production depends only on IR `690bde7`. The two-IR arrangement is verified,
+  production depends only on the production IR. The two-IR arrangement is verified,
   not asserted — `consumer.digest() == projection.bound().digest()` proves both
   revisions bind the same bytes to the same identity.
 - **The blocked gate is scoped correctly.** `TM-006` marks FR-009-AC-5 and

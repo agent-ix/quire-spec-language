@@ -3,7 +3,7 @@ id: SR-274
 title: "Gap analysis of native workflow after owned wire decoding"
 type: SpecReview
 analysis: gap-analysis
-scope: "plan/Plan-009-native-workflow; TM-007; Task-035 changed behavior at 3c6a0e6"
+scope: "plan/Plan-009-native-workflow; TM-007; Task-035 changed behavior"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-009
@@ -31,7 +31,7 @@ or the native profile's #30 admission inventory.
 
 ## Coverage
 
-Reconciliation: Quire 0.31.0, engine 0.46.0@ca7362d4, `quire coverage --scope . --json`.
+Reconciliation: `quire coverage --scope . --json`.
 Tasks done: 12/12; TM-007: 16/16 bound test cases; FR-024: 4/4 bound criteria.
 The repository-wide 325/329 rollup includes unrelated open assurance criteria.
 Seven status-column diagnostics remain across the repository. No unbacked

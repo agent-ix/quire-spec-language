@@ -13,8 +13,8 @@ relationships:
 
 ## Scope and readiness
 
-Implement the exact formal-environment linking API reviewed at 8dc6b48
-(SR-046–053 over c78792a). Owner assignment keeps all work serial in A's
+Implement the exact formal-environment linking API reviewed by
+SR-046–053. Owner assignment keeps all work serial in A's
 isolated compiler worktree. This is the next executable LC02 stage, not a
 replacement for the full native state workflow.
 
@@ -33,7 +33,7 @@ TC-030–034; TC-025–029 remain FR-006's subsequent static-judgment work.
 Gate after Task-005: exact owner/source identities, missing/stale/ambiguous/atomic
 controls, lexical scopes, unsupported mappings and resource boundaries pass
 through the real public API. Existing parser and selected private Rust audit
-tests also pass after the IR/serde/Rust 1.98.1 dependency changes.
+tests also pass.
 
 Gate after Task-006: actual Rust/code review, scoped Quire validation/coverage,
 gap report and exact private PR evidence. No hosted dispatch. Remaining typing,

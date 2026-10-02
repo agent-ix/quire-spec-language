@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit 048deb3 on `task/210-family-extension`. This pass
+Round 1. Reviewed `task/210-family-extension`. This pass
 checks four things: the family DAG (§1), the handoff edges to sibling and
 downstream tickets (§5.3, §8, §13, §14), the L1-D1 decision (§11), and whether
 enablement comes before the features that consume it.
@@ -51,8 +51,8 @@ The medium findings are dependency edges the record implies but does not state:
   (FND-007).
 - #229's scope overlaps DA-11 (FND-008).
 
-Verdict: **ACCEPT WITH FINDINGS** (round 3, delta 924f239..9045cd5). Round 1
-was REJECT until FND-001 was fixed. Round 2 (8fb238b) resolved it. Round 3
+Verdict: **ACCEPT WITH FINDINGS** (round 3). Round 1
+was REJECT until FND-001 was fixed. Round 2 resolved it. Round 3
 confirms Codegen #86 as the CG prerequisite and resolves the unnumbered-ticket
 residue. It opens one medium finding (FND-016: no edges recorded for Contract
 IR #141 and QSpec #134, and the #212 pre-gate edges) and four low ones; see
@@ -79,7 +79,7 @@ IR #141 and QSpec #134, and the #212 pre-gate edges) and four low ones; see
 
 ## Method
 
-- Read ADR-012 at 048deb3 in full, and read the `spec/spec.md` frontmatter and
+- Read ADR-012 in full, and read the `spec/spec.md` frontmatter and
   index table at the same commit.
 - Read the bodies of #205, #210, #212, #185, #213, #214, #229, #222, #217,
   #223, #186, #187, #188, #189, #191, #192 and #198 as of 2026-09-19.
@@ -151,7 +151,7 @@ on #210. FND-004 breaks it by naming the single #222 input that #212 needs.
 
 ## Round 2
 
-Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: REJECT.
+Reviewed the ADR-012 diff from round 1. Round-1 verdict: REJECT.
 
 | ID | Round-1 severity | Status | Note |
 |---|---|---|---|
@@ -166,7 +166,7 @@ Reviewed ADR-012 at 8fb238b (diff from 048deb3). Round-1 verdict: REJECT.
 | FND-009 | low | resolved | §14 gives the QSL `negotiate_*` removal to #214. §14.2 lists issue-body amendments for #185 and #214 after #212. |
 | FND-010 | low | resolved | `Requirements` carries extent and bound, not mode. §13.3 Q2 asks only about advertisement. |
 | FND-011 | low | resolved | §14 gives the S7 registry arm and its seam probe to #185. §5.3 still groups S7 with the "S5–S9 owners" sentence (SR-478 FND-003 note). |
-| FND-012 | low | resolved | PR #133 is merged (818f555), and FR-290 is `depends_on` in the frontmatter. |
+| FND-012 | low | resolved | PR #133 is merged, and FR-290 is `depends_on` in the frontmatter. |
 | FND-013 | low | resolved | The #198 row states that the emission request is a checked-package export request and names no `BackendId`. |
 | FND-014 | low | resolved | §1 moves #222 to a "Design input" column. |
 
@@ -178,12 +178,12 @@ New findings:
 
 Round 2 verdict: ACCEPT WITH FINDINGS
 
-## Round 3 (delta 924f239..9045cd5)
+## Round 3
 
-Reviewed only the ADR-012 changes in 924f239 and 9045cd5. The ticket bodies of
+Reviewed only the ADR-012 changes of the round-3 delta. The ticket bodies of
 Codegen #86, Contract IR #141 and QSpec #134 (all open) were read with
-`gh issue view`. The L1-D1 edges and placements were checked against ADR-011 at
-e62a39f (QSL PR #235).
+`gh issue view`. The L1-D1 edges and placements were checked against ADR-011
+(QSL PR #235).
 
 Edges the delta introduces or makes concrete:
 
@@ -217,18 +217,17 @@ New findings:
 | FND-017 | low | §14.2 leaves #185 out of the Codegen #86 amendment. §11 and §14.1 make #185's own exit criterion wait on #86 (round-2 option 2). The §14.2 #185 bullet lists only the linker removal, the QSL copy removal, FR-036 and the registry evidence, and the #86 bullet names #188, #189 and #217. Fix: change the §14.2 bullet to "#185 (exit corpus case), #188, #189, #217: add Codegen #86 as a prerequisite". | ADR-012 §11, §14.1, §14.2 |
 | FND-018 | low | §14.1 hands Codegen #86 work that its body does not include. #86 does not list the solver-absence fault-injection test (§7.4, which replaces the IT-010 `expect` panic). It also does not list the CG string-compare removal (§9 CG row). #86's "Asked for" covers the closed kind, the candidate set, `requires-bound`, `invalid-request` and the S9 gate test. Fix: add a §14.2 bullet "Codegen #86: add the §7.4 solver-absence test and the §9 CG enum matches", or give those items to a named CG ticket. | ADR-012 §7.4, §9, §14.1, §14.2 · Codegen #86 "Asked for" |
 | FND-019 | low | The RT ticket is still unnumbered ("RT ticket, to be opened by the RT owner", §14.1). S6 names RT op selection as a consumer (§5.1), and §10 OBS-033 says "RT owns its edits". Contract IR #141's gate test ("fails if a wire string is matched after intake") covers IR only. RT string dispatch after intake therefore has no gate and no ticket that #212 scenario 7 can point to. Fix: ask the RT owner to open the ticket before #212. Or record, with a measurement, that RT has no string dispatch after intake, and drop the row. | ADR-012 §5.1 S6, §10 OBS-033, §14.1 · Contract IR #141 "Asked for" 3 |
-| FND-020 | low | 9045cd5 introduces an edge to #225 that §11 and §14 do not record. §7.1 now says only the orchestrating binary calls QSL `route` and then CG, and #225 places that binary. #185's exit corpus case and the #188 and #189 closures settle an item through `route` and CG `negotiate_*` (ADR-011: "settle an item through `route` and E7"). They therefore need something that calls both. Per ADR-010's layer table, #225 is a Layer 5 design ticket. Without a statement, #185's exit appears to wait on Layer 5. Fix: state in §11 that these corpus cases run in a test harness crate downstream of CG, independent of the #225 driver, or add #225 as a prerequisite and accept the reordering. | ADR-012 §7.1, §11, §14.1 · ADR-011 §6.1 "driver", "Answers to ADR-012 §13.1" (e62a39f) · ADR-010 layer table (#225) |
+| FND-020 | low | The delta introduces an edge to #225 that §11 and §14 do not record. §7.1 now says only the orchestrating binary calls QSL `route` and then CG, and #225 places that binary. #185's exit corpus case and the #188 and #189 closures settle an item through `route` and CG `negotiate_*` (ADR-011: "settle an item through `route` and E7"). They therefore need something that calls both. Per ADR-010's layer table, #225 is a Layer 5 design ticket. Without a statement, #185's exit appears to wait on Layer 5. Fix: state in §11 that these corpus cases run in a test harness crate downstream of CG, independent of the #225 driver, or add #225 as a prerequisite and accept the reordering. | ADR-012 §7.1, §11, §14.1 · ADR-011 §6.1 "driver", "Answers to ADR-012 §13.1" · ADR-010 layer table (#225) |
 
 Round 3 verdict: ACCEPT WITH FINDINGS. The delta resolves the unnumbered CG and
 IR ticket residue (round-2 FND-002 residue 2 and the numbering half of
 FND-015). Its #86 edges agree with the ticket bodies, and its placements agree
-with ADR-011 at e62a39f. One medium finding remains: FND-016, the missing
+with ADR-011. One medium finding remains: FND-016, the missing
 #141 and #134 edges and the #212 pre-gate edges. Four low findings remain.
 
 ### Author response (after round 3)
 
-FND-016, FND-017 and FND-020 are addressed in the ADR commit that follows
-9045cd5:
+FND-016, FND-017 and FND-020 are addressed in the next ADR commit:
 - §14.1 records #86 → #141 and #86/#141 → QSpec #134.
 - §14.2 adds:
   - #212 → #229 and QSpec #134;
@@ -258,11 +257,11 @@ names the owner that holds the remaining work.
 | FND-019 | Routed: the RT enum-match ticket is the RT owner's (§14.1 RT row). It is open until the RT owner files it. |
 | FND-020 | Fixed: §14.2 states that the disposition exit cases run in a test harness downstream of CG, so there is no #225 edge. |
 
-## PR review (QSL PR #234, delta 43677c9..10664aa)
+## PR review (QSL PR #234)
 
-The PR reviewer checked the author-closure lines above against ADR-012 at
-10664aa. FND-002, FND-008, FND-015, FND-016, FND-017, FND-018 and FND-020 are
+The PR reviewer checked the author-closure lines above against ADR-012.
+FND-002, FND-008, FND-015, FND-016, FND-017, FND-018 and FND-020 are
 confirmed fixed in §14.1 and §14.2. FND-019 is routed with an owner (the RT
 owner) and a trigger (the owner files the ticket). The §11 L1-D1 edges still
-match ADR-011 22fa948 and now include #213 and QSpec #115 for #187. No new
+match ADR-011 and now include #213 and QSpec #115 for #187. No new
 dependency finding. The open PR findings are in SR-474.

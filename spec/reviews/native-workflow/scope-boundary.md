@@ -10,7 +10,7 @@ review_set: all
 
 A owns the Rust compiler-side mapped entry point and source correspondence. C retains document extraction, wire decoding and availability; B retains portable verification results. The complete native body is parsed directly with no synthetic header or Markdown expression compiler.
 
-PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
+PR-readiness review of implementation baseline; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

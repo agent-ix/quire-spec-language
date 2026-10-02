@@ -5,7 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "spec/spec.md and indexed requirements"
 review_set: all
-evaluated_revision: "a80a17d1dd303b91712df2023fdba8aba83e89c1"
 review_date: "2026-09-07"
 ---
 
@@ -21,14 +20,14 @@ Trust boundaries, entity keys, purity, and graph/resource failure handling were 
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | An OS argument containing byte FF reaches std::env::args and panics (exit 101), escaping the documented usage/I/O outcome. Specify the argument and path encoding boundary. | ../../src/main.rs:22; FR-010; [probe](data/cli-nonutf8.json) |
+| FND-001 | medium | An OS argument containing byte FF reaches std::env::args and panics (exit 101), escaping the documented usage/I/O outcome. Specify the argument and path encoding boundary. | ../../src/main.rs:22; FR-010 |
 | FND-002 | medium | Formatter performs the append before checking its ceiling and has no caller-selected output budget. Define inclusive budget behavior and check prospective growth. | ../../src/format.rs:8; ../../src/format.rs:46; FR-003; NFR-001 |
 
 ## Scope and provenance
 
-Reviewed `quire-spec-language@a80a17d1dd303b91712df2023fdba8aba83e89c1`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
+Reviewed `quire-spec-language`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
 
-The installed Quoin 0.20.0 `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. [Provenance](data/provenance.json), [coverage output](data/coverage.json), [advisor output](data/advice.json), and [actual method catalog](data/verification-methods.json) preserve the deterministic inputs. IDs in this report are local to this repository unless qualified.
+The installed Quoin `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. IDs in this report are local to this repository unless qualified.
 
 These are new repositories. Missing formal plans, TC records, suites, and matrices are workflow setup/readiness debt. Unimplemented LC02–LC05 stages and unqualified shared consumers are known remaining work; they are not reported as regressions or hidden stubs. No completion status is fabricated.
 

@@ -3,7 +3,7 @@ id: SR-525
 title: "Failure-domain review of the QSL-208 node-key and expression-lowering requirements"
 type: SpecReview
 analysis: failure-domain
-scope: "Commit d96591be: FR-092 and FR-093 node model, preimages, binder levels, recursion groups, occurrences and ownership split"
+scope: "FR-092 and FR-093 node model, preimages, binder levels, recursion groups, occurrences and ownership split"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092

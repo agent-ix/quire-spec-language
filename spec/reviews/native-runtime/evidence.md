@@ -5,7 +5,6 @@ type: SpecReview
 analysis: evidence
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
-evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -43,11 +42,10 @@ selected evidence. No runtime evidence is claimed executed.
 
 ## Deterministic advice and selected methods
 
-Ran quoin advise --json and quoin catalog methods --json; complete outputs are
-in data/advice.json and data/methods.json. The initial sandboxed advisor attempt
-could not determine the child Quire version. The same installed command completed
-outside that sandbox under automatic approval, with empty stderr. No tool code
-was changed or substituted. Quire independently reports 0.31.0.
+Ran quoin advise --json and quoin catalog methods --json. The initial sandboxed
+advisor attempt could not determine the child Quire version. The same installed
+command completed outside that sandbox under automatic approval, with empty
+stderr. No tool code was changed or substituted.
 
 All 42 scoped FR records have mismatch=false, uncatalogued=false and
 inconclusive=false. All 17 NFR records have mismatch=true solely because the
@@ -110,10 +108,8 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed dc63f337fcdaee1320d221383eca38599239f62c. Re-ran the installed
-quoin advise --json and catalog methods --json; complete current outputs are
-reviews/data/native-runtime/input-setup-advice.json and input-setup-methods.json.
-All seven FR-018 records retain Test-class matches with mismatch, uncatalogued
+Reviewed the TC-055–057 setup correction. Re-ran the installed
+quoin advise --json and catalog methods --json. All seven FR-018 records retain Test-class matches with mismatch, uncatalogued
 and inconclusive false. Stable-output additionally recommends golden approval
 for AC-4. Public constructor tests, independent literal bytes/hash and generated
 boundary families serve the unchanged criteria. These inputs need no checked

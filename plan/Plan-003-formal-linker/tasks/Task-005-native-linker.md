@@ -35,13 +35,12 @@ relationships:
 
 ## Scope
 
-Implement FR-013 in a native module, consuming the pinned public IR API. Add
+Implement FR-013 in a native module, consuming the public IR API. Add
 structured declaration provenance to the existing native diagnostic envelope.
 Use borrowed immutable models, owned parsed source and no cross-request cache.
 
 ## Subtasks
 
-- [x] Integrate the exact IR dependency and Rust 1.98.1/serde policy changes.
 - [x] Implement import selection, scoped references, shape lookup and atomic output.
 - [x] Exercise every listed public-API test and existing parser/audit regressions.
 

@@ -48,8 +48,7 @@ selector.
 4. Compile a declaration unmatched on two dimensions at once — a bounded past
    operator under the timestamped-event profile — and require both the
    past-operator and finite-window dimensions named, not one summary cause.
-5. Require a supported classification to name its TL target identity, the source
-   table's baseline revision `782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f`, and its
+5. Require a supported classification to name its TL target identity and its
    outstanding bridge premises —
    total Boolean predicate projection, source and clause identity, model, type and
    predicate bindings, evaluation anchor and capture environment, clock and

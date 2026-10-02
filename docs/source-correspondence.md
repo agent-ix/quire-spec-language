@@ -14,8 +14,7 @@ the original Quire output remains available unchanged.
 identity, revision namespace, revision), a path and bounded UTF-8
 bytes, preserving the original content. The source stores its actual SHA-256;
 `Source::read_verified` additionally compares it with an independently selected
-expected ByteDigest. Digests bind bytes only and use sha2 0.10.9, the same pinned
-version inspected in contract IR. No contract-IR canonical identity is redefined.
+expected ByteDigest. Digests bind bytes only and use sha2. No contract-IR canonical identity is redefined.
 
 `parse_source` consumes that immutable source directly, retaining the same bytes,
 identity and digest in ParsedUnit. It rechecks the caller's source-byte limit

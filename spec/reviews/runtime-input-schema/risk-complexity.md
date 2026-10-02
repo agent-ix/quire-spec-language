@@ -3,7 +3,7 @@ id: SR-281
 title: "Risk review of the runtime input schema"
 type: SpecReview
 analysis: risk-complexity
-scope: "FR-024-AC-5 at f4679ef"
+scope: "FR-024-AC-5"
 review_set: all
 ---
 ## Summary

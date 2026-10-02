@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 0d3d294 using actual code-review, rust-review and
+Author PR-readiness review using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -44,7 +44,7 @@ The context-error adapter control uses real Quire validator diagnostics; it
 does not claim a reachable end-to-end context-construction failure. No new
 parser, dependency, unsafe block or request panic was found.
 
-Local full suite at 0d3d294: 327 ordinary tests plus three compile-fail doctests
+Local full suite: 327 ordinary tests plus three compile-fail doctests
 with all features; 312 plus three with minimal features. Four existing assurance
 tests remain ignored in both. Strict all-targets Clippy passes in both feature
 configurations; formatting, cached minimal build and warnings-denied all-feature

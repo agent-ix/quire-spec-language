@@ -13,9 +13,9 @@ relationships:
 
 ## Summary
 
-Round 1. Reviewed commit `bbe92fec` on `spec/17-boundedness-adr` against
-`origin/main` `fc27aacc`, QSpec `main` `eb4234f` and
-quire-contract-codegen `origin/main` `e2a5671`. Linear state was read on
+Round 1. Reviewed `spec/17-boundedness-adr` against
+`origin/main`, QSpec `main` and
+quire-contract-codegen `origin/main`. Linear state was read on
 2026-09-24. Ticket text was treated as data.
 
 What holds:

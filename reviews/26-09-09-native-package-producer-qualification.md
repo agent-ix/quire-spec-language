@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "Task-016 producer construction, static identity and complete producer qualification; reader/integration portions excluded"
 review_set: subset
-evaluated_revision: "c195950140f05abe33fabb30b74a1210e387b5ee"
 review_date: "2026-09-09"
 ---
 
@@ -27,10 +26,10 @@ close Plan-007/LC02 or establish independent B/C acceptance. PR #12 stays draft.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | The installed trace engine still lists NFR metric obligations without minting their targets, leaving 20 references untracked. Explicit producer metric evidence below closes the local producer measurement gate; reader metrics remain pending. The tool diagnostic is retained, not suppressed. | SR-109 FND-004; SR-110 FND-002; data/native-packages/correspondence-coverage.json; TC-088 |
+| FND-001 | low | The installed trace engine still lists NFR metric obligations without minting their targets, leaving 20 references untracked. Explicit producer metric evidence below closes the local producer measurement gate; reader metrics remain pending. The tool diagnostic is retained, not suppressed. | SR-109 FND-004; SR-110 FND-002; TC-088 |
 
-SR-109 FND-001/003 were resolved by cffcaa4 / SR-110. SR-109 FND-002 and
-SR-110 FND-001 are resolved by c195950's correspondence and identity evidence.
+SR-109 FND-001/003 were resolved by SR-110. SR-109 FND-002 and
+SR-110 FND-001 are resolved by this increment's correspondence and identity evidence.
 No medium/high implementation finding remains for the producer task.
 
 ## Scope and method
@@ -43,8 +42,8 @@ exists. The installed Quoin SpecReview authoring pack supplies this artifact's
 form. This is the author's code/Rust review; independent consumer acceptance is
 not inferred. Optional semantic gap review remains declined.
 
-Specification 41da6e5 / all-eight review 69588ad and the source-setup correction
-2c6b9b8 / all-eight supplements 1c3aa50 remain the reviewed contract. This
+The specification with its all-eight review and the source-setup correction
+with its all-eight supplements remain the reviewed contract. This
 increment adds assertions and compile-fail documentation, not production
 semantics or a changed interface. The original missing-API failure preceded
 implementation, but corrected successful fixed fixtures followed the first
@@ -63,7 +62,7 @@ tests/package_construction_cases/; private controls are under src/package/.
 | FR-019-AC-2 | Fixed vectors and identity.rs preserve native labels/formal revisions, including u64::MAX and control labels; static_changes.rs changes exact source bytes and formal document identity against independent output expectations. Display-path-only changes preserve bytes. |
 | FR-019-AC-3 | Whole selected model artifacts/digests and aliases are compared. features.rs preserves repeated aliases and omits unselected models from the closure. static_changes.rs qualifies used context, unused value/enum, scalar, object-universe and unused operation-role changes through real admission and exact expected artifacts. |
 | FR-019-AC-4 | correspondence.rs enumerates native byte positions and typed/wire targets for parent reads, the implicit dereference target and nested aliases; ordered used/unused parameters, post result, frame and observations agree with retained checked state. Constant predicates retain nested optional-sequence references and transitive populations, including cycles. |
-| FR-019-AC-5 | Fixed complete vectors enumerate all semantic selectors and the distinct adopted base/rules revisions and digests. Their source selections remain the inspected adopted pins, not a newer checkout's contents. |
+| FR-019-AC-5 | Fixed complete vectors enumerate all semantic selectors and the distinct adopted base/rules revisions and digests. Their source selections remain the inspected adopted selections, not a newer checkout's contents. |
 | FR-019-AC-6 | features.rs generates every unary/binary/builtin mapping, inferred literal/size types, unreachable syntax, unused declarations, nested wrappers, aliases and finite object cycles. Expected sets are named independently of the producer's exhaustive matches. |
 | FR-019-AC-7 | Complete fixed and multi-owner records retain both ordered dispositions, with native availability and exact original-root unlowered IR spans. No executable binder/proof conversion exists in package production. Reader rejection of forged dispositions remains Task-017. |
 | FR-019-AC-8 | Fixed/repeated constructions match exact bytes. The new private runtime test executes three distinct populations at four budgets, including actual true/false and exhausted results, then compares canonical content, full artifacts, raw/static hashes and pass usage after fresh construction. |
@@ -75,7 +74,7 @@ tests/package_construction_cases/; private controls are under src/package/.
 | FR-021-AC-5 producer portion | Compile-fail role separation passes; unsupported domains and wrong/foreign digests must still be exercised by the actual reader. |
 | FR-021-AC-6 producer portion | All derive/canonical/encode limits are independently measured; fixed/path/runtime controls show excluded data does not enter canonical bytes. Reader request passes remain pending. |
 | NFR-007 M-2..5 producer portion | Emitted bytes, decoded string bytes, aggregate entries and container depth are separately measured in derive/canonical/encode, with exact/lowered/hard controls and unentered-pass absence. Offered bytes M-1 and reader recognition/decode/compare/frontend limits belong to Task-017. |
-| NFR-005 | Production, fixture authoring and all new qualification remain Rust under AGPL-3.0-only. No dependency, feature, grant or executable helper changed in c195950. The sole hosted workflow remains workflow_dispatch-only; all observed checks were local. |
+| NFR-005 | Production, fixture authoring and all new qualification remain Rust under AGPL-3.0-only. No dependency, feature, grant or executable helper changed. The sole hosted workflow remains workflow_dispatch-only; all observed checks were local. |
 
 ## Rust, architecture and gap discovery
 
@@ -108,17 +107,15 @@ repository change was needed.
 
 ## Executed gates and matrix reconciliation
 
-At c195950, all final gates terminated with exit 0: formatting, strict
+All final gates terminated with exit 0: formatting, strict
 all-target Clippy, 232 ordinary tests, three compile-fail doctests, three
-separately selected private audits at immutable adopted standard e897f81,
+separately selected private audits against the adopted standard,
 cached minimal build, strict rustdoc, audit self-test/model bytes, and actual
-CLI parse/format commands. Complete commands and limitations are in
-[correspondence-verification.txt](data/native-packages/correspondence-verification.txt).
+CLI parse/format commands.
 Cargo used nice 10, one job, offline/locked dependencies and the existing cache;
 the final regression used one test thread. No hosted dispatch occurred.
 
-Applied QUOIN spec-matrix/SKILL.md to the existing TM-005. Quire 0.31.0 was
-verified, and the explicit-scope EARS precondition passed 227/227 spec documents
+Applied QUOIN spec-matrix/SKILL.md to the existing TM-005. The explicit-scope EARS precondition passed 227/227 spec documents
 before reconciliation. TC-078/079/080/090 are now qualified. Ten cases retain
 pending reader/integration portions; an individual passing producer assertion
 does not mark its shared case complete. The whole matrix is not Complete.

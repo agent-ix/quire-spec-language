@@ -22,8 +22,8 @@ relationships:
 Implement the reviewed native-state-model/1 admission and link profile, then
 native contextual typing and guarded definedness through the existing IR prover.
 Preserve all five FR-006 reference/operation judgments and exact source/model/
-authored-clause identity. Requirements are reviewed at ceccabb; all eight actual
-QUOIN review artifacts and validation are committed at 3cdeb59.
+authored-clause identity. Requirements are reviewed; all eight actual
+QUOIN review artifacts and validation are committed.
 
 This is a static-checking milestone in the full Agent A assignment. Runtime
 population validation, reference truth/cost, qualified backend and Quire

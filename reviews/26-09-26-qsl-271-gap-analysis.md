@@ -3,7 +3,7 @@ id: SR-675
 title: "Spine run (FR-100) delivery gaps"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@c23b3128c6a16c60b2d30021ef87e9c8490b9109; FR-100; FR-026; TC-450; TC-451; TC-452; spec/tests.md; spec/spec.md; tests/it/spine_run.rs; qsl-replay/src/spine/call.rs; tools/arch-lint/api_surface.rs; src/command.rs"
+scope: "agent-ix/quire-spec-language; FR-100; FR-026; TC-450; TC-451; TC-452; spec/tests.md; spec/spec.md; tests/it/spine_run.rs; qsl-replay/src/spine/call.rs; tools/arch-lint/api_surface.rs; src/command.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -17,7 +17,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-271. PR: quire-spec-language#468 at c23b3128. This review traces
+Ticket: QSL-271. PR: quire-spec-language#468. This review traces
 FR-100-AC-1 to AC-9 through TC-450 to TC-452 to their tagged tests, and checks
 QSpec FR-301's exit codes (origin/main) against the code.
 
@@ -70,28 +70,25 @@ No underspecified code was found. `NativeRunSelection::Missing{Selection,Snapsho
 
 ## Dispositions
 
-Reviewer disposition pass at efa42552 (based on a643665a, #469).
+Reviewer disposition pass (#469).
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-001 | fixed | 8eda2b73 and 630728ba. TC-450 step 6 is tested, and step 4's no-call and extraction items are isolated (mutant killed). |
-| FND-002 | deferred | partly fixed: 8eda2b73 renders `Undefined`. The refused and fault rows' renderer and exit mapping are still untested, so TC-452 ✅ overclaims (SR-674 FND-013). |
-| FND-003 | fixed | 3f49b580. The decoder makes `clauses` optional, and FR-100 Inputs is unchanged and now satisfied. |
-| FND-004 | fixed | 630728ba. The TC-450/451/452 Status sections say "Passed locally". |
-| FND-005 | fixed | 630728ba. FR-100 Status is rewritten for the full mapping (kernel rows are live, exits 30 direct). |
+| FND-001 | fixed | TC-450 step 6 is tested, and step 4's no-call and extraction items are isolated (mutant killed). |
+| FND-002 | deferred | partly fixed: the fix renders `Undefined`. The refused and fault rows' renderer and exit mapping are still untested, so TC-452 ✅ overclaims (SR-674 FND-013). |
+| FND-003 | fixed | The decoder makes `clauses` optional, and FR-100 Inputs is unchanged and now satisfied. |
+| FND-004 | fixed | The TC-450/451/452 Status sections say "Passed locally". |
+| FND-005 | fixed | FR-100 Status is rewritten for the full mapping (kernel rows are live, exits 30 direct). |
 | FND-006 | accepted-no-change | The AC-8 CLI arm stays outside `make ci`; the workspace unit tests gate it. |
 
-## Dispositions, round 2 (46fff6e1)
+## Dispositions, round 2
 
-Post-rebase SHAs for the round-1 dispositions above: 3f49b580→482a1ac1,
-630728ba→239e664f and 8eda2b73→3025bc3e.
-
-| FND | Outcome | fix_sha / reason |
+| FND | Outcome | Reason |
 | --- | --- | --- |
-| FND-002 | fixed | 2a059b32. The CLI's renderer and exit mapping are tested for the record (exit by code, 22), family, kernel (20) and fault (30) rows; see SR-674 FND-013. The `locus` rendering gap is carried as SR-674 FND-019. |
+| FND-002 | fixed | The CLI's renderer and exit mapping are tested for the record (exit by code, 22), family, kernel (20) and fault (30) rows; see SR-674 FND-013. The `locus` rendering gap is carried as SR-674 FND-019. |
 
-## Dispositions, round 3 (982a52e3)
+## Dispositions, round 3
 
 There are no open SR-675 findings; each is fixed or accepted-no-change as of
 round 2. The SR-674 FND-019 locus-render gap, cross-referenced from FND-002,
-is fixed in 3c4c1586.
+is fixed in round 3.

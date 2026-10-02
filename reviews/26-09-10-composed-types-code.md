@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Reviewed `agent-a/composed-type-admission` (621205d) against
+Reviewed `agent-a/composed-type-admission` against
 `agent-a/composed-value-checking` under `code-review` + `rust-review` +
 `rust-style` and the repo's own `AGENTS.md`/`CLAUDE.md` idioms. The stage is
 honest work: charge-before-work is real in every dimension, `TypeDisposition`
@@ -33,10 +33,8 @@ accepted as delivered, and FR-040/TC-119 remain open as a whole (see SR-326).
 
 ## Gates
 
-Executed sequentially at 621205d under `flock /tmp/quire-heavy-check.lock`,
-each `CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=/tmp/formalization-a-language-target
-nice -n10 cargo ... --locked`, tests `-- --test-threads=1`. Log:
-`/tmp/quire-composed-types-review-gates.log`.
+Executed sequentially, each `CARGO_BUILD_JOBS=1 nice -n10 cargo ... --locked`,
+tests `-- --test-threads=1`.
 
 | Gate | Result |
 | --- | --- |
@@ -62,7 +60,7 @@ New controls inside those runs: `composed_types` 16 passed, `composed_type_pipel
 
 ## Detail
 
-**FND-001 (PLAUSIBLE, not reproduced).** Since c92bf5a, `ModelBindings` builds
+**FND-001 (PLAUSIBLE, not reproduced).** Since the inherited correction, `ModelBindings` builds
 an `Exports`/`Catalog` only for inputs an import actually selects
 (`models.rs:331`, `models.rs:426-432`); every other supplied input keeps
 `catalogs[i] == None`. The new `catalog_at` (`models.rs:227`) returns `Option`
@@ -134,7 +132,7 @@ expression into `count` two lines later (`solver.rs:231-232`); and
 `solve_relations`'s `let mut failed = vec![false; ..]` is bound as `done` in the
 loop and means "settled", not "failed" (`expressions.rs:321-325`).
 
-## Inherited correction recheck (ee865ec..c92bf5a, merged here)
+## Inherited correction recheck (merged here)
 
 Narrow recheck only; no previously settled finding is reopened.
 

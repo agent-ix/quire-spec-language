@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Task-021–028 are done; standalone Boolean projection export is implemented at
-d1fcf16. Broader LC05 producer adoption and deferred assurance remain open.
+Task-021–028 are done; standalone Boolean projection export is implemented.
+Broader LC05 producer adoption and deferred assurance remain open.
 
 ## Verdict
 

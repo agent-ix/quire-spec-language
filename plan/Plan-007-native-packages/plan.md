@@ -23,10 +23,8 @@ relationships:
 
 ## Requirements Summary
 
-This new LC02 package slice is owned by private language issue #3. Its
-specification is 41da6e5eb86bb727fbad5370fd23b38d330bcfea; the actual eight
-QUOIN reviews SR-101–108 are committed at
-69588ad9888893ae839352661e16df3ec040b0d4. Plan-005's checker and Plan-006's
+This new LC02 package slice is owned by private language issue #3. The
+actual eight QUOIN reviews are SR-101–108. Plan-005's checker and Plan-006's
 runtime qualification are done. Existing source/link plans retain their own
 requirements; this bundle adds the new package requirements, without
 duplicating their completed tasks.
@@ -88,9 +86,9 @@ Loom, mutation-adequacy or benchmark result is fabricated.
 
 ### Track A: Critical path, serial
 
-- Task-016 construction and static identity — Done at c195950 / SR-111; independent bytes and complete inventories agree, with measured producer limits. Original estimates and corrective sequence remain in the task/history.
-- Task-017 verified reconstruction — Done at eb97a87 / SR-112; strict intake and real compiler replay preserve authority, original bytes, failure stages and selected limits.
-- Task-018 integration and qualification — Done at eb97a87 / SR-112/113; reconstructed workflows and local gates pass. The gap audit retains the catalog's metric-target limitation.
+- Task-016 construction and static identity — Done / SR-111; independent bytes agree, with measured producer limits.
+- Task-017 verified reconstruction — Done / SR-112; strict intake and real compiler replay preserve authority, original bytes, failure stages and selected limits.
+- Task-018 integration and qualification — Done / SR-112/113; reconstructed workflows and local gates pass.
 
 A gate failure is fixed before dependent work proceeds; a changed contract
 reopens the specification review. There is one active writer and no parallel
@@ -113,8 +111,7 @@ this plan does not schedule their builds or edit their repositories.
 ## Coordination Rules
 
 The worktree is /home/peter/dev/worktrees/formalization-a-language, branch
-agent-a/lc02-linked-packages, based on merged runtime 789c636. Keep the private
-owning issue and PR concrete with source/review/evidence pins. No public
+agent-a/lc02-linked-packages. No public
 posting, producer-language invocation or shared-repository change is included.
 
 Use local serial Cargo phases at nice 10, one build job/test thread and existing

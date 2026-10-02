@@ -3,7 +3,7 @@ id: SR-769
 title: "QSL-314 gap analysis of PR 509 (TC-469 ConfigVersion spine corpus)"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@01356698adcabce3ed91138221b7424b12097bed; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-469-configversion-spine-corpus-matches-native.md; tests/it/config_version_spine.rs; examples/config-version/spine.rs; examples/config-version/model.semantic-ir.json; examples/config-version/fixtures.rs; examples/config-version/cases.rs (unchanged); examples/config-version/README.md (unchanged); tests/it/config_version.rs (unchanged)"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-108-run-the-configversion-spine-corpus.md; spec/test-cases/TC-469-configversion-spine-corpus-matches-native.md; tests/it/config_version_spine.rs; examples/config-version/spine.rs; examples/config-version/model.semantic-ir.json; examples/config-version/fixtures.rs; examples/config-version/cases.rs (unchanged); examples/config-version/README.md (unchanged); tests/it/config_version.rs (unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-108
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-314. PR: quire-spec-language#509 at 01356698. There is no plan
+Ticket: QSL-314. PR: quire-spec-language#509. There is no plan
 bundle. The scope is FR-108-AC-1 to AC-6, verified by TC-469 steps 1 to 6.
 QSL-315 is the bug split out of AC-6.
 

@@ -58,7 +58,7 @@ Native Completed/Incomplete/Refused reports tied to exact context; qualified hea
 
 ## Notes
 
-Qualified at 48f53aed5990f7daf15ae6871c1c081d8974c64f by SR-098 (PASS).
+Qualified by SR-098 (PASS).
 Twenty-nine public evaluator tests and two private invariant controls pass,
 including all ten exact cost vectors, 2,456 graph comparisons and 40 short sequences.
 The review records the complete gate sequence and actual limitations.

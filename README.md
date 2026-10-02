@@ -69,7 +69,7 @@ combines four source units, queries, population/reference roles and actual model
 operations, recording the producer's own source identity as a digest over its
 own source text and retaining independently derived selectors.
 `protocol_artifact::handoff::PUBLISHED_V1_HANDOFF` now addresses that committed
-`/1` handoff directly from the pinned crate. Version-explicit member constants
+`/1` handoff directly from the crate. Version-explicit member constants
 name its offer, external reference, `Selection` record and checksum inventory;
 consumers need no environment variable, producer execution or repository-layout
 guess. Its `Service` and `Provider` roles retain distinct admitted model
@@ -132,7 +132,7 @@ See [native-runtime-inputs.md](docs/native-runtime-inputs.md) for the contract.
 typed values, finite reference closure, operation captures, population deltas
 and immutable frames. Its constructor-private context retains the checked
 package and immutable input; failed reports retain located defects and fresh
-budget usage. Task-013 is qualified at 45ed1b4 by SR-097 with 35 public API tests.
+budget usage. Task-013 is qualified by SR-097 with 35 public API tests.
 See [the review](reviews/26-09-09-native-runtime-validation.md) for scope and evidence.
 
 `runtime::evaluate` executes the original native AST over a borrowed validated
@@ -156,7 +156,7 @@ validation establishes input conditions before predicate execution.
 models, authored clauses, resolutions, runtime obligations and projection
 dispositions with separate byte and native static identities. Serde owns JSON
 encoding, with independently measured derivation/canonical/output passes.
-Task-016 is qualified at c195950 / SR-111, with fixed canonical/artifact vectors,
+Task-016 is qualified by SR-111, with fixed canonical/artifact vectors,
 complete correspondence/capture controls, static dependency mutations and
 runtime-independent identity checks. `NativePackage::read_verified` now verifies
 selected bytes, closed JSON and external bindings, then repeats actual
@@ -172,7 +172,7 @@ model/read/observation correspondence. Object and graph expressions refuse.
 `lowering::lower_for` with `ProjectionTarget::IntegerIrV1` additionally exports
 bounded integer arithmetic and comparisons accepted by the strict IR binder.
 Use `quire-spec lower <compile.json> --target integer-ir/v1` for this target;
-the pinned codegen emits executable numeric Rust for obligation-free comparisons.
+codegen emits executable numeric Rust for obligation-free comparisons.
 The `standalone_fixtures`
 example emits `integer-healthy` and `integer-violating` requests for `amount < 7`.
 Their native runs return true and false; both export the same integer projection.
@@ -209,8 +209,7 @@ The [ConfigVersion example](examples/config-version/README.md) supplies the name
 parent-order, cycle, identity and recorded-update workflow, with 13 native and
 Markdown request sets and explicit refused/incomplete cases.
 
-Rust 1.98.1 is pinned in rust-toolchain.toml. Cargo.lock pins dependencies. The
-native CLI needs no Node or JVM. Default native commands need no optional features;
+The native CLI needs no Node or JVM. Default native commands need no optional features;
 the Quire consumer is enabled explicitly with `quire-extraction`.
 Use `--target-dir target` where a machine config points Cargo outside the checkout.
 
@@ -224,11 +223,12 @@ cargo run --locked --target-dir target -- parse agent-ix test:parent fixture fix
 cargo run --locked --target-dir target -- format agent-ix test:value-format fixture fixture:1 tests/fixtures/value-format.native
 ```
 
-Run the full local gate with `make ci`: formatting, clippy and `cargo test`
-under both no-default-features and `--all-features`, a clean
-no-default-features build, `fixture-audit self-test`, and the parse example
-above — the exact commands `.github/workflows/ci.yml` runs, mirrored so a
-contributor never needs to run them by hand. See `Makefile` for each step.
+Run the full local gate with `make ci`: the committed-binary and index-completeness
+checks, formatting, clippy and `cargo test` under default features and
+`--all-features`, a clean no-default-features build with `fixture-audit self-test`
+and the parse example above, `cargo doc`, `seam-probe`, `string-edge`,
+`route-lint`, `cargo-deny-bans` and `arch-lint-canonical-encoder`. See `Makefile`
+for each step.
 
 Run these checks locally while the repository stabilizes. Hosted CI exposes
 only `workflow_dispatch` and has a ten-minute job timeout. Pushing commits or
@@ -272,7 +272,7 @@ or change extraction availability. Run `cargo test --test it mapped::` for the
 mapped parent workflow and stage refusals.
 
 With `quire-extraction`, `qsl_source::extract(original, context, selection,
-limits)` from the `qsl-source` crate calls Quire's actual pinned Rust extractor
+limits)` from the `qsl-source` crate calls Quire's actual Rust extractor
 and returns an `ExtractedSource`: the verified native body in its document
 source map, the clause's declared language and Quire's unchanged result. Supply
 a digest-verified original Source, a loaded Quire SemanticContext (the `run`
@@ -335,10 +335,7 @@ for later checking; the caller owns assigning the formal identity.
 ## Design and status
 
 The [requirements index](spec/spec.md) covers LC01–LC05 through discrete Quoin
-catalog artifacts. [Authoring status](docs/spec-workflow.md) records the exact
-skills, validation results and outstanding review work. These requirements are
-drafts; the completed native readiness reviews and local results are recorded
-in the authoring status. The owner adopted specification PR8 for internal
+catalog artifacts. These requirements are drafts. The owner adopted specification PR8 for internal
 LC02 implementation.
 [LC02's test matrix](spec/model-linking/tests.md) records qualified linking and
 planned type checking. The new
@@ -397,8 +394,7 @@ private sibling repository. Audit intake bounds files to 8 MiB, aggregate reads
 to 64 MiB, files/decoded values to 10,000, and JSON nesting to 64 values; it refuses
 escaped duplicate keys, invalid fields, foreign paths and exhausted budgets.
 Fixture trees must stay immutable during a run. See the
-[audit error catalog](docs/audit-error-codes.md) and
-[remediation evidence](docs/rust-verification-remediation.md).
+[audit error catalog](docs/audit-error-codes.md).
 
 New tests use the shared `ix_trace_rs::trace` macro with canonical attributes
 such as `#[trace("TC-006", "FR-012-AC-6")]`. Quire's declared grammar binds the

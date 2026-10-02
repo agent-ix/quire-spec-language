@@ -1,11 +1,11 @@
 # Native runtime input and validation contract
 
 LC03 contract reviewed before implementation. FR-018's structural constructors
-are qualified; model-aware validation is qualified at 45ed1b4 by SR-097,
+are qualified; model-aware validation is qualified by SR-097,
 with 35 passing public API tests. Native evaluation and combined execution are
 implemented under FR-008/023; selected byte intake is defined by FR-024. This
-contract consumes the internally adopted state-finite rules at specification
-e897f81 and the native model/checker landed in PR10 at bfac17d. It does not
+contract consumes the internally adopted state-finite rules and the native
+model/checker landed in PR10. It does not
 modify the historical profile or fixture bytes. FR-018 owns input construction,
 FR-007 owns validation, and NFR-006 owns implementation work ceilings.
 
@@ -16,13 +16,13 @@ CheckedPackage supplies authored clause/source bindings, native types and static
 definedness. The IR remains the declaration and proof API. Runtime input cannot
 change model roles, scalar bounds, operation anchors or frame permissions.
 
-The inspected quire-contract-runtime at 7caefac supplies generated-oracle
+The inspected quire-contract-runtime supplies generated-oracle
 operators, observations and campaign counts. Its snapshot-json format persists
 campaign counters, not native domain populations. It has no native population
 validator or interpreter to reuse. The new runtime remains compiler modules.
 
-B's quire-verification shared-reference reader exists at d577486 in its VP01
-worktree and retains the standard's 8ab058b schema/data snapshot. It owns shared
+B's quire-verification shared-reference reader exists in its VP01
+worktree. It owns shared
 reference interpretation and portable method/plan/result contracts. Native input
 artifacts below are domain payloads with local byte provenance, not replacements
 for those wrappers. The existing IR BoundPackage/binder remains the backend

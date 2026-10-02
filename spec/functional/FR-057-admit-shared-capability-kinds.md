@@ -35,8 +35,8 @@ checking, lowering, proof or execution, and it negotiates nothing.
 
 ## Admitted vocabulary
 
-Capability vocabulary `quire.capability-kind/v1` is the FR-290 Values table at
-quire-specification revision `55d2fcc`
+Capability vocabulary `quire.capability-kind/v1` is the FR-290 Values table in
+quire-specification
 ([quire-specification#135](https://github.com/agent-ix/quire-specification/pull/135)).
 It admits these ten labels and no others. The labels, their meanings, their
 families and their spelling are FR-290's. QSL defines no local alias,
@@ -363,8 +363,7 @@ checker's definition permissions. Their ownership is decided in #211.
 
 ## Dependencies
 
-- quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) at
-  revision `55d2fcc` owns the kind vocabulary (the ten labels, their
+- quire-specification FR-290 (`ix://agent-ix/quire-specification/FR-290`) owns the kind vocabulary (the ten labels, their
   meanings and families), (kind, mode) advertisement, the candidate-set rule
   and the tool-absence result. Its FR-290-AC-4 owns the backend-absence
   settlement at negotiation. This requirement's claim-form table is QSL's
@@ -385,7 +384,7 @@ checker's definition permissions. Their ownership is decided in #211.
   FR-057-AC-1 to AC-5, AC-7 and AC-10 have no #222 prerequisite; only `requires-bound` and the
   `unbounded-extent` case are #222's.
 - Where this requirement abbreviates FR-290 (diagnostic payloads, report
-  order, `inconsistent-candidates` coverage), FR-290 at `55d2fcc` governs.
+  order, `inconsistent-candidates` coverage), FR-290 governs.
 - #210 decides which family records which requirements, within this
   requirement's "Kind applicability" table. #211 decides the QSL
   carrier member for the vocabulary identity and the ownership of the other QSL

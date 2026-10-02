@@ -14,7 +14,7 @@ relationships:
 ## Summary
 
 Task-021–024 are done; the public model frontend and review corrections are
-implemented at fbdf687.
+implemented.
 Plan-009 remains open for the standalone command and C's extraction adoption.
 
 ## Verdict

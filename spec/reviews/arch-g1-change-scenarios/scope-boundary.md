@@ -17,7 +17,7 @@ relationships:
 
 ## Summary
 
-Reviewed state: QSL `origin/main` 457a131 on branch `task/212-arch-g1-gate`,
+Reviewed state: QSL `origin/main` on branch `task/212-arch-g1-gate`,
 plus the uncommitted ADR-011 edits of this PR (#245 rule 8 and the ADR-013
 O-03 alignment). The four records were read together. Line anchors are to the
 working tree. `ADR-011:134` means line 134 of

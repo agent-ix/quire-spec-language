@@ -10,7 +10,7 @@ review_set: all
 
 Native package authority is retained by an immutable borrow, input artifacts by ownership, and authored selection without replacement. Result and diagnostic variants reuse existing runtime types. No portable evidence claim, reconstructed identity or additional semantic result authority is introduced.
 
-Author PR-readiness review of `9c3e5ff`, following implementation as directed.
+Author PR-readiness review, following implementation as directed.
 The selected review set is all; no applicable AssuranceProfile was found.
 
 ## Findings

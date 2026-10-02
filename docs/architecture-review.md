@@ -2,8 +2,7 @@
 
 ## Boundary correction — 2026-09-08
 
-Accepted Contract IR ADR-0054 at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f
-supersedes this review's earlier global model-adapter prerequisite. Filament
+Accepted Contract IR ADR-0054 supersedes this review's earlier global model-adapter prerequisite. Filament
 defines archetype schemas and generates datatypes; it is not the formal model
 authority. FR-013 DeclarationEnvironment, FR-019 Rust APIs and FR-023 binding
 already support generic native compilation. IR #54 is closed by this boundary
@@ -91,7 +90,7 @@ long flat chains on a bounded stack and a deterministic malformed corpus.
 These checks qualify syntax behavior only. They are not typechecking, evaluator
 conformance, or a proof of parser safety.
 
-Library basis: [Logos 0.16.1](https://docs.rs/logos/0.16.1/logos/) generates a
+Library basis: [Logos](https://docs.rs/logos) generates a
 recognizer from token definitions and exposes original byte spans;
-[serde_json](https://docs.rs/serde_json/1.0.151/serde_json/fn.from_str.html) supplies
+[serde_json](https://docs.rs/serde_json/latest/serde_json/fn.from_str.html) supplies
 the string codec. Neither library defines this language's semantic profile.

@@ -35,7 +35,7 @@ No failed execution produces a logical value. B owns portable result adaptation.
 [The evaluation contract](../../docs/native-runtime-evaluation.md) fixes exact
 observation capture, immutable values, evaluation order, eligible comparisons,
 checked integer arithmetic, sequence quantification, graph expansion and events.
-It uses the adopted standard at e897f81. Native execution evaluates the source
+It uses the adopted standard. Native execution evaluates the source
 AST, independently of the IR proof view or generated backend code.
 
 The selected accounting version is native-ref-cost/1-draft: one step per entered
@@ -85,11 +85,10 @@ establish all-input validity or backend cost parity.
 
 ## Status
 
-Reference execution and accounting are qualified at
-48f53aed5990f7daf15ae6871c1c081d8974c64f by
+Reference execution and accounting are qualified by
 [SR-098](../../reviews/26-09-09-native-reference-evaluation.md), covering all
 twenty criteria through 29 public evaluator tests and two private invariant controls.
-IT-006 is qualified at 4ac3597 by SR-099. Task-015's qualification/handoff is
+IT-006 is qualified by SR-099. Task-015's qualification/handoff is
 complete, with final plan audit in SR-100. Backend and Quire integration remain
 required. The historical
 standard/profile bytes remain unchanged.

@@ -1,7 +1,7 @@
 # Native formal-environment linking
 
 The `native-formal-environment/1` binding profile makes FR-005 concrete using
-Contract IR's existing public Rust API at 690bde7f2dc58662cf9ff0595c2c0e3b17107c6f.
+Contract IR's existing public Rust API.
 It introduces no Filament reader, generic model service or replacement binder.
 It is an explicit A-owned mapping for native compilation over already validated
 formal declarations. Additional native object/reference semantics remain required
@@ -122,9 +122,7 @@ unsupported mappings, boundary limits and prior-call/permutation controls are
 independent expected cases. TC-020–024 qualify resolution; TC-025–029 remain
 the separately planned static judgments. FR-013 adds the concrete API controls.
 
-Consume the pinned IR dependency under its existing MIT OR Apache-2.0 grant.
-Its exact serde 1.0.228 requirement is selected consistently for this crate;
-existing Rust fixture audits and parser gates must pass after the dependency
-change. Pin the native toolchain/local workflow recipe to Rust 1.98.1, with
-Cargo rust-version 1.98. Hosted workflows remain workflow_dispatch only and are
+Consume the IR dependency under its existing MIT OR Apache-2.0 grant.
+Existing Rust fixture audits and parser gates must pass after the dependency
+change. Hosted workflows remain workflow_dispatch only and are
 not dispatched. New native implementation remains AGPL-3.0-or-later.

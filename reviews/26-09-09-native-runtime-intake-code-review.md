@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author re-review of `0016103` using actual code-review, rust-review and rust-style
+Author re-review of the correction using actual code-review, rust-review and rust-style
 skills. No applicable AssuranceProfile was found. Public integration tests use
 the repository's existing fixture convention and real trace attributes.
 

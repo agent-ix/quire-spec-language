@@ -3,7 +3,7 @@ id: SR-406
 title: "Gap analysis of L2 cross-family identity completion"
 type: SpecReview
 analysis: gap-analysis
-scope: "quire-spec-language#35; FR-036; IT-009; TC-114; TC-115; TM-003; 71198c8"
+scope: "quire-spec-language#35; FR-036; IT-009; TC-114; TC-115; TM-003"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-036
@@ -20,7 +20,7 @@ relationships:
 
 PASS for L2 issue #35's final acceptance criterion. The earlier reviewed
 composed-package implementation already supplies historical identity,
-dependency, type and admission-stage controls. The `71198c8` completion adds
+dependency, type and admission-stage controls. The completion adds
 the missing real-producer evidence for common cross-family type identity,
 declaration-owned capture and instance identity, and explicit capability refusal
 without disappearing from aggregate success.

@@ -24,15 +24,14 @@ branch selection, seal authentication, and B's public consumer handoff.
 
 **PASS (scoped)** — no new base-requirement quality, consistency, traceability,
 or boundary defect was found. After static review, the parent verified a passing
-stripped-release test and fresh producer invocation in
-`/tmp/quire-received-handoff-gates.log`.
+stripped-release test and fresh producer invocation.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No scoped base-review defect found: FR-042, TC-121, the recipe README and fixture agree on the joined received-choice scenario and its limits. | FR-042:275-280; TC-121:37-47; README.md:10-20; workflow.body.native:47-65 |
-| FND-002 | low | The producer recipe remains an ignored stripped-release test, so its terminal run result must be taken from the parent-owned focused gate rather than inferred from static traceability. | examples/native_protocol_handoff.rs:32-42; /tmp/quire-received-handoff-focused.log |
+| FND-002 | low | The producer recipe remains an ignored stripped-release test, so its terminal run result must be taken from the parent-owned focused gate rather than inferred from static traceability. | examples/native_protocol_handoff.rs:32-42 |
 
 ### Checklist result
 

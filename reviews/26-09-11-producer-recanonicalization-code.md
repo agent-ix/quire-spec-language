@@ -54,7 +54,7 @@ integer. No canonicalization implementation or second semantic frontend was
 introduced. Tests use ordinary Rust assertions and existing fixture APIs; there
 are no mock seams, unsafe additions, new dependencies or production panics.
 
-The change was reviewed against 1c96fc5, the already merged digest-domain
+The change was reviewed against the already merged digest-domain
 increment. Full minimal/all-feature suites pass 609/625 tests respectively,
 with zero failures and four inherited ignored in each; both strict Clippy lanes
 pass with warnings denied. Formatting and diff checks pass. Pinned Quire with

@@ -66,7 +66,7 @@ mutated document except where the row says otherwise.
 | 39 | 11.1 over 11.2 | a package variant where `Sub` specializes `ConfigVersion` and is a member type of `config_history`; post changes `child`'s type to `Sub`, sets `child.parent` absent and deletes `root` | `frame_violation`/`unauthorized-change` naming `child`'s type change |
 | 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to a present reference and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
-| 42 | 1.7 label order | blank `revision_namespace` and blank `revision` in document and selection | `invalid_source_identity`/`blank-label`, `label` `revision_namespace` |
+| 42 | 1.7 label order | blank `authority` and blank `identity` in document and selection | `invalid_source_identity`/`blank-label`, `label` `authority` |
 | 43 | 8 over a parameter | probe invocation with `target` `{config_history, missing}` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
 | 44 | 6.5 | a package variant that adds object type `Other`, unrelated to `ConfigVersion`, and a population `others` over it; `child.parent` naming `o`, an `Other` object of a complete `others` | `invalid_runtime_input`/`wrong-value-kind` at `child`, `parent` |
 

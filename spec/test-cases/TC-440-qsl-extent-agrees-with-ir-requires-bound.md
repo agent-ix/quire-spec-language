@@ -1,12 +1,12 @@
 ---
 id: TC-440
-title: "QSL's extent agrees with IR's requires-bound at the pinned IR revision"
+title: "QSL's extent agrees with IR's requires-bound"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-097
     type: verifies
 ---
-# TC-440: QSL's extent agrees with IR's requires-bound at the pinned IR revision
+# TC-440: QSL's extent agrees with IR's requires-bound
 
 ## Description
 

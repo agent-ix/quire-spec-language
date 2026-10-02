@@ -3,7 +3,7 @@ id: SR-681
 title: "Kernel ForeignReference record delivery gaps"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@2fc99d9d8457bc5e838a47842f33a5e5ba053c8f; FR-096-AC-8; FR-100-AC-9; TC-322; TC-428; TC-452; quire-exact/src/outcome.rs; quire-exact/src/equality.rs; qsl-foundation/src/diagnostic.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-eval/tests/it/model_reference_queries.rs"
+scope: "agent-ix/quire-spec-language; FR-096-AC-8; FR-100-AC-9; TC-322; TC-428; TC-452; quire-exact/src/outcome.rs; quire-exact/src/equality.rs; qsl-foundation/src/diagnostic.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs; qsl-eval/tests/it/model_reference_queries.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -13,7 +13,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-281. PR: quire-spec-language#479 at 2fc99d9d. This checks the
+Ticket: QSL-281. PR: quire-spec-language#479. This checks the
 ticket's deliverables, and the ACs they touch, against tagged tests and code.
 
 Delivered and traced:
@@ -40,11 +40,11 @@ owning requirement (FND-001).
 
 ## Dispositions
 
-Round 1, re-checked at 6c213eb2.
+Round 1, re-checked.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 6c213eb2: FR-096's key table gains a kernel `Refusal::ForeignReference` row owning the operand rule (code order corrected in 7f4bd626; FR-100 states it too) |
-| FND-002 | fixed | 7f4bd626: `c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member` drives a checked `Contains` through `evaluate`; killed the membership-swap mutant |
+| FND-001 | fixed | FR-096's key table gains a kernel `Refusal::ForeignReference` row owning the operand rule (code order corrected in the fix round; FR-100 states it too) |
+| FND-002 | fixed | `c06b_contains_a_foreign_universe_probe_refuses_required_is_the_member` drives a checked `Contains` through `evaluate`; killed the membership-swap mutant |
 
-Round 2, re-checked at 9045639a (spec-only; no code change since 6c213eb2). Every round-1 outcome stands; nothing is open.
+Round 2, re-checked (spec-only; no code change since round 1). Every round-1 outcome stands; nothing is open.

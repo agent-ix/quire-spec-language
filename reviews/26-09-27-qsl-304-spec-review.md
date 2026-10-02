@@ -3,7 +3,7 @@ id: SR-767
 title: "QSL-304 spec review (integrity) of PR 506 spec edits"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@1d58b150d62709540b21adcf474ead696251aebb; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md (AC-1, AC-3); spec/functional/FR-104-check-state-clauses.md (AC-1); spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md (Expected Results steps 1, 3); spec/test-cases/TC-465-admission-refuses-each-input-defect.md (rows 20, 30); spec/tests.md (TC-459 row); spec/test-cases/TC-459-s3-checks-configversion-state-clauses.md (unchanged)"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-103-admit-model-operations-and-frames-on-the-spine.md (AC-1, AC-3); spec/functional/FR-104-check-state-clauses.md (AC-1); spec/test-cases/TC-458-spine-admits-model-operations-and-frames.md (Expected Results steps 1, 3); spec/test-cases/TC-465-admission-refuses-each-input-defect.md (rows 20, 30); spec/tests.md (TC-459 row); spec/test-cases/TC-459-s3-checks-configversion-state-clauses.md (unchanged)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-103

@@ -13,14 +13,14 @@ relationships:
 
 ## Summary
 
-Reviewed commit cd4f71a on `task/229-capability-spec`
+Reviewed `task/229-capability-spec`
 (agent-ix/quire-spec-language), diff against `origin/main`: new FR-057, TC-153,
 TC-154 and TC-155, and amendments to FR-036, TC-115, `spec/model-linking/tests.md`
 and `spec/spec.md`. The ticket is #229, including the 2026-09-19 owner ruling
 that there is no compatibility path for the four-kind vocabulary.
 
 The core of FR-057 is sound. The six labels, their spelling and their meanings
-match QSpec FR-290 at `818f555` exactly. Matching is byte-exact with no
+match QSpec FR-290 exactly. Matching is byte-exact with no
 normalization. Identity is the label, and the kinds carry no order. Absent,
 unknown and four-kind labels are refused, never mapped. Backend absence settles
 `unsupported` with a warning naming the kind, never a refusal or hold.
@@ -50,7 +50,7 @@ Verdict: REVISE (FND-001 is high and blocking; FND-002 to FND-006 are medium).
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | high | The refusal code is outside the closed catalog. FR-057 refuses with `invalid_capability` and causes `absent-kind`, `unknown-kind` and `unsupported-version`. None of these is in `quire.native.diagnostics/v1` (`proposals/quire-v1/definitions/native-diagnostics.md` at QSpec `818f555`) or in `src/diagnostic.rs`. That catalog is closed: "A new required code or cause variant needs a new catalog revision". AD-016 arrow 1 requires QSL refusals to be `Diagnostic{Code}` from the closed catalog, and its gate 7 checks every `catalog_code()` is inside it. So #213 cannot implement FR-057 without inventing a code. FR-057 also does not name the diagnostic stage. Fix: in FR-057, restate each refusal as an existing catalog code/cause pair and name its stage. Candidates: absent label as `invalid_package`/`missing-member`; unknown label as `invalid_package`/`invalid-value`; unsupported version as `unknown_wire`/`unsupported-wire`. If a new code is needed instead, add a `depends_on` to the catalog revision that adds it, and mark FR-057 and TC-153/TC-154 blocked on it. Update FR-057-AC-2, AC-3, TC-153 and TC-154 to match. | FR-057 Outputs, Refusal of labels, Absence table, AC-2, AC-3 · TC-153 · TC-154 · QSpec AD-016 arrow 1 |
+| FND-001 | high | The refusal code is outside the closed catalog. FR-057 refuses with `invalid_capability` and causes `absent-kind`, `unknown-kind` and `unsupported-version`. None of these is in `quire.native.diagnostics/v1` (`proposals/quire-v1/definitions/native-diagnostics.md`) or in `src/diagnostic.rs`. That catalog is closed: "A new required code or cause variant needs a new catalog revision". AD-016 arrow 1 requires QSL refusals to be `Diagnostic{Code}` from the closed catalog, and its gate 7 checks every `catalog_code()` is inside it. So #213 cannot implement FR-057 without inventing a code. FR-057 also does not name the diagnostic stage. Fix: in FR-057, restate each refusal as an existing catalog code/cause pair and name its stage. Candidates: absent label as `invalid_package`/`missing-member`; unknown label as `invalid_package`/`invalid-value`; unsupported version as `unknown_wire`/`unsupported-wire`. If a new code is needed instead, add a `depends_on` to the catalog revision that adds it, and mark FR-057 and TC-153/TC-154 blocked on it. Update FR-057-AC-2, AC-3, TC-153 and TC-154 to match. | FR-057 Outputs, Refusal of labels, Absence table, AC-2, AC-3 · TC-153 · TC-154 · QSpec AD-016 arrow 1 |
 | FND-002 | medium | "Hold" is never defined. #229 asks FR-057 to define the distinction among absence, backend absence, unsupported, refusal, timeout and hold. The case table has no hold row. The text says several times that a case is "never a hold", but never says what a hold is or which stage can produce one. So "not a hold" in FR-057-AC-6 and TC-155 has no checkable meaning beyond "no item waits for a registration". Fix: add a hold row to the case table that states what a hold is (a settlement deferred until some input arrives) and where it can occur, then state the testable property TC-155 checks. | FR-057 Absence table, AC-6 · TC-155 · #229 Scope |
 | FND-003 | medium | Absent versus unknown is ambiguous. FR-057 says "carries no capability label" is `absent-kind`, and any label not byte-equal to an admitted one is `unknown-kind`. An empty string and a JSON `null` fit both readings. The catalog also says missing and explicit null "may not be collapsed". Fix: state that a missing member is `absent-kind`, and that an empty string and `null` are each one named cause. Add both inputs to FR-057-AC-2 and TC-153 step 3. | FR-057 Refusal of labels, AC-2 · TC-153 |
 | FND-004 | medium | The version rule is not implementable as written. (a) FR-057 requires "any serialized artifact that carries capability labels" to declare `quire.capability-kind/v1`, but does not name the member that holds it or where it sits. TC-154 step 2 ("remove the version declaration") cannot be written without that. Carrier ownership is #211's, yet the matrix plans TC-154 under #213 alone. (b) FR-057 says `v1` means FR-290's six labels, but does not pin the FR-290 revision `v1` denotes. FR-290 itself is marked "Proposed". A later FR-290 edit could change what `v1` admits without a new version. (c) The canonical form of one value is a JSON string, but no canonical form is given for a serialized set of kinds, such as a backend's advertised kinds. Fix: in FR-057, name the version member and its JSON type, or state that #211 names it and mark the TC-154 row "Planned; #211/#213". Pin `quire.capability-kind/v1` to FR-290 at a named QSpec commit. State the canonical form of a serialized set (for example, a JSON array in ascending byte order of labels, no duplicates, and a duplicate is refused). | FR-057 Serialization and version, Dependencies · TC-154 · `spec/model-linking/tests.md` TC-154 row |
@@ -63,8 +63,8 @@ Verdict: REVISE (FND-001 is high and blocking; FND-002 to FND-006 are medium).
 
 ## Method
 
-- **Vocabulary.** Compared FR-057's table with FR-290 at QSpec `origin/main`
-  `818f555`, label by label and description by description. They are identical.
+- **Vocabulary.** Compared FR-057's table with FR-290 at QSpec `origin/main`,
+  label by label and description by description. They are identical.
   FR-290's identity, absence and backend-absence rules match FR-057.
 - **Settled rulings.** Checked against the owner rulings given for this review:
   FR-290 is the vocabulary authority, backend absence is `unsupported` with a
@@ -72,8 +72,8 @@ Verdict: REVISE (FND-001 is high and blocking; FND-002 to FND-006 are medium).
   admission only, and there is no compatibility path for the four-kind
   vocabulary. FR-057 follows each one. No finding recommends a mapping, reader or
   migration.
-- **Catalog.** Read `native-diagnostics.md` at QSpec `818f555` and
-  `src/diagnostic.rs` at cd4f71a. Neither has `invalid_capability` or its causes.
+- **Catalog.** Read QSpec `native-diagnostics.md` and
+  `src/diagnostic.rs`. Neither has `invalid_capability` or its causes.
   AD-016 arrow 1 and gate 7 require catalog codes.
 - **Code state.** `src/linking/composed/requests.rs:36` still has the four-kind
   `Capability`. `src/checking/composed.rs:320` has a private `Capability`
@@ -90,15 +90,15 @@ Verdict: REVISE (FND-001 is high and blocking; FND-002 to FND-006 are medium).
 
 ## Round 2 dispositions
 
-Checked against the current tree: cd4f71a plus the uncommitted edits. The
-upstream is quire-specification `046d1bd`.
+Checked against the current tree, including the uncommitted edits. The
+upstream is quire-specification.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |
 | FND-001 | resolved | `invalid_capability` and all nine causes are catalogued in `quire.native.diagnostics/v1` revision `1-draft.5` (FR-057:87-91; FR-057 Dependencies at FR-057:327-329; upstream `native-diagnostics.md` `invalid_capability` row, FR-271, FR-272). QSL refreshes its copy to that revision before #213 (FR-057:328-329). |
 | FND-002 | resolved | A hold row and a definition were added (FR-057:271, 273-274). TC-155 checks that "nothing is pending after routing returns" (TC-155:58-60). |
 | FND-003 | resolved | Missing or `null` is `absent-kind`; `""` and non-string values are `unknown-kind` (FR-057:141-150). AC-2 covers both (FR-057:307), and so does TC-153 (steps 2 and 3, TC-153:24-27). |
-| FND-004 | resolved | (a) The member belongs to each format's owner: FR-331's `capability_vocabulary`, and QSL's per #211 (FR-057:133-137); the TC-154 row reads "#211/#213" (`tests.md:222,302`). (b) `v1` is pinned to FR-290 at `046d1bd` (FR-057:38-40). (c) A serialized set of kinds is carrier format. Under FR-290 the owner assigns it, and kinds compare as sets (FR-057:105-107). It is deferred to #211 with the member. |
+| FND-004 | resolved | (a) The member belongs to each format's owner: FR-331's `capability_vocabulary`, and QSL's per #211 (FR-057:133-137); the TC-154 row reads "#211/#213" (`tests.md:222,302`). (b) `v1` is pinned to FR-290 (FR-057:38-40). (c) A serialized set of kinds is carrier format. Under FR-290 the owner assigns it, and kinds compare as sets (FR-057:105-107). It is deferred to #211 with the member. |
 | FND-005 | resolved | Negotiation is described in the indicative and attributed to CG (FR-057:232-247). FR-290-AC-4 is cited as the owner (FR-057:322-323). TC-155 and TC-115 use fixtures (TC-155:16-18; TC-115:25-31). |
 | FND-006 | resolved | The TC-115 summary row is 🚧 (`tests.md:196`) and agrees with the FR-036-AC-6 row (`tests.md:296`). `tests.md:241-247` states that the traced AC-6 tests run over the four-member vocabulary. "8 of 8" is gone. Its replacement sentence is wrong for AC-9, which is recorded as SR-490 FND-002. |
 | FND-007 | resolved | FR-036:210-211 now describes the FR-057-kind pairs. `tests.md:244` has no "now". |
@@ -106,7 +106,7 @@ upstream is quire-specification `046d1bd`.
 | FND-009 | resolved (SR-490), low | The term is unified: "requested clause/capability pair" (FR-057:27, 60). FR-331 is linked (FR-057:20-21, 223). US-002 still does not list FR-057 among the requirements it `exercises` (`spec/usecase/US-002-link-exact-models.md:5-25`), although FR-057 `implements` US-002 (FR-057:6-7). Fix: add `ix://agent-ix/quire-spec-language/FR-057` with type `exercises` to US-002. |
 | FND-010 | accepted-as-ruled | The seven baseline TestMatrix `Coverage Status` failures are outside this diff and were excluded by the review brief. Round-2 validation shows only those seven. |
 | FND-011 (new) | resolved (SR-490), medium | The Diagnostic code statement is broader than the requirement. It says "The QSL composed linker SHALL report every refusal under this requirement with code `invalid_capability` and exactly one cause from the closed set `absent-kind`, `unknown-kind` and `unsupported-version`" (FR-057:83-85). But the same requirement has other refusals. The registry refuses with `unknown-mode` and `duplicate-backend` (FR-057:215-219). The family checker refuses with `unsupported_construct`/`declaration-form` (FR-057:192-193). `case` exhaustiveness refuses with `undefined_expression`/`unproved-exhaustiveness` (FR-057:170). The carrier refusal is made by "QSL", not by the linker (FR-057:127-129). Read literally, these statements contradict each other. Fix: scope the statement: "The QSL composed linker SHALL report every refusal of a requested pair's label with code `invalid_capability` and cause `absent-kind` or `unknown-kind`; a carrier refused for its version carries `unsupported-version`; registration refusals carry the causes the registry rule names." |
-| FND-012 (new) | resolved (SR-490), low | "the `SumCase` checker" (FR-057:170) names a component that does not exist. No QSL source, no QSL spec and no quire-specification document at `046d1bd` defines `SumCase`. FR-290 says only "discharged during language admission" (quire-specification FR-146). Fix: write "none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as …". |
-| FND-013 (new) | resolved (SR-490), low | FR-057's paraphrase of FR-290 at `046d1bd` drops five details that the review brief asks it to match. (1) `inconsistent-candidates` also covers "a candidate that does not advertise the item's kind" (FR-290:177). FR-057:241 says only "inconsistent with the manifest or the named backend". (2) `unknown-backend` names the backend, and `inconsistent-candidates` names each offending candidate (FR-290:176-177). FR-057:240-241 omits both payloads. (3) Registration refusals are reported ordered bytewise by backend identity, then digest (FR-290:193-195). FR-057:215-219 does not say so. (4) A tool that changes after a passing probe records the FR-331 result `failed` (FR-290:222-224). The FR-057 case table has no row for it (FR-057:269-270). (5) The FR-290 claim-form qualifiers "over a sum type" and "under a finite-trace or infinite-trace profile" are dropped (FR-057:169, 176). Fix: carry these five points into FR-057:215-219, 240-241 and 269-270, and restore the two qualifiers. Or state once that where FR-057's tables abbreviate FR-290, FR-290 at `046d1bd` governs. |
+| FND-012 (new) | resolved (SR-490), low | "the `SumCase` checker" (FR-057:170) names a component that does not exist. No QSL source, no QSL spec and no quire-specification document defines `SumCase`. FR-290 says only "discharged during language admission" (quire-specification FR-146). Fix: write "none; language admission discharges it (quire-specification FR-146), and an unproved obligation refuses as …". |
+| FND-013 (new) | resolved (SR-490), low | FR-057's paraphrase of FR-290 drops five details that the review brief asks it to match. (1) `inconsistent-candidates` also covers "a candidate that does not advertise the item's kind" (FR-290:177). FR-057:241 says only "inconsistent with the manifest or the named backend". (2) `unknown-backend` names the backend, and `inconsistent-candidates` names each offending candidate (FR-290:176-177). FR-057:240-241 omits both payloads. (3) Registration refusals are reported ordered bytewise by backend identity, then digest (FR-290:193-195). FR-057:215-219 does not say so. (4) A tool that changes after a passing probe records the FR-331 result `failed` (FR-290:222-224). The FR-057 case table has no row for it (FR-057:269-270). (5) The FR-290 claim-form qualifiers "over a sum type" and "under a finite-trace or infinite-trace profile" are dropped (FR-057:169, 176). Fix: carry these five points into FR-057:215-219, 240-241 and 269-270, and restore the two qualifiers. Or state once that where FR-057's tables abbreviate FR-290, FR-290 governs. |
 
 Round 2 verdict: ACCEPT WITH FINDINGS

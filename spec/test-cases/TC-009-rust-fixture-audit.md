@@ -9,7 +9,7 @@ relationships:
 
 ## Description
 
-CLI encoding and Rust-only execution. Scope: FR-012-AC-10, NFR-005-M-2. Type: E2E; priority P1.
+CLI encoding and Rust-only execution. Scope: FR-012-AC-10, NFR-005-M-1. Type: E2E; priority P1.
 
 ## Test Procedure
 

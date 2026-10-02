@@ -19,8 +19,8 @@ source reference that names them.
 
 ## Inputs
 
-The source's authority, identity and revision (a namespace and a value), a
-path, UTF-8 bytes and caller ceilings.
+The source's authority and identity, a path, UTF-8 bytes and caller
+ceilings.
 
 ## Outputs
 
@@ -40,23 +40,21 @@ as S0's input; the native-v1 parser reads through them and through the
 spine's lexer (ADR-013 §6 Spans row).
 
 A source QSL reads itself is named by the caller, never by QSL. The caller
-supplies four labels with the bytes: the **authority** that issues the
-source's identity, the **identity** within that authority, and the
-**revision** as a namespace and a value. The namespace names the revision
-system the value belongs to, for example `git` for a commit or `semver` for
-a release. QSL does not default any label and does not derive one from the
-path, the bytes or another label: a path is a locator, not an identity
-(QSpec FR-004), and a revision namespace is never inferred from the shape of
-its value.
+supplies two labels with the bytes: the **authority** that issues the
+source's identity, and the **identity** within that authority. The source's
+identity is that document identity plus the content digest of its bytes
+(QSpec STD-150). QSL does not default either label and does not derive one
+from the path, the bytes or the other label: a path is a locator, not an
+identity (QSpec FR-004).
 
 A label is blank when it is empty or consists only of Unicode `White_Space`
 scalars. Admission checks the labels first, in the order `authority`,
-`identity`, `revision_namespace`, `revision`:
+`identity`:
 
 - When a label is blank, the source shall refuse with
   `invalid_source_identity`, cause `blank-label`, and field `label` naming
-  the first blank label in that order, spelled exactly `authority`,
-  `identity`, `revision_namespace` or `revision`.
+  the first blank label in that order, spelled exactly `authority` or
+  `identity`.
 - When every label is non-blank and the path is empty, the source shall
   refuse with `invalid_source_identity`, cause `empty-path`, and no field.
 
@@ -67,11 +65,11 @@ region.
 ### Edit and binding refusals are not source-identity refusals
 
 Three complete-V1 host refusals concern a source already admitted, not the
-labels it was admitted under: an incremental edit whose revision is not the
-exact predecessor's or that changes the authority, identity or revision
-namespace (`EditPredecessor`), a CST node rendered against a parsed source it
-does not belong to (`ForeignNode`), and an editor request bound to another
-document revision (`RequestRevision`). They SHALL refuse with
+labels it was admitted under: an incremental edit whose predecessor digest is
+not the source's current digest or that changes the authority or identity
+(`EditPredecessor`), a CST node rendered against a parsed source it does not
+belong to (`ForeignNode`), and an editor request bound to another source
+digest of the document (`RequestRevision`). They SHALL refuse with
 `invalid_source_map`, the retained host code for an invalid correspondence,
 source binding or queried range, whose causes the catalog does not
 close, keeping their host cause. They SHALL name no region: byte 0 cannot
@@ -87,7 +85,7 @@ context: "Unavailable context is explicitly unavailable; byte zero, an empty
 path or a name-search match cannot masquerade as a located failure"):
 
 - Invalid UTF-8, a BOM and NUL refuse at a region under a `RawSourceRef`
-  minted for the refusal over the offered bytes: the four labels and the
+  minted for the refusal over the offered bytes: the two labels and the
   `quire.source.bytes/v1` digest of the bytes offered. Only these refusals
   mint a reference over bytes that were not admitted. Invalid UTF-8 is the
   empty region at the end of the longest valid prefix; a BOM is the region
@@ -118,7 +116,7 @@ longest valid UTF-8 prefix of those bytes, which contains the region.
 ### Admission mints the source reference
 
 On admission the source shall carry its `RawSourceRef` (ADR-013 O-07,
-QSpec FR-322): the four labels exactly as supplied and the
+QSpec FR-322): the two labels exactly as supplied and the
 `quire.source.bytes/v1` digest of the admitted bytes. The source reference
 is the one value every later stage names this source by:
 
@@ -131,8 +129,8 @@ is the one value every later stage names this source by:
   ([FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md),
   [FR-092](FR-092-key-type-parameter-and-declared-nodes.md)).
 
-The revision and digest do not enter a declaration's node key: two
-revisions of one source keep the keys of their unchanged declarations
+The digest does not enter a declaration's node key: two contents of one
+source keep the keys of their unchanged declarations
 (QSpec `proposals/checked-package-v2/README.md`). A different authority or
 identity gives every source-owned declaration a different key.
 
@@ -140,7 +138,7 @@ identity gives every source-owned declaration a different key.
 
 - The command line supplies them as operands of `parse` and `format`
   ([FR-010](FR-010-report-native-outcomes.md)). `parse` reads native-v1
-  source and `format` complete-V1 source, under the same four-label grammar.
+  source and `format` complete-V1 source, under the same two-label grammar.
 - A native-v1 request supplies them in each source's wire identity: the
   run, compile and lower requests
   ([FR-026](FR-026-run-standalone-native-workflow.md),
@@ -149,7 +147,7 @@ identity gives every source-owned declaration a different key.
   one identity definition.
 - A library caller supplies them in the source identity it passes to the
   source reader and to S1's `parse`.
-- A supplied library's source carries its own four labels in the
+- A supplied library's source carries its own two labels in the
   dependency input (FR-099, ADR-015 D-1): the library caller sets them, the
   native-compile/1 `libraries` member carries them in each library's source
   selection, and the replay executor takes them from the dependency entry's
@@ -158,7 +156,7 @@ identity gives every source-owned declaration a different key.
   `package_id`.
 - The replay executor recompiles each source under the `RawSourceRef` the
   replay request's package reference names (QSpec FR-323 `package`, ADR-013
-  O-26). It passes that reference's four labels as the source identity, the
+  O-26). It passes that reference's two labels as the source identity, the
   reference's identity as the path, and the provided bytes as the source. A
   reference whose label is only whitespace, which QSpec's `Nonempty` admits,
   refuses the replay with `invalid_source_identity`/`blank-label`, naming
@@ -175,8 +173,8 @@ identity gives every source-owned declaration a different key.
 
 A native runtime input artifact (a snapshot or an invocation,
 `native-state-input/1`) is not a source read under this requirement. Its
-caller names it with the same four labels, because QSpec FR-004 makes the
-revision namespace and value part of every immutable key
+caller names it with the same two labels and the artifact's content digest
+(QSpec FR-004, STD-150)
 ([FR-018](FR-018-construct-native-runtime-inputs.md),
 [FR-024](FR-024-read-native-runtime-artifacts.md)).
 
@@ -188,13 +186,13 @@ revision namespace and value part of every immutable key
 | FR-001-AC-2 | Changed bytes under a selected digest receive source_digest_mismatch. | Test |
 | FR-001-AC-3 | Invalid UTF-8 receives a source diagnostic. | Test |
 | FR-001-AC-4 | Input beyond the selected byte ceiling receives resource_exhausted naming that ceiling, whether the ceiling is below or above the 1 MiB default. | Test |
-| FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire`, revision namespace `git`, revision value `3f2a` and bytes `b` carries a `RawSourceRef` whose authority, identity, revision namespace and value read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`. Admitting the same bytes under revision value `3f2b` gives a `RawSourceRef` that differs only in the revision value. | Test (TC-424) |
-| FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority, identity, revision namespace or revision value is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority`, `identity`, `revision_namespace` or `revision` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
-| FR-001-AC-11 | With both the revision namespace and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With all four labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
-| FR-001-AC-12 | An incremental edit whose expected revision is not the source's revision, rendering a CST node against a parsed source it does not belong to, and an editor request bound to another document revision each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor`, `ForeignNode` or `RequestRevision` respectively, and name no region; none refuses with `invalid_source_identity`. | Test (TC-424) |
-| FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, revision (`git`, `1`), and again under the reference of bytes `b'` admitted as `a`, `u`, (`git`, `2`), give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, revision (`git`, `1`), they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, revision (`git`, `1`), a third key. | Test (TC-424) |
-| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`, `git`, `1`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
-| FR-001-AC-10 | Admission with an empty revision namespace, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
+| FR-001-AC-5 | Source admitted with authority `agent-ix`, identity `specs/a.quire` and bytes `b` carries a `RawSourceRef` whose authority and identity read exactly those labels and whose digest is the `quire.source.bytes/v1` digest of `b`, and no other member. Admitting bytes `b'` under the same labels gives a `RawSourceRef` that differs only in the digest. | Test (TC-424) |
+| FR-001-AC-6 | Admission refuses with `invalid_source_identity`, cause `blank-label`, and admits nothing, when exactly one of the authority or identity is empty, again when it is a single space, and again when it is U+3000 IDEOGRAPHIC SPACE; field `label` is `authority` or `identity` respectively. A label that is U+200B ZERO WIDTH SPACE, which is not `White_Space`, is not blank. | Test (TC-424) |
+| FR-001-AC-11 | With both the identity and the authority blank, admission refuses `invalid_source_identity`/`blank-label` with `label` `authority`. With the identity blank and the path empty, it refuses `blank-label` with `label` `identity`, not `empty-path`. With both labels non-blank and the path empty, it refuses `invalid_source_identity`/`empty-path` with no field. | Test (TC-424) |
+| FR-001-AC-12 | An incremental edit whose expected predecessor digest is not the source's digest, rendering a CST node against a parsed source it does not belong to, and an editor request bound to another source digest each refuse with `invalid_source_map`, keeping the host cause `EditPredecessor`, `ForeignNode` or `RequestRevision` respectively, and name no region; none refuses with `invalid_source_identity`. | Test (TC-424) |
+| FR-001-AC-7 | Package declarations holding one record `Point` with field `x: Int[0, 9]`, checked under the source reference of bytes `b` admitted as authority `a`, identity `u`, and again under the reference of bytes `b'` admitted as `a`, `u`, give `Point` the same node key. Checked under the reference of `b` admitted as authority `c`, identity `u`, they give `Point` a different key, and under the reference of `b` admitted as authority `a`, identity `v`, a third key. | Test (TC-424) |
+| FR-001-AC-8 | Bytes `a\xffb` admitted as (`a`, `u`) refuse with the region `[1, 1)` under the `RawSourceRef` of those three bytes, and bytes `ab\0c` with the region `[2, 3)` under theirs. | Test (TC-424) |
+| FR-001-AC-10 | Admission with an empty identity, admission of five bytes under a four-byte ceiling, and verified intake of bytes whose digest differs from the selected one each refuse with no region, not a region at byte 0. | Test (TC-424) |
 | FR-001-AC-9 | A renderer given the region `[4, 7)` of admitted source `ab\ncdéf` reports start line 2, column 2 and end line 2, column 4, derived from the admitted bytes; the region itself holds only its `RawSourceRef`, 4 and 7. | Test (TC-424) |
 
 ## Dependencies
@@ -205,9 +203,10 @@ revision namespace and value part of every immutable key
   boundary, which the replay executor's recompilation needs.
 - ADR-013 O-07 and O-12: `RawSourceRef` and `SourceRegion`. §7 slice S-4b
   builds this requirement's source reference.
-- QSpec FR-004: a path or display label is a locator, and a key includes the
-  revision namespace and value. QSpec FR-322 `RawSourceRef`, `Revision`,
-  `SourceOwner` and `PackageLock.sources`.
+- QSpec FR-004: a path or display label is a locator. QSpec FR-322
+  `RawSourceRef`, `SourceOwner` and `PackageLock.sources`.
+- QSpec STD-150: source identity is the document identity plus the content
+  digest; `RawSourceRef` is the authority, the identity and that digest.
 - `quire.native.diagnostics/v1` (QSpec STD-110,
   `proposals/quire-v1/definitions/native-diagnostics.md`, cited by
   reference): the `invalid_source_identity` row, its causes `blank-label`
@@ -218,7 +217,7 @@ revision namespace and value part of every immutable key
 
 Draft. AC-1 to AC-4 describe the existing reader. AC-5 to AC-10 are
 implemented (ADR-013 §7 slice S-4b) and backed by TC-424:
-`SourceIdentity` (`qsl-foundation/src/source.rs`) carries the four labels,
+`SourceIdentity` (`qsl-foundation/src/source.rs`) carries the labels,
 admission mints the source's `RawSourceRef`, S0 refusals carry a
 `SourceRegion` or none, `Source::render` and `render_offered` derive line and
 column, and `PackageDeclarations::new` takes the unit's `RawSourceRef`. The
@@ -228,8 +227,15 @@ reference's labels is ADR-013 TK-01's.
 
 QSL emits the catalog causes:
 `SourceReadCause` carries `BlankLabel { label }` and `EmptyPath`, and
-`Source::read_typed` checks the four labels in order before the path
+`Source::read_typed` checks the labels in order before the path
 (`qsl-foundation/src/source.rs`).
+
+Remaining work (implementation, Linear QSL-381): `SourceIdentity`, `RawSourceRef` and the
+label check still carry the revision namespace and revision labels (four
+labels in all); they drop to the authority and identity as AC-5, AC-6,
+AC-7, AC-8, AC-10 and AC-11 state. The `RequestRevision` and
+`EditPredecessor` checks compare revisions and become digest comparisons
+(AC-12).
 The cause and `label` reach the native `Diagnostic`,
 the `parse`/`format` refusal line, the native-run output, the
 native-state-input construction error and the replay recompile refusal, each

@@ -10,7 +10,7 @@ review_set: all
 
 The existing source frontend/static pipeline creates a NativePackage, then existing Boolean lowering invokes the strict IR binder. Both pinned IR readers and the current code generator consume the resulting bytes in the real integration test. Backend activation assurance and Quire extraction adoption remain separate. This command requires no new producer API or runtime input artifact.
 
-Author PR-readiness review of `d1fcf16`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

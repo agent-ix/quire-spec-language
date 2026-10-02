@@ -13,15 +13,14 @@ relationships:
 
 ## Summary
 
-Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` (base
-`99e9b6c7`) and its amendments to ADR-011, ADR-012, ADR-013 and
+Reviewed the uncommitted ADR-017 draft on `spec/16-arch43-mapping` and its amendments to ADR-011, ADR-012, ADR-013 and
 `spec/spec.md`. The review checked five things:
 
 - completeness against Linear QSL-16, QSL-36, QSL-39 and QSL-40, read as
   data;
 - consistency with ADR-011 to ADR-015 and QSL FR-057, FR-105, FR-110 and
   FR-115;
-- consistency with QSpec `main` at `4634f5f`: AD-003, FR-290, FR-301,
+- consistency with QSpec `main`: AD-003, FR-290, FR-301,
   FR-353, the V1 inventory rows V1-TOOL-011/012 and V1-BACK-021/022, and the
   diagnostics catalog;
 - that each decision has one interpretation and can be implemented against

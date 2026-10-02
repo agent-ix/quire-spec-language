@@ -5,7 +5,6 @@ type: SpecReview
 analysis: failure-domain
 scope: "FR-007/008/018, NFR-006, native-runtime input/evaluation contracts, IT-006, TC-055–077 and TM-004"
 review_set: all
-evaluated_revision: "045025f843346001a91919b8d0816a519e2df337"
 review_date: "2026-09-09"
 ---
 
@@ -62,7 +61,7 @@ workflow. Implementation changes to this contract reopen specify/review.
 
 ## Constructor setup correction — 2026-09-09
 
-Reviewed the TC-055–057 correction at dc63f337fcdaee1320d221383eca38599239f62c.
+Reviewed the TC-055–057 correction.
 Using structurally constructed inputs preserves the intended trust boundary:
 duplicates and model-invalid shapes survive for later model-aware diagnosis.
 A CheckedPackage supplies no constructor authority. Identity/ref distinctions,

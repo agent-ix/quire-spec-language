@@ -10,7 +10,7 @@ review_set: all
 
 FR-022 has explicit inputs, a single authored clause, observable outcomes and five measurable criteria. TM-007 maps all five to TC-095/096; source traces and three actual integration tests back both test cases. The six coverage rules were checked within this API; source-map permutations and individual stage ceilings remain owned by their existing requirements.
 
-PR-readiness review of implementation baseline `22d4e9a`; the owner's selected
+PR-readiness review of implementation baseline; the owner's selected
 set is all. Review follows implementation as directed. No applicable installed
 AssuranceProfile was found. This author review does not claim independence.
 

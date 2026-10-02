@@ -18,8 +18,8 @@ relationships:
 
 US-004/StR-001 supply the existing evidence/integration need; the full native
 assessment workflow is not owned or marked complete by this bounded plan.
-Readiness comes from the [scoped review](../../spec/reviews/rust-verification/base.md)
-at specification revision 11a9128. Fresh producer approval is not assumed.
+Readiness comes from the [scoped review](../../spec/reviews/rust-verification/base.md).
+Fresh producer approval is not assumed.
 
 ## Dependency Graph
 
@@ -41,7 +41,6 @@ The authoritative task edges are in the task files; no cycle exists.
 | TC-007 | Fixture root containment | Generate nested relative and escaping/absolute paths; include a Unix symlink escape in an isolated temporary tree. Contained paths are read; foreign targets refuse and are never used as evidence. |
 | TC-008 | Audit resource ceilings | Generate sizes around lowered file/aggregate/record limits and verify the default oversized-file boundary. At-ceiling valid input succeeds; beyond-ceiling work reports resource-exhausted without partial success. |
 | TC-009 | CLI encoding and Rust-only execution | Invoke the real binary with unknown/invalid OS arguments and run self-test with external runtimes unavailable. Usage exits 2 without panic; Rust audits execute with no Python/Node. |
-| TC-010 | Owned verification language inventory | Inspect all owned executable audit files, CI steps and documented verification commands after migration. No Python audit executable/CI invocation or embedded non-Rust verifier remains; historical records retain their provenance. |
 
 ## Delivered Work
 
@@ -60,7 +59,7 @@ additional agents. B/C/TL continue their own work; this plan does not allocate i
 | Task | Track | Owns (references) | Verified by (verifies) | Status |
 | --- | --- | --- | --- | --- |
 | Task-001 | A | FR-012, NFR-005 | TC-001–TC-009 | done |
-| Task-002 | A | FR-012, NFR-005 | TC-002–TC-010 | done |
+| Task-002 | A | FR-012, NFR-005 | TC-002–TC-009 | done |
 
 ## Coordination Rules
 

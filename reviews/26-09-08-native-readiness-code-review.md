@@ -5,7 +5,6 @@ type: SpecReview
 analysis: code-review
 scope: "Plan-002 native source, formatter, CLI, tests and SR-009 dispositions"
 review_set: subset
-evaluated_revision: "cbccbb61e9bf15690af386d857b6255ed2bfb948"
 review_date: "2026-09-08"
 ---
 
@@ -25,23 +24,22 @@ finding prevents the owner-authorized private merge under local-only CI.
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | Installed process catalog requires Coverage Status but its functional coverage reader selects Status; status checking is skipped on that table. Actual TC-summary statuses and execution are reconciled explicitly. Six duplicate registry diagnostics remain visible. | spec/native-readiness/tests.md:18; spec/reviews/native-readiness/data/implementation-coverage.json |
-| FND-002 | low | A future hosted runner cannot fetch the private ix-trace-rs pin without repository read access. No hosted run is an acceptance gate under the owner's current local-only policy; configure access before any later dispatch. | Cargo.toml:31; .github/workflows/ci.yml:3; NFR-002 |
+| FND-001 | low | Installed process catalog requires Coverage Status but its functional coverage reader selects Status; status checking is skipped on that table. Actual TC-summary statuses and execution are reconciled explicitly. Six duplicate registry diagnostics remain visible. | spec/native-readiness/tests.md:18 |
+| FND-002 | low | A future hosted runner cannot fetch the private ix-trace-rs dependency without repository read access. No hosted run is an acceptance gate under the owner's current local-only policy; configure access before any later dispatch. | Cargo.toml:31; .github/workflows/ci.yml:3; NFR-002 |
 
 ## Scope and skills
 
 Used the actual agent-skills/code-review/SKILL.md, its Rust dispatch to the
 owner-named agent-skills/rust-review/SKILL.md, default rust-style, and the
-implementation-gap-analysis discovery phase. Rust review SHA-256 remains
-bec67626edf3944397fa6c2c83c1164278c9f86db3efdcc67cf91b2152b2d85a.
+implementation-gap-analysis discovery phase.
 AGENTS.md and the dependency/license decisions govern the review. There is no
 applicable AssuranceProfile or overriding Rust idiom file in this repository.
 No subagent or optional gap-analysis semantic pass was used.
 
-Native refinements were specified at a10ec80/afeeb20 and reviewed in SR-020–027
-at f1f6c50. Compilation exposed thiserror's implicit source-field inference;
-the exception was specified at 5d0c9de and reviewed at 03dfc72 before the manual
-trait implementation. Source implementation is df2d0b5; cbccbb6 only splits one
+Native refinements were specified and reviewed in SR-020–027.
+Compilation exposed thiserror's implicit source-field inference;
+the exception was specified and reviewed before the manual
+trait implementation. A final commit only splits one
 multiline trace into two canonical attributes after Quire failed to bind it.
 
 ## SR-009 dispositions
@@ -50,7 +48,7 @@ multiline trace into two canonical attributes after Quire failed to bind it.
 | --- | --- |
 | FND-001: OS argument panic | args_os plus separate UTF-8 command/label validation; real FF arguments exit 2 before missing-file I/O, while an FF file path parses exact bytes and preserves valid labels. TC-017. |
 | FND-002: formatter ceiling | Additive format_with_limit checks every append with checked_add; zero/one-short/exact/above/default/usize::MAX boundaries execute. A 1 MiB admitted source that expands refuses. Existing format API remains. TC-016. |
-| FND-003: Error interoperability | Diagnostic implements Display/Error directly, preserving source provenance. Pinned thiserror 2.0.20 infers source as a nested error, so the reviewed compatibility exception avoids renaming fields or adding a false error cause. Actual boxed Diagnostic propagates through ?, downcasts intact and has no cause. TC-018. |
+| FND-003: Error interoperability | Diagnostic implements Display/Error directly, preserving source provenance. thiserror infers source as a nested error, so the reviewed compatibility exception avoids renaming fields or adding a false error cause. Actual boxed Diagnostic propagates through ?, downcasts intact and has no cause. TC-018. |
 | FND-004: untraced native tests | Nine real TC artifacts and TM-002 cover the native boundary. All 21 old native tests and six added tests have imported canonical trace attributes. Quire now binds 41/41 repository test candidates including LR02. |
 | FND-005: missing CLI outcomes | Real processes assert usage/missing-file/directory-read exit 2, resource exit 3, refusal exit 1 and parse exit 0 with an independently selected source digest. TC-015/017. |
 | FND-006: code catalog | Code all/from_code/Display and the owned native catalog retain all ten spellings. Enumeration, uniqueness, lookup and unknown-code refusal execute. TC-018. |
@@ -73,8 +71,6 @@ multiline trace into two canonical attributes after Quire failed to bind it.
 
 ## Actual local gates
 
-Rust 1.94.1, Cargo.lock SHA-256
-26c8dc235777ff79a5882e01a6c700d2feab9fe4d9f4397662490aa37fb9d444.
 All Cargo build/test commands below used --offline --locked and --target-dir
 target, except the separate build target target/clean.
 
@@ -94,21 +90,20 @@ selected private-packet lane: 3 passed, 0 failed, 0 ignored, 5 filtered out
 cargo build --no-default-features --target-dir target/clean: exit 0
 RUSTDOCFLAGS='-D missing_docs' cargo doc --no-deps --lib: exit 0
 fixture-audit self-test: 6 content/digest negative controls; duplicate keys refused
-fixture-audit model-bytes tests/fixtures: 5 checkpoint byte digests and exact producer pin
+fixture-audit model-bytes tests/fixtures: 5 checkpoint byte digests
 quire-spec parse test:parent fixture:1 tests/fixtures/parent.native: parsed, 4 clauses
 ```
 
 The selected private lane uses QUIRE_STATE_CORE pointing to
-formalization-a-spec/proposals/state-core at e897f810a7356d4ce8fd19026221ebda7b65596f.
+formalization-a-spec/proposals/state-core.
 An initial invocation incorrectly used spec/state-core and failed on the absent
 directory; correcting the explicit path made all three tests execute and pass.
 Two initial boundary-test setup errors were also corrected before the passing
-full suite. No failed attempt is counted as a pass. After cbccbb6's attribute-only
+full suite. No failed attempt is counted as a pass. After the attribute-only
 edit, formatter/strict Clippy and all three CLI tests passed again. No runtime
 source or dependency changed after the full suite.
 
-No deny.toml exists. No hosted CI was dispatched. Fixture bytes are unchanged
-from 5fbc96e. Random fuzzing, mutation-score campaigns and broader fault
+No deny.toml exists. No hosted CI was dispatched. Fixture bytes are unchanged. Random fuzzing, mutation-score campaigns and broader fault
 injection remain recommendations, not completed evidence.
 
 ## Coverage and claim limits

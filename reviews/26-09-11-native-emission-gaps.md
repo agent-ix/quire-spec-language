@@ -14,10 +14,10 @@ relationships:
 
 ## Summary
 
-Recheck of this analysis at `89bc4e3` using QUOIN `gap-analysis` with a fresh
+Recheck of this analysis after the correction using QUOIN `gap-analysis` with a fresh
 `quire coverage --scope <worktree> --json`. The in-scope evidence gap is closed:
 the four added tests execute the Choice, Await, positive `Repeat`,
-`NeedsAuthority` and non-literal Boolean paths that had no caller at `ae910c0`,
+`NeedsAuthority` and non-literal Boolean paths that had no caller at the original review,
 and FR-042's Inputs section now owns the three caller-supplied revision
 namespaces. The corpus reconciliation is unchanged — the same six unbacked rows
 and twenty untracked symbols, all inherited from FR-036/FR-017/NFR-005/NFR-007
@@ -80,13 +80,13 @@ increment delivered here.
 
 ## Coverage
 
-- Reconciliation: `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-emission --json`, quire 0.31.0, module `spec-artifacts-process`. Engine path, not a grep fallback. Version ≥ 0.16.0, so the split document/source roots apply.
-- Rows backed by a tagged test: 367 / 376 across the bundle; FR-042 acceptance criteria 9 / 10. Both unchanged from `ae910c0` — the new tests add tags to criteria that were already backed, which is why counts alone prove nothing here and the assertions were read individually.
+- Reconciliation: `quire coverage --scope /home/peter/dev/worktrees/quire-language-native-emission --json`, module `spec-artifacts-process`. Engine path, not a grep fallback. Version ≥ 0.16.0, so the split document/source roots apply.
+- Rows backed by a tagged test: 367 / 376 across the bundle; FR-042 acceptance criteria 9 / 10. Both unchanged from the original review — the new tests add tags to criteria that were already backed, which is why counts alone prove nothing here and the assertions were read individually.
 - Tasks done: not applicable. No plan bundle targets FR-042, per the owner directive against creating plan bundles for this work.
 - Status lies: 0. Every FR-042 and TC-121 row is `🚧 Planned`.
 - Unbacked rows: 6, of which 2 are method-exempt (`no_symbol_rows`). All inherited.
 - Untracked symbols: 20, all inherited `NFR-007-M-*`; plus 3 unmatched `IT-004` tags owned outside this repository.
 - Diagnostics: 25 declarations selected nothing; none in the reviewed scope.
-- New untraced behaviors: 0. The one recorded at `ae910c0` is now owned by FR-042 Inputs. Source stubs: 0. Test stubs: 0.
+- New untraced behaviors: 0. The one recorded at the original review is now owned by FR-042 Inputs. Source stubs: 0. Test stubs: 0.
 - Test quality in the new suite: the four added tests assert exact values, not counts; reader expectations in `tests/support/native_protocol/mod.rs` are rebuilt from original parser spans and authored mappings rather than read back from the emitted payload; `discharged()` asserts real `Typed`/`Discharged` dispositions. Two residual assertion-strength gaps are recorded as FND-005.
 - Semantic review: skipped, declined by the owner.

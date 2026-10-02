@@ -3,7 +3,7 @@ id: SR-609
 title: "Base review of the QSL-211 recursion-group order and the FR-092 to FR-094 fixture corrections"
 type: SpecReview
 analysis: base
-scope: "Commit 7be2d02a: FR-092 (Recursion groups, the group order, vectors L5, L6, E11 to E13, G1 to G15, AC-7, AC-11, AC-12), FR-093 (quantity.convert mode, AC-4), FR-094 (C3, P9, AC-5, AC-6), FR-065-AC-7, ADR-013 QC-24 and QC-26, and the TC-413 to TC-419 edits"
+scope: "FR-092 (Recursion groups, the group order, vectors L5, L6, E11 to E13, G1 to G15, AC-7, AC-11, AC-12), FR-093 (quantity.convert mode, AC-4), FR-094 (C3, P9, AC-5, AC-6), FR-065-AC-7, ADR-013 QC-24 and QC-26, and the TC-413 to TC-419 edits"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-092

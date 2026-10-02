@@ -3,7 +3,7 @@ id: SR-710
 title: "Gap analysis of FR-064 acceptance criteria against the string-edge tests"
 type: SpecReview
 analysis: gap-analysis
-scope: "agent-ix/quire-spec-language@9686fc5f872dc1e3fc7317f12fc7de44bec0707c; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; xtask/src/string_edge.rs; Makefile"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-064-restrict-string-dispatch-to-marked-edges.md; spec/test-cases/TC-162-string-edge-scan-coverage.md; xtask/src/string_edge.rs; Makefile"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485 at
-9686fc5f. This maps each FR-064 acceptance criterion to the tests in
+Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485.
+This maps each FR-064 acceptance criterion to the tests in
 `xtask/src/string_edge.rs` that back it. The reviewer ran
 `cargo test -p xtask --lib string_edge`: 17 passed, 0 ignored.
 
@@ -48,10 +48,10 @@ the scan reports", and real post-edge dispatch is invisible to it.
 
 ## Dispositions
 
-Disposition pass at 5f573711.
+Disposition pass.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 39bd09e2: Real-site test scans the workspace with marks ignored over CanonicalizationDomain::from_str, AdapterArtifact::try_from and clock_binding_name. Reviewer mutations: &&/// widening off fails it (AdapterArtifact::try_from); strip_prefix widening off fails it (clock_binding_name). The profile string is now registry data, allocation is gone. |
-| FND-002 | deferred | QSL-287 (https://linear.app/agent-ix/issue/QSL-287), child of QSL-145, Backlog, carries the scope (const-resolving detector on branch task/145-268-string-edge-consts@39bd09e2, ~53 sites, conversions for NARROW/FUNCTION_PARAMETERS/ENUM_VALUE_FORM). FR-064 Status now reads Partial and names the unbuilt clause and the known instances, so the deferral is recorded, not silent. Status should name QSL-287 (SR-722 FND-003). |
-| FND-003 | fixed | 39bd09e2: The three AC-5 fixture tests carry #[trace("TC-162", "FR-064-AC-5")]. |
+| FND-001 | fixed | Real-site test scans the workspace with marks ignored over CanonicalizationDomain::from_str, AdapterArtifact::try_from and clock_binding_name. Reviewer mutations: &&/// widening off fails it (AdapterArtifact::try_from); strip_prefix widening off fails it (clock_binding_name). The profile string is now registry data, allocation is gone. |
+| FND-002 | deferred | QSL-287 (https://linear.app/agent-ix/issue/QSL-287), child of QSL-145, Backlog, carries the scope (const-resolving detector on branch task/145-268-string-edge-consts, ~53 sites, conversions for NARROW/FUNCTION_PARAMETERS/ENUM_VALUE_FORM). FR-064 Status now reads Partial and names the unbuilt clause and the known instances, so the deferral is recorded, not silent. Status should name QSL-287 (SR-722 FND-003). |
+| FND-003 | fixed | The three AC-5 fixture tests carry #[trace("TC-162", "FR-064-AC-5")]. |

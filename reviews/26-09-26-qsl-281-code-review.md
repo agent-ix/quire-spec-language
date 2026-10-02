@@ -3,7 +3,7 @@ id: SR-680
 title: "Code and Rust review of kernel ForeignReference universes"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@2fc99d9d8457bc5e838a47842f33a5e5ba053c8f; quire-exact/src/outcome.rs; quire-exact/src/equality.rs; qsl-foundation/src/diagnostic.rs; qsl-eval/tests/it/collection_algebra.rs; qsl-eval/tests/it/equality_matrix.rs; qsl-eval/tests/it/model_reference_queries.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs"
+scope: "agent-ix/quire-spec-language; quire-exact/src/outcome.rs; quire-exact/src/equality.rs; qsl-foundation/src/diagnostic.rs; qsl-eval/tests/it/collection_algebra.rs; qsl-eval/tests/it/equality_matrix.rs; qsl-eval/tests/it/model_reference_queries.rs; qsl-replay/src/spine/call/tests.rs; src/command/output.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-096
@@ -11,7 +11,7 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-281. PR: quire-spec-language#479 at 2fc99d9d. Code review with the
+Ticket: QSL-281. PR: quire-spec-language#479. Code review with the
 rust-review lane, scoped to `git diff origin/main...HEAD` (8 Rust files).
 
 Sound: `Refusal::ForeignReference { required, supplied }` stays `Copy`
@@ -65,17 +65,17 @@ already in force (the binding's).
 
 ## Gate
 
-`make ci` at 2fc99d9d, re-run by the reviewer with one target dir in the
-worktree. Log: scratchpad/rv479/make-ci.log (SHA first line, `exit=` last). Result: exit 0. Mutant logs: scratchpad/rv479/mut-raise-swap.log, scratchpad/rv479/mut-record-swap.log (both mutants killed; tree restored clean).
+`make ci`, re-run by the reviewer with one target dir in the
+worktree. Log: scratchpad/rv479/make-ci.log (`exit=` last). Result: exit 0. Mutant logs: scratchpad/rv479/mut-raise-swap.log, scratchpad/rv479/mut-record-swap.log (both mutants killed; tree restored clean).
 
 ## Dispositions
 
-Round 1, re-checked at 6c213eb2 (fix round 7f4bd626; rebased on main at 87f54643, #481) in a fresh worktree. The reviewer re-ran two mutants. Reverting `member_equal_stop` to `plan_pairs(candidate, member)` fails c06b and c10. Swapping the fields in `kernel_refusal_record` fails the TC-428 test, qsl-replay TC-452 step 4 and the CLI `refused_foreign_reference_renders_record_and_exits_20`.
+Round 1, re-checked after the fix round (rebased on main after #481) in a fresh worktree. The reviewer re-ran two mutants. Reverting `member_equal_stop` to `plan_pairs(candidate, member)` fails c06b and c10. Swapping the fields in `kernel_refusal_record` fails the TC-428 test, qsl-replay TC-452 step 4 and the CLI `refused_foreign_reference_renders_record_and_exits_20`.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 7f4bd626: `member_equal_stop` calls `plan_pairs(member, candidate)`; c10 expects required=u1 supplied=u2; c06b covers `Contains` |
-| FND-002 | fixed | 7f4bd626: `tc_322_foreign_reference_universes_are_not_swapped` deleted |
-| FND-003 | fixed | 7f4bd626: qsl-replay asserts literal `"01"`/`"02"` x32; the CLI test builds its record through `kernel_refusal_record` and asserts literals |
+| FND-001 | fixed | `member_equal_stop` calls `plan_pairs(member, candidate)`; c10 expects required=u1 supplied=u2; c06b covers `Contains` |
+| FND-002 | fixed | `tc_322_foreign_reference_universes_are_not_swapped` deleted |
+| FND-003 | fixed | qsl-replay asserts literal `"01"`/`"02"` x32; the CLI test builds its record through `kernel_refusal_record` and asserts literals |
 
-Round 2, re-checked at 9045639a (spec-only; no code change since 6c213eb2). Every round-1 outcome stands; nothing is open.
+Round 2, re-checked (spec-only; no code change since round 1). Every round-1 outcome stands; nothing is open.

@@ -10,7 +10,7 @@ review_set: all
 
 The target admits only checked primitive expressions and direct model declarations. Calls, locals, fields, references and graph forms refuse the complete package, including a later unsupported clause. Original nominal identity remains in the native model and direct-read correspondence. Counters and bounded serialization stay per request. Unknown CLI targets refuse before file intake; runtime values do not enter source-only lowering.
 
-Author PR-readiness review of `b0c02c7`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile exists; timing follows the owner directive.
 
 Prepared wire declarations and nested expressions now refuse before serialization,

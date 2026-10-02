@@ -87,7 +87,7 @@ Snapshot, format `quire.state.snapshot/v1`:
 ```json
 {
   "format": "quire.state.snapshot/v1",
-  "identity": {"authority": "agent-ix", "identity": "ix://example/config-version/current/healthy-parent", "revision_namespace": "example", "revision": "1"},
+  "identity": {"authority": "agent-ix", "identity": "ix://example/config-version/current/healthy-parent"},
   "observation": "current",
   "anchor": {"kind": "handler", "name": "validate"},
   "model": {"identity": "example/config-version", "version": "1", "digest": "sha256-jcs:<hex>"},
@@ -122,12 +122,12 @@ Invocation, format `quire.state.invocation/v1`:
 ```json
 {
   "format": "quire.state.invocation/v1",
-  "identity": {"authority": "agent-ix", "identity": "ix://example/config-version/invocation/changed-version", "revision_namespace": "example", "revision": "1"},
+  "identity": {"authority": "agent-ix", "identity": "ix://example/config-version/invocation/changed-version"},
   "model": {"identity": "example/config-version", "version": "1", "digest": "sha256-jcs:<hex>"},
   "context": "ix://example/config-version/ConfigVersion",
   "operation": "attemptUpdate",
   "self": {"population": "ix://example/config-version/config_history", "key": "child"},
-  "pre": {"identity": {"authority": "agent-ix", "identity": "...", "revision_namespace": "example", "revision": "1"}, "digest": "sha256-jcs:<hex>"},
+  "pre": {"identity": {"authority": "agent-ix", "identity": "..."}, "digest": "sha256-jcs:<hex>"},
   "post": {"identity": {"...": "..."}, "digest": "sha256-jcs:<hex>"},
   "parameters": {},
   "result": {"boolean": true},
@@ -209,9 +209,8 @@ required; check 10 settles it.
    7. If a label of the document's identity is empty or consists only of
       Unicode `White_Space` scalars, then admission SHALL refuse
       `invalid_source_identity`/`blank-label`. Within this check, the labels
-      are checked in the order `authority`, `identity`,
-      `revision_namespace`, `revision`, and field `label` names the first
-      blank one.
+      are checked in the order `authority`, `identity`, and field `label`
+      names the first blank one.
 2. Selection form check. If `Current` selects a precondition or postcondition,
    `PreCall` selects an invariant or a postcondition, or `Invocation` an
    invariant, then admission SHALL refuse `wrong_snapshot`/
@@ -330,14 +329,14 @@ required; check 10 settles it.
 | FR-106-AC-4 | The incomplete-population snapshot (`complete: false`, `child.parent` naming `missing`) gives `Incomplete` with `incomplete_population`/`incomplete-scope` and no dangling refusal; the same snapshot with `complete: true` gives `Refused` with `dangling_reference`, naming `missing` and `config_history`. A second, incomplete population that no reference value names does not make a healthy case incomplete. | Test (TC-465) |
 | FR-106-AC-5 | The forbidden-parent-change invocation (post sets `child.parent` absent) refuses `frame_violation`/`unauthorized-change` naming `child` and `parent`. A package whose `attemptUpdate` frame modifies only `parent`, with an invocation that changes only `versionNumber`, refuses `frame_violation`/`unauthorized-change` naming `versionNumber` (a scalar field). An invocation declaring `created: [child]` refuses `population_delta_mismatch`/`delta-disagreement`. A post snapshot that adds a population `archive` absent from the pre snapshot, holding `a1`, refuses `frame_violation`/`unauthorized-change` naming the creation of `a1` (the pre side is an empty document). | Test (TC-465) |
 | FR-106-AC-6 | Running admission twice over the same inputs gives equal results, and admission builds its result without reading the filesystem (the provisions are in-memory maps; a test with no files on disk passes). | Test (TC-464) |
-| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `content-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `revision_namespace` and `revision` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `revision_namespace`. | Test (TC-465) |
+| FR-106-AC-7 | Multi-defect documents report the first defect by the order above: bytes edited under their original digest that also add an unknown member refuse `content-mismatch`; a snapshot with `root.versionNumber` `"-1"` and `child.versionNumber` `"1001"` refuses `invalid-value` at `root`; an invocation whose post both deletes `root` and changes `child.parent` refuses the deletion; over a package where `Sub` specializes `ConfigVersion`, an invocation whose post changes `child`'s type to `Sub` and deletes `root` refuses the type change, naming `child`; an invocation whose pre and post list `archive` before `config_history`, with a change outside the frame in each, refuses naming the `archive` object; a snapshot whose `authority` and `identity` are both blank refuses `invalid_source_identity`/`blank-label` with `label` `authority`. | Test (TC-465) |
 | FR-106-AC-8 | Over TC-466 step 3's `probe` unit, `PreCall { snapshot, self: a, parameters: {target: a} }` over the chain `a -> b -> c` pre snapshot, selected for `ReachesTarget`, admits one pre observation, `self` `a`, the parameter `target` naming `a`, no post observation, result or delta, and runs no frame check. The same selection for `VersionUnchanged` refuses `wrong_snapshot`/`wrong-observation`; with a snapshot that says `post` it refuses `wrong_snapshot`/`wrong-observation`; with no `target` it refuses `invalid_runtime_input`/`missing-member`; with `target` naming `ghost`, absent from the complete `config_history`, it refuses `dangling_reference`/`absent-target-in-complete-population`; over the same unit in a package variant where `Sub` specializes `ConfigVersion` and a second population `archive` has member type `Sub` (so `config_history` stays the one population covering `ReachesTarget`), `target` naming `a1` in `archive`, which the snapshot lists with no objects and marks `complete: false`, and which no field of `a`, `b` or `c` reaches, returns `Incomplete` with `incomplete_population`/`incomplete-scope` naming `archive`; with its snapshot marked `complete: false` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. In that variant, `target` naming a `Sub` object of a complete `archive` admits, typed `Sub`. Over the base `probe` unit plus an object type `Other` unrelated to `ConfigVersion` and a population `others` over it, `target` naming an `Other` object of a complete `others` refuses `invalid_runtime_input`/`wrong-value-kind`; over the variant plus an operation `probeSub(target: Sub)` on `ConfigVersion` and a precondition on it, `PreCall` with `target` naming `a` refuses `invalid_runtime_input`/`wrong-value-kind`. | Test (TC-464) |
 | FR-106-AC-9 | The forbidden-parent-change invocation (its post sets `child.parent` absent, outside `attemptUpdate`'s frame) selected for a precondition admits the pre observation, `self` and parameters with no post observation, result or delta and no frame check, and the precondition's verdict equals its verdict under `PreCall` over the same pre snapshot, `self` and parameters. The same invocation whose `post` snapshot is absent from the provision, and the same invocation whose `post` snapshot bytes are malformed (not JSON), each admit and give that same verdict, with no `unavailable_observation`, `byte-digest-mismatch` or other refusal. | Test (TC-464) |
 
 ## Dependencies
 
 - FR-084 and FR-089 (population binding and identity), FR-103 (operation
-  effect), FR-001 (the four labels), FR-056 (the `sha256-jcs` rule and its
+  effect), FR-001 (the two labels; QSpec STD-150), FR-056 (the `sha256-jcs` rule and its
   digest-first order), FR-038 (integer spelling).
 - QSpec FR-153 and `state-contract.md` (anchors, completeness and closure),
   `native-diagnostics.md` (every code and cause above).

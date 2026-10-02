@@ -3,7 +3,7 @@ id: SR-772
 title: "QSL-309 code re-review of PR 510 after the SR-770/SR-771 fix round"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@fbb63d61c382c527c957f029b94dc14902f70e90; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-cst/src/grammar.rs (read only, protocol productions); qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/state_clause.rs; qsl-package/src/emit/tests.rs; qsl-replay/src/spine.rs"
+scope: "agent-ix/quire-spec-language; qsl-forms/src/protocol_clause.rs; qsl-forms/src/syntax.rs; qsl-cst/src/grammar.rs (read only, protocol productions); qsl-semantics/src/check/protocol_clause.rs; qsl-semantics/src/check/mod.rs; qsl-semantics/src/check/assemble.rs; qsl-semantics/src/check/lowering.rs; qsl-semantics/src/check/lowering/state.rs; qsl-semantics/src/check/region.rs; qsl-semantics/src/check/refusal.rs; qsl-semantics/src/check/state_clause.rs; qsl-package/src/emit/tests.rs; qsl-replay/src/spine.rs"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-113
@@ -13,8 +13,8 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-309. PR: quire-spec-language#510 at fbb63d6, base b43badd. This
-is the code-review re-review after fix commits 005647d and fbb63d6, with the
+Ticket: QSL-309. PR: quire-spec-language#510. This
+is the code-review re-review after the fix commits, with the
 rust-review lane folded in. SR-770's own dispositions are appended to SR-770.
 
 What was checked, and holds:
@@ -47,7 +47,7 @@ What was checked, and holds:
   errors are gathered together. `.get()`/zip replace indexing, and an empty
   slot is an `InternalFault`, never a skip. `attempt_spans` is
   `Option<Span>`. `contracts` is read between `[` and `]`.
-- **The gate passed.** A fresh `make ci` at fbb63d6
+- **The gate passed.** A fresh `make ci`
   (`CARGO_TARGET_DIR=target-309`) exited 0, with 93 `test result: ok` and 0
   FAILED. `string-edge` reported "no unmarked, unlisted string comparison or
   string match found". `ci-docs` was then forced fresh (lib roots touched)

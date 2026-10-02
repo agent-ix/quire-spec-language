@@ -17,8 +17,7 @@ relationships:
 Actual Claude Sonnet code/Rust review of PR61 on PR60, using the repository
 conventions and the actual `code-review` and `rust-review` skills. The reviewer
 inspected the fixture diff, full touched files, enforcing producer interfaces
-and terminal local gate log. Session `317e2ef1-055c-4e3d-8cbe-46559f6f26a5`;
-retained CLI output: `/tmp/quire-received-handoff-sonnet-review.jsonl`.
+and terminal local gate log.
 
 ## Verdict
 
@@ -45,8 +44,8 @@ The notes concern assertion granularity in this new fixture delta; they do not
 identify a concrete producer defect.
 
 Formatting, both strict Clippy configurations, the explicit ignored stripped
-release producer test and a fresh producer invocation passed in
-`/tmp/quire-received-handoff-gates.log`; the parent verified terminal exit zero.
+release producer test and a fresh producer invocation passed; the parent
+verified terminal exit zero.
 The reviewer inspected evidence rather than rerunning commands. QUOIN base and
 gap outcomes remain in SR363/364; full parent suites and actual B consumer
 acceptance are not claimed by this fixture review.

@@ -14,7 +14,7 @@ relationships:
 
 ## Summary
 
-Failure-domain recheck of the closed wire/input boundary at 23a5892 — trust
+Failure-domain recheck of the closed wire/input boundary — trust
 boundaries, entity identity, evaluation purity, topological robustness. Purity
 and topology remain the strong axes and are unchanged. Of the three original
 medium findings, one is resolved by a real static rule, one is resolved by an

@@ -5,7 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "FR-013, formal-environment-linking.md, TC-020–024, TC-030–034 and IT-005 linking seam"
 review_set: all
-evaluated_revision: "c78792a"
 review_date: "2026-09-08"
 ---
 
@@ -38,10 +37,10 @@ semantic comparison is not included. This is not an independent B/C acceptance.
 
 ## Fixture correction re-review
 
-IT-005 consistency re-review at 3e8d348: PASS for the corrected specification.
+IT-005 consistency re-review: PASS for the corrected specification.
 This is a consistency correction within A's existing test model. The shared IR, B's references, C's consumers, native arithmetic checking and runtime semantics remain outside this edit.
 
 
-Evaluated ecaf4cf before continuing the corrected qualification implementation.
+Evaluated before continuing the corrected qualification implementation.
 PASS for this correction under the previously selected all-analysis review set.
 Only the example field spelling and inaccurate PackageId description change. The existing native grammar, IR grammar, binding algorithm, ownership and phase boundaries remain unchanged.

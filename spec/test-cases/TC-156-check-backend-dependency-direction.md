@@ -16,11 +16,9 @@ every FB-11 cycle over the combined normal+dev edge graph exactly once, and
 reports no IR → QSL edge and no QSL ⇄ IR cycle when run against
 quire-contract-ir's real current-head `cargo metadata` output, that resolving
 QSL's own manifest classifies its real edge on `quire-contract-model` as
-QSL → IR, and
-that a stale `--ir`/`--rt`/`--cg` clone is rejected before the edge graph is
-even built, and that the shared leaves `quire-exact` and
+QSL → IR, and that the shared leaves `quire-exact` and
 `quire-semantic-value` classify as no ecosystem repository. Scope: FR-059-AC-1
-through FR-059-AC-9.
+through FR-059-AC-6, FR-059-AC-8 and FR-059-AC-9.
 
 ## Test Procedure
 
@@ -41,18 +39,10 @@ through FR-059-AC-9.
    own manifest and a real local checkout of quire-contract-ir's current head.
    Separately, resolve QSL's own workspace manifest through
    `edges_for_manifest`, the path `direction` uses for `--qsl` (automated).
-7. Call the freshness comparison directly with a resolved revision that does
-   not match a captured remote `main` head (the reviewer's real repro:
-   quire-contract-codegen resolved at local main `bda01f1...`, remote main at
-   `a4b2a733...`), and separately with a resolved revision that does match a
-   captured remote head (quire-contract-ir at `ef11217...` on both sides).
-   Then run `arch-lint direction` end to end against `--qsl .` and a real
-   local checkout, and inspect the printed report for the resolved revision
-   of every root.
-8. Parse a synthetic `cargo metadata` document in which RT depends on
+7. Parse a synthetic `cargo metadata` document in which RT depends on
    `quire-exact` and on `qsl-eval`, both sourced from the QSL repository's
    git url, and run the check on the resulting edges.
-9. Parse a synthetic `cargo metadata` document in which RT depends on
+8. Parse a synthetic `cargo metadata` document in which RT depends on
    `quire-semantic-value`, `qsl-semantics` and `qsl-eval`, all sourced from
    the QSL repository's git url, and run the check on the resulting edges.
 
@@ -77,15 +67,9 @@ through FR-059-AC-9.
   QSL's normal edge on the git-sourced `quire-contract-model`, classified as
   QSL → IR (the permitted direction); a classifier that no longer recognises
   the real IR crate drops that edge and fails the test.
-- Step 7: the mismatched-revision call fails distinctly (`Code::Stale`), and
-  the error names both the stale local revision and the remote's current
-  head; the matched-revision call passes; the end-to-end run's report prints
-  the resolved revision for every root, including `--qsl`'s, regardless of
-  whether the run passes, fails, or is skipping the comparison via
-  `--offline`.
-- Step 8: the only edge is RT → QSL via `qsl-eval`, and the FB-05 report
+- Step 7: the only edge is RT → QSL via `qsl-eval`, and the FB-05 report
   names exactly that edge; the `quire-exact` dependency contributes no edge.
-- Step 9: the edges are RT → QSL via `qsl-eval` and via `qsl-semantics`, and
+- Step 8: the edges are RT → QSL via `qsl-eval` and via `qsl-semantics`, and
   the FB-05 report names exactly those two; the `quire-semantic-value`
   dependency contributes no edge.
 

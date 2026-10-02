@@ -11,14 +11,14 @@ review_set: subset
 
 The authored Test method is appropriate by explicit reviewer judgment: the exact public report,
 typed cause, source index, and source slice are observable in one deterministic Rust integration
-test. `quoin advise --repo . --json` was run but could not detect the installed Quire 0.31.0 CLI, so
+test. `quoin advise --repo . --json` was run but could not detect the installed Quire CLI, so
 no catalog recommendation is represented as an advisor verdict.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | medium | Automatic method advice is unavailable because Quoin cannot detect the installed Quire 0.31.0 CLI; Test/Integration is retained as labeled reviewer judgment. | FR-042-AC-8; TC-121 |
+| FND-001 | medium | Automatic method advice is unavailable because Quoin cannot detect the installed Quire CLI; Test/Integration is retained as labeled reviewer judgment. | FR-042-AC-8; TC-121 |
 
 The regression symbol `multi_unit_invalid_role_type_reports_the_role_in_its_own_source` carries
 `TC-121` and `FR-042-AC-8`. It exercises actual native admission, requires `Invalid::Type`, resolves

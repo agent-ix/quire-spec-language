@@ -38,7 +38,7 @@ missing behavior.
 
 ## Coverage
 
-- Reconciliation: `quire coverage` 0.32.0 (engine a874fb64), scoped to the
+- Reconciliation: `quire coverage`, scoped to the
   repository and interpreted for Plan-009/Task-042.
 - Tasks done: 17 / 17; targeted task done: 1 / 1.
 - Targeted rows backed by tagged tests: FR-049-AC-9, NFR-009-AC-4 and TC-142.

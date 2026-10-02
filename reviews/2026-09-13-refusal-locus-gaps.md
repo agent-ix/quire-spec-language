@@ -33,7 +33,7 @@ untracked and unmatched tags keep the whole-corpus rollup at medium/low findings
 
 ## Coverage
 
-- Reconciliation: `quire coverage --scope . --json` with Quire 0.31.0, engine `ca7362d4`.
+- Reconciliation: `quire coverage --scope . --json`.
 - Tasks done: 13 / 13 in Plan-009; no stale unchecked delivery item.
 - Rows backed by a tagged test: 466 / 477. The only two `unbacked_rows` are also declared
   `no_symbol_rows` (`TC-010` Manual and `FR-017-AC-2` Inspection), so the workflow explicitly

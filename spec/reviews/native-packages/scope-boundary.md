@@ -5,8 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "US-002, FR-019/020/021, NFR-007, IT-007, TC-078–091, TM-005 and native package wire/API/schema"
 review_set: all
-evaluated_revision: "41da6e5eb86bb727fbad5370fd23b38d330bcfea"
-supplement_evaluated_revision: "2c6b9b83dc5c87c68666ebcd24c41b198f4c339b"
 review_date: "2026-09-09"
 ---
 
@@ -54,8 +52,8 @@ flowchart LR
 | --- | --- | --- |
 | Caller source/model authority | Assumed: caller selects intended inputs; correspondence is checked | Explicit CheckBindings and admitted NativeModel |
 | Native frontend and runtime | Guaranteed by planned real integration, with existing qualified baseline | FR-015/016/007/008; IT-007 |
-| Contract IR at 690bde7 | Guaranteed through existing admission/checker and planned integration controls | Public declaration/proof APIs; no forged BoundPackage |
-| Adopted standard e897f81 | Assumed normative owner decision; exact definition selection is checked | Both pinned definition revision/digests |
+| Contract IR | Guaranteed through existing admission/checker and planned integration controls | Public declaration/proof APIs; no forged BoundPackage |
+| Adopted standard | Assumed normative owner decision; exact definition selection is checked | Both definition digests |
 | Serde JSON recognition | Library grammar assumed; boundary behavior guaranteed by planned adverse tests | FR-020/NFR-007 |
 | SHA-256 primitive | Cryptographic properties assumed; preimage/encoding guaranteed by planned vectors | FR-021/TC-090 |
 | Rust schema validator | Draft implementation assumed; selected schema behavior checked by planned cases | TC-083 |
@@ -72,10 +70,10 @@ retain their existing scope.
 
 ## Admitted source setup correction — 2026-09-09
 
-Re-reviewed specification 2c6b9b83dc5c87c68666ebcd24c41b198f4c339b using this
+Re-reviewed the specification using this
 installed QUOIN lens, superseding the initial review's header-only positive
-fixture assumption at 41da6e5. The original PASS and its missed precondition
-remain visible at 69588ad. Escape cause: wrong-requirement.
+fixture assumption. The original PASS and its missed precondition
+remain visible. Escape cause: wrong-requirement.
 
 Agent A corrects its package fixture contract only. Parser/standard, B/C, IR and Filament behavior is unchanged. The minimum positive source uses the existing Rust model fixture; shared consumer acceptance remains required.
 
@@ -83,14 +81,14 @@ Task-016 began under the original completed review gate. Its initial API-red
 run is followed by a first implementation run with one passing nonempty case
 and three parser setup failures. Further implementation paused for this
 specification correction and all-eight re-review; no parser behavior was
-relaxed. The initial stdout/stderr is retained in reviews/data/native-packages/.
+relaxed.
 No claim of executed full package, schema or canonical-vector qualification is
 made. PASS to continue against the corrected admitted-source fixture contract.
 
 ## Verdict and provenance
 
 PASS for planning and implementing this producer/reader slice. Agent A applied
-the installed QUOIN 0.22.5 skills serially under the owner's existing all-review
+the installed QUOIN skills serially under the owner's existing all-review
 selection; no required AssuranceProfile applies. This is the author's recorded
 review, not independent B/C acceptance. All package cases remain planned.
 Changes to the reviewed requirements or interface reopen specify/spec-review.

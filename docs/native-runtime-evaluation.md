@@ -1,7 +1,7 @@
 # Native reference execution and accounting
 
 Draft LC03 contract under FR-008 and NFR-006. The existing adopted
-state-finite/0-draft semantics at specification e897f81 govern values and order.
+state-finite/0-draft semantics govern values and order.
 The selected reference accounting label is native-ref-cost/1-draft. Qualification
 must execute its independent exact vectors before claiming that accounting
 implemented. Profile meaning, reference accounting and backend fuel are separate.

@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR-readiness review of 53431cb using actual code-review, rust-review and
+Author PR-readiness review using actual code-review, rust-review and
 rust-style skills. No applicable AssuranceProfile or deny.toml exists.
 
 ## Verdict
@@ -40,7 +40,7 @@ distinct identities, exact source maps and repeatable bytes are exercised.
 The generator uses real production APIs and introduces no parser, dependency,
 unsafe code, unchecked numeric conversion or alternate evaluator.
 
-At 53431cb, full local suites pass: 332 ordinary tests plus three compile-fail
+Full local suites pass: 332 ordinary tests plus three compile-fail
 doctests with all features, 316 plus three with minimal features. Four existing
 assurance tests remain ignored in each. Strict all-targets Clippy passes in both
 configurations. Formatting, cached minimal binary/example build and warnings-denied

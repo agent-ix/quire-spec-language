@@ -5,7 +5,6 @@ type: SpecReview
 analysis: integrity
 scope: "FR-017, TC-054, SR-074 repairs and existing regression contracts"
 review_set: all
-evaluated_revision: "a350754988dab207bbecff590f121039ccf2682b"
 review_date: "2026-09-08"
 ---
 
@@ -21,7 +20,7 @@ The specified repair preserves the existing public contracts while correcting fi
 
 ## Analysis
 
-US-002 → FR-017 → StR-001 traces user value; NFR-005 governs production and qualification. AC-1 is Test/TC-054, AC-2 is Inspection, AC-3 uses actual FR-013 tests, AC-4 uses actual FR-012 audits. One scalar table owns both representation and native role, avoiding independently updated indexes. RawValue is a private development feature on the existing pinned package, not another model format. Unknown/duplicate typed fields remain strict. Linker/audit refactoring preserves diagnostic precedence and current output; no new service, fallback, pagination or authentication assumption is added.
+US-002 → FR-017 → StR-001 traces user value; NFR-005 governs production and qualification. AC-1 is Test/TC-054, AC-2 is Inspection, AC-3 uses actual FR-013 tests, AC-4 uses actual FR-012 audits. One scalar table owns both representation and native role, avoiding independently updated indexes. RawValue is a private development feature on the existing package, not another model format. Unknown/duplicate typed fields remain strict. Linker/audit refactoring preserves diagnostic precedence and current output; no new service, fallback, pagination or authentication assumption is added.
 
 ## Verdict and provenance
 

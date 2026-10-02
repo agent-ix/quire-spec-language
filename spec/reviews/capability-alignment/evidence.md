@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit cd4f71a on `task/229-capability-spec`, the diff against
+Reviewed `task/229-capability-spec`, the diff against
 `origin/main`, for issue #229. The review checks the verification method of
 FR-057-AC-1 to AC-7 and the changed FR-036-AC-6. It also checks that TC-115,
 TC-153, TC-154 and TC-155 can produce the evidence their criteria need.
@@ -84,8 +84,7 @@ matrix rows.
 
 ## Round 2 dispositions
 
-Checked against the current tree: cd4f71a plus the uncommitted edits. FR-057
-pins quire-specification `046d1bd`.
+Checked against the current tree, including the uncommitted edits.
 
 | Finding | Disposition | Evidence |
 | --- | --- | --- |

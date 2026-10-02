@@ -5,7 +5,6 @@ type: SpecReview
 analysis: risk-complexity
 scope: "Compiler FR-035/036, TC-113–115 and IT-009 under compiler #35 (L2)"
 review_set: all
-evaluated_revision: "d5047a8"
 review_date: "2026-09-10"
 relationships:
   - { target: ix://agent-ix/quire-spec-language/FR-035, type: reviews }
@@ -50,7 +49,7 @@ claim implementation, producer availability or executed conformance evidence.
 [SR-301](failure-domain.md) covers identity, purity, topology and exhaustion.
 [SR-303](dependency.md) and [SR-306](scope-boundary.md) retain the external
 acceptance prerequisites and producer ownership. The accounting clarification
-from [SR-302](integrity.md) is addressed in FR-036 and TC-114 at `d5047a8`.
+from [SR-302](integrity.md) is addressed in FR-036 and TC-114.
 The scope adds no distributed coordinator, execution engine, universal memory
 ceiling or new cryptographic algorithm. Those would be separate requirements,
 not incidental parser/linker implementation decisions.

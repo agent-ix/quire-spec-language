@@ -1,6 +1,6 @@
 ---
 id: TC-430
-title: "Native run and compile requests and their outputs carry the four source labels"
+title: "Native run and compile requests and their outputs carry the two source labels"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-026
@@ -10,14 +10,14 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-031
     type: verifies
 ---
-# TC-430: Native run and compile requests and their outputs carry the four source labels
+# TC-430: Native run and compile requests and their outputs carry the two source labels
 
 ## Description
 
-Verify that the native-v1 request wire requires all four FR-001 labels, that
-native-run-result/1 and native-linked-package/1 render them, and that a
-two-label request refuses as malformed. This catches a label defaulted by
-the lane and a two-label request admitted. It also verifies that an
+Verify that the native-v1 request wire requires both FR-001 labels, that
+native-run-result/1 and native-linked-package/1 render them with the source
+digest and no other identity member, and that a request missing a label
+refuses as malformed. This catches a label defaulted by the lane. It also verifies that an
 extraction body record names a document identity plus a content digest.
 
 Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5.
@@ -25,13 +25,13 @@ Scope: FR-026-AC-6, FR-027-AC-4, FR-031-AC-5.
 ## Test Procedure
 
 1. Run a native-run/1 request whose program source, model source and
-   snapshot selection each name `authority` `agent-ix`, their own
-   `identity`, `revision_namespace` `git` and `revision` `1`.
+   snapshot selection each name `authority` `agent-ix` and their own
+   `identity`.
 2. Run it again without the program source's `authority`, then without the
-   snapshot selection's `revision_namespace`, then with a blank `authority`.
-3. Compile a native-compile/1 request with the same four labels, and
+   snapshot selection's `identity`, then with a blank `authority`.
+3. Compile a native-compile/1 request with the same two labels, and
    validate the package bytes against the native-linked-package/1 schema.
-4. Compile it again without `revision_namespace`.
+4. Compile it again without `identity`.
 5. Run an extraction request whose body record names `authority`
    `agent-ix`, `identity` `b`, `document` `B` and, as `digest`, the
    raw-artifact digest of the extracted body's bytes. Then run it without
@@ -44,7 +44,8 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
 
 ## Expected Results
 
-- Step 1: the result renders each selection with its four labels.
+- Step 1: the result renders each selection with its two labels and its
+  digest, and no other identity member.
 - Step 2: the first two refuse at the request stage with `invalid-request`,
   exit 20; the blank label refuses with `invalid_source_identity`, cause
   `blank-label`, `label` `authority`.
@@ -52,14 +53,12 @@ Tag the tests `#[trace("TC-430", "FR-026-AC-6")]` and
   digest) and the formal identity (`B`, digest); the second and third refuse
   with `invalid-request`, exit 20; the fourth refuses
   `stale_dependency`/`content-mismatch`, naming both digests.
-- Step 3: the package `source` names the four labels and the schema
-  accepts it.
+- Step 3: the package `source` names the two labels and the source digest,
+  and the schema accepts it.
 - Step 4: `invalid-request`, exit 20.
 
 ## Status
 
-Partial. ADR-013 §7 slice S-4b. Steps 2 to 4 pass locally; step 5 is
-planned, since the code still reads the body record's old revision fields
-(FR-031 Status, QSL-381); step 1 passes only with the deviation below. Step 1 passes with the model source's revision value `draft:1`, not `1`: the program's model import pins the model artifact, which binds that label. Step 2's `blank-label` cause and `label` field (catalog revision `1-draft.8`, FR-001) are asserted.
+Partial. The four-label form of steps 1 to 4 passes locally (ADR-013 §7 slice S-4b), with step 2's `blank-label` cause and `label` field (FR-001) asserted. The two-label form of steps 1 to 4 stated here waits on the request and output identity change (FR-026 and FR-027 Status, Linear QSL-381). Step 5 is planned, since the code still reads the body record's old revision fields (FR-031 Status, QSL-381).
 
 Step 2's blank-label refusal renders a byte-0 span in the run output: the native `Diagnostic`'s retained debt (FR-001, "Where an S0 refusal is located"), not this requirement's behaviour.

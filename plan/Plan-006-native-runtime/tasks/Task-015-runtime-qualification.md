@@ -46,8 +46,7 @@ Recorded full runtime API results, validated code/Rust and gap reviews, accurate
 
 ## Notes
 
-Task-014 is qualified at 48f53ae by SR-098. TC-077/IT-006 is qualified at
-4ac3597 by SR-099: five pipeline tests, the full 202-test regression and a
+Task-014 is qualified by SR-098. TC-077/IT-006 is qualified by SR-099: five pipeline tests, the full 202-test regression and a
 compile-fail doctest, three private audits and documented local gates pass.
 The initial SR-100 audit found only this task's unfinished reconciliation and
 handoff. The private PR and owning LC03 handoff are now published, as are

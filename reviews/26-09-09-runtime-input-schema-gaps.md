@@ -3,7 +3,7 @@ id: SR-285
 title: "Gap analysis after the runtime input schema"
 type: SpecReview
 analysis: gap-analysis
-scope: "Plan-009 native workflow; TM-007; Task-036 schema behavior at f4679ef"
+scope: "Plan-009 native workflow; TM-007; Task-036 schema behavior"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-009
@@ -31,8 +31,7 @@ below retained separately from successful checks on the selected candidate stack
 ## Coverage
 
 Reconciliation used `quire coverage --scope . --json` with both explicit module
-roots from docs/matrix-status.md. Clean CLI ff638b9 / engine d3bc2ba and clean
-process e6ea515 / ISO a60ee12 revisions were verified before the run. Results:
+roots from docs/matrix-status.md. Results:
 FR-024 5/5 criteria, TM-007 16/16 test cases, overall 326/330 targets; zero status
 lies and zero status-column diagnostics. No new unmatched or untracked schema
 test tags appear. Seventeen unrelated declaration/vocabulary diagnostics remain.

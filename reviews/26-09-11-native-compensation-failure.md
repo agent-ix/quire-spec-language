@@ -15,10 +15,10 @@ relationships:
 ## Summary
 
 Failure-domain recheck of the compensation obligation at the correction commit
-`b7aafe1` against the reviewed `c7275f5`, across the same four declared phases —
+the correction against the reviewed commit, across the same four declared phases —
 registration identity, capture staging, bounded retry, recovery — plus the
 payload-free effect requirement. Scope is the correction diff and the refusal
-paths it changes. The two escapes recorded at `c7275f5` are closed and both were
+paths it changes. The two escapes recorded at the reviewed commit are closed and both were
 reproduced red before the fix. The failure mode that replaces them points the
 other way: the reader now reconstructs the expected recovery inventory itself, by
 a different algorithm from the one that built it, so the residual risk is
@@ -41,12 +41,11 @@ set of newly load-bearing refusals with no adverse case.
 | FND-004 | low      | Compensation registration/activation spans extend only forwards from the binder, so a capture authored before it would fall outside its phase scope (unchanged) | src/protocol_artifact/native/layout.rs:807                                               | missing-requirement                 |
 | FND-005 | low      | Capture-stage confusion is caught by the type/scope stage, never by the emitter, so an emitter regression has no independent detector (unchanged) | tests/native_compensation_emission.rs:361                                                | correct-requirement-no-evidence     |
 
-## Dispositions of the SR-350 findings recorded at c7275f5
-
+## Dispositions of the SR-350 findings
 | Prior   | Disposition                                                                                                                                   |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| FND-001 | **Resolved.** See "Identity" below. Reproduced red at `/tmp/quire-native-compensation-review-red.log`.                                          |
-| FND-002 | **Resolved.** See "Recovery" below. The clock swap was reproduced red in the same log.                                                          |
+| FND-001 | **Resolved.** See "Identity" below. Reproduced red.                                          |
+| FND-002 | **Resolved.** See "Recovery" below. The clock swap was reproduced red.                                                          |
 | FND-003 | **Resolved by specification, with a residual.** `1..=9223372036854775807` is now the stated authored bound in FR-042 and the wire contract, and `compensation_attempt_bound_preserves_signed64_maximum_and_refuses_one_beyond` shows `i64::MAX` surviving source→emit→independent read and `9223372036854775808` refusing as `NumberError::ComponentOutOfRange { component: Decimal }`. Residual carried above as FND-003: the ceiling is the decoder's, not a compensation check, and no work dimension is charged against the value. |
 | FND-004 | **Open**, unchanged. Carried above as FND-004.                                                                                                  |
 | FND-005 | **Open**, unchanged. Carried above as FND-005.                                                                                                  |
@@ -114,7 +113,7 @@ of any compensation check, so a future wider numeric representation would move
 the bound silently, and nothing is charged against the value as work.
 
 Note on evidence class: that test is not in the red log and is not a regression
-test — `i64::MAX` was already accepted at `c7275f5`. It characterises the bound
+test — `i64::MAX` was already accepted at the reviewed commit. It characterises the bound
 and exercises an existing refusal path.
 
 ### Recovery — completeness premises and their owners

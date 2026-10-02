@@ -3,7 +3,7 @@ id: SR-648
 title: "QSL-271 integrity review of spine run"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@3c7c0a8bb365b9ce460dfda97a037682a5c94100; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-450-cli-run-routes-a-program-by-its-declared-edition.md; spec/test-cases/TC-451-spine-run-binds-arguments-and-maps-outcomes-to-exit-codes.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/spec.md; spec/tests.md; unchanged: spec/functional/FR-001-read-exact-source.md, spec/functional/FR-026-run-standalone-native-workflow.md, spec/functional/FR-027-export-compiled-native-package.md, spec/functional/FR-098-execute-a-replay-request.md, spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md, spec/test-cases/TC-105-standalone-package-export.md, qsl-replay/src/execute.rs; quire-specification FR-301 at origin/main (external)"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-100-run-a-named-function-through-the-spine.md; spec/test-cases/TC-450-cli-run-routes-a-program-by-its-declared-edition.md; spec/test-cases/TC-451-spine-run-binds-arguments-and-maps-outcomes-to-exit-codes.md; spec/test-cases/TC-452-spine-run-entry-lives-in-qsl-replay.md; spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md; spec/spec.md; spec/tests.md; unchanged: spec/functional/FR-001-read-exact-source.md, spec/functional/FR-026-run-standalone-native-workflow.md, spec/functional/FR-027-export-compiled-native-package.md, spec/functional/FR-098-execute-a-replay-request.md, spec/decisions/ADR-014-temporal-trace-and-boundedness-architecture.md, spec/test-cases/TC-105-standalone-package-export.md, qsl-replay/src/execute.rs; quire-specification FR-301 at origin/main (external)"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -48,11 +48,11 @@ Verdict: changes requested (one medium, three low).
 
 ## Dispositions
 
-Disposition pass at `agent-ix/quire-spec-language@8c786c48fcd7b6fdf4bc56799b4bf9db1fa2ce48` (fix commit `8c786c48`, "QSL-271 spec: fix SR-646 to SR-649 findings on spine run"). Each outcome was re-checked against the spec at that head, not taken from the commit message.
+Disposition pass. Each outcome was re-checked against the spec.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed 8c786c48 | FR-026's Description, exit contract and Inputs now scope themselves to `0-draft` or no edition and route `1-draft` to FR-100. A Behavior SHALL admits FR-100's members at decode and applies the member rules for the edition after the header is read. An FR-100 `references` edge was added. "No edition" routes native, as `Edition::of` does in code (src/command.rs:398-403). |
-| FND-002 | fixed 8c786c48 | TC-450 step 2 now cites the TC-103 and TC-104 requests and assertions in `tests/it/standalone.rs`. |
-| FND-003 | fixed 8c786c48 | ADR-011 §5 now states the native-compile/1 route (FR-027) with no operand form and no QSL-5 clause. OQ-2 now says "a native-compile/1 request routed by the program's declared edition", amended 2026-09-26. Neither `compile <identity>` nor "lands with QSL-5" remains anywhere in spec/. |
-| FND-004 | fixed 8c786c48 | FR-100 states the `unsupported_construct` versus `NotAPredicate` difference as deliberate, with a reason. `references` edges to FR-001 and FR-038 were added. |
+| FND-001 | fixed | FR-026's Description, exit contract and Inputs now scope themselves to `0-draft` or no edition and route `1-draft` to FR-100. A Behavior SHALL admits FR-100's members at decode and applies the member rules for the edition after the header is read. An FR-100 `references` edge was added. "No edition" routes native, as `Edition::of` does in code (src/command.rs:398-403). |
+| FND-002 | fixed | TC-450 step 2 now cites the TC-103 and TC-104 requests and assertions in `tests/it/standalone.rs`. |
+| FND-003 | fixed | ADR-011 §5 now states the native-compile/1 route (FR-027) with no operand form and no QSL-5 clause. OQ-2 now says "a native-compile/1 request routed by the program's declared edition", amended 2026-09-26. Neither `compile <identity>` nor "lands with QSL-5" remains anywhere in spec/. |
+| FND-004 | fixed | FR-100 states the `unsupported_construct` versus `NotAPredicate` difference as deliberate, with a reason. `references` edges to FR-001 and FR-038 were added. |

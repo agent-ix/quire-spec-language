@@ -31,8 +31,7 @@ There is no network service or external producer process in this test.
 
 ## Preconditions
 
-Record compiler revision, model/source digests, IR pin 690bde7, Rust 1.98.1 and
-the adopted state semantics at e897f81. The LC03 spec-review gate is resolved
+The LC03 spec-review gate is resolved
 before implementation. Construct the positive model and source through the same
 already qualified APIs as the negative controls; setup must succeed before the
 stage under test is invoked. A missing implementation leaves a test planned.
@@ -78,7 +77,7 @@ backend parity or Quire integration is claimed from this milestone alone.
 
 ## Metadata
 
-Priority: High. Status: qualified at 4ac3597 by SR-099. Five public Rust pipeline
+Priority: High. Status: qualified by SR-099. Five public Rust pipeline
 tests cover all seven steps; workflow-final-tests.txt retains actual observations.
 Local Rust Integration tests, one Cargo job and
 one test thread; no additional agents, hosted dispatch or producer-language work.

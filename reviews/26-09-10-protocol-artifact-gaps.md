@@ -16,7 +16,7 @@ relationships:
 
 ## Summary
 
-Gap analysis of the FR-042 reader slice rechecked at 23a5892. `quire coverage
+Gap analysis of the FR-042 reader slice, rechecked. `quire coverage
 --scope` still reports **366/376 rows backed, zero status lies**, with the same
 six unbacked rows that predate this branch. TM-003 remains honest: every FR-042
 row stays 🚧 Planned and no tag claims FR-042-AC-1 or AC-10. The corrections
@@ -65,8 +65,7 @@ clause rather than undocumented scope.
 
 ## Coverage
 
-`quire coverage --scope /home/peter/dev/worktrees/quire-language-artifact-contract --json`
-(quire 0.31.0, cli 4f6ed024, engine 0.46.0@ca7362d4): **366/376 backed, 258
+`quire coverage --scope /home/peter/dev/worktrees/quire-language-artifact-contract --json`: **366/376 backed, 258
 criteria, 0 status lies, 6 unbacked rows, 3 unmatched tags, 2 no-symbol rows.**
 The six unbacked rows are TC-115, TC-010, FR-017-AC-2 and FR-036-AC-5/6/8 — all
 pre-existing FR-036/NFR-005 work, two of them Manual/Inspection by declared type.

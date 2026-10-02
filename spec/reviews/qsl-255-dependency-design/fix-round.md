@@ -3,7 +3,7 @@ id: SR-635
 title: "Fix-round review of ADR-015 after SR-633"
 type: SpecReview
 analysis: failure-domain
-scope: "QSL branch qsl-255-dep-design head 620ed0b4: git diff HEAD~2..HEAD (84319959, 620ed0b4), read against origin/main...HEAD at main e86524bd (includes PR 445); QSpec companion FR-323 read at qspec-dep-design head e60521d"
+scope: "QSL branch qsl-255-dep-design: the last two commits, read against origin/main (includes PR 445); QSpec companion FR-323 read at qspec-dep-design"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-015

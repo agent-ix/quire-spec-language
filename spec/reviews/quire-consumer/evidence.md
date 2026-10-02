@@ -8,9 +8,9 @@ review_set: all
 ---
 ## Summary
 
-The actual quoin advise invocation failed at Quire version detection, despite installed Quire 0.31.0. Using the fetched catalog, author judgment selects integration-testing and negative-abuse-testing (Test) for FR-030 AC-1–5 and FR-011 AC-1–4, backed by TC-108 and the real producer/compiler/runtime. Boundary and CRLF cases are observed; broader property/fuzz and producer assurance remain for the later campaign, with no concurrency seam requiring Loom here.
+The actual quoin advise invocation failed at Quire version detection. Using the fetched catalog, author judgment selects integration-testing and negative-abuse-testing (Test) for FR-030 AC-1–5 and FR-011 AC-1–4, backed by TC-108 and the real producer/compiler/runtime. Boundary and CRLF cases are observed; broader property/fuzz and producer assurance remain for the later campaign, with no concurrency seam requiring Loom here.
 
-Author PR-readiness review of `55649b3`, using the owner-selected all set.
+Author PR-readiness review, using the owner-selected all set.
 No applicable AssuranceProfile was found; timing follows the owner directive.
 
 ## Findings

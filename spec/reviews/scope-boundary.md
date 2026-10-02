@@ -5,7 +5,6 @@ type: SpecReview
 analysis: scope-boundary
 scope: "spec/spec.md and indexed requirements"
 review_set: all
-evaluated_revision: "a80a17d1dd303b91712df2023fdba8aba83e89c1"
 review_date: "2026-09-07"
 ---
 
@@ -25,9 +24,9 @@ Every FR/StR/NFR has one owning component and responsibility class. External pro
 
 ## Scope and provenance
 
-Reviewed `quire-spec-language@a80a17d1dd303b91712df2023fdba8aba83e89c1`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
+Reviewed `quire-spec-language`. The owner selected base plus all seven Quoin analyses, and declined the optional intent↔test↔code semantic step in `/gap-analysis`. Ordinary requirements consistency, EARS conformance, and the separate current-code review remain in scope. The assignment prohibits spawning additional agents, so these analyses were performed sequentially by Agent A; no independent reviewer acceptance is implied.
 
-The installed Quoin 0.20.0 `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. [Provenance](data/provenance.json), [coverage output](data/coverage.json), [advisor output](data/advice.json), and [actual method catalog](data/verification-methods.json) preserve the deterministic inputs. IDs in this report are local to this repository unless qualified.
+The installed Quoin `spec-review/SKILL.md` and its analysis skills govern these artifacts. The SpecReview authoring pack was fetched once for this repository and its process skeleton/schema was used. IDs in this report are local to this repository unless qualified.
 
 These are new repositories. Missing formal plans, TC records, suites, and matrices are workflow setup/readiness debt. Unimplemented LC02–LC05 stages and unqualified shared consumers are known remaining work; they are not reported as regressions or hidden stubs. No completion status is fabricated.
 
@@ -54,9 +53,9 @@ flowchart LR
 | Dependency / actor | Boundary | Assumed or guaranteed | Contract and limit |
 | --- | --- | --- | --- |
 | Specification author / verification operator | Selected source, profile, inputs and work budgets | assumed | FR-001/StR-001; inputs are validated, caller intent is not inferred. |
-| Filament model producer | Existing TypeSpec process / semantic IR / manifest / lock | guaranteed for the inspected production fixture only | 3b75e01c652ba00bb07c352ff5467419401e792b, TypeSpec 1.15.0; recorded fresh/locked/stale-lock checks. Native typed binding remains assumed/unqualified. |
-| Existing contract-IR owners | Typed-model view, canonicalization and executable binding | guaranteed for inspected legacy regression baseline only | decc99a430a0894de489102dbab04e83d1fb804f; 17 canonicalization/binding tests and 99 conformance rows observed in prerequisite inspection. Proposed native projection remains assumed/unqualified. |
-| Agent B / portable verification consumer | Method/plan/result envelopes and independent reference joins | assumed | Standard IT-002; private verification PR6 at 4c46481 still uses the older revision/profile shape. A-v2 adoption not established. |
+| Filament model producer | Existing TypeSpec process / semantic IR / manifest / lock | guaranteed for the inspected production fixture only | Recorded fresh/locked/stale-lock checks. Native typed binding remains assumed/unqualified. |
+| Existing contract-IR owners | Typed-model view, canonicalization and executable binding | guaranteed for inspected legacy regression baseline only | 17 canonicalization/binding tests and 99 conformance rows observed in prerequisite inspection. Proposed native projection remains assumed/unqualified. |
+| Agent B / portable verification consumer | Method/plan/result envelopes and independent reference joins | assumed | Standard IT-002; private verification PR6 still uses the older revision/profile shape. A-v2 adoption not established. |
 | Agent C / existing Quire extraction | Opaque body, selected source region/map and existing-repository adapter | assumed | Language IT-003; CO01 ownership/amendment proposal. No second Markdown expression compiler. |
 | TL session / temporal work | Temporal capability and clock semantics | assumed and excluded from this profile | No temporal capability is inherited by a finite-state syntax result. |
 | Quoin/Quire catalog tools | Authoring, grammar, trace and method analysis | assumed with observed limitations | Recorded versions/manifests; DuplicateArchetype/DuplicateInverseEdge remain external diagnostics. |

@@ -74,7 +74,7 @@ NFR-005 applies to all new qualification execution. Hosted CI stays manual-only.
 
 ## Status
 
-Implemented repair of all four SR-074 findings at 08a4fe7, reviewed in SR-083.
+Implemented repair of all four SR-074 findings, reviewed in SR-083.
 AC-1/3/4 have executed traced regressions; AC-2 has the specified ownership
 inspection. Full native model/checker qualification remains unfinished;
 completing this repair does not establish FR-015/016.

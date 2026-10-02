@@ -13,7 +13,7 @@ relationships:
 
 ## Summary
 
-Reviewed commit `47b1b806` (branch `spec/19-arch40-mapping`). The engine
+Reviewed branch `spec/19-arch40-mapping`. The engine
 check (`quire validate --summary` over ADR-016 and FR-089) reports 2/2 docs
 grammar-clean with 0 grammar findings, so every finding below is semantic.
 As in SR-630, EARS is applied to the ADR's normative decision sentences and

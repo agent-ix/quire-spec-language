@@ -5,7 +5,6 @@ type: SpecReview
 analysis: gap-analysis
 scope: "plan/Plan-003-formal-linker, spec/model-linking/tests.md, src/linking.rs and tests/linking.rs"
 review_set: subset
-evaluated_revision: "d44e97424ecfe42343edb869e9203275aca26db1"
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-003
     type: reviews
@@ -30,13 +29,13 @@ not invalidate the qualified FR-005/013 implementation milestone in SR-054.
 | --- | --- | --- | --- |
 | FND-001 | high | Critical Task-006 is still in_progress: retained review and exact private PR delivery are not complete at this revision. | plan/Plan-003-formal-linker/tasks/Task-006-linker-qualification.md |
 | FND-002 | high | TC-025–029 and FR-006's five criteria have no native checker backing. The full matrix cannot be marked complete. | spec/model-linking/tests.md; spec/functional/FR-006-check-defined-expressions.md |
-| FND-003 | medium | Catalog/status extraction diagnostics constrain the global coverage rollup; no evidence is claimed for unmatched or uncatalogued methods. | data/native-linking/formalization-a-link-coverage.json |
+| FND-003 | medium | Catalog/status extraction diagnostics constrain the global coverage rollup; no evidence is claimed for unmatched or uncatalogued methods. | - |
 
 ## Coverage
 
 Used the installed QUOIN gap-analysis skill, including target, plan, matrix,
 reverse-gap and artifact steps. Reconciliation is actual quire coverage --scope .
---json with CLI 0.31.0 and engine 0.46.0, under the active spec-artifacts-process
+--json under the active spec-artifacts-process
 traceability model. No grep fallback or zero-denominator pass is used.
 
 Target: plan/Plan-003-formal-linker; spec root: spec/; matrix: TM-003 at
@@ -75,7 +74,7 @@ stop this available native work. No broader LC issue or goal is closed here.
 
 ## Handoff disposition
 
-FND-001 is resolved for the reviewable-PR deliverable after 3924dbb was pushed,
+FND-001 is resolved for the reviewable-PR deliverable after the reviews were pushed,
 compiler PR8 was made ready, and exact LC02/CO01 handoffs were posted. Both
 Plan-003 tasks are now done for that bounded delivery. The original evaluated
 revision and 1/2 rollup above remain historical evidence. FND-002/003 remain;

@@ -3,15 +3,15 @@ id: SR-778
 title: "QSL-303 code review of PR 515 (M-6d SEAM-3 handoff deletions)"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@da16ed495cf6dfa394306d9fd1dff1113116010a; src/protocol_artifact/{checked_handoff,checked_predicate,content_identity,temporal_subject}.rs (deleted); src/protocol_artifact/native_temporal/* (deleted); src/protocol_artifact/mod.rs; tests/it/compiled_protocol_v2.rs; tests/it/main.rs; tests/it/native_temporal_owner.rs (deleted); tests/support/content_identity.rs (deleted); tests/support/mod.rs; tools/arch-lint/canonical_encoder.rs; README.md; docs/checked-native-handoffs.md; docs/native-temporal-owner.md; schemas/checked-*-v1.schema.json; schemas/native-temporal-*-v{1,2}.schema.json"
+scope: "agent-ix/quire-spec-language; src/protocol_artifact/{checked_handoff,checked_predicate,content_identity,temporal_subject}.rs (deleted); src/protocol_artifact/native_temporal/* (deleted); src/protocol_artifact/mod.rs; tests/it/compiled_protocol_v2.rs; tests/it/main.rs; tests/it/native_temporal_owner.rs (deleted); tests/support/content_identity.rs (deleted); tests/support/mod.rs; tools/arch-lint/canonical_encoder.rs; README.md; docs/checked-native-handoffs.md; docs/native-temporal-owner.md; schemas/checked-*-v1.schema.json; schemas/native-temporal-*-v{1,2}.schema.json"
 review_set: subset
 ---
 ## Summary
 
-Ticket: QSL-303. PR: quire-spec-language#515 at da16ed49. It is a pure deletion
+Ticket: QSL-303. PR: quire-spec-language#515. It is a pure deletion
 PR (+2/-8866), with a Rust-review lane folded in.
 
-What I checked, measured at da16ed49:
+What I checked, measured at the PR head:
 
 - **The deleted modules are dead in Rust.** Nothing in `src/`, `tests/`,
   `examples/`, `xtask/`, `tools/` or any workspace crate names
@@ -46,7 +46,7 @@ What I checked, measured at da16ed49:
   context lines, not removals. See SR-779 for the spec-side trace consequences.
 
 The problems are what the deletion left behind outside `src/` and `tests/`.
-My own `make ci` run at da16ed49 exited 0, with 6507 `ok` lines and 0 FAILED or
+My own `make ci` run exited 0, with 6507 `ok` lines and 0 FAILED or
 panicked.
 
 ## Findings
@@ -55,7 +55,7 @@ panicked.
 | --- | --- | --- | --- |
 | FND-001 | medium | README still documents the deleted public API. It says `protocol_artifact::checked_predicate` and `protocol_artifact::temporal_subject` "publish the FR-051 native-owner handoffs" and that `protocol_artifact::native_temporal::{request,result}` "publishes the FR-052 formula-wide owner boundary". It also links two contract docs that now describe a surface that does not exist. Remove those two README paragraphs and delete `docs/checked-native-handoffs.md` and `docs/native-temporal-owner.md`. | README.md:83-103; docs/checked-native-handoffs.md; docs/native-temporal-owner.md |
 | FND-002 | medium | Six schema files are orphaned. Their only readers were the `SCHEMA_BYTES` `include_bytes!` constants in the deleted modules (checked_predicate.rs:10, temporal_subject.rs:13, native_temporal/request.rs:24, result.rs:18, v2.rs:28,34). Nothing in the repo reads them now. Delete them. | schemas/checked-predicate-v1.schema.json; schemas/checked-temporal-subject-v1.schema.json; schemas/native-temporal-request-v1.schema.json; schemas/native-temporal-request-v2.schema.json; schemas/native-temporal-result-v1.schema.json; schemas/native-temporal-result-v2.schema.json |
-| FND-003 | low | A downstream crate still uses the deleted API. `agent-ix/quire-contract-ir` origin/main (48ab5dc) imports `protocol_artifact::checked_predicate`, `temporal_subject` and `native_temporal::{request,result}`, including `SCHEMA_BYTES` and `ValidatedRequest`, in src/predicate/{admission,definition,reader}.rs and src/temporal/{admission,correspondence,formula,join,reader,request,valuation}.rs. It is pinned to QSL rev 9395be42, so nothing breaks today. Its next QSL pin bump will fail to compile unless IR first drops its SEAM-3 predicate/temporal consumers. This does not block the merge (QSL does not wait on downstream repos). It needs an IR-side Linear ticket. | quire-contract-ir Cargo.toml:24,51; quire-contract-ir src/predicate/*, src/temporal/* |
+| FND-003 | low | A downstream crate still uses the deleted API. `agent-ix/quire-contract-ir` origin/main imports `protocol_artifact::checked_predicate`, `temporal_subject` and `native_temporal::{request,result}`, including `SCHEMA_BYTES` and `ValidatedRequest`, in src/predicate/{admission,definition,reader}.rs and src/temporal/{admission,correspondence,formula,join,reader,request,valuation}.rs. It depends on an older QSL revision, so nothing breaks today. Its next QSL dependency bump will fail to compile unless IR first drops its SEAM-3 predicate/temporal consumers. This does not block the merge (QSL does not wait on downstream repos). It needs an IR-side Linear ticket. | quire-contract-ir Cargo.toml:24,51; quire-contract-ir src/predicate/*, src/temporal/* |
 
 ## Verdict
 
@@ -65,10 +65,10 @@ FND-003 is a follow-up ticket, not a blocker.
 
 ## Dispositions
 
-Round 1, reviewed at `f2ce945213b0de88fe32faa367152e94c3bf4bd3`.
+Round 1.
 
-| FND | outcome | sha/reason |
+| FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | f2ce9452: README.md's two paragraphs on `checked_predicate`/`temporal_subject`/`native_temporal` are removed; docs/checked-native-handoffs.md and docs/native-temporal-owner.md are deleted; `git grep` at f2ce9452 finds no link to either doc outside historical `reviews/` records |
-| FND-002 | fixed | f2ce9452: all six schema files are deleted (schemas/ now holds only native-linked-package-1, native-run-result-1, native-state-input-1); `git grep` finds no remaining reference in src, tests, tools, xtask, Makefile, Cargo.toml or .github |
+| FND-001 | fixed | README.md's two paragraphs on `checked_predicate`/`temporal_subject`/`native_temporal` are removed; docs/checked-native-handoffs.md and docs/native-temporal-owner.md are deleted; `git grep` finds no link to either doc outside historical `reviews/` records |
+| FND-002 | fixed | all six schema files are deleted (schemas/ now holds only native-linked-package-1, native-run-result-1, native-state-input-1); `git grep` finds no remaining reference in src, tests, tools, xtask, Makefile, Cargo.toml or .github |
 | FND-003 | deferred | IR-308 ("Drop imports of checked_predicate/temporal_subject/native_temporal after QSL-303's SEAM-3 deletion", Backlog) owns the IR-side follow-up; QSL does not wait on downstream repos |

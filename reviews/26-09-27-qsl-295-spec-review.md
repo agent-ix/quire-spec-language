@@ -3,7 +3,7 @@ id: SR-757
 title: "QSL-295 spec review of PR 502 (FR-109-AC-6, TC-468 step 6)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@6a78d6c9843c419b5a94eed41654a22e4b11bbcc; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md; context read: spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:204,711,717,867"
+scope: "agent-ix/quire-spec-language; spec/functional/FR-109-run-a-state-clause-through-the-spine.md; spec/test-cases/TC-468-spine-clause-run-reports-typed-dispositions.md; context read: spec/decisions/ADR-011-stage-dag-and-dependency-architecture.md:204,711,717,867"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-109
@@ -13,11 +13,11 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-295. PR: quire-spec-language#502 at 6a78d6c9.
+Ticket: QSL-295. PR: quire-spec-language#502.
 
 Sound:
 - The coder was right that main had no I3 AC. FR-109-AC-1 to AC-5 on
-  a62bd8b4 never mention the I3 source.
+  main never mention the I3 source.
 - FR-109-AC-6 restates Outputs :81-83 faithfully. The body's identity and
   digest are the source, and the original's identity and digest are the
   extraction. It adds that a program source carries none. Each clause is
@@ -40,8 +40,8 @@ testable.
 
 ## Dispositions
 
-Round 2, reviewed 39837943e97327e49c203501188a556651439211.
+Round 2.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 39837943. FR-109 has a new Behavior bullet (:94-98): a non-`ix:native` I3 source reports stage `compile`, `refusal`, `unknown_language`, carries the extraction's original, and compiles, admits and evaluates nothing. FR-109-AC-6 (:162) and TC-468 step 6 (:38-42, :68-74) add the `ix:formal` case with exit 20 and no `package_id`. The case is testable and tested. `unknown_language` is the catalog code the CLI join emits (qsl-foundation/src/diagnostic.rs:192; docs/native-error-codes.md:40). |
+| FND-001 | fixed | FR-109 has a new Behavior bullet (:94-98): a non-`ix:native` I3 source reports stage `compile`, `refusal`, `unknown_language`, carries the extraction's original, and compiles, admits and evaluates nothing. FR-109-AC-6 (:162) and TC-468 step 6 (:38-42, :68-74) add the `ix:formal` case with exit 20 and no `package_id`. The case is testable and tested. `unknown_language` is the catalog code the CLI join emits (qsl-foundation/src/diagnostic.rs:192; docs/native-error-codes.md:40). |

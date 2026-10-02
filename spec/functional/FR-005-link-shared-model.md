@@ -25,8 +25,7 @@ A separately constructed LinkedPackage or located linkage diagnostics.
 ## Behavior
 
 Contract IR FR-013 owns the formal type system; its FR-019 public Rust API is
-available now. Accepted ADR-0054 at IR revision
-690bde7f2dc58662cf9ff0595c2c0e3b17107c6f supersedes the earlier requirement for
+available now. Accepted IR ADR-0054 supersedes the earlier requirement for
 a Filament reader or universal typed-model adapter. Filament defines archetype
 schemas and generates datatypes; those facts do not supply formal semantics.
 

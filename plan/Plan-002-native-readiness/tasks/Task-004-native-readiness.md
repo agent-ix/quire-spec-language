@@ -55,7 +55,6 @@ Reproducible local results, resolving matrix and code/Rust review. The final
 plan audit and private merge are follow-on workflow actions, not a circular
 prerequisite for this task's own completion.
 
-Verified source/test candidate cbccbb61e9bf15690af386d857b6255ed2bfb948;
 SR-028 records the actual code/Rust review and commands. TM-002's nine cases
 passed, with all 28 native ACs backed and 41/41 repository test symbols bound.
 The only remaining review conditions are external catalog status interpretation

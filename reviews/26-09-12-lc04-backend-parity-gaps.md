@@ -3,7 +3,7 @@ id: SR-404
 title: "Plan-008 gap analysis at LC04 backend parity completion"
 type: SpecReview
 analysis: gap-analysis
-scope: "plan/Plan-008-native-lowering; FR-009; IT-008; TC-094; TM-006; d2154af"
+scope: "plan/Plan-008-native-lowering; FR-009; IT-008; TC-094; TM-006"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/Plan-008

@@ -62,7 +62,7 @@ Inputs this record builds on:
   (separating witness record), QSpec FR-352 (`native-run-result/2`), AD-014, and the
   `proposals/checked-package-v2/` schemas and vectors that FR-322 names as its
   normative transport.
-- **Witness fact**: IR PR #139, merged at `954c2f2`, defined `Witness` with
+- **Witness fact**: IR PR #139 defined `Witness` with
   one stored field, `transcript`. Harness symbol, check kind, check text and
   concrete values are methods that re-derive their answer from `transcript` on
   every call. This record adopts that shape for the witness (O-25) and adds
@@ -324,7 +324,7 @@ enum, and each mapping fails to compile until it has an arm.
 | --- | --- |
 | Owner | QSL, source and check stages. QSL is the only span minter (AD-016). |
 | Implementing ticket | #213 S-4 for the source map and `Locus` (landed, #399); #213 S-4b for the source reference of a source QSL reads itself, the `LocatedSpan` replacement and C-21. |
-| Public type | One package source map keyed by the O-07 occurrence key, whose regions carry `RawSourceRef` document identity. A source QSL reads itself carries the `RawSourceRef` its caller names: the caller supplies the authority, identity and revision namespace and value, and S0 adds the `quire.source.bytes/v1` digest of the admitted bytes (FR-001). `LocatedSpan` (`qsl-foundation/src/source.rs`) is replaced by the O-07 region type (`SourceRegion`), which carries the `RawSourceRef`; #213 S-4b makes that change. The kernel `Origin`/`Location` is a location tag that names a node id and occurrence key and carries no bytes. `source_map::SourceMap` maps embedded-body bytes to document bytes; it is a source-stage helper whose output feeds the node-keyed map (C-21), and it is not a provenance authority (OBS-021). CST spans (`LosslessCst`) are source-stage inputs to `SourceRegion`. |
+| Public type | One package source map keyed by the O-07 occurrence key, whose regions carry `RawSourceRef` document identity. A source QSL reads itself carries the `RawSourceRef` its caller names: the caller supplies the authority and identity, and S0 adds the `quire.source.bytes/v1` digest of the admitted bytes (FR-001). `LocatedSpan` (`qsl-foundation/src/source.rs`) is replaced by the O-07 region type (`SourceRegion`), which carries the `RawSourceRef`; #213 S-4b makes that change. The kernel `Origin`/`Location` is a location tag that names a node id and occurrence key and carries no bytes. `source_map::SourceMap` maps embedded-body bytes to document bytes; it is a source-stage helper whose output feeds the node-keyed map (C-21), and it is not a provenance authority (OBS-021). CST spans (`LosslessCst`) are source-stage inputs to `SourceRegion`. |
 | Serialized authority | v2 `source_map` (FR-322). |
 | Conversions | FCD `Locus` → region (intake only). Body span → document span (source stage, C-21). `quire_semantic_value::location::Location` → region of the unit the declaration was read from, through the S2 form spans (S3 and S6a, FR-096); a position in a tree not read from a unit has no region. Occurrence key → regions at replay through the occurrence-key-keyed source map (O-07) in v2 (AD-016 arrow 7, C-14). RT reports the tag it is handed and computes none. No layer re-mints a span. |
 | Validation and diagnostics | A tag naming no node in the package refuses at replay. A diagnostic names its position by the foundation `Locus` (T-5). |
@@ -1103,7 +1103,7 @@ direction is S-3's, not a gate on S-2 (Consequences).
 | S-3 | Typestate, clause and type: O-08, O-09 clause id, O-10, O-11, O-14, O-15, T-1, T-3 | S-2, QC-10 |
 | S-4 | Provenance: O-07, O-12 occurrence-key-keyed source map (O-07), T-5 `Locus`. Landed (#399). | S-3 |
 | S-4b | Source references: FR-001's four-label `SourceIdentity` for every source admission, spine and native-v1, and the `RawSourceRef` S0 mints from it; S0's refusal regions (FR-001-AC-8); FR-010's `parse` and `format` grammar; the native-v1 request wire, native-run-result/1, native-linked-package/1 and native-state-input/1 with their schemas and golden vectors, each carrying the four labels (FR-026, FR-027, FR-031, FR-018, FR-024), with `docs/native-runtime-inputs.md`; the consumers of those labels, the verified package reader and its bindings (FR-020) and the static package identity, whose hash vectors change because the manifest's source identity gains two labels (FR-021); package declarations and the `CheckedGraph` carrying the unit's `RawSourceRef`, their `SourceOwner` taken from it, for the M-4 emitter to emit as the lock `sources` entry; O-12's `LocatedSpan` replacement in the canonical S0 to S2 diagnostics; C-21. The replay executor's recompilation under the reference's labels (FR-001) is TK-01's (the replay recompilation, ADR-011 §2 S8), not S-4b's. | S-4 |
-| S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258, `0bfa4b9`). | S-1, QC-11 |
+| S-5a | Refusals: O-17 QSL `catalog_code()`, the `CatalogCode` and O-16 category types in F `diagnostic`, T-4's `InternalFault` — no `Locus`. Landed (#258). | S-1, QC-11 |
 | S-5b | Refusals and readers (FR-096): O-17 `RefusalRecord`, T-4's `LimitExceeded`/`LimitKind` and `Staged<T>`/`StageFailure<C>`, O-22's I2 reader — all carry `Locus` (T-5). The check-stage loci resolve through the unit's `RawSourceRef` (S-4b) and the forms' spans (FR-091-AC-10). The I2 reader's loci need `Locus::Artifact{digest, pointer}`'s O-18 digest record (S-2) and three IR reader changes (FR-096 Dependencies). | S-5a (landed, #258), S-4 (landed, #399), S-4b (landed, #408), FR-091-AC-10 (landed, #413), QC-11 (met), QC-28 (met) |
 | S-6 | Bounds, modes and capability: O-19 `Capability`, O-20 request representation, and the #222 bound types (O-21) that ADR-014 §11 names | S-1, ADR-014 (#222) accepted, agent-ix/quire-specification#134 |
 
@@ -1159,7 +1159,7 @@ Questions for #209:
 | Q209-4 | Creation and dependency direction of `quire-exact`. ADR-011 X-1 answers it: a leaf crate, extracted first, that QSL, RT and CG depend on. T-6 lists the edge cuts. |
 | Q209-5 | Retirement of IR `replay_with_native_runtime` and the CG → QSL normal edge for the executor (OBS-028, OBS-039, AD-016 WP9). Answered by ADR-011 FB-05 (§3): no backend repository (IR, RT, CG) depends on QSL Rust types, except the CG replay adapter's normal dependency on the public API of the QSL layer-6 `replay` module. T-12 checks it. IR names no QSL type (OQ-H), so CG is the only backend on the `replay` facade. |
 | Q209-6 | Where the diagnostic envelope sits in the module DAG (OBS-016). ADR-011 §6.1 answers it: `diagnostic` is foundation. T-5 fixes the locus. |
-| Q209-8 | Does ADR-011's I2 reader yield checked values? Answered and applied by ADR-011 (`102c8bb`): I2 yields `VerifiedPackage` and `ImportView`, neither checked typestate, and E9 recompiles source (R-10, T-2). |
+| Q209-8 | Does ADR-011's I2 reader yield checked values? Answered and applied by ADR-011: I2 yields `VerifiedPackage` and `ImportView`, neither checked typestate, and E9 recompiles source (R-10, T-2). |
 
 Questions for #210, answered in ADR-012 §13.5:
 
@@ -1200,7 +1200,6 @@ ADR-012 (above).
 
 Owner rulings (2026-09-22), kernel convergence. The QSL
 lead ruled these. Each closes its question until its reopen condition holds.
-QSpec is cited at `agent-ix/quire-specification` `2449ceb`.
 
 | ID | Question | Ruling | Reason | Reopen if |
 | --- | --- | --- | --- | --- |
@@ -1243,7 +1242,7 @@ opened.
 | TK-07 | FR-201 digest domains: QC-2 and QC-4. | QSpec |
 | TK-08 | Model-owned node-identity vectors (QC-3), FR-321 duplicate-selection code (QC-5), FR-322 dependency node reference (QC-10, resolved by FR-322's `dependency_reference`), catalog codes for stage limits and internal fault (QC-11), the node-identity preimage owner scope and the structural-node arm (QC-18), the unknown-node-kind code (QC-19), the parameter and function node shapes (QC-24) and the `dependencies` rule for every node kind with the all-families fixture corrections (QC-27). | QSpec |
 | TK-09 | Candidate-set wire (QC-12). Covered by agent-ix/quire-specification#134 scope item 4; no second ticket. | agent-ix/quire-specification#134 |
-| TK-10 | One AD-016 amendment PR: QC-13 to QC-17 (OQ-3 ruling), QC-20, and QC-7 (the WP9 parity carrier, confirmed 2026-09-19). agent-ix/quire-contract-ir#139 is merged (`954c2f2`). | QSpec |
+| TK-10 | One AD-016 amendment PR: QC-13 to QC-17 (OQ-3 ruling), QC-20, and QC-7 (the WP9 parity carrier, confirmed 2026-09-19). agent-ix/quire-contract-ir#139 is merged. | QSpec |
 
 ### 9. ADR-010 items decided
 
@@ -1320,7 +1319,7 @@ Tickets and work in progress routed to #211 by ADR-010 §7.2 to §7.4 and §8:
 - #213 and #231 implement from §3 and §7 without choosing an owner. #212 can
   place its scenarios against O-01 to O-27; a scenario that needs an owner not
   listed here reopens this record.
-- PR #200 at `9e59dde` already encodes native references as
+- PR #200 already encodes native references as
   `ValueTypeRef::Native`; the adverse test for the pseudo-package refusal is
   #213 S-2's, and #131 is asked to land it with PR #200 (O-03).
 - The byte transfers in `value/model_query.rs`, `NodeKey::from_bytes` and the

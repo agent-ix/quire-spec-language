@@ -14,10 +14,10 @@ relationships:
 
 ## Summary
 
-Reviewed `agent-a/composed-value-checking` (40f6b43) against
+Reviewed `agent-a/composed-value-checking` against
 `agent-a/composed-native-binding` under `code-review` + `rust-review` +
 `rust-style`, plus the repo's own `AGENTS.md`/`CLAUDE.md` idioms and the pinned
-`quire-contract-ir` at 690bde7. The producer slice is correct and well tested:
+`quire-contract-ir`. The producer slice is correct and well tested:
 `/1` bytes are unchanged, the rational wire variant is genuinely closed, bounds
 go through the real `ir::RationalType::new` without repair, and every budget is
 charged before its work with checked arithmetic. No live defect was found. The
@@ -34,9 +34,8 @@ comparison and be materialized into the IR proof as a Boolean.
 
 ## Gates
 
-All run in this session from the worktree, one heavy command at a time under
-`flock /tmp/quire-heavy-check.lock` with `CARGO_BUILD_JOBS=1`,
-`CARGO_TARGET_DIR=/tmp/formalization-a-language-target`, `nice -n 10`. Exit
+All run in this session from the worktree, one heavy command at a time with
+`CARGO_BUILD_JOBS=1`, `nice -n 10`. Exit
 statuses captured directly; no gate piped through `tail`/`head`.
 
 | Gate | Result |
@@ -234,7 +233,7 @@ statement.
 - **Bounds are the IR's, unrepaired.** `lower_scalar` calls the real
   `ir::RationalType::new` (`lower.rs:133`) and only attaches the original span
   to the upstream diagnostic. I checked the pinned constructor
-  (`quire-contract-ir` 690bde7, `src/expression.rs:110-132`): it validates
+  (`quire-contract-ir` `src/expression.rs:110-132`): it validates
   `minimum <= maximum` and `1 <= maximum_denominator <= i64::MAX` and performs
   no normalization, matching FR-041:82-84 exactly. `i64::MIN`/`i64::MAX`, both
   sides of 2^53, and denominators 1 and `i64::MAX` round-trip to literal
@@ -289,9 +288,9 @@ statement.
   (`expression.rs:1682-1692`), not in the type constructor, so FR-041's
   producer-only scope is the right cut.
 
-## Correction disposition (a4344d0)
+## Correction disposition
 
-Targeted re-review of correction 96d9240 and its integration merge a4344d0,
+Targeted re-review of the correction and its integration merge,
 same skills and gates. Binding indexes inherited from PR48 have their own
 review and were not re-reviewed here. Historical proof semantics are unchanged
 and no false nominal equivalence was introduced: `Catalog::historical` restores
@@ -316,12 +315,10 @@ the residue is low and latent. All five gates re-run and pass.
 | FND-008 | fixed | `FromStr` added with `TryFrom` delegating (`native_model.rs:45`); retag control `tests/native_model_profiles.rs:217` |
 | FND-009 | fixed | arms hoisted to statements with defensive comments (`features.rs:76`, `:121`) |
 
-### Gates (a4344d0)
+### Gates
 
-Whole sequential batch under one `flock /tmp/quire-heavy-check.lock`, with
-`CARGO_BUILD_JOBS=1`, `CARGO_TARGET_DIR=/tmp/formalization-a-language-target`,
-`nice -n 10`, `--locked`; `src/lib.rs` mtime touched once under the lock
-(content unchanged) to defeat cross-worktree reuse. Exit statuses captured
+Whole sequential batch with `CARGO_BUILD_JOBS=1`, `nice -n 10`, `--locked`;
+`src/lib.rs` mtime touched once (content unchanged) to defeat cross-worktree reuse. Exit statuses captured
 directly, no pipes.
 
 | Gate | Result |

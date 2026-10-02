@@ -3,7 +3,7 @@ id: SR-709
 title: "Code and Rust review of the string-edge sweep and detector widening"
 type: SpecReview
 analysis: code-review
-scope: "agent-ix/quire-spec-language@9686fc5f872dc1e3fc7317f12fc7de44bec0707c; xtask/src/string_edge.rs; Makefile; src/protocol_artifact/validate.rs; src/state/evaluation.rs; src/temporal.rs; src/protocol_artifact/native_temporal/request.rs; qsl-semantics/src/check/claims.rs; src/linking.rs; src/mapped.rs; src/protocol_artifact/handoff/writer.rs; src/protocol_artifact/intake.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v3/intake.rs; src/protocol_artifact/number.rs; src/package/intake.rs; src/cli.rs; src/linking/composed/models.rs; qsl-semantics/src/model/intake.rs; qsl-semantics/src/model/domain_package.rs; qsl-semantics/src/check/identity.rs; qsl-semantics/src/check/type_form.rs; qsl-semantics/src/library/bundle.rs; qsl-cst/src/lexer.rs; qsl-cst/src/parser.rs; qsl-foundation/src/digest.rs; qsl-foundation/src/selection.rs; qsl-replay/src/witness.rs; xtask/src/definition_scan.rs; xtask/src/import_graph.rs; xtask/src/main.rs; xtask/src/route_lint.rs; xtask/src/typestate_scan.rs; tests/it/family_outcome_layering.rs; qsl-*/Cargo.toml; Cargo.lock"
+scope: "agent-ix/quire-spec-language; xtask/src/string_edge.rs; Makefile; src/protocol_artifact/validate.rs; src/state/evaluation.rs; src/temporal.rs; src/protocol_artifact/native_temporal/request.rs; qsl-semantics/src/check/claims.rs; src/linking.rs; src/mapped.rs; src/protocol_artifact/handoff/writer.rs; src/protocol_artifact/intake.rs; src/protocol_artifact/v2/intake.rs; src/protocol_artifact/v3/intake.rs; src/protocol_artifact/number.rs; src/package/intake.rs; src/cli.rs; src/linking/composed/models.rs; qsl-semantics/src/model/intake.rs; qsl-semantics/src/model/domain_package.rs; qsl-semantics/src/check/identity.rs; qsl-semantics/src/check/type_form.rs; qsl-semantics/src/library/bundle.rs; qsl-cst/src/lexer.rs; qsl-cst/src/parser.rs; qsl-foundation/src/digest.rs; qsl-foundation/src/selection.rs; qsl-replay/src/witness.rs; xtask/src/definition_scan.rs; xtask/src/import_graph.rs; xtask/src/main.rs; xtask/src/route_lint.rs; xtask/src/typestate_scan.rs; tests/it/family_outcome_layering.rs; qsl-*/Cargo.toml; Cargo.lock"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-064
@@ -11,8 +11,8 @@ relationships:
 ---
 ## Summary
 
-Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485 at
-9686fc5f. Code review with the rust-review lane, scoped to
+Ticket: QSL-145 (cross-reference QSL-268). PR: quire-spec-language#485.
+Code review with the rust-review lane, scoped to
 `git diff origin/main...HEAD` (44 files).
 
 Measured by the reviewer, in a separate detached worktree:
@@ -103,15 +103,15 @@ sight. The rest are low.
 
 ## Dispositions
 
-Disposition pass at 5f573711.
+Disposition pass.
 
-| FND | Outcome | sha/reason |
+| FND | Outcome | reason |
 | --- | --- | --- |
-| FND-001 | fixed | 91369e11: valid_digest/valid_adapter deleted; CanonicalizationDomain (FromStr) + ByteDigest-typed CanonicalDigest, AdapterArtifact via TryFrom, each the one marked conversion. ByteDigest::from_hex keeps the old 64-lowercase-hex rule. |
-| FND-002 | fixed | 91369e11, 39bd09e2: clock: read once per admission into ClockNames (v1/v2 intake, temporal_v2 admit; v3 has no temporal evaluator); the three runtime re-parses are gone; clock_binding_name compares the literal and is back in the real-site test. The ADR-012 typed clock-role variant stays unbuilt and is now stated as partial in ADR-012 (SR-722 FND-003 asks for an owner). |
-| FND-003 | fixed | 91369e11: Profile::classify deleted; definitions() returns Vec<RegisteredDefinition> (native path uses metadata's registered list) and Graph::profile matches it. Same identity sets per Family arm. |
-| FND-004 | fixed | 91369e11: Closed OccurrenceRole enum (alphabetical order preserved, same kernel spellings); key_claims uses iter_role(Expression); the one spelling read is the marked OccurrenceRole::of. |
-| FND-005 | fixed | 91369e11: SymbolName::new("self") error now propagated as an InvalidModelBinding failure. |
-| FND-006 | fixed | 39bd09e2: Filename skip removed; only tests/ dirs and #[cfg(test)] mod x; files skipped. Reviewer mutation: a plain `mod plain_tests;` file with a string compare is reported by cargo xtask string-edge. |
-| FND-007 | fixed | 91369e11: mapped::compile, OperationSelection::new and features are unmarked; features uses closed FamilyFeature/RequiredFeature with marked from_wire. Reviewer mutation: a new compare in features and in mapped::compile is reported. is_workflow_apply is a narrow marked predicate (SR-722 FND-002). |
-| FND-008 | fixed | 8ffa54a3: Module doc now states the literal-only scope and that named-constant dispatch is not detected. |
+| FND-001 | fixed | valid_digest/valid_adapter deleted; CanonicalizationDomain (FromStr) + ByteDigest-typed CanonicalDigest, AdapterArtifact via TryFrom, each the one marked conversion. ByteDigest::from_hex keeps the old 64-lowercase-hex rule. |
+| FND-002 | fixed | clock: read once per admission into ClockNames (v1/v2 intake, temporal_v2 admit; v3 has no temporal evaluator); the three runtime re-parses are gone; clock_binding_name compares the literal and is back in the real-site test. The ADR-012 typed clock-role variant stays unbuilt and is now stated as partial in ADR-012 (SR-722 FND-003 asks for an owner). |
+| FND-003 | fixed | Profile::classify deleted; definitions() returns Vec<RegisteredDefinition> (native path uses metadata's registered list) and Graph::profile matches it. Same identity sets per Family arm. |
+| FND-004 | fixed | Closed OccurrenceRole enum (alphabetical order preserved, same kernel spellings); key_claims uses iter_role(Expression); the one spelling read is the marked OccurrenceRole::of. |
+| FND-005 | fixed | SymbolName::new("self") error now propagated as an InvalidModelBinding failure. |
+| FND-006 | fixed | Filename skip removed; only tests/ dirs and #[cfg(test)] mod x; files skipped. Reviewer mutation: a plain `mod plain_tests;` file with a string compare is reported by cargo xtask string-edge. |
+| FND-007 | fixed | mapped::compile, OperationSelection::new and features are unmarked; features uses closed FamilyFeature/RequiredFeature with marked from_wire. Reviewer mutation: a new compare in features and in mapped::compile is reported. is_workflow_apply is a narrow marked predicate (SR-722 FND-002). |
+| FND-008 | fixed | Module doc now states the literal-only scope and that named-constant dispatch is not detected. |

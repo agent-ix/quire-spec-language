@@ -9,8 +9,7 @@ model artifact is an upstream input, quoted by existing Serde. No production
 package output, parsed AST or checked manifest supplies the expected fields.
 
 The corrected oracle follows the first producer implementation and records that
-true sequence. Original missing-API and failed-setup logs remain in
-reviews/data/native-packages/. Additional complete clause/operation vectors and
+true sequence. Additional complete clause/operation vectors and
 adversarial families remain required by Task-016/017; these first vectors do not
 complete TC-090.
 

@@ -6,8 +6,8 @@ type: TestMatrix
 
 ## Overview
 
-LC02 verification after the owner's internal adoption of specification PR8 at
-e897f81. Ten linking cases, TC-020–024 and TC-030–034, now execute through the
+LC02 verification after the owner's internal adoption of specification PR8.
+Ten linking cases, TC-020–024 and TC-030–034, now execute through the
 public formal linker API. Their eleven FR-005/013 criteria are backed by the
 Rust tests in tests/linking.rs. The five FR-006 typing cases now execute through
 the native checker. Model/checker qualification covers the earlier adopted definition; executable projection
@@ -665,7 +665,7 @@ assuming the existing IR proof implementation qualifies that added logic.
 
 ## Construction repair qualification
 
-FR-017 / Task-011 is complete at 08a4fe7. TC-054 has three executed tests for
+FR-017 / Task-011 is complete. TC-054 has three executed tests for
 original occurrences and strict/foreign refusals. Existing linker and audit
 regressions carry FR-017-AC-3/4 attributes and retain their actual outcomes.
 SR-083 supplies the separate FR-017-AC-2 ownership inspection. The default
@@ -675,7 +675,7 @@ Task-008/009 evidence appears below; trace presence alone is not qualification.
 
 ## Native linkage qualification
 
-TC-044 is qualified at 667bf07 by SR-084. Eight new Rust link tests exercise
+TC-044 is qualified by SR-084. Eight new Rust link tests exercise
 the actual source-derived model and shared linker, including original field/
 operation/enum/parameter targets, exact profile/digest selection, carrier access
 refusals, conflicting inventory identities and hard native-link limits. The
@@ -687,7 +687,7 @@ test tag establishes checking or runtime qualification.
 
 ## Complete native model qualification
 
-TC-040–045 are qualified at 0cd679c by SR-084/085. Seventeen additional Rust
+TC-040–045 are qualified by SR-084/085. Seventeen additional Rust
 tests cover every primitive site/wrapper, native-only role/carrier/operation
 refusals, ordinary zero-bounded text, unused unsupported IR declarations, all
 source-locus classes, seven source-derived semantic mutations and six inventory

@@ -15,7 +15,7 @@ relationships:
 ## Description
 
 Integration, priority P1. Verifies FR-007-AC-5, FR-008-AC-1, FR-008-AC-2, FR-018-AC-3.
-Qualified at 4ac3597 by SR-099 through five public pipeline tests and the recorded
+Qualified by SR-099 through five public pipeline tests and the recorded
 full regression. Setup uses qualified public model/checker APIs; unrelated setup
 failure cannot stand in for the intended phase's outcome.
 

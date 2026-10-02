@@ -17,5 +17,5 @@ Implement native byte intake with Serde and existing structural constructors.
 Exercise serialized input through native execution and queue a reviewable PR.
 Full standalone model intake and C's producer adoption remain later LC05 work.
 
-Implemented at 67c68da; five new reader tests and 18 package-reader regressions
+Implemented; five new reader tests and 18 package-reader regressions
 pass. PR-time spec/code reviews are SR-145–153. Full LC05 remains open.

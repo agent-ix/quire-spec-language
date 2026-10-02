@@ -8,7 +8,7 @@ review_set: subset
 ---
 ## Summary
 
-Author PR review of implementation fd69a60 using the actual agent-skills
+Author PR review of the implementation using the actual agent-skills
 code-review, rust-review, rust-style and implementation-gap discovery workflows.
 No required AssuranceProfile, repository-specific Rust idiom override or deny.toml
 was found. The final spec wording clarifies existing preflight precedence.
@@ -63,7 +63,7 @@ stub was found. Original frozen model/package vectors remain in the full suite.
   formatting and both Rust fixture-audit commands: exit 0.
 
 Commands use the locked offline dependencies, worktree target cache, nice 10,
-one Cargo job and one test thread. Logs are /tmp/agent-a-sequence-*.txt. Quire
+one Cargo job and one test thread. Quire
 validation/coverage is recorded by SR-262/264. The workflow diff is empty;
 existing CI remains workflow_dispatch-only with both feature lanes, and no run
 was dispatched. No dependency or license changed. Broader ruling reconciliation,

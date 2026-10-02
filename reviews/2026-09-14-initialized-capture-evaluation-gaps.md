@@ -34,7 +34,7 @@ outside this repair.
 
 ## Coverage
 
-- Reconciliation: `quire coverage` 0.32.0; 491 / 512 rows backed. Its 13 unbacked rows, one status lie, 20 untracked symbols and diagnostics do not name the scoped initializer behavior.
+- Reconciliation: `quire coverage`; 491 / 512 rows backed. Its 13 unbacked rows, one status lie, 20 untracked symbols and diagnostics do not name the scoped initializer behavior.
 - Tasks done: 15 / 15 in Plan-009; Task-040 is done.
 - Scoped source behaviors: initializer dependency discovery, admitted initializer execution, initializer-cycle refusal and override refusal — all owned by FR-049-AC-9/NFR-009-AC-4 and covered by TC-134's real v2 fixture.
 - Semantic review: skipped; it was not requested.
