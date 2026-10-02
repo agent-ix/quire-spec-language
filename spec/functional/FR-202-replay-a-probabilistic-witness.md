@@ -46,14 +46,17 @@ pub struct ProbabilisticCounterexample {
     pub initial_state: u32,
     pub binding: Option<Binding>,
     pub bound: Bound,
-    pub scheduler: Option<WitnessScheduler>,     // absent under a workload
+        pub scheduler: Option<WitnessScheduler>,     // present over every scheduler and under a workload with free delays (QSpec FR-413)
+
     pub evidence: WitnessEvidence,
 }
-pub struct WitnessScheduler { pub entries: Vec<(ProductKey, WitnessChoice)> }
-pub enum WitnessChoice { Identity(SchedulerChoice), PostState(Vec<(Vec<Value>, Digest)>), Delay }
+pub struct WitnessScheduler { pub entries: Vec<(ProductKey, WitnessEntry)> }
+pub enum WitnessEntry { Choice(WitnessChoice), Randomized(Vec<(WitnessChoice, Rational)>) } // randomized: fairness sets
+pub enum WitnessChoice { Identity(SchedulerChoice), PostState(Vec<(Vec<Value>, Digest)>), UnitDelay,
+    FreeDelays(Vec<(Vec<Rational>, Vec<(SchedulerChoice, Rational)>)>) } // per drawn given-delay vector, each free racing identity's delay
 pub enum WitnessEvidence { Paths(Vec<WitnessPath>), Subsystem(ProbabilityCertificate),
     Undefined { path: WitnessPath, undefined: UndefinedEvaluation } }   // ADR-028 XV-8
-pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 step content plus the drawn vector
+pub struct WitnessPath { pub steps: Vec<WitnessStep> }  // CX-2 step content plus the drawn vector and, over a timed subject, the delay
 
 pub fn replay_probabilistic_witness(
     request: &ReplayRequest,                     // FR-098

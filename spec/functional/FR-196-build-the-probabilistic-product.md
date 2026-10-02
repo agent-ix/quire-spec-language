@@ -20,7 +20,8 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `exact_probabilistic` module SHALL build, for a probabilistic
+QSL's `exact_probabilistic` module in layer A, crate `qsl-analyze`
+(ADR-028 SP-2), SHALL build, for a probabilistic
 claim, the finite product on which EN-5 computes (ADR-028 §2, SCH-2): the
 MDP over FR-187's actions and draws, or under a workload the DTMC over
 FR-187's step probabilities, in product with FR-126's deterministic monitor

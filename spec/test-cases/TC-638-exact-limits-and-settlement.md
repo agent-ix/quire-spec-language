@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-638", "FR-203-AC-n")]`.
 ## Expected Results
 
 - Step 1: `ExactValue{24233/25000}`; `ValueBounds{BackwardInduction{64}}`; `refuted` with a `Min` entry.
-- Step 2: `PrecisionBudget` around `99/100`; `ResourceExhausted` naming `limits.max_states` and 1,000; the published defaults.
+- Step 2: `PrecisionBudget` around `99/100`; `ResourceExhausted` naming `model_check.max_states` and 1,000; the published defaults.
 - Step 3: `CertificateRejected`; `ReplayParity`; `ZeroWeightComponent`; no `measured` value.
 - Step 4: 2 proved; distinct identities for confidence, one identity across `precision_bits`.

@@ -106,7 +106,7 @@ What EN-5 builds on:
 | ID | Rule |
 | --- | --- |
 | SP-1 | **Engine EN-5.** EN-5 computes, over the full finite subject, the exact value or a sound interval of a probabilistic claim's quantity: a probability, a conditional probability, the expectation of a fraction, a long-run fraction or an expected reward. It decides the claim from that value, under a workload or over every scheduler, and every verdict carries evidence a checker verifies in exact rationals with no engine present: a certificate for a proof (§11), a witness for a refutation (§10). |
-| SP-2 | **Placement.** EN-5 lives in QSL layer 5, module `exact_probabilistic`, after `model_check` and `statistical`, and runs in ADR-018's stage S6c over E10. It reuses `model_check`'s product `TransitionSystem`, its monitor translations, its edge retention and its SCC decomposition, and FR-120's `ModelSystem`. Its checker entries live in layer 6 `replay` beside `replay_model_trace` (§10, §11). |
+| SP-2 | **Placement.** EN-5 lives in QSL layer A, crate `qsl-analyze`, module `exact_probabilistic`, beside `model_check` and `statistical`, above the qualified core (ADR-029 CB-3), and runs in ADR-018's stage S6c over E10. It reuses `model_check`'s product `TransitionSystem`, its monitor translations, its edge retention and its SCC decomposition, and reads FR-120's `ModelSystem` from layer 5, `qsl-eval`. Its verdict types, its witness replay arm, its certificate checker and its settlement map live in layer 6, `qsl-replay`, beside `replay_model_trace` (§10, §11), as does every type CG reads. Every EN-5 proof carries a certificate that the in-core checker checks (CE-4), so the rule that a proof whose engine has no core certificate checker settles `proved` labelled `uncertified` does not arise for EN-5. |
 | SP-3 | **Evidence kind `exact`.** EN-5's provider manifest advertises (`probabilistic-satisfaction`, evidence `exact`) (ADR-024 SV-9). CG's `negotiate_*` arm for `probabilistic-satisfaction` routes an item naming `exact` to EN-5 and an item naming `statistical` to EN-4. One claim may be requested with either kind; the two results are separate items with separate terminal records. |
 | SP-4 | **Confidence parameters.** ADR-024 PF-10's `α`, `β` and `ι` are for statistical evidence only (ADR-024 RU-6, RU-2 here). When a claim states them they stay part of its obligation identity; EN-5 decides the claim's bound itself, which entails every stated confidence, so it reads none of them. A claim that states none is exact-only: statistical checking refuses it at negotiation (`MissingConfidence`, ADR-024 SV-5), and EN-5 checks it. |
 | SP-5 | **Proof from the engine's evidence.** An EN-5 `proved` leaves S6c with its certificate over ADR-018's E11, as a refutation leaves with its counterexample, and settles only after the layer-6 checker accepts the certificate (CE-5), as ADR-026 CF-4 states for EN-6. An EN-5 `refuted` settles only after its witness replays (WS-5). |
@@ -268,7 +268,7 @@ kinds and its own `ProofBasis` members, never with ADR-024's `measured`.
 
 | ID | Rule |
 | --- | --- |
-| LM-1 | **`ExactProbLimits`.** EN-5's budgets are ADR-014 B-5 budgets of QSL's own provider: the `ModelCheckLimits` members (`max_states`, `max_transitions`, `max_automaton_states`) for the product; `max_iterations`, the interval-iteration sweeps; `precision_bits`, the starting dyadic precision, and `max_precision_bits`, the most it doubles to; `max_rational_bits`, the longest exact rational FH-1 and UR-4 keep; `max_policy_iterations`; and `max_witness_paths` (WS-3); plus time, the clause meter and cancellation. Each is set by the request, with a published default. No budget is a modelling limit, and the language fixes no cap on states, horizon, precision or iterations. |
+| LM-1 | **`ExactProbLimits`.** EN-5's budgets are ADR-014 B-5 budgets of QSL's own provider: an embedded `ModelCheckLimits` (ADR-018), with its members, setting names and defaults unchanged (`max_states`, `max_transitions`, `max_automaton_states`) for the product; `max_iterations`, the interval-iteration sweeps; `precision_bits`, the starting dyadic precision, and `max_precision_bits`, the most it doubles to; `max_rational_bits`, the longest exact rational FH-1 and UR-4 keep; `max_policy_iterations`; and `max_witness_paths` (WS-3); plus time, the clause meter and cancellation. Each is set by the request, with a published default. No budget is a modelling limit, and the language fixes no cap on states, horizon, precision or iterations. |
 | LM-2 | **Reaching a budget.** A budget reached before the method completes settles V-7: `Incomplete(PrecisionBudget{lower, upper})` when the interval still straddles the threshold, `Incomplete(ResourceExhausted)` naming the budget otherwise, unless XV-5's partial evidence already settles the item. The caller raises the budget and reruns. |
 | LM-3 | **Identity.** Budgets and the method choices they drive are request settings recorded in the result; none enters the obligation identity. |
 
@@ -573,8 +573,8 @@ Each amended text carries an "Amended by ADR-028" note.
 ## Amendments to make on acceptance
 
 - ADR-021 PT-2: RX-2's row.
-- ADR-011 §1 and §6.1: S6c runs EN-5; layer 5 gains `exact_probabilistic`
-  after `model_check` and `statistical`; E11 carries EN-5 certificates and
+- ADR-011 §1 and §6.1: S6c runs EN-5; layer A, crate `qsl-analyze`, gains
+  `exact_probabilistic` (ADR-029 CB-3); E11 carries EN-5 certificates and
   probabilistic witnesses; layer 6 `replay` gains
   `replay_probabilistic_witness` and `check_probability_certificate`.
 - ADR-026 SS-7, RU-5 and §15: the digital route as TA-1 to TA-7 state it.
@@ -641,8 +641,9 @@ Each amended text carries an "Amended by ADR-028" note.
   half: Linear STD-137 (QSpec FR-405 to FR-414) and, for the digital
   route, Linear STD-139 (QSpec FR-421). Research and the owner's ruling that EN-5
   is a native engine specified now: Linear RES-53. Zone-based timed analysis: Linear RES-54.
-- ADR-029, the qualified core and its certificate checkers (RU-2, CB-2):
-  Linear QSL-390, on its own draft branch.
+- ADR-029, the qualified core, its certificate checkers and the crate
+  layout (RU-2, CB-2, CB-3), with the uncertified-proof rule the owner
+  ruled: Linear QSL-390, on its own draft branch.
 - Team-leader decision of 2026-10-01 on ADR-026 SD-1: an operation with no
   `delay` member has a nondeterministic delay, resolved by its minimum or
   maximum under a workload (RU-6), never an implied distribution.
