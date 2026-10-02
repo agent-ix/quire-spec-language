@@ -27,5 +27,5 @@ Tag the tests `#[trace("TC-611", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: `Violated` with a `StepTuple` on the tuple with `x.k = 0` and `y.k = 1`, with no `undefined` member.
+- Step 1: `Violated` with a `StepTuple` on the tuple with `x.k = 0` and `y.k = 1`, not an `Undefined` counterexample.
 - Step 2: the counterexample reproduces, and the item settles `refuted`, `decisive-counterexample`, with no `UndefinedEvaluation`.

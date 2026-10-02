@@ -83,8 +83,6 @@ pub struct ModelRelationForm {
   body with `pre(…)`, argument, `self` and `result` reads as written.
 - S2 SHALL build no form that resolves a name; whether a binding names a
   model operation, and whether an alias names a model, are S3's (FR-172).
-- The S2 depth and node bounds of FR-091 SHALL apply to these forms as to
-  every other form.
 
 ## Acceptance Criteria
 

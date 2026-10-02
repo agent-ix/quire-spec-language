@@ -30,6 +30,6 @@ Tag the tests `#[trace("TC-610", "<AC id>")]`.
 
 ## Expected Results
 
-- Step 1: `Violated` with a `StepTuple` on the first tuple in canonical order, which has `x.k = 0`, and `undefined` set to `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; never `Holds`.
+- Step 1: `Violated` with an `Undefined` counterexample on the first tuple in canonical order, which has `x.k = 0`, carrying `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; never `Holds`.
 - Step 2: `reproduced-with-evaluated-witness` with the `UndefinedEvaluation` as its value; then `inconclusive`, `Verdicts`.
 - Step 3: `refuted`, `decisive-counterexample`, category violation, with a record carrying the `UndefinedEvaluation`, the tuple's two executions and the cause; never `proved`.

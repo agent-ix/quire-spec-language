@@ -26,7 +26,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL decide an HP-6 item, a universal clause
+QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL decide an HP-6 item, a universal clause
 with a safety body and `align skip { O, … }`, over its projected product
 (ADR-023 PA-2 to PA-6): components take skipped steps one at a time, take
 visible steps together when `μ_U` holds, and the body's safety monitor reads
@@ -87,6 +87,20 @@ clause is proved.
 - `max_depth` SHALL count moves of either kind; `max_states` product states;
   `max_transitions` moves.
 
+### Undefined and undetermined evaluation
+
+- The engine SHALL evaluate `μ_U` on every joint visible step and the
+  monitor's letters at every joint projected position through the one
+  clause evaluator (FR-107).
+- If one evaluates `Undefined`, then the engine SHALL return `Violated`
+  with QSpec FR-400's `Undefined` counterexample ending there, one path per
+  variable, the first such product state in breadth-first order; between it
+  and a rejecting monitor state, the first in that order SHALL be returned
+  (ADR-023 HV-8).
+- If `μ_U` evaluates refused or incomplete at a reachable joint visible
+  step, and no refuting evidence comes first, then the engine SHALL return
+  `Undecided(MatchUndetermined)` (ADR-023 HV-4).
+
 ### Three-valued prefix evaluation
 
 - The evaluator SHALL evaluate a safety body over a tuple of finite
@@ -102,6 +116,8 @@ clause is proved.
 | FR-178-AC-2 | §13's vault with the leaky post clause `l = (i + h) mod 2` and `align skip { V::Vault::mix }` returns `Violated` with a `Projected` counterexample whose traces have equal visible step counts, unequal total lengths, no loop entry, and each step marked skipped or visible. | Test (TC-603) |
 | FR-178-AC-3 | Three-valued evaluation of `always holds(v.l @ a = v.l @ b)` over a joint projected prefix whose last projected position has unequal `l` returns `false`; over one with equal `l` throughout it returns no `false`. | Test (TC-603) |
 | FR-178-AC-4 | AC-2's request with `max_depth` 1 returns `BoundReached{depth: 1}`, counting a skip move as one move. Running AC-2's request twice gives byte-equal counterexamples. | Test (TC-603) |
+| FR-178-AC-5 | AC-1's `align skip` clause with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint visible step whose `a` step is `step(0)`, returns `Violated` with an `Undefined` counterexample, one unmarked path per variable ending at the first such step in breadth-first order, cause `division-by-zero`. | Test (TC-603) |
+| FR-178-AC-6 | AC-1's `align skip` clause with a `match` conjunct that calls a function whose evaluation exhausts its meter at the first joint visible step (incomplete) returns `Undecided(MatchUndetermined)` and never `Holds`. | Test (TC-603) |
 
 ## Dependencies
 

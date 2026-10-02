@@ -91,6 +91,8 @@ pub struct CheckedModelRelation {
   `V`'s model whose element type is `T`. The clause SHALL check to one
   instance per key of each parameter's universe, and to the product of the
   universes for parameters over several aliases (ADR-023 HS-3).
+- If an object parameter names a population of an alias the clause does not
+  bind, then S3 SHALL refuse `ill_typed` at the parameter (QSpec FR-395).
 
 ### Indexed atoms and step labels
 
@@ -105,8 +107,9 @@ pub struct CheckedModelRelation {
 
 ### Match
 
-- S3 SHALL refuse a `match` conjunct that reads state, `ill_typed` at the
-  read: `μ` reads step labels only (ADR-023 HS-5).
+- S3 SHALL refuse a `match` conjunct that reads state,
+  `unsupported_construct`/`expression-form` at the read: `μ` reads step
+  labels only (ADR-023 HS-5, QSpec FR-395).
 - S3 SHALL flatten `μ` into its top-level conjuncts and place each conjunct
   that reads only universal variables in `mu_universal` and every other
   conjunct in `mu_existential` (ADR-023 HM-3).
@@ -154,7 +157,7 @@ pub struct CheckedModelRelation {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-172-AC-1 | ADR-023 §1's `NonInterference` checks with one alias `V`, two universal quantifiers over it, one instance for universe `{v}`, both `μ` conjuncts in `mu_universal` and none in `mu_existential`. `SavesPower` checks with aliases `S` and `N`. §8.2's `Opaque` checks with its one conjunct in `mu_existential`. | Test (TC-597) |
-| FR-172-AC-2 | Refusals at the named span: `forall trace a` with no `of` in a `behaviours` clause (`unsupported_construct`, the quantifier); `of V` in a finite trace domain clause (the quantifier); `of W` naming no model (`missing_declaration`, the alias); `v.l` with no trace variable and `d.used @ n` with `d: S::Device` (`ill_typed`, the read); a `match` conjunct reading `v.l @ a` (`ill_typed`); `fair weak N::Device::tick` on a variable of `S` (`missing_declaration`). | Test (TC-597) |
+| FR-172-AC-2 | Refusals at the named span: `forall trace a` with no `of` in a `behaviours` clause (`unsupported_construct`, the quantifier); `of V` in a finite trace domain clause (the quantifier); `of W` naming no model (`missing_declaration`, the alias); `v.l` with no trace variable and `d.used @ n` with `d: S::Device` (`ill_typed`, the read); a `match` conjunct reading `v.l @ a` (`unsupported_construct`/`expression-form`, the read); an object parameter `d: S::Device` in a clause that binds only `V` (`ill_typed`, the parameter); `fair weak N::Device::tick` on a variable of `S` (`missing_declaration`). | Test (TC-597) |
 | FR-172-AC-3 | §13's clause with `align skip { V::Vault::mix }` checks with `align_skip` holding `mix`; `align skip { }`, `align skip { V::Vault::mix, V::Vault::mix }`, `align skip { N::Device::tick }` in a clause over `V` alone, and `align skip` with `fair weak V::Vault::step` each refuse `unsupported_construct`/`expression-form`. | Test (TC-597) |
 | FR-172-AC-4 | FR-171-AC-3's `Det` checks with two model execution bindings to `step`. `NonInterference` and the same clause with its quantifiers' fairness sets swapped between `a` and `b` (one empty, one `weak step`) have different node identities, as do the clause and the same clause with an extra `match` conjunct. | Test (TC-597) |
 

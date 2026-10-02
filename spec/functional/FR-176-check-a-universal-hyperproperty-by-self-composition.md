@@ -28,7 +28,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL decide an HP-2 item by exploring a
+QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL decide an HP-2 item by exploring a
 `HyperProduct` (ADR-023 HC-1): the tuple of component model states, one per
 universal variable, with the state of the generalized Büchi automaton for
 the negated body, stepping only on joint steps where `μ_U` holds. It reuses
@@ -83,10 +83,9 @@ public outputs differ.
   identities.
 - `μ_U` SHALL be evaluated through the one clause evaluator (FR-107) over
   the joint step's labels. If it evaluates `Undefined` at a reachable
-  joint step, then the engine SHALL return `Violated` with a `Lockstep`
-  counterexample ending at that joint step, with no `loop_entry`, whose
-  `undefined` member is `UndefinedEvaluation{where, cause}` (ADR-023
-  HV-8). If it evaluates refused or incomplete there, then the engine SHALL
+  joint step, then the engine SHALL return `Violated` with QSpec FR-400's
+  `Undefined` counterexample ending at that joint step, one path per trace
+  variable (ADR-023 HV-8). If it evaluates refused or incomplete there, then the engine SHALL
   return `Undecided(MatchUndetermined)`.
 
 ### Phases
@@ -124,7 +123,7 @@ public outputs differ.
 | FR-176-AC-1 | ADR-023 §8.1, no reduction: the leaky product has 14 reachable states and two accepting SCCs, and returns `Violated` with a `Lockstep` counterexample of the §8.1 table's shape, `a` from `(0, 0)`, `b` from `(1, 0)`, joint steps `(step(0), step(0))`, loop entry 1. The secure product has 8 states and returns `Holds{Exhaustive}`. | Test (TC-601) |
 | FR-176-AC-2 | `NonInterference` with its `match` block removed returns `Violated` over the secure model. `match { a.step.op = V::Vault::step and b.step.op = stutter }` over the vault, which has no terminal state, returns `Undecided(VacuousMatch)`. | Test (TC-601) |
 | FR-176-AC-3 | The secure vault with an added `reset` operation (no precondition, postcondition `self.l = 0`, frame `[l]`) and the one-variable clause `forall trace a of V { always eventually holds(v.l @ a = 0) }`: under `fair { weak V::Vault::reset }` on `a` it returns `Holds`, and with the empty fairness set `Violated` with a loop of `step(1)` steps. In a two-variable clause over a subject where `a` can reach a terminal state, `μ` `a.step.op = b.step.op` pairs `a`'s stutter step only with `b`'s stutter step. | Test (TC-601) |
-| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. A `match` conjunct that the clause evaluator evaluates undefined at a reachable joint step (an integer division by an argument that is 0 there) returns `Violated` with a `Lockstep` prefix ending at the first such joint step in canonical order and `undefined` set to `UndefinedEvaluation` with cause `division-by-zero`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
+| FR-176-AC-4 | A subject that alone exceeds `max_states` stops the item `Stopped(ResourceExhausted, MaxStates)` before the product is built. `NonInterference` over the secure vault with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1`, which has no value on a joint step whose `a` step is `step(0)`, returns `Violated` with an `Undefined` counterexample ending at the first such joint step in canonical order, with a path for `a` and for `b` and cause `division-by-zero`. Running AC-1's leaky request twice gives byte-equal counterexamples. | Test (TC-601) |
 
 ## Dependencies
 

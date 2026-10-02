@@ -41,7 +41,7 @@ relationships:
 ## Status
 
 Proposed, 2026-10-01. The QSL compiler requirements that implement it are
-US-021 and FR-171 to FR-184, with TC-596 to TC-609. It builds on
+US-021 and FR-171 to FR-184, with TC-596 to TC-611, TC-615 and TC-616. It builds on
 ADR-018, itself a draft, and follows the owner's rulings recorded there
 (ADR-018 RU-1 to RU-4): the explicit-state engine comes first; the unmarked
 fairness granularity is `whole` (ADR-018 FA-6); reachable deadlocks are
@@ -193,8 +193,8 @@ ADR-018 §1 records a temporal form. The requirement's kind is
 | HP-2 | Universal hyperproperty | `hyper` over `behaviours`, every quantifier `forall` (`∀^n`, `n >= 1`), lockstep, any infinite-trace body, any fairness sets | EN-1 (exhaustive); EN-2 (refutation, bounded-to-`k`); EN-3 (inductive, safety body) |
 | HP-3 | `∀∃` safety hyperproperty | prefix `∀^n ∃^m` with `n >= 0`, `m >= 1` and `n + m >= 2`; body in ADR-014 A-4's safety fragment, interval operators included (ADR-018 IV-4); every existential variable has the empty fairness set | EN-1 (exhaustive) |
 | HP-4 | Other hyperproperty | an existential variable before a universal one; an existential variable, with a universal or a second existential beside it, whose body is outside the safety fragment or whose fairness set is non-empty; `align skip` with an existential variable or a body outside the safety fragment | none: V-8, `unsupported-requested-capability` |
-| HP-5 | Single-existential claim | prefix of exactly one `exists`, any infinite-trace body, any fairness set | ADR-022's possible family (§15) |
-| HP-6 | Projection-aligned universal hyperproperty | as HP-2, with `align skip` (HS-9) and a body in ADR-014 A-4's safety fragment (§13) | EN-1 (exhaustive) |
+| HP-5 | Single-existential claim | prefix of exactly one `exists`, no `align skip`, any infinite-trace body, any fairness set; with `align skip` the clause is HP-4 | ADR-022's possible family (§15) |
+| HP-6 | Projection-aligned universal hyperproperty | every quantifier `forall`, with `align skip` (HS-9), a body in ADR-014 A-4's safety fragment and no fairness set on any variable (PA-1, PA-3, §13) | EN-1 (exhaustive) |
 
 **The admitted fragment is HP-1, HP-2, HP-3, HP-5 and HP-6.** HP-2 is
 alternation-free and any body; HP-3 is `∀*∃*` with a safety body and
@@ -231,7 +231,7 @@ reachable graph (Clarkson and Schneider's `k`-safety).
 | HC-6 | **EN-2**, SMT unrolling of `n` copies of the transition relation over `k` joint steps, with `μ_U` as a constraint on each joint step and a joint loop back-edge that closes every component at the same step | HP-2 refutation | V-4, V-5 |
 | HC-7 | **EN-3**, `k`-induction over the self-composed transition relation | HP-2 with a safety body | V-3, V-6 `InductionNotClosed` |
 
-EN-2 and EN-3 are the SMT backend's, after ADR-018 RU-1's sequencing. HP-1's
+EN-2 and EN-3 are the SMT backend's (ADR-018 RU-1). HP-1's
 model claim, HP-3 and HP-6 are EN-1's; HP-1's code claim is the IR/CG side's
 (§14).
 
@@ -239,7 +239,7 @@ model claim, HP-3 and HP-6 are EN-1's; HP-1's code claim is the IR/CG side's
 
 | ID | Rule |
 | --- | --- |
-| HC-8 | **Pre-check.** Before building any product, EN-1 classifies every root of every subject (ADR-018 §3 pre-check) and explores each subject's reachable graph once under the request's `ModelCheckLimits`. A subject that alone reaches a limit settles the item V-7 before the product is built. HP-4 settles V-8 in negotiation and reaches no engine; HP-5 is checked as §15 states. |
+| HC-8 | **Pre-check.** Before building any product, EN-1 classifies every root of every subject (ADR-018 §3 pre-check) and explores each subject's reachable graph once under the request's `ModelCheckLimits`. A subject that alone reaches a limit settles the item V-7 before the product is built. HP-4 settles V-8 in negotiation and reaches no engine. HP-5 classifies every root as above but runs no separate subject exploration: ADR-022's phase 0 runs first, then SE-3's product exploration, whose limits count product states (§15). |
 | HC-9 | **Cost per form.** With `R_i` the reachable states of component `i`, `d_i` its greatest out-degree, `E_i` the edges of the operation variable `i` names, `A` the automaton for the negated body and `Q` the safety automaton: HP-1 evaluates at most `∏ \|E_i\|` tuples. HP-2 stores at most `∏ \|R_i\| × \|A\|` product states with at most `∏ d_i` joint steps each; matching on inputs usually removes most of them, since a matched joint step needs equal labels. HP-3 stores at most `∏ \|R_u\| × 2^(∏ \|R_e\| × \|Q\|)` states, and one `X` holds at most `∏ \|R_e\| × \|Q\|` members. When the existential model's step is determined by the matched inputs, as in a model whose only nondeterminism is the environment's choice, every `X` holds at most (existential initial tuples) × `\|Q\|` members. |
 | HC-10 | **Run limits.** Every limit is a caller-set resource budget, never a modelling limit: no form, formula size, arity or depth is capped. Each is counted with checked arithmetic as the run reaches it, and reaching one stops the run and settles V-7, `Incomplete(ResourceExhausted)` naming the limit, so the run never continues past it and the caller raises it and reruns. `max_states` counts product states, `max_transitions` joint steps, and `max_automaton_states` automaton states (ADR-018 IV-6). Two budgets join `ModelCheckLimits`, ADR-014 B-5 budgets of QSL's own provider that a request sets like the others, each with a published default that applies only when the request sets none: **`max_witness_set`**, the members one HP-3 witness set may reach before the run stops, default 2^16 (65,536); **`max_relation_tuples`**, the tuples an HP-1 run may evaluate before it stops, default 2^24 (16,777,216). `max_depth` is a method parameter (ADR-018 §1 "Depth") and settles V-5 (HV-3). Meter, time and cancellation settle V-7 as ADR-018 §3 states. |
 | HC-11 | **Where checking stops being tractable.** For HP-2 with two copies of one subject, the product is quadratic in the reachable states: at a `max_states` budget of 2^20 an unpruned pair product fits components of about 1,000 reachable states, and with three copies about 100; copy-swap symmetry (§16) halves a symmetric pair product. HP-3 is exponential in the existential reachable states in the worst case and linear in them when the existential step is determined by its matched inputs (HC-9). HP-4's general `∀∃` needs Büchi complementation, `2^O(s log s)` in the automaton size `s`. |
@@ -281,29 +281,31 @@ Why each entry holds:
 ### 6. Verdicts
 
 Every verdict is one of ADR-018 V-1 to V-8. No label, basis, category or
-`ProofBasis` member is added.
+`ProofBasis` member is added; a `proved` record carries its certification
+(HX-7, ADR-029 RU-2).
 
 | ID | Rule |
 | --- | --- |
-| HV-1 | **Proved.** EN-1 completes with no violation: HP-1 every tuple evaluated true, HP-2 no fair accepting cycle, HP-3 no reachable empty `X` with a fair universal cycle, HP-6 no reachable rejecting monitor state. V-1, `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, or `Proved{basis: Reduced{…}}` under ADR-021 RV-1, which names copy-swap when it applied (CS-5). EN-3 proves HP-2 as V-3. |
+| HV-1 | **Proved.** EN-1 completes with no violation: HP-1 every tuple evaluated true, HP-2 no fair accepting cycle, HP-3 no reachable empty `X` with a fair universal cycle, HP-6 no reachable rejecting monitor state. V-1, `proved`, `closed-scope`, `Proved{basis: Exhaustive}`, or `Proved{basis: Reduced{…}}` under ADR-021 RV-1, which names copy-swap when it applied (CS-5). EN-3 proves HP-2 as V-3. Every V-1 `proved` from EN-1 settles only after the product-closure certificate checker (HX-7) accepts its certificate. A proof whose method has no certificate checker, such as EN-3's induction, settles `proved` labelled `uncertified` in its terminal record. A rejected certificate settles V-6 `CertificateRejected`. |
 | HV-2 | **Refuted.** A counterexample (§7) that replay reproduces, including one that ends where the claim evaluated undefined (HV-8). V-4, `refuted`, `decisive-counterexample`, `Refuted`. |
 | HV-3 | **Bounded.** A run that completes every depth up to `max_depth` with no violation settles V-5 `BoundReached{depth}`. For HP-2 and HP-3 this is "no counterexample whose universal lasso has length at most `k`", lockstep length being the shared number of joint steps (ADR-018 §1 "Length"). For HP-1 it is "no counterexample whose executions all leave states at depth below `k`". |
-| HV-4 | **Inconclusive causes.** `InconclusiveCause` gains `MatchUndetermined`: `μ` evaluated refused or incomplete at a reachable joint step. It gains `VacuousMatch`: the HM-7 case. `UndecidedSuccessor`, `NoInitialState`, `ReplayParity` and `ReplayRefused` apply as ADR-018 V-6 states. All are V-6. |
+| HV-4 | **Inconclusive causes.** `InconclusiveCause` gains `MatchUndetermined`: `μ_U` or `μ_E` evaluated refused or incomplete at a reachable joint step, for HP-2, HP-3 and HP-6 alike. It gains `VacuousMatch`: the HM-7 case. `UndecidedSuccessor`, `NoInitialState`, `ReplayParity` and `ReplayRefused` apply as ADR-018 V-6 states. All are V-6. |
 | HV-5 | **Stopped.** Reaching a run limit of HC-10, a meter, time or cancellation settles V-7. |
 | HV-6 | **Unsupported.** HP-4, and a clause over `behaviours` under a profile other than infinite-trace (HS-7), settle V-8, `unsupported-requested-capability`. |
 | HV-7 | **Identity.** The obligation identity (ADR-013 O-09) binds every subject in alias order, the quantifier prefix with each variable's alias in order, each variable's fairness set, `μ`, and the object parameters' instance. Reversing two quantifiers, or moving a constraint from one variable to another, gives a different obligation (QSpec FR-191-AC-2, AC-4). |
-| HV-8 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply to every hyper form EN-1 decides. When the body or `μ` evaluates undefined on a tuple, the item settles `refuted`, V-4, with cause `UndefinedEvaluation{where, cause}`. `where` names the tuple: one trace per quantified variable, ending at the joint position where the claim evaluated undefined, which is `trace_position`; for HP-1, the tuple of executions. `cause` is the evaluator's undefined cause. The engine reports the first refuting evidence in canonical order: for HP-1 the first tuple, in the product of canonical edge orders, on which the body is false or undefined; for HP-2, HP-3, HP-5 and HP-6 the first product state, in canonical breadth-first order, at which a letter is undefined or a violation is reached, as ADR-018 UE-4 states. The counterexample is a finite prefix with no `loop_entry`, and its `undefined` member holds the `UndefinedEvaluation`. |
+| HV-8 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply to every hyper form EN-1 decides. When the body or `μ` evaluates undefined on a tuple, the item settles `refuted`, V-4, with cause `UndefinedEvaluation{where, cause}`. `where` names the tuple: one trace per quantified variable, ending at the joint position where the claim evaluated undefined, which is `trace_position`; for HP-1, the tuple of executions. `cause` is the evaluator's undefined cause. The engine reports the first refuting evidence in canonical order: for HP-1 the first tuple, in the product of canonical edge orders, on which the body is false or undefined; for HP-2, HP-3, HP-5 and HP-6 the first product state, in canonical breadth-first order, at which a letter is undefined or a violation is reached, as ADR-018 UE-4 states. The counterexample is QSpec FR-400's `undefined` kind: one finite path per trace or execution variable, universal and existential, ending at the state the undefined evaluation reads, so an undefined `μ_E` or body letter on an HP-3 existential tuple is carried and replayed like a universal one. |
 
 ### 7. Counterexamples and replay
 
 | ID | Rule |
 | --- | --- |
-| HX-1 | **Content.** A hyper counterexample is `HyperCounterexample{kind, traces, loop_entry, instance}`. `traces` holds one model trace per universal variable, in quantifier order: the variable, its subject (by alias), the index of its initial state in the subject, and each step as its FR-181 transition identity, or the stutter marker, with its post-state key as ADR-018 CX-2 records it. Every trace has the same number of steps, and `loop_entry` is the joint position at which every component's loop re-enters. `kind` is `Lockstep` (HP-2), `WitnessExhausted{position}` (HP-3, the first joint position at which `X` is empty), `Projected` (HP-6, PA-6) or `StepTuple` (HP-1). A `StepTuple` trace is a finite prefix from an initial state to the execution's pre-state followed by the execution's transition, and has no `loop_entry`. It travels in `WitnessEnvelope<HyperCounterexample>` with a new `ReplaySource::ModelTraceTuple` source arm, replayed by a layer-6 facade entry `qsl_replay::replay_model_trace_tuple` beside ADR-018 CX-3's `replay_model_trace`, `trace_position` naming the failing joint position (ADR-014 TR-2). |
+| HX-1 | **Content.** A hyper counterexample is QSpec FR-400's `HyperCounterexample`, with its five kinds: `lockstep` (HP-2), `witness-exhausted` (HP-3), `projected` (HP-6, PA-6), `step-tuple` (HP-1) and `undefined` (any form, HV-8), and FR-400's reader validation. QSL's type mirrors it member for member (FR-183). It travels in `WitnessEnvelope<HyperCounterexample>` with a new `ReplaySource::ModelTraceTuple` source arm, replayed by a layer-6 facade entry `qsl_replay::replay_model_trace_tuple` beside ADR-018 CX-3's `replay_model_trace`, `trace_position` naming the failing joint position (ADR-014 TR-2). |
 | HX-2 | **Replay of `Lockstep`.** E9 recompiles the package (FR-098) and re-admits each subject. For each trace it re-executes the steps through its subject's `ModelSystem` with FR-101 `replay`, with ADR-018 CX-3's refusals (no successor of a step's identity with the recorded post-state, a step not enabled, a loop that does not close at `loop_entry`). It then checks `μ_U` at every joint step, the loop's closing step included, and each trace's fairness set on its own loop (ADR-018 CX-3, ADR-019 SR-8), refusing an unmatched tuple or an unfair trace with `invalid_runtime_input`/`invalid-value`. It evaluates the body over the tuple by HM-4. False settles `reproduced-with-evaluated-witness` and the item `refuted`; true settles `inconclusive`, `ReplayParity`. |
 | HX-3 | **Replay of `WitnessExhausted`.** Replay re-executes and checks the universal traces as HX-2 does, without evaluating the body. It then recomputes `X_0` to `X_position` along the universal traces from the existential subjects' `ModelSystem`s and the safety automaton, by HC-2's rule, under the request's `max_witness_set`. `X_position` empty and every earlier `X` non-empty settles `reproduced-with-evaluated-witness` and the item `refuted`. A non-empty `X_position` settles `inconclusive`, `ReplayParity`; reaching `max_witness_set` during replay settles `inconclusive`, `ReplayRefused`. |
 | HX-4 | **What an HP-3 refutation proves.** It names a fair tuple of universal behaviours and a joint position by which every existential tuple matched with it has violated the body. `X` is a function of the universal prefix, the existential subjects and the body, so replay recomputes it with no engine present and checks the absence of a witness exhaustively over the existential subject, along a finite prefix. That is why the refutation's basis is `decisive-counterexample`: the evidence is the universal tuple, and the existential half is a closed computation over it. |
 | HX-5 | **Replay of `StepTuple`.** Replay re-executes each prefix, checks the final transition is enabled with the recorded post-state, and evaluates the body over the tuple of executions through the one clause evaluator. False reproduces; true settles `ReplayParity`. A counterexample whose `undefined` member is set replays, for every kind, by ADR-018 UE-5 over the tuple: it reproduces when the first undefined evaluation along the tuple is at `where` with an equal cause. |
 | HX-6 | **Engine independence.** EN-2 reads each component's transition identities from selector variables in its encoding and produces a `Lockstep` counterexample that replays by HX-2 with no solver present (ADR-018 CX-4). A counterexample found under symmetry is concretised by ADR-021 EI-6 per component with the one diagonal permutation, so no counterexample carries a canonical state. |
+| HX-7 | **Product-closure certificate.** An EN-1 `proved` for HP-1, HP-2, HP-3, HP-5 or HP-6 writes a product-closure certificate: the form, the instance, and the sorted list of reachable product-state keys the run stored (for HP-1, each subject's reachable state keys). The layer-6 checker in `qsl-replay` recompiles the package and rebuilds each subject's `ModelSystem`, as replay does, and reads nothing from the engine but the certificate. It accepts when the recomputed initial product states are members, every member's recomputed successors are members (canonicalised by CS-2 when the record names copy-swap), no member's letters or `μ` evaluate undefined, refused or incomplete, and the closed set holds no violation by the form's own rule, recomputed by the checker: no fair accepting SCC (HP-2), no reachable empty `X` with a fair universal cycle (HP-3), no rejecting monitor state (HP-6), no false tuple (HP-1), no fair accepting cycle missing from an initial state's part (HP-5). FR-183 states the format and the check (ADR-029 RU-2). |
 
 ### 8. Worked examples
 
@@ -426,38 +428,26 @@ loops while `l_a = l_b`. After position 0 every member of `X` is at `g`.
   claim. It is routed to ADR-022's family and settles by its verdict rows
   GV-1 (V-9), GV-2 (V-10) and GV-5 (§15).
 
-### 10. Downstream impact and sequencing
+### 10. Downstream impact
 
 **Stage DAG.** Hyper and relation model claims run at ADR-018's S6c, reading
 the S4 package over E10; their refutations leave S6c over E11 as S7 typed
 witnesses, reach S8 through E9, and settle their terminal records only after
 replay, as ADR-018 §7 states for a model counterexample. A relation's code
-claim runs on the existing S5 → E7 → S6b Kani path (§14). ADR-011 §6.1 layer
-5 `model_check` holds the hyper product, the projected product, the
-witness-set product and tuple enumeration; layer 6 `replay` gains the facade
-entry `replay_model_trace_tuple`.
+claim runs on the existing S5 → E7 → S6b Kani path (§14). Following ADR-029
+CB-3, layer A `qsl-analyze` holds the engines: the hyper product, the
+projected product, the witness-set product and tuple enumeration. Layer 6
+`qsl-replay` holds the verdict settlement, the facade entry
+`replay_model_trace_tuple` and the product-closure certificate checker
+(HX-7).
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | S2: forms for `hyper` over `behaviours` and `relation` over model executions, in place of today's refusal. S3, in the `TemporalTrace` family: the HS-2 alias binding, object parameters, indexed atoms, step labels and the `μ` split, per-variable fairness, the execution-binding check, the `align skip` list (PA-1), the copy-swap test (CS-1), form classification HP-1 to HP-6, and the HP-1 code-claim requirement record (XC-1). Layer-5 evaluator: tuple-of-lassos evaluation (HM-4) and three-valued evaluation of a projected prefix tuple (PA-6). Layer 5 `model_check`: `HyperProduct` (HC-1), the projected product (PA-4), `WitnessSet` shared with ADR-020 (HC-2), tuple enumeration (HC-3), component-scoped fairness, the copy-swap canonicaliser (CS-2), the two new budgets, `VacuousMatch` detection; HP-5 reaches ADR-022's engine (SE-2). `qsl-replay`: `HyperCounterexample`, `ReplaySource::ModelTraceTuple` and its result arm, `MatchUndetermined` and `VacuousMatch`. The request writer: one subject per alias and the deadlock-freedom item per subject. |
+| DS-1 | QSL | S2: forms for `hyper` over `behaviours` and `relation` over model executions, in place of today's refusal. S3, in the `TemporalTrace` family: the HS-2 alias binding, object parameters, indexed atoms, step labels and the `μ` split, per-variable fairness, the execution-binding check, the `align skip` list (PA-1), the copy-swap test (CS-1), form classification HP-1 to HP-6, and the HP-1 code-claim requirement record (XC-1). Layer-5 evaluator: tuple-of-lassos evaluation (HM-4) and three-valued evaluation of a projected prefix tuple (PA-6). `qsl-analyze`: `HyperProduct` (HC-1), the projected product (PA-4), `WitnessSet` shared with ADR-020 (HC-2), tuple enumeration (HC-3), component-scoped fairness, the copy-swap canonicaliser (CS-2), the two new budgets, `VacuousMatch` detection; HP-5 reaches ADR-022's engine (SE-2). `qsl-replay`: `HyperCounterexample`, `ReplaySource::ModelTraceTuple` and its result arm, the verdict settlement with `MatchUndetermined` and `VacuousMatch`, and the product-closure certificate checker (HX-7). The request writer: one subject per alias and the deadlock-freedom item per subject. |
 | DS-2 | CG | The EN-1 `negotiate_*` arm reads the HP form; HP-4 settles V-8. The SMT arm takes HP-2 only. The two-call Kani harness for an HP-1 code claim (XC-2 to XC-5). Obligation identity per HV-7. |
 | DS-3 | IR | EN-2 and EN-3 over `n` copies of the transition relation with `μ_U` as a step constraint, after ADR-018 DS-3. Intake of the HP-1 code-claim obligation (XC-1). |
 | DS-4 | Driver | Supplies one subject per alias to S6c and to E9 replay. |
 | DS-5 | QSpec | §11. |
-
-**Sequencing.** After ADR-018's EN-1 (ADR-018 §7 sequencing step 3):
-
-1. **Specification.** This record, then QSpec (§11), then the QSL compiler
-   requirements.
-2. **HP-2 on EN-1.** The S2 and S3 forms, the tuple evaluator, `HyperProduct`,
-   the counterexample and its replay, and §8.1 as the first conformance
-   vector. It needs nothing beyond ADR-018's EN-1.
-3. **HP-1, HP-3, HP-6 and copy-swap on EN-1**, in parallel once step 2
-   lands. HP-3 shares `WitnessSet` with ADR-020 AX-2; whichever lands first
-   builds it. HP-5 follows ADR-022's engine.
-4. **The HP-1 code claim**, on the IR/CG side once Kani harness generation
-   reads the XC-1 hand-off.
-5. **EN-2 and EN-3 for HP-2**, after the SMT backend exists (ADR-018 RU-1).
 
 ### 11. What QSpec must specify
 
@@ -468,7 +458,7 @@ entry `replay_model_trace_tuple`.
 | QS-3 | The forms HP-1 to HP-6, the admitted fragment, V-8 for HP-4, and the routing of HP-5 to the possible family with its witness, trap and verdict rules (SE-1 to SE-5) | QSpec FR-396; FR-390 to FR-394 for HP-5 |
 | QS-4 | Claim-form rows: a hyperproperty over behaviours and a relation's model claim require `temporal-satisfaction`; a relation's code claim requires `operation-contract`, one claim per relation, with every declared invariant of each execution's model as its pre-state premise (XC-1, XC-2) | QSpec FR-290 |
 | QS-5 | Verdicts: the HV table onto QSpec FR-360 and FR-243; the `MatchUndetermined` and `VacuousMatch` inconclusive causes; `max_witness_set` and `max_relation_tuples` with their defaults and V-7 settlement | QSpec FR-399, FR-360, FR-331 |
-| QS-6 | Counterexample wire and replay: `HyperCounterexample` with its four kinds, equal trace lengths and the shared loop entry for `Lockstep` and `WitnessExhausted`, per-step skip marks for `Projected`, the replay rules HX-2, HX-3, HX-5 and PA-7, HX-4's evidence for an HP-3 refutation, and the relation code claim's Kani counterexample replay (XC-4) | QSpec FR-400, FR-401, FR-331 |
+| QS-6 | Counterexample wire and replay: `HyperCounterexample` with its five kinds, the `undefined` kind carrying a trace for every variable, equal trace lengths and the shared loop entry for `Lockstep` and `WitnessExhausted`, per-step skip marks for `Projected`, the replay rules HX-2, HX-3, HX-5 and PA-7, HX-4's evidence for an HP-3 refutation, and the relation code claim's Kani counterexample replay (XC-4) | QSpec FR-400, FR-401, FR-331 |
 | QS-7 | Obligation identity: subjects, prefix with aliases, per-variable fairness, `μ`, instance (HV-7); the checked-package v2 `hyperproperty` node's members for them | QSpec FR-402, FR-331 |
 | QS-8 | Preservation rows PH-1 to PH-6 beside ADR-021's PT-2, and copy-swap: its detection rule, its admission without a request selection, and `CopySwap` in `ProofBasis::Reduced` (CS-1 to CS-5) | QSpec FR-403 |
 | QS-9 | Conformance vectors, each with expected verdict and, for a refutation, a counterexample that must replay: (a) §8.1 leaky refuted, secure proved, unmatched refuted; (b) §8.2 leaky refuted with exhaustion at position 1, secure proved; (c) a `μ_U` no tuple satisfies, settling `VacuousMatch`; (d) a model where one copy reaches a terminal state, with `μ` matching `stutter`; (e) an HP-2 liveness body that holds only under one variable's fairness set; (f) HP-4 prefixes and bodies settling V-8; (g) a step relation for determinism, refuted on a model with a nondeterministic post-state and proved on a deterministic one; (h) replay refusals: traces of unequal length, `μ_U` false at a joint step, an unfair component, a recomputed non-empty `X`; (i) an HP-3 run that reaches `max_witness_set` and settles V-7; (j) a body with an interval operator nested under `always`; (k) §13's projection example, refuted in lockstep and proved with `align skip`, and a projected counterexample that replays; (l) copy-swap on §8.1, with the reduced and unreduced runs agreeing, and a body that fails the CS-1 test; (m) an HP-5 claim proved by a lasso witness and one refuted by a trap; (n) a relation code claim whose Kani counterexample replays | QSpec TC-213 and new TCs |
@@ -638,7 +628,7 @@ is CG's.
 ## References
 
 - Owning ticket: Linear QSL-370. Related: VER-6, RES-18. Its QSpec half,
-  QS-1 to QS-9, goes to a paired STD ticket.
+  QS-1 to QS-9, is QSpec FR-395 to FR-403 (Linear STD-136).
 - The owner's rulings of §12 are recorded on the owning ticket.
 - ADR-018 (Linear QSL-366; QSpec half QSpec FR-360 to FR-370, Linear
   STD-131). Sibling records: ADR-019

@@ -24,7 +24,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL decide the model claim of an HP-1 step
+QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL decide the model claim of an HP-1 step
 relation (ADR-023 HM-9, HC-3) by exploring each subject's reachable graph
 once, retaining edges, and evaluating the relation's body over every tuple
 of reachable transitions, one per execution variable, each labelled with
@@ -68,10 +68,10 @@ each with a path from an initial state to its pre-state.
 - The first tuple on which the body evaluates `false` or `Undefined` SHALL
   return `Violated`, each execution carrying the canonical breadth-first
   path from an initial state to its pre-state followed by its transition.
-- If the body evaluates `Undefined` on that tuple, then the counterexample's
-  `undefined` member SHALL hold `UndefinedEvaluation{where, cause}`, with
-  `where` the tuple and `cause` the evaluator's undefined cause (ADR-018
-  UE-1, UE-2).
+- If the body evaluates `Undefined` on that tuple, then the engine SHALL
+  return QSpec FR-400's `Undefined` counterexample over the same execution
+  paths, carrying `UndefinedEvaluation{where, cause}` with `where` the tuple and
+  `cause` the evaluator's undefined cause (ADR-018 UE-1, UE-2).
 - When every tuple evaluated `true`, the engine SHALL return
   `Holds{Exhaustive}`.
 - When the next tuple would pass `max_relation_tuples`, the engine SHALL
@@ -88,8 +88,8 @@ each with a path from an initial state to its pre-state.
 | FR-179-AC-1 | FR-171-AC-3's `Det` over ADR-023 §8's secure vault returns `Holds{Exhaustive}` after evaluating every pair of the 8 reachable `step` edges (64 tuples). | Test (TC-604) |
 | FR-179-AC-2 | `Det` over a vault variant whose `step` postcondition is `self.l = i or self.l = 1 - i` (a nondeterministic post-state) returns `Violated` with a `StepTuple` counterexample: two executions of `step` with equal pre-states and inputs and unequal post-states, each with a path from an initial state to its pre-state. | Test (TC-604) |
 | FR-179-AC-3 | AC-1's request with `max_relation_tuples` 10 returns `Stopped(ResourceExhausted, MaxRelationTuples)` after 10 tuples, naming the limit and its value; with `max_depth` 1 it enumerates only the 4 transitions from the two initial states (16 tuples) and returns `BoundReached{depth: 1}`. Running AC-2's request twice gives byte-equal counterexamples. | Test (TC-604) |
-| FR-179-AC-4 | Over a `Cell` model (field `d: Int[0, 1]`, operation `set(k: Int[0, 1])` with postcondition `self.d = k`, initial `d = 0`), `relation R using v over (x: C::Cell::set, y: C::Cell::set) { 1 / x.k >= y.k }` evaluates every tuple with `x.k = 1` `true` and every tuple with `x.k = 0` undefined, and returns `Violated` with a `StepTuple` counterexample on the first tuple in canonical order, which has `x.k = 0`, whose `undefined` member is `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; it never returns `Holds`. | Test (TC-610) |
-| FR-179-AC-5 | Over the same `Cell` model, `relation R2 using v over (x: C::Cell::set, y: C::Cell::set) { 1 / (1 - x.k) > y.k }`, where every tuple with `x.k = 0` precedes every tuple with `x.k = 1` in canonical order, is true on the first tuple (`x.k = 0`, `y.k = 0`), false on the next (`x.k = 0`, `y.k = 1`) and undefined on every tuple with `x.k = 1`. It returns `Violated` with a `StepTuple` counterexample on the false tuple, with no `undefined` member. | Test (TC-611) |
+| FR-179-AC-4 | Over a `Cell` model (field `d: Int[0, 1]`, operation `set(k: Int[0, 1])` with postcondition `self.d = k`, initial `d = 0`), `relation R using v over (x: C::Cell::set, y: C::Cell::set) { 1 / x.k >= y.k }` evaluates every tuple with `x.k = 1` `true` and every tuple with `x.k = 0` undefined, and returns `Violated` with an `Undefined` counterexample on the first tuple in canonical order, which has `x.k = 0`, carrying `UndefinedEvaluation{where: that tuple, cause: division-by-zero}`; it never returns `Holds`. | Test (TC-610) |
+| FR-179-AC-5 | Over the same `Cell` model, `relation R2 using v over (x: C::Cell::set, y: C::Cell::set) { 1 / (1 - x.k) > y.k }`, where every tuple with `x.k = 0` precedes every tuple with `x.k = 1` in canonical order, is true on the first tuple (`x.k = 0`, `y.k = 0`), false on the next (`x.k = 0`, `y.k = 1`) and undefined on every tuple with `x.k = 1`. It returns `Violated` with a `StepTuple` counterexample on the false tuple, not an `Undefined` one. | Test (TC-611) |
 
 ## Dependencies
 

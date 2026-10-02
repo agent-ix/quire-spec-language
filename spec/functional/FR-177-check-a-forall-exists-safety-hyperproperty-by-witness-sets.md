@@ -26,12 +26,12 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL decide an HP-3 item by exploring a
+QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL decide an HP-3 item by exploring a
 witness-set product (ADR-023 HC-2): each state is a tuple of universal
 component states with the set `X` of (existential tuple, safety automaton
 state) pairs still consistent with it. An empty `X` from which a fair
 universal cycle exists is a violation. The construction is one `WitnessSet`
-component of `model_check`, which ADR-020's hidden-field refinement also
+component of `qsl-analyze`, which ADR-020's hidden-field refinement also
 uses. It needs no Büchi complementation.
 
 ## Use case
@@ -81,6 +81,20 @@ partner has failed.
   SHALL stop and return `Stopped(ResourceExhausted, MaxWitnessSet)`
   (FR-184).
 
+### Undefined and undetermined evaluation
+
+- The engine SHALL evaluate `μ_U`, `μ_E` and the safety automaton's letters
+  through the one clause evaluator (FR-107) at every joint step and joint
+  position it builds, for universal and existential components alike.
+- If one evaluates `Undefined`, then the engine SHALL return `Violated`
+  with QSpec FR-400's `Undefined` counterexample ending at that joint
+  position, one path per universal and existential variable, the first such
+  position in canonical breadth-first order (ADR-023 HV-8). Between it and
+  an empty `X`, the first in that order SHALL be returned.
+- If `μ_U` or `μ_E` evaluates refused or incomplete at a reachable joint
+  step, and no refuting evidence comes first, then the engine SHALL return
+  `Undecided(MatchUndetermined)` (ADR-023 HV-4).
+
 ### Violation
 
 - `X` empty SHALL be absorbing.
@@ -104,6 +118,8 @@ partner has failed.
 | FR-177-AC-2 | `Opaque` over the secure vault: every reachable universal state `(h, l)` has `X = {((1 - h, l), g)}`, the product has 4 states, and the item returns `Holds{Exhaustive}`. | Test (TC-602) |
 | FR-177-AC-3 | The `exists trace b of V exists trace c of V` clause (`n = 0`) with body `holds(v.h @ b != v.h @ c) and always holds(v.l @ b = v.l @ c)` and `match { b.step.Vault::step.i = c.step.Vault::step.i }` returns `Holds` over the secure vault and `Violated` over the leaky vault. | Test (TC-602) |
 | FR-177-AC-4 | `Opaque` over the leaky vault with `max_witness_set` 0 returns `Stopped(ResourceExhausted, MaxWitnessSet)` naming the limit and its value; with the default it returns AC-1's outcome. | Test (TC-602) |
+| FR-177-AC-5 | `Opaque` over the secure vault with the added `match` conjunct `(if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) else 1) = 1` on the existential variable `b`, which has no value on a joint step whose `b` step is `step(0)`: the item returns `Violated` with an `Undefined` counterexample whose traces hold a path for `a` and for `b`, ending at the first such joint step in canonical order, with cause `division-by-zero`; it never returns `Holds`. | Test (TC-602) |
+| FR-177-AC-6 | `Opaque` with a `match` conjunct that calls a function whose evaluation exhausts its meter at the first joint step (incomplete) returns `Undecided(MatchUndetermined)` and never `Holds`. | Test (TC-602) |
 
 ## Dependencies
 

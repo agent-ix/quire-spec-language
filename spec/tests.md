@@ -399,15 +399,15 @@ names different artifacts in each.
 | TC-599 | Hyper products admit reductions by their rows and halve by compiler-checked copy-swap | Integration | P1 | FR-174-AC-1, FR-174-AC-2, FR-174-AC-3, FR-174-AC-4 | 🚧 Planned |
 | TC-600 | The evaluator reads a hyper body over a tuple of lassos in lockstep | Unit | P1 | FR-175-AC-1, FR-175-AC-2, FR-175-AC-3 | 🚧 Planned |
 | TC-601 | EN-1 checks a universal hyperproperty over the self-composition product | Integration | P1 | FR-176-AC-1, FR-176-AC-2, FR-176-AC-3, FR-176-AC-4 | 🚧 Planned |
-| TC-602 | EN-1 checks a forall-exists safety hyperproperty by witness sets | Integration | P1 | FR-177-AC-1, FR-177-AC-2, FR-177-AC-3, FR-177-AC-4 | 🚧 Planned |
-| TC-603 | EN-1 checks a projection-aligned hyperproperty over the projected product | Integration | P1 | FR-178-AC-1, FR-178-AC-2, FR-178-AC-3, FR-178-AC-4 | 🚧 Planned |
+| TC-602 | EN-1 checks a forall-exists safety hyperproperty by witness sets | Integration | P1 | FR-177-AC-1, FR-177-AC-2, FR-177-AC-3, FR-177-AC-4, FR-177-AC-5, FR-177-AC-6, FR-183-AC-6 | 🚧 Planned |
+| TC-603 | EN-1 checks a projection-aligned hyperproperty over the projected product | Integration | P1 | FR-178-AC-1, FR-178-AC-2, FR-178-AC-3, FR-178-AC-4, FR-178-AC-5, FR-178-AC-6 | 🚧 Planned |
 | TC-604 | EN-1 checks a step relation over every tuple of reachable transitions | Integration | P1 | FR-179-AC-1, FR-179-AC-2, FR-179-AC-3 | 🚧 Planned |
 | TC-605 | A bound step relation hands over its code claim, and its Kani counterexample replays | Integration | P1 | FR-180-AC-1, FR-180-AC-2, FR-180-AC-3 | 🚧 Planned |
 | TC-606 | A single-existential claim is proved by a lasso witness and refuted by a trap | Integration | P1 | FR-181-AC-1, FR-181-AC-2, FR-181-AC-3, FR-181-AC-4 | 🚧 Planned |
 | TC-615 | A single-existential witness proves only after exploration rules out an undefined evaluation | Integration | P1 | FR-181-AC-5 | 🚧 Planned |
 | TC-616 | A single-existential witness on a stopped run settles well-definedness unchecked | Integration | P1 | FR-181-AC-6 | 🚧 Planned |
-| TC-607 | Hyper and step-relation outcomes settle as terminal records with their causes | Unit | P1 | FR-182-AC-1, FR-182-AC-2, FR-182-AC-3, FR-182-AC-4 | 🚧 Planned |
-| TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4 | 🚧 Planned |
+| TC-607 | Hyper and step-relation outcomes settle as terminal records with their causes | Unit | P1 | FR-182-AC-1, FR-182-AC-2, FR-182-AC-3, FR-182-AC-4, FR-182-AC-7, FR-182-AC-8 | 🚧 Planned |
+| TC-608 | The replay facade replays hyper counterexamples of every kind through ModelSystem | Integration | P1 | FR-183-AC-1, FR-183-AC-2, FR-183-AC-3, FR-183-AC-4, FR-183-AC-7 | 🚧 Planned |
 | TC-609 | max_witness_set and max_relation_tuples are caller budgets with published defaults | Unit | P1 | FR-184-AC-1, FR-184-AC-2, FR-184-AC-3 | 🚧 Planned |
 | TC-610 | An HP-1 relation whose first refuting tuple is undefined settles refuted with UndefinedEvaluation | Integration | P1 | FR-179-AC-4, FR-182-AC-5, FR-183-AC-5 | 🚧 Planned |
 | TC-611 | An HP-1 relation whose first refuting tuple is false settles refuted ahead of later undefined tuples | Integration | P1 | FR-179-AC-5, FR-182-AC-6 | 🚧 Planned |

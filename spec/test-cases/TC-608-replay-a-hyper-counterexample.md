@@ -12,7 +12,7 @@ relationships:
 
 Verify `replay_model_trace_tuple` on `Lockstep`, `WitnessExhausted`, `Projected` and `StepTuple` counterexamples: reproduction, disagreement, refusal and determinism.
 
-Scope: FR-183-AC-1 to FR-183-AC-4.
+Scope: FR-183-AC-1 to FR-183-AC-4, FR-183-AC-7.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Fixtures: the counterexamples of TC-601, TC-602, TC-603 and TC-604, and the edit
 2. Replay the `Projected` and `StepTuple` counterexamples.
 3. Replay each FR-183-AC-3 edited envelope.
 4. Replay FR-183-AC-4's hand-built envelopes; §8.2's leaky one with `max_witness_set` 0; one envelope twice.
+5. Check §8.1's secure proof certificate, the same with one member removed, with an accepting member added and with its states unsorted; check the copy-swap certificate.
 
 Tag the tests `#[trace("TC-608", "FR-183-AC-n")]`.
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-608", "FR-183-AC-n")]`.
 - Step 2: both reproduce.
 - Step 3: each refuses with no result.
 - Step 4: `inconclusive`, `Verdicts` for each hand-built envelope; a refusal; equal results.
+- Step 5: `Accepted` (8 states); `Rejected` naming the closure rule and the missing successor; `Rejected` naming the violation rule; `Rejected` before recomputation; `Accepted` (6 states).

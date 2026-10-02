@@ -22,7 +22,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL check an HP-5 claim, a `hyper` clause over
+QSL's layer-A `qsl-analyze` engine EN-1 (ADR-029 CB-3) SHALL check an HP-5 claim, a `hyper` clause over
 `behaviours` whose prefix is exactly one `exists trace b of M`, as a
 possibility claim with a temporal body (ADR-023 SE-1 to SE-5): from every
 initial state of the subject, some behaviour fair under the clause's
@@ -64,6 +64,13 @@ that no trace exists.
 
 ## Behavior
 
+### Order
+
+- The engine SHALL classify every root of the subject as FR-176's
+  pre-check does, and SHALL run no separate exploration of the subject for
+  an HP-5 item. Phase 0 SHALL run next, then the product exploration below,
+  whose `max_states` counts product states (ADR-023 HC-8).
+
 ### Check
 
 - The engine SHALL build the product of the subject with the generalized
@@ -96,6 +103,9 @@ that no trace exists.
   `WitnessedUnchecked` with the run's end and open causes otherwise, since a
   reachable undefined evaluation of the body is then not ruled out
   (ADR-022 RU-5).
+- `Witnessed` SHALL carry the product-closure certificate of the explored
+  product (FR-183); the item SHALL settle `proved` only after its witnesses
+  replay and the certificate check accepts (FR-182, ADR-023 HX-7).
 - If a letter of the body evaluates `Undefined` at a reachable product
   state, the engine SHALL return `Undefined` with FR-126's canonical
   breadth-first path to the first such product state, `where` naming that
@@ -136,7 +146,7 @@ that no trace exists.
 | FR-181-AC-2 | `exists trace b of V { eventually holds(v.l @ b = 2) }` returns `Trapped` for initial state 0 with an empty stem; replay re-explores its part of the product, finds no accepting cycle, and the item settles `refuted`, `closed-scope`. | Test (TC-606) |
 | FR-181-AC-3 | Over the secure vault with FR-176-AC-3's `reset` operation, `exists trace b of V fair { weak V::Vault::reset } { eventually always holds(v.l @ b = 1) }` settles `refuted`, `closed-scope`, and the same clause with no fairness set settles `proved`. | Test (TC-606) |
 | FR-181-AC-4 | AC-1's claim with `max_depth` 1 and `witness_samples` 0 returns `NoDecision` and settles `inconclusive`, `BoundReached{depth: 1}`. AC-1's witness with its loop's last step removed refuses as FR-128 refuses a loop that does not close. | Test (TC-606) |
-| FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(v.l @ b = 0 and 1 / (1 - v.l @ b) = 1) }` has a witness lasso looping `step(0)` at `(h, 0)` for each initial state, and still returns `Undefined` at the first product state with `l = 1`, cause `division-by-zero`, settling `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
+| FR-181-AC-5 | Over the secure vault, `exists trace b of V { eventually always holds(1 / (1 - v.l @ b) = 1 and v.l @ b = 0) }`, whose division is evaluated first and has no value at `l = 1`, has a witness lasso looping `step(0)` at `(h, 0)` for each initial state, and still returns `Undefined` at the first product state with `l = 1`, cause `division-by-zero`, settling `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`. AC-1's claim with the default `witness_samples` settles `proved` only from a product exploration that completed with no open node. | Test (TC-615) |
 | FR-181-AC-6 | AC-1's claim with the default `witness_samples` and `max_states` 2 gets a sampled witness lasso per initial state, the exploration stops at `max_states`, and the item returns `WitnessedUnchecked` and settles `inconclusive`, `WellDefinednessUnchecked`, never `proved`; with `witness_samples` 0 the same run settles `failed`, `resource-incomplete`, naming `max_states`. | Test (TC-616) |
 
 ## Dependencies

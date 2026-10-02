@@ -35,7 +35,10 @@ member (ADR-023 HV-1 to HV-8). `InconclusiveCause` gains `MatchUndetermined`
 and `VacuousMatch`. An item whose claim evaluates undefined on a tuple
 settles `refuted` with cause `UndefinedEvaluation{where, cause}` naming the
 tuple (ADR-018 UE-1, UE-2). HP-5 items settle by the possible family's map
-(FR-181).
+(FR-181). Settlement is `qsl-replay`'s (ADR-029 CB-2): an EN-1 `proved`
+settles only after the product-closure certificate checker (FR-183)
+accepts its certificate, and a proof whose method has no certificate
+checker settles `proved` labelled `uncertified` (ADR-023 HV-1, HX-7).
 
 ## Use case
 
@@ -49,6 +52,8 @@ match no pair of runs satisfies reads `inconclusive`, `VacuousMatch`, never
 
 - A `ModelCheckOutcome` from FR-176, FR-177, FR-178 or FR-179, or an SMT
   outcome for HP-2 mapped by CG (ADR-023 HC-6, HC-7) into the same values.
+- For `Holds` from EN-1: the `CertificateCheck` of its certificate
+  (FR-183).
 - For `Violated`: the FR-072 replay result of its `HyperCounterexample`
   (FR-183), or the `ReplayRefusal` that stopped it.
 - For an item negotiation did not route: its negotiation disposition.
@@ -71,12 +76,12 @@ FR-243 basis, O-16 category and method.
 
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
-| V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174), proof basis `exhaustive` or `reduced` (QSpec FR-399) | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
+| V-1 | `Holds{Exhaustive}` or `Holds{Reduced{…}}` (copy-swap named, FR-174), proof basis `exhaustive` or `reduced` (QSpec FR-399), whose certificate check is `Accepted` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
 | V-3 | SMT `k`-inductive for HP-2 with a safety body | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}}` | success |
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
-| V-4 | `Violated` whose `undefined` member is set and whose replay reproduces the undefined value at `where` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
+| V-4 | `Violated` with an `Undefined` counterexample (QSpec FR-400) whose replay reproduces the undefined value at `trace_position` (FR-183) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
-| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving` (wire cause `reduction-not-preserving`); SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `Undecided(MatchUndetermined)`, `Undecided(VacuousMatch)`, `UndecidedSuccessor`, `NoInitialState`, `ReductionNotPreserving` (wire cause `reduction-not-preserving`); `Holds` whose certificate check is `Rejected` (`CertificateRejected`, ADR-029); SMT `InductionNotClosed{depth}`; `Violated` whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | `Stopped(cause, limit)`, including `MaxWitnessSet` and `MaxRelationTuples` (FR-184) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | HP-4; a `behaviours` clause under a profile other than infinite-trace | `unsupported` | `unavailable` | `Unsupported(unsupported-requested-capability)` | unsupported |
 
@@ -97,6 +102,13 @@ FR-243 basis, O-16 category and method.
   raises it.
 - The record SHALL carry the method (`explicit-state`, `smt-unrolling` or
   `k-induction`).
+- A `proved` record SHALL carry its certification: `certified` when the
+  product-closure certificate checker accepted its certificate, and
+  `uncertified` for a proof whose method has no certificate checker, which
+  is V-3 from `k-induction`. An `uncertified` proof SHALL keep the label
+  `proved`.
+- A certificate check that a limit stopped SHALL settle V-7 naming the
+  limit.
 - A verdict SHALL hold for exactly its subjects; the obligation identity
   binds them as FR-172 states.
 
@@ -110,10 +122,12 @@ FR-243 basis, O-16 category and method.
 | FR-182-AC-4 | FR-179-AC-3's `max_depth` run settles `inconclusive`, `BoundReached{depth: 1}`, execution `completed`, truth `pending`, with a record stating the HP-1 reading of the bound. | Test (TC-607) |
 | FR-182-AC-5 | FR-179-AC-4's outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-183 replay reproduces the undefined value at its tuple, with a record carrying `UndefinedEvaluation` naming that tuple, its two executions and the division-by-zero cause; it never settles `proved`. | Test (TC-610) |
 | FR-182-AC-6 | FR-179-AC-5's `Violated` outcome settles `refuted`, `decisive-counterexample`, after its `StepTuple` replays, with no `UndefinedEvaluation`: the false tuple is the first refuting evidence, ahead of the undefined tuples. | Test (TC-611) |
+| FR-182-AC-7 | §8.1's secure proof settles `proved`, certification `certified`, after FR-183-AC-7's certificate is accepted; with the certificate's member removed the item settles `inconclusive`, `CertificateRejected`, never `proved`. An HP-2 `Inductive{depth: 1}` outcome from `k-induction` settles `proved`, `decisive-witness`, certification `uncertified`. | Test (TC-607) |
+| FR-182-AC-8 | FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation` naming `a` and `b`, after its replay; FR-177-AC-6's and FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`. | Test (TC-607) |
 
 ## Dependencies
 
-- ADR-023 §6 HV-1 to HV-7, §7 HX-4; ADR-018 §1 (V-1 to V-8); ADR-013 O-16
+- ADR-023 §6 HV-1 to HV-8, §7 HX-4 and HX-7; ADR-029 CB-2 and RU-2; ADR-018 §1 (V-1 to V-8); ADR-013 O-16
   and O-24 as amended by ADR-018.
 - [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the map), [FR-176](FR-176-check-a-universal-hyperproperty-by-self-composition.md),
