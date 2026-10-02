@@ -40,7 +40,7 @@ phase only. A liveness form adds a second phase that decomposes the
 retained graph into strongly connected components (SCCs) and looks for a
 fair accepting cycle. The engine returns a `ModelCheckOutcome`
 (`qsl-replay`, ADR-018 LA-3) that FR-127 settles; a proof carries the
-certificate FR-127's core checker verifies (ADR-018 PC-3, PC-4).
+certificate FR-338's or FR-339's core checker verifies (ADR-018 PC-3, PC-4).
 
 ## Use case
 
@@ -82,7 +82,8 @@ pub fn check_model(
 caller-raisable ADR-014 B-5 budgets of QSL's own provider (ADR-018 §1,
 IV-6). `ModelCheckLimits::default()` publishes `max_states` 1,000,000,
 `max_transitions` 10,000,000 and `max_automaton_states` 65,536. A request
-raises any of them; reaching one settles `inconclusive` (V-7, FR-127), and
+raises any of them; reaching one settles `incomplete`,
+`LimitReached{limit, value, setting}` (V-7, FR-127, QSpec FR-331), and
 every terminal record states the values used and whether one was reached.
 `ModelCheckOutcome`, `ModelCheckLimits` and `ModelCheckLimit` are
 `qsl-replay` types (ADR-018 LA-5). `max_depth` is the search horizon `k`

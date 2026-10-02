@@ -13,7 +13,7 @@ relationships:
 Verify the map from EN-1's outcomes and their replay results to
 `TerminalValue`, QSpec FR-360 labels, FR-243 bases and O-16 categories; the
 category of every `ProofBasis` and new inconclusive cause; each replay
-refusal path; a faulting replay; and the named budget of a run that reached it.
+refusal path; a faulting replay; and the named limit of a run that reached it.
 
 Scope: FR-127-AC-1 to FR-127-AC-5 and FR-127-AC-7 to FR-127-AC-10.
 
@@ -45,7 +45,7 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
 ## Expected Results
 
 - Step 1: each row exactly as FR-127's table; depth 2 and method
-  `explicit-state` on V-5; the budget-reached record names `max_states`, value 2.
+  `explicit-state` on V-5; the limit-reached record names `max_states`, value 2, setting `max_states`.
 - Step 2: inconclusive `KaniVacuousProof`; success four times; inconclusive
   four times.
 - Step 3: `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`, success;
@@ -53,11 +53,11 @@ Tag the tests `#[trace("TC-522", "FR-127-AC-n")]`.
   `ReplayRefused`; `inconclusive`, `ReplayParity` (the unfair lasso);
   `inconclusive`, `ReplayRefused`; `inconclusive`, `ReplayParity`;
   `failed`, category failed.
-- Step 4: `inconclusive`, `unsettled`,
-  `Inconclusive(BudgetReached{MaxAutomatonStates, 50})`, the record naming
-  `max_automaton_states`, value 50, and the three budgets used;
+- Step 4: `incomplete`, `unavailable`,
+  `Incomplete(LimitReached{MaxAutomatonStates, 50, max_automaton_states})`,
+  the record stating the three limits used;
   `inconclusive`, `BoundReached{depth: 2}`, execution `completed`, truth
-  `pending`; a budget-reached record naming `EvaluationMeter`, value 0.
+  `pending`; a limit-reached record naming `EvaluationMeter`, value 0.
 - Step 5: `refuted` with a counterexample of `kind: Deadlock`, and an
   obligation identity distinct from the authored claims'.
 - Step 6: `Proved{Exhaustive, Certified}`; `inconclusive`,
