@@ -637,14 +637,28 @@ mod tests {
         let (n1, n2, d) = (node_key(1), node_key(2), declaration("d"));
         let mut correspondence = ModelCorrespondence::default();
         assert_eq!(correspondence.record(n1, d.clone()), Ok(()));
+        let conflict = correspondence.record(n2, d.clone());
         assert_eq!(
-            correspondence.record(n2, d.clone()),
+            conflict,
             Err(Box::new(CorrespondenceConflict::DeclarationRebound {
                 declaration: d.clone(),
                 recorded: n1,
                 offered: n2,
             }))
         );
+        // The S3 fault this conflict becomes, through the same mapping as
+        // `NodeRebound` (lowering's `model_node`).
+        let Err(conflict) = conflict else {
+            panic!("the second record refuses");
+        };
+        let cause = crate::check::refusal::CheckCause::InternalFault(Box::new(
+            crate::check::refusal::KeyFault::CorrespondenceConflict(conflict),
+        ));
+        assert_eq!(
+            cause.code(),
+            qsl_foundation::diagnostic::Code::RuntimeInvariant
+        );
+        assert_eq!(cause.cause(), Some("established-invariant-broken"));
         assert_eq!(correspondence.resolve(n2), None);
         assert_eq!(correspondence.resolve(n1), Some(&d));
     }
