@@ -44,7 +44,7 @@ graph.
 
 ## Acceptance Examples (Illustrative)
 
-### US-020-EX-1: The game can be won
+### US-020-EX-1: A config can reach version 2
 
 - **Given** ADR-022 §7.1's ConfigVersion subject and `possible ReachesTwo`
   over each config.

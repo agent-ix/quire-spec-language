@@ -389,6 +389,8 @@ names different artifacts in each.
 | TC-612 | An undefined predicate refutes a state-graph claim and replays | Integration | P1 | FR-168-AC-5, FR-169-AC-6, FR-170-AC-5 | 🚧 Planned |
 | TC-613 | A witness proves possible only after exploration rules out an undefined evaluation | Integration | P1 | FR-166-AC-5, FR-168-AC-7, FR-169-AC-7 | 🚧 Planned |
 | TC-614 | A witness on a stopped run settles inconclusive with well-definedness unchecked | Integration | P1 | FR-166-AC-6, FR-168-AC-8, FR-169-AC-8 | 🚧 Planned |
+| TC-618 | Phase 0 walks stop at their step budget, and the horizon is not a limit | Integration | P1 | FR-166-AC-7 | 🚧 Planned |
+| TC-619 | An explored witness ends at a target node on a run with open nodes | Integration | P1 | FR-168-AC-9 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 

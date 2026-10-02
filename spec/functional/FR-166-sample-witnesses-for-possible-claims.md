@@ -24,9 +24,11 @@ relationships:
 
 ## Description
 
-When a request holds a `possible` item, QSL's layer-5 `model_check` SHALL
+When a request holds a `possible` item, `qsl-analyze`'s `model_check` SHALL
 draw seeded random walks for it before exploring the subject (ADR-022 GE-2): `witness_samples`
-walks per initial state, with FR-101's sampler. A walk that reaches a state
+walks per initial state, with FR-101's sampler. Each walk takes at most
+`max_walk_steps` steps, a caller-set budget with a published default of
+4,096, and never more than the search horizon. A walk that reaches a state
 where the target holds is a witness for its initial state. Phase 0 is on by
 default, with a published default of 64 walks, and a request turns it off by
 setting `witness_samples` to 0. Every walk is named by its
@@ -50,9 +52,11 @@ result says that a witness was found and well-definedness is unchecked.
 
 ```rust
 pub struct ModelCheckLimits {
-    pub limits: Limits,                 // FR-101: max_states, max_depth, max_transitions
+    pub limits: Limits,                 // FR-101: max_states, max_transitions;
+                                        // max_depth is the horizon, not a limit
     pub max_automaton_states: u64,      // FR-126
     pub witness_samples: u64,           // default 64; 0 turns phase 0 off
+    pub max_walk_steps: u64,            // default 4_096; steps per phase 0 walk
 }
 
 pub struct ModelCheckRequest<'a> {
@@ -65,8 +69,8 @@ pub struct ModelCheckRequest<'a> {
   FR-392 (ADR-022 QS-7).
 - The subject (FR-125), its `ModelSystem` (FR-120), and each `Possible` item
   (FR-165) with its instances.
-- The sampler's `DefinitionRef` from the ecosystem lock, as FR-101's
-  `sample_request` takes it.
+- The sampler `quire.simulation.sampler/v1`, which `sample_request` selects
+  by identity (FR-101).
 
 ## Outputs
 
@@ -74,7 +78,9 @@ pub struct ModelCheckRequest<'a> {
   witness, or none. A sampled witness is a `ModelPath` (FR-170) from that
   initial state, ending at the first visited state where the target holds,
   with source `Sampled(SampleProvenance{seed, trace, sampler, stopped})`.
-- The run's seed, recorded in each item's terminal record (FR-169).
+- The run's seed, `witness_samples`, `max_walk_steps`, the search horizon
+  and the count of walks `max_walk_steps` stopped, recorded in each item's
+  terminal record (FR-169).
 
 ## Behavior
 
@@ -84,7 +90,14 @@ pub struct ModelCheckRequest<'a> {
   `r` in `0..witness_samples`, the engine SHALL call FR-101 `sample_request`
   on a view of the subject's `ModelSystem` whose only initial state is
   initial state `i`, with the request's seed, trace index `i ×
-  witness_samples + r` and step ceiling `max_depth`.
+  witness_samples + r` and step ceiling the lesser of `max_walk_steps` and
+  the search horizon `max_depth`.
+- When a walk reaches its step ceiling without visiting a target state, the
+  engine SHALL continue the run with that walk deciding nothing.
+- The terminal record SHALL name `max_walk_steps`, its value and the count
+  of walks that `max_walk_steps` stopped. A
+  walk the horizon stopped is not counted, since the horizon is a method
+  parameter and not a limit (FR-101).
 - The engine SHALL compute each trace index with checked arithmetic. If it
   overflows `u64`, then the engine SHALL stop before the first walk and
   return `Stopped(ResourceExhausted, WitnessSamples)`, naming
@@ -109,12 +122,12 @@ pub struct ModelCheckRequest<'a> {
 - When `witness_samples` is 0, the engine SHALL draw no walk.
 - When the request names no seed, the engine SHALL run under
   `DEFAULT_WITNESS_SEED`.
-- The engine SHALL record the seed the run used in each item's terminal
-  record, whether the request named it or not.
+- The engine SHALL record the seed and `witness_samples` the run used in
+  each item's terminal record on every run, as QSpec FR-392 states.
 - The engine SHALL read the cancellation poll before each walk, and a
   `true` poll SHALL stop the run as FR-126 states.
-- Phase 0's walks SHALL be functions of the subject, the item, the limits
-  and the seed.
+- Phase 0's walks SHALL be functions of the subject, the item, the limits,
+  the horizon and the seed.
 
 ## Acceptance Criteria
 
@@ -126,6 +139,7 @@ pub struct ModelCheckRequest<'a> {
 | FR-166-AC-4 | `witness_samples` `u64::MAX` over the two-snapshot subject returns `Stopped(ResourceExhausted, WitnessSamples)` before any walk, naming the limit and its value; a poll that returns `true` stops the run before the first walk. | Test (TC-591) |
 | FR-166-AC-5 | Over §7.1's subject with default limits, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` gets a sampled witness ending at a node with `va = 1`, and the item does not settle from it: exploration runs to completion and the item settles `refuted` with cause `UndefinedEvaluation` at `(2, 0)` (FR-168-AC-7). `ReachesTwo` under the same limits settles `proved` with its sampled witnesses only after exploration completes with no open node. | Test (TC-613) |
 | FR-166-AC-6 | `ReachesTwo` with default `witness_samples` and `max_states` 2 gets a sampled witness for each instance, the exploration stops at `max_states`, and the item settles `inconclusive`, `WellDefinednessUnchecked`, never `proved` (FR-169-AC-8). | Test (TC-614) |
+| FR-166-AC-7 | `ReachesThree` with the default limits draws 64 walks per instance, each stopped by `max_walk_steps` at 4,096 steps, finds no witness and decides nothing; the terminal record names `max_walk_steps`, 4,096 and a count of 64 per instance. With `max_walk_steps` 1, `ReachesTwo` gets no sampled witness, since `versionNumber` 2 is two steps away, and every witness comes from phase 1. With horizon `max_depth` 1, every walk takes at most 1 step, the record states horizon 1, and no walk is counted as stopped by a limit. | Test (TC-618) |
 
 ## Dependencies
 
@@ -139,8 +153,9 @@ pub struct ModelCheckRequest<'a> {
   [FR-165](FR-165-check-state-graph-claims-at-s3.md) (`Possible`).
 - FR-167 runs phase 1; FR-169 settles; FR-170 replays the witness.
 - QSpec FR-392 owns `witness_samples` with its default 64, the seed with its
-  default 0, and the settlement method in the terminal record (ADR-022
-  QS-7).
+  default 0, the horizon as a method parameter, and the settlement method in
+  the terminal record (ADR-022 QS-7); `max_walk_steps` is ADR-022 GE-2's
+  budget, asked of QSpec in QS-7.
 
 ## References
 

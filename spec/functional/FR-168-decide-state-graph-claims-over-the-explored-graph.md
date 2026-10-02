@@ -20,7 +20,7 @@ relationships:
 
 ## Description
 
-When FR-167's exploration ends, QSL's layer-5 `model_check` SHALL decide each
+When FR-167's exploration ends, `qsl-analyze`'s `model_check` SHALL decide each
 state-graph item instance by one pass over the explored graph, linear in its
 nodes and edges (ADR-022 §3): backward reachability for `possible` and
 `always possible`, and path counting for `unique path`. It SHALL return
@@ -85,10 +85,16 @@ Each carries its instance's `over` binding.
   retained edges from every such node, recording each node's distance `d` to
   the nearest one.
 - A closed node outside `E⁺` SHALL be a **trap**.
+- A node where the target evaluates `Undefined` SHALL NOT be a target node;
+  it is refuting evidence ("Undefined evaluation" below).
+- For `Possible`, the engine SHALL also compute, by a breadth-first search
+  backwards from the target nodes alone, each node's distance `d_P` to the
+  nearest target node.
 - For `Possible`: an initial state with no sampled witness and a path of
   closed or target nodes to a target node SHALL get the **explored witness**:
   from the initial state, at each node, the first edge in canonical order
-  whose target is a node at distance one less, ending at a target node.
+  whose target has `d_P` one less, so the witness ends at a target node
+  whether or not the run has open nodes.
 - When every initial state has a sampled or explored witness, `Possible`
   SHALL return `Witnessed` if the run completed with no open node, and
   `WitnessedUnchecked` otherwise. Otherwise, if an initial state is a trap,
@@ -131,12 +137,15 @@ Each carries its instance's `over` binding.
   evaluator (FR-107) at every explored node.
 - If a predicate evaluates `Undefined` at an explored node, then the engine
   SHALL return `Undefined` with the canonical breadth-first path to the
-  first such node in discovery order, `where` that node and `cause` the
-  evaluator's undefined cause (ADR-022 GV-7, ADR-018 UE-1).
+  first such node in discovery order, with `where` and `cause` as QSpec
+  FR-391 states them: the predicate, the node's state-key digest and the
+  locus of the expression with no value, and the catalogued reason
+  (ADR-022 GV-7, ADR-018 UE-1).
 - `Undefined` SHALL take the place of `Witnessed`, `WitnessedUnchecked`
   and `Holds`, whether the witnesses were sampled or explored. When a trap
   or a path pair is found at a node earlier in discovery order, the engine
-  SHALL return that evidence instead.
+  SHALL return that evidence instead. A node that is undefined and also a
+  trap or a count-2 node SHALL return `Undefined` (QSpec FR-391).
 
 ### Partial runs
 
@@ -162,11 +171,12 @@ Each carries its instance's `over` binding.
 | FR-168-AC-1 | ADR-022 §7.1 with `witness_samples` 0: `ReachesTwo` for `c = a` returns `Witnessed` with the explored path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, and for `c = b` the same with `upd(b)`; `ReachesThree` returns `Trapped` with initial state `(0, 0)` and an empty stem for each instance. | Test (TC-593) |
 | FR-168-AC-2 | §7.2: `CanStillWin` returns `Trapped` at `Lost` with stem `play, lose`; with `from (x.phase != Lost)` it returns `Holds{Exhaustive}`; with the `restart` operation and no `from` it returns `Holds{Exhaustive}`. | Test (TC-593) |
 | FR-168-AC-3 | §7.3: `InOneWay` returns `PathPair` with an empty stem, first `stepA, stepB, finish` and second `stepB, stepA, finish`; the sequenced variant returns `Holds{Exhaustive}`. The sequenced variant with `reset` (precondition `a and not b`, postcondition `not a`, frame `[a]`) returns `PathPair` with first `stepA, stepB, finish` and second `stepA, reset, stepA, stepB, finish`. | Test (TC-593) |
-| FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]` and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
+| FR-168-AC-4 | The §7.2 game with field `n: Int[0, 50]`, initially 0, and operation `celebrate` (precondition `phase = Won and n < 50`, postcondition `n = n + 1`, frame `[n]`), under the search horizon `max_depth` 3: `CanStillWin` returns `Trapped` at `Lost` although the node `Won` with `n = 1` is open; `possible x.phase = Won and x.n = 50` returns `NoDecision` with `end` `Completed` and open cause `MaxDepth`. | Test (TC-593) |
 | FR-168-AC-5 | Over §7.1's subject, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` returns `Undefined` with the canonical path `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`, `where` `(2, 0)` and cause `division-by-zero`, although `(1, 0)` satisfies the target. | Test (TC-612) |
 | FR-168-AC-6 | `ReachesTwo` with `witness_samples` 64 and with 0 both return `Witnessed`, with sources `Sampled` and `Explored` respectively. Running AC-2's three requests twice gives byte-equal outcomes. | Test (TC-593) |
 | FR-168-AC-7 | FR-168-AC-5's item with default `witness_samples` holds a sampled witness from `(0, 0)` ending at `(1, 0)` and still returns `Undefined` at `(2, 0)`, not `Witnessed`; `ReachesTwo` with default limits returns `Witnessed` with `Sampled` sources from a run that completed with no open node. | Test (TC-613) |
 | FR-168-AC-8 | `ReachesTwo` with default `witness_samples` and `max_states` 2 returns `WitnessedUnchecked` with `Sampled` sources and `end` `Stopped(ResourceExhausted, MaxStates)`; with `witness_samples` 0 and `max_states` 2 it returns `NoDecision` with the same `end`. | Test (TC-614) |
+| FR-168-AC-9 | Fixture `Fork`: one object with `pos: Int[0, 4]`, initially 0; operations `toA()` (pre `pos = 0`, post `pos = 1`), `toB()` (pre `pos = 0`, post `pos = 2`), `fromA()` (pre `pos = 1`, post `pos = 3`), `fromB()` (pre `pos = 2`, post `pos = 4`) and `back()` (pre `pos = 3`, post `pos = 0`), each framed `modifies self.pos`, with `toA` before `toB` in canonical transition order. `possible x.pos = 4` with `witness_samples` 0 under horizon 2: the node with `pos = 3` is open, `pos = 1` and `pos = 2` both have `d` 1, and the explored witness is `toB, fromB`, ending at the target `pos = 4`, not `toA, fromA`; the outcome is `WitnessedUnchecked`. | Test (TC-619) |
 
 ## Dependencies
 

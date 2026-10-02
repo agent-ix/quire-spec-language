@@ -30,8 +30,8 @@ relationships:
 
 ## Description
 
-QSL SHALL replay state-graph evidence through the layer-6 replay facade
-(FR-098) at ADR-011 E9: `qsl_replay::replay_model_graph` takes FR-098's
+QSL SHALL replay state-graph evidence through `qsl-replay`'s replay facade
+(FR-098, ADR-029 CB-2) at ADR-011 E9: `qsl_replay::replay_model_graph` takes FR-098's
 request with the subject's inputs and a `WitnessEnvelope<GraphEvidence>`
 whose source is `ReplaySource::ModelGraph` (ADR-022 GX-1). It re-executes
 each recorded path through FR-120's `ModelSystem` with FR-101 `replay` and
@@ -77,11 +77,9 @@ pub enum GraphEvidence {
 
 ## Outputs
 
-- An FR-072 replay result on the `ModelGraph` arm, retaining the source
-  identity and digest, the `package_id`, the claim's identities, each
-  initial state's document identity and digest, each replayed post-state
-  digest and the evaluated predicate values; or a typed `ReplayRefusal`
-  with no partial result.
+- An FR-072 replay result on the `ModelGraph` arm carrying the evaluated
+  predicate values, as FR-128 carries its evaluated value; or a typed
+  `ReplayRefusal` with no partial result.
 - For a trap, the replay result also carries the closure exploration's
   outcome: completed with its node count, or stopped with its limit.
 
@@ -123,7 +121,10 @@ pub enum GraphEvidence {
   node: `possible`'s and `always possible`'s target, or `unique path`'s `to`.
 - Exploration that completes with no target node SHALL settle
   `reproduced-with-evaluated-witness`. A target node SHALL settle
-  `inconclusive`, `Verdicts`. Exploration a limit stops SHALL return the
+  `inconclusive`, `Verdicts`. A node of the closure where the target
+  evaluates `Undefined` SHALL settle `inconclusive`, `Verdicts`: the engine
+  would have reported it as `Undefined` evidence (QSpec FR-391), not as a
+  trap. Exploration a limit stops SHALL return the
   replay result stopped with that limit, which FR-169 settles V-7.
 
 ### Path pair

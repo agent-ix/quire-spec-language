@@ -28,7 +28,7 @@ relationships:
 
 ## Description
 
-QSL's layer-5 `model_check` SHALL explore a model subject's state graph
+`qsl-analyze`'s `model_check` SHALL explore a model subject's state graph
 once for all of its state-graph items (ADR-022 GE-1, GM-1). It runs at stage
 S6c over edge E10, as FR-126 does. The exploration retains every edge, labels
 every node with the truth of each item's predicates under each instance's
@@ -151,7 +151,7 @@ pub enum RunEnd {
 ## Dependencies
 
 - ADR-022 §2 GM-1, GM-2, GM-6, GM-8; §3 GE-1 and "Placement in
-  negotiation"; §6 GR-1 and GR-4; ADR-011 §1 and §6.1 (S6c, E10, layer 5
+  negotiation"; §6 GR-1 and GR-4; ADR-011 §1 and §6.1 (S6c, E10, layer A
   `model_check`) as amended by ADR-018.
 - [FR-101](FR-101-explore-finite-models-with-canonical-order-and-pinned-sampler.md),
   [FR-120](FR-120-simulate-a-checked-package-s-state-family.md),

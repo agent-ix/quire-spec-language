@@ -36,7 +36,8 @@ replays. The verdict does not depend on the method. A witness settles
 `proved` only from a run that ruled out a reachable undefined evaluation;
 witnesses from any other run settle `inconclusive`,
 `WellDefinednessUnchecked` (ADR-022 GV-1, RU-5). `qsl-replay` owns
-`ProofBasis::Witness` and its category; `model_check` owns the map.
+`ProofBasis::Witness`, its category and this verdict map, beside the other
+verdicts and settlement (ADR-029 CB-2).
 
 ## Use case
 
@@ -68,7 +69,7 @@ pub enum ProofBasis {
 pub enum WitnessSource {
     Sampled(SampleProvenance),     // FR-101: seed, trace index, sampler
     Explored,
-    Unrolled { depth: u64 },
+    Unrolled { depth: u64 },       // only in WellDefinednessUnchecked
 }
 
 // InconclusiveCause gains:
@@ -115,8 +116,13 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   - for V-1, `Exhaustive`, or `Reduced` with its reductions;
   - for V-10 and V-4, that exploration found the evidence it carries;
   - for V-5 to V-7, the limits the run used.
-- The record SHALL carry the run's seed whenever phase 0 ran, whether the
-  request named the seed or the default applied.
+- Every record SHALL state the search horizon `max_depth` the run used as a
+  method parameter beside the limits, never as a limit (QSpec FR-392).
+- Every record SHALL carry the run's seed and `witness_samples`, whether
+  the request named them or the defaults applied, and the count of walks
+  `max_walk_steps` stopped (FR-166), as QSpec FR-392 records them.
+- `Witness{sources}` SHALL NOT carry an `Unrolled` source; an EN-2 witness
+  settles only `WellDefinednessUnchecked` (ADR-022 GE-3).
 - A V-5 record SHALL have execution `completed` and truth `pending`, as
   FR-127 states.
 - A V-7 record SHALL name its limit, its value and the request member that
@@ -131,7 +137,7 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | FR-169-AC-1 | Each input row maps to its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states; `Proved{basis: Witness{sources}}` maps to success. | Test (TC-594) |
 | FR-169-AC-2 | ADR-022 §7.1's `ReachesTwo` under default limits settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}}`, success, and its record names the seed and trace index of each walk; with `witness_samples` 0 it settles the same label and basis with sources `[Explored]` and a record naming exploration. `ReachesThree` settles `refuted`, `closed-scope`, after its trap replays. | Test (TC-594) |
 | FR-169-AC-3 | §7.2's `CanStillWin` settles `refuted`, `closed-scope` (V-10); its `from` variant `proved`, `closed-scope`, `Proved{Exhaustive}` (V-1). §7.3's `InOneWay` settles `refuted`, `decisive-counterexample` (V-4). | Test (TC-594) |
-| FR-169-AC-4 | FR-168-AC-4's trap settles `refuted` (V-10) and its `NoDecision` settles `inconclusive`, `BoundReached{depth: 3}`, execution `completed`, truth `pending`. A run stopped by `max_states` settles `failed`, `resource-incomplete`, naming `max_states` and its value; an undecided node with no decisive evidence settles `inconclusive`, `UndecidedSuccessor`; a subject with no initial state settles `inconclusive`, `NoInitialState`. | Test (TC-594) |
+| FR-169-AC-4 | FR-168-AC-4's trap settles `refuted` (V-10) and its `NoDecision` settles `inconclusive`, `BoundReached{depth: 3}`, execution `completed`, truth `pending`, and its record states horizon 3 as a method parameter, not among the limits. A run stopped by `max_states` settles `failed`, `resource-incomplete`, naming `max_states` and its value; an undecided node with no decisive evidence settles `inconclusive`, `UndecidedSuccessor`; a subject with no initial state settles `inconclusive`, `NoInitialState`. | Test (TC-594) |
 | FR-169-AC-5 | A `Witnessed` outcome whose replay settles `inconclusive` settles `inconclusive`, `ReplayParity`, never `proved`; a `Trapped` outcome whose replay a limit stops settles `failed`, `resource-incomplete`. | Test (TC-594) |
 | FR-169-AC-6 | FR-168-AC-5's `Undefined` outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-170 replay reproduces it, with cause `UndefinedEvaluation` naming the node `(2, 0)` and `division-by-zero`. | Test (TC-612) |
 | FR-169-AC-7 | FR-168-AC-7's `Undefined` outcome, found although a sampled witness existed, settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`; `ReachesTwo` with default limits settles `proved`, `decisive-witness`, with `Sampled` sources, and its record names a completed exploration. | Test (TC-613) |
