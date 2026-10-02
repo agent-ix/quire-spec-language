@@ -989,6 +989,8 @@ live in a test-only corpus the gate's real run over
 covers all five QSpec AD-003 `requires` edges (QSpec FR-453).
 ## Sum types and `case` (FR-315 to FR-324) coverage
 TC-815 to TC-834 back every AC of FR-315 to FR-324 and FR-046-AC-9. All are
+## Sum types and `case` (FR-313 and FR-316 to FR-324) coverage
+TC-815 to TC-834 back every AC of FR-313 and FR-316 to FR-324 and FR-046-AC-9. All are
 `🚧 Planned`. QSpec TC-262 to TC-265 run inside TC-817 to TC-819, TC-822,
 TC-826 and TC-831 under `QSpec-` tags. TC-827's wire assertions,
 TC-830's v2 `union_value` spelling, TC-832's charge points and TC-833's

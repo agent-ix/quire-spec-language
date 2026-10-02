@@ -46,7 +46,7 @@ sentence in §2. SC-Q1 is ruled: option (a) (ADR-013 OQ-I, 2026-09-29).
 Amended 2026-10-01 (sum/case FR pass): §16.5's limit row and §16.8's Limits
 row no longer name a nesting-depth limit for `case`. Nesting of any depth is
 admitted, bounded only by caller-configured checking ceilings (QSpec FR-146;
-owner ruling 2026-10-01 that depth is never a limit kind). FR-315 to FR-324
+owner ruling 2026-10-01 that depth is never a limit kind). FR-313 and FR-316 to FR-324
 implement §16. §16.10 states the QSpec rules SC-G1 to SC-G7 that §16 relies
 on: QSpec FR-440, FR-441, FR-143, FR-144 and FR-146.
 
@@ -1837,7 +1837,7 @@ disposition: none"; ADR-013 R-08 and §5).
 ### 16.10 QSpec rules §16 relies on
 
 QSpec owns the wire and the language text (ADR-013 R-02). §16 relies on
-these QSpec requirements, and FR-315 to FR-324 cite them.
+these QSpec requirements, and FR-313 and FR-316 to FR-324 cite them.
 
 | ID | QSpec requirement | Used by |
 | --- | --- | --- |

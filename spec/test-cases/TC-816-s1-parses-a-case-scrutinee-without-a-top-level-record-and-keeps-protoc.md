@@ -3,14 +3,14 @@ id: TC-816
 title: "S1 parses a case scrutinee without a top-level record and keeps protocol case apart"
 type: TC
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: verifies
 ---
 # TC-816: S1 parses a case scrutinee without a top-level record and keeps protocol case apart
 
 ## Description
 
-Scope: FR-315-AC-3.
+Scope: FR-313-AC-3.
 
 ## Test Procedure
 

@@ -9,7 +9,7 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-065
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-316
     type: traces_to

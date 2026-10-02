@@ -1,5 +1,5 @@
 ---
-id: FR-315
+id: FR-313
 title: "Build union declaration and case expression forms at S1 and S2"
 type: FR
 relationships:
@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-146
     type: depends_on
 ---
-# FR-315: Build union declaration and case expression forms at S1 and S2
+# FR-313: Build union declaration and case expression forms at S1 and S2
 
 ## Description
 
@@ -65,9 +65,9 @@ its source span (ADR-012 §16.4 S1 and S2 rows).
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-315-AC-1 | Source `union Shape { Empty, Circle(Integer), Rect(Integer, Integer), }` yields one `UnionForm` named `Shape` with members `Empty` (no payload), `Circle` (`Integer`) and `Rect` (`Integer`, `Integer`) in that order, each with its own span; the trailing comma is admitted. | Test (TC-815) |
-| FR-315-AC-2 | A function body `case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; }` yields one `CaseForm` whose scrutinee is the name `s` and whose three arms keep source order, member spellings `Circle`, `Shape::Rect` and `Empty`, binders `[r]`, `[w, h]` and `[]`, and their bodies and spans. `Shape::Circle(3)` and `Shape::Empty` yield an `Expression::Call` and an `Expression::Name`, not a construction form. | Test (TC-815) |
-| FR-315-AC-3 | A `case` whose scrutinee is an unparenthesized record value `R { f: 1 }` is not parsed as having that record as scrutinee; the same `case` with the scrutinee written `(R { f: 1 })` parses. A protocol `choice` with `case` arms in the same unit parses to the protocol production, unchanged. | Test (TC-816) |
+| FR-313-AC-1 | Source `union Shape { Empty, Circle(Integer), Rect(Integer, Integer), }` yields one `UnionForm` named `Shape` with members `Empty` (no payload), `Circle` (`Integer`) and `Rect` (`Integer`, `Integer`) in that order, each with its own span; the trailing comma is admitted. | Test (TC-815) |
+| FR-313-AC-2 | A function body `case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; }` yields one `CaseForm` whose scrutinee is the name `s` and whose three arms keep source order, member spellings `Circle`, `Shape::Rect` and `Empty`, binders `[r]`, `[w, h]` and `[]`, and their bodies and spans. `Shape::Circle(3)` and `Shape::Empty` yield an `Expression::Call` and an `Expression::Name`, not a construction form. | Test (TC-815) |
+| FR-313-AC-3 | A `case` whose scrutinee is an unparenthesized record value `R { f: 1 }` is not parsed as having that record as scrutinee; the same `case` with the scrutinee written `(R { f: 1 })` parses. A protocol `choice` with `case` arms in the same unit parses to the protocol production, unchanged. | Test (TC-816) |
 
 ## Dependencies
 

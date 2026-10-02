@@ -3,7 +3,7 @@ id: US-032
 title: "Model a closed set of alternatives with a union and handle every case"
 type: US
 relationships:
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-316
     type: exercises
@@ -95,7 +95,7 @@ checker cannot prove exhaustive.
 
 ## Traceability (Informative)
 
-- FR-315 to FR-324.
+- FR-313 and FR-316 to FR-324.
 - QSpec AD-015, FR-143, FR-146.
 
 ## References

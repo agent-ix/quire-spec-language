@@ -13,7 +13,7 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-316
     type: traces_to
@@ -24,7 +24,7 @@ relationships:
 
 ## Description
 
-When S3 types an `Expression::Case` (FR-315), the checker SHALL return one
+When S3 types an `Expression::Case` (FR-313), the checker SHALL return one
 checked `Case` node or exactly one refusal, found by the `SumCase` family's
 staged builder (scrutinee, then arms, then `finish`): the first, in the
 order below, of a scrutinee refusal, an arm body refusal, or the first
@@ -128,7 +128,7 @@ failed QSpec FR-146 exhaustiveness obligation, QSpec FR-146's order
   FR-146-AC-11; the
   catalog cause `undefined_expression`/`unproved-exhaustiveness`.
 - FR-062 (family contract and staged builder), FR-057 (claim forms),
-  FR-096 and NFR-011 (limits and loci), FR-315, FR-316.
+  FR-096 and NFR-011 (limits and loci), FR-313, FR-316.
 
 ## References
 

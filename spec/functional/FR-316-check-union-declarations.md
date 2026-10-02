@@ -13,7 +13,7 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-091
     type: traces_to
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: traces_to
   - target: ix://agent-ix/quire-specification/FR-143
     type: depends_on
@@ -22,7 +22,7 @@ relationships:
 
 ## Description
 
-When S2 yields a `UnionForm` (FR-315), the FR-091 assembler SHALL register
+When S2 yields a `UnionForm` (FR-313), the FR-091 assembler SHALL register
 the union in the package's type environment as a composite declaration
 beside records and tuples, and the `SumCase` family `check` SHALL admit it
 or refuse it with one located cause: duplicate member names, unresolved

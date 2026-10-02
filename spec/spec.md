@@ -599,7 +599,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/US-023
   - target: ix://agent-ix/quire-spec-language/US-032
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-315
+  - target: ix://agent-ix/quire-spec-language/FR-313
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-316
     type: contains
@@ -1119,6 +1119,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-160](functional/FR-160-settle-reduced-verdicts-and-reduction-causes.md) | FR | Specified: `ProofBasis::Reduced`, `ReductionNotPreserving`, `SymmetryBroken`, `ConstraintReached`, `ReductionHorizon` for a partial-order run to its horizon, and unreduced refutations (ADR-021 RV-1 to RV-5, RV-7); an undefined evaluation refuting unreduced (RV-7); reduced-versus-unreduced agreement over the corpus (RV-10); not yet implemented -- TC-584, TC-588, TC-886 planned |
 | [FR-161](functional/FR-161-concretise-a-reduced-counterexample.md) | FR | Specified: concretisation of a symmetry-reduced counterexample, loop closure by repetition and AQ-7 `each` loops, replaying as an ordinary trace (ADR-021 EI-6, EI-7, AQ-7); not yet implemented -- TC-585, TC-586 planned |
 | [FR-162](functional/FR-162-offer-reductions-through-transition-system-hooks.md) | FR | Specified: the `canonical`, `footprint` and `holds_constraint` `TransitionSystem` hooks, product delegation and the reduced expansion, with simulation unreduced (ADR-021 RD-2, EI-2 to EI-5); not yet implemented -- TC-587 planned |
+| [FR-313](functional/FR-313-build-union-declaration-and-case-forms.md) | FR | Specified: S1 `union-decl` and expression `case` productions, S2 `UnionForm` and `CaseForm`, no construction form (ADR-012 §16); not yet implemented -- TC-815, TC-816 planned |
 | [FR-316](functional/FR-316-check-union-declarations.md) | FR | Specified: S3 `SumCase` union declaration check: duplicate members, payload resolution, the recursion rule with payload positions as named edges, unions as type-environment composites (SC-Q1 (a)), no depth limit; not yet implemented -- TC-817, TC-818 planned |
 | [FR-317](functional/FR-317-resolve-member-references-and-check-union-construction.md) | FR | Specified: S3 call-target seam, `q::m` candidate precedence and ambiguity, union construction and its four `ill_typed`/`type-mismatch` refusals; not yet implemented -- TC-819, TC-820 planned |
 | [FR-318](functional/FR-318-check-case-expressions-and-exhaustiveness.md) | FR | Specified: S3 `case` builder: scrutinee, arms, the four exhaustiveness obligations in QSpec order, one refusal per `case`, QSpec FR-146's result-type rule, loci, no claim, no depth limit; not yet implemented -- TC-821 to TC-825 planned |
