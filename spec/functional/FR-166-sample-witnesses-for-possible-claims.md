@@ -59,6 +59,12 @@ pub struct ModelCheckLimits {
     pub max_walk_steps: u64,            // default 4_096; steps per phase 0 walk
 }
 
+pub enum ModelCheckLimit {
+    // FR-126's members, plus:
+    WitnessSamples,
+    MaxWalkSteps,
+}
+
 pub struct ModelCheckRequest<'a> {
     // FR-126's members, plus:
     pub seed: Option<u64>,              // None runs under DEFAULT_WITNESS_SEED
@@ -124,8 +130,9 @@ pub struct ModelCheckRequest<'a> {
   `DEFAULT_WITNESS_SEED`.
 - The engine SHALL record the seed and `witness_samples` the run used in
   each item's terminal record on every run, as QSpec FR-392 states.
-- The engine SHALL read the cancellation poll before each walk, and a
-  `true` poll SHALL stop the run as FR-126 states.
+- The engine SHALL check the request's `Cancel` handle (FR-276) before each
+  walk; a cancelled handle SHALL stop the run with `Stopped{cause:
+  Cancelled(cause)}`, as FR-276 states for every operation.
 - Phase 0's walks SHALL be functions of the subject, the item, the limits,
   the horizon and the seed.
 
@@ -136,7 +143,7 @@ pub struct ModelCheckRequest<'a> {
 | FR-166-AC-1 | Over ADR-022 §7.1's subject with default limits and no seed, each `ReachesTwo` instance gets a sampled witness from `(0, 0)` whose last state is the first visited state where the bound config's `versionNumber` is 2, whose source is `Sampled` with seed 0 and a trace index below 64, and phase 1 searches for no explored witness for the item. | Test (TC-591) |
 | FR-166-AC-2 | The same request with `witness_samples` 0 draws no walk and every witness comes from phase 1. `ReachesThree` with the default draws 64 walks per instance, finds no witness, and leaves the item to phase 1. | Test (TC-591) |
 | FR-166-AC-3 | Over the §7.1 unit with two initial snapshots, `(0, 0)` and `(1, 1)`, the witness for initial state 1 has a trace index in `64..128`. A request with seed 7 records seed 7; two requests with no seed give byte-equal witnesses and record the default seed. | Test (TC-591) |
-| FR-166-AC-4 | `witness_samples` `u64::MAX` over the two-snapshot subject returns `Stopped(ResourceExhausted, WitnessSamples)` before any walk, naming the limit and its value; a poll that returns `true` stops the run before the first walk. | Test (TC-591) |
+| FR-166-AC-4 | `witness_samples` `u64::MAX` over the two-snapshot subject returns `Stopped(ResourceExhausted, WitnessSamples)` before any walk, naming the limit and its value; a cancelled `Cancel` handle stops the run before the first walk. | Test (TC-591) |
 | FR-166-AC-5 | Over §7.1's subject with default limits, `possible 2 / (2 - c.versionNumber) = 2` for `c = a` gets a sampled witness ending at a node with `va = 1`, and the item does not settle from it: exploration runs to completion and the item settles `refuted` with cause `UndefinedEvaluation` at `(2, 0)` (FR-168-AC-7). `ReachesTwo` under the same limits settles `proved` with its sampled witnesses only after exploration completes with no open node. | Test (TC-613) |
 | FR-166-AC-6 | `ReachesTwo` with default `witness_samples` and `max_states` 2 gets a sampled witness for each instance, the exploration stops at `max_states`, and the item settles `inconclusive`, `WellDefinednessUnchecked`, never `proved` (FR-169-AC-8). | Test (TC-614) |
 | FR-166-AC-7 | `ReachesThree` with the default limits draws 64 walks per instance, each stopped by `max_walk_steps` at 4,096 steps, finds no witness and decides nothing; the terminal record names `max_walk_steps`, 4,096 and a count of 64 per instance. With `max_walk_steps` 1, `ReachesTwo` gets no sampled witness, since `versionNumber` 2 is two steps away, and every witness comes from phase 1. With horizon `max_depth` 1, every walk takes at most 1 step, the record states horizon 1, and no walk is counted as stopped by a limit. | Test (TC-618) |

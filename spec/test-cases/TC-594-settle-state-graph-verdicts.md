@@ -35,13 +35,14 @@ Tag the tests `#[trace("TC-594", "FR-169-AC-n")]`.
 
 - Step 1: each row's `TerminalValue`, label, basis and category as FR-169's
   table states; `Proved{Witness{…}}` maps to success.
-- Step 2: `proved`, `decisive-witness`, `Witness{[Sampled(…)]}`, success,
+- Step 2: `proved`, `decisive-witness`, `Witness{[Sampled(…)]}`, `Certified`, success,
   with seed and trace index in the record; the same with `[Explored]` and a
   record naming exploration; `refuted`, `closed-scope`.
 - Step 3: `refuted`, `closed-scope`; `proved`, `closed-scope`,
-  `Exhaustive`; `refuted`, `decisive-counterexample`.
+  `Exhaustive`, `Certified`; `refuted`, `decisive-counterexample`.
 - Step 4: `refuted` (V-10); `inconclusive`, `BoundReached{depth: 3}`,
   execution `completed`, truth `pending`; `failed`, `resource-incomplete`,
   naming `max_states` and its value; `inconclusive`, `UndecidedSuccessor`;
   `inconclusive`, `NoInitialState`.
-- Step 5: `inconclusive`, `ReplayParity`; `failed`, `resource-incomplete`.
+- Step 5: `inconclusive`, `ReplayParity`; `inconclusive`, `ReplayRefused`,
+  naming the limit.

@@ -63,9 +63,24 @@ pub struct ModelPath {
     pub steps: Vec<ModelStep>,          // FR-128: transition identity, post-state digest
 }
 
+pub struct ModelLasso {
+    pub path: ModelPath,                // stem and loop, FR-128's step shape
+    pub loop_entry: u32,                // index of the loop's first state in `path`
+}
+
+pub enum WitnessPath {
+    Path(ModelPath),                    // a state-graph `possible` witness
+    Lasso(ModelLasso),                  // an HP-5 witness (FR-181)
+}
+
+pub enum TrapClosure {
+    StateGraph,                         // the forward closure in the model's state graph
+    Product,                            // one initial state's part of an HP-5 product (FR-181)
+}
+
 pub enum GraphEvidence {
-    Witness { paths: Vec<(ModelPath, WitnessSource)>, over: Option<OverBinding> },
-    Trap { stem: ModelPath, over: Option<OverBinding> },
+    Witness { paths: Vec<(WitnessPath, WitnessSource)>, over: Option<OverBinding> },
+    Trap { stem: ModelPath, closure: TrapClosure, over: Option<OverBinding> },
     PathPair { stem: ModelPath, first: Vec<ModelStep>, second: Vec<ModelStep>,
                over: Option<OverBinding> },
     Undefined { stem: ModelPath, undefined: UndefinedEvaluation,
@@ -81,7 +96,7 @@ pub enum GraphEvidence {
   predicate values, as FR-128 carries its evaluated value; or a typed
   `ReplayRefusal` with no partial result.
 - For a trap, the replay result also carries the closure exploration's
-  outcome: completed with its node count, or stopped with its limit.
+  node count.
 
 ## Behavior
 
@@ -105,12 +120,19 @@ pub enum GraphEvidence {
   `invalid_runtime_input`/`invalid-value`.
 - The executor SHALL replay each path from its recorded steps whatever its
   source; a `Sampled` path SHALL replay without running the sampler.
+- A `WitnessPath::Lasso` SHALL replay by FR-128's step, loop and fairness
+  rules, as FR-181 states, so an unfair lasso refuses
+  `invalid_runtime_input`/`invalid-value` and FR-169 settles it V-6
+  `ReplayRefused`, as FR-127 settles an unfair counterexample lasso. The
+  rest of this section is for `WitnessPath::Path`.
 - The executor SHALL evaluate the target at each path's last state. True at
   every last state SHALL settle `reproduced-with-evaluated-witness`; false
   at one SHALL settle `inconclusive`, `Verdicts`.
 
 ### Trap
 
+- A `TrapClosure::Product` trap SHALL replay as FR-181 states. The rest of
+  this section is for `TrapClosure::StateGraph`.
 - The executor SHALL re-execute the stem and evaluate `from` (for
   `always possible` and `unique path`) at its last state; a `possible` trap
   SHALL have an empty stem. A `from` that is false there SHALL settle
@@ -124,8 +146,9 @@ pub enum GraphEvidence {
   `inconclusive`, `Verdicts`. A node of the closure where the target
   evaluates `Undefined` SHALL settle `inconclusive`, `Verdicts`: the engine
   would have reported it as `Undefined` evidence (QSpec FR-391), not as a
-  trap. Exploration a limit stops SHALL return the
-  replay result stopped with that limit, which FR-169 settles V-7.
+  trap. Exploration a limit stops SHALL refuse with `stage_limit_exceeded`
+  naming the limit and its value, as FR-098 refuses a replay that reaches a
+  stage limit, and FR-169 settles the refusal V-6 `ReplayRefused`.
 
 ### Path pair
 
@@ -161,8 +184,9 @@ pub enum GraphEvidence {
 | FR-170-AC-1 | ADR-022 §7.1's `ReachesTwo` witnesses replay to `reproduced-with-evaluated-witness`, for a `Sampled` witness and an `Explored` one alike, with no sampler in the replay request. | Test (TC-595) |
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
-| FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns a result stopped with `max_states`. Replaying one envelope twice gives equal results. | Test (TC-595) |
+| FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 refuses `stage_limit_exceeded` naming `max_states` and 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
 | FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`. | Test (TC-612) |
+| FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 
 ## Dependencies
 

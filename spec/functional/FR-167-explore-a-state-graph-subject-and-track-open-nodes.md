@@ -47,7 +47,7 @@ state as a dead end.
 
 - A `ModelCheckRequest` (FR-126, FR-166) whose items are the subject's
   state-graph items (FR-165) and its deadlock-freedom item (FR-124), with
-  `ModelCheckLimits` and a cancellation poll.
+  `ModelCheckLimits` and the request's `Cancel` handle (FR-276).
 - Any reduction or state constraint the request selects (ADR-021, as its
   requirements state).
 
@@ -121,8 +121,8 @@ pub enum RunEnd {
 - If a node's expansion evaluates a contract conjunction undecided (FR-120
   `ContractUndetermined`), then the node SHALL be open,
   `UndecidedSuccessor`, and exploration SHALL continue with the other nodes.
-- When `max_states`, `max_transitions`, a clause meter or a `true` poll stops
-  the run, every discovered node not yet expanded SHALL be open,
+- When `max_states`, `max_transitions`, a clause meter or a cancelled
+  `Cancel` handle stops the run, every discovered node not yet expanded SHALL be open,
   `NotExpanded`, and `end` SHALL be `Stopped` with that limit.
 - Every other node SHALL be closed: its retained outgoing edges are exactly
   its FR-120 successors.

@@ -27,7 +27,7 @@ Fixtures: ADR-022 §7.1's subject; the same unit with two initial snapshots,
 3. `ReachesTwo` over the two-snapshot subject; with seed 7; twice with no
    seed.
 4. `ReachesTwo` over the two-snapshot subject with `witness_samples`
-   `u64::MAX`; with a poll that returns `true`.
+   `u64::MAX`; with a cancelled `Cancel` handle.
 
 Tag the tests `#[trace("TC-591", "FR-166-AC-n")]`.
 

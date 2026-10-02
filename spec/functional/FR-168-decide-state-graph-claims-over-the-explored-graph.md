@@ -69,6 +69,11 @@ left undecided, never guessed.
   its `UndefinedEvaluation{where, cause}`;
 - `NoInitialState`.
 
+With `Witnessed`, and with `Holds{Exhaustive}`, the engine SHALL also return
+the `StateGraphCertificate` FR-169 checks: the explored states, and the
+target distances or path counts it computed (ADR-022 GC-1). `Holds` under a
+reduction carries none (GC-4).
+
 Each carries its instance's `over` binding.
 
 ## Behavior

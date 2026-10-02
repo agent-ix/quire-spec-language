@@ -35,7 +35,11 @@ unrolled witness, exhaustive exploration, or exploration with evidence that
 replays. The verdict does not depend on the method. A witness settles
 `proved` only from a run that ruled out a reachable undefined evaluation;
 witnesses from any other run settle `inconclusive`,
-`WellDefinednessUnchecked` (ADR-022 GV-1, RU-5). `qsl-replay` owns
+`WellDefinednessUnchecked` (ADR-022 GV-1, RU-5). A `proved` from an
+unreduced exploration settles only after the core checker accepts its
+state-graph certificate, and carries ADR-018 PC-1's `Certified` label; a
+`proved` from a reduced exploration has no core checker and carries
+`Uncertified` (ADR-022 GC-1 to GC-4). `qsl-replay` owns
 `ProofBasis::Witness`, its category and this verdict map, beside the other
 verdicts and settlement (ADR-029 CB-2).
 
@@ -57,6 +61,9 @@ well-definedness unchecked.
 - For `Witnessed`, `WitnessedUnchecked`, `Trapped` and `PathPair`: the FR-072 replay result of its
   evidence (FR-170), or the `ReplayRefusal` that stopped it.
 - The run's seed and limits (FR-166).
+- For `Witnessed` and `Holds` from an unreduced run: the
+  `StateGraphCertificate` the engine returns with it (FR-168), and FR-098's
+  replay request for the subject, which the checker recompiles.
 
 ## Outputs
 
@@ -74,6 +81,21 @@ pub enum WitnessSource {
 
 // InconclusiveCause gains:
 //   WellDefinednessUnchecked { sources: Vec<WitnessSource> }
+// TerminalValue::Proved carries FR-127's `certification` beside its basis.
+
+pub struct StateGraphCertificate {
+    pub closure: Vec<StateKey>,          // explored model states, sorted
+    pub ranks: Vec<(u64, u32)>,          // `possible`, `always possible`: (state, d)
+    pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (state, count, order)
+}
+
+pub enum StateGraphRule {
+    InitialMissing, SuccessorMissing, PredicateUndefined,
+    RankBroken, RankMissing, CountBroken, OrderBroken,
+}
+
+pub fn check_state_graph(request: &CertificateRequest<'_>, claim: &StateGraphItem,
+    certificate: &StateGraphCertificate) -> Result<(), CertificateRejection>;
 ```
 
 and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
@@ -86,19 +108,58 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 
 | Verdict | Input | QSpec FR-360 label | QSpec FR-243 basis | `TerminalValue` | O-16 category |
 | --- | --- | --- | --- | --- | --- |
-| V-9 | `Witnessed` whose replay settles `reproduced-with-evaluated-witness` | `proved` | `decisive-witness` | `Proved{basis: Witness{sources}}` | success |
+| V-9 | `Witnessed` whose replay settles `reproduced-with-evaluated-witness` and whose certificate the checker accepts | `proved` | `decisive-witness` | `Proved{basis: Witness{sources}, certification: Certified}` | success |
 | V-10 | `Trapped` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `closed-scope` | `Refuted` | violation |
 | V-4 | `PathPair` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Undefined` whose replay reproduces the undefined value at `where` (FR-170) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
-| V-1 | `Holds{basis}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive}` or `Proved{basis: Reduced{…}}` | success |
+| V-1 | `Holds{Exhaustive}` whose certificate the checker accepts; `Holds{Reduced{…}}` | `proved` | `closed-scope` | `Proved{basis: Exhaustive, certification: Certified}`, or `Proved{basis: Reduced{…}, certification: Uncertified}` | success |
+| V-6 | `Witnessed` or `Holds{Exhaustive}` whose certificate the checker rejects | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, state})` (ADR-018 PC-2) | inconclusive |
 | V-5 | `NoDecision` with `end` `Completed`, open causes only `MaxDepth`, and no partial-order reduction | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: max_depth})` | inconclusive |
 | V-6 | `WitnessedUnchecked` whose witnesses each replay to `reproduced-with-evaluated-witness` | `inconclusive` | `unsettled` | `Inconclusive(WellDefinednessUnchecked{sources})` | inconclusive |
-| V-6 | `NoDecision` with `end` `Completed` and an `UndecidedSuccessor` open cause (`UndecidedSuccessor`), else a `ConstraintBoundary` one (`ConstraintReached`); `NoInitialState`; `ReductionNotPreserving` (FR-167); evidence whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
-| V-7 | `NoDecision` with `end` `Stopped(cause, limit)`; `NoDecision` with `end` `Completed` and open causes only `MaxDepth` under partial-order reduction (ADR-021 RV-5); a `Stopped` replay of a trap (FR-170); `Stopped(ResourceExhausted, WitnessSamples)` (FR-166) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
+| V-6 | `NoDecision` with `end` `Completed` and an `UndecidedSuccessor` open cause (`UndecidedSuccessor`), else a `ConstraintBoundary` one (`ConstraintReached`); `NoInitialState`; `ReductionNotPreserving` (FR-167); evidence whose replay settles `inconclusive` (`ReplayParity`, wire cause `replay-parity`) or refuses (`ReplayRefused`), a trap replay a limit stopped included (FR-170) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-7 | `NoDecision` with `end` `Stopped(cause, limit)`; `NoDecision` with `end` `Completed` and open causes only `MaxDepth` under partial-order reduction (ADR-021 RV-5); `Stopped(ResourceExhausted, WitnessSamples)` (FR-166); a certificate check a limit stopped | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(cause)` | incomplete |
 | V-8 | No candidate discharges the form | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
 - `TerminalValue::category` SHALL map `Proved{basis: Witness{…}}` to
-  success.
+  success, with either certification.
+
+### State-graph certificate (ADR-022 GC-1 to GC-4)
+
+- **Production.** With `Witnessed` or `Holds` from an unreduced
+  exploration, the engine SHALL return a `StateGraphCertificate`: every
+  explored model state's `quire.simulation.state-key/v1` digest, sorted;
+  for `possible` and `always possible`, each state's distance `d` to the
+  nearest target node, for every state from which a target is reachable;
+  for `unique path`, each node of `H`'s path count and its position in a
+  reverse topological order of `H`.
+- **Check.** `check_state_graph`, a layer-6 entry of `qsl-replay` beside
+  FR-127's `check_closure`, SHALL recompile the package, re-admit the
+  subject and recompute with its own code, reading nothing from the engine
+  but the certificate. It SHALL reject with `CertificateRejected{rule,
+  state}`, naming the first failing state in certificate order:
+  - `InitialMissing`, when an initial state is not in `closure`;
+  - `SuccessorMissing`, when a successor that `ModelSystem` computes for a
+    `closure` state is not in `closure`, as FR-127's `check_closure` does;
+  - `PredicateUndefined`, when a claim predicate evaluates undefined at a
+    `closure` state;
+  - for `possible`: `RankMissing`, when an initial state has no rank;
+    for `always possible`: `RankMissing`, when a state where `from` holds
+    has no rank; and for both, `RankBroken`, when a ranked state with
+    `d = 0` fails the target or one with `d > 0` has no successor ranked
+    `d - 1`;
+  - for `unique path`: `OrderBroken`, when an edge of `H` does not go to a
+    node earlier in the order, and `CountBroken`, when a node's count is not
+    1 for a `to` node, otherwise the sum of its `H` successors' counts
+    saturated at 2, or when a node where `from` holds counts other than 1.
+- An accepted certificate establishes the claim over every reachable
+  state, well-definedness included: the closure holds every reachable
+  state, no predicate is undefined there, and the ranks or counts give the
+  claim's truth (ADR-022 GM-4, GM-5).
+- The checker SHALL count states against `max_states` and successors
+  against `max_transitions`, with checked arithmetic, and stop at a reached
+  limit, naming it, which settles V-7.
+- A proof under a reduction SHALL carry `certification: Uncertified`, with
+  no certificate (ADR-022 GC-4).
 - No item SHALL settle `proved` from a witness unless FR-168 returned
   `Witnessed`, which it returns only from a run that completed with no open
   node and no undefined evaluation of the target.
@@ -135,13 +196,15 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-169-AC-1 | Each input row maps to its `TerminalValue`, FR-360 label, FR-243 basis and O-16 category exactly as the table states; `Proved{basis: Witness{sources}}` maps to success. | Test (TC-594) |
-| FR-169-AC-2 | ADR-022 §7.1's `ReachesTwo` under default limits settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}}`, success, and its record names the seed and trace index of each walk; with `witness_samples` 0 it settles the same label and basis with sources `[Explored]` and a record naming exploration. `ReachesThree` settles `refuted`, `closed-scope`, after its trap replays. | Test (TC-594) |
-| FR-169-AC-3 | §7.2's `CanStillWin` settles `refuted`, `closed-scope` (V-10); its `from` variant `proved`, `closed-scope`, `Proved{Exhaustive}` (V-1). §7.3's `InOneWay` settles `refuted`, `decisive-counterexample` (V-4). | Test (TC-594) |
+| FR-169-AC-2 | ADR-022 §7.1's `ReachesTwo` under default limits settles `proved`, `decisive-witness`, `Proved{basis: Witness{[Sampled(…)]}, certification: Certified}`, success, and its record names the seed and trace index of each walk; with `witness_samples` 0 it settles the same label and basis with sources `[Explored]` and a record naming exploration. `ReachesThree` settles `refuted`, `closed-scope`, after its trap replays. | Test (TC-594) |
+| FR-169-AC-3 | §7.2's `CanStillWin` settles `refuted`, `closed-scope` (V-10); its `from` variant `proved`, `closed-scope`, `Proved{Exhaustive, Certified}` (V-1). §7.3's `InOneWay` settles `refuted`, `decisive-counterexample` (V-4). | Test (TC-594) |
 | FR-169-AC-4 | FR-168-AC-4's trap settles `refuted` (V-10) and its `NoDecision` settles `inconclusive`, `BoundReached{depth: 3}`, execution `completed`, truth `pending`, and its record states horizon 3 as a method parameter, not among the limits. A run stopped by `max_states` settles `failed`, `resource-incomplete`, naming `max_states` and its value; an undecided node with no decisive evidence settles `inconclusive`, `UndecidedSuccessor`; a subject with no initial state settles `inconclusive`, `NoInitialState`. | Test (TC-594) |
-| FR-169-AC-5 | A `Witnessed` outcome whose replay settles `inconclusive` settles `inconclusive`, `ReplayParity`, never `proved`; a `Trapped` outcome whose replay a limit stops settles `failed`, `resource-incomplete`. | Test (TC-594) |
+| FR-169-AC-5 | A `Witnessed` outcome whose replay settles `inconclusive` settles `inconclusive`, `ReplayParity`, never `proved`; a `Trapped` outcome whose replay a limit stops settles `inconclusive`, `ReplayRefused`, naming the limit. | Test (TC-594) |
 | FR-169-AC-6 | FR-168-AC-5's `Undefined` outcome settles `refuted`, `decisive-counterexample`, category violation, after FR-170 replay reproduces it, with cause `UndefinedEvaluation` naming the node `(2, 0)` and `division-by-zero`. | Test (TC-612) |
 | FR-169-AC-7 | FR-168-AC-7's `Undefined` outcome, found although a sampled witness existed, settles `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`; `ReachesTwo` with default limits settles `proved`, `decisive-witness`, with `Sampled` sources, and its record names a completed exploration. | Test (TC-613) |
 | FR-169-AC-8 | FR-168-AC-8's `WitnessedUnchecked` outcome settles `inconclusive`, `unsettled`, `Inconclusive(WellDefinednessUnchecked{sources})` with `Sampled` sources, naming `max_states` and its value, never `proved`; its `NoDecision` variant with `witness_samples` 0 settles `failed`, `resource-incomplete`. | Test (TC-614) |
+| FR-169-AC-9 | Accepted certificates. `ReachesTwo` for `c = a` returns a certificate whose closure is §7.1's 9 states and whose ranks are `d = 0` at `va = 2`, 1 at `va = 1` and 2 at `va = 0`; `check_state_graph` accepts it and the item settles `Proved{Witness{…}, Certified}`. §7.2's `CanStillWin` `from (x.phase != Lost)` returns ranks `Won` 0, `Mid` 1, `Start` 2 and no rank for `Lost`, accepted, `Proved{Exhaustive, Certified}`. §7.3's sequenced `InOneWay` returns counts 1 at every node of `H` with a reverse topological order, accepted. The `possible` item of FR-167-AC-4 proved under partial-order reduction settles `Proved{Reduced{…}, Uncertified}` with no certificate. | Test (TC-643) |
+| FR-169-AC-10 | Rejected certificates, each settling `inconclusive`, `CertificateRejected{rule, state}` and never `proved`: AC-9's `ReachesTwo` certificate with `(2, 2)` removed (`SuccessorMissing` at the state that reaches it); with the rank of `(1, 0)` changed to 2 (`RankBroken` at `(1, 0)`); with `(0, 0)` unranked (`RankMissing`); a hand-built certificate for FR-168-AC-5's item (`PredicateUndefined` at `(2, 0)`); the `InOneWay` certificate over §7.3's unsequenced job with every count 1 (`CountBroken` at the node with two paths); the sequenced certificate with its order reversed (`OrderBroken`). The check with `max_states` 2 stops and settles `failed`, naming `max_states`. | Test (TC-644) |
 
 ## Dependencies
 
