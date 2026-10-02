@@ -480,15 +480,10 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
     // 25 authored tokens; one profile, one declaration and one Boolean node.
     // The existing value parser enters expression and precedence contexts.
     let text = "language \"ix:native\" edition \"1-draft\"; profile S = \"test:profile\" version \"1\" digest \"unresolved\"; predicate P using S(): Boolean { true }";
-    // `nesting` counts bracket pairs (NFR-001 "Nesting level"), not
-    // productions entered: the empty parameter list `()` and the body
-    // block `{ true }` are siblings, each one bracket pair deep, so this
-    // declaration's deepest token sits inside exactly 1 pair.
     let exact = Limits {
         source_bytes: text.len(),
         tokens: 25,
         nodes: 3,
-        nesting: 1,
     };
     let NativeUnit::Composed(parsed) = read(text, exact).unwrap() else {
         panic!("composed");
@@ -517,17 +512,6 @@ fn exact_small_limits_admit_and_each_next_charge_refuses() {
         (
             Limits { nodes: 2, ..exact },
             Phase::Parse,
-            Code::StageLimitExceeded,
-        ),
-        // The lexer's own delimiter-nesting check (`qsl_cst::lexer::recognize`)
-        // refuses the predicate's `(` before the parser ever runs, since a
-        // ceiling of 0 admits no bracket at all.
-        (
-            Limits {
-                nesting: 0,
-                ..exact
-            },
-            Phase::Lex,
             Code::StageLimitExceeded,
         ),
     ] {

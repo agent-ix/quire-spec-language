@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Nesting levels, chain lengths and stack safety for the native S1 parser,
+//! Bracket nesting, chain lengths and stack safety for the native S1 parser,
 //! historical and composed editions. Every test runs on a 512 KiB thread at
 //! the default ceilings; see `qsl-cst/tests/it/nesting_levels.rs` for the
 //! complete-V1 parser.
@@ -185,66 +185,22 @@ fn parenthesized_sum_five_deep_parses() {
     });
 }
 
-#[trace("TC-012", "NFR-001-M-4")]
+// Bracket nesting has no ceiling of its own: parentheses and composed
+// type-argument brackets nested far past the old 64-pair ceiling parse at
+// the default limits.
+#[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
-fn paren_nesting_to_exactly_the_ceiling_parses_and_one_deeper_is_refused_by_the_lexer() {
+fn deep_brackets_parse_at_the_default_ceilings() {
     on_bounded_stack(|| {
-        let bound = Limits::default().nesting;
-        // The invariant's own `{` is the first pair.
-        let inner = bound - 1;
-        read_expr(&format!("{}1{}", "(".repeat(inner), ")".repeat(inner)))
-            .expect("exactly the ceiling parses");
-
-        let opens = "(".repeat(inner + 1);
-        let text = document(&format!("{opens}1{}", ")".repeat(inner + 1)));
-        let offending = body_prefix().len() + opens.len() - 1;
-        let error = parse(
-            identity("over"),
-            "test.native",
-            text.as_bytes(),
-            Limits::default(),
-        )
-        .expect_err("one pair deeper is refused");
-        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
-        assert_eq!(error.phase, Phase::Lex);
-        assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
-            (offending, offending + 1)
+        let depth = 5_000;
+        read_expr(&format!("{}1{}", "(".repeat(depth), ")".repeat(depth)))
+            .expect("5,000 parenthesis pairs parse");
+        let deep = format!(
+            "{COMPOSED_HEADER}invariant Deep using S on M::OrderView at current {{ {}size<M::T>(1){} }}",
+            "(".repeat(depth),
+            ")".repeat(depth)
         );
-    });
-}
-
-// A type-argument `<` is a bracket pair the lexer does not count, so only
-// the parser's own charge can refuse it. Past the ceiling the `<` is refused
-// before anything after it is read; the unit is cut short after the `>` so
-// no later `(` reaches the lexer's own check first.
-#[trace("TC-012", "NFR-001-M-4")]
-#[test]
-fn type_argument_bracket_past_the_ceiling_is_refused_by_the_parser() {
-    on_bounded_stack(|| {
-        let bound = Limits::default().nesting;
-        let prefix = |inner: usize| {
-            format!(
-                "{COMPOSED_HEADER}invariant Deep using S on M::OrderView at current {{ {}",
-                "(".repeat(inner)
-            )
-        };
-        // The clause's `{` is pair 1, so after `inner` parens the `<` and
-        // the call's `(` are pair `inner + 2`.
-        let inner = bound - 2;
-        let at_bound = format!("{}size<M::T>(1){} }}", prefix(inner), ")".repeat(inner));
-        read_composed(&at_bound).expect("size<…>(…) exactly at the ceiling parses");
-
-        let inner = bound - 1;
-        let over = format!("{}size<M::T>{} }}", prefix(inner), ")".repeat(inner));
-        let error = read_composed(&over).expect_err("the `<` opens pair 65");
-        assert_eq!(refused_limit(&error), SyntaxLimit::NestingDepth { bound });
-        assert_eq!(error.phase, Phase::Parse);
-        let angle = prefix(inner).len() + "size".len();
-        assert_eq!(
-            (error.span.start.byte, error.span.end.byte),
-            (angle, angle + 1)
-        );
+        read_composed(&deep).expect("size<…>(…) inside 5,000 pairs parses");
     });
 }
 
@@ -275,8 +231,7 @@ fn flat_twenty_thousand_operator_chain_completes() {
 }
 
 // The longest chain of each shape the default ceilings admit parses, and
-// one element more names the ceiling it hits. Every shape has nesting
-// depth 0.
+// one element more names the ceiling it hits.
 #[trace("TC-012", "NFR-001-M-2", "NFR-001-M-3")]
 #[test]
 fn longest_historical_chains_parse_and_one_longer_names_a_ceiling() {

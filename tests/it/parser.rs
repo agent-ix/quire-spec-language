@@ -286,34 +286,24 @@ fn resource_limits_never_become_boolean_results() {
             },
             false,
         ),
-        (
-            Limits {
-                nesting: 0,
-                ..Limits::default()
-            },
-            false,
-        ),
     ] {
         let error = read(document("true").as_bytes(), limits).unwrap_err();
         assert_eq!(error.is_incomplete(), incomplete, "{limits:?}");
     }
-    let error = read(
+    // Bracket nesting has no ceiling of its own: 1,000 pairs fit the default
+    // token and node ceilings and parse.
+    read(
         document(&format!("{}true{}", "(".repeat(1000), ")".repeat(1000))).as_bytes(),
         Limits::default(),
     )
-    .unwrap_err();
-    assert!(!error.is_incomplete());
-    // A right-associative `implies` chain has nesting depth 0 (NFR-001
-    // "Nesting level"): 1,000 operands fits comfortably under the default
-    // token/node ceilings and must parse, not refuse. This replaces a
-    // former assertion that it was refused, back when `enter()` charged
-    // nesting on every `expression()`/`binary()` recursion instead of on
-    // real bracket pairs.
+    .expect("1,000 bracket pairs fit the default ceilings");
+    // A right-associative `implies` chain of 1,000 operands fits the default
+    // token and node ceilings and parses.
     let expression = std::iter::repeat_n("true", 1000)
         .collect::<Vec<_>>()
         .join(" implies ");
     let parsed = read(document(&expression).as_bytes(), Limits::default())
-        .expect("a 1,000-operand implies chain has nesting depth 0 and fits the default ceilings");
+        .expect("a 1,000-operand implies chain fits the default ceilings");
     // 1,000 `true` literals plus 999 binary `implies` nodes.
     assert_eq!(parsed.expressions().len(), 1999);
 }
