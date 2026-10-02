@@ -50,3 +50,12 @@ emitted v2 package's identity preimage. The pairs are:
 - each FR-258 expression form at 4 and at 63 levels;
 - a parameter typed with 4 and with 100 nested `Option`s;
 - a chain of 4 and of 30 records."
+
+## Dispositions
+
+Round 1, reviewed at d48ce4286bedc187447f31e33b35e73cc86ef3e7.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d48ce428: FR-259-AC-4 and TC-728 step 5 added; the four tests are retagged to TC-728 / FR-259-AC-4. |
+| FND-002 | fixed | d48ce428: FR-259-AC-4 names compound-unit ids, enum preimages and the checked package identity as fixed-depth by type. |

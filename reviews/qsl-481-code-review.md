@@ -67,3 +67,11 @@ Mergeable with one low finding.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | `wire_depth` measures the whole emitted v2 wire, not the identity preimage the test is named for. As an upper bound it is sound, because `identity_preimage` is a member of the wire, so growth there grows the wire. But a deeper non-identity section (`source_map`, `diagnostics`) would fail a test named for the identity preimage. Fix: measure the wire's `identity_preimage` member, or rename the test to the wire. | qsl-package/src/emit/tests/identity_depth.rs:23-27 |
+
+## Dispositions
+
+Round 1, reviewed at d48ce4286bedc187447f31e33b35e73cc86ef3e7.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d48ce428: `identity_preimage_depth` measures the wire's `identity_preimage` member only. |
