@@ -684,7 +684,7 @@ fn no_shipped_dependency_enables_test_support() {
 /// certificate checker keeps its own DBM separate from the zone engine's
 /// (ADR-026 CF-6, FR-245), cannot reach the engine's DBM through a
 /// dependency edge.
-#[trace("TC-700", "FR-245-AC-4")]
+#[trace("TC-700", "FR-245-AC-6")]
 #[test]
 fn no_core_crate_depends_on_qsl_analyze() {
     let packages = workspace_dependencies();

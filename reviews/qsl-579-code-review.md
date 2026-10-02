@@ -96,7 +96,17 @@ Changes requested: two low findings.
 
 ## Dispositions
 
-| ID | Outcome |
-| --- | --- |
-| FND-001 | fixed cf5e9a89d: `Exact` has the private supertrait `sealed::Sealed`, implemented for `Integer` and, under `cfg(kani)` only, `i64`. |
-| FND-002 | fixed cf5e9a89d: `certificate` is a private module of `qsl-replay` until `check_zone_certificate` calls it. |
+Round 1, reviewed at `3653e30e5fc134c8090168417efd3a099657cc80`. The branch is rebased onto main b8a79a9d.
+`git range-diff` shows the four original commits identical (`=`), plus
+the fix commit cf5e9a89 and 3653e30e, which only commits review files. The
+fix deletes nothing beyond the `pub` on `certificate` and two `.clone()`
+calls in a test. The arch-lint touches only add `qsl-analyze/src`: to
+`qsl_scan_src_roots` and its two fixtures in api_surface.rs, to the test
+`ROOTS` in canonical_encoder.rs (count 11 to 12), and to the tc_021 fixture
+in main.rs. arch-lint, qsl-analyze, qsl-replay certificate tests and clippy
+pass.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
+| FND-002 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |

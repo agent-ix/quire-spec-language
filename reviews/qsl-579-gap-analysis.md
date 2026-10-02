@@ -41,10 +41,29 @@ Trace:
 
 Changes requested: FND-001 and FND-003 are medium, FND-002 is low.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The new `no_core_crate_depends_on_qsl_analyze` is traced `#[trace("TC-700", "FR-245-AC-4")]`, but FR-245-AC-4 is "the Kani harnesses ... pass for dimension at most 3 with bounds in [-8, 8]"; this test checks dependency edges, which AC-4 does not state. It backs FR-245's "DBM code separate from EN-6's" (Behavior, CF-6), which no AC holds. Either add an FR-245 AC for the separation and retarget the trace, or drop the FR-245-AC-4 tag. | tests/it/family_outcome_layering.rs:681-688; spec/functional/FR-245-check-a-zone-certificate-in-the-qualified-core.md:76 |
+
 ## Dispositions
 
-| ID | Outcome |
-| --- | --- |
-| FND-001 | fixed cf5e9a89d: `qsl-analyze/src` is in `qsl_scan_src_roots` and in the arch-lint fixtures (`ensure_qsl_roots`, tc_arch_lint_api_surface_019, tc_arch_lint_api_surface_021, `canonical_encoder` `ROOTS`). |
-| FND-002 | fixed cf5e9a89d: `tests/it/family_outcome_layering.rs` `no_core_crate_depends_on_qsl_analyze` checks that no core crate's normal, dev or build table names `qsl-analyze`. Planting a `qsl-analyze` dev-dependency in `qsl-replay` makes it fail. |
-| FND-003 | fixed cf5e9a89d: FR-238 and TC-693 are passed locally; FR-245 and TC-700 are partial, with AC-4 passing locally and AC-1, AC-2, AC-3 and AC-5 planned. |
+Round 1, reviewed at `3653e30e5fc134c8090168417efd3a099657cc80` (fix commit cf5e9a89).
+The ruled spec edits are in place:
+- FR-238's Outputs now give `constrain`, `reset` and `includes` their
+  `Result<_, DbmError>` signatures and list `DbmError`.
+- A new Behavior SHALL says a refused operation returns `DbmError`, leaves
+  the DBM unchanged and never panics. AC-2 and its test now assert
+  `ClockOutOfRange`, `ResetReferenceClock` and `DimensionMismatch`, and
+  that the DBM is unchanged after each refusal.
+- FR-238-AC-3 and TC-693 step 3 describe the windowed `1/dim` grid as the
+  test implements it: a seeded anchor, least corners, past the looser entry
+  for a refused inclusion, emptiness checked both ways, and a canonicity
+  re-close.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
+| FND-002 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
+| FND-003 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
