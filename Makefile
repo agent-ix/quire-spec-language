@@ -206,13 +206,15 @@ quire-walk-no-std:
 
 # The deep-input fuzz target (FR-356-AC-7, TC-903) over the S1 parser and
 # the S3 checker: 10,000 generated sources nested 1 to 100,000 levels deep.
+# Depths are spread over orders of magnitude (`qsl_bench::deep_input`).
 # It resolves against the root `Cargo.lock`, copied in (fuzz/Cargo.lock is
-# gitignored). Needs a nightly toolchain and `cargo install cargo-fuzz`. Not
-# part of `ci:`.
+# gitignored), and builds on the pinned stable toolchain with no sanitizer:
+# QSL's crates forbid `unsafe`, so the run checks panics, aborts
+# and stack overflows. Needs `cargo install cargo-fuzz`. Not part of `ci:`.
 FUZZ_RUNS ?= 10000
 fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
-	cd fuzz && cargo +nightly fuzz run deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
+	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
 ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions
 

@@ -11,11 +11,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-qsl-cst = { path = "../qsl-cst" }
-qsl-forms = { path = "../qsl-forms" }
-qsl-foundation = { path = "../qsl-foundation" }
-qsl-replay = { path = "../qsl-replay" }
-quire-semantic-value = { path = "../quire-semantic-value" }
+# The generator and the S1-to-S4 driver, built and tested by `make ci`.
+qsl-bench = { path = "../qsl-bench" }
 
 # Its own workspace: cargo-fuzz builds on nightly with sanitizer flags, so
 # this crate stays out of the main workspace (`exclude = ["fuzz"]`).

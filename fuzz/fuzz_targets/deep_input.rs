@@ -11,7 +11,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    let input = qsl_fuzz::DeepInput::from_bytes(data);
+    let input = qsl_bench::deep_input::DeepInput::from_bytes(data);
     // Either outcome is a result; reaching here without a panic, abort or
     // overflow is what the target checks.
     let _outcome = input.compile();

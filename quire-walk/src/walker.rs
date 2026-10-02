@@ -84,8 +84,8 @@ pub fn walk<W: Walk + ?Sized>(walker: &mut W, root: W::Node) -> ControlFlow<W::S
     let mut tasks: Vec<Task<W::Node, W::Frame>> = Vec::new();
     tasks.push(Task::Enter(root));
     // Reused for every node: `enter` pushes its children here in entry
-    // order, and they move onto `tasks` reversed, so the first child is
-    // popped first.
+    // order. Popping them onto `tasks` reverses them, so the first child is
+    // the next task popped.
     let mut pending: Vec<W::Node> = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
@@ -97,7 +97,9 @@ pub fn walk<W: Walk + ?Sized>(walker: &mut W, root: W::Node) -> ControlFlow<W::S
                     },
                 )?;
                 tasks.push(Task::Exit(frame));
-                tasks.extend(pending.drain(..).rev().map(Task::Enter));
+                while let Some(child) = pending.pop() {
+                    tasks.push(Task::Enter(child));
+                }
             }
             Task::Exit(frame) => walker.exit(frame)?,
         }
