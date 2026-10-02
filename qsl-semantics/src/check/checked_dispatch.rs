@@ -704,28 +704,11 @@ enum Rewrite {
     /// Read the node: resolve a name in scope, and name the steps of its
     /// operands and binders.
     Node(ExprId),
-    /// Bind the `slot`th binder of the node ([`binder_names`]) for the scope
+    /// Bind the `slot`th binder of the node ([`ExprNode::binders`]) for the scope
     /// about to be entered ([`Scope::bind`]).
     Bind(ExprId, usize),
     /// Leave the innermost binder's scope.
     Unbind,
-}
-
-/// The binder names a node introduces, in binding order: a `let`'s name, a
-/// query, count or sum binder, or an accumulator then its element binder.
-fn binder_names(node: &ExprNode) -> Vec<&str> {
-    match node {
-        ExprNode::Let { name: binder, .. }
-        | ExprNode::Query { binder, .. }
-        | ExprNode::Count { binder, .. }
-        | ExprNode::Sum { binder, .. } => vec![binder],
-        ExprNode::Accumulate {
-            accumulator,
-            binder,
-            ..
-        } => vec![accumulator, binder],
-        _ => Vec::new(),
-    }
 }
 
 /// [`substitute_names`]'s walk, on the walker toolkit: every name is read in
@@ -817,7 +800,7 @@ impl Renaming<'_, '_, '_> {
                 let source = self
                     .tree
                     .get(id)
-                    .and_then(|node| binder_names(node.node()).get(slot).copied());
+                    .and_then(|node| node.node().binders().get(slot).copied());
                 if let (Some(source), Some(used)) = (source, self.binders.get_mut(id.index())) {
                     used.push(self.scope.bind(source));
                 }
@@ -867,41 +850,16 @@ fn substitute_names(expression: &Expression, rename: &BTreeMap<String, String>) 
     let ControlFlow::Continue(()) =
         quire_walk::walk(&mut renaming, Rewrite::Node(expression.root_id()));
     let Renaming { names, binders, .. } = renaming;
-    expression
-        .respelled(|node, copy| {
-            let index = node.id().index();
-            let mut used = binders.get(index).into_iter().flatten().cloned();
-            match copy {
-                ExprNode::Name(name) => {
-                    if let Some(Some(renamed)) = names.get(index) {
-                        name.clone_from(renamed);
-                    }
-                }
-                ExprNode::Let { name: binder, .. }
-                | ExprNode::Query { binder, .. }
-                | ExprNode::Count { binder, .. }
-                | ExprNode::Sum { binder, .. } => {
-                    if let Some(renamed) = used.next() {
-                        *binder = renamed;
-                    }
-                }
-                ExprNode::Accumulate {
-                    accumulator,
-                    binder,
-                    ..
-                } => {
-                    if let Some(renamed) = used.next() {
-                        *accumulator = renamed;
-                    }
-                    if let Some(renamed) = used.next() {
-                        *binder = renamed;
-                    }
-                }
-                _ => {}
-            }
-        })
-        // The rewrite above sets names and binders only, never a child id.
-        .expect("a renaming keeps every node's children")
+    expression.respell_names(|id, spellings| {
+        let index = id.index();
+        if let (Some(name), Some(Some(renamed))) = (spellings.reference, names.get(index)) {
+            name.clone_from(renamed);
+        }
+        let used = binders.get(index).into_iter().flatten();
+        for (binder, renamed) in spellings.binders.into_iter().zip(used) {
+            binder.clone_from(renamed);
+        }
+    })
 }
 
 /// Types every linked candidate's effective precondition and body for one

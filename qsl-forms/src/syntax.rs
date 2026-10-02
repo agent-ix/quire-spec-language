@@ -782,6 +782,107 @@ impl ExprNode {
         }
     }
 
+    /// The names this node binds, in binding order: a `let`'s name, a
+    /// query's, count's or sum's binder, or an accumulation's accumulator
+    /// then its binder. Empty for every other node.
+    pub fn binders(&self) -> Vec<&str> {
+        match self {
+            Self::Let { name: binder, .. }
+            | Self::Query { binder, .. }
+            | Self::Count { binder, .. }
+            | Self::Sum { binder, .. } => vec![binder],
+            Self::Accumulate {
+                accumulator,
+                binder,
+                ..
+            } => vec![accumulator, binder],
+            Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Rational(..)
+            | Self::Name(_)
+            | Self::SelfRef
+            | Self::Result
+            | Self::If { .. }
+            | Self::Binary { .. }
+            | Self::Negate(_)
+            | Self::Not(_)
+            | Self::Present(_)
+            | Self::Value(_)
+            | Self::Deref(_)
+            | Self::Flatten(_)
+            | Self::Size(_)
+            | Self::Field { .. }
+            | Self::Convert { .. }
+            | Self::Pre(_)
+            | Self::Call { .. }
+            | Self::Record { .. }
+            | Self::Collection { .. }
+            | Self::Contains { .. }
+            | Self::AllInstances { .. }
+            | Self::Lookup { .. }
+            | Self::Dispatch { .. }
+            | Self::Reaches { .. } => Vec::new(),
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
+        }
+    }
+
+    /// The name this node reads and the names it binds, writable, with no
+    /// child id in reach.
+    fn spellings_mut(&mut self) -> Spellings<'_> {
+        match self {
+            Self::Name(name) => Spellings {
+                reference: Some(name),
+                binders: Vec::new(),
+            },
+            Self::Let { name: binder, .. }
+            | Self::Query { binder, .. }
+            | Self::Count { binder, .. }
+            | Self::Sum { binder, .. } => Spellings {
+                reference: None,
+                binders: vec![binder],
+            },
+            Self::Accumulate {
+                accumulator,
+                binder,
+                ..
+            } => Spellings {
+                reference: None,
+                binders: vec![accumulator, binder],
+            },
+            Self::Boolean(_)
+            | Self::Integer(_)
+            | Self::Rational(..)
+            | Self::SelfRef
+            | Self::Result
+            | Self::If { .. }
+            | Self::Binary { .. }
+            | Self::Negate(_)
+            | Self::Not(_)
+            | Self::Present(_)
+            | Self::Value(_)
+            | Self::Deref(_)
+            | Self::Flatten(_)
+            | Self::Size(_)
+            | Self::Field { .. }
+            | Self::Convert { .. }
+            | Self::Pre(_)
+            | Self::Call { .. }
+            | Self::Record { .. }
+            | Self::Collection { .. }
+            | Self::Contains { .. }
+            | Self::AllInstances { .. }
+            | Self::Lookup { .. }
+            | Self::Dispatch { .. }
+            | Self::Reaches { .. } => Spellings {
+                reference: None,
+                binders: Vec::new(),
+            },
+            #[cfg(seam_probe)]
+            Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
+        }
+    }
+
     /// Apply `shift` to every child id this node names.
     fn shift_children(&mut self, shift: impl Fn(ExprId) -> ExprId) {
         let one = |id: &mut ExprId| *id = shift(*id);
@@ -1339,6 +1440,24 @@ impl Expression {
         Ok(Self { nodes })
     }
 
+    /// A copy of this tree with the names its nodes read and bind
+    /// respelled by `respell`, which is handed each node's id (children
+    /// first) and that node's [`Spellings`]. It reaches no child id, so the
+    /// copy always has this tree's shape.
+    pub fn respell_names(&self, mut respell: impl FnMut(ExprId, Spellings<'_>)) -> Self {
+        let nodes = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(index, node)| {
+                let mut copy = node.clone();
+                respell(ExprId(index), copy.spellings_mut());
+                copy
+            })
+            .collect();
+        Self { nodes }
+    }
+
     /// Every node with its id, each after its children, the root last.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = ExprRef<'_>> + '_ {
         self.nodes.iter().enumerate().map(|(index, node)| ExprRef {
@@ -1435,6 +1554,16 @@ fn render(tree: &Expression, root: ExprId, f: &mut fmt::Formatter<'_>) -> fmt::R
         ControlFlow::Continue(()) => Ok(()),
         ControlFlow::Break(error) => Err(error),
     }
+}
+
+/// The names one expression node writes, each writable, and no child id:
+/// what [`Expression::respell_names`] hands its closure.
+#[derive(Debug)]
+pub struct Spellings<'n> {
+    /// The name a `Name` node reads; `None` for every other node.
+    pub reference: Option<&'n mut String>,
+    /// The names the node binds, in [`ExprNode::binders`] order.
+    pub binders: Vec<&'n mut String>,
 }
 
 /// [`Expression::respelled`]'s rewrite of this node named other children
@@ -2610,6 +2739,43 @@ mod tests {
             Err(TreeRefusal::ClaimedTwice(y))
         );
         assert_eq!(builder.build(), Err(TreeRefusal::Unclaimed(ExprId(1))));
+    }
+
+    /// `respell_names` rewrites the names a tree reads and binds, in
+    /// binding order, and keeps every child where it was.
+    #[trace("TC-724", "FR-257-AC-1")]
+    #[test]
+    fn respell_names_rewrites_references_and_binders() {
+        let tree = Expression::let_in(
+            "v",
+            Expression::name("x"),
+            Expression::binary(
+                BinaryOperator::Add,
+                Expression::name("v"),
+                Expression::integer(1_i64),
+            ),
+        );
+        let renamed = tree.respell_names(|_, spellings| {
+            if let Some(name) = spellings.reference {
+                name.push('1');
+            }
+            for binder in spellings.binders {
+                binder.push('2');
+            }
+        });
+        assert_eq!(
+            renamed,
+            Expression::let_in(
+                "v2",
+                Expression::name("x1"),
+                Expression::binary(
+                    BinaryOperator::Add,
+                    Expression::name("v1"),
+                    Expression::integer(1_i64)
+                ),
+            )
+        );
+        assert_eq!(renamed.root_node().binders(), ["v2"]);
     }
 
     /// `respelled` rewrites each node's payload in place and keeps the

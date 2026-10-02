@@ -45,8 +45,8 @@ pub use syntax::{
     FieldInitializer, FunctionDeclaration, NameForm, ProtocolBodyForm, ProtocolConstructForm,
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
     RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal, TupleForm, TypeForm,
-    TypeFormHead, UnitForm, UsingAlias,
+    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TermOperator, TreeRefusal,
+    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a
