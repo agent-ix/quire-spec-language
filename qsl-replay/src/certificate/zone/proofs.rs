@@ -17,19 +17,14 @@
 use super::reference::{self, RawZone, RefBound};
 use super::Zone;
 
-/// Largest dimension the harnesses cover: two clocks and the reference.
-const MAX_DIM: usize = 3;
 /// Bound magnitudes the harnesses cover.
 const MAX_BOUND: i64 = 8;
 /// The scale symbolic points are read at: a grid of `1 / SCALE`.
 const SCALE: i64 = 6;
-/// Largest scaled point coordinate magnitude: a closed bound is a sum of
-/// at most `MAX_DIM - 1` input bounds, and `up` and `reset` add two.
+/// Largest scaled point coordinate magnitude: a closed bound over two
+/// clocks is a sum of at most two input bounds, and `up` and `reset` add
+/// two.
 const MAX_COORD: i64 = 4 * MAX_BOUND * SCALE;
-
-fn any_dim() -> usize {
-    kani::any_where(|d: &usize| (1..=MAX_DIM).contains(d))
-}
 
 fn any_constant() -> i64 {
     kani::any_where(|c: &i64| (-MAX_BOUND..=MAX_BOUND).contains(c))
@@ -69,10 +64,7 @@ fn any_closed(dim: usize) -> (RawZone, Zone<i64>) {
 }
 
 /// `close` keeps exactly the raw zone's points and reaches a fixpoint.
-#[kani::proof]
-#[kani::unwind(12)]
-fn close_agrees_with_the_reference() {
-    let dim = any_dim();
+fn close_agrees_with_the_reference(dim: usize) {
     let (raw, zone) = any_closed(dim);
     let point = any_point(dim);
     assert_eq!(
@@ -86,10 +78,7 @@ fn close_agrees_with_the_reference() {
 
 /// `constrain` keeps exactly the points of the zone that satisfy the
 /// constraint, and leaves the zone canonical.
-#[kani::proof]
-#[kani::unwind(12)]
-fn constrain_agrees_with_the_reference() {
-    let dim = any_dim();
+fn constrain_agrees_with_the_reference(dim: usize) {
     let (raw, mut zone) = any_closed(dim);
     let i = kani::any_where(|i: &usize| *i < dim);
     let j = kani::any_where(|j: &usize| *j < dim);
@@ -114,10 +103,7 @@ fn constrain_agrees_with_the_reference() {
 
 /// `reset` gives exactly the points of the eliminated reference, and
 /// leaves the zone canonical.
-#[kani::proof]
-#[kani::unwind(12)]
-fn reset_agrees_with_the_reference() {
-    let dim = kani::any_where(|d: &usize| (2..=MAX_DIM).contains(d));
+fn reset_agrees_with_the_reference(dim: usize) {
     let (raw, mut zone) = any_closed(dim);
     let clock = kani::any_where(|x: &usize| (1..dim).contains(x));
     let value = kani::any_where(|v: &i64| (0..=MAX_BOUND).contains(v));
@@ -133,10 +119,7 @@ fn reset_agrees_with_the_reference() {
 
 /// `up` gives exactly the points of the eliminated reference, and leaves
 /// the zone canonical.
-#[kani::proof]
-#[kani::unwind(12)]
-fn up_agrees_with_the_reference() {
-    let dim = any_dim();
+fn up_agrees_with_the_reference(dim: usize) {
     let (raw, mut zone) = any_closed(dim);
     let point = any_point(dim);
     zone.up();
@@ -149,10 +132,7 @@ fn up_agrees_with_the_reference() {
 
 /// `includes` agrees with the entrywise reference, and an included zone's
 /// points are points of the including zone.
-#[kani::proof]
-#[kani::unwind(12)]
-fn includes_agrees_with_the_reference() {
-    let dim = any_dim();
+fn includes_agrees_with_the_reference(dim: usize) {
     let (_, big) = any_closed(dim);
     let (_, small) = any_closed(dim);
     let point = any_point(dim);
@@ -167,10 +147,7 @@ fn includes_agrees_with_the_reference() {
 }
 
 /// The aLU test agrees with its plain-bound transcription.
-#[kani::proof]
-#[kani::unwind(12)]
-fn alu_agrees_with_the_reference() {
-    let dim = any_dim();
+fn alu_agrees_with_the_reference(dim: usize) {
     let (_, zone) = any_closed(dim);
     let (_, target) = any_closed(dim);
     let mut lower = Vec::new();
@@ -191,4 +168,39 @@ fn alu_agrees_with_the_reference() {
             &upper
         )
     );
+}
+
+/// One harness per operation and dimension, so each runs over a matrix of
+/// fixed shape. A dimension of at most 3 is the harness input FR-245-AC-4
+/// names, not a limit of the checker.
+macro_rules! harnesses {
+    ($($name:ident => $check:ident($dim:expr);)*) => {
+        $(
+            #[kani::proof]
+            #[kani::unwind(12)]
+            fn $name() {
+                $check($dim);
+            }
+        )*
+    };
+}
+
+harnesses! {
+    close_dim_1 => close_agrees_with_the_reference(1);
+    close_dim_2 => close_agrees_with_the_reference(2);
+    close_dim_3 => close_agrees_with_the_reference(3);
+    constrain_dim_1 => constrain_agrees_with_the_reference(1);
+    constrain_dim_2 => constrain_agrees_with_the_reference(2);
+    constrain_dim_3 => constrain_agrees_with_the_reference(3);
+    reset_dim_2 => reset_agrees_with_the_reference(2);
+    reset_dim_3 => reset_agrees_with_the_reference(3);
+    up_dim_1 => up_agrees_with_the_reference(1);
+    up_dim_2 => up_agrees_with_the_reference(2);
+    up_dim_3 => up_agrees_with_the_reference(3);
+    includes_dim_1 => includes_agrees_with_the_reference(1);
+    includes_dim_2 => includes_agrees_with_the_reference(2);
+    includes_dim_3 => includes_agrees_with_the_reference(3);
+    alu_dim_1 => alu_agrees_with_the_reference(1);
+    alu_dim_2 => alu_agrees_with_the_reference(2);
+    alu_dim_3 => alu_agrees_with_the_reference(3);
 }
