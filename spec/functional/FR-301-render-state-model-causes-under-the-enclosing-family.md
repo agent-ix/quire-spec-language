@@ -34,8 +34,8 @@ result.
 
 ## Inputs
 
-- A model form (`deref`, a field read, `allInstances`, `lookup`, a dispatched
-  call) evaluated through `value::model_query` from the `evaluate` hook of the
+- A model form (`deref` (a field read), `allInstances`, `lookup`, a
+  dispatched call) evaluated through `value::model_query` from the `evaluate` hook of the
   enclosing `Value` or `ProtocolClause` family (ADR-016 FP-3).
 - The admitted population binding and object environment
   ([FR-084](FR-084-admit-closed-populations-and-resolve-lookup.md)).
@@ -54,7 +54,8 @@ enclosing family's result as a `StateModel` cause. Its catalog code SHALL
 render with the `state-model` prefix and never with the enclosing family's
 prefix. Its O-16 category SHALL be the category of the `FamilyResult` arm that
 carries it (`Refused` → refusal, `Undefined` → undefined), as ADR-012 §13.5
-Q210-3 maps it. No `StateModel` arm is added to the S6a family kind.
+Q210-3 maps it. The S6a family kind is unchanged: the cause travels in the
+enclosing family's result.
 
 ## Acceptance Criteria
 

@@ -66,8 +66,8 @@ produce no checked package and no partial dispatch table.
 ### The family walk is bounded by a caller limit
 
 If a called family's `redefines` walk would exceed the caller's
-`family_steps` ceiling, the compile SHALL refuse at S3 with a resource
-refusal naming the limit `family_steps`, its configured value, and the
+`family_steps` ceiling, the compile SHALL refuse at S3 with FR-083's
+resource-exhaustion cause `family-steps`, naming the limit `family_steps`, its configured value, and the
 `SpineLimits` model normalization field that raises it. The ceiling is the
 caller's value, with the published default of
 `ModelNormalizationLimits::default()`.
@@ -77,11 +77,11 @@ caller's value, with the published default of
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-302-AC-1 | A unit with dispatched calls on two operations, `size` redefined at `A` and at `B` (`B` a subtype of `A`) and `area` declared at `A`, each called twice, compiles into a checked package carrying exactly one linked dispatch table per called operation; the `size` table maps `A` to `A`'s candidate and `B` to `B`'s, and the checked node of every dispatched call names the table of the operation it calls. | Test (TC-793) |
-| FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
 | FR-302-AC-2 | A unit whose dispatched call's family has two undominated candidates for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`multiple-undominated`, naming the subtype, both candidates and the dominance pairs, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-3 | A unit whose dispatched call's family has no applicable candidate for one concrete subtype refuses at S3 with `ambiguous_dispatch`/`no-applicable`, naming the subtype, and returns no checked package. | Test (TC-794) |
 | FR-302-AC-4 | A unit with dispatched calls on two operations, each with one failing subtype, refuses once and names both failures. | Test (TC-794) |
-| FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with a resource refusal naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
+| FR-302-AC-5 | A unit whose called family has `n` `redefines` edges compiles with `family_steps = n` and, with `family_steps = n - 1`, refuses at S3 with the resource-exhaustion cause `family-steps` naming `family_steps`, the value `n - 1` and the limits field that raises it. | Test (TC-795) |
+| FR-302-AC-6 | A unit whose precondition makes a dispatched call on an operation redefined at `A` and at `B` (`B` a subtype of `A`) compiles; evaluating the precondition with a receiver whose most-specific type is `B` runs `B`'s body, and with a receiver of type `A` runs `A`'s body. | Test (TC-809) |
 
 ## Dependencies
 

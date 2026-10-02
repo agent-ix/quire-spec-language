@@ -28,9 +28,10 @@ relationships:
 
 When the S3 checker checks a `FrameBinding` keyed by an `OperationKey`, the
 checker SHALL accept the binding whether or not a clause or attempt names the
-operation. When a clause or attempt names the operation, the checker SHALL
-relate the binding to that operation's one `state`/`frame` node and one
-`state`/`operation_anchor` node.
+operation, and SHALL record in the checked binding's `frame_nodes` member
+the operation's one `state`/`frame` node key and one
+`state`/`operation_anchor` node key when a clause or attempt names the
+operation.
 
 ## Inputs
 
@@ -43,8 +44,13 @@ relate the binding to that operation's one `state`/`frame` node and one
 
 ## Outputs
 
-The binding, related to the operation's frame node and anchor node when the
-unit has them.
+The checked `FrameBinding` of the `CheckedAbstractionRelation`, holding
+`frame_nodes: Option<FrameNodes { frame: NodeKey, anchor: NodeKey }>`:
+`Some` with the `NodeKey`s of the operation's `state`/`frame` and
+`state`/`operation_anchor` nodes when the unit has its
+`CheckedOperationFrame`, and `None` otherwise. The v2 relation node does not
+carry `frame_nodes`; a reader joins a frame entry to those nodes by its
+operation key (QSpec FR-451).
 
 ## Behavior
 
@@ -73,8 +79,8 @@ a type that declares no such operation, and refuses as FR-304 states
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-305-AC-1 | A unit that binds the frame of an operation no clause or attempt names checks, and its checked relation holds that `FrameBinding` under the operation's `OperationKey`. | Test (TC-802) |
-| FR-305-AC-2 | A unit that binds `attemptUpdate`'s frame and has a clause naming `attemptUpdate` relates the binding to exactly the `state`/`frame` node and the `state`/`operation_anchor` node of `attemptUpdate`'s `CheckedOperationFrame`. | Test (TC-802) |
+| FR-305-AC-1 | A unit that binds the frame of an operation no clause or attempt names checks, and its checked relation holds that `FrameBinding` under the operation's `OperationKey` with `frame_nodes` `None`. | Test (TC-802) |
+| FR-305-AC-2 | A unit that binds `attemptUpdate`'s frame and has a clause naming `attemptUpdate` checks, and the checked `FrameBinding`'s `frame_nodes` is `Some(FrameNodes { frame, anchor })` whose `frame` and `anchor` equal the `NodeKey`s of the `state`/`frame` and `state`/`operation_anchor` nodes of `attemptUpdate`'s `CheckedOperationFrame`. | Test (TC-802) |
 | FR-305-AC-3 | A frame binding keyed by `OperationKey { Sub, op }`, where `Sub` inherits `op` from `Base` without redeclaring it, refuses `missing_declaration`/`missing-name` naming the key; the same binding keyed by `OperationKey { Base, op }` checks. | Test (TC-803) |
 
 ## Dependencies

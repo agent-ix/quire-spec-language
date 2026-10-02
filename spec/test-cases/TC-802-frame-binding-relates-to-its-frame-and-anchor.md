@@ -21,7 +21,9 @@ Scope: FR-305-AC-1, FR-305-AC-2.
 ## Expected Results
 
 1. The unit compiles; the checked relation holds the `FrameBinding` under
-   `OperationKey { ConfigVersion, attemptUpdate }`.
-2. The binding is related to exactly the `state`/`frame` and
-   `state`/`operation_anchor` node keys of `attemptUpdate`'s
+   `OperationKey { ConfigVersion, attemptUpdate }`, with `frame_nodes`
+   `None`.
+2. The `FrameBinding`'s `frame_nodes` is `Some(FrameNodes { frame, anchor
+   })`, with `frame` equal to the `state`/`frame` node key and `anchor`
+   equal to the `state`/`operation_anchor` node key of `attemptUpdate`'s
    `CheckedOperationFrame`.

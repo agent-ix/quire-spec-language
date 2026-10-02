@@ -94,6 +94,12 @@ is a prerequisite of gate QSL-15 (#224, ARCH-G4) for that gate's scenarios 5
 feature. Supersedes nothing. Its `/spec-review all` is SR-800 to SR-807 in
 [`spec/reviews/arch-43-boundaries/`](../reviews/arch-43-boundaries/integrity.md).
 
+Amended 2026-10-01 (abstraction relation FR pass, FR-304 to FR-307): AR-1,
+AR-2, AR-4 and §5 follow QSpec's answers to Q-1, Q-2 and Q-7, which are
+decided: QSpec FR-450 spells the declaration (Q-1), QSpec FR-451 spells the
+v2 node (Q-2), and QSpec FR-353-AC-1 accepts the derived operation key
+(Q-7). AR-2's frame binding receiver is a `RustReceiver`.
+
 A bare FR, AD or TC id is a QSL artifact; a QSpec artifact is always written
 "QSpec FR-nnn". Item ids `PF-`, `RF-`, `AR-`, `G-`, `Q-` and `TK-` are local
 to this record; other artifacts cite them as `ADR-017 PF-n`.
@@ -555,9 +561,8 @@ does not read (the real corpus is under `tests/fixtures/refinement/`).
 The relation is a `Relation` family declaration in QSL source, parsed at S2,
 checked at S3 and carried in the checked package (ADR-012 §3). It is not a
 domain-package declaration: FCD's semantic IR describes the model, not its
-implementation. Its surface spelling belongs to QSpec's shared grammar, which
-has none (Q-1). This record does not adopt the CST's refused
-`RelationClause` production; Q-1 decides the spelling.
+implementation. Its surface spelling is QSpec FR-450's `abstraction-decl`
+(Q-1, decided).
 
 #### AR-2 Keys and binding values
 
@@ -565,7 +570,7 @@ has none (Q-1). This record does not adopt the CST's refused
 | --- | --- | --- |
 | Model object | the object type's `DeclarationKey { package, node }` (O-03) | `ObjectBinding { rust_type: RustPath, fields: map field Identifier → RustField }` |
 | Population | the population declaration's `DeclarationKey` (the `population_key` FR-089 mints `PopulationId` from) (O-03) | `PopulationBinding { collection: RustPath }`: the path from the implementation state root to the collection |
-| Operation frame | `OperationKey { declaring: DeclarationKey, operation: Identifier }` (O-03 plus the operation identifier) | `FrameBinding { function: RustPath, receiver: RustField, parameters: map operation parameter Identifier → Rust parameter identifier }` |
+| Operation frame | `OperationKey { declaring: DeclarationKey, operation: Identifier }` (O-03 plus the operation identifier) | `FrameBinding { function: RustPath, receiver: RustReceiver, parameters: map operation parameter Identifier → Rust parameter identifier }`; a `RustReceiver` is `self` or one Rust identifier naming a function parameter (QSpec FR-450) |
 
 - **Anchors.** An operation has one anchor and one frame (FR-105). Its QSpec
   FR-012 pre, post and result anchors are the implementation function's
@@ -580,8 +585,8 @@ has none (Q-1). This record does not adopt the CST's refused
   identities are functions of `OperationKey`. A binding therefore exists for
   an operation that no clause names, and S3 relates it to the
   `state`/`frame` and `state`/`operation_anchor` nodes when a clause or
-  attempt names the operation. Q-7 asks QSpec to accept this derived key for
-  QSpec FR-353-AC-1.
+  attempt names the operation. QSpec FR-353-AC-1 accepts this derived key
+  (Q-7, decided).
 - An inherited operation anchors at its declaring type (FR-105), so it has
   one frame binding, at the declaring type. A subtype whose implementation
   function differs cannot be bound separately: QSpec FR-353 maps one frame to
@@ -628,7 +633,7 @@ There is no totality check.
 #### AR-4 Export and the unbound refusal
 
 - **One authority.** The relation is part of the checked package, as a v2
-  node whose tag, form and body QSpec spells (Q-2). Kani and Verus read it
+  node whose tag, form and body QSpec FR-451 spells (Q-2, decided). Kani and Verus read it
   only from the v2 bytes (ADR-011 FB-05). There is no side file.
 - **Implementation export.** A layer-4 `package` function takes the checked
   package and the requested items, each a requirement record's occurrence key
@@ -657,8 +662,8 @@ There is no totality check.
 - CG's own unbound check (CG#84: "A claim whose model elements have no bound
   relation refuses") guards requests formed outside the driver, as QSpec
   FR-290's per-item `invalid-request` does (ADR-012 §7.2).
-- **Relation revision.** Once the relation is a v2 node (Q-2), its node ids
-  enter the `package_id` (O-02), so rebinding changes the `package_id`. Every
+- **Relation revision.** The relation is a v2 node (QSpec FR-451), so its
+  node ids enter the `package_id` (O-02), so rebinding changes the `package_id`. Every
   generated contract carries the `package_id` it was generated from (O-25),
   so it is never reinterpreted (QSpec FR-353-AC-5). There is no separate
   revision field.
@@ -701,7 +706,7 @@ QSpec TC-268 verifies QSpec FR-353-AC-1 to AC-5. QSL's share:
 | AC-2 | Kani and Verus read the relation through QSpec AD-010 negotiation (CG#49, CG#84; not QSL) |
 | AC-3 | an item referencing an unbound element refuses naming every unbound element, while a sibling item with bound elements continues; an unknown occurrence key refuses (#198) |
 | AC-4 | a duplicate and a conflicting binding each refuse `conflicting-binding` naming both; a `parameters` map that omits a parameter and a malformed `RustPath` segment each refuse `malformed-declaration` (#198) |
-| AC-5 | rebinding one field changes the `package_id` (#198 feature slice, after Q-2) |
+| AC-5 | rebinding one field changes the `package_id` (#198 feature slice) |
 
 ### 5. Named interfaces for the dependent tickets
 
@@ -709,10 +714,9 @@ QSpec TC-268 verifies QSpec FR-353-AC-1 to AC-5. QSL's share:
 
 - **Enablement**, which waits on nothing: `CheckedAbstractionRelation`,
   `OperationKey`, the binding value types, `RustPath` and
-  `RustField`, the AR-3 refusals and the AR-4 export, tested on relations
-  built in the test from checked packages. These stay crate-private until
-  Q-2 fixes the wire shape.
-- **Feature**, which waits on Q-1 and Q-2: the S2 form, the S4 relation node,
+  `RustField` and `RustReceiver`, the AR-3 refusals and the AR-4 export,
+  tested on relations built in the test from checked packages.
+- **Feature**, on QSpec FR-450 and FR-451: the S2 form, the S4 relation node,
   AC-5, #198's spine exit (one ConfigVersion model element binds to a Rust
   struct and exports through the checked package; an unbound element
   referenced by an emission request refuses by name; model admission
@@ -732,7 +736,7 @@ V1-TOOL-012, not QSpec FR-250.
 
 | Owner | Ask |
 | --- | --- |
-| CG#84 (IR-32), CG#49 (IR-93) | read the relation from the Q-2 v2 node; resolve each `RustPath` and `RustField` and refuse one that names no item, naming the path (CG chooses the catalog cause); keep the unbound guard |
+| CG#84 (IR-32), CG#49 (IR-93) | read the relation from the QSpec FR-451 v2 node; resolve each `RustPath`, `RustField` and `RustReceiver` and refuse one that names no item, naming the path (CG chooses the catalog cause); keep the unbound guard |
 | Orchestrating driver (ADR-011 T-13, QSL #248) | call the AR-4 export before `route`, and put only its bound items in the QSpec FR-331 request for an emission onto implementation code |
 | IR#136 (IR-33) | nothing from this record (AR-6) |
 | IR-339, CG#49 | replace their `unsupported` frame arms (PF-2) |
@@ -747,13 +751,13 @@ These are proposed; the team lead files them.
 | TK-2 | G-2: `replay_frame` checks the envelope's `clause_node` and `occurrence_key` against the payload; the frame envelope's members as PF-4 states; amend FR-116 | a frame envelope whose `clause_node` or `occurrence_key` differs from the payload refuses `stale_dependency`/`revision-mismatch` naming both, before recompiling; TC-515 extended | QSL |
 | TK-3 | G-3: delete `check::identity::{Frame, FrameSubjects, ResolvedFrameSubjects}`; re-home TC-248 onto `CheckedOperationFrame` and `OperationEffect` subject resolution (FR-088-AC-2); correct the stale `model/intake.rs:17-23` module doc | TC-248 passes against the live types; FR-088-AC-2 stays backed | QSL |
 | TK-4 | Consume IR-370's `reaches_field` reference-edge check; TC-463 step 1 and TC-469 step 6 run without `#[ignore]` (FR-105-AC-3, FR-108-AC-6) | TC-463 step 1 and TC-469 step 6 pass | QSL |
-| Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar | QSpec | QSpec |
-| Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values | QSpec | QSpec |
+| Q-1 | Surface spelling of the QSpec FR-353 abstraction relation in the shared grammar. Decided: QSpec FR-450 (STD-116) | QSpec | QSpec |
+| Q-2 | `quire.checked-package/v2` node for the abstraction relation, carrying AR-2's keys and values. Decided: QSpec FR-451 (STD-116) | QSpec | QSpec |
 | Q-3 | QSpec FR-290 claim-form row: remove "(a relation-family refinement gate)"; re-trace V1-TOOL-011 and V1-TOOL-012 from QSpec FR-177 and TC-208 to the #191 and #192 gate tests | QSpec | QSpec |
 | Q-4 | QSpec FR-323 `selection` for a frame packet (a function or a frame operation), with CG's packet members (CG FR-024, agent-ix/quire-contract-codegen#50) | QSpec, CG | QSpec |
 | Q-5 | Which profile layering V1-TOOL-012 covers for a compiler whose selections are fixed by its catalog, and which QSpec AD-003 edges V1 requires | QSpec | QSpec |
 | Q-6 | A catalog cause for an implementation-gap `unsupported_construct` refusal (QSL's `not-yet-implemented`) | QSpec | QSpec |
-| Q-7 | QSpec FR-353-AC-1: accept a frame binding keyed by the operation (declaring type key, operation identifier), with the frame and anchor identities derived from it, or amend AC-1 | QSpec | QSpec |
+| Q-7 | QSpec FR-353-AC-1: accept a frame binding keyed by the operation (declaring type key, operation identifier), with the frame and anchor identities derived from it, or amend AC-1. Decided: QSpec FR-353-AC-1 accepts the derived key (STD-121) | QSpec | QSpec |
 
 Ticket-text corrections for the owner (all ticket text read as data):
 

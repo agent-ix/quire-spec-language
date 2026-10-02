@@ -16,13 +16,14 @@ Scope: FR-300-AC-3.
 ## Test Procedure
 
 1. Run `xtask seam-probe`.
-2. Remove the `StateModel` S3 hook arm's entry from the probe's expected
-   seam list in a scratch copy and run the probe against it.
+2. In a scratch copy of the source, delete the `StateModel` arm of the S3
+   hook match and run the probe against that copy, its expected seam list
+   unchanged.
 
 ## Expected Results
 
 1. The probe passes, and its reported locations include the `StateModel`
    arm of the `catalog_code()` prefix match, of the S2 hook match and of the
    S3 hook match.
-2. The probe fails and names the S3 arm location as reported but not
-   expected.
+2. The probe fails and names the `StateModel` S3 hook arm as expected but
+   missing from its report.

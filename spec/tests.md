@@ -281,10 +281,9 @@ names different artifacts in each.
 | TC-791 | The seam probe reports the StateModel arms at S1, S2 and S3 | Integration | P1 | FR-300-AC-3 | 🚧 Planned |
 | TC-792 | StateModel causes raised under Value and ProtocolClause evaluation render with the state-model prefix | Integration | P1 | FR-301-AC-1, FR-301-AC-2 | 🚧 Planned |
 | TC-793 | Unit compile carries one linked dispatch table per called operation, named by each call | Integration | P1 | FR-302-AC-1 | 🚧 Planned |
-| TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 Planned |
 | TC-794 | Unit compile refuses ambiguous and inapplicable dispatch with no checked package | Integration | P1 | FR-302-AC-2, FR-302-AC-3, FR-302-AC-4 | 🚧 Planned |
 | TC-795 | Unit compile refuses a dispatch family past the caller's family_steps limit | Integration | P1 | FR-302-AC-5 | 🚧 Planned |
-| TC-796 | The model correspondence faults on a second, different entry in either direction | Unit | P1 | FR-303-AC-1, FR-303-AC-2, FR-303-AC-3 | 🚧 Planned |
+| TC-796 | The model correspondence faults on a second, different entry in either direction | Integration | P1 | FR-303-AC-1, FR-303-AC-2, FR-303-AC-3, FR-303-AC-4 | 🚧 Planned |
 | TC-797 | An abstraction relation checks into one binding per key, total or partial | Unit | P1 | FR-304-AC-1, FR-304-AC-2 | 🚧 Planned |
 | TC-798 | An abstraction binding whose model key resolves to nothing refuses missing-name | Unit | P1 | FR-304-AC-3 | 🚧 Planned |
 | TC-799 | Duplicate and conflicting abstraction bindings refuse conflicting-binding | Unit | P1 | FR-304-AC-4 | 🚧 Planned |
@@ -297,6 +296,9 @@ names different artifacts in each.
 | TC-806 | The export refuses each item with an unbound element and returns the others | Integration | P1 | FR-307-AC-1, FR-307-AC-2, FR-307-AC-3 | 🚧 Planned |
 | TC-807 | The export references the receiver's static type and the operation key | Integration | P1 | FR-307-AC-4, FR-307-AC-5 | 🚧 Planned |
 | TC-808 | The driver sends CG only the items the export bound | Integration | P1 | FR-307-AC-6 | 🚧 Planned |
+| TC-809 | Evaluation selects the dispatched body from the linked table by the receiver's most-specific type | Integration | P1 | FR-302-AC-6 | 🚧 Planned |
+| TC-810 | Abstraction binding keys are unique across all of a unit's declarations | Integration | P1 | FR-304-AC-7 | 🚧 Planned |
+| TC-811 | Abstraction declarations parse from source and refuse unsupported or malformed forms | Integration | P1 | FR-304-AC-8 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -709,8 +711,8 @@ TC-795, TC-809) and the one-to-one model correspondence (TC-796).
 [FR-304](functional/FR-304-check-an-authored-abstraction-relation.md) to
 [FR-307](functional/FR-307-export-the-bindings-each-item-references.md)
 carry ADR-017 AR-1 to AR-6, QSL's share of QSpec FR-353 (QSpec TC-268): the
-S3 check (TC-797 to TC-801), the frame binding key (TC-802, TC-803), the v2
+S3 check (TC-797 to TC-801, TC-810), the S2 source form (TC-811), the frame binding key (TC-802, TC-803), the v2
 relation node (TC-804, TC-805) and the per-item export (TC-806 to TC-808).
 TC-797 to TC-803 and TC-806 to TC-807 build the relation input in the test
-from checked packages; TC-804 and the S2 form use the spelling and node
+from checked packages; TC-804 and TC-811 use the spelling and node
 QSpec FR-450 and FR-451 give. Every row is `🚧 Planned`.
