@@ -186,8 +186,8 @@ pub use type_form::TypeFormFault;
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use identity::{
-    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, InvalidSumVariants,
-    ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
+    InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
@@ -1421,18 +1421,15 @@ impl PackageDeclarations {
             .flat_map(|(bindings, lowered)| bindings.iter().zip(lowered))
             .map(|(bound, lowered)| (&bound.operation, &lowered.binding));
         let operation_frames = operation_frames(clause_frames.chain(attempt_frames));
-        let (semantic_graph, correspondence, identities, binders) = (
+        // FR-094: `check` is the model correspondence's only writer; it
+        // holds exactly the model declaration nodes lowering keyed, and a
+        // conflicting entry refused the lowering above (FR-303).
+        let (semantic_graph, model_correspondence, identities, binders) = (
             lowered.graph,
             lowered.correspondence,
             lowered.functions,
             lowered.binders,
         );
-        // FR-094: `check` is the model correspondence's only writer; it
-        // holds exactly the model declaration nodes lowering keyed.
-        let mut model_correspondence = identity::ModelCorrespondence::default();
-        for (node, declaration) in correspondence {
-            model_correspondence.record(node, declaration);
-        }
         // ADR-012 §13.5, ADR-011 E7: exactly one record per claim site,
         // keyed by the `expression` occurrence recorded at the site's own
         // location (ADR-013 O-07). A claim that cannot be keyed is a fault,

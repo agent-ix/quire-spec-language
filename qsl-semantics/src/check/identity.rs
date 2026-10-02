@@ -259,22 +259,74 @@ impl CheckedClauseKind {
 /// (FR-088-AC-2) reads it and nothing else: no consumer re-derives a
 /// `NodeKey`'s `DeclarationKey` by searching source or a collection whose
 /// order no declaration defines (R-05).
+///
+/// One-to-one in both directions (FR-303, ADR-016 §2): a node has at most
+/// one declaration and a declaration at most one node.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModelCorrespondence {
     entries: BTreeMap<NodeKey, DeclarationKey>,
+    nodes: BTreeMap<DeclarationKey, NodeKey>,
+}
+
+/// A second, different correspondence entry for a node or a declaration
+/// already recorded (FR-303): the recorded pair and the offered pair. The
+/// correspondence keeps the recorded pair. Boxed where it is returned: it
+/// names two `DeclarationKey`s.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CorrespondenceConflict {
+    /// `(node, offered)` offered while `(node, recorded)` is recorded.
+    NodeRebound {
+        /// The node both pairs name.
+        node: NodeKey,
+        /// The declaration already recorded for `node`.
+        recorded: DeclarationKey,
+        /// The different declaration offered for `node`.
+        offered: DeclarationKey,
+    },
+    /// `(offered, declaration)` offered while `(recorded, declaration)` is
+    /// recorded.
+    DeclarationRebound {
+        /// The declaration both pairs name.
+        declaration: DeclarationKey,
+        /// The node already recorded for `declaration`.
+        recorded: NodeKey,
+        /// The different node offered for `declaration`.
+        offered: NodeKey,
+    },
 }
 
 impl ModelCorrespondence {
     /// Record one checked node's own domain declaration. The S3 checker is
-    /// the only writer (ADR-013 O-04). PR #300 review finding 4:
-    /// `pub(super)`, not `pub` -- only `super::PackageDeclarations::check`
-    /// (this module's parent, `check`) ever records a correspondence entry;
-    /// no other module has a legitimate reason to construct one directly,
-    /// so this is not part of `crate::check`'s public re-export surface
-    /// (`check/mod.rs`'s `pub use identity::{...}` list carries the type,
-    /// never this method).
-    pub(super) fn record(&mut self, node: NodeKey, declaration: DeclarationKey) {
+    /// the only writer (ADR-013 O-04), so this is `pub(super)`: only
+    /// `check` and its lowering record an entry. Recording a pair already
+    /// present changes nothing; a pair that would give `node` a second
+    /// declaration, or `declaration` a second node, is refused and leaves
+    /// the correspondence unchanged (FR-303).
+    pub(super) fn record(
+        &mut self,
+        node: NodeKey,
+        declaration: DeclarationKey,
+    ) -> Result<(), Box<CorrespondenceConflict>> {
+        if let Some(recorded) = self.entries.get(&node) {
+            if *recorded == declaration {
+                return Ok(());
+            }
+            return Err(Box::new(CorrespondenceConflict::NodeRebound {
+                node,
+                recorded: recorded.clone(),
+                offered: declaration,
+            }));
+        }
+        if let Some(recorded) = self.nodes.get(&declaration) {
+            return Err(Box::new(CorrespondenceConflict::DeclarationRebound {
+                declaration,
+                recorded: *recorded,
+                offered: node,
+            }));
+        }
+        self.nodes.insert(declaration.clone(), node);
         self.entries.insert(node, declaration);
+        Ok(())
     }
 
     /// `node`'s `DeclarationKey`, read only from this recorded
@@ -547,6 +599,83 @@ mod tests {
 
     fn identifier(name: &str) -> Identifier {
         Identifier::new(name).unwrap()
+    }
+
+    // -- O-04: model correspondence (FR-303) -----------------------------
+
+    fn declaration(node: &str) -> DeclarationKey {
+        DeclarationKey {
+            package: "acme/orders".to_owned(),
+            node: node.to_owned(),
+        }
+    }
+
+    /// TC-796 step 1 (FR-303-AC-1): `(n, d1)` then `(n, d2)` refuses
+    /// naming `n`, `d1` and `d2`, and `n` still resolves to `d1`.
+    #[trace("TC-796", "FR-303-AC-1")]
+    #[test]
+    fn a_second_declaration_for_a_node_is_refused() {
+        let (n, d1, d2) = (node_key(1), declaration("d1"), declaration("d2"));
+        let mut correspondence = ModelCorrespondence::default();
+        assert_eq!(correspondence.record(n, d1.clone()), Ok(()));
+        assert_eq!(
+            correspondence.record(n, d2.clone()),
+            Err(Box::new(CorrespondenceConflict::NodeRebound {
+                node: n,
+                recorded: d1.clone(),
+                offered: d2,
+            }))
+        );
+        assert_eq!(correspondence.resolve(n), Some(&d1));
+    }
+
+    /// TC-796 step 2 (FR-303-AC-2): `(n1, d)` then `(n2, d)` refuses
+    /// naming `n1`, `n2` and `d`, and `n2` resolves to no declaration.
+    #[trace("TC-796", "FR-303-AC-2")]
+    #[test]
+    fn a_second_node_for_a_declaration_is_refused() {
+        let (n1, n2, d) = (node_key(1), node_key(2), declaration("d"));
+        let mut correspondence = ModelCorrespondence::default();
+        assert_eq!(correspondence.record(n1, d.clone()), Ok(()));
+        let conflict = correspondence.record(n2, d.clone());
+        assert_eq!(
+            conflict,
+            Err(Box::new(CorrespondenceConflict::DeclarationRebound {
+                declaration: d.clone(),
+                recorded: n1,
+                offered: n2,
+            }))
+        );
+        // The S3 fault this conflict becomes, through the same mapping as
+        // `NodeRebound` (lowering's `model_node`).
+        let Err(conflict) = conflict else {
+            panic!("the second record refuses");
+        };
+        let cause = crate::check::refusal::CheckCause::InternalFault(Box::new(
+            crate::check::refusal::KeyFault::CorrespondenceConflict(conflict),
+        ));
+        assert_eq!(
+            cause.code(),
+            qsl_foundation::diagnostic::Code::RuntimeInvariant
+        );
+        assert_eq!(cause.cause(), Some("established-invariant-broken"));
+        assert_eq!(correspondence.resolve(n2), None);
+        assert_eq!(correspondence.resolve(n1), Some(&d));
+    }
+
+    /// TC-796 step 3 (FR-303-AC-3): recording `(n, d)` twice succeeds and
+    /// leaves one entry for `n`: the correspondence equals one with the pair
+    /// recorded once.
+    #[trace("TC-796", "FR-303-AC-3")]
+    #[test]
+    fn recording_the_same_pair_twice_keeps_one_entry() {
+        let (n, d) = (node_key(1), declaration("d"));
+        let mut once = ModelCorrespondence::default();
+        assert_eq!(once.record(n, d.clone()), Ok(()));
+        let mut twice = once.clone();
+        assert_eq!(twice.record(n, d.clone()), Ok(()));
+        assert_eq!(twice, once);
+        assert_eq!(twice.resolve(n), Some(&d));
     }
 
     // -- O-10: clause kind ------------------------------------------------

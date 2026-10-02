@@ -869,7 +869,10 @@ mod tests {
         // Step 3: the frame's own anchor node resolves to its
         // DeclarationKey only by reading the recorded correspondence.
         let mut correspondence = ModelCorrespondence::default();
-        correspondence.record(frame.anchor(), context_decl.clone());
+        assert_eq!(
+            correspondence.record(frame.anchor(), context_decl.clone()),
+            Ok(())
+        );
         assert_eq!(correspondence.resolve(frame.anchor()), Some(&context_decl));
 
         // Step 4 (adverse): a correspondence rebuilt without that entry
@@ -881,7 +884,7 @@ mod tests {
         // Step 5: a freshly rebuilt correspondence with the entry
         // reproduces exactly step 3's resolution.
         let mut rebuilt = ModelCorrespondence::default();
-        rebuilt.record(frame.anchor(), context_decl.clone());
+        assert_eq!(rebuilt.record(frame.anchor(), context_decl.clone()), Ok(()));
         assert_eq!(rebuilt.resolve(frame.anchor()), Some(&context_decl));
     }
 }
