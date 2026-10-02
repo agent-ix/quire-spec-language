@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-144
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-338
+    type: depends_on
 ---
 # FR-149: Check a refinement's simulation certificate in the qualified core
 
@@ -77,17 +79,17 @@ pub struct CertifiedEdge {
 ```rust
 pub enum CertificateCheck {
     Accepted,
-    Rejected(CertificateRejection),        // first failing position and check
+    Rejected(CertificateRejection),        // FR-338's: first failing rule and locus
     Stopped(IncompleteCause, ModelCheckLimit),
 }
-
-pub enum CertificateRejection {
-    InitialMismatch { initial: u64 },
-    SuccessorsDiffer { position: u64 },
-    StepFails { position: u64, edge: u64, verdict: StepVerdict },
-    PostDiffers { position: u64, edge: u64 },
-}
 ```
+
+The checker uses FR-338's `CertificateRejection{rule, state}`. FR-338's
+`CertificateRule` gains `InitialMismatch`, `SuccessorsDiffer`, `StepFails`
+and `PostDiffers`, and its `CertificateLocus` gains
+`SimulationStep { position: u64, edge: Option<u64>, verdict: Option<StepVerdict> }`:
+the certificate position, the edge when the rule concerns one, and
+`check_step`'s verdict for `StepFails`.
 
 ## Behavior
 
@@ -100,16 +102,18 @@ pub enum CertificateRejection {
   node, either `package_id` or obligation identity differs from the item's
   recompile (FR-098).
 - **Initial states.** For each concrete initial state `i`, the checker SHALL
-  run `check_initial` and SHALL reject with `InitialMismatch{initial: i}`
-  unless it passes with the position `initial[i]` names.
+  run `check_initial` and SHALL reject with rule `InitialMismatch` at
+  `SimulationStep{position: initial[i], edge: None}` unless it passes with
+  that position.
 - **Successors.** For each position, the checker SHALL compute the concrete
-  successors with FR-120's `ModelSystem` and SHALL reject with
-  `SuccessorsDiffer` unless they are exactly the listed edges' transitions
+  successors with FR-120's `ModelSystem` and SHALL reject with rule
+  `SuccessorsDiffer` at that position unless they are exactly the listed edges' transitions
   and post-states, in canonical order.
 - **Steps.** For each edge, the checker SHALL run `check_step` (FR-141)
-  from the position and SHALL reject with `StepFails` unless it returns
-  `Passes`, and with `PostDiffers` unless its post position and `Taken`
-  equal the edge's.
+  from the position and SHALL reject with rule `StepFails`, carrying the
+  verdict, unless it returns `Passes`, and with rule `PostDiffers` unless
+  its post position and `Taken` equal the edge's, each at that position
+  and edge.
 - **Order.** The checker SHALL check positions in index order and report
   the first rejection.
 - **Limits.** The checker SHALL count positions against `max_states` and
@@ -127,8 +131,8 @@ pub enum CertificateRejection {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-149-AC-1 | ADR-020 §8's `CasRefinesCounter` without its `ensure` row: the engine's certificate holds one position per stored product state, and the checker returns `Accepted`. | Test (TC-556) |
-| FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected(PostDiffers)` at that position and edge; with that edge's post index pointing at the initial position it returns `Rejected(PostDiffers)`; with one listed edge removed it returns `Rejected(SuccessorsDiffer)`. | Test (TC-556) |
-| FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected(StepFails)` with `AbstractStepRejected{transition: inc(c), cause: Postcondition}`, so a false relation is never accepted. | Test (TC-556) |
+| FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected` with rule `PostDiffers` at that position and edge; with that edge's post index pointing at the initial position, rule `PostDiffers`; with one listed edge removed, rule `SuccessorsDiffer` at that position. Each settles `inconclusive`, `CertificateRejected{rule, state}`. | Test (TC-556) |
+| FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected` with rule `StepFails` and verdict `AbstractStepRejected{transition: inc(c), cause: Postcondition}` in its locus, so a false relation is never accepted. | Test (TC-556) |
 | FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(ResourceExhausted, MaxTransitions)`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
 
 ## Dependencies

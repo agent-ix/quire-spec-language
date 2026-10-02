@@ -37,9 +37,9 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: one position per stored product state; `Accepted`.
-- Step 2: `Rejected(PostDiffers)`; `Rejected(PostDiffers)`;
-  `Rejected(SuccessorsDiffer)`.
-- Step 3: `Rejected(StepFails)` with `AbstractStepRejected{transition:
+- Step 2: rule `PostDiffers`; rule `PostDiffers`; rule `SuccessorsDiffer`;
+  each FR-338's `CertificateRejection` with a `SimulationStep` locus.
+- Step 3: rule `StepFails` with verdict `AbstractStepRejected{transition:
   inc(c), cause: Postcondition}`.
 - Step 4: `Stopped(ResourceExhausted, MaxTransitions)`;
   `stale_dependency`/`content-mismatch`; equal results.
