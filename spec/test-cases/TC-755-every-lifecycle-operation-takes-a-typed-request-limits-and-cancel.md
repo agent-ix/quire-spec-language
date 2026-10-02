@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify the eleven QSL lifecycle operations share the FR-275 call shape: each takes its typed request, its limits value and `&Cancel`; each consuming operation takes its predecessor's own type; and each is a function of its request and limits.
+Verify the twelve QSL lifecycle operations share the FR-275 call shape: each takes its typed request, its limits value and `&Cancel`; each consuming operation takes its predecessor's own type; and each is a function of its request and limits.
 
 Scope: FR-275-AC-1 to FR-275-AC-3, FR-275-AC-5.
 
@@ -21,7 +21,7 @@ Scope: FR-275-AC-1 to FR-275-AC-3, FR-275-AC-5.
 3. Call `execute` on the `CheckedPackage` selecting `seven` with no arguments and the interpreter backend.
 4. Call `inspect` with the package view selector, then `render` the view as text.
 5. Compile the `compile_fail` doctests that pass raw bytes to `check`, a `ParsedSource` to `package`, package bytes to `execute` and to `analyze`, and a `ParsedSource` to `monitor`, each beside a compiling control with the correct type.
-6. Call each of the eleven operations twice over its step 1 to 4 input (for `analyze`, `monitor` and `replay`, TC-762's, TC-765's and FR-098's fixtures) and compare the outcomes.
+6. Call each of the twelve operations twice over its step 1 to 4 input (for `analyze`, `monitor`, `replay` and `check_fences`, TC-762's, TC-765's, FR-098's and TC-901's fixtures) and compare the outcomes.
 7. Read the per-stage work counters from the accounting of step 1's `check`, and of `package`, `execute` and `monitor` (TC-765's trace) over step 1's `CheckedPackage`.
 
 Tag the tests `#[trace("TC-755", "<AC id>")]`.

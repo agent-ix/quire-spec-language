@@ -305,6 +305,7 @@ names different artifacts in each.
 | TC-526 | An EN-1 component certificate is accepted or rejected by the core checker | Unit | P1 | FR-339-AC-1, FR-339-AC-2 | 🚧 Planned |
 | TC-893 | An SMT proof certificate is accepted or rejected by the core checker | Unit | P1 | FR-314-AC-1, FR-314-AC-2 | 🚧 Planned |
 | TC-900 | The SMT-LIB transition-relation encoding is canonical and refuses unencodable constructs | Unit | P1 | FR-315-AC-1, FR-315-AC-2, FR-315-AC-3, FR-315-AC-4, FR-315-AC-5 | 🚧 Planned |
+| TC-901 | The quire fences of spec artifacts are checked against the objects they declare | Unit | P1 | FR-355-AC-1, FR-355-AC-2, FR-355-AC-3, FR-355-AC-4, FR-355-AC-5, FR-355-AC-6 | 🚧 Planned |
 | TC-530 | S3 checks strong fairness constraints and the unmarked fairness kind | Unit | P1 | FR-129-AC-1, FR-129-AC-2 | 🚧 Planned |
 | TC-531 | The explicit-state model checker decides strong fairness by SCC refinement | Integration | P1 | FR-130-AC-1, FR-130-AC-2, FR-130-AC-3, FR-130-AC-4, FR-130-AC-5 | 🚧 Planned |
 | TC-532 | Replay checks strong fairness on a model counterexample | Integration | P1 | FR-131-AC-1, FR-131-AC-2, FR-131-AC-3 | 🚧 Planned |

@@ -64,7 +64,7 @@ name of the limits field that sets the bound.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-277-AC-1 | For each field of the limits types of all eleven operations (`parse`, `format`, `select`, `check`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758) |
+| FR-277-AC-1 | For each field of the limits types of all twelve operations (`parse`, `format`, `select`, `check`, `check_fences`, `package`, `execute`, `analyze`, `monitor`, `replay`, `inspect` and `render`), running the operation over its TC-755 step 6 input with that field set to one below the counter the input reaches names that field: `LimitExceeded` with the field's limit kind, configured value and limits-field name; for `execute`, the outcome `Incomplete` naming that counter; for `analyze`, each open item `incomplete` with that limit as its cause. Setting the field to the counter reached succeeds. | Test (TC-758) |
 | FR-277-AC-2 | On a thread with the platform's default stack, a source whose body is a 100,000-term sum checks successfully when the caller raises `s3.nodes` to fit it, and with `s3.nodes` one below its node count refuses with `LimitExceeded` naming `s3.nodes`; no outcome names a depth. | Test (TC-758) |
 
 ## Dependencies

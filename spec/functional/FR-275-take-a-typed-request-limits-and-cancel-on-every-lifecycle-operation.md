@@ -28,8 +28,8 @@ relationships:
 
 QSL SHALL expose its lifecycle stages as typed library operations with one
 call shape (ADR-029 LC-2, OP-1). The QSL-owned operations are `parse`,
-`format`, `select`, `check`, `package`, `execute`, `analyze`, `monitor`,
-`replay`, `inspect` and `render`. `format` lives in the core library, layer 1
+`format`, `select`, `check`, `check_fences`, `package`, `execute`,
+`analyze`, `monitor`, `replay`, `inspect` and `render`. `format` lives in the core library, layer 1
 `qsl_cst::format`; the driver's `format` verb (ADR-029 CB-5) and the
 qualification runner call it. The driver-owned operations `lower`, `generate` and
 `prove` reach QSL through FR-280.
@@ -40,6 +40,7 @@ qualification runner call it. The driver-owned operations `lower`, `generate` an
 | `format` | an admissible `ParsedSource` | `Staged<FormattedSource>`, the formatted bytes | FR-003 |
 | `select` | domain package documents by digest, the unit's model selections | `Staged<AdmittedModels>` | FR-278 |
 | `check` | `ParsedSource`, `AdmittedModels`, the dependency input, lock evidence | `Staged<CheckedPackage>` | FR-278 |
+| `check_fences` | a spec artifact inventory and the module manifests that type it | `Staged<FenceReport>` | FR-355 |
 | `package` | `&CheckedPackage` | `Staged<EmittedPackage>` | FR-278 |
 | `execute` | `&CheckedPackage`, a function or clause selection, arguments, `ObjectEnvironment`, the execution backend | `Result<Evaluation<Value>, CallFailure>` | FR-279 |
 | `analyze` | `&CheckedPackage`, claim items, subject binding, engine settings | `Staged<AnalyzeOutcome>` | FR-281 |
@@ -89,7 +90,7 @@ identity and the profile it runs under; its limits value; `&Cancel`.
 | --- | --- | --- |
 | FR-275-AC-1 | Over `tests/fixtures/spine-compile.native`, the chain `parse`, `select` (no domain packages), `check`, `package`, each called with default limits and an uncancelled `Cancel`, returns `Staged` values at every step, `format` over the `ParsedSource` returns the bytes FR-003 specifies for that source, and `package` returns the bytes `qsl_replay::spine::compile` writes for that source. `execute` on the resulting `CheckedPackage` selecting `seven` with no arguments completes with the integer 7. `inspect` with the package view and `render` of that view both return `Staged` values. | Test (TC-755) |
 | FR-275-AC-2 | Passing raw source bytes to `check`, a `ParsedSource` to `package`, package bytes to `execute` or `analyze`, and a `ParsedSource` to `monitor`, each fails to compile (`compile_fail` doctests), and each has a compiling control with the correct type. | Test (TC-755) |
-| FR-275-AC-3 | Calling each of the eleven operations twice with equal requests and limits returns equal outcomes. | Test (TC-755) |
+| FR-275-AC-3 | Calling each of the twelve operations twice with equal requests and limits returns equal outcomes. | Test (TC-755) |
 | FR-275-AC-4 | A property test over arbitrary source bytes, arbitrary trace documents and arbitrary replay request bytes calls `parse`, `check`, `monitor` and `replay`; every call returns `Ok` or a typed `StageFailure`, and no call panics. | Test (TC-756) |
 | FR-275-AC-5 | With each stage's work counter exposed through the outcome's accounting, `check` over the `ParsedSource` of FR-275-AC-1 reports zero S1 and S2 work, and `package`, `execute` and `monitor` over its `CheckedPackage` each report zero work for S1 to S4. | Test (TC-755) |
 
