@@ -89,14 +89,23 @@ pub struct StateGraphCertificate {
     pub counts: Vec<(u64, u8, u64)>,     // `unique path`: (state, count, order)
 }
 
-pub enum StateGraphRule {
-    InitialMissing, SuccessorMissing, PredicateUndefined,
-    RankBroken, RankMissing, CountBroken, OrderBroken,
+pub enum StateGraphCheck {
+    Accepted,
+    Rejected(CertificateRejection),          // FR-338's: rule and locus
+    Stopped(ReachedLimit),                   // FR-126: the limit and its value
 }
 
 pub fn check_state_graph(request: &CertificateRequest<'_>, claim: &StateGraphItem,
-    certificate: &StateGraphCertificate) -> Result<(), CertificateRejection>;
+    certificate: &StateGraphCertificate) -> StateGraphCheck;
 ```
+
+The checker uses FR-338's `CertificateRejection{rule, state}`. FR-338's
+`CertificateRule` gains `PredicateUndefined`, `RankMissing`, `RankBroken`,
+`OrderBroken` and `CountBroken` (`InitialMissing` and `SuccessorMissing`
+are FR-338's own), and its `CertificateLocus` gains
+`ModelState(DigestRecord)`, a model state's
+`quire.simulation.state-key/v1` digest, since a state-graph certificate
+holds model states, not product states.
 
 and the FR-331 terminal record carrying the value, its QSpec FR-360 label,
 its QSpec FR-243 basis, its O-16 category and its settlement method.
@@ -133,13 +142,15 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   for `unique path`, each node of `H`'s path count and its position in a
   reverse topological order of `H`.
 - **Check.** `check_state_graph`, a layer-6 entry of `qsl-replay` beside
-  FR-127's `check_closure`, SHALL recompile the package, re-admit the
+  FR-338's `check_closure`, SHALL recompile the package, re-admit the
   subject and recompute with its own code, reading nothing from the engine
-  but the certificate. It SHALL reject with `CertificateRejected{rule,
-  state}`, naming the first failing state in certificate order:
+  but the certificate. It SHALL return `Rejected` with FR-338's
+  `CertificateRejection{rule, state}`, `state` the `ModelState` locus of
+  the first failing state in certificate order, which settles
+  `CertificateRejected{rule, state}`:
   - `InitialMissing`, when an initial state is not in `closure`;
   - `SuccessorMissing`, when a successor that `ModelSystem` computes for a
-    `closure` state is not in `closure`, as FR-127's `check_closure` does;
+    `closure` state is not in `closure`, as FR-338's `check_closure` does;
   - `PredicateUndefined`, when a claim predicate evaluates undefined at a
     `closure` state;
   - for `possible`: `RankMissing`, when an initial state has no rank;
@@ -156,8 +167,9 @@ its QSpec FR-243 basis, its O-16 category and its settlement method.
   state, no predicate is undefined there, and the ranks or counts give the
   claim's truth (ADR-022 GM-4, GM-5).
 - The checker SHALL count states against `max_states` and successors
-  against `max_transitions`, with checked arithmetic, and stop at a reached
-  limit, naming it, which settles V-7.
+  against `max_transitions`, with checked arithmetic, and return
+  `Stopped` naming the reached limit and its value, which settles V-7,
+  `incomplete`, `LimitReached{limit, value, setting}`.
 - A proof under a reduction SHALL carry `certification: Uncertified`, with
   no certificate (ADR-022 GC-4).
 - No item SHALL settle `proved` from a witness unless FR-168 returned

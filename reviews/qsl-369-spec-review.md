@@ -85,3 +85,35 @@ terminate on a model with no reachable target). FND-002 to FND-005 are
 medium. The owner rulings on well-definedness and undefined evaluation are
 applied correctly and consistently with QSpec FR-391 and FR-392; the
 findings are engine-soundness and alignment defects, not ruling defects.
+
+## Dispositions
+
+Round 1, reviewed at 666cfdb1ac85a7fc102c7414ab9ad6f307c56abe (`git diff b07f7b10...666cfdb1`; fix round ae35eac9, then 818c5bfb and 666cfdb1).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | ae35eac9 |
+| FND-002 | fixed | ae35eac9 |
+| FND-003 | fixed | ae35eac9 |
+| FND-004 | fixed | ae35eac9 |
+| FND-005 | fixed | ae35eac9 |
+| FND-006 | fixed | ae35eac9 |
+| FND-007 | fixed | ae35eac9 |
+| FND-008 | fixed | ae35eac9 |
+| FND-009 | fixed | ae35eac9 |
+| FND-010 | fixed | ae35eac9 |
+| FND-011 | fixed | ae35eac9 |
+| FND-012 | fixed | ae35eac9 |
+| FND-013 | fixed | ae35eac9 |
+| FND-014 | fixed | ae35eac9 |
+| FND-015 | fixed | ae35eac9 |
+
+## New findings (disposition pass 1)
+
+Reviewed at 666cfdb1ac85a7fc102c7414ab9ad6f307c56abe, lines of the PR diff only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-016 | medium | `check_state_graph` rejects with rules FR-338's `CertificateRule` does not have (`PredicateUndefined`, `RankMissing`, `RankBroken`, `OrderBroken`, `CountBroken`), and FR-169 does not add them. It names "the first failing state", a model state, where `CertificateLocus` holds a `ProductStateRef`. It also stops at a reached limit, which settles V-7, but its signature returns `Result<(), CertificateRejection>`, which has no stop arm. It twice cites `check_closure` as FR-127's; it is FR-338's. State the added rules and locus, and give the checker a return type that carries a limit stop, as FR-149 does with `Stopped`. | spec/functional/FR-169-settle-a-state-graph-verdict-with-its-settlement-method.md:97-98,135-160 |
+| FND-017 | medium | FR-170's `Undefined` replay reproduces when the first undefined evaluation is at the stem's last state "with an undefined cause equal to the payload's". It never compares the predicate or the locus of `where`, which FR-168 and GV-7 now fill from QSpec FR-391. A payload naming another predicate or expression with the same reason reproduces. This is the defect fixed in FR-128 on #562 (SR-1120 FND-015). Compare `where`'s predicate and locus too. | spec/functional/FR-170-replay-state-graph-evidence.md:162-168 |
+| FND-018 | low | ADR-022 cites a bare "FR-181" for the transition identity and canonical order (GX-1, and §3 and QS lines), while its own line 48 says a bare FR id is a QSL requirement. #571 adds a QSL FR-181 (the possible family), so the bare id resolves to the wrong artifact once the stack lands. Write "QSpec FR-181". | spec/decisions/ADR-022-possible-properties-and-state-graph-queries.md:191,264,455 |

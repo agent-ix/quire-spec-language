@@ -163,8 +163,9 @@ pub enum GraphEvidence {
 
 - The executor SHALL re-execute the stem and evaluate the claim's
   predicates at each of its states in order (ADR-018 UE-5). When the first
-  undefined evaluation is at the stem's last state, with an undefined cause
-  equal to the payload's, the executor SHALL settle
+  undefined evaluation is at the stem's last state, of the predicate
+  `where.predicate` names, at the expression `where.locus` names, with an
+  undefined cause equal to the payload's, the executor SHALL settle
   `reproduced-with-evaluated-witness`, with the `UndefinedEvaluation` as
   the value; otherwise `inconclusive`, `Verdicts`.
 
@@ -185,7 +186,7 @@ pub enum GraphEvidence {
 | FR-170-AC-2 | `ReachesThree`'s trap replays by exploring 9 nodes and reproduces; §7.2's `CanStillWin` trap re-executes `play, lose`, explores the closure `{Lost}`, and reproduces. §7.3's path pair reproduces. | Test (TC-595) |
 | FR-170-AC-3 | Disagreements settle `inconclusive`, `Verdicts`: a `ReachesTwo` witness truncated to end at `(1, 0)`; a `CanStillWin` trap whose stem ends at `Mid` (its closure reaches `Won`); a path pair whose two sequences are equal; the `CanStillWin` trap in an envelope for its `from (x.phase != Lost)` variant, both claims in one unit (the stem's last state fails `from`). | Test (TC-595) |
 | FR-170-AC-4 | Refusals settle no result: a witness with one post-state digest altered; a witness step replaced by a transition that is not enabled; a witness with no path for one of two initial states; an `initial` index of 1 over a one-snapshot subject. `ReachesThree`'s trap replayed with `max_states` 2 returns the replay result stopped at `max_states`, value 2. Replaying one envelope twice gives equal results. | Test (TC-595) |
-| FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`. | Test (TC-612) |
+| FR-170-AC-5 | FR-168-AC-5's `Undefined` evidence replays to `reproduced-with-evaluated-witness`; the same stem with its last step removed settles `inconclusive`, `Verdicts`, and so does the evidence with `where.predicate` naming another predicate of the claim, or `where.locus` another expression, with the same cause. | Test (TC-612) |
 | FR-170-AC-6 | A `Witness` arm holding a `WitnessPath::Lasso` over §7.1's subject whose loop is `upd(a)` from `(2, 0)` back to `(2, 0)`, for `possible c.versionNumber = 2`, replays the loop by FR-128's rules; the same lasso with its loop entry moved so the loop does not close refuses as FR-128 refuses. A `Trap` with `TrapClosure::Product` is routed to FR-181's product replay and never explored as a state-graph closure. | Test (TC-595) |
 
 ## Dependencies

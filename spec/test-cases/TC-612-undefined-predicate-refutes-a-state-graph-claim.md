@@ -27,7 +27,8 @@ for `c = a`.
 
 1. Run the item through EN-1.
 2. Replay its evidence, then the same evidence with the stem's last step
-   removed.
+   removed, then with `where.locus` naming another expression of the claim
+   and the same cause.
 3. Settle the outcome with step 2's first replay result.
 
 Tag the tests `#[trace("TC-612", "<AC id>")]`.
@@ -37,6 +38,6 @@ Tag the tests `#[trace("TC-612", "<AC id>")]`.
 - Step 1: `Undefined` with stem `(0, 0) -upd(a)-> (1, 0) -upd(a)-> (2, 0)`,
   `where` `(2, 0)`, cause `division-by-zero`; not `Witnessed`.
 - Step 2: `reproduced-with-evaluated-witness`; then `inconclusive`,
-  `Verdicts`.
+  `Verdicts`, twice.
 - Step 3: `refuted`, `decisive-counterexample`, category violation, cause
   `UndefinedEvaluation`.
