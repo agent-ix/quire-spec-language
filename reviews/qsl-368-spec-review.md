@@ -107,6 +107,14 @@ mismatch.
 | FND-012 | low | POR-11 step (4) says what to do when `A(v)` has a step of `η` or an extra, but not when `E(v)` is empty. A fair accepting behaviour can end in a stutter-extended terminal state (ADR-018 SM-4), and then the construction must take no step. The argument holds: an extra taken at `v` is independent of all of the finite `η`, so it would stay enabled at `σ`'s terminal state, so no extra exists and `σ'` ends at the same terminal state. The proof should state this case. | spec/decisions/ADR-021-state-space-reduction.md:197 |
 | FND-013 | low | POR-11 step 5(d) and §2 cite Peled and Wilke 1997 for "the infinite-trace forms PT-2 admits under POR are invariant under stuttering". Peled and Wilke prove the converse: every stutter-invariant LTL property is expressible without next. The direction step 5(d) needs (next-free LTL is stutter-invariant) is the older, easy one, and Peled and Wilke cover future operators only. The grammar also has `since` and `triggered`, whose stutter invariance is QS-8 and is tested by QSpec TC-328 (FR-161-AC-12). Cite FR-161 / TC-328 for the past operators and state the direction used. | spec/decisions/ADR-021-state-space-reduction.md:197, :265-270, :971-974 |
 
+## New findings (disposition pass 3)
+
+Reviewed at 31d5eb9ae92691b81b6b42a0d7563268b6f7274a, limited to the plan lead's four items and to lines the PR changed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | low | TC-886 is the reduced-versus-unreduced differential test, and it carries the trace tag `#[trace("TC-886", "FR-160-AC-6")]`. `make ci` runs `cargo test --locked --workspace`, so it gates TC-886 once implemented, but only if the test is not `#[ignore]`. The repo already splits one corpus-wide test out of `make ci` this way (`make test-differential` runs the parser differential with `--include-ignored`). TC-886 does not say it runs in the gate. State that TC-886 runs under `make ci` and is not ignored, or name the part of the corpus that `make ci` runs if a full run is too slow. | spec/test-cases/TC-886-reduced-and-unreduced-runs-agree-over-the-corpus.md:36 |
+
 ## Dispositions
 
 | FND | Outcome | sha/reason |
@@ -131,3 +139,10 @@ Round 2, reviewed at 38add39a2862c34c28f7a0ae8aa38363fe6ba56a.
 | FND-011 | fixed | 2b7d4c7e: Resolved by citation: POR-1 cites QSpec FR-383, whose call rule QSpec #169 adds at da0f8347; merge #169 first. |
 | FND-012 | still-open | POR-11 step (4) still says nothing about a reduced state with `E(v)` empty, where the construction must take no step and `σ'` ends at the same terminal state. |
 | FND-013 | still-open | POR-11 5(d) still cites Peled and Wilke for "the infinite-trace forms PT-2 admits under POR are invariant under stuttering"; that needs the easy converse direction, and `since` and `triggered` need QS-8. |
+
+Round 3, reviewed at 31d5eb9ae92691b81b6b42a0d7563268b6f7274a.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-012 | fixed | 31d5eb9a: POR-11 step (4) covers a terminal `v` with empty `E(v)`. |
+| FND-013 | fixed | 31d5eb9a: 5(d) and §2 cite Lamport 1983 for next-free implies stutter-invariant, QSpec FR-161/TC-328 for `since` and `triggered`, and Peled and Wilke as the converse. |
