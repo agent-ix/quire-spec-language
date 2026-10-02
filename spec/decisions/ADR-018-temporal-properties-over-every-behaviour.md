@@ -74,8 +74,8 @@ them gives a verdict over every behaviour for a temporal property.
 
 - **Finite exploration.** FR-101 implements QSpec FR-181: canonical
   breadth-first exploration over any `TransitionSystem`, with state keys,
-  frontiers, `Limits{max_states, max_depth, max_transitions}` and
-  `Outcome{Exhaustive, Bounded, Cancelled}`. FR-120's `ModelSystem` supplies
+  frontiers, `Limits{max_states, max_transitions}`, the `max_depth` horizon
+  and `Outcome{Exhaustive, BoundReached, Bounded, Cancelled, Stopped}`. FR-120's `ModelSystem` supplies
   the successor relation of a checked state model: an operation applied to an
   argument vector from finite parameter domains, enabled when its effective
   precondition holds, times every post-state in its frame that satisfies its
