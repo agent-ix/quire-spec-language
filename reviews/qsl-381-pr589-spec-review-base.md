@@ -35,3 +35,16 @@ Examined:
 ## Verdict
 
 Not mergeable: three medium findings (FND-001 FR-045's behavioural QSpec baseline pin, FND-005 ADR-010's dangling `<sha>`/Context-table convention, FND-006 the self-contradicting ADR-013 S-4b row) and three low findings (FND-002 FR-049/TC-136 baseline pins, FND-003 `e897f81` in three touched files, FND-004 the scope-boundary mermaid label).
+
+## Dispositions
+
+Round 1, reviewed at 0070b74a9befe49bc29d2bc1c075da8fe506e3a4.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0070b74a |
+| FND-002 | still-open | FR-049 is fixed: the baseline is gone and its Status records `OBSERVATION_CONTRACT_REVISION` (src/state/input.rs:12) for deletion. TC-136:27-28 drops the SHA but keeps the substitution step: "Substitute the domain package digest, the observation revision and one owned identity independently". That step tests the revision comparison in src/state/evaluation.rs:2485 (`revision == OBSERVATION_CONTRACT_REVISION`), which FR-049's Status now says is deleted. Drop "the observation revision" from TC-136's substitution list, leaving the domain package digest and the owned identity. |
+| FND-003 | fixed | 0070b74a |
+| FND-004 | fixed | 0070b74a |
+| FND-005 | fixed | 0070b74a |
+| FND-006 | fixed | 0070b74a |
