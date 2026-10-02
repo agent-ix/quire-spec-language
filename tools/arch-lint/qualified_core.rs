@@ -24,11 +24,13 @@
 //! proc-macro crate: build scripts, build dependencies and proc macros run
 //! in the compiler and link nothing into the core crate. It stops at an
 //! offending dependency, so each pair names the crate the core reaches, not
-//! that crate's own dependencies. One edge is not followed:
-//! [`FCD_LIFT_CLAP`], `qsl-semantics` reaching `clap` through FCD's
-//! `agent-ix-extraction-frontend`; the same crate reaching `clap` any other
-//! way still fails. Metadata is resolved with
-//! `--all-features`, so an optional dependency any feature turns on counts,
+//! that crate's own dependencies. One edge is not followed, temporarily:
+//! [`FCD_LIFT_CLAP`], FCD's `agent-ix-extraction-frontend` depending on
+//! `clap`. Under a core crate, only `qsl-semantics` may depend on that
+//! frontend; an edge into it from any other crate fails
+//! ([`Offence::FcdFrontend`]), so `clap` reached any way other than
+//! `qsl-semantics -> agent-ix-extraction-frontend -> clap` fails. Metadata
+//! is resolved with `--all-features`, so an optional dependency any feature turns on counts,
 //! over the targets QSL builds for (the host and [`NO_STD_TARGET`]), so a dependency gated on either target counts and
 //! one behind a `cfg` neither sets (`cfg(loom)`) does not.
 //!
@@ -39,10 +41,10 @@
 //! read, a filesystem or temp-directory access, a mutable global, a write to
 //! stdout or stderr, or a process exit ([`AMBIENT`]).
 //!
-//! One site is not reported: [`FCD_LIFT_SCRATCH`], the scratch directory
-//! `lift_document` hands FCD's `lift`, which writes its document only to an
-//! output path. Any other ambient access in that file or function still
-//! fails.
+//! One site is not reported, temporarily: [`FCD_LIFT_SCRATCH`], the scratch
+//! directory `lift_document` hands FCD's `lift`, which writes its document
+//! only to an output path. Any other ambient access in that file or function
+//! still fails.
 //!
 //! **Stated limitations.** The scan matches paths, so a function imported
 //! by name (`use std::env::var; var(..)`) is caught at its `use` line, not
@@ -110,13 +112,20 @@ pub(crate) const DRIVER: &[&str] = &[
 /// The one dependency path the direction check does not follow:
 /// `qsl-semantics` depends on FCD's `agent-ix-extraction-frontend` for
 /// `lift`, and that crate depends on `clap` for its own command line. The
-/// edge belongs to FCD; any other path from a core crate to `clap` fails.
+/// edge belongs to FCD. Only `qsl-semantics` may depend on the frontend, so
+/// any other path from a core crate to `clap` fails.
+///
+/// Temporary: when FCD's extraction frontend puts `clap` behind a
+/// non-default feature, this const and its tests are deleted.
 pub(crate) const FCD_LIFT_CLAP: [&str; 3] =
     ["qsl-semantics", "agent-ix-extraction-frontend", "clap"];
 
 /// The one ambient site the scan does not report, as (file under the QSL
 /// root, enclosing function, category): FCD's `lift` writes its document
 /// only to an output path, so `lift_document` gives it a scratch directory.
+///
+/// Temporary: when FCD offers a `lift` that returns the document bytes,
+/// this const and its tests are deleted.
 const FCD_LIFT_SCRATCH: (&str, &str, Ambient) = (
     "qsl-semantics/src/model/intake.rs",
     "lift_document",
@@ -259,6 +268,9 @@ pub(crate) enum Offence {
     /// A CG or RT crate.
     Backend(Repo),
     Frontend(Frontend),
+    /// An edge into FCD's `agent-ix-extraction-frontend` from a crate other
+    /// than `qsl-semantics` ([`FCD_LIFT_CLAP`]).
+    FcdFrontend,
 }
 
 impl fmt::Display for Offence {
@@ -268,6 +280,7 @@ impl fmt::Display for Offence {
             Self::Driver => f.write_str("driver crate"),
             Self::Backend(repo) => write!(f, "{repo} crate"),
             Self::Frontend(category) => f.write_str(category.as_str()),
+            Self::FcdFrontend => f.write_str("FCD frontend outside qsl-semantics"),
         }
     }
 }
@@ -338,30 +351,58 @@ fn core_offence(package: &Package) -> Option<Offence> {
         .map(|(category, _)| Offence::Frontend(*category))
 }
 
-/// Whether the edge `current -> next` is [`FCD_LIFT_CLAP`]'s last edge,
-/// with `current` reached directly from `qsl-semantics`. The edge is skipped
-/// without marking `next` seen, so `clap` reached any other way is still
-/// found.
-fn is_fcd_lift_clap(
+/// What [`FCD_LIFT_CLAP`] makes of the edge `current -> next` under a core
+/// crate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FcdEdge {
+    /// Not an edge the const names.
+    Other,
+    /// `agent-ix-extraction-frontend -> clap`: not followed.
+    Skip,
+    /// An edge into `agent-ix-extraction-frontend` from a crate other than
+    /// `qsl-semantics`: refused.
+    Refuse,
+}
+
+fn fcd_edge(graph: &DepGraph, current: usize, next: usize) -> FcdEdge {
+    let [semantics, frontend, clap] = FCD_LIFT_CLAP;
+    let (from, to) = (&graph.packages[current].name, &graph.packages[next].name);
+    if to == frontend && from != semantics {
+        FcdEdge::Refuse
+    } else if from == frontend && to == clap {
+        FcdEdge::Skip
+    } else {
+        FcdEdge::Other
+    }
+}
+
+/// The crates between `start` and `current`, `current` included unless it
+/// is `start`.
+fn chain(
     graph: &DepGraph,
     previous: &BTreeMap<usize, usize>,
+    start: usize,
     current: usize,
-    next: usize,
-) -> bool {
-    let [semantics, frontend, clap] = FCD_LIFT_CLAP;
-    graph.packages[next].name == clap
-        && graph.packages[current].name == frontend
-        && previous
-            .get(&current)
-            .is_some_and(|&parent| graph.packages[parent].name == semantics)
+) -> Vec<String> {
+    let mut via = Vec::new();
+    let mut cursor = current;
+    while cursor != start {
+        via.push(graph.packages[cursor].name.clone());
+        cursor = previous[&cursor];
+    }
+    via.reverse();
+    via
 }
 
 /// Walk `start`'s closure breadth-first, stopping at each package `rule`
-/// refuses and recording it, with the chain it was reached through.
+/// refuses and recording it, with the chain it was reached through. With
+/// `fcd`, [`FCD_LIFT_CLAP`]'s edges are applied before any package is
+/// marked seen, so they hold whatever order the walk finds them in.
 fn walk(
     graph: &DepGraph,
     start: usize,
     rule: fn(&Package) -> Option<Offence>,
+    fcd: bool,
     findings: &mut BTreeSet<DirectionFinding>,
 ) {
     let mut previous: BTreeMap<usize, usize> = BTreeMap::new();
@@ -370,29 +411,29 @@ fn walk(
     while let Some(current) = queue.pop_front() {
         for &next in &graph.deps[current] {
             let package = &graph.packages[next];
-            if package.proc_macro || is_fcd_lift_clap(graph, &previous, current, next) {
+            if package.proc_macro {
                 continue;
             }
-            if !seen.insert(next) {
-                continue;
-            }
-            previous.insert(next, current);
-            let Some(offence) = rule(package) else {
+            let offence = match fcd.then(|| fcd_edge(graph, current, next)) {
+                Some(FcdEdge::Skip) => continue,
+                Some(FcdEdge::Refuse) => Some(Offence::FcdFrontend),
+                Some(FcdEdge::Other) | None => {
+                    if !seen.insert(next) {
+                        continue;
+                    }
+                    previous.insert(next, current);
+                    rule(package)
+                }
+            };
+            let Some(offence) = offence else {
                 queue.push_back(next);
                 continue;
             };
-            let mut via = Vec::new();
-            let mut cursor = current;
-            while cursor != start {
-                via.push(graph.packages[cursor].name.clone());
-                cursor = previous[&cursor];
-            }
-            via.reverse();
             findings.insert(DirectionFinding {
                 core: graph.packages[start].name.clone(),
                 dependency: package.name.clone(),
                 offence,
-                via,
+                via: chain(graph, &previous, start, current),
             });
         }
     }
@@ -411,11 +452,11 @@ pub(crate) fn check_direction(graph: &DepGraph) -> Result<Vec<DirectionFinding>>
                 format!("core crate {core} is not a member of the --qsl workspace"),
             )
         })?;
-        walk(graph, start, core_offence, &mut findings);
+        walk(graph, start, core_offence, true, &mut findings);
     }
     for (start, package) in graph.packages.iter().enumerate() {
         if package.workspace_member && !CORE_CRATES.contains(&package.name.as_str()) {
-            walk(graph, start, backend_or_driver, &mut findings);
+            walk(graph, start, backend_or_driver, false, &mut findings);
         }
     }
     Ok(findings.into_iter().collect())
@@ -1137,7 +1178,8 @@ mod tests {
     /// The one FCD edge, `qsl-semantics -> agent-ix-extraction-frontend ->
     /// clap`, is not followed; `qsl-semantics` reaching `clap` directly or
     /// through another crate still fails for it and every core crate above
-    /// it, and so does another core crate reaching the frontend directly.
+    /// it, and any edge into the frontend from a crate other than
+    /// `qsl-semantics` fails.
     #[trace("TC-767", "FR-284-AC-1")]
     #[test]
     fn tc_767_only_the_fcd_frontend_clap_edge_is_skipped() {
@@ -1164,12 +1206,36 @@ mod tests {
             .unwrap();
         assert_eq!(semantics.via, ["some-frontend"]);
 
+        let frontend = "agent-ix-extraction-frontend";
         let mut eval = with_fcd_frontend();
-        eval.edge("qsl-eval", "agent-ix-extraction-frontend");
+        eval.edge("qsl-eval", frontend);
         assert_eq!(
             eval.pairs(),
-            [pair("qsl-eval", "clap"), pair("qsl-replay", "clap")]
+            [pair("qsl-eval", frontend), pair("qsl-replay", frontend)]
         );
+        let findings = check_direction(&eval.graph).unwrap();
+        assert!(findings
+            .iter()
+            .all(|finding| finding.offence == Offence::FcdFrontend));
+
+        // A second route into the frontend beside the sanctioned one fails
+        // whichever route the walk discovers first.
+        let mut second = with_fcd_frontend();
+        second.add("y", None, false, false);
+        second.edge("qsl-semantics", "y");
+        second.edge("y", frontend);
+        let every_core_reaching_the_frontend: Vec<(String, String)> = ABOVE_SEMANTICS
+            .iter()
+            .map(|core| pair(core, frontend))
+            .collect();
+        assert_eq!(second.pairs(), every_core_reaching_the_frontend);
+        let semantics = check_direction(&second.graph)
+            .unwrap()
+            .into_iter()
+            .find(|finding| finding.core == "qsl-semantics")
+            .unwrap();
+        assert_eq!(semantics.via, ["y"]);
+        assert_eq!(semantics.offence, Offence::FcdFrontend);
     }
 
     /// A core crate missing from the graph is an error, never a pass.
