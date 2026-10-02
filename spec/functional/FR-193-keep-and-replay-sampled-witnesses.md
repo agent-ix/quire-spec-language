@@ -44,15 +44,14 @@ trace refutes the qualitative claim that every behaviour meets 2 ms.
 pub struct SampledWitness {
     pub test: u32,
     pub trace: u64,
-    pub initial: u32,
-    pub binding: Option<Binding>,
-    pub steps: Vec<SampledStep>,       // FR-188: transition, post digest, choices, drawn values, probability
+        pub steps: Vec<SampledStep>,       // FR-188: transition, post digest, choices, drawn values, probability; a timed step adds its delay (FR-254)
     pub path_probability: Rational,    // product of step probabilities
     pub value: WitnessValue,           // event false, the measure's value, or Undefined(UndefinedEvaluation)
 }
 
 pub fn replay_sampled_witness(
-    request: &ReplayRequest,           // FR-098: package, provision, seed, sampler
+        request: &ReplayRequest,           // FR-098: package, provision, seed, sampler
+    provenance: &StatisticalProvenance, // FR-191: per test, initial state and binding
     witness: &SampledWitness,
 ) -> Result<ReplayOutcome, ReplayRefusal>;
 ```
@@ -82,7 +81,8 @@ pub fn replay_sampled_witness(
 ### Replay
 
 - `replay_sampled_witness` SHALL recompile the package (FR-098), re-admit
-  the subject's initial state from the provision, and re-execute each step
+  the initial state the provenance records for the witness's test from the
+  provision, and re-execute each step
   through FR-128's model-trace replay: enabledness, successor selection by
   post-state digest, and SM-1 evaluation of the event or measure over the
   replayed positions.
@@ -107,7 +107,8 @@ pub fn replay_sampled_witness(
 ### The qualitative claim
 
 - A sampled witness SHALL convert to an ADR-018 `TemporalCounterexample`
-  over the same subject (its initial state index, steps and binding) for
+  over the same subject (the initial state and binding that the verdict's
+  provenance records for its test index, QSpec FR-410, and its steps) for
   the TP-2 claim of its bound direction (ADR-024 SV-7): "`E` on every
   behaviour" for a `>= θ` bound, "not `E` on every behaviour" for a
   `<= θ` bound, the PF-4 event's form for a quantile, and the fraction

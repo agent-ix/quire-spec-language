@@ -96,7 +96,9 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 - When a window would hold more than `max_window_values` values, evaluation
   SHALL stop and the result SHALL be `Incomplete`, naming
   `max_window_values`, its value and the run setting that raises it. The
-  limit SHALL have a published default of 1,048,576 (2^20).
+  limit SHALL have a published default of 1,048,576 (2^20), which QSL
+  publishes, and the setting name `monitor.max_window_values` (FR-255's
+  convention).
 - Evaluation SHALL charge one unit of ADR-014 TR-5 work per value visited.
 - Each aggregate atom SHALL become a derived Boolean signal per position,
   and the temporal layer (tl-mltl) SHALL receive those signals unchanged.

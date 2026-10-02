@@ -120,37 +120,22 @@ the claim's form does not admit (FR-190, SPRT below).
   `<= q`, whose boundary lies inside the indifference region.
 
 - If the event, the measure or its comparison evaluates `Undefined` on a
-  sample, then EN-4 SHALL decide that test Rejected at once, draw no
-  further sample for it, and set the test's `undefined` to
+  sample, then EN-4 SHALL decide that test Rejected at once, stop the
+  run, as QSpec FR-408 does, and set the test's `undefined` to
   `UndefinedEvaluation{where, cause}`, `where` naming the test index, the
   trace index and the position at which the claim evaluated undefined
   (ADR-024 SV-11, ADR-018 UE-1).
 
-### Okamoto
+### Methods
 
-- EN-4 SHALL take `N = ⌈ln(1/min(α', β')) / (2ι²)⌉` samples per test, with
-  the logarithm replaced by QSpec's rational upper bound and `N` rounded up,
-  and report the interval `[p̂ − ι, p̂ + ι]` for the estimate `p̂`.
-- For a `>= θ` bound it SHALL decide Accepted when the interval's lower end
-  is at least `θ`, Rejected when its upper end is below `θ`, and Undecided
-  (`IndifferenceRegion`) otherwise; `<= θ` is symmetric. A mean of a
-  fraction SHALL be decided the same way over the sample mean of the
-  fraction.
-
-### SPRT
-
-- For `>= θ`, with `p0 = θ + ι` and `p1 = θ − ι`, each counted sample SHALL
-  add `ln(p1/p0)` when the event holds and `ln((1 − p1)/(1 − p0))` when it
-  fails; the test SHALL decide Rejected when the sum reaches `ln(1/α')` and
-  Accepted when it reaches `ln(β')`. A `<= θ` bound swaps the roles.
-- Each logarithm SHALL be a rational bound by QSpec FR-408's method, with
-  the thresholds rounded away from zero. EN-4 SHALL keep two sums: a lower
-  sum of the increments rounded down and an upper sum of the increments
-  rounded up. It SHALL decide Rejected only when the lower sum reaches
-  `ln(1/α')` and Accepted only when the upper sum reaches `ln(β')`, so the
-  test never decides earlier than with the true values.
-- A mean of a fraction SHALL be decided by Okamoto only; a request naming
-  SPRT for it SHALL be refused as `NotStatistical`.
+- EN-4 SHALL implement QSpec FR-408's fixed-sample method (Okamoto) and
+  sequential method (SPRT) over each test's `α'`, `β'` and the claim's
+  `ι`, with FR-408's rational bounds, conservative rounding and two-sum
+  SPRT decision, in exact rationals, so the decision is a function of the
+  counts alone.
+- EN-4 SHALL decide a mean of a fraction by the fixed-sample method over
+  the sample mean of the fraction. A request naming the sequential method
+  for it SHALL be refused as `NotStatistical`, as FR-408 states.
 
 ### Decision and stops
 
