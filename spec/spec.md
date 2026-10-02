@@ -196,6 +196,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-028
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-020
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-023
@@ -490,6 +492,28 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-024
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-195
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-196
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-197
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-198
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-199
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-200
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-201
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-202
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-203
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-204
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-023
+    type: contains
 ---
 # Master Requirements Specification
 
@@ -684,6 +708,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-021](usecase/US-021-compare-runs-over-every-behaviour-of-a-model.md) | US | Draft |
 | [US-018](usecase/US-018-prove-that-a-detailed-model-implements-an-abstract-one.md) | US | Draft |
 | [US-022](usecase/US-022-measure-a-probabilistic-property-of-a-model-or-a-live-system.md) | US | Draft |
+| [US-023](usecase/US-023-prove-a-probabilistic-property-exactly-over-every-scheduler.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -939,6 +964,16 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-193](functional/FR-193-keep-and-replay-sampled-witnesses.md) | FR | Specified: sampled witnesses kept in trace order and `replay_sampled_witness` with support and draw checks, and their use as qualitative counterexamples (ADR-024 SV-6 to SV-8); the undefined sample kept and replayed; not yet implemented -- TC-628, TC-640 planned |
 | [FR-194](functional/FR-194-evaluate-window-aggregates-in-monitors.md) | FR | Specified: aggregate terms over past windows of trace subjects (count, sum, min, max, fraction, nearest-rank quantile), `InsufficientData` as undefined, `max_window_values`, derived Boolean signals for tl-mltl (ADR-024 WA-1 to WA-8); not yet implemented -- TC-629 planned |
 | [FR-311](functional/FR-311-build-random-reward-and-workload-forms-at-s2.md) | FR | Specified: S2 builds `random-decl`, `reward-decl` and `workload-decl` forms (QSpec shared grammar) with their dispatch entries; not yet implemented -- TC-890 planned |
+| [FR-195](functional/FR-195-check-exact-only-forms-and-route-exact-evidence.md) | FR | Specified: S3 admits unbounded reachability, until and always over state predicates, expected rewards and elapsed time to a target, and fairness sets on every-scheduler claims; `exact_only` claims; routing of `exact` items to EN-5 with no substitution (ADR-028 SP-3, SP-4, XF-4, XF-5, XF-7, FS-1); not yet implemented -- TC-630 planned |
+| [FR-196](functional/FR-196-build-the-probabilistic-product.md) | FR | Specified: layer-5 `exact_probabilistic` builds the DTMC or MDP product over FR-187's actions with EN-1's monitors, accumulators and intermediate states for draws with several post-states (ADR-028 PR-1 to PR-6, SCH-2); an undefined state of positive probability stopping the build (ADR-028 XV-8); not yet implemented -- TC-631, TC-641 planned |
+| [FR-197](functional/FR-197-decide-finite-horizon-forms-by-exact-backward-induction.md) | FR | Specified: exact backward induction for probability bounds, quantiles (XF-2 transform) and means of fractions, with the dyadic-interval fallback and precision doubling (ADR-028 XF-1 to XF-3, AR-1 to AR-3, FH-1 to FH-4); not yet implemented -- TC-632 planned |
+| [FR-198](functional/FR-198-decide-unbounded-reachability-and-expected-rewards.md) | FR | Specified: Prob0/Prob1 precomputation, MEC collapse, interval iteration with outward rounding, exact policy iteration with Bareiss solves, and `+∞` expected rewards (ADR-028 UR-1 to UR-7); not yet implemented -- TC-633 planned |
+| [FR-199](functional/FR-199-decide-long-run-fractions-by-bottom-components.md) | FR | Specified: exact long-run fractions, weighted or not, by BSCC stationary distributions and MEC optima through Dinkelbach over policy iteration, with gain–bias pairs and `ZeroWeightComponent` (ADR-028 LR-1 to LR-5); not yet implemented -- TC-634 planned |
+| [FR-200](functional/FR-200-decide-every-scheduler-claims-over-fair-schedulers.md) | FR | Specified: every-scheduler claims over fair schedulers: maximal fair end components by refinement, fair infima and suprema per form, randomized fair witnesses (ADR-028 §3a FS-1 to FS-9); not yet implemented -- TC-635 planned |
+| [FR-201](functional/FR-201-check-a-probability-certificate.md) | FR | Specified: `ProbabilityCertificate` and `check_probability_certificate` in layer 6, in the qualified core: re-enumeration, recomputed qualitative sets and fair end components, fixed-point, ranking and gain–bias conditions in exact rationals (ADR-028 CE-1 to CE-7; ADR-029 RU-2); not yet implemented -- TC-636 planned |
+| [FR-202](functional/FR-202-replay-a-probabilistic-witness.md) | FR | Specified: `ProbabilisticCounterexample` with witness schedulers, path-set or subsystem evidence, and `replay_probabilistic_witness` with scheduler, support, prefix, sum and fairness checks (ADR-028 WS-1 to WS-6); `Undefined` path evidence; not yet implemented -- TC-637, TC-641 planned |
+| [FR-203](functional/FR-203-bound-an-exact-run-and-settle-its-verdict.md) | FR | Specified: `ExactProbLimits` as caller-set budgets with published defaults, and the map onto `Proved{ExactValue|ValueBounds}`, `Refuted`, `PrecisionBudget`, `CertificateRejected` and the unsupported causes (ADR-028 LM-1 to LM-3, XV-1 to XV-7); `refuted` with cause `UndefinedEvaluation`; not yet implemented -- TC-638, TC-641 planned |
+| [FR-204](functional/FR-204-check-probabilistic-timed-automata-through-digital-clocks.md) | FR | Specified: closed probabilistic timed automata through digital clocks, the claim's scheduler resolving delays, `discrete` delays under a workload as a DTMC, free delays decided by their minimum or maximum, and the route's unsupported causes (ADR-028 TA-1 to TA-7, RU-6); not yet implemented -- TC-639, TC-642 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
@@ -954,3 +989,4 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [ADR-023](decisions/ADR-023-hyperproperties-over-every-behaviour.md) | ADR | Proposed; hyperproperties over every behaviour of a model: trace variables bound to model aliases, lockstep or projection alignment with input matching, per-variable fairness, the admitted fragment (step relations on model and code, universal formulas, `∀∃` with safety bodies, single-existential claims routed to the possible family), the self-composition, projected and witness-set products on EN-1, compiler-verified copy-swap symmetry, tuple counterexamples and their replay, and the owner's rulings (§12) |
 | [ADR-020](decisions/ADR-020-refinement-mappings-between-qsl-models.md) | ADR | Proposed; refinement mappings between QSL models: the refinement declaration with state, step and fairness rows, stuttering and abstract progress, safety and liveness transfer, history and hidden abstract fields in place of auxiliary variables, population-valued mapping expressions, EN-1 and SMT per-step checking, one mechanism with protocol refinement, compare-and-set counter and ring-buffer examples; amended for protocol subjects by ADR-027 |
 | [ADR-024](decisions/ADR-024-statistical-and-probabilistic-properties.md) | ADR | Proposed; statistical and probabilistic properties: random parameters and workloads, probability bounds, quantiles and long-run fractions, statistical model checking with QSL's sampler, window aggregates in monitors, and the `measured` verdict that is never a proof |
+| [ADR-028](decisions/ADR-028-exact-probabilistic-engine.md) | ADR | Proposed; exact probabilistic checking, the native engine EN-5: DTMC and MDP products with step probabilities on EN-1's graph, minimum and maximum over every scheduler, exact backward induction, interval iteration in dyadic arithmetic with an exact policy-iteration fallback, long-run fractions by bottom components, certificates and witness schedulers checked in exact rationals, and closed probabilistic timed automata through digital clocks |
