@@ -80,3 +80,11 @@ Code is correct; one low cleanup.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | `unit_nodes` matches `Owner::Model(_) => None`, but `Lowering::new` always sets `owner: Owner::Source(..)` and nothing reassigns it, so the arm is dead. Its implied meaning ("a model-owned lowering keeps no preimage") is behaviour the code never has. | qsl-semantics/src/check/lowering/model.rs:463-466 |
+
+## Dispositions
+
+Round 1, reviewed at `4ec05638e0e1938027969a23d66ba1195da3ff8b` (diff `a9e332b8..4ec05638`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4ec05638e0e1938027969a23d66ba1195da3ff8b |

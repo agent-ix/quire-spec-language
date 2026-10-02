@@ -38,3 +38,12 @@ Not mergeable until the two coverage gaps get tests.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-094's new key-fault bullet has no test: "a declared unit, or a dimension or unit a held unit names, whose nominal preimage the unit table does not hold". `KeyFault::UnheldNominal` is reached by a table built through `FromIterator`/`with_units`, not `UnitTable::declared`, holding a declared unit; no test builds one. | qsl-semantics/src/check/lowering/model.rs:472-474 |
 | FND-002 | medium | FR-094 says check builds "every dimension and unit node it names (its dimension, that dimension's base dimensions, its target units)". Every fixture (`units()`, `metre_units_owned_by`) admits only root units over base dimensions. So none of these is exercised: the target-unit and derived-dimension arms of the walk, the emitter's `Dimension` terms and `Unit` target dependency arms, or IR's admission of a source-owned non-root unit or derived dimension preimage. | qsl-semantics/src/check/lowering/model.rs:483-512 |
+
+## Dispositions
+
+Round 1, reviewed at `4ec05638e0e1938027969a23d66ba1195da3ff8b` (diff `a9e332b8..4ec05638`).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4ec05638e0e1938027969a23d66ba1195da3ff8b |
+| FND-002 | fixed | 4ec05638e0e1938027969a23d66ba1195da3ff8b |
