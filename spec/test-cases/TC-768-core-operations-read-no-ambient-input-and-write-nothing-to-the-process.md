@@ -25,3 +25,10 @@ Tag the tests `#[trace("TC-768", "<AC id>")]`.
 
 - Step 1: the outcomes are recorded.
 - Step 2: the outcomes equal step 1's, the captured stdout and stderr are empty, and the child exits only when the harness ends it.
+
+## Status
+
+The static half is implemented: `arch-lint qualified-core`'s ambient-input
+scan of the core crates' shipped source, with its unit tests. The
+child-process run in steps 1 and 2 waits on FR-275's typed lifecycle API,
+which TC-755 step 1's chain calls.

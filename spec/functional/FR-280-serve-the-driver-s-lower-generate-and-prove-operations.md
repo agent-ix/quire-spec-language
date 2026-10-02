@@ -62,7 +62,8 @@ FR-331 results: one terminal record per routed item.
 - The terminal record the provider entry returns for an item shall equal the
   record `analyze` returns for the same item, package, subject binding and
   limits.
-- No QSL crate shall depend on a CG, IR, RT or driver crate.
+- No QSL crate shall depend on a CG, RT or driver crate. An IR crate that
+  ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed.
 
 ## Acceptance Criteria
 
@@ -70,7 +71,7 @@ FR-331 results: one terminal record per routed item.
 | --- | --- | --- |
 | FR-280-AC-1 | Each QSL engine's provider manifest is read by the FR-331 manifest reader and converted by FR-288's conversion into a `BackendDescriptor` whose advertised (kind, mode) pairs equal the claim kinds the engine settles in TC-762. | Test (TC-761) |
 | FR-280-AC-2 | For each TC-762 item, an FR-331 provider request that routes that item to its QSL engine, passed to the provider entry with the `EmittedPackage` of the same source, returns a terminal record equal to the one `analyze` returns for that item. | Test (TC-761) |
-| FR-280-AC-3 | The `cargo tree` of every QSL crate lists no CG, IR, RT or driver crate (FR-284's direction check). | Test (TC-767) |
+| FR-280-AC-3 | The `cargo tree` of every QSL core crate lists no CG, RT or driver crate; an IR crate ADR-011 §6.1 sanctions (`quire-contract-model`) is allowed (FR-284's direction check). | Test (TC-767) |
 
 ## Dependencies
 
