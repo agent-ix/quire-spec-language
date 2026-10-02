@@ -10,7 +10,7 @@ relationships:
 ---
 ## Description
 
-Integration, P1: use the pinned real Quire Rust extractor with immutable licensed
+Integration, P1: use the real Quire Rust extractor (`quire-rs`) with immutable licensed
 Markdown and the native compiler/runtime; compare exact original/body source.
 
 ## Test Procedure
@@ -22,8 +22,7 @@ foreign/stale selections, unavailable extraction, EOF mapping and exhausted limi
 
 ## Expected Results
 
-Each foreign source identity, path, package, contract version and semantic-core
-version must return its own typed preflight cause and actual/expected values,
+Each foreign source identity, path and package must return its own typed preflight cause and actual/expected values,
 without an extraction outcome. Both minimal and enabled feature suites run locally.
 
 The original clause remains identifiable through actual extraction, compilation

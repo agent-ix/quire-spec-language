@@ -546,6 +546,10 @@ names different artifacts in each.
 | TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
 | TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
 | TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4 | 🚧 Planned |
+| TC-898 | The walker toolkit walks deep trees on a small stack | Unit | P1 | FR-356-AC-1, FR-356-AC-2, FR-356-AC-3 | 🚧 Planned |
+| TC-899 | Kani verifies the walker toolkit | Property | P1 | FR-356-AC-4 | 🚧 Planned |
+| TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 Planned |
+| TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 Planned |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 | TC-895 | The native checker reads a field's optionality from its presence | Unit | P1 | FR-016-AC-10 | 🚧 Planned |
 | TC-896 | A field redefinition narrows presence and multiplicity on separate axes | Unit | P1 | FR-082-AC-8 | 🚧 Planned |
@@ -1043,7 +1047,7 @@ union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 | TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 Planned |
 | TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 Planned |
 
-## Arbitrary nesting depth (FR-255 to FR-264) coverage
+## Arbitrary nesting depth (FR-255 to FR-264, FR-356) coverage
 FR-255 to FR-264 carry ADR-030: limit outcomes that name the setting which
 raises them, uniform across the library builder, the replay request and
 the settings operation the driver CLI's `--limit` calls (FR-255), and for each component the iterative walk, the resource
@@ -1051,7 +1055,10 @@ limit that bounds it and its deep-input criteria: S1 (FR-256), S2 (FR-257),
 S3 (FR-258), identities and QSL's use of `quire-canonical`
 (FR-259), semantic-IR intake (FR-260), the other untrusted JSON reads
 (FR-261), the evaluator (FR-262), replay (FR-263) and the v2 wire (FR-264).
-TC-720 to TC-739 back every AC, all `🚧 Planned`. Each 100,000-deep case
+FR-356 is the walker toolkit those walks run on, the qualified core's
+iterative-only rule with its deep entry-point tests, the `maybe_grow`
+wrapper outside the core, and the deep-input fuzz target. TC-720 to TC-739,
+TC-898, TC-899, TC-902 and TC-903 back every AC, all `🚧 Planned`. Each 100,000-deep case
 sets its own limits and runs on a thread with a 512 KiB stack. TC-729 waits
 on the `quire-canonical` capabilities FR-259 names, TC-730 and TC-731 on the
 semantic-IR crate's move onto that reader, and TC-739's malformed-wire step

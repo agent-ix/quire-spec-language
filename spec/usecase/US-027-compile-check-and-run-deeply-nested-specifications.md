@@ -23,6 +23,8 @@ relationships:
     type: exercises
   - target: ix://agent-ix/quire-spec-language/FR-264
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-356
+    type: exercises
   - target: ix://agent-ix/quire-spec-language/ADR-030
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/StR-001
@@ -106,4 +108,5 @@ Priority: High. The owner ruled that deep nesting must be supported. Today a
 - [FR-262](../functional/FR-262-evaluate-values-and-calls-at-any-depth.md)
 - [FR-263](../functional/FR-263-replay-at-any-depth-under-the-request-limits.md)
 - [FR-264](../functional/FR-264-emit-and-read-v2-packages-at-schema-fixed-depth.md)
+- [FR-356](../functional/FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)
 - [ADR-030](../decisions/ADR-030-arbitrary-nesting-depth-no-fixed-caps.md)

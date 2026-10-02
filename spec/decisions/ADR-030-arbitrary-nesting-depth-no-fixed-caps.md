@@ -39,8 +39,8 @@ relationships:
 ## Status
 
 Draft, 2026-10-01. Design only: this record makes the decisions. The QSL
-requirements that carry them are FR-255 to FR-264 (US-027, TC-720 to
-TC-739), with the D-5 deletions applied in place. The QSpec requirements for
+requirements that carry them are FR-255 to FR-264 and FR-356 (US-027, TC-720
+to TC-739, TC-898, TC-899 and TC-902), with the D-5 deletions applied in place. The QSpec requirements for
 D-1 and D-2 follow as separate work. No code changes
 with this record. The owner's rulings on the draft's questions are
 recorded in D-9.
@@ -99,11 +99,23 @@ wire format.
    depth ceiling, or a constant sized to a stack (RU-1).
 2. **No walk uses native recursion proportional to input.** Every structure
    walk, including the derived `Clone`, `PartialEq`, `Hash`, `Debug` and
-   `Drop` of a recursive type, runs over an explicit heap stack, or over a
-   representation whose depth is fixed by its schema.
-3. **Heap stacks are charged.** Every heap stack grows by at most a constant
-   per node already charged against a node, byte or work limit, so the
-   configured limits bound memory.
+   `Drop` of a recursive type, is iterative by default, in one of two ways
+   (FR-356):
+   - **Arena order.** An arena stores each node after its children, so a
+     bottom-up computation is one forward loop over the arena with no stack.
+   - **The walker toolkit.** A top-down or mutually recursive walk runs on
+     the one shared `no_std` walker toolkit, the crate `quire-walk`: an
+     explicit heap stack of typed frames, with enter and exit callbacks. The
+     toolkit is Kani-verified. It is a shared leaf in FB-05's class (ADR-011
+     §6.1 layer W), so QSL, IR, CG and RT all use it.
+
+   A representation whose depth its schema fixes needs neither, and
+   `quire-exact`, a leaf with no dependency, keeps hand-written iterative
+   traits (D-4.7).
+3. **Heap stacks are charged.** Every heap stack, and every recursion through
+   the `maybe_grow` wrapper (item 6), grows by at most a constant per node
+   already charged against a node, byte or work limit, so the configured
+   limits bound memory.
 4. **Reaching a limit is a stated outcome.** A stage limit settles as
    `stage_limit_exceeded` (ADR-014 B-3, FR-096), and an execution budget as
    `incomplete { limit_kind, ... }` at the denied charge (ADR-014 B-2). Each
@@ -113,6 +125,17 @@ wire format.
    its published default (ADR-014 §2, "inherited"). Defaults are size and work
    values sized for realistic specifications, never depth values. A deep
    input that does not fit them runs under limits the caller raises to fit.
+6. **The qualified core is iterative only.** In the qualified core (the S0 to
+   S4 checker, the prove path and the certificate checkers; ADR-029 CB-2) no
+   walk grows or switches the native stack. Outside the core, a walk whose
+   conversion to the toolkit is awkward may grow the stack on demand as a
+   justified exception, only through QSL's one `maybe_grow` wrapper, which
+   is a plain call under `cfg(kani)` and in a `no_std` build. Each use has a
+   test at 100,000 depth on a thread with a small fixed stack.
+7. **Every public core entry point is tested deep.** Each public entry point
+   of the qualified core has a test that drives a 100,000-deep input through
+   it on a thread with a small fixed stack, so leftover or hidden recursion
+   fails at test time (D-6).
 
 This generalises FR-146's checking-only statement to every stage.
 
@@ -238,8 +261,8 @@ smaller than one frame per level would need (D-6).
     depth and cannot fail.
   - The checked `Node` becomes an arena, as in D-4.2 (`NodeId` into one
     vector per checked body), so its derived traits are flat.
-  - `LeafWalk::walk` becomes a loop over its existing `stack` of path
-    segments, with one explicit frame per entered type: the `ValueType`
+    - `LeafWalk::walk` runs on the walker toolkit beside its existing `stack`
+    of path segments, with one typed frame per entered type: the `ValueType`
     being walked and, for a composite, its field cursor and the
     `open`-list length on entry. `open` and `prefixes` keep their roles.
   - QSL's `SemanticTerm` becomes stratified Rust types matching D-2
@@ -247,8 +270,9 @@ smaller than one frame per level would need (D-6).
     becomes a fixed-depth match, and its depth guard is deleted. Body
     preimages then have a schema-fixed depth.
   - Every other walk over a checked `Node` that recurses (for example the
-    facts helpers that follow a field-access chain) becomes a loop over an
-    explicit stack.
+    facts helpers that follow a field-access chain) runs in arena order or
+    on the walker toolkit (D-1 item 2). The checker is in the qualified core,
+    so none of its walks grows the stack on demand (D-1 item 6).
 - **Limit.** The checking node limit, the per-declaration preimage byte limit
   and the work budget (NFR-011), each a `stage_limit_exceeded` outcome
   (D-3). A text-leaf walk charges one node unit per leaf and one work
@@ -422,6 +446,10 @@ requirements work that follows this record.
 - Each criterion in D-4 is one test on a thread with a small fixed stack
   (`qsl-cst`'s parser test is the existing example), so a pass shows that
   stack use does not grow with depth.
+- Each public entry point of the qualified core, and each `maybe_grow` call
+  site outside it, has a test at 100,000 depth on a thread with a small
+  fixed stack (D-1 items 6 and 7; FR-356, TC-902). The walker toolkit has
+  its own small-stack tests and Kani harnesses (TC-898, TC-899).
 - Deep inputs cover a sum, an `else if` chain and nested `let`s through parse,
   forms, check, lower, emit, v2 read and evaluate; a deep `Option` type and a
   recursive list value through state key, replay and identity; deep JSON
@@ -444,8 +472,11 @@ QSL's own work lands in four slices. Each names only the other lane's work
 it waits on.
 
 - **Slice 1. Waits on nothing outside QSL.**
+  - The walker toolkit and the `maybe_grow` wrapper (FR-356), landing first,
+    since the walks below run on it.
   - Forms arena and iterative `control_anchors` (D-4.2).
-  - Checked `Node` arena, iterative `LeafWalk` and the remaining checker walks
+  - Checked `Node` arena, and `LeafWalk` and the remaining checker walks on
+    the walker toolkit
     (D-4.3).
   - Stratified `SemanticTerm` and fixed-depth `node_key::term` (D-4.3).
   - Iterative `ValueType` traits (D-4.7).
@@ -552,9 +583,16 @@ The owner ruled on the questions the draft left open, on 2026-10-01.
 
 - **Raise each cap.** Rejected. A higher constant moves the failure point;
   the owner ruled that a known limit is a redesign.
-- **Run deep work on a large-stack thread, or grow the stack on demand.**
-  Rejected. It moves the constant to the thread size. A Rust stack overflow
-  aborts and cannot be caught, and `no_std` targets have no such thread.
+- **Run deep work on a fixed large-stack thread.** Rejected. It moves the
+  constant to the thread size. A Rust stack overflow aborts and cannot be
+  caught, and `no_std` targets have no such thread.
+- **Grow the stack on demand.** Rejected in the qualified core. Growing the
+  stack switches stacks with `unsafe` code that Kani cannot verify, so a
+  core walk that relied on it would leave the core's proofs. Outside the
+  core it is a justified exception where conversion to the walker toolkit
+  is awkward, through the one `maybe_grow` wrapper and a 100,000-depth test
+  for each use (D-1 item 6). A grown stack has no fixed size, so it is not
+  the fixed-thread alternative above.
 - **Keep an optional caller depth knob.** Rejected (RU-1). Once every walk
   is iterative, memory and time are linear in nodes and bytes, so a depth
   knob bounds nothing those limits do not. It would also keep depth as a

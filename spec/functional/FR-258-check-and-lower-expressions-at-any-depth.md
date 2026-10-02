@@ -17,6 +17,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-255
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-356
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-146
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
@@ -46,11 +48,13 @@ for checking; this requirement carries that rule through QSL's checker.
    checked body visit its nodes without native recursion.
 3. **Iterative walks.** Typing, definedness facts, obligation collection,
    expression lowering, the FR-092 type-keying walk and every other walk
-   over parsed forms, checked nodes or `ValueType` SHALL run over an
-   explicit heap stack. Each stack SHALL grow by at most a constant per
+   over parsed forms, checked nodes or `ValueType` SHALL run in arena order or
+   on the walker toolkit (FR-356). The checker is in the qualified core, so
+   no checker walk SHALL grow or switch the native stack. Each stack SHALL
+   grow by at most a constant per
    node or composite already charged against `s3.nodes` or `s3.work_units`.
-4. **Iterative text-leaf walk.** FR-093's text-leaf walk SHALL run as a loop
-   over an explicit heap stack with one frame per entered type, holding the
+4. **Iterative text-leaf walk.** FR-093's text-leaf walk SHALL run on the
+   walker toolkit with one typed frame per entered type, holding the
    type being walked and, for a composite, its field cursor and the open-list
    length on entry. It SHALL charge one node unit per leaf it appends and one
    work unit per composite it enters, as FR-093 defines, and nothing per
@@ -90,6 +94,9 @@ for checking; this requirement carries that rule through QSL's checker.
   define type keying, lowering and the text-leaf walk.
 - [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md) names
   each S3 setting.
+- [FR-356](FR-356-walk-nested-structures-through-one-iterative-walker-toolkit.md)
+  defines arena order, the walker toolkit and the deep tests on every
+  public core entry point.
 
 ## References
 
