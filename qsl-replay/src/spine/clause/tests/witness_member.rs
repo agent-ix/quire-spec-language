@@ -74,7 +74,7 @@ fn model_digest_hex() -> String {
 fn unit_text() -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{}\";\n{CLAUSES}",
         model_digest_hex()
