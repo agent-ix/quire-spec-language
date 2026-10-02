@@ -98,3 +98,11 @@ Round 4, reviewed at dc06cafc94a0d5ccbd6f41cd52637c89b019fdb7.
 | FND-010 | fixed | 8fd50817: `maybe_grow` is the only item of the std-only, non-core crate `qsl-walk-grow` (layer WG); `quire-walk` is `no_std` with no features; AC-5 checks the resolved workspace build and an arch-lint refusal. |
 | FND-011 | fixed | 8fd50817: A Text scalar type with bounds and a QSpec FR-141 profile is admitted as `Text[min, max; profile]`; only an unknown profile or a bare parameterless typeRef is refused. |
 | FND-012 | still-open | FR-031:29 at dc06cafc reads "each identity keeps the revision its own record states". That keeps a source revision in identity, which STD-150 (QSpec 5e85e89, merged) removed: source identity is the document identity plus the canonical content digest. Reword the line to say so, with no revision. |
+
+Round 5, reviewed at b77853a817239174a14c06ec834d580705d05b8e.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-012 | fixed | adf724a5: FR-031 states each identity as a document identity plus a content digest; the body record is `{authority, identity, document, digest}` with no revision fields (b77853a8). |
+
+Round 6, reviewed at 514f06152f65c19fc30c77e2ffa1168ca8512345. No finding had a still-open or missing outcome before this round.
