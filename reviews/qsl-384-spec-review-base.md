@@ -123,3 +123,20 @@ Round 2, reviewed at 92070da9804a6951c5b353c942042961d185cf3c.
 | FND-013 | fixed | 2afd7b93 |
 | FND-014 | fixed | 2afd7b93 |
 | FND-015 | fixed | 2afd7b93 |
+
+Round 3, reviewed at 451d607a4402e9b860b6d6cec448b298f9bc9ad9 (`git diff bd4df244...451d607a`, stacked on #562's b07f7b10).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-016 | fixed | 451d607a |
+| FND-017 | fixed | 451d607a |
+| FND-018 | fixed | 451d607a |
+
+## New findings (disposition pass 3)
+
+Reviewed at 451d607a4402e9b860b6d6cec448b298f9bc9ad9, lines `git diff bd4df244...451d607a` changed only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-019 | medium | FR-331 now refuses `stale_dependency`/`content-mismatch` whenever the interval of the recompiled clause's first interval-carrying operator differs from the payload's `interval`, for every kind. QSpec FR-364 runs that check for `kind: formula` only and sets `interval` to `null` for the undefined-evaluation envelope. FR-331-AC-4 replays FR-327-AC-5's undefined outcome for `always[0,2] holds(2 / (2 - c.value) >= 1)`, whose clause interval is `{lower: "0", upper: "2"}`: a packet that follows FR-364 (`interval: null`) is refused instead of reproducing, and one that carries `{0, 2}` is not FR-364's wire. Limit the interval check to `kind: formula`, as FR-128 does. | spec/functional/FR-331-replay-a-temporal-counterexample-over-an-observed-trace.md:82-87,118 |
+
