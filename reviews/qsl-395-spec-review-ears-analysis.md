@@ -29,3 +29,9 @@ One low finding.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | "It SHALL report a component whose distinct `source` values number more than one." names no subject, so EARS cannot classify it. It should name the check as the subject. | spec/functional/FR-061-check-duplicate-ecosystem-revisions.md:42 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b052250b (FR-061 deleted; the statement no longer exists) |

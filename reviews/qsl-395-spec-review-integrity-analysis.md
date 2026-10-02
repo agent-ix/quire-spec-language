@@ -65,3 +65,77 @@ are medium or low and can be fixed in the same PR.
 | FND-008 | low | The catalog-revision sweep is incomplete. `1-draft.N` claims remain in FR-096, FR-062, FR-093, FR-092, FR-026, TC-430, five spec.md rows and ADR-014. The amended ADR-013 O-17 says code claims no catalog revision. | spec/functional/FR-096-stage-limits-refusal-records-and-readers-carry-a-locus.md:128; FR-062:539; FR-093:125; FR-092:120; FR-026:124; spec/spec.md:391, :400, :425, :435, :508; ADR-014:70 |
 | FND-009 | low | FR-099 Inputs and ADR-015 still require a per-library `version` in the dependency input. With `revision-mismatch` deleted, no rule compares it; it is refused only when empty. Either delete it or state what reads it. | spec/functional/FR-099-compile-against-supplied-libraries.md:43-45; ADR-015:66-67 |
 | FND-010 | low | FR-110-AC-5's id is reused for the opposite behaviour: it was a `byte-digest-mismatch` refusal and is now a successful compile. The existing test tagged FR-110-AC-5 asserts the old refusal. | spec/functional/FR-110-resolve-header-profile-selections-at-e3.md:141 |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at 8bd562a038838f9564e903e4262a77e7477ee601. Scope: the
+PR diff against origin/main. New findings are raised only on lines the diff
+changed, or on references the diff's deletions left dangling.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | The PR deletes FR-061, TC-158, FR-069-AC-2, FR-070-AC-8, FR-071-AC-4, FR-071-AC-8, TC-188 and TC-445, but code still traces to them and `make ci` still runs the FR-061 check. Round 3 reverted all code (spec only), and no surviving FR Status or tests.md row records the code removal, unlike FR-042's SHA256SUMS note. Fix: record each removal as remaining work in a surviving artifact or a named ticket, or delete the code here. | qsl-replay/src/proof_result.rs:283, :466-469; qsl-replay/src/request.rs:197, :466, :1064-1068, :1113-1120; qsl-replay/src/witness.rs:1241-1246; tools/arch-lint/duplicate_revisions.rs:2, :148-283; tools/arch-lint/main.rs:2-7, :317; tools/arch-lint/graph.rs:44, :355-357; Makefile:201, :282-285 |
+| FND-012 | medium | The `BackendDescriptor` shape disagrees. ADR-012 §7.1 and its Descriptor row now drop `tool`, so a descriptor is the identity plus the advertised pairs. FR-075 Inputs cites ADR-012 §7.1 for a descriptor that carries `tool`, and FR-075-AC-7, FR-057 and ADR-013 O-19/C-28 compare `tool` for descriptor equality. Two implementers would read the equal-descriptor rule differently. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:673, :1017; spec/functional/FR-075-compute-candidates-from-registered-backends.md:42-44, :225; spec/functional/FR-057-admit-shared-capability-kinds.md:239; spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:718, :967 |
+| FND-013 | low | ADR-013 C-27 now says the `backend` member is the identity alone, but its evidence column still cites the `backend_digest_in_any_other_fr201_domain_refuses` tests as the digest-domain half of FR-070-AC-6, for a backend digest that no longer exists. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:966 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 564d2b74 |
+| FND-002 | fixed | 564d2b74 |
+| FND-003 | fixed | 564d2b74 |
+| FND-004 | fixed | 564d2b74 (citations); `content-mismatch` is now on QSpec main through quire-specification#174 (merged) |
+| FND-005 | fixed | 564d2b74 |
+| FND-006 | fixed | 564d2b74 |
+| FND-007 | still-open | 564d2b74 dropped the dead traces, but b052250b reverted all code to main (spec only). `tests/it/lowering_registry_isolation.rs:2,146` still traces FR-079 and TC-204, and nothing on the branch records the removal now that ADR-011's FR-079 retirement line is deleted |
+| FND-008 | fixed | 564d2b74 |
+| FND-009 | fixed | 564d2b74 |
+| FND-010 | fixed | b052250b |
+
+Round 2, reviewed at 08500770878eec974bdf6f15801d969df7b5de7f (`git diff 8bd562a0...08500770`).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | 08500770 |
+| FND-011 | fixed | 08500770 |
+| FND-012 | fixed | 08500770 |
+| FND-013 | fixed | 08500770 |
+
+Round 3, reviewed at 261ab3c47873d9f1c8d4cd41cf2259edb26a30a6 (the branch squashed into one commit on ec749300; `git diff ec749300...261ab3c4`, compared with round 2's patch at 08500770).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-014 | fixed | 261ab3c4 |
+
+Round 4, reviewed at 767c35467b0922ba1acd12d18ce7ca3fd4259441 (one commit on origin/main 85732a8e; `git diff 85732a8e...767c3546`).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-015 | fixed | 767c3546 |
+
+## New findings (disposition pass 2)
+
+Reviewed at 08500770, lines `git diff 8bd562a0...08500770` changed only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | low | TC-447 still says its fixtures are "matching TC-282's own", but the rewrite makes `A2` differ from `A1` by an extra advertised pair, (`value-validity`, `unbounded`). QSpec TC-282's `A2` advertises the same single pair as `A1` and differs only in one option, which QSL's `{id, advertises}` descriptor has no member for. State that TC-447 departs from TC-282 here and why, or drop "matching TC-282's own". | spec/test-cases/TC-447-duplicate-backend-identity-matches-qspec-tc282.md:23-27 |
+
+## New findings (disposition pass 3)
+
+Reviewed at 261ab3c47873d9f1c8d4cd41cf2259edb26a30a6 against its parent ec749300 (main with #571 merged).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-015 | high | The squash deletes everything #571 (QSL-370, hyperproperties) merged to main: ADR-023, FR-163, FR-171 to FR-184, TC-596 to TC-611, TC-615, TC-616, TC-645, TC-646, US-021 and `reviews/qsl-370-spec-review.md`. It also reverts #571's rows and amendments in `spec/spec.md` (34 lines), `spec/tests.md` (20), ADR-012, ADR-014 and ADR-016. Round 2's patch at 08500770 deleted none of these files. The 38 deletions are exactly the files #571 added, so the conflict resolution took a pre-#571 tree. Restore main's version of every #571 file and row, and keep only #586's own deletions. Rebase onto current main (85732a8e) too; the branch is 6 merges behind. | spec/decisions/ADR-023-hyperproperties-over-every-behaviour.md; spec/functional/FR-163-check-a-hyper-item-s-product-closure-certificate.md; spec/functional/FR-171..FR-184; spec/usecase/US-021-compare-runs-over-every-behaviour-of-a-model.md; spec/spec.md; spec/tests.md |
+
+## New findings (disposition pass 4)
+
+Reviewed at 767c35467b0922ba1acd12d18ce7ca3fd4259441, lines of `git diff 85732a8e...767c3546` only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-016 | medium | The branch adds the QSL-395 review files twice, as `reviews/qsl-395-spec-review-ears-analysis.md` and `-integrity-analysis.md` and again under `spec/reviews/`. The two copies already differ. The `reviews/` integrity file is the 67-line review-pass version, with no dispositions; the `spec/reviews/` one has 111 lines with rounds 1 and 2. This repository keeps flat `qsl-NNN-*` SpecReview files in root `reviews/` (389 files, among them qsl-394 and qsl-396); `spec/reviews/` holds the older per-topic folders. Keep one copy, in `reviews/`, at the reviewer's latest version, and delete the `spec/reviews/` pair. | reviews/qsl-395-spec-review-integrity-analysis.md; spec/reviews/qsl-395-spec-review-integrity-analysis.md; reviews/qsl-395-spec-review-ears-analysis.md; spec/reviews/qsl-395-spec-review-ears-analysis.md |
+| FND-017 | low | ADR-017's rewritten "Snapshots and invocation" row names `stale_dependency`/`byte-digest-mismatch` for the snapshot byte check. FR-106 check 1.3, which the row cites, now refuses `stale_dependency`/`content-mismatch` (QSpec FR-272-AC-14), and TC-465 rows 4 and 29 expect `content-mismatch`. Write `content-mismatch` in the row. | spec/decisions/ADR-017-protocol-refinement-abstraction-boundaries.md:336; spec/functional/FR-106-admit-snapshots-and-invocations.md:189-191 |
+
