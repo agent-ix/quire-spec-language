@@ -4133,7 +4133,7 @@ fn a_reference_into_an_unlisted_population_refuses_dangling_reference() {
 /// names a key (`missing`) absent from `archive` itself -- nothing else
 /// requires `archive`, so this must admit, not refuse `dangling_reference`.
 /// `finish_populations` passes exactly this reference to
-/// `ObjectEnvironment::new` as a tolerated dangling target.
+/// `ObjectClosure::new` as a tolerated dangling target.
 #[trace("TC-465", "FR-106-AC-4")]
 #[test]
 fn a_dangling_reference_into_an_incomplete_population_still_admits() {

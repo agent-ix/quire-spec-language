@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The core object closure of an object environment over the kernel
-//! [`ObjectReference`] (FR-143; ADR-011 §6.2).
+//! [`ObjectReference`] (QSpec FR-143-AC-3 and AC-9; ADR-011 §6.2). Its
+//! admission rules are FR-106-AC-10's.
 //!
 //! A reference is terminal: its identity is the snapshot-supplied
-//! FR-009/FR-204 triple (universe, object-type declaration identity, object
+//! QSpec FR-009/FR-204 triple (universe, object-type declaration identity, object
 //! identity), and equality never inspects the referenced state. No source
 //! form creates one. Cycles between objects are representable only through
 //! references resolved in an [`ObjectClosure`].
@@ -178,4 +179,100 @@ fn present(slots: &[FieldValue]) -> impl Iterator<Item = &Value> {
         FieldValue::Present(value) => Some(value),
         FieldValue::Absent | FieldValue::Null => None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::declaration::{FieldDeclaration, ObjectTypeDeclaration};
+    use alloc::vec;
+    use ix_trace_rs::trace;
+    use quire_exact::{EffectiveId, ObjectId, Presence, ValueType};
+
+    fn object_type(byte: u8) -> EffectiveId {
+        EffectiveId::from_digest([byte; 32])
+    }
+
+    const A: u8 = 1;
+    const B: u8 = 2;
+    const UNDECLARED: u8 = 3;
+
+    /// Model object types `A` and `B`, each with one required `Int`
+    /// attribute `x`.
+    fn types() -> TypeEnvironment {
+        let declare = |byte, name| {
+            ObjectTypeDeclaration::new(
+                object_type(byte),
+                name,
+                vec![FieldDeclaration::new(
+                    "x",
+                    ValueType::Integer,
+                    Presence::Required,
+                )],
+            )
+        };
+        TypeEnvironment::new([], [declare(A, "A"), declare(B, "B")])
+            .expect("two object types admit")
+    }
+
+    fn reference(type_byte: u8, key: &str) -> ObjectReference {
+        ObjectReference::new(
+            UniverseId::from_digest([9; 32]),
+            object_type(type_byte),
+            ObjectId::new(key).expect("non-empty key"),
+        )
+    }
+
+    fn object(reference: &ObjectReference) -> (ObjectReference, Vec<(&'static str, FieldValue)>) {
+        (
+            reference.clone(),
+            vec![("x", FieldValue::Present(Value::Integer(1_i64.into())))],
+        )
+    }
+
+    /// TC-904 row 1: a second object with an admitted identity triple
+    /// refuses `DuplicateObject`, naming that triple.
+    #[trace("TC-904", "FR-106-AC-10")]
+    #[test]
+    fn a_duplicate_identity_triple_refuses() {
+        let a = reference(A, "a");
+        assert_eq!(
+            ObjectClosure::new(&types(), [object(&a), object(&a)], &[]).unwrap_err(),
+            ObjectClosureRefusal {
+                object: Box::new(a),
+                cause: ObjectClosureCause::DuplicateObject,
+            }
+        );
+    }
+
+    /// TC-904 row 2: an object whose type names no model object type of the
+    /// environment refuses `UnknownObjectType`.
+    #[trace("TC-904", "FR-106-AC-10")]
+    #[test]
+    fn a_non_model_object_type_refuses() {
+        let stray = reference(UNDECLARED, "s");
+        assert_eq!(
+            ObjectClosure::new(&types(), [object(&stray)], &[]).unwrap_err(),
+            ObjectClosureRefusal {
+                object: Box::new(stray),
+                cause: ObjectClosureCause::UnknownObjectType,
+            }
+        );
+    }
+
+    /// TC-904 rows 3 and 4: `find` returns the one object a universe and
+    /// key name, and none when two objects of different types share them.
+    #[trace("TC-904", "FR-106-AC-10")]
+    #[test]
+    fn find_returns_none_for_an_ambiguous_key() {
+        let universe = UniverseId::from_digest([9; 32]);
+        let a = reference(A, "k");
+        let single = ObjectClosure::new(&types(), [object(&a)], &[]).unwrap();
+        assert_eq!(single.find(universe, "k"), Some(&a));
+
+        let b = reference(B, "k");
+        let both = ObjectClosure::new(&types(), [object(&a), object(&b)], &[]).unwrap();
+        assert!(both.contains(&a) && both.contains(&b));
+        assert_eq!(both.find(universe, "k"), None);
+    }
 }

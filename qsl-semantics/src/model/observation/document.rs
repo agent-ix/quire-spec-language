@@ -1479,7 +1479,11 @@ fn map_environment_refusal(error: ObjectClosureRefusal) -> AdmissionFailure {
             )
             .with("object", target.object().as_str().to_owned()),
         ),
-        _ => fault("object-environment-refused-after-admission-checks"),
+        ObjectClosureCause::DuplicateObject
+        | ObjectClosureCause::UnknownObjectType
+        | ObjectClosureCause::Attribute(_) => {
+            fault("object-environment-refused-after-admission-checks")
+        }
     }
 }
 

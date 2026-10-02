@@ -908,7 +908,7 @@ fn run_clause_evaluates_a_function_selection_with_an_integer_argument() {
 }
 
 /// TC-468 (FR-109-AC-4): a `Function` selection over a `Reference` argument
-/// resolves it in the current snapshot (`ObjectEnvironment::find`,
+/// resolves it in the current snapshot (`ObjectClosure::find`,
 /// `population_universe`) and evaluates `hasNext`.
 #[trace("TC-468", "FR-109-AC-4")]
 #[test]
