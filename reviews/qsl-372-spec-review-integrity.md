@@ -53,3 +53,24 @@ The FR-205 to FR-218 and ADR-027 references resolve only after #575 lands. That 
 ## Verdict
 
 The design follows every owner ruling. It is internally coherent apart from the AC fixtures. Three high findings are ACs that cannot pass as written. FND-001 (the MP race) is also wrong in ADR-025 §10 and in QSpec FR-438-AC-1. FND-002 and FND-003 are fixtures that forget MA-1's sharing rule. The branch also needs a rebase onto the current #366 (FND-009). The PR is not mergeable as it stands.
+
+## Dispositions
+
+Round 1, reviewed at 1e72750b1351d38cc2fc1a516fa951d1cda4583b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9807af2e: FR-224-AC-1's message-passing shape loads `data` only in the `choice` case where the flag load read 1. |
+| FND-002 | fixed | 9807af2e: The bound ACs make both locations shared, so the buffer fills. |
+| FND-003 | fixed | 9807af2e: FR-228-AC-2 makes `x` shared through branch `r`'s repeated load. |
+| FND-004 | fixed | 9807af2e: FR-227-AC-4 names `w`'s buffer and `flush(w)`. |
+| FND-005 | fixed | 9807af2e: FR-221-AC-3 has a second branch load both `x` and `y`. |
+| FND-006 | fixed | 9807af2e: MX-4 constrains atomic shared accesses only under `tso`. |
+| FND-007 | fixed | 9807af2e: FR-219 refuses two entries naming the same `parallel`. |
+| FND-008 | still-open | QSL now defines `WeakAccessShape.shape` as `MultiLocation{locations}` only (FR-220:59, :97), while QSpec FR-439 on main gives `multi-location` and `join-policy`. The variant sets still disagree, now in the other direction. Either keep `JoinPolicy` in QSL, or have QSpec drop `join-policy`. |
+| FND-009 | fixed | 9807af2e: The pin wording is gone from ADR-014 B-5 and FR-126 carries `max_store_buffer` and `max_messages`. The stacking on pre-rebase #562 is a merge item, not a content defect. |
+| FND-010 | fixed | 9807af2e: ADR-025 MB-4 states the full precedence, including `InstanceBoundReached`. |
+| FND-011 | fixed | 9807af2e: `bound` names the request member that raises it. |
+| FND-012 | fixed | 9807af2e: FR-226 warns of each load-buffering shape whatever the model. |
+| FND-013 | fixed | 9807af2e: FR-227 Inputs list `UndefinedEvaluation{where, cause}`. |
+| FND-014 | fixed | 9807af2e: FR-222 cites QSpec FR-437 for the litmus vectors; no external checker runs in the QSL gate. |

@@ -38,3 +38,16 @@ Ticket: QSL-372 (PR #574). The Wave B rule is: "Do not re-specify QSpec-owned se
 ## Verdict
 
 Six FRs duplicate QSpec semantics. The duplication is already causing drift (SR-1020 FND-007, FND-008). Replace the restated rules with citations to QSpec FR-436 to FR-439, and keep the QSL-specific types and engine obligations.
+
+## Dispositions
+
+Round 1, reviewed at 1e72750b1351d38cc2fc1a516fa951d1cda4583b.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9807af2e: `Tso` implements QSpec FR-436 through the SE-1 members. |
+| FND-002 | fixed | 9807af2e: `Ra` implements QSpec FR-437. |
+| FND-003 | fixed | 9807af2e: FR-223 cites QSpec FR-437's new-event, frontier and collection rules. |
+| FND-004 | fixed | 9807af2e: FR-224 carries QSpec FR-438's race summary by citation. |
+| FND-005 | fixed | 9807af2e: FR-228 cites QSpec FR-436 and FR-437 for the fairness definitions. |
+| FND-006 | fixed | 9807af2e: FR-225 cites QSpec FR-439's bound rule. |
