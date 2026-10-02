@@ -6,11 +6,10 @@ use ix_trace_rs::trace;
 use qsl_cst::{CstElement, LosslessCst, ParsedSource, Production};
 use qsl_forms::{
     build_unit, Accumulation, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
-    DeclarationKind, ExactNumberKind, Expression, FieldInitializer, FormsCause, FormsFailure,
-    FormsLimits, FunctionDeclaration, ParsedUnit, TermOperator, TypeFormHead,
+    DeclarationKind, ExactNumberKind, ExprNode, ExprRef, Expression, FieldInitializer, FormsCause,
+    FunctionDeclaration, ParsedUnit, TermOperator, TypeFormHead,
 };
-use qsl_foundation::diagnostic::{LimitKind, Locus};
-use qsl_foundation::{Code, SourceIdentity, Span};
+use qsl_foundation::{Code, SourceIdentity, Span, SyntaxLimit};
 use quire_exact::{CollectionKind, Integer};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
@@ -40,8 +39,7 @@ fn admissible(declarations: &str) -> (String, ParsedSource) {
 
 fn build(declarations: &str) -> (String, ParsedUnit) {
     let (text, parsed) = admissible(declarations);
-    let unit = build_unit(&parsed, FormsLimits::default())
-        .unwrap_or_else(|failure| panic!("{declarations}: {failure:?}"));
+    let unit = build_unit(&parsed).unwrap_or_else(|failure| panic!("{declarations}: {failure:?}"));
     (text, unit)
 }
 
@@ -67,8 +65,8 @@ fn body(body: &str) -> (String, FunctionDeclaration) {
 
 fn refusal(declarations: &str) -> (String, FormsCause, Option<Span>) {
     let (text, parsed) = admissible(declarations);
-    match build_unit(&parsed, FormsLimits::default()) {
-        Err(FormsFailure::Refused(refusal)) => (text, refusal.cause, refusal.span),
+    match build_unit(&parsed) {
+        Err(refusal) => (text, refusal.cause, refusal.span),
         other => panic!("{declarations}: a refusal, not {other:?}"),
     }
 }
@@ -86,24 +84,24 @@ fn name(spelling: &str) -> String {
 }
 
 /// A compact rendering of an expression tree, operands in order.
-fn show(expression: &Expression) -> String {
+fn show(expression: ExprRef<'_>) -> String {
     let children: Vec<String> = expression.children().into_iter().map(show).collect();
-    let head = match expression {
-        Expression::Boolean(value) => format!("{value}"),
-        Expression::Integer(value) => format!("{value}"),
-        Expression::Rational(n, d) => format!("rational({n},{d})"),
-        Expression::Name(spelling) => spelling.clone(),
-        Expression::Let { name, .. } => format!("Let[{name}]"),
-        Expression::If { .. } => "If".into(),
-        Expression::Binary { operator, .. } => format!("{operator:?}"),
-        Expression::Negate(_) => "Negate".into(),
-        Expression::Not(_) => "Not".into(),
-        Expression::Field { field, .. } => format!("Field[{field}]"),
-        Expression::Present(_) => "Present".into(),
-        Expression::Value(_) => "Value".into(),
-        Expression::Deref(_) => "Deref".into(),
-        Expression::Call { name, .. } => format!("Call[{name}]"),
-        Expression::Record { name, fields } => {
+    let head = match expression.node() {
+        ExprNode::Boolean(value) => format!("{value}"),
+        ExprNode::Integer(value) => format!("{value}"),
+        ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::Name(spelling) => spelling.clone(),
+        ExprNode::Let { name, .. } => format!("Let[{name}]"),
+        ExprNode::If { .. } => "If".into(),
+        ExprNode::Binary { operator, .. } => format!("{operator:?}"),
+        ExprNode::Negate(_) => "Negate".into(),
+        ExprNode::Not(_) => "Not".into(),
+        ExprNode::Field { field, .. } => format!("Field[{field}]"),
+        ExprNode::Present(_) => "Present".into(),
+        ExprNode::Value(_) => "Value".into(),
+        ExprNode::Deref(_) => "Deref".into(),
+        ExprNode::Call { name, .. } => format!("Call[{name}]"),
+        ExprNode::Record { name, fields } => {
             let fields: Vec<String> = fields
                 .iter()
                 .map(|(field, initializer)| match initializer {
@@ -113,36 +111,36 @@ fn show(expression: &Expression) -> String {
                 .collect();
             format!("Record[{name};{}]", fields.join(","))
         }
-        Expression::Collection { kind, .. } => format!("Collection[{kind:?}]"),
-        Expression::Convert { target, .. } => format!("Convert[{:?}]", target.head),
-        Expression::Query { query, binder, .. } => format!("Query[{query:?},{binder}]"),
-        Expression::Flatten(_) => "Flatten".into(),
-        Expression::Accumulate {
+        ExprNode::Collection { kind, .. } => format!("Collection[{kind:?}]"),
+        ExprNode::Convert { target, .. } => format!("Convert[{:?}]", target.head),
+        ExprNode::Query { query, binder, .. } => format!("Query[{query:?},{binder}]"),
+        ExprNode::Flatten(_) => "Flatten".into(),
+        ExprNode::Accumulate {
             form,
             accumulator_type,
             accumulator,
             binder,
             ..
         } => format!("Accumulate[{form:?},{accumulator_type},{accumulator},{binder}]"),
-        Expression::Count {
+        ExprNode::Count {
             result_type,
             binder,
             ..
         } => format!("Count[{result_type},{binder}]"),
-        Expression::Sum {
+        ExprNode::Sum {
             result_type,
             binder,
             ..
         } => format!("Sum[{result_type},{binder}]"),
-        Expression::Size(_) => "Size".into(),
-        Expression::Contains { .. } => "Contains".into(),
-        Expression::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
-        Expression::Lookup { .. } => "Lookup".into(),
-        Expression::Dispatch { .. } => "Dispatch".into(),
-        Expression::Pre(_) => "Pre".into(),
-        Expression::SelfRef => "SelfRef".into(),
-        Expression::Result => "Result".into(),
-        Expression::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+        ExprNode::Size(_) => "Size".into(),
+        ExprNode::Contains { .. } => "Contains".into(),
+        ExprNode::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
+        ExprNode::Lookup { .. } => "Lookup".into(),
+        ExprNode::Dispatch { .. } => "Dispatch".into(),
+        ExprNode::Pre(_) => "Pre".into(),
+        ExprNode::SelfRef => "SelfRef".into(),
+        ExprNode::Result => "Result".into(),
+        ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
     };
     if children.is_empty() {
         head
@@ -174,7 +172,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
          record Point { x: Int[0, 9]; }\n\
          tuple Pair(Int[0, 9], Int[0, 9]);",
     );
-    let unit = build_unit(&parsed, FormsLimits::default()).expect("the unit builds");
+    let unit = build_unit(&parsed).expect("the unit builds");
     let kinds: Vec<&str> = unit
         .forms()
         .iter()
@@ -240,8 +238,10 @@ fn a_function_form_carries_its_signature_as_syntax() {
         TypeFormHead::Builtin(BuiltinType::Int)
     ));
     assert_eq!(inc.result.bounds, ["0", "10"]);
-    assert!(matches!(&inc.measure, Some(Expression::Name(name)) if name == "x"));
-    assert_eq!(show(&inc.body), "Add(x, 1)");
+    assert!(
+        matches!(inc.measure.as_ref().map(Expression::root_node), Some(ExprNode::Name(name)) if name == "x")
+    );
+    assert_eq!(show(inc.body.root()), "Add(x, 1)");
 }
 
 /// A span's first `length` bytes.
@@ -332,30 +332,30 @@ fn each_expression_construct_maps_to_its_variant() {
     ];
     for (source, expected) in cases {
         let (_, declaration) = body(source);
-        assert_eq!(show(&declaration.body), expected, "{source}");
+        assert_eq!(show(declaration.body.root()), expected, "{source}");
     }
     let (_, declaration) = body("R { f: a, g: null }");
-    let Expression::Record { fields, .. } = &declaration.body else {
+    let ExprNode::Record { fields, .. } = declaration.body.root_node() else {
         panic!("a record value");
     };
     assert!(matches!(fields[1], (ref g, FieldInitializer::Null) if g == "g"));
     let (_, declaration) = body("rational(1, -2)");
     assert!(matches!(
-        &declaration.body,
-        Expression::Rational(n, d) if *n == Integer::from(1_i64) && *d == Integer::from(-2_i64)
+        declaration.body.root_node(),
+        ExprNode::Rational(n, d) if *n == Integer::from(1_i64) && *d == Integer::from(-2_i64)
     ));
     let (_, declaration) = body("sequence[a]");
     assert!(matches!(
-        &declaration.body,
-        Expression::Collection {
+        declaration.body.root_node(),
+        ExprNode::Collection {
             kind: CollectionKind::Sequence,
             ..
         }
     ));
     let (_, declaration) = body("fold<A>(acc, x in c: a)");
     assert!(matches!(
-        &declaration.body,
-        Expression::Accumulate {
+        declaration.body.root_node(),
+        ExprNode::Accumulate {
             form: Accumulation::Fold,
             identity: None,
             ..
@@ -363,16 +363,16 @@ fn each_expression_construct_maps_to_its_variant() {
     ));
     let (_, declaration) = body("map(x in c: x)");
     assert!(matches!(
-        &declaration.body,
-        Expression::Query {
+        declaration.body.root_node(),
+        ExprNode::Query {
             query: BinderQuery::Map,
             ..
         }
     ));
     let (_, declaration) = body("a + b");
     assert!(matches!(
-        &declaration.body,
-        Expression::Binary {
+        declaration.body.root_node(),
+        ExprNode::Binary {
             operator: BinaryOperator::Add,
             ..
         }
@@ -393,7 +393,7 @@ fn grouping_and_associativity_come_from_the_cst() {
     ];
     for (source, expected) in cases {
         let (_, declaration) = body(source);
-        assert_eq!(show(&declaration.body), expected, "{source}");
+        assert_eq!(show(declaration.body.root()), expected, "{source}");
     }
 }
 
@@ -402,8 +402,8 @@ fn grouping_and_associativity_come_from_the_cst() {
 fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
     let (_, recovering) = parse("function f using v(): Boolean pure { true ");
     assert!(!recovering.cst().recoveries().is_empty());
-    match build_unit(&recovering, FormsLimits::default()) {
-        Err(FormsFailure::Refused(refusal)) => {
+    match build_unit(&recovering) {
+        Err(refusal) => {
             assert_eq!(refusal.cause, FormsCause::RecoveringCst);
             assert_eq!(refusal.cause.catalog_code(), Code::InvalidSyntax);
         }
@@ -416,8 +416,8 @@ fn s2_refuses_inadmissible_input_and_undispatched_declarations() {
     prepended.code = Code::UnknownProfile;
     diagnosed.prepend_diagnostic(prepended);
     assert!(diagnosed.cst().recoveries().is_empty());
-    match build_unit(&diagnosed, FormsLimits::default()) {
-        Err(FormsFailure::Refused(refusal)) => {
+    match build_unit(&diagnosed) {
+        Err(refusal) => {
             assert_eq!(
                 refusal.cause,
                 FormsCause::DiagnosedSource(Code::UnknownProfile)
@@ -502,7 +502,7 @@ fn nested_constructs_of_other_families_are_built_where_written() {
         let (_, unit) = build(&format!(
             "function f using v(x: Int[0, 9]): Boolean pure {{ {source} }}"
         ));
-        assert_eq!(show(&function(unit.forms()[0].form()).body), expected);
+        assert_eq!(show(function(unit.forms()[0].form()).body.root()), expected);
     }
     let (_, unit) =
         build("function g using v(x: Int[0, 9]): Boolean pure decreases(pre(x)) { true }");
@@ -510,74 +510,71 @@ fn nested_constructs_of_other_families_are_built_where_written() {
         .measure
         .as_ref()
         .expect("the measure is carried");
-    assert_eq!(show(measure), "Pre(x)");
+    assert_eq!(show(measure.root()), "Pre(x)");
 }
 
 fn nots(count: usize) -> String {
     format!("{}a", "not ".repeat(count))
 }
 
+/// The depth of an expression tree: one forward loop over its arena, each
+/// node one deeper than its deepest child.
+fn depth(tree: &Expression) -> usize {
+    let mut depths: Vec<usize> = Vec::with_capacity(tree.len());
+    for node in tree.iter() {
+        let deepest = node
+            .node()
+            .children()
+            .into_iter()
+            .map(|child| depths[child.index()])
+            .max()
+            .unwrap_or(0);
+        depths.push(deepest + 1);
+    }
+    depths.last().copied().unwrap_or(0)
+}
+
 #[trace("FR-091-AC-9", "TC-397")]
 #[test]
-fn the_nesting_depth_bound_refuses_past_its_limit() {
-    let limits = FormsLimits { nesting_depth: 8 };
-    let (_, seven) = admissible(&format!(
-        "function f using v(a: Boolean): Boolean pure {{ {} }}",
-        nots(7)
-    ));
-    build_unit(&seven, limits).expect("depth 8 builds");
-    for count in [8, 20] {
-        let (text, parsed) = admissible(&format!(
+fn deep_not_chains_build_with_no_s2_limit() {
+    for count in [8, 20, 129] {
+        let (_, unit) = build(&format!(
             "function f using v(a: Boolean): Boolean pure {{ {} }}",
             nots(count)
         ));
-        match build_unit(&parsed, limits) {
-            Err(FormsFailure::Limit { limit, span }) => {
-                assert_eq!(limit.kind(), LimitKind::NestingDepth);
-                assert_eq!(limit.configured_bound(), 8);
-                // The node at depth 9: the ninth `not` from the left, or
-                // the `a` under eight of them.
-                let expected = if count == 8 {
-                    span_of(&text, "a }").start_and(1)
-                } else {
-                    let start = text.find("not").expect("a not") + 4 * 8;
-                    Span {
-                        start,
-                        end: span_of(&text, "a }").start + 1,
-                    }
-                };
-                assert_eq!(span, expected, "{count}");
-            }
-            other => panic!("{count}: a depth limit, not {other:?}"),
-        }
+        let body = &function(unit.forms()[0].form()).body;
+        assert_eq!(depth(body), count + 1, "{count}");
     }
 }
 
-/// FR-096-AC-3: with S2 nesting-depth bound 8, a body of eight `not`s over
-/// `a` stops at depth 9 with the configured bound, the actual depth and
-/// `Locus::Region` over the span of `a` (the node at depth 9) under the
-/// unit's `RawSourceRef`.
+/// FR-096-AC-3: S1 over a body of eight `not`s with its node ceiling one
+/// below the unit's node count refuses naming the node ceiling at the
+/// region its diagnostic names; S2 over the same body, parsed at the
+/// default S1 limits, builds its form.
 #[trace("FR-096-AC-3", "TC-427")]
 #[test]
-fn the_s2_depth_limit_is_located_at_the_first_node_past_the_bound() {
-    let (text, parsed) = admissible(&format!(
+fn s1_bounds_the_body_and_s2_builds_it() {
+    let declaration = format!(
         "function f using v(a: Boolean): Boolean pure {{ {} }}",
         nots(8)
-    ));
-    let Err(FormsFailure::Limit { limit, .. }) =
-        build_unit(&parsed, FormsLimits { nesting_depth: 8 })
-    else {
-        panic!("depth 9 is past the bound");
-    };
-    assert_eq!(limit.kind(), LimitKind::NestingDepth);
-    assert_eq!(limit.configured_bound(), 8);
-    assert_eq!(limit.actual(), 9);
-    let a = u64::try_from(span_of(&text, "a }").start).unwrap();
-    let Some(Locus::Region(region)) = limit.locus() else {
-        panic!("an S2 limit carries its region, got {:?}", limit.locus());
-    };
-    assert_eq!(region.source(), parsed.source().reference());
-    assert_eq!((region.start(), region.end()), (a, a + 1));
+    );
+    let (_, parsed) = admissible(&declaration);
+    let nodes = parsed.cst().nodes().len();
+    let text = format!("{HEADER}{declaration}\n");
+    let refusal = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default().with_nodes(nodes - 1),
+    )
+    .expect_err("one node below the unit's count refuses");
+    assert_eq!(
+        refusal.limit(),
+        Some(SyntaxLimit::Nodes { bound: nodes - 1 })
+    );
+    assert!(refusal.byte_span().is_some(), "{refusal:?}");
+    let unit = build_unit(&parsed).expect("S2 builds the body");
+    assert_eq!(depth(&function(unit.forms()[0].form()).body), 9);
 }
 
 #[trace("FR-091-AC-10", "TC-403")]
@@ -646,23 +643,6 @@ fn every_expression_span_lies_inside_its_parents() {
         );
     }
     assert_eq!(seen, 9, "every non-root node of both bodies carries a span");
-}
-
-#[trace("FR-091-AC-21", "TC-406")]
-#[test]
-fn the_nesting_depth_limit_reports_stage_limit_exceeded() {
-    let (_, parsed) = admissible("function f using v(a: Boolean): Boolean pure { not a }");
-    let failure = build_unit(&parsed, FormsLimits { nesting_depth: 1 })
-        .expect_err("depth 2 is past the bound");
-    assert_eq!(failure.catalog_code(), Code::StageLimitExceeded);
-    let FormsFailure::Limit { limit, .. } = failure else {
-        panic!("a limit");
-    };
-    use qsl_foundation::diagnostic::CatalogCoded as _;
-    assert_eq!(
-        limit.catalog_code().to_string(),
-        "stage_limit_exceeded/nesting-depth-exceeded"
-    );
 }
 
 #[trace("FR-091-AC-1")]
@@ -853,7 +833,7 @@ fn s2_builds_a_predicate_as_a_function_declaration_of_kind_predicate() {
     ));
     assert_eq!(predicate.result.span, span_of(&text, "Boolean"));
     assert!(predicate.measure.is_none());
-    assert_eq!(show(&predicate.body), "Greater(x, 0)");
+    assert_eq!(show(predicate.body.root()), "Greater(x, 0)");
 
     let (_, unit) = build("function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }");
     assert_eq!(
@@ -941,4 +921,105 @@ fn s2_builds_dimension_and_unit_forms_as_written() {
         panic!("a unit form");
     };
     assert!(metre.target.is_none() && metre.offset.is_none());
+}
+
+/// TC-722's function bodies, each 100,000 levels deep, with the depth of
+/// the form tree S2 builds for each: brackets group without a node of
+/// their own, so the bracket nest's tree is its one literal.
+fn deep_bodies() -> [(String, usize); 5] {
+    const DEPTH: usize = 100_000;
+    [
+        (format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH)), 1),
+        (format!("{}a", "not ".repeat(DEPTH)), DEPTH + 1),
+        (vec!["x"; DEPTH].join(" + "), DEPTH),
+        (format!("{}x", "if a then x else ".repeat(DEPTH)), DEPTH + 1),
+        (format!("{}x", "let v = x in ".repeat(DEPTH)), DEPTH + 1),
+    ]
+}
+
+/// S2 builds each of TC-722's 100,000-deep function bodies on a 512 KiB
+/// stack, parsed under S1 limits raised to fit it; the built unit clones,
+/// compares equal to its clone, formats for debug and drops there too.
+#[trace("TC-724", "FR-257-AC-1")]
+#[test]
+fn deep_bodies_build_clone_compare_format_and_drop_on_a_small_stack() {
+    for (body, expected_depth) in deep_bodies() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                let text = format!(
+                    "{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ {body} }}\n"
+                );
+                let parsed = qsl_cst::parse(
+                    SourceIdentity::new("a", "u", "git", "1"),
+                    "unit.native",
+                    text.as_bytes(),
+                    qsl_cst::Limits::default()
+                        .with_source_bytes(usize::MAX)
+                        .with_tokens(usize::MAX)
+                        .with_nodes(usize::MAX),
+                )
+                .expect("S1 reads the body under raised limits");
+                assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+                let unit = build_unit(&parsed).expect("S2 builds the body");
+                let built = function(unit.forms()[0].form());
+                assert_eq!(depth(&built.body), expected_depth);
+                let copy = unit.clone();
+                assert_eq!(function(copy.forms()[0].form()).body, built.body);
+                assert!(!format!("{unit:?}").is_empty());
+                drop(copy);
+                drop(unit);
+            })
+            .expect("spawn a 512 KiB thread")
+            .join()
+            .expect("S2 and the built unit's traits do not overflow a 512 KiB stack");
+    }
+}
+
+/// A parameter type nested 100,000 `Option`s deep builds on a 512 KiB
+/// stack under raised S1 limits, and its type form clones, compares equal
+/// to its clone, formats for debug and drops there too.
+#[trace("TC-724", "FR-257-AC-1")]
+#[test]
+fn a_deep_parameter_type_builds_clones_compares_formats_and_drops_on_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(|| {
+            const DEPTH: usize = 100_000;
+            let text = format!(
+                "{HEADER}function f using v(p: {}Boolean{}): Boolean pure {{ true }}\n",
+                "Option<".repeat(DEPTH),
+                ">".repeat(DEPTH)
+            );
+            let parsed = qsl_cst::parse(
+                SourceIdentity::new("a", "u", "git", "1"),
+                "unit.native",
+                text.as_bytes(),
+                qsl_cst::Limits::default()
+                    .with_source_bytes(usize::MAX)
+                    .with_tokens(usize::MAX)
+                    .with_nodes(usize::MAX),
+            )
+            .expect("S1 reads the type under raised limits");
+            assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+            let unit = build_unit(&parsed).expect("S2 builds the type");
+            let parameter = &function(unit.forms()[0].form()).parameters[0].1;
+            let mut levels = 0;
+            let mut form = parameter;
+            while let [argument] = form.arguments.as_slice() {
+                levels += 1;
+                form = argument;
+            }
+            assert_eq!(levels, DEPTH);
+            assert_eq!(form.head, TypeFormHead::Builtin(BuiltinType::Boolean));
+            let copy = parameter.clone();
+            assert_eq!(&copy, parameter);
+            let rendered = format!("{copy:?}");
+            assert_eq!(rendered.matches("TypeForm {").count(), DEPTH + 1);
+            drop(copy);
+            drop(unit);
+        })
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("S2 and the type form's traits do not overflow a 512 KiB stack");
 }

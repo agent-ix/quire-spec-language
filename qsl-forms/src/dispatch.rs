@@ -20,34 +20,12 @@
 //! cannot produce.
 
 use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recovery, TokenClass};
-use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus};
 use qsl_foundation::selection::SourceSelections;
-use qsl_foundation::{Code, Source, Span};
+use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
 use super::syntax::DeclarationForm;
 use super::value;
-
-/// The default S2 nesting-depth bound: the checker's own maximum
-/// expression depth, so a form S2 builds is one check can admit.
-pub const DEFAULT_FORMS_NESTING_DEPTH: u64 = 128;
-
-/// The explicit limits the S2 entry takes (ADR-011 §2.3 Limits).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FormsLimits {
-    /// The deepest `Expression` or type-form node S2 builds: a root is at
-    /// depth 1, and each child one deeper than its parent (FR-091 "S2 depth
-    /// limit").
-    pub nesting_depth: u64,
-}
-
-impl Default for FormsLimits {
-    fn default() -> Self {
-        Self {
-            nesting_depth: DEFAULT_FORMS_NESTING_DEPTH,
-        }
-    }
-}
 
 /// A parsed form built from one declaration of a lossless CST with no
 /// error or recovery node (ADR-011 §2.1 E2). It carries only the span of
@@ -245,9 +223,13 @@ impl FormsCause {
     }
 }
 
-/// A forms-stage refusal: its cause, the byte span it concerns, and the
-/// CST's own recovery evidence when the cause is
+/// Why S2 returned no parsed unit (ADR-013 T-4): its cause, the byte span
+/// it concerns, and the CST's own recovery evidence when the cause is
 /// [`FormsCause::RecoveringCst`] (empty otherwise).
+///
+/// S2 takes no limit set: it builds at most one form node per CST node, so
+/// S1's node limit bounds it (FR-257), and a unit S1 admits builds or is
+/// refused by its content.
 #[derive(Clone, Debug)]
 pub struct FormsRefusal {
     /// The typed cause.
@@ -258,79 +240,36 @@ pub struct FormsRefusal {
     pub recoveries: Vec<Recovery>,
 }
 
-/// Why S2 returned no parsed unit (ADR-013 T-4): a refusal, or a limit
-/// reached first.
-#[derive(Clone, Debug)]
-pub enum FormsFailure {
-    /// The unit was refused.
-    Refused(FormsRefusal),
-    /// The S2 nesting-depth bound was reached (FR-091 "S2 depth limit").
-    Limit {
-        /// The limit kind, configured bound and the depth reached.
-        limit: LimitExceeded,
-        /// The span of the first node past the bound.
-        span: Span,
-    },
-}
-
-impl FormsFailure {
-    /// The catalog code: the refusal cause's, or `stage_limit_exceeded`.
+impl FormsRefusal {
+    /// The catalog code: the cause's.
     pub fn catalog_code(&self) -> Code {
-        match self {
-            Self::Refused(refusal) => refusal.cause.catalog_code(),
-            Self::Limit { .. } => Code::StageLimitExceeded,
-        }
+        self.cause.catalog_code()
     }
 
-    pub(crate) fn refused(cause: FormsCause, span: Span) -> Self {
-        Self::Refused(FormsRefusal {
+    pub(crate) fn at(cause: FormsCause, span: Span) -> Self {
+        Self {
             cause,
             span: Some(span),
             recoveries: Vec::new(),
-        })
-    }
-
-    /// FR-096: a limit reached in `source`'s CST is located at
-    /// `Locus::Region` over the span of the first node past the bound,
-    /// under the source's `RawSourceRef`.
-    fn located(self, source: &Source) -> Self {
-        match self {
-            Self::Limit { limit, span } => Self::Limit {
-                limit: limit.at(source.region(span).map(Locus::Region)),
-                span,
-            },
-            refused @ Self::Refused(_) => refused,
-        }
-    }
-
-    pub(crate) fn depth(limits: FormsLimits, span: Span) -> Self {
-        Self::Limit {
-            limit: LimitExceeded::new(
-                LimitKind::NestingDepth,
-                limits.nesting_depth,
-                u128::from(limits.nesting_depth) + 1,
-            ),
-            span,
         }
     }
 }
 
-/// One declaration a family production reads: the CST, the declaration's
-/// own `Declaration` node, and the S2 limits.
+/// One declaration a family production reads: the CST and the
+/// declaration's own `Declaration` node.
 #[derive(Clone, Copy)]
 pub(crate) struct Construct<'c> {
     /// The unit's CST.
     pub(crate) cst: &'c LosslessCst,
     /// The declaration's `Declaration` node.
     pub(crate) node: &'c CstNode,
-    /// The S2 limits.
-    pub(crate) limits: FormsLimits,
 }
 
 /// Build the parsed unit of an admissible S1 output (ADR-011 §2.1 E2
 /// admitted input), or refuse with its cause (ADR-011 §2.3 E2: "No. A form
-/// is built from a complete CST or not at all.").
-pub fn build_unit(parsed: &ParsedSource, limits: FormsLimits) -> Result<ParsedUnit, FormsFailure> {
+/// is built from a complete CST or not at all."). S2 takes no limit set
+/// (FR-257): S1's limits bound what it builds.
+pub fn build_unit(parsed: &ParsedSource) -> Result<ParsedUnit, FormsRefusal> {
     if !parsed.cst().recoveries().is_empty() {
         return Err(recovering(parsed.cst()));
     }
@@ -341,14 +280,13 @@ pub fn build_unit(parsed: &ParsedSource, limits: FormsLimits) -> Result<ParsedUn
                 end: usize::try_from(region.end()).ok()?,
             })
         });
-        return Err(FormsFailure::Refused(FormsRefusal {
+        return Err(FormsRefusal {
             cause: FormsCause::DiagnosedSource(diagnostic.code),
             span,
             recoveries: Vec::new(),
-        }));
+        });
     }
-    let forms =
-        build_forms(parsed.cst(), limits).map_err(|failure| failure.located(parsed.source()))?;
+    let forms = build_forms(parsed.cst())?;
     Ok(ParsedUnit {
         edition: declared_edition(parsed.cst()),
         selections: parsed.selections().clone(),
@@ -356,18 +294,18 @@ pub fn build_unit(parsed: &ParsedSource, limits: FormsLimits) -> Result<ParsedUn
     })
 }
 
-fn recovering(cst: &LosslessCst) -> FormsFailure {
-    FormsFailure::Refused(FormsRefusal {
+fn recovering(cst: &LosslessCst) -> FormsRefusal {
+    FormsRefusal {
         cause: FormsCause::RecoveringCst,
         span: cst.recoveries().first().map(|recovery| recovery.span),
         recoveries: cst.recoveries().to_vec(),
-    })
+    }
 }
 
 /// One parsed form per `Declaration` node under the CST root, in source
 /// order; the first declaration with no dispatch entry, or the first
 /// refusal a production gives, refuses the whole unit.
-fn build_forms(cst: &LosslessCst, limits: FormsLimits) -> Result<Vec<ParsedForm>, FormsFailure> {
+fn build_forms(cst: &LosslessCst) -> Result<Vec<ParsedForm>, FormsRefusal> {
     if !cst.recoveries().is_empty() {
         return Err(recovering(cst));
     }
@@ -376,14 +314,14 @@ fn build_forms(cst: &LosslessCst, limits: FormsLimits) -> Result<Vec<ParsedForm>
     for node in declarations(cst) {
         let spelling = leading_token_spelling(cst, node).unwrap_or_default();
         let Some(kind) = from_spelling(spelling) else {
-            return Err(FormsFailure::refused(
+            return Err(FormsRefusal::at(
                 FormsCause::NoDispatchEntry {
                     spelling: String::from_utf8_lossy(spelling).into_owned(),
                 },
                 node.span(),
             ));
         };
-        let construct = Construct { cst, node, limits };
+        let construct = Construct { cst, node };
         let form = dispatch(kind, construct)?;
         forms.push(ParsedForm {
             span: node.span(),
@@ -415,7 +353,7 @@ fn declarations(cst: &LosslessCst) -> impl Iterator<Item = &CstNode> {
 fn dispatch(
     kind: LeadingTokenKind,
     construct: Construct<'_>,
-) -> Result<DeclarationForm, FormsFailure> {
+) -> Result<DeclarationForm, FormsRefusal> {
     match kind {
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
@@ -548,7 +486,7 @@ fn unquote(spelling: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod test_support {
-    use super::{Construct, FormsFailure};
+    use super::{Construct, FormsRefusal};
     use crate::syntax::{AliasForm, BuiltinType, DeclarationForm, DeclaredName, TypeForm};
 
     /// The test-only leading token spelling `from_spelling` maps to
@@ -561,7 +499,7 @@ mod test_support {
     /// dispatch call itself, not any family's grammar.
     pub(super) fn stub_production(
         construct: Construct<'_>,
-    ) -> Result<DeclarationForm, FormsFailure> {
+    ) -> Result<DeclarationForm, FormsRefusal> {
         let span = construct.node.span();
         Ok(DeclarationForm::Alias(AliasForm {
             name: DeclaredName {
@@ -581,15 +519,12 @@ mod tests {
 
     const HEADER: [&str; 4] = ["language", "\"ix:native\"", "edition", "\"1-draft\""];
 
-    fn build(cst: &LosslessCst) -> Result<Vec<ParsedForm>, FormsFailure> {
-        build_forms(cst, FormsLimits::default())
+    fn build(cst: &LosslessCst) -> Result<Vec<ParsedForm>, FormsRefusal> {
+        build_forms(cst)
     }
 
-    fn cause(failure: FormsFailure) -> FormsCause {
-        match failure {
-            FormsFailure::Refused(refusal) => refusal.cause,
-            FormsFailure::Limit { .. } => panic!("a refusal, not a limit"),
-        }
+    fn cause(refusal: FormsRefusal) -> FormsCause {
+        refusal.cause
     }
 
     fn probe_cst(recoveries: Vec<Recovery>) -> LosslessCst {
@@ -611,11 +546,8 @@ mod tests {
             span: Span { start: 0, end: 0 },
             expected: "test recovery".into(),
         }]);
-        let FormsFailure::Refused(refusal) = build(&recovering)
-            .expect_err("a recovering CST refuses even though the same entry exists")
-        else {
-            panic!("a refusal");
-        };
+        let refusal = build(&recovering)
+            .expect_err("a recovering CST refuses even though the same entry exists");
         assert_eq!(refusal.cause, FormsCause::RecoveringCst);
         assert_eq!(refusal.recoveries.len(), 1);
     }

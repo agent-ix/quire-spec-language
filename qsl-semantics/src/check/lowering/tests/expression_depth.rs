@@ -8,7 +8,7 @@
 //! recursed once per level, and measuring the declaration recursed once per
 //! level before any limit was checked.
 
-use qsl_forms::{Accumulation, FieldInitializer};
+use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::{Obligation, WrongSnapshotCause};
@@ -56,10 +56,6 @@ fn sequence_of(element: TypeForm) -> TypeForm {
     TypeForm::collection(CollectionKind::Sequence, SPAN)
         .with_arguments(vec![element])
         .with_bounds(vec!["0".into(), "5".into()])
-}
-
-fn boxed(expression: Expression) -> Box<Expression> {
-    Box::new(expression)
 }
 
 /// A nested expression form: `f`'s parameters, result and body when the
@@ -188,17 +184,16 @@ impl Form {
         let x_below_one = || binary(BinaryOperator::Less, x(), integer_expr(1));
         let integer = || TypeForm::builtin(BuiltinType::Integer, SPAN);
         let sequence = sequence_of(int_form(0, 9));
-        let record = |value: Expression, next: Option<Expression>| Expression::Record {
-            name: "N".to_owned(),
-            fields: std::iter::once(("v".to_owned(), FieldInitializer::Value(value)))
-                .chain(next.map(|next| ("next".to_owned(), FieldInitializer::Value(next))))
-                .collect(),
+        let record = |value: Expression, next: Option<Expression>| {
+            Expression::record(
+                "N".to_owned(),
+                std::iter::once(("v".to_owned(), Some(value)))
+                    .chain(next.map(|next| ("next".to_owned(), Some(next))))
+                    .collect(),
+            )
         };
-        let binder_query = |query: BinderQuery, binder: String, source, body| Expression::Query {
-            query,
-            binder,
-            source: boxed(source),
-            body: boxed(body),
+        let binder_query = |query: BinderQuery, binder: String, source, body| {
+            Expression::query(query, binder, source, body)
         };
         let (parameters, result, leaf) = match self {
             Self::Add | Self::AddLeft | Self::Negate | Self::Narrowed => {
@@ -231,7 +226,7 @@ impl Form {
                 boolean(),
                 name_expr("n"),
             ),
-            Self::Forall => (vec![("s", sequence)], boolean(), Expression::Boolean(true)),
+            Self::Forall => (vec![("s", sequence)], boolean(), Expression::boolean(true)),
             Self::And
             | Self::AndLeft
             | Self::IfThen
@@ -251,26 +246,11 @@ impl Form {
             body = match self {
                 Self::And => binary(BinaryOperator::And, a(), body),
                 Self::AndLeft => binary(BinaryOperator::And, body, a()),
-                Self::IfThen => Expression::If {
-                    condition: boxed(a()),
-                    then: boxed(body),
-                    otherwise: boxed(Expression::Boolean(false)),
-                },
-                Self::IfCondition => Expression::If {
-                    condition: boxed(body),
-                    then: boxed(a()),
-                    otherwise: boxed(a()),
-                },
-                Self::Let => Expression::Let {
-                    name: format!("b{level}"),
-                    value: boxed(a()),
-                    body: boxed(body),
-                },
-                Self::Not => Expression::Not(boxed(body)),
-                Self::Call => Expression::Call {
-                    name: "g".to_owned(),
-                    arguments: vec![body],
-                },
+                Self::IfThen => Expression::if_then_else(a(), body, Expression::boolean(false)),
+                Self::IfCondition => Expression::if_then_else(body, a(), a()),
+                Self::Let => Expression::let_in(format!("b{level}"), a(), body),
+                Self::Not => Expression::logical_not(body),
+                Self::Call => Expression::call("g".to_owned(), vec![body]),
                 Self::Comparison => binary(
                     BinaryOperator::Equal,
                     binary(BinaryOperator::Less, x(), x()),
@@ -279,43 +259,46 @@ impl Form {
                 Self::Guard => binary(BinaryOperator::And, body, x_below_one()),
                 Self::Add => binary(BinaryOperator::Add, x(), body),
                 Self::AddLeft => binary(BinaryOperator::Add, body, x()),
-                Self::Negate => Expression::Negate(boxed(body)),
+                Self::Negate => Expression::negate(body),
                 Self::Narrowed => binary(BinaryOperator::Multiply, x(), body),
                 Self::Record => record(a(), Some(body)),
-                Self::Field => Expression::Value(boxed(Expression::Field {
-                    operand: boxed(body),
-                    field: "next".to_owned(),
-                })),
-                Self::Forall => Expression::Query {
-                    query: BinderQuery::Forall,
-                    binder: format!("v{level}"),
-                    source: boxed(name_expr("s")),
-                    body: boxed(body),
-                },
-                Self::Sum => Expression::Sum {
-                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                    result_type: "Total".to_owned(),
-                    binder: format!("v{level}"),
-                    source: boxed(name_expr("s")),
-                    summand: boxed(body),
-                },
-                Self::Count => Expression::Count {
-                    result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                    result_type: "Total".to_owned(),
-                    binder: format!("v{level}"),
-                    source: boxed(name_expr("s")),
-                    predicate: boxed(binary(BinaryOperator::Equal, body, integer_expr(0))),
-                },
-                Self::Fold => Expression::Accumulate {
-                    accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
-                    form: Accumulation::Fold,
-                    accumulator_type: "Total".to_owned(),
-                    accumulator: format!("acc{level}"),
-                    binder: format!("v{level}"),
-                    source: boxed(name_expr("s")),
-                    step: boxed(body),
-                    identity: Some(boxed(integer_expr(0))),
-                },
+                Self::Field => Expression::value(Expression::field(body, "next".to_owned())),
+                Self::Forall => Expression::query(
+                    BinderQuery::Forall,
+                    format!("v{level}"),
+                    name_expr("s"),
+                    body,
+                ),
+                Self::Sum => Expression::sum(
+                    qsl_forms::DeclaredName {
+                        name: "Total".to_owned(),
+                        span: qsl_foundation::Span { start: 0, end: 0 },
+                    },
+                    format!("v{level}"),
+                    name_expr("s"),
+                    body,
+                ),
+                Self::Count => Expression::count(
+                    qsl_forms::DeclaredName {
+                        name: "Total".to_owned(),
+                        span: qsl_foundation::Span { start: 0, end: 0 },
+                    },
+                    format!("v{level}"),
+                    name_expr("s"),
+                    binary(BinaryOperator::Equal, body, integer_expr(0)),
+                ),
+                Self::Fold => Expression::accumulate(
+                    Accumulation::Fold,
+                    qsl_forms::DeclaredName {
+                        name: "Total".to_owned(),
+                        span: qsl_foundation::Span { start: 0, end: 0 },
+                    },
+                    format!("acc{level}"),
+                    format!("v{level}"),
+                    name_expr("s"),
+                    body,
+                    Some(integer_expr(0)),
+                ),
                 Self::Map => {
                     let binder = format!("v{level}");
                     binder_query(BinderQuery::Map, binder.clone(), body, name_expr(&binder))
@@ -324,46 +307,24 @@ impl Form {
                     BinderQuery::Filter,
                     format!("v{level}"),
                     body,
-                    Expression::Boolean(true),
+                    Expression::boolean(true),
                 ),
-                Self::Contains => Expression::Contains {
-                    collection: boxed(name_expr("bs")),
-                    item: boxed(body),
-                },
-                Self::Convert => Expression::Convert {
-                    target: int_form(0, 9),
-                    operand: boxed(body),
-                },
-                Self::Collection => Expression::Call {
-                    name: "gs".to_owned(),
-                    arguments: vec![Expression::Collection {
-                        kind: CollectionKind::Sequence,
-                        elements: vec![body],
-                    }],
-                },
-                Self::Tuple => Expression::Call {
-                    name: "tv".to_owned(),
-                    arguments: vec![Expression::Call {
-                        name: "T".to_owned(),
-                        arguments: vec![body],
-                    }],
-                },
+                Self::Contains => Expression::contains(name_expr("bs"), body),
+                Self::Convert => Expression::convert(int_form(0, 9), body),
+                Self::Collection => Expression::call(
+                    "gs".to_owned(),
+                    vec![Expression::collection(CollectionKind::Sequence, vec![body])],
+                ),
+                Self::Tuple => Expression::call(
+                    "tv".to_owned(),
+                    vec![Expression::call("T".to_owned(), vec![body])],
+                ),
             };
         }
         let body = match self {
-            Self::Guard => Expression::If {
-                condition: boxed(body),
-                then: boxed(a()),
-                otherwise: boxed(a()),
-            },
-            Self::Narrowed => Expression::Call {
-                name: "h".to_owned(),
-                arguments: vec![body],
-            },
-            Self::Field => Expression::Field {
-                operand: boxed(body),
-                field: "v".to_owned(),
-            },
+            Self::Guard => Expression::if_then_else(body, a(), a()),
+            Self::Narrowed => Expression::call("h".to_owned(), vec![body]),
+            Self::Field => Expression::field(body, "v".to_owned()),
             Self::And
             | Self::AndLeft
             | Self::IfThen
@@ -420,14 +381,14 @@ pub(super) fn check_on_small_stack(
                         &[("c", sequence_of(boolean()))],
                         boolean(),
                         None,
-                        Expression::Boolean(true),
+                        Expression::boolean(true),
                     ),
                     function(
                         "tv",
                         &[("t", TypeForm::name("T", SPAN))],
                         boolean(),
                         None,
-                        Expression::Boolean(true),
+                        Expression::boolean(true),
                     ),
                 ],
                 types: types(),
@@ -549,19 +510,15 @@ fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
             .spawn_scoped(scope, || {
                 let parameters = vec![("a".to_owned(), ValueType::Boolean)];
                 let mut unread = name_expr("a");
-                let mut bound = Expression::Pre(boxed(name_expr("a")));
+                let mut bound = Expression::pre(name_expr("a"));
                 for level in 0..TOO_DEEP {
                     unread = binary(BinaryOperator::And, name_expr("a"), unread);
-                    bound = Expression::Let {
-                        name: format!("b{level}"),
-                        value: boxed(name_expr("a")),
-                        body: boxed(bound),
-                    };
+                    bound = Expression::let_in(format!("b{level}"), name_expr("a"), bound);
                 }
                 [unread, bound].map(|operand| {
                     graph.check_postcondition_expression(
                         parameters.clone(),
-                        &Expression::Pre(boxed(operand)),
+                        &Expression::pre(operand),
                         Some(&ValueType::Boolean),
                         CheckMode::Linked,
                         CheckingLimits::default(),

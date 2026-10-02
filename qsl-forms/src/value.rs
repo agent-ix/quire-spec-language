@@ -10,22 +10,21 @@
 //! `qsl_foundation` and `quire_exact` only (FR-091-AC-11).
 //!
 //! Every walk runs on an explicit heap stack, so native stack use does not
-//! grow with nesting. S2's nesting-depth bound counts `Expression` nodes
-//! (and, separately, type-form nodes): a node past the bound refuses the
-//! unit with a limit naming that node's span, never a truncated form.
+//! grow with nesting. S2 takes no limit of its own: it builds at most one
+//! node per CST node, so S1's node limit bounds it (FR-257).
 
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
 use qsl_foundation::Span;
 use quire_exact::{CollectionKind, Integer};
 
-use super::dispatch::{Construct, FormsCause, FormsFailure, FormsLimits};
+use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, BinaryOperator, BinderQuery, BuiltinType, DeclarationForm,
     DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    ExactNumberForm, ExactNumberKind, Expression, FieldInitializer, FunctionDeclaration, NameForm,
-    RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm,
-    UsingAlias,
+    ExactNumberForm, ExactNumberKind, ExprId, ExprNode, Expression, ExpressionBuilder,
+    FieldInitializer, FunctionDeclaration, NameForm, RecordFieldForm, RecordForm, TermOperator,
+    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -81,8 +80,8 @@ pub(crate) fn has_token(items: &[Item<'_>], spelling: &[u8]) -> bool {
 }
 
 /// The refusal for a CST node whose shape its grammar rule does not give.
-pub(crate) fn unexpected(node: &CstNode) -> FormsFailure {
-    FormsFailure::refused(
+pub(crate) fn unexpected(node: &CstNode) -> FormsRefusal {
+    FormsRefusal::at(
         FormsCause::UnexpectedShape {
             production: node.production(),
         },
@@ -91,12 +90,12 @@ pub(crate) fn unexpected(node: &CstNode) -> FormsFailure {
 }
 
 /// The refusal for a construct no `Expression` variant represents.
-pub(crate) fn unrepresented(production: Production, span: Span) -> FormsFailure {
-    FormsFailure::refused(FormsCause::UnrepresentedConstruct { production }, span)
+pub(crate) fn unrepresented(production: Production, span: Span) -> FormsRefusal {
+    FormsRefusal::at(FormsCause::UnrepresentedConstruct { production }, span)
 }
 
 /// A token's spelling as text.
-pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFailure> {
+pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsRefusal> {
     std::str::from_utf8(token.spelling())
         .map(str::to_owned)
         .map_err(|_| unexpected(node))
@@ -105,7 +104,7 @@ pub(crate) fn text(token: &CstToken, node: &CstNode) -> Result<String, FormsFail
 /// Every significant token inside `node`'s span, spelled and joined with
 /// no separator: a qualified name `M::T`, a signed integer `-2`, a
 /// rounding mode `nearest-even`.
-pub(crate) fn spelled(cst: &LosslessCst, node: &CstNode) -> Result<String, FormsFailure> {
+pub(crate) fn spelled(cst: &LosslessCst, node: &CstNode) -> Result<String, FormsRefusal> {
     let mut spelling = String::new();
     for token in significant_tokens(cst, node) {
         spelling.push_str(&text(token, node)?);
@@ -130,12 +129,12 @@ pub(crate) fn significant_tokens<'c>(cst: &'c LosslessCst, node: &CstNode) -> Ve
 }
 
 /// An integer literal's value.
-fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsFailure> {
+fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
     spelling.parse().map_err(|_| unexpected(node))
 }
 
 /// The one production node under a `Declaration` node.
-pub(crate) fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNode, FormsFailure> {
+pub(crate) fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNode, FormsRefusal> {
     items(construct.cst, construct.node)
         .into_iter()
         .find_map(|item| match item {
@@ -149,7 +148,7 @@ pub(crate) fn production_node<'c>(construct: Construct<'c>) -> Result<&'c CstNod
 pub(crate) fn declared_name(
     items: &[Item<'_>],
     node: &CstNode,
-) -> Result<DeclaredName, FormsFailure> {
+) -> Result<DeclaredName, FormsRefusal> {
     let token = tokens_of(items, TokenKind::Identifier)
         .first()
         .copied()
@@ -165,7 +164,7 @@ pub(crate) fn only<'c>(
     items: &[Item<'c>],
     production: Production,
     node: &CstNode,
-) -> Result<&'c CstNode, FormsFailure> {
+) -> Result<&'c CstNode, FormsRefusal> {
     match nodes_of(items, production).as_slice() {
         [child] => Ok(child),
         _ => Err(unexpected(node)),
@@ -174,14 +173,14 @@ pub(crate) fn only<'c>(
 
 /// `function name using alias(parameters): result pure [decreases(m)] {
 /// body }` (FR-091 "Function form").
-pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn function(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     function_like(construct, DeclarationKind::Function)
 }
 
 /// `predicate name using alias(parameters): Boolean { body }` (FR-091
 /// "Predicate form"): the `forms` `FunctionDeclaration` of kind
 /// `Predicate`, with a `Boolean` result type form and no measure.
-pub(crate) fn predicate(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn predicate(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     function_like(construct, DeclarationKind::Predicate)
 }
 
@@ -191,7 +190,7 @@ pub(crate) fn predicate(construct: Construct<'_>) -> Result<DeclarationForm, For
 fn function_like(
     construct: Construct<'_>,
     kind: DeclarationKind,
-) -> Result<DeclarationForm, FormsFailure> {
+) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -209,17 +208,12 @@ fn function_like(
         let declared = only(&parameter_items, Production::ParameterType, parameter)?;
         let declared_items = self::items(cst, declared);
         let reference = only(&declared_items, Production::TypeReference, declared)?;
-        parameters.push((
-            text(name, parameter)?,
-            type_form(cst, reference, construct.limits)?,
-        ));
+        parameters.push((text(name, parameter)?, type_form(cst, reference)?));
     }
     let result = match kind {
-        DeclarationKind::Function => type_form(
-            cst,
-            only(&items, Production::TypeReference, node)?,
-            construct.limits,
-        )?,
+        DeclarationKind::Function => {
+            type_form(cst, only(&items, Production::TypeReference, node)?)?
+        }
         DeclarationKind::Predicate => {
             let boolean = items
                 .iter()
@@ -233,16 +227,12 @@ fn function_like(
     };
     let measure = match nodes_of(&items, Production::Expression).as_slice() {
         [] => None,
-        [measure] => Some(expression(cst, measure, construct.limits)?),
+        [measure] => Some(expression(cst, measure)?),
         _ => return Err(unexpected(node)),
     };
     let block = only(&items, Production::Block, node)?;
     let block_items = self::items(cst, block);
-    let (body, body_spans) = expression(
-        cst,
-        only(&block_items, Production::Expression, block)?,
-        construct.limits,
-    )?;
+    let (body, body_spans) = expression(cst, only(&block_items, Production::Expression, block)?)?;
     let (measure, measure_spans) = measure.map_or((None, None), |(measure, spans)| {
         (Some(measure), Some(spans))
     });
@@ -265,7 +255,7 @@ fn function_like(
 /// `[ordered] enum Name { A, B = "text", }` (FR-091 "Enum form"). Members
 /// stay in source order; the assembler sorts an unordered enum's cases for
 /// its preimage.
-pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -290,7 +280,7 @@ pub(crate) fn enumeration(construct: Construct<'_>) -> Result<DeclarationForm, F
 }
 
 /// A `QualifiedName` node as a name form.
-pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsFailure> {
+pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, FormsRefusal> {
     Ok(NameForm {
         name: spelled(cst, node)?,
         span: node.span(),
@@ -299,7 +289,7 @@ pub(crate) fn name_form(cst: &LosslessCst, node: &CstNode) -> Result<NameForm, F
 
 /// `dimension Name;` and `dimension Name = T * U^-2 / V;` (FR-091
 /// "Dimension form"). Terms stay as written: the assembler normalizes.
-pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -338,7 +328,7 @@ pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, For
 }
 
 /// An `ExactNumber` node as written.
-fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsFailure> {
+fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsRefusal> {
     let items = items(cst, node);
     let signed = nodes_of(&items, Production::SignedInteger);
     let (kind, first, second) = if has_token(&items, b"rational") {
@@ -371,7 +361,7 @@ fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, Fo
 
 /// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
 /// form").
-pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -397,7 +387,7 @@ pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsFai
 }
 
 /// `type Name = T;` (FR-091 "Alias form").
-pub(crate) fn alias(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn alias(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let node = production_node(construct)?;
     let items = items(construct.cst, node);
     Ok(DeclarationForm::Alias(AliasForm {
@@ -405,13 +395,12 @@ pub(crate) fn alias(construct: Construct<'_>) -> Result<DeclarationForm, FormsFa
         target: type_form(
             construct.cst,
             only(&items, Production::TypeReference, node)?,
-            construct.limits,
         )?,
     }))
 }
 
 /// `record Name { f: T; g: U?; }` (FR-091 "Record form").
-pub(crate) fn record(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn record(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let items = items(cst, node);
@@ -421,11 +410,7 @@ pub(crate) fn record(construct: Construct<'_>) -> Result<DeclarationForm, FormsF
         let name = declared_name(&field_items, field)?;
         fields.push(RecordFieldForm {
             name: name.name,
-            type_form: type_form(
-                cst,
-                only(&field_items, Production::TypeReference, field)?,
-                construct.limits,
-            )?,
+            type_form: type_form(cst, only(&field_items, Production::TypeReference, field)?)?,
             optional: has_token(&field_items, b"?"),
         });
     }
@@ -436,12 +421,12 @@ pub(crate) fn record(construct: Construct<'_>) -> Result<DeclarationForm, FormsF
 }
 
 /// `tuple Name(T, U);` (FR-091 "Tuple form").
-pub(crate) fn tuple(construct: Construct<'_>) -> Result<DeclarationForm, FormsFailure> {
+pub(crate) fn tuple(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let node = production_node(construct)?;
     let items = items(construct.cst, node);
     let mut elements = Vec::new();
     for element in nodes_of(&items, Production::TypeReference) {
-        elements.push(type_form(construct.cst, element, construct.limits)?);
+        elements.push(type_form(construct.cst, element)?);
     }
     Ok(DeclarationForm::Tuple(TupleForm {
         name: declared_name(&items, node)?,
@@ -452,31 +437,19 @@ pub(crate) fn tuple(construct: Construct<'_>) -> Result<DeclarationForm, FormsFa
 /// A `TypeReference` (or a `Reference<Q>` argument's `QualifiedName`) as a
 /// type form: its head, its bounds as spelled, and its argument forms,
 /// built bottom-up on an explicit stack.
-pub(crate) fn type_form(
-    cst: &LosslessCst,
-    root: &CstNode,
-    limits: FormsLimits,
-) -> Result<TypeForm, FormsFailure> {
+pub(crate) fn type_form(cst: &LosslessCst, root: &CstNode) -> Result<TypeForm, FormsRefusal> {
     enum Frame<'c> {
-        Enter(&'c CstNode, u64),
+        Enter(&'c CstNode),
         Exit(&'c CstNode, usize),
     }
-    let mut frames = vec![Frame::Enter(root, 1)];
+    let mut frames = vec![Frame::Enter(root)];
     let mut built: Vec<TypeForm> = Vec::new();
     while let Some(frame) = frames.pop() {
         match frame {
-            Frame::Enter(node, depth) => {
-                if depth > limits.nesting_depth {
-                    return Err(FormsFailure::depth(limits, node.span()));
-                }
+            Frame::Enter(node) => {
                 let arguments = type_arguments(cst, node);
                 frames.push(Frame::Exit(node, arguments.len()));
-                frames.extend(
-                    arguments
-                        .into_iter()
-                        .rev()
-                        .map(|argument| Frame::Enter(argument, depth + 1)),
-                );
+                frames.extend(arguments.into_iter().rev().map(Frame::Enter));
             }
             Frame::Exit(node, count) => {
                 let split = built
@@ -523,7 +496,7 @@ fn type_arguments<'c>(cst: &'c LosslessCst, node: &'c CstNode) -> Vec<&'c CstNod
 }
 
 /// A type-form node's head and bounds, with no arguments yet.
-fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsFailure> {
+fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal> {
     let span = node.span();
     if node.production() == Production::QualifiedName {
         return Ok(TypeForm::name(spelled(cst, node)?, span));
@@ -573,9 +546,9 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsFailure
     Ok(TypeForm::new(head, span).with_bounds(bounds))
 }
 
-/// One `Expression` node before its children are built: its payload, its
-/// span, its parent and its children, as arena indices in
-/// [`Expression::children`] order.
+/// One expression node before its children are built: its payload, its
+/// span, its parent and its children, as pending-list indices in
+/// [`ExprNode::children`] order.
 struct Pending {
     shape: Shape,
     /// The CST production this node maps from, for a refusal naming it.
@@ -585,7 +558,7 @@ struct Pending {
     children: Vec<usize>,
 }
 
-/// An `Expression` variant's payload, without its subexpressions.
+/// An [`ExprNode`] variant's payload, without its subexpressions.
 enum Shape {
     Boolean(bool),
     Integer(Integer),
@@ -630,114 +603,110 @@ enum Shape {
 }
 
 /// The built subexpressions of one node, consumed in order.
-struct Operands(std::vec::IntoIter<Expression>);
+struct Operands(std::vec::IntoIter<ExprId>);
 
 impl Operands {
-    fn next(&mut self) -> Option<Expression> {
+    fn next(&mut self) -> Option<ExprId> {
         self.0.next()
     }
 
-    fn boxed(&mut self) -> Option<Box<Expression>> {
-        self.0.next().map(Box::new)
-    }
-
-    fn rest(self) -> Vec<Expression> {
+    fn rest(self) -> Vec<ExprId> {
         self.0.collect()
     }
 }
 
 impl Shape {
-    /// The expression with this payload over `children`, or `None` when
-    /// their number is not the one this shape takes.
-    fn build(self, children: Vec<Expression>) -> Option<Expression> {
+    /// The node with this payload over `children`, or `None` when their
+    /// number is not the one this shape takes.
+    fn build(self, children: Vec<ExprId>) -> Option<ExprNode> {
         let count = children.len();
         let mut operands = Operands(children.into_iter());
         let arity = |expected: usize| (count == expected).then_some(());
-        let expression = match self {
+        let node = match self {
             Self::Boolean(value) => {
                 arity(0)?;
-                Expression::Boolean(value)
+                ExprNode::Boolean(value)
             }
             Self::Integer(value) => {
                 arity(0)?;
-                Expression::Integer(value)
+                ExprNode::Integer(value)
             }
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
-                Expression::Rational(numerator, denominator)
+                ExprNode::Rational(numerator, denominator)
             }
             Self::Name(name) => {
                 arity(0)?;
-                Expression::Name(name)
+                ExprNode::Name(name)
             }
             Self::Let(name) => {
                 arity(2)?;
-                Expression::Let {
+                ExprNode::Let {
                     name,
-                    value: operands.boxed()?,
-                    body: operands.boxed()?,
+                    value: operands.next()?,
+                    body: operands.next()?,
                 }
             }
             Self::If => {
                 arity(3)?;
-                Expression::If {
-                    condition: operands.boxed()?,
-                    then: operands.boxed()?,
-                    otherwise: operands.boxed()?,
+                ExprNode::If {
+                    condition: operands.next()?,
+                    then: operands.next()?,
+                    otherwise: operands.next()?,
                 }
             }
             Self::Binary(operator) => {
                 arity(2)?;
-                Expression::Binary {
+                ExprNode::Binary {
                     operator,
-                    left: operands.boxed()?,
-                    right: operands.boxed()?,
+                    left: operands.next()?,
+                    right: operands.next()?,
                 }
             }
             Self::Negate => {
                 arity(1)?;
-                Expression::Negate(operands.boxed()?)
+                ExprNode::Negate(operands.next()?)
             }
             Self::Not => {
                 arity(1)?;
-                Expression::Not(operands.boxed()?)
+                ExprNode::Not(operands.next()?)
             }
             Self::Field(field) => {
                 arity(1)?;
-                Expression::Field {
-                    operand: operands.boxed()?,
+                ExprNode::Field {
+                    operand: operands.next()?,
                     field,
                 }
             }
             Self::Present => {
                 arity(1)?;
-                Expression::Present(operands.boxed()?)
+                ExprNode::Present(operands.next()?)
             }
             Self::Value => {
                 arity(1)?;
-                Expression::Value(operands.boxed()?)
+                ExprNode::Value(operands.next()?)
             }
             Self::Deref => {
                 arity(1)?;
-                Expression::Deref(operands.boxed()?)
+                ExprNode::Deref(operands.next()?)
             }
             Self::Pre => {
                 arity(1)?;
-                Expression::Pre(operands.boxed()?)
+                ExprNode::Pre(operands.next()?)
             }
             Self::Flatten => {
                 arity(1)?;
-                Expression::Flatten(operands.boxed()?)
+                ExprNode::Flatten(operands.next()?)
             }
             Self::Size => {
                 arity(1)?;
-                Expression::Size(operands.boxed()?)
+                ExprNode::Size(operands.next()?)
             }
-            Self::Call(name) => Expression::Call {
+            Self::Call(name) => ExprNode::Call {
                 name,
                 arguments: operands.rest(),
             },
-            Self::Collection(kind) => Expression::Collection {
+            Self::Collection(kind) => ExprNode::Collection {
                 kind,
                 elements: operands.rest(),
             },
@@ -752,29 +721,29 @@ impl Shape {
                     };
                     fields.push((field, initializer));
                 }
-                Expression::Record { name, fields }
+                ExprNode::Record { name, fields }
             }
             Self::Convert(target) => {
                 arity(1)?;
-                Expression::Convert {
+                ExprNode::Convert {
                     target,
-                    operand: operands.boxed()?,
+                    operand: operands.next()?,
                 }
             }
             Self::AllInstances(target) => {
                 arity(1)?;
-                Expression::AllInstances {
+                ExprNode::AllInstances {
                     target,
-                    population: operands.boxed()?,
+                    population: operands.next()?,
                 }
             }
             Self::Query(query, binder) => {
                 arity(2)?;
-                Expression::Query {
+                ExprNode::Query {
                     query,
                     binder,
-                    source: operands.boxed()?,
-                    body: operands.boxed()?,
+                    source: operands.next()?,
+                    body: operands.next()?,
                 }
             }
             Self::Accumulate {
@@ -785,16 +754,16 @@ impl Shape {
                 identity,
             } => {
                 arity(if identity { 3 } else { 2 })?;
-                Expression::Accumulate {
+                ExprNode::Accumulate {
                     form,
                     accumulator_type: accumulator_type.name,
                     accumulator_type_span: accumulator_type.span,
                     accumulator,
                     binder,
-                    source: operands.boxed()?,
-                    step: operands.boxed()?,
+                    source: operands.next()?,
+                    step: operands.next()?,
                     identity: if identity {
-                        Some(operands.boxed()?)
+                        Some(operands.next()?)
                     } else {
                         None
                     },
@@ -802,87 +771,81 @@ impl Shape {
             }
             Self::Count(result_type, binder) => {
                 arity(2)?;
-                Expression::Count {
+                ExprNode::Count {
                     result_type: result_type.name,
                     result_type_span: result_type.span,
                     binder,
-                    source: operands.boxed()?,
-                    predicate: operands.boxed()?,
+                    source: operands.next()?,
+                    predicate: operands.next()?,
                 }
             }
             Self::Sum(result_type, binder) => {
                 arity(2)?;
-                Expression::Sum {
+                ExprNode::Sum {
                     result_type: result_type.name,
                     result_type_span: result_type.span,
                     binder,
-                    source: operands.boxed()?,
-                    summand: operands.boxed()?,
+                    source: operands.next()?,
+                    summand: operands.next()?,
                 }
             }
             Self::Contains => {
                 arity(2)?;
-                Expression::Contains {
-                    collection: operands.boxed()?,
-                    item: operands.boxed()?,
+                ExprNode::Contains {
+                    collection: operands.next()?,
+                    item: operands.next()?,
                 }
             }
             Self::SelfRef => {
                 arity(0)?;
-                Expression::SelfRef
+                ExprNode::SelfRef
             }
             Self::Result => {
                 arity(0)?;
-                Expression::Result
+                ExprNode::Result
             }
             Self::Reaches(edge, edge_span) => {
                 arity(2)?;
-                Expression::Reaches {
-                    source: operands.boxed()?,
-                    target: operands.boxed()?,
+                ExprNode::Reaches {
+                    source: operands.next()?,
+                    target: operands.next()?,
                     edge,
                     edge_span,
                 }
             }
         };
-        Some(expression)
+        Some(node)
     }
 }
 
 /// One CST expression node still to map, and where its mapping attaches:
-/// the parent's arena index (`None` for the root) and the depth its first
-/// `Expression` node takes.
+/// the parent's pending-list index (`None` for the root).
 struct Task<'c> {
     node: &'c CstNode,
     parent: Option<usize>,
-    depth: u64,
 }
 
-/// The pre-order arena of one expression's nodes, filled from its CST on an
+/// The pre-order list of one expression's nodes, filled from its CST on an
 /// explicit work stack.
 struct Mapping<'c> {
     cst: &'c LosslessCst,
-    limits: FormsLimits,
     arena: Vec<Pending>,
     work: Vec<Task<'c>>,
 }
 
 /// An expression CST node (`Expression` or any production under it) as its
-/// `Expression` tree and the spans of every node (FR-091 "Expression
+/// `Expression` arena and the spans of every node (FR-091 "Expression
 /// mapping", "Every expression node carries its span").
 pub(crate) fn expression(
     cst: &LosslessCst,
     root: &CstNode,
-    limits: FormsLimits,
-) -> Result<(Expression, ExpressionSpans), FormsFailure> {
+) -> Result<(Expression, ExpressionSpans), FormsRefusal> {
     let mut mapping = Mapping {
         cst,
-        limits,
         arena: Vec::new(),
         work: vec![Task {
             node: root,
             parent: None,
-            depth: 1,
         }],
     };
     while let Some(task) = mapping.work.pop() {
@@ -892,18 +855,14 @@ pub(crate) fn expression(
 }
 
 impl<'c> Mapping<'c> {
-    /// Add one `Expression` node at `depth` under `parent`.
+    /// Add one expression node under `parent`.
     fn node(
         &mut self,
         shape: Shape,
         production: Production,
         span: Span,
         parent: Option<usize>,
-        depth: u64,
-    ) -> Result<usize, FormsFailure> {
-        if depth > self.limits.nesting_depth {
-            return Err(FormsFailure::depth(self.limits, span));
-        }
+    ) -> usize {
         let index = self.arena.len();
         if let Some(parent) = parent.and_then(|parent| self.arena.get_mut(parent)) {
             parent.children.push(index);
@@ -915,7 +874,7 @@ impl<'c> Mapping<'c> {
             parent,
             children: Vec::new(),
         });
-        Ok(index)
+        index
     }
 
     /// Add one node and queue `children` under it, in source order.
@@ -924,32 +883,25 @@ impl<'c> Mapping<'c> {
         shape: Shape,
         task: &Task<'c>,
         children: Vec<&'c CstNode>,
-    ) -> Result<(), FormsFailure> {
-        let index = self.node(
-            shape,
-            task.node.production(),
-            task.node.span(),
-            task.parent,
-            task.depth,
-        )?;
-        self.queue(index, task.depth + 1, children);
+    ) -> Result<(), FormsRefusal> {
+        let index = self.node(shape, task.node.production(), task.node.span(), task.parent);
+        self.queue(index, children);
         Ok(())
     }
 
-    /// Queue `children` under arena node `parent` at `depth`, so the first
-    /// is mapped first.
-    fn queue(&mut self, parent: usize, depth: u64, children: Vec<&'c CstNode>) {
+    /// Queue `children` under pending node `parent`, so the first is mapped
+    /// first.
+    fn queue(&mut self, parent: usize, children: Vec<&'c CstNode>) {
         self.work
             .extend(children.into_iter().rev().map(|node| Task {
                 node,
                 parent: Some(parent),
-                depth,
             }));
     }
 
     /// Map `task`'s CST node to nothing (a pass-through), to one node, or
     /// to a chain of nodes.
-    fn map(&mut self, task: Task<'c>) -> Result<(), FormsFailure> {
+    fn map(&mut self, task: Task<'c>) -> Result<(), FormsRefusal> {
         let node = task.node;
         let items = items(self.cst, node);
         match node.production() {
@@ -1061,11 +1013,10 @@ impl<'c> Mapping<'c> {
         self.work.push(Task {
             node: child,
             parent: task.parent,
-            depth: task.depth,
         });
     }
 
-    fn expression(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
+    fn expression(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         let operands = nodes_of(items, Production::Expression);
         match items.first() {
@@ -1096,7 +1047,7 @@ impl<'c> Mapping<'c> {
     /// A binary precedence level: `o0 op1 o1 op2 o2 ...`. `implies` nests
     /// to the right in the CST itself; every other level is a
     /// left-associative chain `op_n(... op1(o0, o1) ..., o_n)`.
-    fn chain(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
+    fn chain(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         let mut operands = Vec::new();
         let mut operators = Vec::new();
@@ -1151,44 +1102,34 @@ impl<'c> Mapping<'c> {
         let start = node.span().start;
         let mut parent = task.parent;
         let mut links = Vec::with_capacity(chain.len());
-        for (depth, (operator, right)) in (task.depth..).zip(chain.iter().zip(&operands[1..]).rev())
-        {
+        for (operator, right) in chain.iter().zip(&operands[1..]).rev() {
             let span = Span {
                 start,
                 end: right.span().end,
             };
-            let index = self.node(
-                Shape::Binary(*operator),
-                node.production(),
-                span,
-                parent,
-                depth,
-            )?;
-            links.push((index, depth));
+            let index = self.node(Shape::Binary(*operator), node.production(), span, parent);
+            links.push(index);
             parent = Some(index);
         }
         links.reverse();
         // Queue operands so `o0` is mapped first: `o0` and `o1` under the
         // innermost link, and each later `o_k` under link `k`, as its right
         // operand.
-        for (right, (link, link_depth)) in operands[1..].iter().zip(&links).rev() {
+        for (right, link) in operands[1..].iter().zip(&links).rev() {
             self.work.push(Task {
                 node: right,
                 parent: Some(*link),
-                depth: link_depth + 1,
             });
         }
-        let (innermost, innermost_depth) =
-            links.first().copied().ok_or_else(|| unexpected(node))?;
+        let innermost = links.first().copied().ok_or_else(|| unexpected(node))?;
         self.work.push(Task {
             node: operands[0],
             parent: Some(innermost),
-            depth: innermost_depth + 1,
         });
         Ok(())
     }
 
-    fn unary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
+    fn unary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         match items {
             [Item::Token(token), Item::Node(operand)] => {
@@ -1209,7 +1150,7 @@ impl<'c> Mapping<'c> {
 
     /// `primary(.member)*`: a left-nested chain of `Field` nodes. Indexing
     /// `e[i]` has no variant.
-    fn postfix(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
+    fn postfix(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         let Some((Item::Node(primary), rest)) = items.split_first() else {
             return Err(unexpected(node));
@@ -1246,7 +1187,6 @@ impl<'c> Mapping<'c> {
         }
         let start = node.span().start;
         let mut parent = task.parent;
-        let mut depth = task.depth;
         for member in members.iter().rev() {
             let span = Span {
                 start,
@@ -1257,30 +1197,21 @@ impl<'c> Mapping<'c> {
                 node.production(),
                 span,
                 parent,
-                depth,
-            )?);
-            depth += 1;
+            ));
         }
         self.work.push(Task {
             node: primary,
             parent,
-            depth,
         });
         Ok(())
     }
 
-    fn leaf(&mut self, shape: Shape, task: &Task<'c>) -> Result<(), FormsFailure> {
-        self.node(
-            shape,
-            task.node.production(),
-            task.node.span(),
-            task.parent,
-            task.depth,
-        )
-        .map(|_| ())
+    fn leaf(&mut self, shape: Shape, task: &Task<'c>) -> Result<(), FormsRefusal> {
+        self.node(shape, task.node.production(), task.node.span(), task.parent);
+        Ok(())
     }
 
-    fn primary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsFailure> {
+    fn primary(&mut self, task: Task<'c>, items: &[Item<'c>]) -> Result<(), FormsRefusal> {
         let node = task.node;
         let operands = nodes_of(items, Production::Expression);
         match items.first() {
@@ -1313,7 +1244,7 @@ impl<'c> Mapping<'c> {
         token: &CstToken,
         items: &[Item<'c>],
         operands: Vec<&'c CstNode>,
-    ) -> Result<(), FormsFailure> {
+    ) -> Result<(), FormsRefusal> {
         let node = task.node;
         let one = |operands: &[&'c CstNode]| match operands {
             [operand] => Ok(vec![*operand]),
@@ -1347,11 +1278,7 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Reaches(edge, edge_span), &task, operands)
             }
             b"convert" | b"allInstances" => {
-                let target = type_form(
-                    self.cst,
-                    only(items, Production::TypeReference, node)?,
-                    self.limits,
-                )?;
+                let target = type_form(self.cst, only(items, Production::TypeReference, node)?)?;
                 let shape = if token.spelling() == b"convert" {
                     Shape::Convert(target)
                 } else {
@@ -1383,7 +1310,7 @@ impl<'c> Mapping<'c> {
     }
 
     /// A `Primary` whose first child is a node.
-    fn primary_node(&mut self, task: Task<'c>, child: &'c CstNode) -> Result<(), FormsFailure> {
+    fn primary_node(&mut self, task: Task<'c>, child: &'c CstNode) -> Result<(), FormsRefusal> {
         let items = items(self.cst, child);
         match child.production() {
             Production::QualifiedName | Production::EnumValue => {
@@ -1543,20 +1470,20 @@ impl<'c> Mapping<'c> {
         task: Task<'c>,
         node: &'c CstNode,
         items: &[Item<'c>],
-    ) -> Result<(), FormsFailure> {
+    ) -> Result<(), FormsRefusal> {
         let Some(Item::Token(head)) = items.first() else {
             return Err(unexpected(node));
         };
         let operands = nodes_of(items, Production::Expression);
         let identifiers = tokens_of(items, TokenKind::Identifier);
-        let named_type = || -> Result<DeclaredName, FormsFailure> {
+        let named_type = || -> Result<DeclaredName, FormsRefusal> {
             let name = only(items, Production::QualifiedName, node)?;
             Ok(DeclaredName {
                 name: spelled(self.cst, name)?,
                 span: name.span(),
             })
         };
-        let binder = |position: usize| -> Result<String, FormsFailure> {
+        let binder = |position: usize| -> Result<String, FormsRefusal> {
             identifiers
                 .get(position)
                 .map_or_else(|| Err(unexpected(node)), |token| text(token, node))
@@ -1594,11 +1521,11 @@ impl<'c> Mapping<'c> {
         self.with_children(shape, &task, operands)
     }
 
-    /// The expression and its spans, from the finished arena: spans in
-    /// arena (pre-order) order, so each parent is placed before its
-    /// children; expressions in reverse, so each node's children are built
-    /// before it.
-    fn finish(self, root: &CstNode) -> Result<(Expression, ExpressionSpans), FormsFailure> {
+    /// The expression and its spans, from the finished pending list: spans
+    /// in pending (pre-order) order, so each parent is placed before its
+    /// children; expression nodes in reverse, so each node's children are
+    /// stored before it and the root, pending node 0, is stored last.
+    fn finish(self, root: &CstNode) -> Result<(Expression, ExpressionSpans), FormsRefusal> {
         let Some(first) = self.arena.first() else {
             return Err(unexpected(root));
         };
@@ -1615,36 +1542,38 @@ impl<'c> Mapping<'c> {
                     .map_err(|_| shape_at(pending))?,
             );
         }
-        let mut built: Vec<Option<Expression>> = Vec::with_capacity(self.arena.len());
-        built.resize_with(self.arena.len(), || None);
+        let mut built: Vec<Option<ExprId>> = vec![None; self.arena.len()];
+        let mut builder = ExpressionBuilder::new();
         for (index, pending) in self.arena.into_iter().enumerate().rev() {
             let failure = shape_at(&pending);
             let mut children = Vec::with_capacity(pending.children.len());
             for child in pending.children {
                 children.push(
                     built
-                        .get_mut(child)
-                        .and_then(Option::take)
+                        .get(child)
+                        .copied()
+                        .flatten()
                         .ok_or_else(|| failure.clone())?,
                 );
             }
-            let expression = pending.shape.build(children).ok_or(failure)?;
+            let node = pending
+                .shape
+                .build(children)
+                .ok_or_else(|| failure.clone())?;
+            let id = builder.push(node).map_err(|_| failure)?;
             if let Some(slot) = built.get_mut(index) {
-                *slot = Some(expression);
+                *slot = Some(id);
             }
         }
-        let expression = built
-            .first_mut()
-            .and_then(Option::take)
-            .ok_or_else(|| unexpected(root))?;
+        let expression = builder.build().ok_or_else(|| unexpected(root))?;
         Ok((expression, spans))
     }
 }
 
 /// The refusal for an arena node whose children or span do not fit its
 /// shape, naming that node's production and span.
-fn shape_at(pending: &Pending) -> FormsFailure {
-    FormsFailure::refused(
+fn shape_at(pending: &Pending) -> FormsRefusal {
+    FormsRefusal::at(
         FormsCause::UnexpectedShape {
             production: pending.production,
         },

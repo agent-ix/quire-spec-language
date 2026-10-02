@@ -30,9 +30,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, Expression,
-    FunctionDeclaration, ParsedUnit, RecordFieldForm, StateClauseForm, TypeForm, TypeFormHead,
-    UnitForm,
+    AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
+    Expression, FunctionDeclaration, ParsedUnit, RecordFieldForm, StateClauseForm, TypeForm,
+    TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded, StageFailure};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -842,59 +842,59 @@ fn body_type_forms(function: &FunctionDeclaration) -> Vec<TypeForm> {
 fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) -> Vec<TypeForm> {
     let mut forms = Vec::new();
     for root in roots {
-        let mut stack = vec![root];
+        let mut stack = vec![root.root()];
         while let Some(expression) = stack.pop() {
-            match expression {
-                Expression::Convert { target, .. } | Expression::AllInstances { target, .. } => {
+            match expression.node() {
+                ExprNode::Convert { target, .. } | ExprNode::AllInstances { target, .. } => {
                     forms.push(target.clone());
                 }
-                Expression::Accumulate {
+                ExprNode::Accumulate {
                     accumulator_type: name,
                     accumulator_type_span: span,
                     ..
                 }
-                | Expression::Count {
+                | ExprNode::Count {
                     result_type: name,
                     result_type_span: span,
                     ..
                 }
-                | Expression::Sum {
+                | ExprNode::Sum {
                     result_type: name,
                     result_type_span: span,
                     ..
                 } => forms.push(TypeForm::name(name.clone(), *span)),
-                Expression::Boolean(_)
-                | Expression::Integer(_)
-                | Expression::Rational(..)
-                | Expression::Name(_)
-                | Expression::Let { .. }
-                | Expression::If { .. }
-                | Expression::Binary { .. }
-                | Expression::Negate(_)
-                | Expression::Not(_)
-                | Expression::Field { .. }
-                | Expression::Present(_)
-                | Expression::Value(_)
-                | Expression::Deref(_)
-                | Expression::Call { .. }
-                | Expression::Record { .. }
-                | Expression::Collection { .. }
-                | Expression::Query { .. }
-                | Expression::Flatten(_)
-                | Expression::Size(_)
-                | Expression::Contains { .. }
-                | Expression::Lookup { .. }
-                | Expression::Dispatch { .. }
-                | Expression::Pre(_)
-                | Expression::SelfRef
-                | Expression::Result
-                | Expression::Reaches { .. } => {}
+                ExprNode::Boolean(_)
+                | ExprNode::Integer(_)
+                | ExprNode::Rational(..)
+                | ExprNode::Name(_)
+                | ExprNode::Let { .. }
+                | ExprNode::If { .. }
+                | ExprNode::Binary { .. }
+                | ExprNode::Negate(_)
+                | ExprNode::Not(_)
+                | ExprNode::Field { .. }
+                | ExprNode::Present(_)
+                | ExprNode::Value(_)
+                | ExprNode::Deref(_)
+                | ExprNode::Call { .. }
+                | ExprNode::Record { .. }
+                | ExprNode::Collection { .. }
+                | ExprNode::Query { .. }
+                | ExprNode::Flatten(_)
+                | ExprNode::Size(_)
+                | ExprNode::Contains { .. }
+                | ExprNode::Lookup { .. }
+                | ExprNode::Dispatch { .. }
+                | ExprNode::Pre(_)
+                | ExprNode::SelfRef
+                | ExprNode::Result
+                | ExprNode::Reaches { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
                 // unconditional probe arm so this match keeps compiling
                 // under `--cfg seam_probe`.
                 #[cfg(seam_probe)]
-                Expression::__SeamProbe => {}
+                ExprNode::__SeamProbe => {}
             }
             // Children last-first, so the first child is visited next and
             // forms come out in source order.

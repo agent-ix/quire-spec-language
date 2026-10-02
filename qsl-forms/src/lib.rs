@@ -9,19 +9,19 @@
 //! FR-091, M-3b for `Value`). Each other family's own migration ticket adds
 //! its production function and its variants when it migrates.
 //!
-//! The `Expression` enum and its sibling parsed-form types are defined
-//! exactly once, in `syntax`, and re-exported at this crate's top level
-//! (FR-067-AC-9).
+//! The `Expression` arena, its `ExprNode` enum and their sibling
+//! parsed-form types are defined exactly once, in `syntax`, and re-exported
+//! at this crate's top level (FR-067-AC-9).
 //!
 //! ## Layering
 //!
 //! `qsl-forms` is layer 2 (ADR-011 §6.1), which depends on layer 1
-//! (`qsl-cst`), F (`qsl-foundation`) and K (`quire-exact`), and on nothing
-//! else. It carries kernel types directly as parsed-form payloads
+//! (`qsl-cst`), F (`qsl-foundation`), K (`quire-exact`) and the shared
+//! walker leaf W (`quire-walk`), and on nothing else. It carries kernel types directly as parsed-form payloads
 //! (ADR-013 OQ-A): `quire_exact::Integer` for an integer literal and
 //! `quire_exact::CollectionKind` for a collection kind, both in an
-//! [`Expression`] and in a [`TypeForm`]'s collection head. A parsed form
-//! holds no `ValueType` and no `NodeKey` (FR-091-AC-11): [`Expression`]'s
+//! [`ExprNode`] and in a [`TypeForm`]'s collection head. A parsed form
+//! holds no `ValueType` and no `NodeKey` (FR-091-AC-11): [`ExprNode`]'s
 //! `AllInstances`, `Lookup` and `Convert` variants, and
 //! [`FunctionDeclaration`]'s `parameters`/`result`, each carry a
 //! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
@@ -34,17 +34,17 @@ mod syntax;
 mod value;
 
 pub use dispatch::{
-    build_unit, FormsCause, FormsFailure, FormsLimits, FormsRefusal, LeadingTokenKind, ParsedForm,
-    ParsedUnit, DEFAULT_FORMS_NESTING_DEPTH,
+    build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
     Accumulation, AliasForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinaryOperator,
     BinderForm, BinderKind, BinderQuery, BuiltinType, ClauseKind, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
-    ExactNumberForm, ExactNumberKind, Expression, FieldInitializer, FunctionDeclaration, NameForm,
-    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm, RecordForm, RoleForm, ScopeName,
-    ScopedAnchorForm, StateClauseForm, StateClauseKind, TermOperator, TupleForm, TypeForm,
-    TypeFormHead, UnitForm, UsingAlias,
+    ExactNumberForm, ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder,
+    FieldInitializer, FunctionDeclaration, NameForm, ProtocolBodyForm, ProtocolConstructForm,
+    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    RecordFieldForm, RecordForm, RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    StateClauseForm, StateClauseKind, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm,
+    UnknownChild, UsingAlias,
 };

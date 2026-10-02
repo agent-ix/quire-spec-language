@@ -93,28 +93,19 @@ fn integers(kind: CollectionKind, minimum: u64, maximum: u64) -> ValueType {
 }
 
 fn name(spelling: &str) -> Expression {
-    Expression::Name(spelling.to_owned())
+    Expression::name(spelling.to_owned())
 }
 
 fn literal(value: i64) -> Expression {
-    Expression::Integer(Integer::from(value))
+    Expression::integer(Integer::from(value))
 }
 
 fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
-    Expression::Binary {
-        operator,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    Expression::binary(operator, left, right)
 }
 
 fn query(query: BinderQuery, source: &str, body: Expression) -> Expression {
-    Expression::Query {
-        query,
-        binder: "x".to_owned(),
-        source: Box::new(name(source)),
-        body: Box::new(body),
-    }
+    Expression::query(query, "x".to_owned(), name(source), body)
 }
 
 fn accumulate(
@@ -124,23 +115,22 @@ fn accumulate(
     step: Expression,
     identity: Option<Expression>,
 ) -> Expression {
-    Expression::Accumulate {
-        accumulator_type_span: qsl_foundation::Span { start: 0, end: 0 },
+    Expression::accumulate(
         form,
-        accumulator_type: accumulator_type.to_owned(),
-        accumulator: "acc".to_owned(),
-        binder: "x".to_owned(),
-        source: Box::new(name(source)),
-        step: Box::new(step),
-        identity: identity.map(Box::new),
-    }
+        qsl_forms::DeclaredName {
+            name: accumulator_type.to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "acc".to_owned(),
+        "x".to_owned(),
+        name(source),
+        step,
+        identity,
+    )
 }
 
 fn convert(target: ValueType, operand: &str) -> Expression {
-    Expression::Convert {
-        target: crate::support::type_form::type_form(&target),
-        operand: Box::new(name(operand)),
-    }
+    Expression::convert(crate::support::type_form::type_form(&target), name(operand))
 }
 
 fn aliases() -> Vec<(String, ValueType)> {
@@ -397,7 +387,7 @@ fn q02_filter_keeps_multiplicity_and_first_occurrence_order() {
 #[test]
 fn q03_flatten_admits_kinds_and_derives_bounds() {
     let package = plain();
-    let flatten = Expression::Flatten(Box::new(name("c")));
+    let flatten = Expression::flatten(name("c"));
     let cases = [
         (
             CollectionKind::Sequence,
@@ -603,10 +593,7 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
     let ineligible = [
         binary(BinaryOperator::Subtract, name("acc"), name("x")),
         binary(BinaryOperator::Add, name("acc"), name("acc")),
-        Expression::Call {
-            name: "add".to_owned(),
-            arguments: vec![name("acc"), name("x")],
-        },
+        Expression::call("add".to_owned(), vec![name("acc"), name("x")]),
     ];
     for step in ineligible {
         assert_eq!(
@@ -631,7 +618,7 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
             &parameters,
             &fold(
                 binary(BinaryOperator::Add, name("acc"), name("x")),
-                Expression::Boolean(true)
+                Expression::boolean(true)
             )
         ),
         IllTypedCause::TypeMismatch
@@ -659,7 +646,7 @@ fn q05_set_and_bag_steps_must_be_in_the_syntactic_catalog() {
         "Flag",
         "s",
         binary(BinaryOperator::And, name("acc"), name("x")),
-        Some(Expression::Boolean(true)),
+        Some(Expression::boolean(true)),
     );
     check(&package, &flags, &all).unwrap();
     let sequence = [("s", integers(CollectionKind::Sequence, 0, 3))];
@@ -896,10 +883,7 @@ fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
             h2.clone(),
         ]
     };
-    let contains = |item: &str| Expression::Contains {
-        collection: Box::new(name("hs")),
-        item: Box::new(name(item)),
-    };
+    let contains = |item: &str| Expression::contains(name("hs"), name(item));
     let true_value = format!("{:?}", Value::Boolean(true));
 
     let second = run_in(
@@ -949,7 +933,7 @@ fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
     let size = run_in(
         &package,
         &parameters,
-        &Expression::Size(Box::new(name("hs"))),
+        &Expression::size(name("hs")),
         arguments(),
         UNLIMITED,
         &objects,
@@ -984,13 +968,15 @@ fn q11_fold_charges_visit_step_and_one_accumulator_retain() {
 }
 
 fn sum(result_type: &str, source: &str, summand: Expression) -> Expression {
-    Expression::Sum {
-        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-        result_type: result_type.to_owned(),
-        binder: "x".to_owned(),
-        source: Box::new(name(source)),
-        summand: Box::new(summand),
-    }
+    Expression::sum(
+        qsl_forms::DeclaredName {
+            name: result_type.to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "x".to_owned(),
+        name(source),
+        summand,
+    )
 }
 
 fn check_linked(
@@ -1106,10 +1092,7 @@ fn q13_sum_proves_every_prefix_inside_its_domain_for_every_order() {
 #[test]
 fn q14_collection_literal_formation_stops_incomplete_at_result_retain() {
     let package = plain();
-    let literal = Expression::Collection {
-        kind: CollectionKind::Set,
-        elements: vec![name("a"), name("b")],
-    };
+    let literal = Expression::collection(CollectionKind::Set, vec![name("a"), name("b")]);
     let parameters = [("a", ValueType::Integer), ("b", ValueType::Integer)];
     let expected = integers(CollectionKind::Set, 0, 2);
     let checked = check_as(&package, &parameters, &literal, Some(&expected)).unwrap();
@@ -1163,7 +1146,7 @@ fn q16_flatten_stops_incomplete_at_result_retain() {
     let package = plain();
     let inner_type = integers(CollectionKind::Sequence, 0, 2);
     let outer_type = of(CollectionKind::Sequence, inner_type.clone(), 0, 2);
-    let flatten = Expression::Flatten(Box::new(name("c")));
+    let flatten = Expression::flatten(name("c"));
     let parameters = [("c", outer_type.clone())];
     let arguments = || {
         let inner = vec![
@@ -1254,7 +1237,7 @@ fn tc_441_filter_over_an_unbounded_source_is_unbounded() {
 #[test]
 fn tc_441_flatten_is_unbounded_when_either_level_is() {
     let package = plain();
-    let flatten = Expression::Flatten(Box::new(name("c")));
+    let flatten = Expression::flatten(name("c"));
     let bounded_inner = integers(CollectionKind::Sequence, 0, 2);
     let unbounded_inner = unbounded(CollectionKind::Sequence, ValueType::Integer);
     let cases = [
@@ -1408,13 +1391,15 @@ fn tc_500_a_seed_outside_the_domain_is_undefined_at_the_summand_node() {
 }
 
 fn count(result_type: &str, source: &str, predicate: Expression) -> Expression {
-    Expression::Count {
-        result_type_span: qsl_foundation::Span { start: 0, end: 0 },
-        result_type: result_type.to_owned(),
-        binder: "x".to_owned(),
-        source: Box::new(name(source)),
-        predicate: Box::new(predicate),
-    }
+    Expression::count(
+        qsl_forms::DeclaredName {
+            name: result_type.to_owned(),
+            span: qsl_foundation::Span { start: 0, end: 0 },
+        },
+        "x".to_owned(),
+        name(source),
+        predicate,
+    )
 }
 
 /// The `Int[..]` domain a real kernel evaluation's `IntegerOutOfDomain`

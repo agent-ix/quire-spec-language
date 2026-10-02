@@ -305,7 +305,7 @@ fn builtin(builtin: BuiltinType) -> TypeForm {
 }
 
 fn name(name: &str) -> Expression {
-    Expression::Name(name.to_owned())
+    Expression::name(name.to_owned())
 }
 
 fn function(
@@ -345,7 +345,7 @@ fn check(acme: &Acme, functions: Vec<FunctionDeclaration>) -> CheckedGraph {
 /// redefinition renames both parameters.
 fn clauses(acme: &Acme) -> OperationClauses {
     let mut clauses = OperationClauses::default();
-    let literal = |value: i64| Expression::Integer(Integer::from(value));
+    let literal = |value: i64| Expression::integer(Integer::from(value));
     let operations = [
         (
             "Order/size",
@@ -402,7 +402,7 @@ fn clauses(acme: &Acme) -> OperationClauses {
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses
             .own_precondition
-            .insert(operation.clone(), Expression::Boolean(precondition));
+            .insert(operation.clone(), Expression::boolean(precondition));
         clauses.own_body.insert(operation, body);
     }
     clauses
@@ -478,7 +478,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
             "g",
             &[("r", named("M::Order")), ("s", named("M::Invoice"))],
             builtin(BuiltinType::Boolean),
-            Expression::Boolean(true),
+            Expression::boolean(true),
         )
     };
     let acme = admitted("1.0.0");
@@ -556,11 +556,7 @@ fn reference_equality_is_the_reference_eq_operation() {
             "same",
             &[("r", named("M::Order")), ("s", named("M::Order"))],
             builtin(BuiltinType::Boolean),
-            Expression::Binary {
-                operator: BinaryOperator::Equal,
-                left: Box::new(name("r")),
-                right: Box::new(name("s")),
-            },
+            Expression::binary(BinaryOperator::Equal, name("r"), name("s")),
         )],
     );
     let equal = applications(checked.semantic_graph(), "quire.op.reference.eq");
@@ -603,23 +599,15 @@ fn a_relationship_keys_to_its_relation_node() {
 fn population_reference_and_model_rows_match_their_vectors() {
     let acme = admitted("1.0.0");
     let parameters = [("p", population("M::Order", 3)), ("r", named("M::Order"))];
-    let all_instances = Expression::AllInstances {
-        target: named("M::Order"),
-        population: Box::new(name("p")),
-    };
-    let lookup = |absence| Expression::Lookup {
-        target: named("M::Order"),
-        population: Box::new(name("p")),
-        reference: Box::new(name("r")),
-        absence,
-    };
+    let all_instances = Expression::all_instances(named("M::Order"), name("p"));
+    let lookup = |absence| Expression::lookup(named("M::Order"), name("p"), name("r"), absence);
     let mut declarations = dispatch(&acme, "Order/size");
     declarations.functions.extend([
         function(
             "f1",
             &parameters,
             builtin(BuiltinType::Integer),
-            Expression::Size(Box::new(all_instances)),
+            Expression::size(all_instances),
         ),
         function(
             "f2",
@@ -631,18 +619,13 @@ fn population_reference_and_model_rows_match_their_vectors() {
             "f3",
             &parameters,
             builtin(BuiltinType::Boolean),
-            Expression::Present(Box::new(lookup(
-                qsl_foundation::absence::AbsenceMode::Empty,
-            ))),
+            Expression::present(lookup(qsl_foundation::absence::AbsenceMode::Empty)),
         ),
         function(
             "f4",
             &parameters,
             builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
-            Expression::Field {
-                operand: Box::new(Expression::Deref(Box::new(name("r")))),
-                field: "total".to_owned(),
-            },
+            Expression::field(Expression::deref(name("r")), "total".to_owned()),
         ),
         // A dispatched call checks only inside a clause (FR-151).
         FunctionDeclaration::clause(
@@ -653,15 +636,11 @@ fn population_reference_and_model_rows_match_their_vectors() {
                 .collect(),
             builtin(BuiltinType::Boolean),
             None,
-            Expression::Binary {
-                operator: BinaryOperator::GreaterOrEqual,
-                left: Box::new(Expression::Dispatch {
-                    receiver: Box::new(name("r")),
-                    member: "size".to_owned(),
-                    arguments: Vec::new(),
-                }),
-                right: Box::new(Expression::Integer(Integer::from(0_i64))),
-            },
+            Expression::binary(
+                BinaryOperator::GreaterOrEqual,
+                Expression::dispatch(name("r"), "size".to_owned(), Vec::new()),
+                Expression::integer(0_i64),
+            ),
             DeclaredClauseKind::Precondition,
         ),
         function(
@@ -671,7 +650,7 @@ fn population_reference_and_model_rows_match_their_vectors() {
                 ("q", population("M::Invoice", 3)),
             ],
             builtin(BuiltinType::Boolean),
-            Expression::Boolean(true),
+            Expression::boolean(true),
         ),
     ]);
     let checked = check_declarations(declarations);
@@ -712,25 +691,18 @@ fn model_members_name_the_static_object_type() {
             "total_of",
             &[("s", named("M::Sub"))],
             builtin(BuiltinType::Int).with_bounds(vec!["0".to_owned(), "9".to_owned()]),
-            Expression::Field {
-                operand: Box::new(Expression::Deref(Box::new(name("s")))),
-                field: "total".to_owned(),
-            },
+            Expression::field(Expression::deref(name("s")), "total".to_owned()),
         ),
         FunctionDeclaration::clause(
             "sized",
             vec![("s".to_owned(), named("M::Sub"))],
             builtin(BuiltinType::Boolean),
             None,
-            Expression::Binary {
-                operator: BinaryOperator::GreaterOrEqual,
-                left: Box::new(Expression::Dispatch {
-                    receiver: Box::new(name("s")),
-                    member: "size".to_owned(),
-                    arguments: Vec::new(),
-                }),
-                right: Box::new(Expression::Integer(Integer::from(0_i64))),
-            },
+            Expression::binary(
+                BinaryOperator::GreaterOrEqual,
+                Expression::dispatch(name("s"), "size".to_owned(), Vec::new()),
+                Expression::integer(0_i64),
+            ),
             DeclaredClauseKind::Precondition,
         ),
     ]);
@@ -1119,7 +1091,7 @@ mod quantities {
             )],
             ..PackageDeclarations::new(fixture_source())
         };
-        let plain = check_declarations(package(Expression::Boolean(true)));
+        let plain = check_declarations(package(Expression::boolean(true)));
         let graph = plain.semantic_graph();
         assert_eq!(
             parameter(graph, "a", 0).semantic_type(),
@@ -1153,16 +1125,12 @@ mod quantities {
         ));
         assert!(graph.node(node_key(SECOND)).is_some() && graph.node(node_key(TIME)).is_some());
 
-        let square = Expression::Binary {
-            operator: BinaryOperator::Multiply,
-            left: Box::new(name("a")),
-            right: Box::new(name("a")),
-        };
-        let squared = check_declarations(package(Expression::Binary {
-            operator: BinaryOperator::Equal,
-            left: Box::new(square.clone()),
-            right: Box::new(square),
-        }));
+        let square = Expression::binary(BinaryOperator::Multiply, name("a"), name("a"));
+        let squared = check_declarations(package(Expression::binary(
+            BinaryOperator::Equal,
+            square.clone(),
+            square,
+        )));
         let graph = squared.semantic_graph();
         assert_holds(graph, "U1");
         let product = applications(graph, "quire.op.quantity.mul");
@@ -1251,10 +1219,7 @@ mod quantities {
                 "to_km",
                 &[("a", named("Length"))],
                 named("Km"),
-                Expression::Convert {
-                    target: named("Km"),
-                    operand: Box::new(name("a")),
-                },
+                Expression::convert(named("Km"), name("a")),
             )],
             ..PackageDeclarations::new(fixture_source())
         });

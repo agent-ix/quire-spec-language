@@ -166,9 +166,7 @@ pub(super) fn complete_v1() -> Grammar {
 pub fn base_reserved_spellings() -> std::collections::BTreeSet<&'static str> {
     fn collect(rule: &Rule, output: &mut std::collections::BTreeSet<&'static str>) {
         match rule {
-            Rule::Terminal(
-                Terminal::Exact(value) | Terminal::Literal(value),
-            ) => {
+            Rule::Terminal(Terminal::Exact(value) | Terminal::Literal(value)) => {
                 output.insert(value);
             }
             Rule::Sequence(rules) | Rule::Choice(rules) => {
@@ -378,12 +376,7 @@ fn source_and_types(g: &mut Grammar) {
                 r(P::TextProfile),
                 x("]"),
             ]),
-            s(vec![
-                x("Option"),
-                x("<"),
-                r(P::TypeReference),
-                x(">"),
-            ]),
+            s(vec![x("Option"), x("<"), r(P::TypeReference), x(">")]),
             s(vec![
                 c(vec![x("Sequence"), x("Set"), x("Bag"), x("OrderedSet")]),
                 x("<"),
@@ -395,12 +388,7 @@ fn source_and_types(g: &mut Grammar) {
                 uint(),
                 x("]"),
             ]),
-            s(vec![
-                x("Reference"),
-                x("<"),
-                r(P::QualifiedName),
-                x(">"),
-            ]),
+            s(vec![x("Reference"), x("<"), r(P::QualifiedName), x(">")]),
             r(P::QualifiedName),
         ]),
     );
@@ -509,12 +497,7 @@ fn source_and_types(g: &mut Grammar) {
             x(":"),
             r(P::TypeReference),
             x("pure"),
-            opt(s(vec![
-                x("decreases"),
-                x("("),
-                r(P::Expression),
-                x(")"),
-            ])),
+            opt(s(vec![x("decreases"), x("("), r(P::Expression), x(")")])),
             r(P::Block),
         ]),
     );

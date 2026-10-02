@@ -27,7 +27,8 @@ use crate::check::ir::{Connective, Node, NodeKind, RecordSlot, Slot, Visit};
 use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
 use crate::check::DispatchOperation;
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, ExprRef, Expression,
+    FieldInitializer,
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
@@ -76,7 +77,7 @@ enum Branches<'r> {
 
 impl<'r> Branches<'r> {
     /// The goal of typing `expression`, a branch or body, at `location`.
-    fn goal<'e>(&self, expression: &'e Expression, location: Location) -> Goal<'e, 'r> {
+    fn goal<'e>(&self, expression: ExprRef<'e>, location: Location) -> Goal<'e, 'r> {
         match self {
             Self::Expected(Expected::Checked(required)) => {
                 Goal::Expect(expression, Expected::Checked(required.clone()), location)
@@ -92,10 +93,10 @@ impl<'r> Branches<'r> {
 /// Typing one sub-expression.
 enum Goal<'e, 'r> {
     /// Type it where a type is expected.
-    Expect(&'e Expression, Expected<'r>, Location),
+    Expect(ExprRef<'e>, Expected<'r>, Location),
     /// Infer its type ([`Typer::infer`]), with a hint for a contextual
     /// literal.
-    Infer(&'e Expression, Option<Want<'r>>, Location),
+    Infer(ExprRef<'e>, Option<Want<'r>>, Location),
 }
 
 /// What the loop does next.
@@ -153,12 +154,12 @@ struct IfFrame<'e, 'r> {
 )]
 enum IfStage<'e> {
     Condition {
-        then: &'e Expression,
-        otherwise: &'e Expression,
+        then: ExprRef<'e>,
+        otherwise: ExprRef<'e>,
     },
     Then {
         condition: Node,
-        otherwise: &'e Expression,
+        otherwise: ExprRef<'e>,
     },
     Otherwise {
         condition: Node,
@@ -170,7 +171,7 @@ enum IfStage<'e> {
 struct LetFrame<'e, 'r> {
     branches: Branches<'r>,
     name: &'e str,
-    body: &'e Expression,
+    body: ExprRef<'e>,
     location: Location,
     /// The typed value and the slot it is bound to, once typed.
     value: Option<(Node, Slot)>,
@@ -179,7 +180,7 @@ struct LetFrame<'e, 'r> {
 /// Which operand of a pair is being typed.
 enum Pair<'e, T> {
     /// The first; the other is still to type, at this location.
-    First(&'e Expression, Location),
+    First(ExprRef<'e>, Location),
     /// The second; the first is typed.
     Second(T),
 }
@@ -260,13 +261,15 @@ struct AttributeFrame<'e> {
 /// A function or tuple-constructor call.
 struct ApplicationFrame<'e, 'r> {
     application: Application<'r>,
-    arguments: &'e [Expression],
+    arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<Node>,
 }
 
 /// A record literal, admitting its initializers in source order.
 struct RecordFrame<'e, 'r> {
+    /// The record literal, whose arena holds its initializers' values.
+    record: ExprRef<'e>,
     key: NodeKey,
     declared: &'r [FieldDeclaration],
     fields: &'e [(String, FieldInitializer)],
@@ -283,7 +286,7 @@ struct RecordFrame<'e, 'r> {
 /// A collection literal, its elements checked against its element type.
 struct CollectionFrame<'e> {
     collection_type: CollectionType,
-    elements: &'e [Expression],
+    elements: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<Node>,
 }
@@ -292,7 +295,7 @@ struct CollectionFrame<'e> {
 struct QueryFrame<'e> {
     query: BinderQuery,
     binder: &'e str,
-    body: &'e Expression,
+    body: ExprRef<'e>,
     location: Location,
     /// The typed source, the binder's slot and the source's collection
     /// type, once the source is typed.
@@ -306,8 +309,8 @@ struct AccumulateFrame<'e> {
     value_type: ValueType,
     accumulator: &'e str,
     binder: &'e str,
-    step: &'e Expression,
-    identity: Option<&'e Expression>,
+    step: ExprRef<'e>,
+    identity: Option<ExprRef<'e>>,
     location: Location,
     stage: AccumulateStage,
 }
@@ -352,7 +355,7 @@ struct TallyFrame<'e> {
     tally: Tally,
     value_type: ValueType,
     binder: &'e str,
-    body: &'e Expression,
+    body: ExprRef<'e>,
     location: Location,
     /// The typed source and the binder's slot, once the source is typed.
     source: Option<(Node, Slot)>,
@@ -360,7 +363,7 @@ struct TallyFrame<'e> {
 
 /// `contains(c, v)`.
 struct ContainsFrame<'e> {
-    item: &'e Expression,
+    item: ExprRef<'e>,
     location: Location,
     /// The typed collection and its element type, once typed.
     collection: Option<(Node, ValueType)>,
@@ -377,7 +380,7 @@ struct ReachesFrame<'e> {
 /// `lookup<T>(p, r) absent m`.
 struct LookupFrame<'e> {
     target: ValueType,
-    reference: &'e Expression,
+    reference: ExprRef<'e>,
     absence: AbsenceMode,
     location: Location,
     population: Option<Node>,
@@ -386,7 +389,7 @@ struct LookupFrame<'e> {
 /// `receiver.member(args)`, its receiver being typed.
 struct DispatchFrame<'e> {
     member: &'e str,
-    arguments: &'e [Expression],
+    arguments: Vec<ExprRef<'e>>,
     location: Location,
 }
 
@@ -396,7 +399,7 @@ struct DispatchArgumentsFrame<'e, 'r> {
     receiver: Node,
     operation_index: usize,
     operation: &'r DispatchOperation,
-    arguments: &'e [Expression],
+    arguments: Vec<ExprRef<'e>>,
     location: Location,
     typed: Vec<Node>,
 }
@@ -421,7 +424,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         self.run(Goal::Expect(
-            expression,
+            expression.root(),
             Expected::Checked(Cow::Borrowed(required)),
             location.clone(),
         ))
@@ -436,7 +439,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         self.run(Goal::Infer(
-            expression,
+            expression.root(),
             hint.map(Cow::Borrowed),
             location.clone(),
         ))
@@ -488,7 +491,7 @@ impl<'a> Typer<'a> {
     /// inferred, hinted with the expected type, and then admitted.
     fn expect<'e, 'r>(
         &mut self,
-        expression: &'e Expression,
+        expression: ExprRef<'e>,
         expected: Expected<'r>,
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -496,8 +499,8 @@ impl<'a> Typer<'a> {
     where
         'a: 'r,
     {
-        match expression {
-            Expression::If {
+        match expression.node() {
+            ExprNode::If {
                 condition,
                 then,
                 otherwise,
@@ -506,17 +509,21 @@ impl<'a> Typer<'a> {
                 frames.push(Frame::Leave);
                 Ok(Self::conditional(
                     Branches::Expected(expected),
-                    (condition, then, otherwise),
+                    (
+                        expression.at(*condition),
+                        expression.at(*then),
+                        expression.at(*otherwise),
+                    ),
                     location,
                     frames,
                 ))
             }
-            Expression::Let { name, value, body } => {
+            ExprNode::Let { name, value, body } => {
                 self.enter(&location)?;
                 frames.push(Frame::Leave);
                 Ok(Self::binding(
                     Branches::Expected(expected),
-                    (name, value, body),
+                    (name, expression.at(*value), expression.at(*body)),
                     location,
                     frames,
                 ))
@@ -540,7 +547,7 @@ impl<'a> Typer<'a> {
     /// Start `if condition then then else otherwise`.
     fn conditional<'e, 'r>(
         branches: Branches<'r>,
-        (condition, then, otherwise): (&'e Expression, &'e Expression, &'e Expression),
+        (condition, then, otherwise): (ExprRef<'e>, ExprRef<'e>, ExprRef<'e>),
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
@@ -560,7 +567,7 @@ impl<'a> Typer<'a> {
     /// Start `let name = value in body`.
     fn binding<'e, 'r>(
         branches: Branches<'r>,
-        (name, value, body): (&'e str, &'e Expression, &'e Expression),
+        (name, value, body): (&'e str, ExprRef<'e>, ExprRef<'e>),
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
@@ -613,7 +620,7 @@ impl<'a> Typer<'a> {
     #[deny(clippy::match_wildcard_for_single_variants)]
     fn infer_form<'e, 'r>(
         &mut self,
-        expression: &'e Expression,
+        expression: ExprRef<'e>,
         hint: Option<Want<'r>>,
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -621,57 +628,75 @@ impl<'a> Typer<'a> {
     where
         'a: 'r,
     {
-        let typed = match expression {
-            Expression::Boolean(value) => node(
+        let typed = match expression.node() {
+            ExprNode::Boolean(value) => node(
                 NodeKind::Literal(Value::Boolean(*value)),
                 ValueType::Boolean,
                 &location,
             ),
-            Expression::Integer(value) => node(
+            ExprNode::Integer(value) => node(
                 NodeKind::Literal(Value::Integer(value.clone())),
                 ValueType::Integer,
                 &location,
             ),
-            Expression::Rational(numerator, denominator) => {
+            ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            Expression::Name(name) => self.name(name, &location)?,
-            Expression::Let { name, value, body } => {
+            ExprNode::Name(name) => self.name(name, &location)?,
+            ExprNode::Let { name, value, body } => {
                 return Ok(Self::binding(
                     Branches::Inferred(hint),
-                    (name, value, body),
+                    (name, expression.at(*value), expression.at(*body)),
                     location,
                     frames,
                 ));
             }
-            Expression::If {
+            ExprNode::If {
                 condition,
                 then,
                 otherwise,
             } => {
                 return Ok(Self::conditional(
                     Branches::Inferred(hint),
-                    (condition, then, otherwise),
+                    (
+                        expression.at(*condition),
+                        expression.at(*then),
+                        expression.at(*otherwise),
+                    ),
                     location,
                     frames,
                 ));
             }
-            Expression::Binary {
+            ExprNode::Binary {
                 operator,
                 left,
                 right,
-            } => return self.binary(*operator, (left, right), hint, location, frames),
-            Expression::Negate(operand) => {
-                let goal = Goal::Infer(operand, None, location.child(0));
+            } => {
+                return self.binary(
+                    *operator,
+                    (expression.at(*left), expression.at(*right)),
+                    hint,
+                    location,
+                    frames,
+                )
+            }
+            ExprNode::Negate(operand) => {
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Negate(hint), goal, location, frames));
             }
-            Expression::Not(operand) => {
-                let goal = Goal::Expect(operand, Expected::Checked(boolean()), location.child(0));
+            ExprNode::Not(operand) => {
+                let goal = Goal::Expect(
+                    expression.at(*operand),
+                    Expected::Checked(boolean()),
+                    location.child(0),
+                );
                 return Ok(Self::unary(Unary::Not, goal, location, frames));
             }
-            Expression::Field { operand, field } => {
+            ExprNode::Field { operand, field } => {
+                let operand = expression.at(*operand);
                 let operand_location = location.child(0);
-                if let Expression::Deref(reference) = &**operand {
+                if let ExprNode::Deref(reference) = operand.node() {
+                    let reference = operand.at(*reference);
                     self.enter(&operand_location)?;
                     let reference_location = operand_location.child(0);
                     frames.push(Frame::Attribute(Box::new(AttributeFrame {
@@ -689,20 +714,21 @@ impl<'a> Typer<'a> {
                 frames.push(Frame::Field(field, location));
                 return Ok(Step::Descend(Goal::Infer(operand, None, operand_location)));
             }
-            Expression::Present(operand) => {
-                let goal = Goal::Infer(operand, None, location.child(0));
+            ExprNode::Present(operand) => {
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Present, goal, location, frames));
             }
-            Expression::Value(operand) => {
-                let goal = Goal::Infer(operand, None, location.child(0));
+            ExprNode::Value(operand) => {
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Value, goal, location, frames));
             }
-            Expression::Deref(operand) => {
+            ExprNode::Deref(operand) => {
                 // Only `deref(r).f` is a value.
-                let goal = Goal::Infer(operand, None, location.child(0));
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Deref, goal, location, frames));
             }
-            Expression::Pre(operand) => {
+            ExprNode::Pre(operand) => {
+                let operand = expression.at(*operand);
                 // FR-153/FR-042 (FR-208 applies FR-042 to invariants and
                 // preconditions, naming this same cause explicitly): `pre(...)`
                 // is legal only in an operation's postcondition -- every other
@@ -760,14 +786,15 @@ impl<'a> Typer<'a> {
             // FR-104: `self` and `result` read the state clause's own
             // bindings; outside a state clause `self` names nothing
             // (`missing-name`) and `result` has no anchor (`wrong-anchor`).
-            Expression::SelfRef => self.self_reference(&location)?,
-            Expression::Result => self.operation_result(&location)?,
-            Expression::Reaches {
+            ExprNode::SelfRef => self.self_reference(&location)?,
+            ExprNode::Result => self.operation_result(&location)?,
+            ExprNode::Reaches {
                 source,
                 target,
                 edge,
                 ..
             } => {
+                let (source, target) = (expression.at(*source), expression.at(*target));
                 // FR-104 (ADR-012 §15.2): only a state clause has an
                 // observation to traverse.
                 if !self.in_state_clause() {
@@ -781,22 +808,23 @@ impl<'a> Typer<'a> {
                 })));
                 return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
             }
-            Expression::Call { name, arguments } => {
+            ExprNode::Call { name, arguments } => {
                 let application = Application::resolve(self, name, arguments.len(), &location)?;
                 return Ok(Self::application(
                     Box::new(ApplicationFrame {
                         application,
-                        arguments,
+                        arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
                         location,
                         typed: Vec::with_capacity(arguments.len()),
                     }),
                     frames,
                 ));
             }
-            Expression::Record { name, fields } => {
+            ExprNode::Record { name, fields } => {
                 let (key, declared) = self.record_declaration(name, &location)?;
                 return Self::record_step(
                     Box::new(RecordFrame {
+                        record: expression,
                         key,
                         declared,
                         fields,
@@ -809,24 +837,24 @@ impl<'a> Typer<'a> {
                     frames,
                 );
             }
-            Expression::Collection { kind, elements } => {
+            ExprNode::Collection { kind, elements } => {
                 let collection_type = Self::collection_type(*kind, hint.as_deref(), &location)?;
                 return Ok(Self::collection(
                     Box::new(CollectionFrame {
                         collection_type,
-                        elements,
+                        elements: elements.iter().map(|id| expression.at(*id)).collect(),
                         location,
                         typed: Vec::with_capacity(elements.len()),
                     }),
                     frames,
                 ));
             }
-            Expression::Convert { target, operand } => {
+            ExprNode::Convert { target, operand } => {
                 let target = self.declared_target(target, &location)?;
-                let goal = Goal::Infer(operand, None, location.child(0));
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Convert(target), goal, location, frames));
             }
-            Expression::Query {
+            ExprNode::Query {
                 query,
                 binder,
                 source,
@@ -836,17 +864,21 @@ impl<'a> Typer<'a> {
                 frames.push(Frame::Query(Box::new(QueryFrame {
                     query: *query,
                     binder,
-                    body,
+                    body: expression.at(*body),
                     location,
                     source: None,
                 })));
-                return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*source),
+                    None,
+                    source_location,
+                )));
             }
-            Expression::Flatten(source) => {
-                let goal = Goal::Infer(source, None, location.child(0));
+            ExprNode::Flatten(source) => {
+                let goal = Goal::Infer(expression.at(*source), None, location.child(0));
                 return Ok(Self::unary(Unary::Flatten, goal, location, frames));
             }
-            Expression::Accumulate {
+            ExprNode::Accumulate {
                 accumulator_type_span: _,
                 form,
                 accumulator_type,
@@ -863,14 +895,18 @@ impl<'a> Typer<'a> {
                     value_type,
                     accumulator,
                     binder,
-                    step,
-                    identity: identity.as_deref(),
+                    step: expression.at(*step),
+                    identity: identity.map(|identity| expression.at(identity)),
                     location,
                     stage: AccumulateStage::Source,
                 })));
-                return Ok(Step::Descend(Goal::Infer(source, None, source_location)));
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*source),
+                    None,
+                    source_location,
+                )));
             }
-            Expression::Count {
+            ExprNode::Count {
                 result_type_span: _,
                 result_type,
                 binder,
@@ -880,12 +916,12 @@ impl<'a> Typer<'a> {
                 return self.tally(
                     Tally::Count,
                     (result_type, binder),
-                    (source, predicate),
+                    (expression.at(*source), expression.at(*predicate)),
                     location,
                     frames,
                 )
             }
-            Expression::Sum {
+            ExprNode::Sum {
                 result_type_span: _,
                 result_type,
                 binder,
@@ -895,31 +931,31 @@ impl<'a> Typer<'a> {
                 return self.tally(
                     Tally::Sum,
                     (result_type, binder),
-                    (source, summand),
+                    (expression.at(*source), expression.at(*summand)),
                     location,
                     frames,
                 )
             }
-            Expression::Size(operand) => {
-                let goal = Goal::Infer(operand, None, location.child(0));
+            ExprNode::Size(operand) => {
+                let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
                 return Ok(Self::unary(Unary::Size, goal, location, frames));
             }
-            Expression::Contains { collection, item } => {
+            ExprNode::Contains { collection, item } => {
                 let collection_location = location.child(0);
                 frames.push(Frame::Contains(Box::new(ContainsFrame {
-                    item,
+                    item: expression.at(*item),
                     location,
                     collection: None,
                 })));
                 return Ok(Step::Descend(Goal::Infer(
-                    collection,
+                    expression.at(*collection),
                     None,
                     collection_location,
                 )));
             }
-            Expression::AllInstances { target, population } => {
+            ExprNode::AllInstances { target, population } => {
                 let target = self.population_target(target, &location)?;
-                let goal = Goal::Infer(population, None, location.child(0));
+                let goal = Goal::Infer(expression.at(*population), None, location.child(0));
                 return Ok(Self::unary(
                     Unary::AllInstances(target),
                     goal,
@@ -927,7 +963,7 @@ impl<'a> Typer<'a> {
                     frames,
                 ));
             }
-            Expression::Lookup {
+            ExprNode::Lookup {
                 target,
                 population,
                 reference,
@@ -937,18 +973,18 @@ impl<'a> Typer<'a> {
                 let population_location = location.child(0);
                 frames.push(Frame::Lookup(Box::new(LookupFrame {
                     target,
-                    reference,
+                    reference: expression.at(*reference),
                     absence: *absence,
                     location,
                     population: None,
                 })));
                 return Ok(Step::Descend(Goal::Infer(
-                    population,
+                    expression.at(*population),
                     None,
                     population_location,
                 )));
             }
-            Expression::Dispatch {
+            ExprNode::Dispatch {
                 receiver,
                 member,
                 arguments,
@@ -957,10 +993,12 @@ impl<'a> Typer<'a> {
                 let receiver_location = location.child(0);
                 let frame = Frame::Dispatch(Box::new(DispatchFrame {
                     member,
-                    arguments,
+                    arguments: arguments.iter().map(|id| expression.at(*id)).collect(),
                     location,
                 }));
-                if let Expression::Deref(inner) = &**receiver {
+                let receiver = expression.at(*receiver);
+                if let ExprNode::Deref(inner) = receiver.node() {
+                    let inner = receiver.at(*inner);
                     self.enter(&receiver_location)?;
                     frames.push(frame);
                     frames.push(Frame::Leave);
@@ -974,7 +1012,7 @@ impl<'a> Typer<'a> {
                     receiver_location,
                 )));
             }
-            // FR-063/S2 seam: no arm for `Expression::__SeamProbe`
+            // FR-063/S2 seam: no arm for `ExprNode::__SeamProbe`
             // under `--cfg seam_probe` alone -- this match is deliberately
             // non-exhaustive (`E0004`) in `xtask seam-probe`'s build of
             // `qsl-semantics`, the seam probe's evidence for "the check seam
@@ -988,7 +1026,7 @@ impl<'a> Typer<'a> {
             // seam_probe_downstream`), the same shape `FamilyKind::
             // catalog_code_prefix`'s own doc explains.
             #[cfg(seam_probe_downstream)]
-            Expression::__SeamProbe => unreachable!("never constructed outside the probe build"),
+            ExprNode::__SeamProbe => unreachable!("never constructed outside the probe build"),
         };
         Ok(Step::Typed(typed))
     }
@@ -998,7 +1036,7 @@ impl<'a> Typer<'a> {
     fn binary<'e, 'r>(
         &mut self,
         operator: BinaryOperator,
-        (left, right): (&'e Expression, &'e Expression),
+        (left, right): (ExprRef<'e>, ExprRef<'e>),
         hint: Option<Want<'r>>,
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -1102,11 +1140,12 @@ impl<'a> Typer<'a> {
     fn equality_operand<'e, 'r>(
         &mut self,
         converted: &mut Option<(ValueType, Location)>,
-        expression: &'e Expression,
+        expression: ExprRef<'e>,
         peer: Option<Want<'r>>,
         location: Location,
     ) -> Result<Goal<'e, 'r>, CheckRefusal> {
-        if let Expression::Convert { target, operand } = expression {
+        if let ExprNode::Convert { target, operand } = expression.node() {
+            let operand = expression.at(*operand);
             let target = self.resolve_type(target, &location)?;
             if !matches!(target, ValueType::Collection(_)) {
                 self.enter(&location)?;
@@ -1164,8 +1203,10 @@ impl<'a> Typer<'a> {
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
         let index = frame.typed.len();
-        let arguments = frame.arguments;
-        match (arguments.get(index), frame.application.parameter(index)) {
+        match (
+            frame.arguments.get(index).copied(),
+            frame.application.parameter(index),
+        ) {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index);
                 frames.push(Frame::Application(frame));
@@ -1196,6 +1237,7 @@ impl<'a> Typer<'a> {
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
         let fields = frame.fields;
         while let Some((field, initializer)) = fields.get(frame.next) {
+            let initializer = *initializer;
             frame.next += 1;
             let field_location = match initializer {
                 FieldInitializer::Value(_) => {
@@ -1212,7 +1254,8 @@ impl<'a> Typer<'a> {
                 initializer,
                 &field_location,
             )?;
-            if let Some((index, value_type, expression)) = admitted {
+            if let Some((index, value_type, value)) = admitted {
+                let expression = frame.record.at(value);
                 frame.awaiting = Some(index);
                 frames.push(Frame::Record(frame));
                 return Ok(Step::Descend(Goal::Expect(
@@ -1239,8 +1282,7 @@ impl<'a> Typer<'a> {
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
         let index = frame.typed.len();
-        let elements = frame.elements;
-        match elements.get(index) {
+        match frame.elements.get(index).copied() {
             Some(element) => {
                 let location = frame.location.child(index);
                 let element_type = frame.collection_type.element().clone();
@@ -1277,7 +1319,7 @@ impl<'a> Typer<'a> {
         &self,
         tally: Tally,
         (result_type, binder): (&str, &'e str),
-        (source, body): (&'e Expression, &'e Expression),
+        (source, body): (ExprRef<'e>, ExprRef<'e>),
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
@@ -1304,8 +1346,11 @@ impl<'a> Typer<'a> {
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
         let index = frame.typed.len();
-        let (arguments, operation) = (frame.arguments, frame.operation);
-        match (arguments.get(index), operation.parameters.get(index)) {
+        let operation = frame.operation;
+        match (
+            frame.arguments.get(index).copied(),
+            operation.parameters.get(index),
+        ) {
             (Some(argument), Some(parameter)) => {
                 let location = frame.location.child(index + 1);
                 frames.push(Frame::DispatchArguments(frame));
@@ -1453,6 +1498,7 @@ impl<'a> Typer<'a> {
                 } = *frame;
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
+                let count = arguments.len();
                 Ok(Self::dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
@@ -1460,7 +1506,7 @@ impl<'a> Typer<'a> {
                         operation,
                         arguments,
                         location,
-                        typed: Vec::with_capacity(arguments.len()),
+                        typed: Vec::with_capacity(count),
                     }),
                     frames,
                 ))

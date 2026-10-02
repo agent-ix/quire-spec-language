@@ -30,6 +30,8 @@ qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }
 # ADR-011 §6.1 layer SV: the shared no_std semantic-value leaf.
 quire-semantic-value = { path = "../quire-semantic-value" }
+# ADR-011 §6.1 layer W: the shared no_std walker toolkit (ADR-030 D-1).
+quire-walk = { path = "../quire-walk" }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] }
 # ADR-013 §2 (ADR-013:113): the one RFC 8785 implementation. Every QSL
 # normalized identity encodes through it; arch-lint's

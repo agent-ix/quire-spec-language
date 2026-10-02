@@ -196,11 +196,11 @@ fn undefined_record(evaluation: Evaluation) -> UndefinedRecord {
 }
 
 fn dispatch_expression_on(receiver: &str) -> Expression {
-    Expression::Dispatch {
-        receiver: Box::new(Expression::Name(receiver.to_owned())),
-        member: "size".to_owned(),
-        arguments: Vec::new(),
-    }
+    Expression::dispatch(
+        Expression::name(receiver.to_owned()),
+        "size".to_owned(),
+        Vec::new(),
+    )
 }
 
 fn dispatch_expression() -> Expression {
@@ -218,8 +218,8 @@ fn one_candidate_package(
     result: ValueType,
 ) -> PackageDeclarations {
     let body_value = match &result {
-        ValueType::Integer => Expression::Integer(Integer::from(1_i64)),
-        ValueType::Boolean => Expression::Boolean(true),
+        ValueType::Integer => Expression::integer(1_i64),
+        ValueType::Boolean => Expression::boolean(true),
         other => panic!("this fixture only supports Integer/Boolean results, not {other:?}"),
     };
     let mut functions = vec![FunctionDeclaration::clause(
@@ -339,15 +339,15 @@ fn d07_dispatch_call_admitted_only_inside_invariant_precondition_postcondition()
 fn d07_own_shape_a_dispatch_call_inside_an_ordinary_function_body_is_refused() {
     let receiver_type = object_type("model.dispatch-calls.Receiver");
     let mut package = one_candidate_package(receiver_type, None, ValueType::Integer);
-    let body = Expression::If {
-        condition: Box::new(Expression::Binary {
-            operator: BinaryOperator::GreaterOrEqual,
-            left: Box::new(dispatch_expression_on("r")),
-            right: Box::new(Expression::Integer(Integer::from(1_i64))),
-        }),
-        then: Box::new(Expression::Integer(Integer::from(1_i64))),
-        otherwise: Box::new(Expression::Integer(Integer::from(0_i64))),
-    };
+    let body = Expression::if_then_else(
+        Expression::binary(
+            BinaryOperator::GreaterOrEqual,
+            dispatch_expression_on("r"),
+            Expression::integer(1_i64),
+        ),
+        Expression::integer(1_i64),
+        Expression::integer(0_i64),
+    );
     package.functions.push(FunctionDeclaration::new(
         "f",
         vec![("r".to_owned(), receiver_type_form())],
@@ -385,11 +385,11 @@ fn dispatch_argument_never_admits_integer_to_int_coercion() {
         ("self".to_owned(), ValueType::Reference(receiver_type)),
         ("n".to_owned(), ValueType::Integer),
     ];
-    let call = Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
-        member: "size".to_owned(),
-        arguments: vec![Expression::Name("n".to_owned())],
-    };
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("n".to_owned())],
+    );
     let refusal = checked_package
         .check_clause_expression(
             parameters,
@@ -436,11 +436,11 @@ fn dispatch_argument_admits_a_reference_upcast() {
         ("self".to_owned(), ValueType::Reference(receiver_type)),
         ("arg".to_owned(), ValueType::Reference(sub_type)),
     ];
-    let call = Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
-        member: "size".to_owned(),
-        arguments: vec![Expression::Name("arg".to_owned())],
-    };
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("arg".to_owned())],
+    );
     let checked = checked_package
         .check_clause_expression(
             parameters,
@@ -484,11 +484,11 @@ fn dispatch_argument_refuses_a_reference_downcast() {
         ("self".to_owned(), ValueType::Reference(receiver_type)),
         ("arg".to_owned(), ValueType::Reference(super_type)),
     ];
-    let call = Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
-        member: "size".to_owned(),
-        arguments: vec![Expression::Name("arg".to_owned())],
-    };
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("arg".to_owned())],
+    );
     let refusal = checked_package
         .check_clause_expression(
             parameters,
@@ -534,11 +534,11 @@ fn dispatch_argument_refuses_an_unrelated_reference_type() {
         ("self".to_owned(), ValueType::Reference(receiver_type)),
         ("arg".to_owned(), ValueType::Reference(unrelated_type)),
     ];
-    let call = Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
-        member: "size".to_owned(),
-        arguments: vec![Expression::Name("arg".to_owned())],
-    };
+    let call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "size".to_owned(),
+        vec![Expression::name("arg".to_owned())],
+    );
     let refusal = checked_package
         .check_clause_expression(
             parameters,
@@ -572,10 +572,10 @@ fn synthesized_dispatch_candidate_is_not_callable_by_name() {
         vec![("self".to_owned(), receiver_type_form())],
         crate::support::type_form::type_form(&ValueType::Integer),
         None,
-        Expression::Call {
-            name: "candidate.body".to_owned(),
-            arguments: vec![Expression::Name("self".to_owned())],
-        },
+        Expression::call(
+            "candidate.body".to_owned(),
+            vec![Expression::name("self".to_owned())],
+        ),
     ));
     let refusals = package
         .check(CheckingLimits::default())
@@ -623,7 +623,7 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
             vec![],
             crate::support::type_form::type_form(&ValueType::Boolean),
             None,
-            Expression::Boolean(true),
+            Expression::boolean(true),
             DeclaredClauseKind::Body,
         )],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
@@ -690,7 +690,7 @@ fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
             Vec::new(),
             crate::support::type_form::type_form(&ValueType::Boolean),
             None,
-            Expression::Boolean(true),
+            Expression::boolean(true),
         )
     };
     let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
@@ -738,7 +738,7 @@ fn check_postcondition_expression_still_admits_a_real_postcondition() {
     let checked = package
         .check_postcondition_expression(
             parameters,
-            &Expression::Boolean(true),
+            &Expression::boolean(true),
             Some(&ValueType::Boolean),
             CheckMode::Kernel,
             CheckingLimits::default(),
@@ -864,7 +864,7 @@ fn dispatch_candidate_with_a_mismatched_parameter_type_is_refused_invalid_dispat
         ],
         crate::support::type_form::type_form(&ValueType::Integer),
         None,
-        Expression::Integer(Integer::from(1_i64)),
+        Expression::integer(1_i64),
         DeclaredClauseKind::Body,
     );
     let refusals = package
@@ -971,7 +971,7 @@ fn ab_bridge_clauses(
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
             operation.clone(),
-            Expression::Integer(Integer::from(result)),
+            Expression::integer(Integer::from(result)),
         );
     }
     if let Some(pa) = pa {
@@ -1060,7 +1060,7 @@ fn ab_bridge_package(
 #[test]
 fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific() {
     let b_type = ab_type("model.B");
-    let package = ab_bridge_package(b_type, Some(Expression::Boolean(false)), None);
+    let package = ab_bridge_package(b_type, Some(Expression::boolean(false)), None);
 
     let objects = objects(b_type, "b1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(b_type))];
@@ -1115,7 +1115,7 @@ fn d06_bridge_absent_precondition_selects_most_specific_never_the_less_specific(
 #[test]
 fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() {
     let a_type = ab_type("model.A");
-    let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
+    let package = ab_bridge_package(a_type, Some(Expression::boolean(false)), None);
 
     let objects = objects(a_type, "a1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
@@ -1183,15 +1183,15 @@ fn d06_bridge_false_precondition_is_undefined_and_never_charges_function_call() 
 #[test]
 fn d06_bridge_false_precondition_reports_the_dispatched_calls_own_locus_not_the_root() {
     let a_type = ab_type("model.A");
-    let package = ab_bridge_package(a_type, Some(Expression::Boolean(false)), None);
+    let package = ab_bridge_package(a_type, Some(Expression::boolean(false)), None);
 
     let objects = objects(a_type, "a1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(a_type))];
-    let nested = Expression::Binary {
-        operator: BinaryOperator::Add,
-        left: Box::new(Expression::Integer(Integer::from(0_i64))),
-        right: Box::new(dispatch_expression()),
-    };
+    let nested = Expression::binary(
+        BinaryOperator::Add,
+        Expression::integer(0_i64),
+        dispatch_expression(),
+    );
     let checked = package
         .graph()
         .check_clause_expression(
@@ -1245,7 +1245,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             vec![("self".to_owned(), receiver_type_form())],
             crate::support::type_form::type_form(&ValueType::Integer),
             None,
-            Expression::Integer(Integer::from(1_i64)),
+            Expression::integer(1_i64),
             DeclaredClauseKind::Body,
         ),
         FunctionDeclaration::clause(
@@ -1253,7 +1253,7 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
             vec![("self".to_owned(), receiver_type_form())],
             crate::support::type_form::type_form(&ValueType::Boolean),
             None,
-            Expression::Boolean(false),
+            Expression::boolean(false),
             DeclaredClauseKind::Precondition,
         ),
     ];
@@ -1300,11 +1300,11 @@ fn d06_two_operations_sharing_one_table_report_the_operation_actually_dispatched
 
     let objects = objects(receiver_type, "r1");
     let parameters = vec![("self".to_owned(), ValueType::Reference(receiver_type))];
-    let weight_call = Expression::Dispatch {
-        receiver: Box::new(Expression::Name("self".to_owned())),
-        member: "weight".to_owned(),
-        arguments: Vec::new(),
-    };
+    let weight_call = Expression::dispatch(
+        Expression::name("self".to_owned()),
+        "weight".to_owned(),
+        Vec::new(),
+    );
     let checked = package
         .check_clause_expression(
             parameters,
@@ -1395,8 +1395,8 @@ fn d06_bridge_own_and_ancestor_precondition_both_false_selects_b_never_a() {
     let b_type = ab_type("model.B");
     let package = ab_bridge_package(
         b_type,
-        Some(Expression::Boolean(false)),
-        Some(Expression::Boolean(false)),
+        Some(Expression::boolean(false)),
+        Some(Expression::boolean(false)),
     );
 
     let objects = objects(b_type, "b1");
@@ -1450,8 +1450,8 @@ fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
     let b_type = ab_type("model.B");
     let package = ab_bridge_package(
         b_type,
-        Some(Expression::Boolean(true)),
-        Some(Expression::Boolean(false)),
+        Some(Expression::boolean(true)),
+        Some(Expression::boolean(false)),
     );
 
     let objects = objects(b_type, "b1");
@@ -1487,11 +1487,11 @@ fn d06_bridge_own_false_ancestor_true_completes_through_combinator() {
 /// `self.size() >= 0`: a precondition that dispatches back into the same
 /// operation it guards, for the D08 bridge tests below.
 fn self_recursive_precondition() -> Expression {
-    Expression::Binary {
-        operator: BinaryOperator::GreaterOrEqual,
-        left: Box::new(dispatch_expression()),
-        right: Box::new(Expression::Integer(Integer::from(0_i64))),
-    }
+    Expression::binary(
+        BinaryOperator::GreaterOrEqual,
+        dispatch_expression(),
+        Expression::integer(0_i64),
+    )
 }
 
 /// D08 (FR-151-AC-3), through the real [`checked_dispatch_operation`] bridge
@@ -1543,7 +1543,7 @@ fn d08_bridge_ancestor_cycle_survives_a_sibling_combinator() {
     let declarations = ab_bridge_declarations(
         a_type,
         Some(self_recursive_precondition()),
-        Some(Expression::Boolean(false)),
+        Some(Expression::boolean(false)),
     );
     let refusals = declarations
         .check(CheckingLimits::default())
@@ -1594,25 +1594,25 @@ fn d06_bridge_ancestor_let_binder_colliding_with_descendant_parameter_does_not_c
     clauses.result.insert(b.clone(), ValueType::Integer);
     clauses
         .own_body
-        .insert(a.clone(), Expression::Integer(Integer::from(1_i64)));
+        .insert(a.clone(), Expression::integer(1_i64));
     clauses
         .own_body
-        .insert(b.clone(), Expression::Integer(Integer::from(2_i64)));
+        .insert(b.clone(), Expression::integer(2_i64));
     clauses.own_precondition.insert(
         a.clone(),
-        Expression::Let {
-            name: "b".to_owned(),
-            value: Box::new(Expression::Integer(Integer::from(5_i64))),
-            body: Box::new(Expression::Binary {
-                operator: BinaryOperator::Equal,
-                left: Box::new(Expression::Name("a".to_owned())),
-                right: Box::new(Expression::Name("a".to_owned())),
-            }),
-        },
+        Expression::let_in(
+            "b".to_owned(),
+            Expression::integer(5_i64),
+            Expression::binary(
+                BinaryOperator::Equal,
+                Expression::name("a".to_owned()),
+                Expression::name("a".to_owned()),
+            ),
+        ),
     );
     clauses
         .own_precondition
-        .insert(b.clone(), Expression::Boolean(false));
+        .insert(b.clone(), Expression::boolean(false));
 
     let domain_package = bridge_bundle();
     let view = bridge_view(&domain_package);
@@ -1839,7 +1839,7 @@ fn bridge_clauses(receiver_type: EffectiveId) -> OperationClauses {
         clauses.result.insert(operation.clone(), ValueType::Integer);
         clauses.own_body.insert(
             operation.clone(),
-            Expression::Integer(Integer::from(result)),
+            Expression::integer(Integer::from(result)),
         );
     }
     clauses
@@ -1975,9 +1975,7 @@ fn inherited_only_clauses(receiver_type: EffectiveId) -> OperationClauses {
         vec![("self".to_owned(), ValueType::Reference(receiver_type))],
     );
     clauses.result.insert(a.clone(), ValueType::Integer);
-    clauses
-        .own_body
-        .insert(a, Expression::Integer(Integer::from(1_i64)));
+    clauses.own_body.insert(a, Expression::integer(1_i64));
     clauses
 }
 
@@ -2226,7 +2224,7 @@ fn checked_dispatch_operation_checks_root_key_first_not_record_order() {
         );
         clauses
             .own_body
-            .insert(operation.clone(), Expression::Integer(Integer::from(1_i64)));
+            .insert(operation.clone(), Expression::integer(1_i64));
     }
     let mut meter =
         qsl_semantics::model::accounting::Meter::new(ModelNormalizationLimits::UNLIMITED);

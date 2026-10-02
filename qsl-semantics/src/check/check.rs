@@ -57,8 +57,8 @@ use crate::model::operation::OperationTable;
 use crate::value::definition::AdmittedIeeeProfile;
 use crate::value::enumeration::{mint_variant_id, AdmittedEnumDeclaration};
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
-    FunctionDeclaration,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprId, ExprNode, ExprRef,
+    FieldInitializer, FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::DecimalType;
@@ -613,7 +613,7 @@ pub struct Signature {
     pub(crate) name: String,
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) result: ValueType,
-    /// Whether an ordinary named [`Expression::Call`] may resolve to this
+    /// Whether an ordinary named [`ExprNode::Call`] may resolve to this
     /// signature (TC-196 D07's bypass: a crate-internal FR-151 synthesized
     /// dispatch candidate body or precondition clause is never callable by
     /// plain name, only reachable through a real dispatched call).
@@ -741,12 +741,12 @@ fn is_integer(value_type: &ValueType) -> bool {
 /// The walk keeps its pending sub-expressions on a heap stack: it
 /// runs before the typer has entered `expression`'s own levels, so no
 /// checking limit has bounded its depth yet.
-fn contains_pre_eligible_read(expression: &Expression) -> bool {
+fn contains_pre_eligible_read(expression: ExprRef<'_>) -> bool {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         if matches!(
-            expression,
-            Expression::AllInstances { .. } | Expression::Lookup { .. } | Expression::Pre(_)
+            expression.node(),
+            ExprNode::AllInstances { .. } | ExprNode::Lookup { .. } | ExprNode::Pre(_)
         ) {
             return true;
         }
@@ -758,14 +758,16 @@ fn contains_pre_eligible_read(expression: &Expression) -> bool {
 /// The name a reference expression reads through, looking past `deref`,
 /// `value` and field projections: `target` for `deref(value(target.f))`,
 /// `None` when the reference is not rooted at a name.
-fn reference_root(expression: &Expression) -> Option<&str> {
+fn reference_root(expression: ExprRef<'_>) -> Option<&str> {
     let mut expression = expression;
     loop {
-        match expression {
-            Expression::Name(name) => return Some(name),
-            Expression::Deref(operand)
-            | Expression::Value(operand)
-            | Expression::Field { operand, .. } => expression = operand,
+        match expression.node() {
+            ExprNode::Name(name) => return Some(name),
+            ExprNode::Deref(operand)
+            | ExprNode::Value(operand)
+            | ExprNode::Field { operand, .. } => {
+                expression = expression.at(*operand);
+            }
             _ => return None,
         }
     }
@@ -784,21 +786,21 @@ struct AliasBinding<'e> {
 /// One pending step of [`Typer::resolves_to_captured_alias`]'s walk.
 enum AliasStep<'e> {
     /// Resolve an operand under the scope ending at the binding index.
-    Operand(&'e Expression, Option<usize>),
+    Operand(ExprRef<'e>, Option<usize>),
     /// The value of `let name = value in body` is resolved on top of the
     /// result stack: bind it, then resolve `body`.
-    Bind(&'e str, &'e Expression, Option<usize>),
+    Bind(&'e str, ExprRef<'e>, Option<usize>),
     /// One branch of an `if` is resolved on top of the result stack: keep a
     /// `true`, otherwise resolve the other branch.
-    OrElse(&'e Expression, Option<usize>),
+    OrElse(ExprRef<'e>, Option<usize>),
 }
 
 /// Whether an expression takes its type from its context.
-fn contextual(expression: &Expression) -> bool {
-    match expression {
-        Expression::Integer(_) | Expression::Rational(..) | Expression::Collection { .. } => true,
-        Expression::Negate(operand) => matches!(**operand, Expression::Integer(_)),
-        Expression::Binary {
+fn contextual(expression: ExprRef<'_>) -> bool {
+    match expression.node() {
+        ExprNode::Integer(_) | ExprNode::Rational(..) | ExprNode::Collection { .. } => true,
+        ExprNode::Negate(operand) => matches!(expression.at(*operand).node(), ExprNode::Integer(_)),
+        ExprNode::Binary {
             operator: BinaryOperator::Divide,
             ..
         } => true,
@@ -901,7 +903,7 @@ impl<'a> Typer<'a> {
     }
 
     /// Every function signature this typing pass may resolve an ordinary
-    /// named [`Expression::Call`] against. `check::family::
+    /// named [`ExprNode::Call`] against. `check::family::
     /// Application` reads this for name resolution and arity
     /// checking, exactly as this `Typer`'s own (now deleted) `call` method
     /// did.
@@ -995,18 +997,19 @@ impl<'a> Typer<'a> {
     /// sub-expressions and `let` bindings on the heap: they run
     /// before the typer has entered the operand's own levels, so no
     /// checking limit has bounded its depth yet.
-    fn contains_captured_pre_alias(&self, expression: &Expression, boundary: usize) -> bool {
+    fn contains_captured_pre_alias(&self, expression: ExprRef<'_>, boundary: usize) -> bool {
         let mut bindings: Vec<AliasBinding<'_>> = Vec::new();
-        let mut pending: Vec<(&Expression, Option<usize>)> = vec![(expression, None)];
+        let mut pending: Vec<(ExprRef<'_>, Option<usize>)> = vec![(expression, None)];
         while let Some((expression, scope)) = pending.pop() {
-            match expression {
-                Expression::AllInstances { population, .. }
-                | Expression::Lookup { population, .. } => {
+            match expression.node() {
+                ExprNode::AllInstances { population, .. } | ExprNode::Lookup { population, .. } => {
+                    let population = expression.at(*population);
                     if self.resolves_to_captured_alias(population, boundary, &mut bindings, scope) {
                         return true;
                     }
                 }
-                Expression::Let { name, value, body } => {
+                ExprNode::Let { name, value, body } => {
+                    let (value, body) = (expression.at(*value), expression.at(*body));
                     let alias =
                         self.resolves_to_captured_alias(value, boundary, &mut bindings, scope);
                     bindings.push(AliasBinding {
@@ -1038,20 +1041,20 @@ impl<'a> Typer<'a> {
     /// `bindings` the operand sits under; the bindings its own `let`s make
     /// are appended to `bindings`.
     ///
-    /// - [`Expression::Name`] resolves against the scope first (innermost
+    /// - [`ExprNode::Name`] resolves against the scope first (innermost
     ///   within this walk wins, matching ordinary shadowing), falling back
     ///   to [`Self::captured_before`] for a name this walk never rebound.
-    /// - [`Expression::Let`] resolves its own value first (the value may
+    /// - [`ExprNode::Let`] resolves its own value first (the value may
     ///   itself be a further `let`/`if`), binds that result as `name`, and
     ///   resolves through its body under that extended scope.
-    /// - [`Expression::If`] resolves `true` when *either* branch does: a
+    /// - [`ExprNode::If`] resolves `true` when *either* branch does: a
     ///   checker refusing statically cannot rule out the branch that
     ///   escapes, so both must be clear.
     /// - Every other shape is not itself alias-bearing syntax and resolves
     ///   `false`.
     fn resolves_to_captured_alias<'e>(
         &self,
-        operand: &'e Expression,
+        operand: ExprRef<'e>,
         boundary: usize,
         bindings: &mut Vec<AliasBinding<'e>>,
         scope: Option<usize>,
@@ -1060,32 +1063,32 @@ impl<'a> Typer<'a> {
         let mut pending = vec![AliasStep::Operand(operand, scope)];
         while let Some(step) = pending.pop() {
             match step {
-                AliasStep::Operand(Expression::Name(name), scope) => {
-                    let mut at = scope;
-                    let mut alias = None;
-                    while let Some(binding) = at.and_then(|index| bindings.get(index)) {
-                        if binding.name == name {
-                            alias = Some(binding.alias);
-                            break;
+                AliasStep::Operand(operand, scope) => match operand.node() {
+                    ExprNode::Name(name) => {
+                        let mut at = scope;
+                        let mut alias = None;
+                        while let Some(binding) = at.and_then(|index| bindings.get(index)) {
+                            if binding.name == name {
+                                alias = Some(binding.alias);
+                                break;
+                            }
+                            at = binding.outer;
                         }
-                        at = binding.outer;
+                        resolved
+                            .push(alias.unwrap_or_else(|| self.captured_before(name, boundary)));
                     }
-                    resolved.push(alias.unwrap_or_else(|| self.captured_before(name, boundary)));
-                }
-                AliasStep::Operand(Expression::Let { name, value, body }, scope) => {
-                    pending.push(AliasStep::Bind(name, body, scope));
-                    pending.push(AliasStep::Operand(value, scope));
-                }
-                AliasStep::Operand(
-                    Expression::If {
+                    ExprNode::Let { name, value, body } => {
+                        pending.push(AliasStep::Bind(name, operand.at(*body), scope));
+                        pending.push(AliasStep::Operand(operand.at(*value), scope));
+                    }
+                    ExprNode::If {
                         then, otherwise, ..
-                    },
-                    scope,
-                ) => {
-                    pending.push(AliasStep::OrElse(otherwise, scope));
-                    pending.push(AliasStep::Operand(then, scope));
-                }
-                AliasStep::Operand(_, _) => resolved.push(false),
+                    } => {
+                        pending.push(AliasStep::OrElse(operand.at(*otherwise), scope));
+                        pending.push(AliasStep::Operand(operand.at(*then), scope));
+                    }
+                    _ => resolved.push(false),
+                },
                 AliasStep::Bind(name, body, scope) => {
                     let alias = resolved.pop() == Some(true);
                     bindings.push(AliasBinding {
@@ -1691,20 +1694,20 @@ impl<'a> Typer<'a> {
     /// pre(s.version)` row), and one bound inside it names no parameter.
     /// Parameters, literals and `result` alone are never eligible (QSpec:
     /// "a bare or parameter-only historical selection refuses").
-    fn state_pre_eligible(&self, operand: &Expression) -> bool {
+    fn state_pre_eligible(&self, operand: ExprRef<'_>) -> bool {
         let mut inner: BTreeSet<&str> = BTreeSet::new();
         let mut pending = vec![operand];
         while let Some(expression) = pending.pop() {
-            match expression {
-                Expression::Let { name, .. } => {
+            match expression.node() {
+                ExprNode::Let { name, .. } => {
                     inner.insert(name);
                 }
-                Expression::Query { binder, .. }
-                | Expression::Count { binder, .. }
-                | Expression::Sum { binder, .. } => {
+                ExprNode::Query { binder, .. }
+                | ExprNode::Count { binder, .. }
+                | ExprNode::Sum { binder, .. } => {
                     inner.insert(binder);
                 }
-                Expression::Accumulate {
+                ExprNode::Accumulate {
                     accumulator,
                     binder,
                     ..
@@ -1727,16 +1730,16 @@ impl<'a> Typer<'a> {
         };
         let mut pending = vec![operand];
         while let Some(expression) = pending.pop() {
-            match expression {
-                Expression::SelfRef
-                | Expression::AllInstances { .. }
-                | Expression::Lookup { .. }
-                | Expression::Pre(_) => return true,
-                Expression::Field {
+            match expression.node() {
+                ExprNode::SelfRef
+                | ExprNode::AllInstances { .. }
+                | ExprNode::Lookup { .. }
+                | ExprNode::Pre(_) => return true,
+                ExprNode::Field {
                     operand: reference, ..
                 }
-                | Expression::Deref(reference)
-                    if reference_root(reference).is_some_and(parameter) =>
+                | ExprNode::Deref(reference)
+                    if reference_root(expression.at(*reference)).is_some_and(parameter) =>
                 {
                     return true;
                 }
@@ -1890,13 +1893,13 @@ impl<'a> Typer<'a> {
     /// Admit a record literal's initializer of `field` at `field_location`
     /// into `supplied`: a `null` is admitted now; a value expression names
     /// the slot it fills and the type it is checked against once typed.
-    fn record_field<'d, 'i>(
+    fn record_field<'d>(
         declared: &'d [FieldDeclaration],
         supplied: &mut [Option<RecordSlot>],
         field: &str,
-        initializer: &'i FieldInitializer,
+        initializer: FieldInitializer,
         field_location: &Location,
-    ) -> Result<Option<(usize, &'d ValueType, &'i Expression)>, CheckRefusal> {
+    ) -> Result<Option<(usize, &'d ValueType, ExprId)>, CheckRefusal> {
         let (index, declaration) = declared
             .iter()
             .enumerate()

@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 
 use ix_trace_rs::trace;
 use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
-use qsl_forms::{BinaryOperator, Expression, FieldInitializer, FunctionDeclaration};
+use qsl_forms::{BinaryOperator, Expression, FunctionDeclaration};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedExpression, Obligation, PackageDeclarations,
@@ -1893,19 +1893,15 @@ fn plain_package() -> CheckedPackage {
 }
 
 fn operand(spelling: &str) -> Expression {
-    Expression::Name(spelling.to_owned())
+    Expression::name(spelling.to_owned())
 }
 
 fn operation(operator: BinaryOperator, left: &str, right: &str) -> Expression {
-    Expression::Binary {
-        operator,
-        left: Box::new(operand(left)),
-        right: Box::new(operand(right)),
-    }
+    Expression::binary(operator, operand(left), operand(right))
 }
 
 fn negation(spelling: &str) -> Expression {
-    Expression::Negate(Box::new(operand(spelling)))
+    Expression::negate(operand(spelling))
 }
 
 fn check_in(
@@ -2257,11 +2253,7 @@ fn x04_compound_results_feed_further_quantity_operations() {
             Value::Quantity(Quantity::new(whole(4), units.s)),
         ]
     };
-    let binary = |operator, left, right| Expression::Binary {
-        operator,
-        left: Box::new(left),
-        right: Box::new(right),
-    };
+    let binary = |operator, left, right| Expression::binary(operator, left, right);
     let times_t = |name: &str| binary(BinaryOperator::Multiply, operand(name), operand("t"));
 
     let (quotient, _) = run_in(
@@ -2404,10 +2396,10 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
     let (exact, exact_losses, _) = run_in_losses(
         &package,
         &parameters,
-        &Expression::Convert {
-            target: crate::support::type_form::type_form(&rational_type(0, 0, 1, 1)),
-            operand: Box::new(operand("f")),
-        },
+        &Expression::convert(
+            crate::support::type_form::type_form(&rational_type(0, 0, 1, 1)),
+            operand("f"),
+        ),
         None,
         arguments(negative_zero, three),
         UNLIMITED,
@@ -2458,21 +2450,21 @@ fn x05_ieee_arithmetic_records_flags_and_grammar_ordering_is_ineligible() {
 }
 
 fn record(name: &str, fields: Vec<(&str, Expression)>) -> Expression {
-    Expression::Record {
-        name: name.to_owned(),
-        fields: fields
+    Expression::record(
+        name.to_owned(),
+        fields
             .into_iter()
-            .map(|(field, value)| (field.to_owned(), FieldInitializer::Value(value)))
+            .map(|(field, value)| (field.to_owned(), Some(value)))
             .collect(),
-    }
+    )
 }
 
 fn plus_one(spelling: &str) -> Expression {
-    Expression::Binary {
-        operator: BinaryOperator::Add,
-        left: Box::new(operand(spelling)),
-        right: Box::new(Expression::Integer(integer(1))),
-    }
+    Expression::binary(
+        BinaryOperator::Add,
+        operand(spelling),
+        Expression::integer(integer(1)),
+    )
 }
 
 #[trace("QSpec-TC-194", "QSpec-FR-149-AC-7")]
@@ -2512,16 +2504,9 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
     let parameters = [("p", ValueType::Integer)];
     // `eA = pick(p)` refuses its `Int[0,1]` argument before `function.call`;
     // `eB = p + 1` charges and is incomplete under the zero tuple.
-    let e_a = || Expression::Call {
-        name: "pick".to_owned(),
-        arguments: vec![operand("p")],
-    };
+    let e_a = || Expression::call("pick".to_owned(), vec![operand("p")]);
     let right = || record("Two", vec![("a", plus_one("p")), ("b", plus_one("p"))]);
-    let compare = |left: Expression| Expression::Binary {
-        operator: BinaryOperator::Equal,
-        left: Box::new(left),
-        right: Box::new(right()),
-    };
+    let compare = |left: Expression| Expression::binary(BinaryOperator::Equal, left, right());
 
     let (refused, meter) = run_in(
         &package,
@@ -2561,13 +2546,12 @@ fn e20_source_order_row_evaluates_fields_in_declaration_order() {
 #[test]
 fn e26_let_bound_conversions_are_ordinary_conversions() {
     let package = plain_package();
-    let let_equal = |target: ValueType| Expression::Let {
-        name: "x".to_owned(),
-        value: Box::new(Expression::Convert {
-            target: crate::support::type_form::type_form(&target),
-            operand: Box::new(operand("e")),
-        }),
-        body: Box::new(operation(BinaryOperator::Equal, "x", "d")),
+    let let_equal = |target: ValueType| {
+        Expression::let_in(
+            "x".to_owned(),
+            Expression::convert(crate::support::type_form::type_form(&target), operand("e")),
+            operation(BinaryOperator::Equal, "x", "d"),
+        )
     };
 
     let whole = [("e", decimal_type(0, 9, 0, 0)), ("d", int_type(0, 9))];
@@ -2603,14 +2587,11 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
         }] => assert_eq!(location.path, vec![0]),
         other => panic!("one decimal loss, not {other:?}"),
     }
-    let direct = Expression::Binary {
-        operator: BinaryOperator::Equal,
-        left: Box::new(Expression::Convert {
-            target: crate::support::type_form::type_form(&target),
-            operand: Box::new(operand("e")),
-        }),
-        right: Box::new(operand("d")),
-    };
+    let direct = Expression::binary(
+        BinaryOperator::Equal,
+        Expression::convert(crate::support::type_form::type_form(&target), operand("e")),
+        operand("d"),
+    );
     assert_eq!(
         refused(check_in(
             &package,

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    BinaryOperator, BinderQuery, BuiltinType, Expression, FunctionDeclaration, TypeForm,
+    BinaryOperator, BinderQuery, BuiltinType, ExprNode, Expression, FunctionDeclaration, TypeForm,
 };
 use quire_exact::{
     CardinalityBound, CollectionType, DecimalType, IntegerInterval, LimitKind as MeterLimitKind,
@@ -321,7 +321,7 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
         &[("x", int_form(0, 9))],
         boolean(),
         None,
-        Expression::Boolean(true),
+        Expression::boolean(true),
     );
     for owner in [fixture_source(), w] {
         let graph = check_under(owner, vec![g1.clone()]).expect("g1 checks");
@@ -351,7 +351,7 @@ fn a_type_nested_past_the_depth_limit_refuses() {
                 &[("x", nested(depth))],
                 boolean(),
                 None,
-                Expression::Boolean(true),
+                Expression::boolean(true),
             )],
             ..PackageDeclarations::new(fixture_source())
         }
@@ -379,22 +379,18 @@ fn recursive(name: &str, callee: &str) -> FunctionDeclaration {
         &[("x", int_form(0, 9))],
         boolean(),
         Some(name_expr("x")),
-        Expression::If {
-            condition: Box::new(binary(
-                BinaryOperator::Greater,
-                name_expr("x"),
-                integer_expr(0),
-            )),
-            then: Box::new(Expression::Call {
-                name: callee.to_owned(),
-                arguments: vec![binary(
+        Expression::if_then_else(
+            binary(BinaryOperator::Greater, name_expr("x"), integer_expr(0)),
+            Expression::call(
+                callee.to_owned(),
+                vec![binary(
                     BinaryOperator::Subtract,
                     name_expr("x"),
                     integer_expr(1),
                 )],
-            }),
-            otherwise: Box::new(Expression::Boolean(true)),
-        },
+            ),
+            Expression::boolean(true),
+        ),
     )
 }
 
@@ -566,10 +562,7 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
         &[("s", lists), ("a", list())],
         boolean(),
         None,
-        Expression::Contains {
-            collection: Box::new(name_expr("s")),
-            item: Box::new(name_expr("a")),
-        },
+        Expression::contains(name_expr("s"), name_expr("a")),
     );
     let checked = PackageDeclarations {
         types: list_types(),
@@ -589,28 +582,26 @@ fn equality_and_contains_over_a_recursive_record_without_text_have_no_leaves() {
 #[trace("FR-092-AC-11", "TC-413")]
 #[test]
 fn equal_recursive_calls_are_one_node() {
-    let call = || Expression::Call {
-        name: "h".to_owned(),
-        arguments: vec![binary(
-            BinaryOperator::Subtract,
-            name_expr("x"),
-            integer_expr(1),
-        )],
+    let call = || {
+        Expression::call(
+            "h".to_owned(),
+            vec![binary(
+                BinaryOperator::Subtract,
+                name_expr("x"),
+                integer_expr(1),
+            )],
+        )
     };
     let h = function(
         "h",
         &[("x", int_form(0, 9))],
         boolean(),
         Some(name_expr("x")),
-        Expression::If {
-            condition: Box::new(binary(
-                BinaryOperator::Greater,
-                name_expr("x"),
-                integer_expr(0),
-            )),
-            then: Box::new(binary(BinaryOperator::And, call(), call())),
-            otherwise: Box::new(Expression::Boolean(true)),
-        },
+        Expression::if_then_else(
+            binary(BinaryOperator::Greater, name_expr("x"), integer_expr(0)),
+            binary(BinaryOperator::And, call(), call()),
+            Expression::boolean(true),
+        ),
     );
     let checked = check(vec![h]).expect("h checks");
     let members: Vec<&SemanticNode> = checked
@@ -641,9 +632,12 @@ fn ring(k: usize) -> Vec<FunctionDeclaration> {
         .map(|at| {
             let mut function = recursive(&format!("r{at}"), &format!("r{}", (at + 1) % k));
             if at + 1 == k {
-                if let Expression::If { otherwise, .. } = &mut function.body {
-                    **otherwise = Expression::Boolean(false);
-                }
+                // The body's one Boolean literal is its `else`.
+                function.body = function.body.respelled(|_, node| {
+                    if let ExprNode::Boolean(value) = node {
+                        *value = false;
+                    }
+                });
             }
             function
         })
@@ -833,7 +827,7 @@ fn an_alias_introduces_no_type_node() {
             &[("x", TypeForm::name("Digit", SPAN))],
             boolean(),
             None,
-            Expression::Boolean(true),
+            Expression::boolean(true),
         )],
         ..PackageDeclarations::new(fixture_source())
     }
@@ -890,19 +884,15 @@ fn int_form(lower: i64, upper: i64) -> TypeForm {
 }
 
 fn name_expr(name: &str) -> Expression {
-    Expression::Name(name.to_owned())
+    Expression::name(name.to_owned())
 }
 
 fn integer_expr(value: i64) -> Expression {
-    Expression::Integer(Integer::from(value))
+    Expression::integer(Integer::from(value))
 }
 
 fn binary(operator: BinaryOperator, left: Expression, right: Expression) -> Expression {
-    Expression::Binary {
-        operator,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    Expression::binary(operator, left, right)
 }
 
 fn function(
@@ -966,10 +956,10 @@ fn nb() -> FunctionDeclaration {
         &[("a", boolean())],
         boolean(),
         None,
-        Expression::Call {
-            name: "both".to_owned(),
-            arguments: vec![name_expr("a"), Expression::Boolean(true)],
-        },
+        Expression::call(
+            "both".to_owned(),
+            vec![name_expr("a"), Expression::boolean(true)],
+        ),
     )
 }
 
@@ -979,16 +969,12 @@ fn h() -> FunctionDeclaration {
         &[("a", boolean())],
         boolean(),
         None,
-        Expression::Let {
-            name: "y".to_owned(),
-            value: Box::new(name_expr("a")),
-            body: Box::new(name_expr("y")),
-        },
+        Expression::let_in("y".to_owned(), name_expr("a"), name_expr("y")),
     )
 }
 
 fn f() -> FunctionDeclaration {
-    function("f", &[], boolean(), None, Expression::Boolean(true))
+    function("f", &[], boolean(), None, Expression::boolean(true))
 }
 
 fn t() -> FunctionDeclaration {
@@ -997,11 +983,11 @@ fn t() -> FunctionDeclaration {
         &[],
         boolean(),
         None,
-        Expression::If {
-            condition: Box::new(Expression::Boolean(true)),
-            then: Box::new(Expression::Boolean(true)),
-            otherwise: Box::new(Expression::Boolean(true)),
-        },
+        Expression::if_then_else(
+            Expression::boolean(true),
+            Expression::boolean(true),
+            Expression::boolean(true),
+        ),
     )
 }
 
@@ -1126,7 +1112,7 @@ fn a_measure_is_a_decreases_reference() {
         &[("x", int_form(0, 9))],
         boolean(),
         Some(name_expr("x")),
-        Expression::Boolean(true),
+        Expression::boolean(true),
     );
     let graph = check(vec![m]).expect("m checks");
     let semantic = graph.semantic_graph();
@@ -1275,15 +1261,15 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
             "1".into(),
         ]),
         None,
-        Expression::Convert {
-            target: TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(vec![
+        Expression::convert(
+            TypeForm::builtin(BuiltinType::Rational, SPAN).with_bounds(vec![
                 "0".into(),
                 "9".into(),
                 "1".into(),
                 "1".into(),
             ]),
-            operand: Box::new(name_expr("x")),
-        },
+            name_expr("x"),
+        ),
     );
     let bounded_sequence = |element: TypeForm, maximum: &str| {
         TypeForm::collection(CollectionKind::Sequence, SPAN)
@@ -1298,12 +1284,12 @@ fn conversions_are_classified_and_flat_map_builds_one_node() {
         )],
         bounded_sequence(int_form(0, 9), "6"),
         None,
-        Expression::Query {
-            query: BinderQuery::FlatMap,
-            binder: "x".to_owned(),
-            source: Box::new(name_expr("s")),
-            body: Box::new(name_expr("x")),
-        },
+        Expression::query(
+            BinderQuery::FlatMap,
+            "x".to_owned(),
+            name_expr("s"),
+            name_expr("x"),
+        ),
     );
 
     let graph = check(vec![c1]).expect("c1 checks");
@@ -1356,11 +1342,8 @@ fn binder_levels_count_enclosing_binders() {
     let s = TypeForm::collection(CollectionKind::Sequence, SPAN)
         .with_arguments(vec![int_form(0, 9)])
         .with_bounds(vec!["0".into(), "5".into()]);
-    let query = |query: BinderQuery, binder: &str, body: Expression| Expression::Query {
-        query,
-        binder: binder.to_owned(),
-        source: Box::new(name_expr("s")),
-        body: Box::new(body),
+    let query = |query: BinderQuery, binder: &str, body: Expression| {
+        Expression::query(query, binder.to_owned(), name_expr("s"), body)
     };
     let q = function(
         "q",
@@ -1378,7 +1361,7 @@ fn binder_levels_count_enclosing_binders() {
                     binary(BinaryOperator::Equal, name_expr("x"), name_expr("y")),
                 ),
             ),
-            query(BinderQuery::Exists, "z", Expression::Boolean(true)),
+            query(BinderQuery::Exists, "z", Expression::boolean(true)),
         ),
     );
     let graph = check(vec![q]).expect("q checks");
@@ -1436,11 +1419,11 @@ fn a_law_comes_only_from_the_lock_evidence() {
         &[("p", text()), ("r", text())],
         boolean(),
         None,
-        Expression::Not(Box::new(binary(
+        Expression::logical_not(binary(
             BinaryOperator::Equal,
             name_expr("p"),
             name_expr("r"),
-        ))),
+        )),
     );
     let refusals = check(vec![te.clone()]).expect_err("no text-profile evidence refuses");
     assert_eq!(refusals.len(), 1, "{refusals:?}");
@@ -1560,7 +1543,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("x", integer())],
                 integer(),
                 None,
-                Expression::Negate(Box::new(name_expr("x"))),
+                Expression::negate(name_expr("x")),
             ),
             "quire.op.integer.negate",
             "unary",
@@ -1668,7 +1651,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("a", boolean())],
                 boolean(),
                 None,
-                Expression::Not(Box::new(name_expr("a"))),
+                Expression::logical_not(name_expr("a")),
             ),
             "quire.op.boolean.not",
             "unary",
@@ -1681,7 +1664,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("o", option())],
                 boolean(),
                 None,
-                Expression::Present(Box::new(name_expr("o"))),
+                Expression::present(name_expr("o")),
             ),
             "quire.op.option.present",
             "present",
@@ -1694,11 +1677,11 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("o", option())],
                 int_form(0, 9),
                 None,
-                Expression::If {
-                    condition: Box::new(Expression::Present(Box::new(name_expr("o")))),
-                    then: Box::new(Expression::Value(Box::new(name_expr("o")))),
-                    otherwise: Box::new(integer_expr(0)),
-                },
+                Expression::if_then_else(
+                    Expression::present(name_expr("o")),
+                    Expression::value(name_expr("o")),
+                    integer_expr(0),
+                ),
             ),
             "quire.op.option.value",
             "value",
@@ -1711,10 +1694,10 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("x", int_form(0, 9))],
                 s(),
                 None,
-                Expression::Collection {
-                    kind: CollectionKind::Sequence,
-                    elements: vec![name_expr("x"), name_expr("x")],
-                },
+                Expression::collection(
+                    CollectionKind::Sequence,
+                    vec![name_expr("x"), name_expr("x")],
+                ),
             ),
             "quire.op.collection.sequence",
             "collection",
@@ -1727,10 +1710,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("x", int_form(0, 9))],
                 set(),
                 None,
-                Expression::Collection {
-                    kind: CollectionKind::Set,
-                    elements: vec![name_expr("x")],
-                },
+                Expression::collection(CollectionKind::Set, vec![name_expr("x")]),
             ),
             "quire.op.collection.set",
             "collection",
@@ -1743,12 +1723,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("s", s())],
                 s(),
                 None,
-                Expression::Query {
-                    query: BinderQuery::Map,
-                    binder: "x".into(),
-                    source: Box::new(name_expr("s")),
-                    body: Box::new(name_expr("x")),
-                },
+                Expression::query(BinderQuery::Map, "x", name_expr("s"), name_expr("x")),
             ),
             "quire.op.collection.map",
             "collection",
@@ -1761,12 +1736,12 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("s", s())],
                 s(),
                 None,
-                Expression::Query {
-                    query: BinderQuery::Filter,
-                    binder: "x".into(),
-                    source: Box::new(name_expr("s")),
-                    body: Box::new(Expression::Boolean(true)),
-                },
+                Expression::query(
+                    BinderQuery::Filter,
+                    "x",
+                    name_expr("s"),
+                    Expression::boolean(true),
+                ),
             ),
             "quire.op.collection.filter",
             "collection",
@@ -1779,12 +1754,12 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("s", s())],
                 boolean(),
                 None,
-                Expression::Query {
-                    query: BinderQuery::Exists,
-                    binder: "x".into(),
-                    source: Box::new(name_expr("s")),
-                    body: Box::new(Expression::Boolean(true)),
-                },
+                Expression::query(
+                    BinderQuery::Exists,
+                    "x",
+                    name_expr("s"),
+                    Expression::boolean(true),
+                ),
             ),
             "quire.op.collection.exists",
             "quantify",
@@ -1797,7 +1772,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("s", s())],
                 integer(),
                 None,
-                Expression::Size(Box::new(name_expr("s"))),
+                Expression::size(name_expr("s")),
             ),
             "quire.op.collection.size",
             "collection",
@@ -1810,10 +1785,7 @@ fn value_family_rows_lower_to_their_catalogued_operations() {
                 &[("s", s()), ("x", int_form(0, 9))],
                 boolean(),
                 None,
-                Expression::Contains {
-                    collection: Box::new(name_expr("s")),
-                    item: Box::new(name_expr("x")),
-                },
+                Expression::contains(name_expr("s"), name_expr("x")),
             ),
             "quire.op.collection.contains",
             "collection",
@@ -1873,23 +1845,17 @@ fn record_projection_and_record_values_name_their_record_node() {
         &[("p", TypeForm::name("Point", SPAN))],
         int_form(0, 9),
         None,
-        Expression::Field {
-            operand: Box::new(name_expr("p")),
-            field: "x".to_owned(),
-        },
+        Expression::field(name_expr("p"), "x".to_owned()),
     );
     let build = function(
         "mk",
         &[("x", int_form(0, 9))],
         TypeForm::name("Point", SPAN),
         None,
-        Expression::Record {
-            name: "Point".to_owned(),
-            fields: vec![(
-                "x".to_owned(),
-                qsl_forms::FieldInitializer::Value(name_expr("x")),
-            )],
-        },
+        Expression::record(
+            "Point".to_owned(),
+            vec![("x".to_owned(), Some(name_expr("x")))],
+        ),
     );
     let graph = PackageDeclarations {
         types,

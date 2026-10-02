@@ -312,7 +312,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         ),
         (
             "qsl-forms",
-            &["qsl-cst", "qsl-foundation", "quire-exact"][..],
+            &["qsl-cst", "qsl-foundation", "quire-exact", "quire-walk"][..],
             &[][..],
         ),
         (
@@ -323,6 +323,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
                 "qsl-foundation",
                 "quire-exact",
                 "quire-semantic-value",
+                "quire-walk",
             ][..],
             &["qsl-cst"][..],
         ),
@@ -365,7 +366,7 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         );
         if crate_name == "qsl-forms" {
             // Layer 2's "Depends on" cell names no external crate, so its
-            // `[dependencies]` are exactly the three layer crates.
+            // `[dependencies]` are exactly the four layer crates.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(normal, allowed, "{crate_name}'s [dependencies]");

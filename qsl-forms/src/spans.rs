@@ -2,7 +2,7 @@
 //! The byte spans of a parsed form's expression nodes (FR-091-AC-10).
 //!
 //! A form's spans are held beside its [`Expression`] tree, one span per
-//! node, in an arena shaped exactly as [`Expression::children`] numbers the
+//! node, in an arena shaped exactly as [`ExprNode::children`] numbers the
 //! tree. That shape is what lets a `quire_semantic_value::location::Location`
 //! (a declaration origin plus a child-index path) reach the span of the node it names (FR-096):
 //! each path step `i` moves to child `i`.
@@ -14,6 +14,8 @@ use std::fmt;
 
 use qsl_foundation::Span;
 
+#[cfg(doc)]
+use super::ExprNode;
 use super::Expression;
 
 /// One node of an [`ExpressionSpans`] arena. Minted only by the arena that
@@ -28,7 +30,7 @@ struct SpanNode {
 }
 
 /// The spans of one expression tree, one per node: the root at
-/// [`Self::root`], and each node's children in [`Expression::children`]
+/// [`Self::root`], and each node's children in [`ExprNode::children`]
 /// order. Every child's span lies inside its parent's, and starts at or
 /// after the end of its previous sibling's.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,7 +53,7 @@ pub enum SpanRefusal {
         child: Span,
     },
     /// The child starts before its previous sibling ends: children are
-    /// pushed in source order, as [`Expression::children`] numbers them.
+    /// pushed in source order, as [`ExprNode::children`] numbers them.
     BeforeSibling {
         /// The previous sibling's span.
         sibling: Span,
@@ -103,7 +105,7 @@ impl ExpressionSpans {
     }
 
     /// Append `span` as the next child of `parent`, in
-    /// [`Expression::children`] order.
+    /// [`ExprNode::children`] order.
     pub fn push_child(&mut self, parent: SpanId, span: Span) -> Result<SpanId, SpanRefusal> {
         if span.start > span.end {
             return Err(SpanRefusal::Reversed(span));
@@ -144,7 +146,7 @@ impl ExpressionSpans {
         self.nodes.get(node.0).map(|node| node.span)
     }
 
-    /// The `index`th child of `node`, numbered as [`Expression::children`]
+    /// The `index`th child of `node`, numbered as [`ExprNode::children`]
     /// numbers it.
     pub fn child(&self, node: SpanId, index: usize) -> Option<SpanId> {
         self.nodes.get(node.0)?.children.get(index).copied()
@@ -168,18 +170,23 @@ impl ExpressionSpans {
 
     /// Whether this tree has exactly `expression`'s shape: one node per
     /// expression node, each with as many children as
-    /// [`Expression::children`] lists. Walks both on an explicit stack.
+    /// [`ExprNode::children`] lists. Walks both on an explicit stack.
     pub fn fits(&self, expression: &Expression) -> bool {
-        let mut stack = vec![(self.root(), expression)];
+        let mut stack = vec![(self.root(), expression.root())];
         while let Some((node, expression)) = stack.pop() {
             let Some(node) = self.nodes.get(node.0) else {
                 return false;
             };
-            let children = expression.children();
+            let children = expression.node().children();
             if node.children.len() != children.len() {
                 return false;
             }
-            stack.extend(node.children.iter().copied().zip(children));
+            for (span, child) in node.children.iter().copied().zip(children) {
+                let Some(child) = expression.tree().get(child) else {
+                    return false;
+                };
+                stack.push((span, child));
+            }
         }
         true
     }
@@ -348,7 +355,7 @@ mod tests {
                 Vec::new(),
                 TypeForm::builtin(BuiltinType::Boolean, span(0, 0)),
                 None,
-                Expression::Not(Box::new(Expression::Boolean(true))),
+                Expression::logical_not(Expression::boolean(true)),
             )
         };
         let mut body = tree(span(0, 8));
@@ -392,7 +399,7 @@ mod tests {
 
         // `body` is public: an edit that changes its shape withholds the
         // spans instead of letting them name the wrong node.
-        carried.body = Expression::Boolean(true);
+        carried.body = Expression::boolean(true);
         assert_eq!(carried.spans(), None);
     }
 
@@ -408,6 +415,6 @@ mod tests {
         }
         let path = vec![0; DEPTH];
         assert_eq!(spans.at(&path), Some(span(0, DEPTH)));
-        assert!(!spans.fits(&Expression::Boolean(true)));
+        assert!(!spans.fits(&Expression::boolean(true)));
     }
 }

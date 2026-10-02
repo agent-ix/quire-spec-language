@@ -6,12 +6,11 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, AnchorSite, BinderForm, BinderKind, BuiltinType, DeclarationForm, Expression,
-    ExpressionSpans, FormsCause, FormsFailure, FormsLimits, ParsedUnit, ProtocolConstructKind,
+    build_unit, AnchorSite, BinderForm, BinderKind, BuiltinType, DeclarationForm, ExprNode,
+    ExprRef, ExpressionSpans, FormsCause, ParsedUnit, ProtocolConstructKind,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, ScopedAnchorForm, SpanId,
     StateClauseForm, StateClauseKind, TypeFormHead,
 };
-use qsl_foundation::diagnostic::LimitKind;
 use qsl_foundation::{SourceIdentity, Span};
 
 /// Every unit under test starts with this header (TC-456's own text): one
@@ -45,15 +44,14 @@ fn admissible(declarations: &str) -> (String, qsl_cst::ParsedSource) {
 
 fn build(declarations: &str) -> (String, ParsedUnit) {
     let (text, parsed) = admissible(declarations);
-    let unit = build_unit(&parsed, FormsLimits::default())
-        .unwrap_or_else(|failure| panic!("{declarations}: {failure:?}"));
+    let unit = build_unit(&parsed).unwrap_or_else(|failure| panic!("{declarations}: {failure:?}"));
     (text, unit)
 }
 
 fn refusal(declarations: &str) -> (String, FormsCause, Option<Span>) {
     let (text, parsed) = admissible(declarations);
-    match build_unit(&parsed, FormsLimits::default()) {
-        Err(FormsFailure::Refused(refusal)) => (text, refusal.cause, refusal.span),
+    match build_unit(&parsed) {
+        Err(refusal) => (text, refusal.cause, refusal.span),
         other => panic!("{declarations}: a refusal, not {other:?}"),
     }
 }
@@ -72,7 +70,7 @@ fn assert_every_span_slice_reparses(
     text: &str,
     spans: &ExpressionSpans,
     id: SpanId,
-    expr: &Expression,
+    expr: ExprRef<'_>,
 ) {
     let span = spans
         .span(id)
@@ -175,8 +173,11 @@ fn segment_texts(anchor: &ScopedAnchorForm) -> Vec<&str> {
         .collect()
 }
 
-fn scope_names(anchor: &ScopedAnchorForm) -> Vec<&str> {
-    anchor.scope.iter().map(|name| name.name.as_str()).collect()
+fn scope_names<'a>(form: &'a ProtocolDeclarationForm, anchor: &ScopedAnchorForm) -> Vec<&'a str> {
+    form.scope_names(anchor.scope)
+        .into_iter()
+        .map(|name| name.name.as_str())
+        .collect()
 }
 
 #[trace("TC-510", "FR-112-AC-1")]
@@ -189,22 +190,22 @@ fn s2_builds_four_scoped_anchors_in_source_order() {
     let compensate_for = &form.scoped_anchors[0];
     assert_eq!(compensate_for.site, AnchorSite::CompensateFor);
     assert_eq!(segment_texts(compensate_for), ["Main", "Applied"]);
-    assert!(compensate_for.scope.is_empty());
+    assert_eq!(compensate_for.scope, None);
 
     let compensate_commit = &form.scoped_anchors[1];
     assert_eq!(compensate_commit.site, AnchorSite::CompensateCommit);
     assert_eq!(segment_texts(compensate_commit), ["Main", "Committed"]);
-    assert!(compensate_commit.scope.is_empty());
+    assert_eq!(compensate_commit.scope, None);
 
     let effect_of = &form.scoped_anchors[2];
     assert_eq!(effect_of.site, AnchorSite::EffectOf);
     assert_eq!(segment_texts(effect_of), ["Tried"]);
-    assert_eq!(scope_names(effect_of), ["Main"]);
+    assert_eq!(scope_names(form, effect_of), ["Main"]);
 
     let event_for = &form.scoped_anchors[3];
     assert_eq!(event_for.site, AnchorSite::EventFor);
     assert_eq!(segment_texts(event_for), ["Undo"]);
-    assert_eq!(scope_names(event_for), ["Main"]);
+    assert_eq!(scope_names(form, event_for), ["Main"]);
 
     // Each segment's span covers exactly the segment's text in the source.
     for anchor in &form.scoped_anchors {
@@ -223,7 +224,7 @@ fn s2_builds_four_scoped_anchors_in_source_order() {
         }
         // Each scope name's span covers exactly that name's text too
         // (FR-112 Outputs: "the names, with their spans").
-        for scope_name in &anchor.scope {
+        for scope_name in form.scope_names(anchor.scope) {
             assert_eq!(
                 &text[scope_name.span.start..scope_name.span.end],
                 scope_name.name
@@ -243,9 +244,9 @@ fn binder<'a>(
         .find(|binder| {
             binder.name.name == name
                 && binder.kind == kind
-                && binder
-                    .scope
-                    .iter()
+                && form
+                    .scope_names(binder.scope)
+                    .into_iter()
                     .map(|s| s.name.as_str())
                     .eq(scope.iter().copied())
         })
@@ -497,7 +498,7 @@ fn a_reference_in_a_nested_control_records_every_enclosing_named_control() {
         .find(|anchor| anchor.site == AnchorSite::AwaitAfter)
         .expect("an await-after anchor");
     assert_eq!(segment_texts(await_after), ["Sent"]);
-    assert_eq!(scope_names(await_after), ["Main", "Both", "left"]);
+    assert_eq!(scope_names(form, await_after), ["Main", "Both", "left"]);
 
     // `commit never;` builds no `compensate-commit` anchor.
     let (_, unit) = build(&recovery_flow("never", true, parallel));
@@ -541,7 +542,10 @@ fn building_twice_gives_equal_forms_independent_of_a_named_targets_existence() {
     let event_for_a = &form_a.scoped_anchors[3];
     assert_eq!(event_for_c.site, event_for_a.site);
     assert_eq!(segment_texts(event_for_c), segment_texts(event_for_a));
-    assert_eq!(scope_names(event_for_c), scope_names(event_for_a));
+    assert_eq!(
+        scope_names(form_c, event_for_c),
+        scope_names(form_a, event_for_a)
+    );
 }
 
 /// SR-753/SR-754 FND-001: FR-113 Inputs says a control declares the names
@@ -567,7 +571,7 @@ fn an_awaits_matched_event_and_branches_are_scoped_inside_the_await() {
         .find(|anchor| anchor.site == AnchorSite::AwaitAfter)
         .expect("the await-after anchor");
     assert_eq!(segment_texts(await_after), ["Sent"]);
-    assert_eq!(scope_names(await_after), ["Main"]);
+    assert_eq!(scope_names(form, await_after), ["Main"]);
 
     let receive_of = form
         .scoped_anchors
@@ -575,14 +579,14 @@ fn an_awaits_matched_event_and_branches_are_scoped_inside_the_await() {
         .find(|anchor| anchor.site == AnchorSite::ReceiveOf)
         .expect("the await's matched event's receive-of anchor");
     assert_eq!(segment_texts(receive_of), ["Sent"]);
-    assert_eq!(scope_names(receive_of), ["Main", "Wait"]);
+    assert_eq!(scope_names(form, receive_of), ["Main", "Wait"]);
 
     let effect_of = form
         .scoped_anchors
         .iter()
         .find(|anchor| anchor.site == AnchorSite::EffectOf)
         .expect("the await's then-branch effect-of anchor");
-    assert_eq!(scope_names(effect_of), ["Main", "Wait", "Then"]);
+    assert_eq!(scope_names(form, effect_of), ["Main", "Wait", "Then"]);
 }
 
 /// SR-753 FND-004: no test built a `choice`/`case` or a `repeat`, so a
@@ -605,7 +609,10 @@ fn choice_and_repeat_named_controls_enclose_their_bodies() {
         .iter()
         .find(|anchor| anchor.site == AnchorSite::EffectOf)
         .expect("the choice case's effect-of anchor");
-    assert_eq!(scope_names(effect_of), ["Main", "Decision", "yes", "Yes"]);
+    assert_eq!(
+        scope_names(form, effect_of),
+        ["Main", "Decision", "yes", "Yes"]
+    );
 
     let repeat = "repeat Loop by R visible (true) max 2 invariant { true } variant { 1 } \
          while { false } sequence Body {\n\
@@ -620,16 +627,18 @@ fn choice_and_repeat_named_controls_enclose_their_bodies() {
         .iter()
         .find(|anchor| anchor.site == AnchorSite::EffectOf)
         .expect("the repeat body's effect-of anchor");
-    assert_eq!(scope_names(effect_of), ["Main", "Loop", "Body"]);
+    assert_eq!(scope_names(form, effect_of), ["Main", "Loop", "Body"]);
     // `event-for` appears twice here (the repeat's own `exhausted` branch,
     // and `recovery_flow`'s trailing `event Recovered ... for Undo`, at
     // `["Main"]`); the repeat's own is the one nested three levels deep.
     let event_for = form
         .scoped_anchors
         .iter()
-        .find(|anchor| anchor.site == AnchorSite::EventFor && anchor.scope.len() == 3)
+        .find(|anchor| {
+            anchor.site == AnchorSite::EventFor && form.scope_names(anchor.scope).len() == 3
+        })
         .expect("the repeat's exhausted-branch event-for anchor");
-    assert_eq!(scope_names(event_for), ["Main", "Loop", "Exhausted"]);
+    assert_eq!(scope_names(form, event_for), ["Main", "Loop", "Exhausted"]);
 }
 
 /// The one declaration named `name` of kind `kind` in `form.declarations`.
@@ -653,10 +662,12 @@ fn decl<'a>(
     }
 }
 
-fn decl_scope(declaration: &ProtocolNodeDeclaration) -> Vec<&str> {
-    declaration
-        .scope
-        .iter()
+fn decl_scope<'a>(
+    form: &'a ProtocolDeclarationForm,
+    declaration: &ProtocolNodeDeclaration,
+) -> Vec<&'a str> {
+    form.scope_names(declaration.scope)
+        .into_iter()
         .map(|name| name.name.as_str())
         .collect()
 }
@@ -689,15 +700,18 @@ fn s2_builds_a_declaration_for_every_control_kind() {
     // protocol's `run` control, its `finish` node and its `compensate`
     // templates".
     assert_eq!(
-        decl_scope(decl(form, "Main", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Main", ProtocolNodeKind::Sequence)),
         Vec::<&str>::new()
     );
     assert_eq!(
-        decl_scope(decl(form, "End", ProtocolNodeKind::Finish)),
+        decl_scope(form, decl(form, "End", ProtocolNodeKind::Finish)),
         Vec::<&str>::new()
     );
     assert_eq!(
-        decl_scope(decl(form, "Undo", ProtocolNodeKind::CompensateTemplate)),
+        decl_scope(
+            form,
+            decl(form, "Undo", ProtocolNodeKind::CompensateTemplate)
+        ),
         Vec::<&str>::new()
     );
 
@@ -713,55 +727,55 @@ fn s2_builds_a_declaration_for_every_control_kind() {
         ("Recovered", ProtocolNodeKind::Event),
         ("Committed", ProtocolNodeKind::Commit),
     ] {
-        assert_eq!(decl_scope(decl(form, name, kind)), ["Main"], "{name}");
+        assert_eq!(decl_scope(form, decl(form, name, kind)), ["Main"], "{name}");
     }
 
     // `choice` declares its `case`s directly; each `case` declares its own
     // inner control.
     assert_eq!(
-        decl_scope(decl(form, "yes", ProtocolNodeKind::Case)),
+        decl_scope(form, decl(form, "yes", ProtocolNodeKind::Case)),
         ["Main", "Decision"]
     );
     assert_eq!(
-        decl_scope(decl(form, "no", ProtocolNodeKind::Case)),
+        decl_scope(form, decl(form, "no", ProtocolNodeKind::Case)),
         ["Main", "Decision"]
     );
     assert_eq!(
-        decl_scope(decl(form, "Yes", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Yes", ProtocolNodeKind::Sequence)),
         ["Main", "Decision", "yes"]
     );
     assert_eq!(
-        decl_scope(decl(form, "No", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "No", ProtocolNodeKind::Sequence)),
         ["Main", "Decision", "no"]
     );
 
     // `parallel` declares its `branch`es directly; each `branch` declares
     // its own inner control.
     assert_eq!(
-        decl_scope(decl(form, "left", ProtocolNodeKind::Branch)),
+        decl_scope(form, decl(form, "left", ProtocolNodeKind::Branch)),
         ["Main", "Both"]
     );
     assert_eq!(
-        decl_scope(decl(form, "right", ProtocolNodeKind::Branch)),
+        decl_scope(form, decl(form, "right", ProtocolNodeKind::Branch)),
         ["Main", "Both"]
     );
     assert_eq!(
-        decl_scope(decl(form, "Left", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Left", ProtocolNodeKind::Sequence)),
         ["Main", "Both", "left"]
     );
     assert_eq!(
-        decl_scope(decl(form, "Right", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Right", ProtocolNodeKind::Sequence)),
         ["Main", "Both", "right"]
     );
 
     // `repeat` declares both its `while`-body control and its `exhausted`
     // control directly.
     assert_eq!(
-        decl_scope(decl(form, "Body", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Body", ProtocolNodeKind::Sequence)),
         ["Main", "Loop"]
     );
     assert_eq!(
-        decl_scope(decl(form, "Exhausted", ProtocolNodeKind::Sequence)),
+        decl_scope(form, decl(form, "Exhausted", ProtocolNodeKind::Sequence)),
         ["Main", "Loop"]
     );
 }
@@ -801,65 +815,21 @@ fn s2_builds_the_channel_of_a_send_and_receive_only() {
     assert_eq!(receive_of.channel.as_deref(), Some("D"));
 }
 
-/// SR-753 FND-003: `await ... then <Control>` and `repeat ... exhausted
-/// <Control>` nest with no bracket, so only an explicit depth charge --
-/// not the CST's own bracket-based nesting ceiling -- bounds a chain of
-/// them. A chain past the limit refuses instead of recursing without
-/// bound (a 500-await chain aborts the process on a small stack without
-/// this charge).
-#[trace("TC-510", "FR-112")]
-#[test]
-fn the_control_walk_refuses_past_its_nesting_depth_limit_instead_of_recursing_unbounded() {
-    let limits = FormsLimits { nesting_depth: 6 };
-    let awaits = |count: u64| {
-        let mut control = "sequence End { }".to_owned();
-        for i in 0..count {
-            control = format!(
-                "await W{i} after Sent using v clock \"ticks\" within [0,1] \
-                 match send Ping via Messages as (ping: Config::ConfigVersion) {{ true }}; \
-                 then {control} timeout sequence T{i} {{ }}"
-            );
-        }
-        control
-    };
-    let source = |count: u64| {
-        format!(
-            "protocol Chain using v over (input: Config::ConfigVersion) on origin {{\n\
-             role R on Config::ConfigVersion;\n\
-             run sequence Main {{ {} }}\n\
-             finish End as (outcome: Boolean) {{ true }};\n\
-             }}",
-            awaits(count)
-        )
-    };
-
-    let (_, parsed) = admissible(&source(2));
-    build_unit(&parsed, limits).expect("a short chain of awaits builds");
-
-    let (text, parsed) = admissible(&source(20));
-    match build_unit(&parsed, limits) {
-        Err(FormsFailure::Limit { limit, .. }) => {
-            assert_eq!(limit.kind(), LimitKind::NestingDepth);
-        }
-        other => panic!("{text}: a limit refusal, not {other:?}"),
-    }
-}
-
 /// A compact rendering of an expression tree, operands in order (mirrors
 /// `value_forms::show`, extended with the three forms this ticket adds).
-fn show(expression: &Expression) -> String {
+fn show(expression: ExprRef<'_>) -> String {
     let children: Vec<String> = expression.children().into_iter().map(show).collect();
-    let head = match expression {
-        Expression::Boolean(value) => format!("{value}"),
-        Expression::Integer(value) => format!("{value}"),
-        Expression::Name(spelling) => spelling.clone(),
-        Expression::Binary { operator, .. } => format!("{operator:?}"),
-        Expression::Not(_) => "Not".into(),
-        Expression::Field { field, .. } => format!("Field[{field}]"),
-        Expression::Pre(_) => "Pre".into(),
-        Expression::SelfRef => "SelfRef".into(),
-        Expression::Result => "Result".into(),
-        Expression::Reaches { edge, .. } => format!("Reaches[{edge}]"),
+    let head = match expression.node() {
+        ExprNode::Boolean(value) => format!("{value}"),
+        ExprNode::Integer(value) => format!("{value}"),
+        ExprNode::Name(spelling) => spelling.clone(),
+        ExprNode::Binary { operator, .. } => format!("{operator:?}"),
+        ExprNode::Not(_) => "Not".into(),
+        ExprNode::Field { field, .. } => format!("Field[{field}]"),
+        ExprNode::Pre(_) => "Pre".into(),
+        ExprNode::SelfRef => "SelfRef".into(),
+        ExprNode::Result => "Result".into(),
+        ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         other => panic!("this fixture's bodies use no other form: {other:?}"),
     };
     if children.is_empty() {
@@ -905,7 +875,7 @@ fn an_invariant_builds_one_state_clause_form_with_no_operation() {
     assert_eq!(&text[left.start..left.end], "present(self.parent)");
 
     // Every node, not just the root and its left child (SR-722 FND-007).
-    assert_every_span_slice_reparses(&text, spans, spans.root(), &form.body);
+    assert_every_span_slice_reparses(&text, spans, spans.root(), form.body.root());
 }
 
 #[trace("TC-456", "FR-102-AC-2")]
@@ -937,7 +907,10 @@ fn self_result_and_reaches_build_and_a_qualified_edge_refuses() {
          { not reaches(self, self, parent) }",
     );
     let form = state_clause(unit.forms()[0].form());
-    assert_eq!(show(&form.body), "Not(Reaches[parent](SelfRef, SelfRef))");
+    assert_eq!(
+        show(form.body.root()),
+        "Not(Reaches[parent](SelfRef, SelfRef))"
+    );
 
     let (_, unit) = build(
         "post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate \
@@ -945,13 +918,13 @@ fn self_result_and_reaches_build_and_a_qualified_edge_refuses() {
     );
     let form = state_clause(unit.forms()[0].form());
     assert_eq!(
-        show(&form.body),
+        show(form.body.root()),
         "Equal(Field[versionNumber](SelfRef), Pre(Field[versionNumber](SelfRef)))"
     );
 
     let (_, unit) = build("post R using v on Config::ConfigVersion::attemptUpdate { result }");
     let form = state_clause(unit.forms()[0].form());
-    assert!(matches!(form.body, Expression::Result));
+    assert!(matches!(form.body.root_node(), ExprNode::Result));
 
     let (text, cause, span) = refusal(
         "invariant Q using v on Config::ConfigVersion at current \
@@ -974,34 +947,165 @@ fn self_result_and_reaches_build_and_a_qualified_edge_refuses() {
     );
 }
 
+/// Run `run` on a thread with a 512 KiB stack.
+fn on_small_stack(run: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(run)
+        .expect("spawn a 512 KiB thread")
+        .join()
+        .expect("S2 does not overflow a 512 KiB stack");
+}
+
+/// S1 limits raised past what any deep input here needs.
+fn raised() -> qsl_cst::Limits {
+    qsl_cst::Limits::default()
+        .with_source_bytes(usize::MAX)
+        .with_tokens(usize::MAX)
+        .with_nodes(usize::MAX)
+}
+
+/// Build `declarations` under [`raised`] S1 limits.
+fn build_raised(declarations: &str) -> ParsedUnit {
+    let text = format!("{HEADER}{declarations}\n");
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        raised(),
+    )
+    .expect("S1 reads the unit under raised limits");
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    build_unit(&parsed).expect("S2 builds the unit")
+}
+
+/// An invariant whose body is 128 nested `not`s around `true` builds at the
+/// default S1 limits, and one of 100,000 builds on a 512 KiB stack under
+/// raised S1 limits; S2 takes no limit set.
 #[trace("TC-457", "FR-102-AC-5")]
+#[trace("TC-724", "FR-257-AC-3")]
 #[test]
-fn a_state_clause_body_obeys_the_same_nesting_depth_limit_as_a_function_body() {
-    // A bare `(e)` is a transparent pass-through (`value`'s own doc: "a
-    // single-operand precedence level maps to its operand"), so it adds no
-    // arena node and no depth; `not` is the nesting device `value_forms`'s
-    // own FR-091 depth tests use for exactly this reason.
-    let limits = FormsLimits { nesting_depth: 4 };
-    let nots = |count: u64| "not ".repeat(count as usize) + "true";
-    let source = |count: u64| {
+fn deep_not_invariants_build_with_no_s2_limit() {
+    let source = |count: usize| {
         format!(
-            "invariant N using v on Config::ConfigVersion at current {{ {} }}",
-            nots(count)
+            "invariant N using v on Config::ConfigVersion at current {{ {}true }}",
+            "not ".repeat(count)
         )
     };
+    let (_, unit) = build(&source(128));
+    assert_eq!(state_clause(unit.forms()[0].form()).body.len(), 129);
+    on_small_stack(move || {
+        let unit = build_raised(&source(100_000));
+        assert_eq!(state_clause(unit.forms()[0].form()).body.len(), 100_001);
+    });
+}
 
-    // `nesting_depth` counts the root at depth 1, so `limit - 1` `not`s
-    // reach exactly the bound (the leaf `true` at depth `limit`).
-    let (_, parsed) = admissible(&source(limits.nesting_depth - 1));
-    build_unit(&parsed, limits).expect("exactly at the limit builds");
-
-    let (text, parsed) = admissible(&source(limits.nesting_depth));
-    match build_unit(&parsed, limits) {
-        Err(FormsFailure::Limit { limit, span }) => {
-            assert_eq!(limit.kind(), LimitKind::NestingDepth);
-            let expected_start = text.find("true").expect("the leaf is in the unit");
-            assert_eq!(span.start, expected_start);
+/// Asserts that every anchor at `site` sits directly inside the scope named
+/// by `expected` (in source order), that `hops` parents up from each
+/// anchor's scope is the previous anchor's scope, and that the deepest
+/// anchor's whole path is `depth` names long: by induction, every anchor's
+/// path is the FR-112 one.
+fn assert_chain_scopes(
+    form: &ProtocolDeclarationForm,
+    site: AnchorSite,
+    expected: impl Fn(usize) -> String,
+    hops: usize,
+    depth: usize,
+) {
+    let anchors: Vec<&ScopedAnchorForm> = form
+        .scoped_anchors
+        .iter()
+        .filter(|anchor| anchor.site == site)
+        .collect();
+    assert_eq!(anchors.len(), 100_000, "{site:?}");
+    for (level, anchor) in anchors.iter().enumerate() {
+        let id = anchor.scope.expect("every chain anchor is inside `run`");
+        let entry = &form.scopes[id.index()];
+        assert_eq!(entry.name.name, expected(level), "{site:?} {level}");
+        if level > 0 {
+            let mut up = Some(id);
+            for _ in 0..hops {
+                up = up.and_then(|id| form.scopes[id.index()].parent);
+            }
+            assert_eq!(up, anchors[level - 1].scope, "{site:?} {level}");
         }
-        other => panic!("a limit refusal, not {other:?}"),
     }
+    let deepest = anchors.last().expect("a chain anchor");
+    assert_eq!(form.scope_names(deepest.scope).len(), depth, "{site:?}");
+}
+
+/// A protocol whose `run` sequence holds `chain` before its other nodes.
+fn deep_protocol(chain: &str) -> ParsedUnit {
+    build_raised(&recovery_flow("Main::Committed", false, chain))
+}
+
+/// A 100,000-deep `await ... then` chain builds every scoped anchor on a
+/// 512 KiB stack, each in the scope FR-112 gives it: an `after` anchor in
+/// the scope enclosing its await, a matched event's `of` anchor inside it.
+#[trace("TC-724", "FR-257-AC-2")]
+#[test]
+fn a_100000_deep_await_chain_builds_its_anchors_on_a_small_stack() {
+    on_small_stack(|| {
+        let depth = 100_000;
+        let mut chain = String::new();
+        for level in 0..depth {
+            chain.push_str(&format!(
+                "await W{level} after Tried using v clock \"ticks\" within [0,1] \
+                 match receive G{level} via Messages of Tried \
+                 as (got{level}: Config::ConfigVersion) {{ true }}; then "
+            ));
+        }
+        chain.push_str("sequence Last { }");
+        for level in (0..depth).rev() {
+            chain.push_str(&format!(" timeout sequence T{level} {{ }}"));
+        }
+        chain.push('\n');
+        let unit = deep_protocol(&chain);
+        let form = protocol_form(unit.forms()[0].form());
+        let enclosing = |level: usize| {
+            if level == 0 {
+                "Main".to_owned()
+            } else {
+                format!("W{}", level - 1)
+            }
+        };
+        assert_chain_scopes(form, AnchorSite::AwaitAfter, enclosing, 1, depth);
+        assert_chain_scopes(
+            form,
+            AnchorSite::ReceiveOf,
+            |level| format!("W{level}"),
+            1,
+            depth + 1,
+        );
+    });
+}
+
+/// A 100,000-deep `repeat ... exhausted` chain builds every scoped anchor on
+/// a 512 KiB stack, each inside its repeat's `exhausted` sequence.
+#[trace("TC-724", "FR-257-AC-2")]
+#[test]
+fn a_100000_deep_repeat_chain_builds_its_anchors_on_a_small_stack() {
+    on_small_stack(|| {
+        let depth = 100_000;
+        let mut chain = String::new();
+        for level in 0..depth {
+            chain.push_str(&format!(
+                "repeat L{level} by R visible (true) max 2 invariant {{ true }} variant {{ 1 }} \
+                 while {{ false }} sequence B{level} {{ }} exhausted sequence E{level} {{ \
+                 effect Done{level} of Tried as (done{level}: Config::ConfigVersion) {{ true }}; "
+            ));
+        }
+        chain.push_str(&"} ".repeat(depth));
+        chain.push('\n');
+        let unit = deep_protocol(&chain);
+        let form = protocol_form(unit.forms()[0].form());
+        // Each `effect`'s path is `Main, L0, E0, ..., Lk, Ek`.
+        assert_chain_scopes(
+            form,
+            AnchorSite::EffectOf,
+            |level| format!("E{level}"),
+            2,
+            2 * depth + 1,
+        );
+    });
 }

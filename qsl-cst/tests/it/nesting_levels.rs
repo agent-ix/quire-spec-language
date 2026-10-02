@@ -171,7 +171,14 @@ fn deepest_options(limits: Limits) -> usize {
     while low + 1 < high {
         let middle = (low + high) / 2;
         let text = nested_options(middle);
-        if qsl_cst::parse(identity("options"), "options.native", text.as_bytes(), limits).is_ok() {
+        if qsl_cst::parse(
+            identity("options"),
+            "options.native",
+            text.as_bytes(),
+            limits,
+        )
+        .is_ok()
+        {
             low = middle;
         } else {
             high = middle;
@@ -213,8 +220,13 @@ fn brackets_nest_to_the_default_token_ceiling() {
         let limits = Limits::default().with_nodes(200_000);
         let deepest = deepest_options(limits);
         let text = nested_options(deepest);
-        let parsed = qsl_cst::parse(identity("options"), "options.native", text.as_bytes(), limits)
-            .expect("the deepest nest within the token ceiling parses");
+        let parsed = qsl_cst::parse(
+            identity("options"),
+            "options.native",
+            text.as_bytes(),
+            limits,
+        )
+        .expect("the deepest nest within the token ceiling parses");
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
         let error = qsl_cst::parse(
             identity("options"),

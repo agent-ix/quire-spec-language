@@ -1432,6 +1432,7 @@ dependencies = [
  "qsl-cst",
  "qsl-foundation",
  "quire-exact",
+ "quire-walk",
  "syn 2.0.119",
 ]
 
@@ -1518,6 +1519,7 @@ dependencies = [
  "quire-exact",
  "quire-semantic-value",
  "quire-specification-qualification",
+ "quire-walk",
  "serde",
  "serde_json",
  "sha2",

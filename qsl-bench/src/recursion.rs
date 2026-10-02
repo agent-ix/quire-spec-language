@@ -26,10 +26,7 @@ pub fn self_recursive(functions: usize) -> PackageDeclarations {
                 vec![("x".to_owned(), integer())],
                 integer(),
                 None,
-                Expression::Call {
-                    name: chain_name(index),
-                    arguments: vec![Expression::Name("x".to_owned())],
-                },
+                Expression::call(chain_name(index), vec![Expression::name("x".to_owned())]),
             )
         })
         .collect();

@@ -187,7 +187,7 @@ impl Fixture {
                     vec![("p".to_owned(), population)],
                     boolean(),
                     None,
-                    Expression::Boolean(true),
+                    Expression::boolean(true),
                 );
                 Emitted::whole(
                     modelled(&spine_model_without(&[]), SPINE_MODEL_DOCUMENT, vec![pop]),

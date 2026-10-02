@@ -52,7 +52,7 @@ use std::collections::BTreeMap;
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
 
 use qsl_forms::{
-    Accumulation, BinaryOperator, BinderQuery, ClauseKind, Expression, FieldInitializer,
+    Accumulation, BinaryOperator, BinderQuery, ClauseKind, ExprNode, Expression, FieldInitializer,
     FunctionDeclaration,
 };
 use qsl_foundation::absence::AbsenceMode;
@@ -380,84 +380,84 @@ fn encode_expression(
     root: &Expression,
     targets: &TargetTypes<'_>,
 ) -> Result<(), CheckRefusal> {
-    let mut pending = vec![root];
+    let mut pending = vec![root.root()];
     while let Some(expr) = pending.pop() {
         out.enter_node();
         // The node's sub-expressions in source order; pushed reversed below
         // so the first is visited next.
         let first = pending.len();
-        match expr {
-            Expression::Boolean(value) => {
+        match expr.node() {
+            ExprNode::Boolean(value) => {
                 out.write_str("boolean");
                 out.write_bool(*value);
             }
-            Expression::Integer(value) => {
+            ExprNode::Integer(value) => {
                 out.write_str("integer");
                 out.write_str(&value.to_string());
             }
-            Expression::Rational(numerator, denominator) => {
+            ExprNode::Rational(numerator, denominator) => {
                 out.write_str("rational");
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
-            Expression::Name(name) => {
+            ExprNode::Name(name) => {
                 out.write_str("name");
                 out.write_str(name);
             }
-            Expression::Let { name, value, body } => {
+            ExprNode::Let { name, value, body } => {
                 out.write_str("let");
                 out.write_str(name);
-                pending.extend([&**value, &**body]);
+                pending.extend([expr.at(*value), expr.at(*body)]);
             }
-            Expression::If {
+            ExprNode::If {
                 condition,
                 then,
                 otherwise,
             } => {
                 out.write_str("if");
-                pending.extend([&**condition, &**then, &**otherwise]);
+                pending.extend([expr.at(*condition), expr.at(*then), expr.at(*otherwise)]);
             }
-            Expression::Binary {
+            ExprNode::Binary {
                 operator,
                 left,
                 right,
             } => {
                 out.write_str("binary");
                 out.write_str(binary_operator_tag(*operator));
-                pending.extend([&**left, &**right]);
+                pending.extend([expr.at(*left), expr.at(*right)]);
             }
-            Expression::Negate(operand) => {
+            ExprNode::Negate(operand) => {
                 out.write_str("negate");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Not(operand) => {
+            ExprNode::Not(operand) => {
                 out.write_str("not");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Field { operand, field } => {
+            ExprNode::Field { operand, field } => {
                 out.write_str("field");
                 out.write_str(field);
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Present(operand) => {
+            ExprNode::Present(operand) => {
                 out.write_str("present");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Value(operand) => {
+            ExprNode::Value(operand) => {
                 out.write_str("value");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Deref(operand) => {
+            ExprNode::Deref(operand) => {
                 out.write_str("deref");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Call { name, arguments } => {
+            ExprNode::Call { name, arguments } => {
                 out.write_str("call");
                 out.write_str(name);
                 out.write_u64(arguments.len() as u64);
-                pending.extend(arguments);
+                pending.extend(arguments.iter().map(|id| expr.at(*id)));
             }
-            Expression::Record { name, fields } => {
+            ExprNode::Record { name, fields } => {
                 out.write_str("record");
                 out.write_str(name);
                 out.write_u64(fields.len() as u64);
@@ -466,24 +466,24 @@ fn encode_expression(
                     match initializer {
                         FieldInitializer::Value(expression) => {
                             out.write_str("value");
-                            pending.push(expression);
+                            pending.push(expr.at(*expression));
                         }
                         FieldInitializer::Null => out.write_str("null"),
                     }
                 }
             }
-            Expression::Collection { kind, elements } => {
+            ExprNode::Collection { kind, elements } => {
                 out.write_str("collection");
                 out.write_str(collection_kind_tag(*kind));
                 out.write_u64(elements.len() as u64);
-                pending.extend(elements);
+                pending.extend(elements.iter().map(|id| expr.at(*id)));
             }
-            Expression::Convert { target, operand } => {
+            ExprNode::Convert { target, operand } => {
                 out.write_str("convert");
                 encode_value_type(out, &targets.resolve(target)?);
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Query {
+            ExprNode::Query {
                 query,
                 binder,
                 source,
@@ -492,13 +492,13 @@ fn encode_expression(
                 out.write_str("query");
                 out.write_str(binder_query_tag(*query));
                 out.write_str(binder);
-                pending.extend([&**source, &**body]);
+                pending.extend([expr.at(*source), expr.at(*body)]);
             }
-            Expression::Flatten(operand) => {
+            ExprNode::Flatten(operand) => {
                 out.write_str("flatten");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Accumulate {
+            ExprNode::Accumulate {
                 accumulator_type_span: _,
                 form,
                 accumulator_type,
@@ -514,10 +514,10 @@ fn encode_expression(
                 out.write_str(accumulator);
                 out.write_str(binder);
                 out.write_bool(identity.is_some());
-                pending.extend([&**source, &**step]);
-                pending.extend(identity.as_deref());
+                pending.extend([expr.at(*source), expr.at(*step)]);
+                pending.extend(identity.map(|id| expr.at(id)));
             }
-            Expression::Count {
+            ExprNode::Count {
                 result_type_span: _,
                 result_type,
                 binder,
@@ -527,9 +527,9 @@ fn encode_expression(
                 out.write_str("count");
                 out.write_str(result_type);
                 out.write_str(binder);
-                pending.extend([&**source, &**predicate]);
+                pending.extend([expr.at(*source), expr.at(*predicate)]);
             }
-            Expression::Sum {
+            ExprNode::Sum {
                 result_type_span: _,
                 result_type,
                 binder,
@@ -539,22 +539,22 @@ fn encode_expression(
                 out.write_str("sum");
                 out.write_str(result_type);
                 out.write_str(binder);
-                pending.extend([&**source, &**summand]);
+                pending.extend([expr.at(*source), expr.at(*summand)]);
             }
-            Expression::Size(operand) => {
+            ExprNode::Size(operand) => {
                 out.write_str("size");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::Contains { collection, item } => {
+            ExprNode::Contains { collection, item } => {
                 out.write_str("contains");
-                pending.extend([&**collection, &**item]);
+                pending.extend([expr.at(*collection), expr.at(*item)]);
             }
-            Expression::AllInstances { target, population } => {
+            ExprNode::AllInstances { target, population } => {
                 out.write_str("all-instances");
                 encode_value_type(out, &targets.resolve(target)?);
-                pending.push(population);
+                pending.push(expr.at(*population));
             }
-            Expression::Lookup {
+            ExprNode::Lookup {
                 target,
                 population,
                 reference,
@@ -563,9 +563,9 @@ fn encode_expression(
                 out.write_str("lookup");
                 encode_value_type(out, &targets.resolve(target)?);
                 out.write_str(absence_mode_tag(*absence));
-                pending.extend([&**population, &**reference]);
+                pending.extend([expr.at(*population), expr.at(*reference)]);
             }
-            Expression::Dispatch {
+            ExprNode::Dispatch {
                 receiver,
                 member,
                 arguments,
@@ -573,20 +573,20 @@ fn encode_expression(
                 out.write_str("dispatch");
                 out.write_str(member);
                 out.write_u64(arguments.len() as u64);
-                pending.push(receiver);
-                pending.extend(arguments);
+                pending.push(expr.at(*receiver));
+                pending.extend(arguments.iter().map(|id| expr.at(*id)));
             }
-            Expression::Pre(operand) => {
+            ExprNode::Pre(operand) => {
                 out.write_str("pre");
-                pending.push(operand);
+                pending.push(expr.at(*operand));
             }
-            Expression::SelfRef => {
+            ExprNode::SelfRef => {
                 out.write_str("self_ref");
             }
-            Expression::Result => {
+            ExprNode::Result => {
                 out.write_str("result");
             }
-            Expression::Reaches {
+            ExprNode::Reaches {
                 source,
                 target,
                 edge,
@@ -594,14 +594,14 @@ fn encode_expression(
             } => {
                 out.write_str("reaches");
                 out.write_str(edge);
-                pending.extend([&**source, &**target]);
+                pending.extend([expr.at(*source), expr.at(*target)]);
             }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg
             // seam_probe`.
             #[cfg(seam_probe)]
-            Expression::__SeamProbe => unreachable!("never constructed outside the probe build"),
+            ExprNode::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
         pending[first..].reverse();
     }
@@ -1649,7 +1649,7 @@ mod tests {
             vec![("x".to_owned(), parameter)],
             TypeForm::builtin(BuiltinType::Boolean, SPAN),
             None,
-            Expression::Boolean(true),
+            Expression::boolean(true),
         )
     }
 
@@ -1714,10 +1714,7 @@ mod tests {
             Vec::new(),
             TypeForm::builtin(BuiltinType::Integer, SPAN),
             None,
-            Expression::Convert {
-                target: TypeForm::name("Nowhere", SPAN),
-                operand: Box::new(Expression::Integer(quire_exact::Integer::from(1_i64))),
-            },
+            Expression::convert(TypeForm::name("Nowhere", SPAN), Expression::integer(1_i64)),
         );
         let signature = Signature {
             name: "g".to_owned(),
@@ -1957,10 +1954,7 @@ pub(crate) mod checking_tests {
         arguments: &[Expression],
         location: &CheckLocation,
     ) -> Result<Node, CheckRefusal> {
-        let call = Expression::Call {
-            name: name.to_owned(),
-            arguments: arguments.to_vec(),
-        };
+        let call = Expression::call(name.to_owned(), arguments.to_vec());
         typer.infer(&call, None, location)
     }
 
@@ -1994,7 +1988,7 @@ pub(crate) mod checking_tests {
             ClauseKind::Body,
         );
         let location = root_location();
-        let arguments = vec![Expression::Boolean(true)];
+        let arguments = vec![Expression::boolean(true)];
         let checked = check_application(&mut typer, "f", &arguments, &location)
             .expect("one Boolean argument against a one-Boolean-parameter signature admits");
         assert_eq!(checked.value_type, ValueType::Boolean);
@@ -2021,7 +2015,7 @@ pub(crate) mod checking_tests {
             ClauseKind::Body,
         );
         let location = root_location();
-        let arguments = vec![Expression::Boolean(true), Expression::Boolean(false)];
+        let arguments = vec![Expression::boolean(true), Expression::boolean(false)];
         let refusal = check_application(&mut typer, "f", &arguments, &location)
             .expect_err("two arguments against a one-parameter signature must refuse");
         assert!(matches!(
@@ -2075,7 +2069,7 @@ pub(crate) mod checking_tests {
             ClauseKind::Body,
         );
         let location = root_location();
-        let arguments = vec![Expression::Integer(quire_exact::Integer::from(1_i64))];
+        let arguments = vec![Expression::integer(1_i64)];
         let refusal = check_application(&mut typer, "f", &arguments, &location)
             .expect_err("an Integer argument against a declared Boolean parameter must refuse");
         assert!(matches!(
@@ -2099,10 +2093,7 @@ pub(crate) mod checking_tests {
             Vec::new(),
             boolean_type_form(),
             None,
-            Expression::Call {
-                name: "f".to_owned(),
-                arguments: vec![Expression::Boolean(true)],
-            },
+            Expression::call("f".to_owned(), vec![Expression::boolean(true)]),
         );
         let signatures = Signatures::from(vec![
             Signature {
@@ -2158,7 +2149,7 @@ pub(crate) mod checking_tests {
             Vec::new(),
             boolean_type_form(),
             None,
-            Expression::Integer(quire_exact::Integer::from(1_i64)),
+            Expression::integer(1_i64),
         );
         let input = declarations_for(
             &scope,
@@ -2206,7 +2197,7 @@ pub(crate) mod checking_tests {
                 qsl_foundation::Span { start: 0, end: 0 },
             ),
             None,
-            Expression::Value(Box::new(Expression::Name("o".to_owned()))),
+            Expression::value(Expression::name("o".to_owned())),
         );
         let input = declarations_for(
             &scope,
@@ -2274,7 +2265,7 @@ pub(crate) mod checking_tests {
             Vec::new(),
             boolean_type_form(),
             None,
-            Expression::Integer(quire_exact::Integer::from(1_i64)),
+            Expression::integer(1_i64),
         );
         let refused = ValueFunctionFamily::check(&form, &mut cx).expect_err(
             "an Integer body against a declared Boolean result must refuse through the contract",
@@ -2345,10 +2336,7 @@ pub(crate) mod checking_tests {
             vec![("p0".to_owned(), boolean_type_form())],
             boolean_type_form(),
             None,
-            Expression::Call {
-                name: "helper".to_owned(),
-                arguments: vec![Expression::Name("p0".to_owned())],
-            },
+            Expression::call("helper".to_owned(), vec![Expression::name("p0".to_owned())]),
         );
         let own_signature = boolean_signature("f", 1);
 
@@ -2485,7 +2473,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn a_mutated_meter_is_reflected_in_the_check_outcome() {
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let admissions = |pre_admitted: u64| {
             let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
             for _ in 0..pre_admitted {
@@ -2544,7 +2532,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn a_mutated_diagnostic_sink_is_reflected_in_the_check_outcome() {
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -2571,7 +2559,7 @@ pub(crate) mod checking_tests {
     #[trace("TC-160", "FR-062-AC-3")]
     #[test]
     fn a_mutated_scope_stack_is_reflected_in_the_check_outcome() {
-        let good = declaration("f", Expression::Boolean(true));
+        let good = declaration("f", Expression::boolean(true));
         let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
         let mut diagnostics = DiagnosticSink::default();
         let mut scopes = ScopeStack::default();
@@ -2590,7 +2578,7 @@ pub(crate) mod checking_tests {
         );
 
         // A refusal (`Integer` body, `Boolean` result) restores it too.
-        let bad = declaration("f", Expression::Integer(1_i64.into()));
+        let bad = declaration("f", Expression::integer(1_i64));
         let refused = check_f_with(&bad, &mut meter, &mut diagnostics, &mut scopes);
         assert!(
             matches!(refused, Err(StageFailure::Refused(_))),
@@ -2798,7 +2786,7 @@ pub(crate) mod checking_tests {
             &mut diagnostics,
             &mut scopes,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         // The refused entry would have reached depth 1 against a bound of 0.
         match ValueFunctionFamily::check(&form, &mut cx) {
             Err(StageFailure::Limit(exceeded)) => {
@@ -2847,7 +2835,7 @@ pub(crate) mod checking_tests {
             CheckingLimits::default(),
             &location,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let metrics = measure_resolved(&empty_scope(), &form);
         assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
@@ -2925,11 +2913,11 @@ pub(crate) mod checking_tests {
         // one.
         let larger = declaration(
             "f",
-            Expression::If {
-                condition: Box::new(Expression::Boolean(true)),
-                then: Box::new(Expression::Boolean(false)),
-                otherwise: Box::new(Expression::Boolean(true)),
-            },
+            Expression::if_then_else(
+                Expression::boolean(true),
+                Expression::boolean(false),
+                Expression::boolean(true),
+            ),
         );
         let measured = measure_resolved(&empty_scope(), &larger);
         assert!(measured.input_bytes > 1 && measured.node_count > 1);
@@ -2986,7 +2974,7 @@ pub(crate) mod checking_tests {
             CheckingLimits::default(),
             &location,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let charge = measure_resolved(&empty_scope(), &form).work_budget;
         assert!(charge > 0);
         let limits = StageLimits {
@@ -3101,8 +3089,8 @@ pub(crate) mod checking_tests {
             );
             classify(ValueFunctionFamily::check(form, &mut cx))
         };
-        let good = declaration("f", Expression::Boolean(true));
-        let ill_typed = declaration("f", Expression::Integer(quire_exact::Integer::from(1_i64)));
+        let good = declaration("f", Expression::boolean(true));
+        let ill_typed = declaration("f", Expression::integer(1_i64));
         let unlimited = SCALAR_LIMITS_UNLIMITED.work_units;
         assert_eq!(seen(&good, roomy, unlimited), Seen::Checked);
         assert_eq!(seen(&ill_typed, roomy, unlimited), Seen::Refused);
@@ -3165,9 +3153,9 @@ pub(crate) mod checking_tests {
     fn real_checker_depth_limit_is_the_proximate_cause() {
         let scope = empty_scope();
         let location = root_location();
-        let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
-            Box::new(Expression::Boolean(true)),
-        )))));
+        let nested = Expression::logical_not(Expression::logical_not(Expression::logical_not(
+            Expression::boolean(true),
+        )));
         let form = declaration("f", nested);
         let own_signature = declaration_signature("f");
 
@@ -3222,7 +3210,7 @@ pub(crate) mod checking_tests {
     fn identical_declarations_share_one_identity() {
         let identity = |name: &str| {
             crate::check::PackageDeclarations {
-                functions: vec![declaration(name, Expression::Boolean(true))],
+                functions: vec![declaration(name, Expression::boolean(true))],
                 ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
             }
             .check(CheckingLimits::default())
@@ -3337,7 +3325,7 @@ pub(crate) mod checking_tests {
         let refusals = crate::check::PackageDeclarations {
             functions: names
                 .iter()
-                .map(|name| super::fixtures::declaration(name, Expression::Boolean(true)))
+                .map(|name| super::fixtures::declaration(name, Expression::boolean(true)))
                 .collect(),
             ..crate::check::PackageDeclarations::new(super::fixtures::fixture_source())
         }
@@ -3384,7 +3372,7 @@ mod locus_tests {
     use crate::check::PackageDeclarations;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
-    use qsl_forms::{build_unit, FormsLimits};
+    use qsl_forms::build_unit;
     use qsl_foundation::diagnostic::{CatalogCode, CatalogCoded};
     use qsl_foundation::source::provenance::SourceRegion;
     use qsl_foundation::SourceIdentity;
@@ -3405,7 +3393,7 @@ mod locus_tests {
         )
         .expect("S1 reads the unit");
         assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        let forms = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        let forms = build_unit(&parsed).expect("S2 builds the unit");
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),
             forms,
@@ -3563,7 +3551,7 @@ mod locus_tests {
             CheckingLimits::default(),
             &location,
         );
-        let form = declaration("f", Expression::Boolean(true));
+        let form = declaration("f", Expression::boolean(true));
         let stage = StageLimits {
             input_bytes: 0,
             ..limits()
@@ -3646,9 +3634,9 @@ mod locus_tests {
     #[trace("TC-378", "FR-096-AC-11")]
     #[test]
     fn package_checking_locates_no_limit_in_a_function_without_spans() {
-        let nested = Expression::Not(Box::new(Expression::Not(Box::new(Expression::Not(
-            Box::new(Expression::Boolean(true)),
-        )))));
+        let nested = Expression::logical_not(Expression::logical_not(Expression::logical_not(
+            Expression::boolean(true),
+        )));
         let mut unit = unit();
         unit.functions = vec![declaration("f", nested)];
         assert!(unit.functions[0].spans().is_none());

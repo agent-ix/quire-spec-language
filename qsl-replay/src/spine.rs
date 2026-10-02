@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_cst::{CompleteDiagnostic, HostCause};
-use qsl_forms::{build_unit, FormsCause, FormsFailure, FormsLimits};
+use qsl_forms::{build_unit, FormsCause, FormsRefusal};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::ImportSelection;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
@@ -70,11 +70,11 @@ pub enum CompileRefusal {
     /// recovery, which E2 does not admit. Holds the first diagnostic.
     #[error("{}", .0.message)]
     Source(Box<CompleteDiagnostic>),
-    /// E2: the forms stage refused the unit or reached its depth limit.
+    /// E2: the forms stage refused the unit.
     #[error("the forms stage refused the unit: {}", forms_message(.failure))]
     Forms {
-        /// The S2 failure.
-        failure: FormsFailure,
+        /// The S2 refusal.
+        failure: FormsRefusal,
         /// The region it concerns, when it concerns one.
         region: Option<SourceRegion>,
     },
@@ -255,31 +255,21 @@ impl SpineStage {
 }
 
 /// A readable account of an S2 failure.
-fn forms_message(failure: &FormsFailure) -> String {
-    match failure {
-        FormsFailure::Refused(refusal) => match &refusal.cause {
-            FormsCause::RecoveringCst => {
-                "the source has a syntax error the parser recovered from".to_owned()
-            }
-            FormsCause::DiagnosedSource(code) => {
-                format!("the source carries a {} diagnostic", code.as_str())
-            }
-            FormsCause::NoDispatchEntry { spelling } => {
-                format!("no form reads a `{spelling}` declaration")
-            }
-            FormsCause::UnrepresentedConstruct { .. } => {
-                "no form represents this construct".to_owned()
-            }
-            FormsCause::UnexpectedShape { .. } => {
-                "a node does not have the shape of its grammar rule".to_owned()
-            }
-        },
-        FormsFailure::Limit { limit, .. } => format!(
-            "{} (bound {}, reached {})",
-            limit.kind().catalog_cause(),
-            limit.configured_bound(),
-            limit.actual()
-        ),
+fn forms_message(refusal: &FormsRefusal) -> String {
+    match &refusal.cause {
+        FormsCause::RecoveringCst => {
+            "the source has a syntax error the parser recovered from".to_owned()
+        }
+        FormsCause::DiagnosedSource(code) => {
+            format!("the source carries a {} diagnostic", code.as_str())
+        }
+        FormsCause::NoDispatchEntry { spelling } => {
+            format!("no form reads a `{spelling}` declaration")
+        }
+        FormsCause::UnrepresentedConstruct { .. } => "no form represents this construct".to_owned(),
+        FormsCause::UnexpectedShape { .. } => {
+            "a node does not have the shape of its grammar rule".to_owned()
+        }
     }
 }
 
@@ -850,15 +840,13 @@ impl ImportRefusal {
     }
 }
 
-/// The stage limits one spine compile runs under: S1's, S2's, I1's and
-/// S3's own limits types, each defaulting to that stage's published
-/// default. The v2 emitter takes none.
+/// The stage limits one spine compile runs under: S1's, I1's and S3's own
+/// limits types, each defaulting to that stage's published default. S2
+/// and the v2 emitter take none: S1's limits bound what S2 builds.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SpineLimits {
     /// S1: the lexer and parser ceilings.
     pub source: qsl_cst::Limits,
-    /// S2: the forms depth ceiling.
-    pub forms: FormsLimits,
     /// I1: domain package normalization ceilings.
     pub model: ModelNormalizationLimits,
     /// S3: the checker's ceilings.
@@ -992,13 +980,9 @@ impl Resolution<'_> {
         // reading the same bytes again.
         let unit_source = parsed.source().clone();
         let raw = parsed.source().reference().clone();
-        let unit = build_unit(&parsed, limits.forms).map_err(|failure| {
-            let span = match &failure {
-                FormsFailure::Refused(refusal) => refusal.span,
-                FormsFailure::Limit { span, .. } => Some(*span),
-            };
+        let unit = build_unit(&parsed).map_err(|failure| {
             Box::new(CompileRefusal::Forms {
-                region: span.and_then(|span| region(&raw, span)),
+                region: failure.span.and_then(|span| region(&raw, span)),
                 failure,
             })
         })?;

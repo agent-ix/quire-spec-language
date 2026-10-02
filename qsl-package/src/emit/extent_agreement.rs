@@ -594,8 +594,7 @@ fn emit_text(declarations: &str) -> (CheckedPackage, Value, Box<CheckedPackageV2
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default())
-        .expect("S2 builds the unit");
+    let unit = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let package = CheckedPackage::link(
         PackageDeclarations::assemble(
             parsed.source().reference().clone(),

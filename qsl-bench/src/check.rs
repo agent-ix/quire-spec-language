@@ -83,12 +83,12 @@ pub fn call_chain(functions: usize) -> PackageDeclarations {
     let declarations = (0..functions)
         .map(|index| {
             let body = if index + 1 < functions {
-                Expression::Call {
-                    name: chain_name(index + 1),
-                    arguments: vec![Expression::Name("x".to_owned())],
-                }
+                Expression::call(
+                    chain_name(index + 1),
+                    vec![Expression::name("x".to_owned())],
+                )
             } else {
-                Expression::Name("x".to_owned())
+                Expression::name("x".to_owned())
             };
             function(chain_name(index), body)
         })
@@ -107,11 +107,11 @@ pub fn independent(functions: usize) -> PackageDeclarations {
         .map(|index| {
             function(
                 chain_name(index),
-                Expression::Binary {
-                    operator: BinaryOperator::Add,
-                    left: Box::new(Expression::Name("x".to_owned())),
-                    right: Box::new(Expression::Integer(Integer::from(1_i64))),
-                },
+                Expression::binary(
+                    BinaryOperator::Add,
+                    Expression::name("x".to_owned()),
+                    Expression::integer(1_i64),
+                ),
             )
         })
         .collect();
@@ -191,14 +191,11 @@ pub fn enum_members(functions: usize, binding: &EnumBinding) -> PackageDeclarati
                 vec![("x".to_owned(), integer())],
                 boolean.clone(),
                 None,
-                Expression::Binary {
-                    operator: BinaryOperator::Equal,
-                    left: Box::new(Expression::Name(format!(
-                        "E::{}",
-                        case_name(index % members)
-                    ))),
-                    right: Box::new(Expression::Name(format!("E::{}", case_name(0)))),
-                },
+                Expression::binary(
+                    BinaryOperator::Equal,
+                    Expression::name(format!("E::{}", case_name(index % members))),
+                    Expression::name(format!("E::{}", case_name(0))),
+                ),
             )
         })
         .collect();

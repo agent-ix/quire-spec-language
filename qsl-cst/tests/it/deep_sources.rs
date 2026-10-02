@@ -14,7 +14,9 @@ const HEADER: &str = concat!(
 );
 
 fn function(body: &str) -> String {
-    format!("{HEADER}function f using Complete (a: Boolean, x: Integer): Integer pure {{ {body} }}\n")
+    format!(
+        "{HEADER}function f using Complete (a: Boolean, x: Integer): Integer pure {{ {body} }}\n"
+    )
 }
 
 /// Limits raised past what any of these inputs needs.
@@ -75,10 +77,7 @@ fn a_100000_term_sum_parses() {
 #[trace("TC-722", "FR-256-AC-1")]
 #[test]
 fn a_100000_long_else_if_chain_parses() {
-    parses_on_a_small_stack(function(&format!(
-        "{}x",
-        "if a then x else ".repeat(DEPTH)
-    )));
+    parses_on_a_small_stack(function(&format!("{}x", "if a then x else ".repeat(DEPTH))));
 }
 
 #[trace("TC-722", "FR-256-AC-1")]

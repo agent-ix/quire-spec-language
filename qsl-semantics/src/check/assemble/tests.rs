@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{build_unit, FormsLimits};
+use qsl_forms::build_unit;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, EffectiveId, IeeeWidth, IntegerInterval,
@@ -44,7 +44,7 @@ fn assemble_as(
     )
     .expect("S1 reads the unit");
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-    let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
     PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
@@ -1628,7 +1628,7 @@ fn the_decimal_scale_bound_refuses_with_a_work_budget_limit() {
             qsl_cst::Limits::default(),
         )
         .expect("S1 reads the unit");
-        let unit = build_unit(&parsed, FormsLimits::default()).expect("S2 builds the unit");
+        let unit = build_unit(&parsed).expect("S2 builds the unit");
         let assembled = PackageDeclarations::assemble_with_limits(
             parsed.source().reference().clone(),
             unit,

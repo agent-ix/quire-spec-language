@@ -793,7 +793,7 @@ mod tests {
             vec![("x".to_owned(), bound())],
             bound(),
             None,
-            Expression::Name("x".to_owned()),
+            Expression::name("x".to_owned()),
         )
     }
 
@@ -921,7 +921,7 @@ mod tests {
                 vec![("x".to_owned(), boolean())],
                 boolean(),
                 None,
-                Expression::Not(Box::new(Expression::Name("x".to_owned()))),
+                Expression::logical_not(Expression::name("x".to_owned())),
             )],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }

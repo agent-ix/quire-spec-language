@@ -50,7 +50,7 @@ fn boolean_expression(stream: &mut Stream, depth: u32, callees: &[String]) -> Ex
     let leaf = depth == 0 || stream.below(4) == 0;
     if leaf {
         return match stream.below(4) {
-            0 => Expression::Boolean(stream.below(2) == 0),
+            0 => Expression::boolean(stream.below(2) == 0),
             1 => name_expr("b"),
             2 => binary(
                 BinaryOperator::Greater,
@@ -76,38 +76,34 @@ fn boolean_expression(stream: &mut Stream, depth: u32, callees: &[String]) -> Ex
             boolean_expression(stream, depth - 1, callees),
         ),
         // A nested `let` is shallower, so no name shadows another.
-        2 => Expression::Let {
-            name: format!("y{depth}"),
-            value: Box::new(name_expr("b")),
-            body: Box::new(binary(
+        2 => Expression::let_in(
+            format!("y{depth}"),
+            name_expr("b"),
+            binary(
                 BinaryOperator::And,
                 name_expr(&format!("y{depth}")),
                 boolean_expression(stream, depth - 1, callees),
-            )),
-        },
+            ),
+        ),
         3 if !callees.is_empty() => {
             let callee = &callees[stream.index(callees.len())];
-            Expression::If {
-                condition: Box::new(binary(
-                    BinaryOperator::Greater,
-                    name_expr("x"),
-                    integer_expr(0),
-                )),
-                then: Box::new(Expression::Call {
-                    name: callee.clone(),
-                    arguments: vec![
+            Expression::if_then_else(
+                binary(BinaryOperator::Greater, name_expr("x"), integer_expr(0)),
+                Expression::call(
+                    callee.clone(),
+                    vec![
                         binary(BinaryOperator::Subtract, name_expr("x"), integer_expr(1)),
                         boolean_expression(stream, depth - 1, &[]),
                     ],
-                }),
-                otherwise: Box::new(boolean_expression(stream, depth - 1, &[])),
-            }
+                ),
+                boolean_expression(stream, depth - 1, &[]),
+            )
         }
-        _ => Expression::If {
-            condition: Box::new(boolean_expression(stream, depth - 1, callees)),
-            then: Box::new(boolean_expression(stream, depth - 1, callees)),
-            otherwise: Box::new(boolean_expression(stream, depth - 1, callees)),
-        },
+        _ => Expression::if_then_else(
+            boolean_expression(stream, depth - 1, callees),
+            boolean_expression(stream, depth - 1, callees),
+            boolean_expression(stream, depth - 1, callees),
+        ),
     }
 }
 

@@ -91,12 +91,10 @@ fn int(value: i64) -> FieldValue {
 
 /// `deref(r).field`.
 fn attribute(field: &str) -> Expression {
-    Expression::Field {
-        operand: Box::new(Expression::Deref(Box::new(Expression::Name(
-            "r".to_owned(),
-        )))),
-        field: field.to_owned(),
-    }
+    Expression::field(
+        Expression::deref(Expression::name("r".to_owned())),
+        field.to_owned(),
+    )
 }
 
 fn check(

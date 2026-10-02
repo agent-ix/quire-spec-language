@@ -668,7 +668,7 @@ fn the_assembler_refuses_only_the_unadmitted_import() {
         qsl_cst::Limits::default(),
     )
     .unwrap();
-    let unit = qsl_forms::build_unit(&parsed, qsl_forms::FormsLimits::default()).unwrap();
+    let unit = qsl_forms::build_unit(&parsed).unwrap();
     let refusal = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         unit,
