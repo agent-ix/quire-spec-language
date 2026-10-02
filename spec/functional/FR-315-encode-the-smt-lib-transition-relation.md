@@ -17,8 +17,8 @@ relationships:
 ## Description
 
 QSL SHALL own the one SMT-LIB 2 encoding of a model subject's transition
-relation and of a temporal item's bounded-unrolling and k-induction
-queries, in `qsl-eval` (layer 5), exposed through the `qsl-replay` facade
+relation and of a temporal item's proof queries, the bounded unrolling of
+V-2 and the base and step cases of EN-3's `k`-induction, in `qsl-eval` (layer 5), exposed through the `qsl-replay` facade
 as `encode_smt_query` (ADR-018 LA-2, LA-3, PC-6). CG's SMT backend calls it
 to build the queries it sends to the solver, and FR-314's checker calls it
 to rebuild the queries a certificate claims to refute, so the two compare
@@ -73,10 +73,32 @@ pub fn encode_smt_query(
   precondition on copy `i`, its postcondition relating copies `i` and
   `i+1`, and its frame, with the terminal stutter as one more disjunct
   under infinite-trace (FR-120, FR-125).
+- For a TP-3 item or a TP-2 `on each` item the encoding SHALL also declare
+  one monitor-state constant `m<i>` per position, assert the initial
+  monitor state on `m0` where the initial-state predicate is asserted, and
+  assert each step of the safety monitor that `qsl-eval`'s
+  property-automaton translation builds (ADR-018 EN-3, LA-2); the property
+  at a position is then the monitor state there not rejecting. For a TP-1
+  item the property at a position is its state predicate there.
+- The encoding SHALL read undefinedness as a refutation, never as false or
+  as a disabled step (ADR-018 UE-1, UE-4, UE-6): for every atom the claim
+  reads at a position and every precondition guard a step reads, it SHALL
+  build the atom's or guard's definedness condition (a divisor not zero, a
+  reduction over a non-empty collection, a value inside its sort's range),
+  and the negated property SHALL hold when a definedness condition fails
+  at a position the query covers as well as when the property is
+  violated there.
 - The encoding SHALL assert the negated property: for `Unrolling` and
-  `InductionBase`, its violation at some position `0..=depth`; for
-  `InductionStep`, the property at positions `0..depth` and its violation
-  at `depth`.
+  `InductionBase`, a violation or a definedness failure at some position
+  `0..=depth`; for `InductionStep`, the property and every definedness
+  condition at positions `0..depth`, the states at those positions
+  pairwise distinct (some field or monitor state differs between every two
+  copies), and a violation or a definedness failure at `depth` (ADR-018
+  EN-3).
+- The encoding owns only these proof queries. EN-2's counterexample
+  searches, including its lasso queries with a loop back-edge and fairness
+  on the loop, are the SMT backend's own (ADR-018 DS-3); their refutations
+  replay through FR-128 and need no certificate.
 - The canonical printing SHALL be: `(set-logic QF_LIA)` first; then the
   `declare-const` commands in ascending (position, object, field) order;
   then one `assert` per conjunct in the order above; then `(check-sat)`;
@@ -92,6 +114,8 @@ pub fn encode_smt_query(
 | FR-315-AC-1 | Over the `Counter` subject (universe `{c}`, initial value 0), `Unrolling{depth: 3}` for `always[0,3] holds(c.value <= 3)` declares `s0.c.value` to `s3.c.value` in order, asserts `(= s0.c.value 0)`, one transition assertion per step and the negated property, and ends with `(check-sat)`; encoding it twice gives byte-equal scripts. | Test (TC-900) |
 | FR-315-AC-2 | `InductionStep{depth: 1}` for `always holds(c.value <= 3)` asserts no initial-state predicate, asserts the property at position 0 and its violation at position 1; `InductionBase{depth: 1}` asserts the initial-state predicate on copy 0. | Test (TC-900) |
 | FR-315-AC-3 | An item over a field whose sort the encoding has no form for refuses `SmtEncodingRefusal` naming the field, with its locus, and writes no script. | Test (TC-900) |
+| FR-315-AC-4 | `Unrolling{depth: 3}` for `always holds(6 / (2 - c.value) >= 0)` over `Counter` makes the negated property hold when `(- 2 s<i>.c.value)` is 0 at some position `i` in `0..=3`, so a solver cannot refute the query and no `proved` follows for a claim UE-1 refutes; a precondition guard with a division contributes the same definedness disjunct at the step that reads it. | Test (TC-900) |
+| FR-315-AC-5 | `InductionStep{depth: 2}` for `always holds(c.value <= 3)` asserts that copies 0, 1 and 2 are pairwise distinct; for a TP-3 item it declares `m0` to `m2` and asserts the monitor steps, the property at a position being the monitor state there not rejecting. | Test (TC-900) |
 
 ## Dependencies
 

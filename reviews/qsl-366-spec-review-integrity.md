@@ -68,3 +68,9 @@ Round 1, reviewed at ed7bcc8b (re-checked at the #562 head; first drafted at f71
 | FND-003 | fixed | 204b4db1 |
 | FND-004 | fixed | 204b4db1 |
 | FND-005 | fixed | 204b4db1 |
+
+Round 2, reviewed at b07f7b1067dc25f5ca4067060254a2ae486ad5bf.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | b07f7b10 |

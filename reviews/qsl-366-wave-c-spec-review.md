@@ -85,6 +85,24 @@ Round 1, reviewed at 18a9c22bd1783e2d40eaf3528e662f943183e2b8.
 
 Round 2, reviewed at ed7bcc8b1226619455e5e8e2a25c9815deb35c03. No finding was open after round 1, so this round adds no row. It adds FND-008 to FND-020 below, found in the commits after 18a9c22b (the certificate checkers FR-314, FR-338 and FR-339, FR-337, the limit and cancel settlement, and `[a,*]` under infinite-trace).
 
+Round 3, reviewed at b07f7b1067dc25f5ca4067060254a2ae486ad5bf.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | b07f7b10 |
+| FND-009 | fixed | b07f7b10 |
+| FND-010 | fixed | b07f7b10 |
+| FND-011 | fixed | b07f7b10 |
+| FND-012 | fixed | b07f7b10 |
+| FND-013 | fixed | b07f7b10 |
+| FND-014 | fixed | b07f7b10 |
+| FND-015 | fixed | b07f7b10 |
+| FND-016 | fixed | b07f7b10 |
+| FND-017 | fixed | b07f7b10 |
+| FND-018 | fixed | b07f7b10 |
+| FND-019 | fixed | b07f7b10 |
+| FND-020 | fixed | b07f7b10 |
+
 ## New findings (disposition pass 2)
 
 Reviewed at ed7bcc8b1226619455e5e8e2a25c9815deb35c03 (`git diff 0ecfb9e9...ed7bcc8b`, plus the cross-PR checks of the brief). Checked against QSpec main aa031866.
@@ -104,3 +122,16 @@ Reviewed at ed7bcc8b1226619455e5e8e2a25c9815deb35c03 (`git diff 0ecfb9e9...ed7bc
 | FND-018 | low | FR-127's Outputs declares the certification member twice: "`TerminalValue::Proved` carries `certification: Option<Certification>`", then `TerminalValue::Proved { basis: ProofBasis, certification: Certification }`. The ACs write `Proved{Exhaustive, Certified}` and AC-9 writes `Some(Uncertified)`. Keep the `Option` form. | spec/functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md:86-89 |
 | FND-019 | low | The ADR-013 O-16 amendment says `Certified` "when a core certificate checker accepted the proof's certificate". PC-1, FR-127 and FR-314 give an SMT proof whose certificate FR-314 accepts no label. State the SMT case. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:417-419 |
 | FND-020 | low | ADR-018:64 says a bare FR id is a QSL requirement, but UE-4, §3 and DL-4 cite a bare "FR-181" for canonical breadth-first order. That is QSpec FR-181, which QSL implements as FR-101. Write "FR-101" or "QSpec FR-181" (the same defect as SR-1125 FND-009 in ADR-019). | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:193,244,496 |
+
+## New findings (disposition pass 3)
+
+Reviewed at b07f7b1067dc25f5ca4067060254a2ae486ad5bf (`git diff ed7bcc8b...b07f7b10`), lines that diff changed only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-021 | medium | FR-315's negated property is "its violation at some position" and its transition disjunct is the operation's precondition, postcondition and frame. Neither conjoins definedness. ADR-018 UE-4 says EN-2 and EN-3 conjoin the definedness of every atom the claim reads, and UE-6 says an undefined precondition guard refutes and is never a disabled step. A backend and checker built to FR-315 as written refute a query in which an undefined atom or guard is read as false, so a claim UE-1 refutes can settle `proved` with no label. State the definedness conjuncts and the undefined-guard rule in FR-315, with an AC. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:70-79 |
+| FND-022 | medium | FR-315's `InductionStep` asserts "the property at positions `0..depth` and its violation at `depth`". ADR-018 EN-3 defines the step case over `k` consecutive states "with pairwise distinct states", and gives `Inductive` to TP-3 and TP-2 `on each` "through the safety monitor product". FR-315 has no distinctness constraint and no monitor-product encoding, and "the property at a position" is defined only for a state invariant. The query FR-314 rebuilds is then not EN-3's step case for those forms. Encode EN-3 as stated, or narrow EN-3 and V-3 to what FR-315 encodes. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:76-79; spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:233 |
+| FND-023 | medium | LA-2 now places "the one SMT-LIB transition-relation encoding (FR-315) that CG's SMT backend and the PC-6 checker both use" in `qsl-eval`, and DS-2 has the backend build "its queries" with it. DS-3 still gives IR "the SMT encodings of EN-2 and EN-3, including the `deadlocked` predicate", and EN-2's lasso queries with a loop back-edge and fairness on the loop have no form in FR-315. Two lanes own the encoding. State which queries FR-315 owns (the proof queries only, or all) and amend DS-3 to match. | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:428,438,439 |
+| FND-024 | medium | CX-2 and FR-128 send a payload whose `trace` is `"observed"` to "FR-331". By ADR-018's own rule a bare id is a QSL requirement, and QSL has no FR-331; QSpec FR-331 is the analysis request and terminal record, not a replay path. No QSL requirement replays an observed-arm counterexample, which QSpec FR-364-AC-9 requires to settle `reproduced-with-evaluated-witness`, `unsupported` or a refusal. Name the QSL requirement that replays it, or record the gap. | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:304; spec/functional/FR-128-replay-a-model-counterexample.md:70,111-113 |
+| FND-025 | low | `ShapeMismatch` has no locus. `CertificateRejection.state` is a required `CertificateLocus`, whose variants are a product state, `Query { part }` and `ProofStep { part, index }`, and FR-314 does not say which one a shape mismatch carries. | spec/functional/FR-314-check-an-smt-proof-certificate.md:79-81; spec/functional/FR-338-check-an-en-1-closure-certificate.md:56-62 |
+| FND-026 | low | FR-127 and PC-5 now have QSL's settlement map run `check_smt_proof` and set the SMT proof's label. PC-1's last sentence still says CG's SMT map sets it "on the SMT `Proved` it settles". Align PC-1 with FR-127. | spec/functional/FR-127-settle-a-model-check-verdict-as-a-terminal-record.md:162-168; spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:176,180 |

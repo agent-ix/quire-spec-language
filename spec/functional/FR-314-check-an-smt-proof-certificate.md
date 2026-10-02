@@ -76,7 +76,9 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 
 ## Behavior
 
-- The checker SHALL reject with `ShapeMismatch` a certificate whose variant
+- The checker SHALL reject with `ShapeMismatch` at `Query { part }`, `part`
+  being the first part the basis expects (`Unrolling` for
+  `BoundedComplete`, `Base` for `Inductive`), a certificate whose variant
   differs from the basis: `BoundedComplete` carries one unrolling query and
   `Inductive` carries a base query and a step query.
 - The checker SHALL encode each expected query with FR-315 from the

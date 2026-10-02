@@ -308,7 +308,7 @@ names different artifacts in each.
 | TC-525 | An EN-1 closure certificate is accepted or rejected by the core checker | Unit | P1 | FR-338-AC-1, FR-338-AC-2, FR-338-AC-3 | 🚧 Planned |
 | TC-526 | An EN-1 component certificate is accepted or rejected by the core checker | Unit | P1 | FR-339-AC-1, FR-339-AC-2 | 🚧 Planned |
 | TC-893 | An SMT proof certificate is accepted or rejected by the core checker | Unit | P1 | FR-314-AC-1, FR-314-AC-2 | 🚧 Planned |
-| TC-900 | The SMT-LIB transition-relation encoding is canonical and refuses unencodable constructs | Unit | P1 | FR-315-AC-1, FR-315-AC-2, FR-315-AC-3 | 🚧 Planned |
+| TC-900 | The SMT-LIB transition-relation encoding is canonical and refuses unencodable constructs | Unit | P1 | FR-315-AC-1, FR-315-AC-2, FR-315-AC-3, FR-315-AC-4, FR-315-AC-5 | 🚧 Planned |
 | TC-536 | Exploration and model-check limits publish their defaults | Unit | P1 | FR-101-AC-15, FR-126-AC-8 | 🚧 Planned |
 | TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 Planned |
 | TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 Planned |

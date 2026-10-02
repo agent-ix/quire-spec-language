@@ -67,7 +67,7 @@ member of its own.
   digest; the request names the subject's universes.
 - A `WitnessEnvelope<TemporalCounterexample>` (FR-070). Its payload is
   QSpec FR-364's counterexample, read by FR-364's member names: `trace`
-  (`"model"` here; the `"observed"` arm replays through FR-331), `kind`
+  (`"model"` here; this entry refuses the `"observed"` arm), `kind`
   (formula, deadlock or the undefined-evaluation envelope), `initial_state`,
   `prefix`, `loop` (whose steps are transition identities with post-state
   digests, or FR-364's `terminal-stutter` step), `over_binding`,
@@ -109,8 +109,9 @@ member of its own.
   payload's `interval` differs from it member by member (QSpec FR-364
   step 5).
 - A payload whose `trace` is `"observed"` SHALL refuse
-  `invalid_runtime_input`/`invalid-value` before recompiling; it replays
-  through FR-331.
+  `invalid_runtime_input`/`invalid-value` before recompiling. Its replay,
+  which QSpec FR-364-AC-9 settles, is the observed-trace replay entry of
+  the infinite-trace profile requirements (References: Linear QSL-384).
 - The executor SHALL build the subject's `ModelSystem` by FR-120 from the
   byte provision and the request's universes, and refuse with FR-106's
   record when admission fails. An `initial_state` outside the subject's
@@ -204,6 +205,8 @@ member of its own.
 
 ## References
 
+- Linear QSL-384: the infinite-trace profile requirements, which specify
+  the observed-arm replay entry.
 - QSpec FR-364 (temporal counterexample replay), FR-368 (negotiating
   temporal model-check items) and FR-366 (deadlock freedom): the QSpec half
   of ADR-018 QS-8, QS-9 and QS-12 (Linear STD-131).
