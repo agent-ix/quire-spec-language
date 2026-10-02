@@ -481,7 +481,6 @@ names different artifacts in each.
 | TC-708 | Delay distributions check, windows are exact and the race resolves ties by the workload | Unit | P1 | FR-253-AC-1, FR-253-AC-2, FR-253-AC-3, FR-253-AC-4 | 🚧 Planned |
 | TC-709 | Timed runs sample with exact rational delays, measure timed events and replay | Integration | P1 | FR-254-AC-1, FR-254-AC-2, FR-254-AC-3, FR-254-AC-4 | 🚧 Planned |
 | TC-710 | An undefined timed claim evaluation refutes with a timed prefix and replays | Integration | P1 | FR-239-AC-5, FR-237-AC-5, FR-235-AC-5 | 🚧 Planned |
-| TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5 | 🚧 Planned |
 | TC-565 | S3 carries the symmetric annotation and refuses a fold over its references | Unit | P1 | FR-150-AC-1, FR-150-AC-2 | 🚧 Planned |
 | TC-566 | Every identity-observing form is refused in every clause kind, and transparent forms check | Unit | P1 | FR-150-AC-3, FR-150-AC-4 | 🚧 Planned |
 | TC-567 | Symmetry declarations admit on an annotated population and refuse malformed forms | Unit | P1 | FR-151-AC-1, FR-151-AC-2 | 🚧 Planned |
