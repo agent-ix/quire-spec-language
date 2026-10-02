@@ -197,7 +197,8 @@ the engine's search but the certificate. The engines that produce
 certificates are outside the core. An `analyze` `proved` counts only once
 its in-core checker accepts the certificate. The core's crates are:
 
-- in QSL: `quire-exact`, `quire-semantic-value`, `qsl-foundation`,
+- in QSL: `quire-exact`, `quire-semantic-value`, `quire-walk` (the walker
+  toolkit, without its `std` feature; ADR-030 FR-356), `qsl-foundation`,
   `qsl-cst`, `qsl-source`, `qsl-forms`, `qsl-semantics`, `qsl-package`,
   `qsl-eval`, `qsl-route` and `qsl-replay`, which holds the certificate
   checkers;
