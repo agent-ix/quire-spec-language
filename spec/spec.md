@@ -195,6 +195,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/ADR-025
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-027
+    type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-028
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-020
@@ -490,6 +491,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-308
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-024
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-195
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-196

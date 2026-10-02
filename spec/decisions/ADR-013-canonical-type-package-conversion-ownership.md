@@ -432,6 +432,18 @@ a run limit, including `max_automaton_states`, maps to incomplete with
 `LimitReached{limit, value, setting}`, written `limit-reached`; a cancelled
 run maps to incomplete with `Cancelled`, written `cancelled` (ADR-018 V-7).
 
+Amended by ADR-028 (exact probabilistic checking). The proof column also
+takes the verdicts of the exact probabilistic engine EN-5 (ADR-028 XV-6):
+`Proved` with `ProofBasis::ExactValue` or `ValueBounds` is success and counts
+as proof evidence, and settles only after its certificate check accepts; a
+rejected certificate maps to `inconclusive` with `certificate_rejected`. A
+`ProbabilisticCounterexample` whose replay settles
+`ReproducedWithEvaluatedWitness` maps to `refuted`, and one whose replay
+disagrees, refuses or faults maps as a model counterexample does. A run
+stopped by an `ExactProbLimits` budget maps to incomplete, with
+`PrecisionBudget{lower, upper}` when the interval still straddles the
+threshold.
+
 Amended by ADR-025 MV-1 (weak memory models). `InconclusiveCause` gains
 `MemoryBoundReached{bound, states}`, category inconclusive. The `Unsupported`
 causes gain `WeakAccessShape{site, transition, shape}`, category
