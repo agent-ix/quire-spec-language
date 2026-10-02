@@ -16,15 +16,16 @@ relationships:
 
 ## Description
 
-Each workspace item that shares a canonical type's identifier SHALL be
-resolved by its meaning, as ADR-032 DT-7 and ruling R-2 decide. A namesake
-with the same meaning as the canonical type is a copy, which the
-implementing change deletes in favour of the canonical type. A namesake
-with a different meaning is one the implementing change renames to say what
-it is. The verdict table below gives
-the verdict for each namesake measured on main on 2026-10-01; after it is
-carried out, `cargo xtask canonical-types` (FR-272) reports nothing over the
-QSL workspace.
+Each canonical type SHALL have exactly one module-level definition in the
+QSL workspace's shipped code, and every other item that once shared its
+identifier SHALL carry the name its meaning gives it, as ADR-032 DT-7 and
+ruling R-2 decide. A namesake with the same meaning as the canonical type is
+a copy and does not exist; its uses take the canonical type. A namesake with
+a different meaning carries a name that says what it is. Every `pub use` of
+a canonical type outside its owner crate names the owner's defining path.
+The verdict table below gives the verdict for each namesake and re-export,
+and `cargo xtask canonical-types` (FR-272) reports nothing over the QSL
+workspace.
 
 ## Inputs
 
@@ -35,16 +36,19 @@ QSL workspace.
 
 ## Outputs
 
-- The workspace with each namesake deleted or renamed by the table.
+- The workspace in which each table row holds: a `delete` row's item does
+  not exist, a `rename` row's item carries the row's name, and a `keep` row's
+  `pub use` names the owner path.
 
 ## Behavior
 
-- The implementing change SHALL delete each `delete` row's item.
-- The implementing change SHALL point each deleted item's uses at the
-  canonical type.
-- The implementing change SHALL rename each `rename` row's item to the name
-  the row gives, in its definition and every use.
-- A new name SHALL be one that no canonical type carries.
+- No item of a `delete` row SHALL exist in the workspace, and each of its
+  former uses SHALL name the canonical type.
+- Each `rename` row's item SHALL carry the name the row gives, in its
+  definition and every use.
+- No renamed item SHALL carry a canonical type's identifier.
+- Each `keep` row's `pub use` SHALL name the canonical type's owner crate
+  and defining module, with no `as` rename.
 
 ## Verdict table
 
@@ -64,8 +68,8 @@ type is named by its owner crate and module.
 | same | root `package::encoding::Meter` | the package-encoding pass budget | rename `PackageEncodingMeter` |
 | same | root `protocol_artifact::encoding::Meter` | the protocol-artifact encoding work budget | rename `ArtifactEncodingMeter` |
 | same | root `checking::proof::Meter` | the composed proof-check work budget | rename `ProofCheckMeter` |
-| `quire_exact::value::Value` (the kernel value, ADR-013 O-13) | root `state::input::Value` | an exact semantic value (lane-private, ADR-013 §6) | delete; use `quire_exact::Value` |
-| same | root `runtime::evaluation::value::Value` | the native runtime's evaluated value | delete; use `quire_exact::Value` |
+| `quire_exact::value::Value` (the kernel value, ADR-013 O-13) | root `state::input::Value` | a state-input value carrying a nominal wire type index (`value_type: u32`) beside its kind (lane-private, ADR-013 §6) | rename `TypedStateInputValue` |
+| same | root `runtime::evaluation::value::Value<'a>` | a borrowed arena view over IR value nodes, with `i64` integers, `&str` text and `quire_contract_model` references | rename `RuntimeValueView` |
 | same | root `model_source::wire::Value` | a value-declaration wire record (name, kind, type) | rename `ValueDeclarationWire` |
 | same | root `checking::proof::Value` | a proof-graph value node | rename `ProofValueNode` |
 | same | root `checking::composed::proofs::engine::Value` | a proof-graph value node | rename `ProofValueNode` |
@@ -73,6 +77,7 @@ type is named by its owner crate and module.
 | `quire_exact::integer::Integer` (O-13) | root `protocol_artifact::wire::Integer` | an integer-only wire position | rename `IntegerWire` |
 | `quire_exact::outcome::Outcome` (O-16) | `qsl_eval::simulation::explore::Outcome` | the result of one exploration run | rename `ExplorationOutcome` |
 | same | `qsl_cst::parser::Outcome` | the result of matching one grammar rule | rename `MatchOutcome` |
+| same | `tools/arch-lint` `canonical_encoder::Outcome` | the canonical-encoder check's result over one tree | rename `EncoderCheckOutcome` |
 | same | root `command::output::extraction::Outcome` | the serialized view of a clauses outcome | rename `ClausesOutcomeView` |
 | same | root `command::output::types::Outcome` | the stage member of a run-result document | rename `RunStageOutcome` |
 | same | root `temporal::activation::Outcome` | what activation produced | rename `ActivationOutcome` |
@@ -91,12 +96,17 @@ type is named by its owner crate and module.
 | `qsl_foundation::source::provenance::RawSourceRef` (O-07, digest domain `quire.source.bytes/v1`) | `qsl_replay::identity::RawSourceRef` | a definition-document reference whose digest is in any domain | rename `DefinitionSourceRef` |
 | `qsl_semantics::model::key::DeclarationKey` (O-03) | root `linking::DeclarationKey` | a declaration path within one requirement owner (lane-private, ADR-013 §6) | rename `LinkedDeclarationPath` |
 | `qsl_cst::ParsedSource` (O-15) | root `linking::composed::ParsedSource` | parsed evidence kept when namespace admission fails | rename `UnadmittedParsedUnit` |
-| `qsl_package::checked::CheckedPackage` (O-15) | root `checking::CheckedPackage` | a checked package (lane-private, ADR-013 §6) | delete; use `qsl_package::CheckedPackage` |
+| `qsl_package::checked::CheckedPackage` (O-15) | root `checking::CheckedPackage<'a>` | native-v1 checked clauses that keep the linked AST (lane-private, ADR-013 §6) | rename `NativeCheckedClauses` |
 | `qsl_package::checked::EmittedPackage` (O-15) | root `protocol_artifact::native::EmittedPackage` | the bytes of a native protocol artifact | rename `NativeArtifactBytes` |
 | `QualifiedName` (O-11), defined twice: `qsl_eval::value::expression::family::QualifiedName` and `qsl_replay::identity::QualifiedName` | each of the two | a non-empty sequence of identifiers naming a declaration, the same meaning | delete both; one tagged `QualifiedName` in `quire-semantic-value`, which both crates and the backends reach |
 | same | root `runtime::input::QualifiedName` | a model-owned declaration selector (model and name) | rename `ModelDeclarationSelector` |
 | same | root `runtime::input::wire::QualifiedName` | the wire form of that selector | rename `ModelDeclarationSelectorWire` |
 | same | root `syntax::composed::QualifiedName` | a model alias and a name, with their spans | rename `ModelQualifiedReference` |
+| `qsl_semantics::value::member::Member` (the O-06 member identity) | `qsl_semantics::check::termination::Member<'a>` | what termination checking needs of one checked function | rename `TerminationSubject` |
+| `qsl_foundation::source::provenance::OccurrenceKey` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_foundation::source::provenance::OccurrenceKey` |
+| `quire_exact::location::Origin` (O-07) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::location::Origin` |
+| `quire_exact::integer::Integer` (O-13) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `quire_exact::integer::Integer` |
+| `qsl_semantics::model::key::DeclarationKey` (O-03) | `pub use` in `qsl-replay/src/lib.rs` | the facade path CG reaches QSL through (ADR-011 FB-05) | keep; the `pub use` names `qsl_semantics::model::key::DeclarationKey` |
 
 ## Acceptance Criteria
 

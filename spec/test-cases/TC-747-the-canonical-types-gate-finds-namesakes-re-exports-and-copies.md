@@ -21,8 +21,11 @@ Scope: FR-272-AC-1 to FR-272-AC-4.
 1. Fixture workspace: crate K tags `pub enum Value`; crate W holds, one per
    run, a private `struct Value`; a `pub(crate) enum Value` in a nested
    module; `impl<'de> Visitor<'de> for V { type Value = T; … }`; a `struct
-   Value` in `#[cfg(test)] mod tests`; `pub use k::Value;`. Then K itself
-   holds `pub use self::value::Value;`.
+   Value` in `#[cfg(test)] mod tests`; `pub use v::Value;` where crate V
+   holds `pub use k::Value;`; `pub use k::Value as Datum;`; `pub use
+   k::Value;`. Then K itself holds `pub use self::value::Value;`. Then K
+   tags `pub struct Outcome` and a workspace member whose only target is
+   `[[bin]] path = "main.rs"` outside `src/` holds `struct Outcome`.
 2. Fixture `cargo metadata` with K a workspace member tagging `pub enum
    ComparisonOperator` and E an ecosystem package holding, one per run, an
    enum with K's variant names in order; the same with docs, derives,
@@ -40,7 +43,9 @@ Tag the tests `#[trace("TC-747", "FR-272-AC-n")]`.
 
 - Step 1: `identifier` findings for the first two plants naming both
   locations; none for the associated type or the test-module struct; a
-  `re-export` finding for W's `pub use`; none for K's.
+  `re-export` finding for W's re-export of V's re-export and for its `as`
+  rename; none for W's `pub use k::Value` or for K's; an `identifier`
+  finding for the `[[bin]]` member's `Outcome`.
 - Step 2: `copy` findings for the first two; none for the other three; none
   outside the ecosystem.
 - Step 3: one `copy` finding in the backend run; no `copy` finding for any
