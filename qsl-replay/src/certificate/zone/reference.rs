@@ -269,6 +269,7 @@ pub(super) fn alu_covered(
 /// The aLU simulation by definition: `v ≼LU v'` when for every clock `c`,
 /// `v'(c) < v(c)` implies `v'(c) > L_c` and `v'(c) > v(c)` implies
 /// `v(c) > U_c`. Points are at scale `s`; `None` is `-∞`.
+#[cfg(test)]
 pub(super) fn simulated(
     v: &[i64],
     v_prime: &[i64],
