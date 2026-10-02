@@ -48,7 +48,7 @@ no case at the domain boundaries QSpec FR-180-AC-4 names (0, 1000, -1,
 ```text
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
+profile v = "quire.value.complete/v1";
 model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<the package's digest>";
 invariant ParentOrder using v on Config::ConfigVersion at current { present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }

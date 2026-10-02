@@ -33,11 +33,11 @@ Scope: FR-100-AC-7 to FR-100-AC-10.
    `pub use qsl_eval::value::Evaluation;` to `qsl_replay`.
 4. Compile the fixture unit `F` below through `qsl_replay::spine::compile`
    as the program source (its bytes are exactly these three lines, each
-   ended by one LF, 237 bytes in all):
+   ended by one LF, 136 bytes in all):
 
    ```text
    language "ix:native" edition "1-draft";
-   profile v = "quire.value.complete/v1" version "1-draft.2" digest "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
+   profile v = "quire.value.complete/v1";
    function f using v(x: Int[0, 9]): Integer pure { x + 5 }
    ```
 

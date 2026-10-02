@@ -16,24 +16,25 @@ with its catalogued code and cause, and restricts each declaration to its
 selected layer's forms. Scope: FR-110-AC-1 to FR-110-AC-3 and FR-110-AC-5
 to FR-110-AC-8.
 
-This catches a resolver that accepts any catalog row as a profile, one that
-records the header's version or digest in place of the catalog row, and one
-that stops at the first refusing profile.
+This catches a resolver that accepts any catalog row as a profile, a parser
+that still accepts a header `version` or `digest`, and a resolver that stops
+at the first refusing profile.
 
 ## Test Procedure
 
 Every unit starts with `language "ix:native" edition "1-draft";`, then its
-header profiles, then `function f using v(): Boolean pure { true }`. `R`
-is `DefinitionLock::pinned().entry(CatalogRole::Root)`; the test reads its
-identity, revision value and digest from the catalog, never from literals.
+header profiles, each `profile <alias> = "<identity>";`, then
+`function f using v(): Boolean pure { true }`. `R` is
+`DefinitionLock::pinned().entry(CatalogRole::Root)`; the test reads its
+identity from the catalog, never from a literal.
 
-1. Compile the unit whose one profile is `v` with `R`'s identity, revision
-   value and `sha256:`-spelled digest. Read the emitted lock.
+1. Compile the unit whose one profile is `v` with `R`'s identity. Read the
+   emitted lock.
 2. Compile it with the identity `test:unknown-profile`.
-3. Compile it with the `ieee_profile` row's identity, revision value and
-   digest, then with the `edition` row's.
-4. Compile it with `R`'s identity, version `"1"` and digest `sha256:`
-   followed by 64 `a`s.
+3. Compile it with the `ieee_profile` row's identity, then with the
+   `edition` row's.
+4. Compile it with the header `profile v = "<R's identity>" version "1"
+   digest "sha256:<64 a>";`.
 5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
    `ieee_profile` row's identity) and `x` (`test:unknown-profile`). Then
    compile a unit with profiles `v` and `u`, both `R`'s identity.
@@ -61,7 +62,8 @@ criteria each step backs.
   package.
 - Step 3 refuses `unknown_profile`/`wrong-selection-role` twice, once per
   compile, each retaining the selection and required role `root`.
-- Step 4 compiles, and its emitted lock equals step 1's.
+- Step 4 refuses as a syntax error at the `version` token, before E3, with
+  no package.
 - Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
 - Step 6: each unit compiles; each lock's `definition_selections` hold the
@@ -77,5 +79,5 @@ criteria each step backs.
 
 Partial: `a_header_profile_resolves_only_against_the_root_row`
 (`qsl-replay/src/spine.rs`) backs steps 1-3 and 5. Step 4 fails until the
-header version and digest comparison is removed from the code (FR-110 Status).
+parser takes only `profile <alias> = "<identity>";` (FR-110 Status).
 Step 1's layer-closure lock rows and steps 6 and 7 are planned.

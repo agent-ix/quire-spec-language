@@ -25,7 +25,7 @@ relationships:
 ## Description
 
 When spine `compile` (`qsl_replay::spine::compile`) compiles a complete-V1
-unit, E3 SHALL resolve each of the unit's `profile … version … digest …`
+unit, E3 SHALL resolve each of the unit's `profile <alias> = "<identity>";`
 header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header
 profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
@@ -48,7 +48,7 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
 - The unit's profile selections as S2 carries them
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
-  identity/version/digest, declaration span, identity-literal span).
+  identity, declaration span, identity-literal span).
 - `DefinitionLock::pinned()`, the closed catalog of QSpec
   `complete-value-lock.json` rows, including its `header_selectable_layers`
   rows (each layer's identity, the layers it requires and its admitted-form
@@ -79,8 +79,9 @@ identity, in source order, with the `DefinitionLock` rows. A header selects
 a header-selectable layer (see "Layer selection"); the catalog's
 `qualification_catalog` rows are selected by its own package-selection
 rules (always, conditional and exactly-one roles), not by a header. E3
-compares the header's identity only: the `version` and `digest` strings the
-grammar still carries are ignored for selection. The emitted lock records
+compares the header's identity, the only member a header profile carries
+(QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`). The
+emitted lock records
 the catalog rows, so the package's identity binds the definitions the
 build compiled against.
 
@@ -116,8 +117,8 @@ it applies the same resolution.
 
 Every layer of QSpec AD-003's state and value/model hierarchy is
 header-selectable (QSpec FR-453; the `header_selectable_layers` rows of
-QSpec `complete-value-lock.json` and the QSpec definitions README table
-"Header-selectable layers"): `quire.state.core/v1`,
+QSpec `complete-value-lock.json`, which the QSpec definitions README
+section "Header-selectable layers" cites): `quire.state.core/v1`,
 `quire.state.queries/v1`, `quire.state.graph/v1`,
 `quire.value.complete/v1` and `quire.model.complete/v1`.
 
@@ -170,8 +171,8 @@ edge therefore compile to distinct packages.
 | --- | --- | --- |
 | FR-110-AC-1 | A unit whose one header profile names `quire.value.complete/v1` compiles through spine `compile`. Its emitted lock has empty `profile_selections`, and its `definition_selections` hold `quire.value.complete/v1`, `quire.state.core/v1` and the `qualification_catalog` rows the package-selection rules select for the unit, and no other layer. | Test (TC-490) |
 | FR-110-AC-2 | The same unit with the profile identity `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection` at the span of the identity literal, naming alias `v`, the selection and required role `root`, and produces no package. | Test (TC-490) |
-| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity, revision value and digest refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and required role `root`. The `edition` row's identity (`ix:native`) refuses the same way. | Test (TC-490) |
-| FR-110-AC-5 | The same unit with the `root` identity, version `"1"` and a digest of 64 `a`s compiles, and its emitted lock equals AC-1's. | Test (TC-490) |
+| FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and required role `root`. The `edition` row's identity (`ix:native`) refuses the same way. | Test (TC-490) |
+| FR-110-AC-5 | The same unit with the header `profile v = "quire.value.complete/v1" version "1" digest "sha256:<64 a>";` refuses as a syntax error at the `version` token, before E3, and produces no package. | Test (TC-490) |
 | FR-110-AC-6 | A unit with three header profiles, the `root` selection under alias `v`, the `ieee_profile` row's identity under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the `root` selection under two aliases compiles. | Test (TC-490) |
 | FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` hold the layer and every layer its `requires` closure names and no layer that requires it. | Test (TC-490) |
 | FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
@@ -192,8 +193,8 @@ edge therefore compile to distinct packages.
 - QSpec `proposals/quire-v1/definitions/complete-value-lock.json` (the
   catalog rows and `header_selectable_layers` rows), `native-diagnostics.md`
   (the codes and causes) and FR-322 (the lock members).
-- QSpec FR-453 and the QSpec definitions README table "Header-selectable
-  layers".
+- QSpec FR-453 and QSpec FR-001 (header selection of each layer and its
+  restricted admission).
 
 ## Status
 
@@ -201,8 +202,9 @@ Implemented, apart from the remaining work below, and backed by the
 TC-490 test (`a_header_profile_resolves_only_against_the_root_row`,
 `qsl-replay/src/spine.rs`).
 
-Remaining work: the implementation still compares the header's version and
-digest with the `root` row and refuses a difference with `stale_dependency`.
-AC-5 states the behavior: a header resolves by identity alone. Layer
+Remaining work: the implementation still parses a header's `version` and
+`digest` and compares them with the `root` row. AC-5 states the behavior: a
+header profile is `profile <alias> = "<identity>";` and resolves by identity
+alone. Layer
 selection (AC-7, AC-8) and AC-1's layer-closure lock rows are not yet
 implemented.
