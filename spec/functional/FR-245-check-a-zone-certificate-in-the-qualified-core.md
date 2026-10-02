@@ -70,7 +70,7 @@ pub struct CertificateCheckLimits {
 - The checker SHALL recompile and check the package by FR-098's rules and
   rebuild the subject's `ModelSystem`.
 - If the certificate's obligation identity differs from `item` or from the
-  recompiled item's identity, then the checker SHALL refuse `stale_dependency`/`revision-mismatch`, naming both
+  recompiled item's identity, then the checker SHALL refuse `stale_dependency`/`content-mismatch`, naming both
   identities.
 - The checker SHALL recompute every successor of every node by every
   enabled transition identity with DBM code separate from EN-6's.
@@ -109,7 +109,7 @@ pub struct CertificateCheckLimits {
 |----|----------|--------------|
 | FR-245-AC-1 | FR-244-AC-1, AC-2 and AC-3's certificates are each `Accepted`. | Test (TC-700) |
 | FR-245-AC-2 | Each tampering is `Rejected`, naming the failing part: one node removed; one target zone shrunk so it no longer covers its successor; one LU bound lowered below the computed bound; one edge pointing to a node of smaller component index; one component reason naming a fairness constraint that an edge inside it takes; one node replaced by a bad node; the `admitted` path cut so it ends at a node that is neither quiescent nor in a component with a positive-delay cycle. | Test (TC-700) |
-| FR-245-AC-3 | AC-1's certificate checked against the identity of another item refuses `stale_dependency`/`revision-mismatch` naming both; after a source edit that changes the package identity it refuses by FR-098's rule. With `max_certificate_edges` 1 it returns `Stopped` naming the limit and the value 1. | Test (TC-700) |
+| FR-245-AC-3 | AC-1's certificate checked against the identity of another item refuses `stale_dependency`/`content-mismatch` naming both; after a source edit that changes the package identity it refuses by FR-098's rule. With `max_certificate_edges` 1 it returns `Stopped` naming the limit and the value 1. | Test (TC-700) |
 | FR-245-AC-4 | The Kani harnesses for the checker's `close`, `constrain`, `reset`, `up`, `includes` and aLU test pass for dimension at most 3 with bounds in `[-8, 8]`, proving no overflow and agreement with the reference implementation. | Test (TC-700) |
 
 ## Dependencies

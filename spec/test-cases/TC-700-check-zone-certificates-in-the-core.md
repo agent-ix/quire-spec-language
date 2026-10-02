@@ -29,5 +29,5 @@ Tag the tests `#[trace("TC-700", "FR-245-AC-n")]`.
 
 - Step 1: `Accepted`.
 - Step 2: `Rejected`, naming the failing node, edge or component.
-- Step 3: `stale_dependency`/`revision-mismatch` naming both identities; FR-098's refusal; `Stopped` naming the limit and 1.
+- Step 3: `stale_dependency`/`content-mismatch` naming both identities; FR-098's refusal; `Stopped` naming the limit and 1.
 - Step 4: every harness passes.

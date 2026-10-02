@@ -22,11 +22,11 @@ relationships:
 
 ## Description
 
-A counterexample over a timed subject SHALL carry the delay before each
-discrete step as an exact non-negative rational in the binding's unit, a
-time-lock counterexample SHALL end with a final delay, and a liveness
-counterexample SHALL be a timed lasso whose repetition is a time-divergent
-behaviour (ADR-026 CT-1, CT-2, CT-4). Every refutation an engine reports
+A counterexample over a timed subject SHALL carry QSpec FR-181's step
+member `delay` and, for QSpec FR-417's `time-lock` kind, its member
+`final_delay`, and a liveness counterexample SHALL be a timed lasso whose
+repetition is a time-divergent behaviour (ADR-026 CT-1, CT-2, CT-4). QSpec
+owns the members; this requirement specifies how QSL's engines fill them. Every refutation an engine reports
 has such a counterexample, so it replays with no engine present.
 
 ## Use case
@@ -43,28 +43,28 @@ the reply land just outside a half-open interval.
 
 ## Outputs
 
-`TemporalCounterexample` (FR-128) over a timed subject, with:
+`TemporalCounterexample` (FR-128) over a timed subject, carrying QSpec
+FR-181's `delay` and FR-417's `final_delay`:
 
 ```rust
 pub struct ModelStep {
     pub transition: ModelTransition,
     pub post_state: DigestRecord,          // discrete state and exact clock valuation
-    pub delay: Option<ExactRational>,      // Some over every timed subject
+        pub delay: Option<ExactRational>,      // QSpec FR-181 `delay`
 }
-// TemporalCounterexample gains `final_delay: Option<ExactRational>`,
-// Some exactly when kind is TimeLock.
+// TemporalCounterexample gains `final_delay: Option<ExactRational>` (QSpec FR-417).
 ```
 
 ## Behavior
 
-- Over a timed subject every `ModelStep` SHALL carry `delay: Some(d)`, the
-  exact delay before the step in the binding's unit; under a `Tick` source
-  `d` SHALL be 0. Over an untimed subject it SHALL be `None`.
+- Each engine SHALL fill `delay` as QSpec FR-181 defines it over a timed
+  subject, 0 under a `Tick` source, and leave it `None` over an untimed
+  subject.
 - The post-state digest SHALL be the canonical identity digest of the
   discrete state together with the exact clock valuation.
-- A `TimeLock` counterexample SHALL be a finite prefix ending with
-  `final_delay`, the delay that reaches the time-locked state; every other
-  kind SHALL carry `final_delay: None`.
+- Each engine SHALL report a time-lock as QSpec FR-417's `time-lock`
+  counterexample with its `final_delay`, and SHALL leave `final_delay`
+  `None` on every other kind.
 - **Timed lasso.** Each engine SHALL report a liveness counterexample over a
   timed subject as a lasso whose loop has positive total delay `D`, whose
   last state has the entry's discrete state, in which each clock the loop
@@ -97,6 +97,7 @@ pub struct ModelStep {
 
 ## References
 
-- QSpec half: QSpec FR-416 and FR-417, with QSpec FR-181 and FR-331
-  (Linear STD-139), own the step `delay`, the final delay and the timed
-  lasso on the counterexample wire (ADR-026 OV-5, OV-6).
+- QSpec half: QSpec FR-181 owns the step member `delay`, QSpec FR-417 the
+  `time-lock` kind and its member `final_delay`, and QSpec FR-416 the timed
+  lasso, on the counterexample wire with QSpec FR-331 (Linear STD-139;
+  ADR-026 OV-5, OV-6).
