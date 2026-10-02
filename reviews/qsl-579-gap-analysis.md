@@ -67,3 +67,14 @@ The ruled spec edits are in place:
 | FND-001 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
 | FND-002 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
 | FND-003 | fixed | cf5e9a89d9dce876f7d54fe985996c567129bd88 |
+
+Round 2, reviewed at `5ed1d46993fb024674d7a2cd1ccf8b22bdb02aae` (diff `3653e30e..5ed1d469`, one commit). The
+commit adds FR-245-AC-6, TC-700 step 6 (with its scope, fixture and expected
+result) and the TC-700 row in tests.md, updates the FR-245 row in spec.md,
+and retraces the test. The committed `reviews/qsl-579-*.md` are
+byte-identical to this reviewer's round-1 copies, so the coder's own
+Dispositions sections are gone. Nothing else is deleted.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-004 | fixed | 5ed1d46993fb024674d7a2cd1ccf8b22bdb02aae |
