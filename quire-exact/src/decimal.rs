@@ -358,7 +358,7 @@ impl DecimalLoss {
 /// A well-formed `Decimal[lo, hi; smin, smax; mode]` type: inclusive
 /// membership coefficient and scale bounds plus the rounding spelling. Its
 /// target scale is `smax`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DecimalType {
     lower: Integer,
     upper: Integer,

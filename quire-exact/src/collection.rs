@@ -168,6 +168,24 @@ impl CollectionType {
         &self.element
     }
 
+    /// The element type, for `ValueType`'s iterative walks to take or
+    /// replace in place.
+    pub(crate) fn element_mut(&mut self) -> &mut ValueType {
+        &mut self.element
+    }
+
+    /// Every field, for `ValueType`'s `Debug` to print in the derived
+    /// layout. Destructured whole, so a new field is a compile error until
+    /// `Debug` prints it.
+    pub(crate) fn debug_fields(&self) -> (&CollectionKind, &ValueType, &Option<CardinalityBound>) {
+        let Self {
+            kind,
+            element,
+            bound,
+        } = self;
+        (kind, element, bound)
+    }
+
     /// The declared bound; `None` for an unbounded collection type.
     pub fn bound(&self) -> Option<CardinalityBound> {
         self.bound

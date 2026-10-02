@@ -68,6 +68,8 @@ use crate::rational::{Rational, RationalDomain};
 use crate::reference::ObjectReference;
 use crate::text::{Text, TextType};
 
+mod value_type;
+
 /// The inline, *ranked* set of an enum type's admitted variants (ADR-013
 /// O-14, OQ-D ruling): the kernel `ValueType::Enum` carries its variant set
 /// directly, as opaque [`VariantId`] digests, so `admits` is a pure
@@ -173,7 +175,15 @@ impl EnumMember {
 
 /// A declared kernel value type. Two types are the same type exactly when
 /// they are equal, collection bounds included.
-#[derive(Clone, Debug, Eq, PartialEq)]
+///
+/// `Clone`, `PartialEq`, `Hash`, `Debug` and `Drop` are hand-written so that
+/// no walk over a type uses the host stack in proportion to its nesting
+/// depth: a type of any depth clones, compares, hashes, formats and drops on
+/// a small fixed stack, such as a no_std target's. `Debug` prints what
+/// `#[derive(Debug)]` printed, except that in alternate mode a leaf gets
+/// plain `{:#?}`, so the caller's format flags reach compact-mode leaves
+/// only.
+#[derive(Eq)]
 pub enum ValueType {
     /// `Boolean`.
     Boolean,
@@ -445,7 +455,9 @@ impl fmt::Debug for Value {
     /// gets plain `{:#?}`, so the width, fill, precision and hex flags of
     /// the caller's format spec reach compact-mode leaves only.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        DebugWriter::new(formatter).write(self)
+        DebugWriter::new(formatter)
+            .write(Step::Value(self))
+            .map(|_peak| ())
     }
 }
 
@@ -486,11 +498,14 @@ impl<'a> Items<'a> {
     }
 }
 
-/// One pending piece of `Value`'s `Debug` output. A list is expanded one
-/// item at a time, so the worklist grows with nesting depth, not width.
+/// One pending piece of `Value`'s or `ValueType`'s `Debug` output. A list
+/// is expanded one item at a time, so the worklist grows with nesting depth,
+/// not width.
 #[derive(Clone, Copy)]
 enum Step<'a> {
     Value(&'a Value),
+    Type(&'a ValueType),
+    CollectionType(&'a CollectionType),
     Slot(&'a FieldValue),
     Payload(Option<&'a Value>),
     /// A whole list, brackets included.
@@ -504,8 +519,9 @@ enum Step<'a> {
     Close(Bracket),
 }
 
-/// Writes `Value`'s `Debug` output straight to the formatter, tracking the
-/// open bracket depth that alternate mode indents to.
+/// Writes `Value`'s or `ValueType`'s `Debug` output straight to the
+/// formatter, tracking the open bracket depth that alternate mode indents
+/// to.
 struct DebugWriter<'f, 'g> {
     formatter: &'f mut fmt::Formatter<'g>,
     alternate: bool,
@@ -522,11 +538,17 @@ impl<'f, 'g> DebugWriter<'f, 'g> {
         }
     }
 
-    fn write(mut self, root: &Value) -> fmt::Result {
-        let mut steps = vec![Step::Value(root)];
+    /// Write `root`, returning the most steps the worklist held at once.
+    fn write(mut self, root: Step<'_>) -> Result<usize, fmt::Error> {
+        let mut steps = vec![root];
+        let mut peak = steps.len();
         while let Some(step) = steps.pop() {
             match step {
                 Step::Value(value) => schedule_value(&mut steps, value),
+                Step::Type(value_type) => value_type::schedule_type(&mut steps, value_type),
+                Step::CollectionType(collection_type) => {
+                    value_type::schedule_collection_type(&mut steps, collection_type)
+                }
                 Step::Slot(FieldValue::Present(value)) => {
                     schedule(&mut steps, tuple_steps("Present", Step::Value(value)))
                 }
@@ -560,8 +582,9 @@ impl<'f, 'g> DebugWriter<'f, 'g> {
                 Step::Next => self.next()?,
                 Step::Close(bracket) => self.close(bracket)?,
             }
+            peak = peak.max(steps.len());
         }
-        Ok(())
+        Ok(peak)
     }
 
     fn open(&mut self, bracket: Bracket) -> fmt::Result {
@@ -655,7 +678,7 @@ fn schedule_value<'a>(stack: &mut Vec<Step<'a>>, value: &'a Value) {
             return schedule_node(
                 stack,
                 ["Option", "OptionValue", "payload_type: ", "payload: "],
-                Step::Leaf(payload_type),
+                Step::Type(payload_type),
                 Step::Payload(payload.as_ref()),
                 occ,
             );
@@ -684,7 +707,7 @@ fn schedule_value<'a>(stack: &mut Vec<Step<'a>>, value: &'a Value) {
                     "collection_type: ",
                     "elements: ",
                 ],
-                Step::Leaf(collection_type),
+                Step::CollectionType(collection_type),
                 Step::List(Items::Elements(elements)),
                 occ,
             );

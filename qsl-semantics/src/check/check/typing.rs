@@ -1730,14 +1730,11 @@ impl<'a> Typer<'a> {
                 ))
             }
             Unary::Value => {
-                let ValueType::Option(payload) = operand.value_type.clone() else {
+                let ValueType::Option(payload) = &operand.value_type else {
                     return Err(mismatch(&location));
                 };
-                Ok(node(
-                    NodeKind::Value(Box::new(operand)),
-                    *payload,
-                    &location,
-                ))
+                let payload = ValueType::clone(payload);
+                Ok(node(NodeKind::Value(Box::new(operand)), payload, &location))
             }
             Unary::Deref => Err(mismatch(&location)),
             Unary::Pre => {
