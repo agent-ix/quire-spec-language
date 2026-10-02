@@ -597,6 +597,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-204
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-023
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-032
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-313
