@@ -5,6 +5,8 @@ type: US
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-068
     type: exercises
+  - target: ix://agent-ix/quire-spec-language/FR-270
+    type: exercises
   - target: "ix://agent-ix/quire-spec-language/StR-001"
     type: traces_to
 ---
@@ -86,3 +88,6 @@ halves still share one module.
 ## Traceability (Informative)
 
 - [FR-068](../functional/FR-068-split-expression-checking-into-check-stage.md)
+- [FR-270](../functional/FR-270-gate-stage-entries-to-checked-inputs.md) —
+  the checked-input gate: no execution, routing or replay entry takes or
+  rebuilds an unchecked program.

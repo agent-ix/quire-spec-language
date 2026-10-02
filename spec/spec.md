@@ -184,6 +184,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/ADR-017
     type: contains
+  - target: ix://agent-ix/quire-spec-language/ADR-032
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-099
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-100
@@ -223,6 +225,16 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-122
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-270
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-271
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-272
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-273
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/US-028
     type: contains
 ---
 # Master Requirements Specification
@@ -405,6 +417,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-004](usecase/US-004-reuse-existing-toolchain.md) | US | Draft |
 | [US-013](usecase/US-013-receive-a-typed-family-evaluation-outcome.md) | US | Draft |
 | [US-014](usecase/US-014-compile-value-source-through-the-forms-stage.md) | US | Draft |
+| [US-028](usecase/US-028-trust-one-definition-per-canonical-type.md) | US | Draft |
 | [StR-001](stakeholder/StR-001-native-assessment-trust.md) | StR | Draft |
 | [NFR-001](non-functional/NFR-001-bound-syntax-work.md) | NFR | Draft |
 | [NFR-002](non-functional/NFR-002-reproduce-native-builds.md) | NFR | Draft |
@@ -532,9 +545,14 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-120](functional/FR-120-simulate-a-checked-package-s-state-family.md) | FR | Specified: `ModelSystem`, the model-level `TransitionSystem` over a checked package's state family (QSpec FR-181's successor relation over FR-013 frames, through FR-114 and FR-115), invariant-violating successors recorded rather than pruned (FR-181-AC-4), and effects and results as typed trace data with ambient reads refused at S3 (FR-181-AC-6); runs over the S4 package; fixtures use FR-056's bound scalar reader, on main; not yet implemented -- TC-471 to TC-473 planned |
 | [FR-121](functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md) | FR | Implemented: `qsl_replay::call_site`, a second layer-6 facade entry beside `replay`, compiling against supplied domain packages and dependencies and locating a function's parameters, an operation's anchor, frame and clause identities, or a state clause's identities by declared identity, returning the compiled package's bytes beside its `package_id`, sharing its node-key derivation with `replay` -- TC-516 passed locally |
 | [FR-122](functional/FR-122-replay-a-state-clause-counterexample.md) | FR | Specified: replay of a `WitnessEnvelope<StateClauseCounterexample>` through the replay facade, checking the envelope's clause node and `claim` occurrence against the recompile before admission, admitting by FR-106 and evaluating by FR-107; a clause that evaluates `false` reproduces, one that holds settles `inconclusive`; not yet implemented -- TC-517 planned |
+| [FR-270](functional/FR-270-gate-stage-entries-to-checked-inputs.md) | FR | Specified (ADR-032 CK-1 to CK-5): `cargo xtask checked-input` fails on a stage entry in `qsl-eval`, `qsl-route` or the replay facade that names a pre-check representation, or on a call to a pre-check stage there; a `make ci` prerequisite; not yet implemented -- TC-745 planned |
+| [FR-271](functional/FR-271-tag-canonical-types-at-their-definition.md) | FR | Specified (ADR-032 DT-1): each ADR-013 owner-row public type carries the `/// quire:canonical` doc tag, and the tags are the canonical set; misplaced or duplicate tags fail; not yet implemented -- TC-746 planned |
+| [FR-272](functional/FR-272-fail-on-a-second-definition-of-a-canonical-type.md) | FR | Specified (ADR-032 DT-2 to DT-6): `cargo xtask canonical-types` fails on a workspace namesake, a non-owner re-export, or a same-name, same-member copy in an ecosystem dependency, in QSL and in backend workspaces; not yet implemented -- TC-747 planned |
+| [FR-273](functional/FR-273-resolve-each-canonical-type-namesake.md) | FR | Specified (ADR-032 DT-7): the per-type verdict table for every namesake of a canonical type on main: a same-meaning copy is deleted, a different-meaning namesake is renamed; not yet implemented -- TC-748 planned |
 | [NFR-011](non-functional/NFR-011-bound-value-checking-work.md) | NFR | Implemented: finite default checking ceilings, recorded with each checked result -- TC-423 |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR | Implemented: finite default model normalization and admission ceilings, normalization charged as it works, meters that count rather than log -- TC-434 |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR | Proposed; temporal, trace and boundedness architecture: bound taxonomy, absent bounds, extent and the available finite bound, the infinite-trace facet (#222) |
 | [ADR-015](decisions/ADR-015-compile-and-replay-against-dependencies.md) | ADR | Accepted; compile and replay against dependencies: the dependency input and S4 source resolution, the bare-hex import digest, string library identities, replay dependency entries, typing imported names |
 | [ADR-016](decisions/ADR-016-state-model-finite-execution-mapping.md) | ADR | Proposed; state, model and finite execution on the shared foundation: static conformance versus runtime population data, identity across check, execute, proof handoff and replay, exploration bookkeeping, finite exhaustion is not proof, and the gaps returned to QSL-68 and QSL-67 (#220) |
 | [ADR-017](decisions/ADR-017-protocol-refinement-abstraction-boundaries.md) | ADR | Proposed; protocol/frame, refinement and abstraction-relation boundary mapping: identities, entry selection, frame replay identity checks, spec-versioning and profile-layering gate comparison, abstraction relation keys, export and unbound refusal (#223) |
+| [ADR-032](decisions/ADR-032-checked-input-and-duplicate-canonical-type-gates.md) | ADR | Proposed; two architecture drift gates: `xtask checked-input` (stage entries name no pre-check representation and call no pre-check stage) and `xtask canonical-types` (a canonical public type, marked at its definition, has one definition in the workspace and no copy in an ecosystem dependency) |
