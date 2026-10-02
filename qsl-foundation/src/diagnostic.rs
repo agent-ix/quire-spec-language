@@ -303,21 +303,23 @@ impl Code {
         )
     }
 
-    /// FR-301's single-code ladder: `runtime_invariant` (an internal fault,
-    /// ADR-013 T-4's internal-failure category) is tool failure (30); then
-    /// unsupported (21) before incomplete (22) before invalid or refused
-    /// input (20). The sole source of this mapping; every exit-code site
-    /// routes through it rather than re-deriving it from
-    /// `is_unsupported`/`is_incomplete`.
-    pub fn exit_code(self) -> u8 {
+    /// This code's ADR-013 O-16 category, on QSpec FR-301's single-code
+    /// ladder: `runtime_invariant` (an internal fault, ADR-013 T-4) is an
+    /// internal failure; then unsupported before incomplete before invalid
+    /// or refused input. Exit codes come from a category
+    /// ([`Category::exit_code`], FR-285), and this is the code-to-category
+    /// map an exit derived from a `Code` uses. It is not [`category_of`],
+    /// the refusal-record map, which gives `Refusal` for the unsupported
+    /// and incomplete codes this ladder separates.
+    pub fn category(self) -> Category {
         if self == Self::RuntimeInvariant {
-            30
+            Category::InternalFailure
         } else if self.is_unsupported() {
-            21
+            Category::Unsupported
         } else if self.is_incomplete() {
-            22
+            Category::Incomplete
         } else {
-            20
+            Category::Refusal
         }
     }
 }
@@ -470,15 +472,6 @@ impl Diagnostic {
     /// build does not implement, rather than input that is itself invalid.
     pub fn is_unsupported(&self) -> bool {
         self.code.is_unsupported()
-    }
-    /// FR-301's exit code for this diagnostic alone, always one of
-    /// {20, 21, 22, 30} (asserted over `Code::all()` in
-    /// tests/native_boundaries.rs). FR-301's severity order (tool failure,
-    /// invalid, unsupported, incomplete) is not ascending-numeric, so a
-    /// caller combining several diagnostics resolves the group's code with
-    /// command/output.rs's `combined_exit_code`, not a bare `min`.
-    pub fn exit_code(&self) -> u8 {
-        self.code.exit_code()
     }
 }
 
@@ -723,6 +716,46 @@ impl Category {
             Self::InternalFailure => "internal-failure",
         }
     }
+
+    /// FR-285 (ADR-029 CB-4): the one exit function, QSpec FR-301's code
+    /// for an item of this category. Undefined folds to 10 with violation;
+    /// inconclusive is a proof or `analyze` item's, which did not settle
+    /// its claim and so is incomplete (22). A supplied-trace clause still
+    /// pending at the trace's end takes [`Self::trace_exit_code`] instead.
+    pub const fn exit_code(self) -> u8 {
+        match self {
+            Self::Success => 0,
+            Self::Violation | Self::Undefined => 10,
+            Self::Refusal => 20,
+            Self::Unsupported => 21,
+            Self::Incomplete | Self::Inconclusive => 22,
+            Self::InternalFailure => 30,
+        }
+    }
+
+    /// FR-285's row for a supplied-trace clause (FR-283): one still pending
+    /// when the trace ends is inconclusive but observed no violation, so it
+    /// exits 0. Every other category exits as [`Self::exit_code`] states.
+    pub const fn trace_exit_code(self) -> u8 {
+        match self {
+            Self::Inconclusive => 0,
+            other => other.exit_code(),
+        }
+    }
+
+    /// FR-285's severity fold: the most severe of `codes` under QSpec
+    /// FR-301's order 30, 20, 21, 22, 10, 0, or `None` when `codes` is
+    /// empty. A code outside that set ranks most severe, so it is never
+    /// hidden behind a known one.
+    pub fn most_severe(codes: impl IntoIterator<Item = u8>) -> Option<u8> {
+        const ORDER: [u8; 6] = [30, 20, 21, 22, 10, 0];
+        codes.into_iter().min_by_key(|code| {
+            ORDER
+                .iter()
+                .position(|known| known == code)
+                .map_or(0, |rank| rank + 1)
+        })
+    }
 }
 
 impl std::fmt::Display for Category {
@@ -834,9 +867,14 @@ impl InternalFault {
 /// than reading this table. The `unsupported_*`
 /// codes are refusals too: the catalog has no category column, and O-16's
 /// evaluation column rules `unsupported` out of an evaluation outcome.
-/// [`Code::is_incomplete`] and [`Code::is_unsupported`] are the native-v1
-/// exit-code ladder (FR-301), not the O-16 category, so they may differ
-/// from this table.
+/// This table is only the category a refusal record reports (ADR-013
+/// O-17). No exit code is derived from it: exits come from the O-16
+/// category ([`Category::exit_code`]), which for a native code is
+/// [`Code::category`]. That map separates the unsupported
+/// codes (`unsupported_construct`, `unknown_required_feature`,
+/// `unsupported_projection`) and the incomplete ones (`resource_exhausted`,
+/// `incomplete_population`, `unavailable_observation`) that this table
+/// files under `Refusal`.
 const CATALOG_CATEGORIES: [(&str, Category); 48] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
@@ -888,16 +926,17 @@ const CATALOG_CATEGORIES: [(&str, Category); 48] = [
     ("runtime_invariant", Category::InternalFailure),
 ];
 
-/// FR-090-AC-5: the O-16 category of a catalog code, read from the code
-/// alone, as a refusal record carries it (`CATALOG_CATEGORIES`). `None`
-/// for a code the catalog does not define: an unknown code has no
-/// category, and this map never guesses one.
+/// FR-090-AC-5: the category a refusal record carrying this catalog code
+/// reports, read from the code alone (`CATALOG_CATEGORIES`, the ADR-013
+/// O-17 refusal-record map). Never an exit code's source: exits come from
+/// the O-16 category ([`Category::exit_code`]). `None` for a code the catalog does not define: an
+/// unknown code has no category, and this map never guesses one.
 pub fn category_of(code: &CatalogCode) -> Option<Category> {
     catalog_category(code.code())
 }
 
-/// The O-16 category of the catalog code spelled `code`; `None` for a
-/// spelling the catalog does not define.
+/// The refusal-record category of the catalog code spelled `code`
+/// ([`category_of`]); `None` for a spelling the catalog does not define.
 pub fn catalog_category(code: &str) -> Option<Category> {
     CATALOG_CATEGORIES
         .iter()
@@ -1170,6 +1209,66 @@ mod foundation_tests {
         category_of, resource_exhausted, CatalogCode, Category, Code, InternalFault, Phase, Source,
         SourceIdentity, Span, SyntaxLimit, CATALOG_CATEGORIES,
     };
+    use ix_trace_rs::trace;
+
+    /// FR-285-AC-1 (TC-769 step 1): each of the nine table rows maps to its
+    /// code, with undefined folding to 10 beside violation, an inconclusive
+    /// proof or `analyze` item at 22 and a supplied-trace clause pending at
+    /// the trace's end at 0.
+    #[trace("TC-769", "FR-285-AC-1")]
+    #[test]
+    fn tc_769_exit_function_maps_every_table_row() {
+        let rows = [
+            Category::Success.exit_code(),
+            Category::Violation.exit_code(),
+            Category::Undefined.exit_code(),
+            Category::Refusal.exit_code(),
+            Category::Unsupported.exit_code(),
+            Category::Incomplete.exit_code(),
+            Category::Inconclusive.exit_code(),
+            Category::Inconclusive.trace_exit_code(),
+            Category::InternalFailure.exit_code(),
+        ];
+        assert_eq!(rows, [0, 10, 10, 20, 21, 22, 22, 0, 30]);
+        for category in Category::ALL {
+            if category != Category::Inconclusive {
+                assert_eq!(
+                    category.trace_exit_code(),
+                    category.exit_code(),
+                    "{category}"
+                );
+            }
+        }
+    }
+
+    /// FR-285-AC-2 (TC-769 step 2): a multi-item outcome exits with the most
+    /// severe item code under the order 30, 20, 21, 22, 10, 0, in any item
+    /// order.
+    #[trace("TC-769", "FR-285-AC-2")]
+    #[test]
+    fn tc_769_multi_item_outcomes_exit_with_the_most_severe_code() {
+        let cases: [(&[u8], u8); 6] = [
+            (&[10, 22], 22),
+            (&[0, 30, 20], 30),
+            (&[21, 22], 21),
+            (&[20, 21], 20),
+            (&[0, 10], 10),
+            (&[0], 0),
+        ];
+        for (codes, expected) in cases {
+            assert_eq!(
+                Category::most_severe(codes.iter().copied()),
+                Some(expected),
+                "{codes:?}"
+            );
+            assert_eq!(
+                Category::most_severe(codes.iter().rev().copied()),
+                Some(expected),
+                "{codes:?} reversed"
+            );
+        }
+        assert_eq!(Category::most_severe(std::iter::empty()), None);
+    }
 
     /// `Code::from_code` is the typed reverse lookup of `Code::as_str`,
     /// round-tripping every code, and `None` for an unrecognized spelling.

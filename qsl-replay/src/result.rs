@@ -21,7 +21,7 @@ use crate::bounds::BoundExceeded;
 
 mod wire;
 use crate::identity::TracePosition;
-use crate::proof_result::ProofCategory;
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::provenance::SourceRegion;
 pub use wire::CauseCodecError;
 
@@ -35,20 +35,20 @@ pub use wire::CauseCodecError;
 /// map, and this module needs only that two verdicts either agree or do
 /// not, which the category's own equality already gives.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Verdict(ProofCategory);
+pub struct Verdict(Category);
 
 impl Verdict {
     /// The one place the QSpec outcome-to-verdict map (fixed per ADR-013
     /// O-16 category, QC-8) lands. Presently the identity map over the
     /// category -- the real map is QSpec's, not re-derived or guessed here
     /// -- so that when it lands, only this function's body changes.
-    pub fn from_category(category: ProofCategory) -> Self {
+    pub fn from_category(category: Category) -> Self {
         Self(category)
     }
 
     /// The category this verdict is presently defined as (identity map; see
     /// [`Self::from_category`]'s doc).
-    pub fn category(self) -> ProofCategory {
+    pub fn category(self) -> Category {
         self.0
     }
 }
@@ -392,7 +392,7 @@ fn value_bytes(value: &Value) -> usize {
 pub struct WitnessArmResult {
     settlement: WitnessSettlement,
     disagreement: Option<DisagreementCause>,
-    category: ProofCategory,
+    category: Category,
     value: Option<EvaluatedValue>,
     record: Option<Box<SeparatingWitnessRecord>>,
     resolved_regions: Vec<SourceRegion>,
@@ -411,7 +411,7 @@ impl WitnessArmResult {
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
-        category: ProofCategory,
+        category: Category,
         value: Option<EvaluatedValue>,
         witness: WitnessCheck,
         resolved_regions: Vec<SourceRegion>,
@@ -448,7 +448,7 @@ impl WitnessArmResult {
         self.disagreement.as_ref()
     }
     /// The category this arm's settlement carries.
-    pub fn category(&self) -> ProofCategory {
+    pub fn category(&self) -> Category {
         self.category
     }
     /// The evaluated value this arm produced, or `None` when the replay
@@ -480,7 +480,7 @@ impl WitnessArmResult {
 pub struct InputArmResult {
     settlement: InputSettlement,
     disagreement: Option<DisagreementCause>,
-    category: ProofCategory,
+    category: Category,
     value: Option<EvaluatedValue>,
     resolved_regions: Vec<SourceRegion>,
     charges: ScalarLimits,
@@ -495,7 +495,7 @@ impl InputArmResult {
     pub fn settle(
         proved: Verdict,
         replayed: Verdict,
-        category: ProofCategory,
+        category: Category,
         value: Option<EvaluatedValue>,
         witness: &WitnessCheck,
         resolved_regions: Vec<SourceRegion>,
@@ -526,7 +526,7 @@ impl InputArmResult {
         self.disagreement.as_ref()
     }
     /// The category this arm's settlement carries.
-    pub fn category(&self) -> ProofCategory {
+    pub fn category(&self) -> Category {
         self.category
     }
     /// The evaluated value this arm produced, or `None` when the replay
@@ -686,18 +686,18 @@ mod tests {
     #[test]
     fn tc_189_witness_and_input_arms_stay_distinct() {
         let witness_result = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             agrees(record(vec!["field"])),
             regions(),
             charges(),
         );
         let input_result = InputArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             &WitnessCheck::Agrees(None),
             regions(),
@@ -730,9 +730,9 @@ mod tests {
     #[test]
     fn tc_190_disagreement_settles_inconclusive_and_is_never_repaired() {
         let disagreeing = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Refusal),
-            ProofCategory::Refusal,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Refusal),
+            Category::Refusal,
             Some(EvaluatedValue::Boolean(false)),
             agrees(record(vec!["field"])),
             regions(),
@@ -742,17 +742,17 @@ mod tests {
         assert_eq!(
             disagreeing.disagreement(),
             Some(&DisagreementCause::Verdicts {
-                proved: Verdict::from_category(ProofCategory::Success),
-                replayed: Verdict::from_category(ProofCategory::Refusal),
+                proved: Verdict::from_category(Category::Success),
+                replayed: Verdict::from_category(Category::Refusal),
             })
         );
         // A disagreement never carries a decisive record.
         assert!(disagreeing.record().is_none());
 
         let disagreeing_input = InputArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Refusal),
-            ProofCategory::Refusal,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Refusal),
+            Category::Refusal,
             Some(EvaluatedValue::Boolean(false)),
             &WitnessCheck::Agrees(None),
             regions(),
@@ -770,11 +770,11 @@ mod tests {
     #[trace("TC-190", "FR-072-AC-2")]
     #[test]
     fn tc_190_a_replay_with_no_value_never_agrees() {
-        let violation = Verdict::from_category(ProofCategory::Violation);
+        let violation = Verdict::from_category(Category::Violation);
         let witness = WitnessArmResult::settle(
             violation,
             violation,
-            ProofCategory::Violation,
+            Category::Violation,
             None,
             WitnessCheck::Agrees(None),
             regions(),
@@ -794,7 +794,7 @@ mod tests {
         let input = InputArmResult::settle(
             violation,
             violation,
-            ProofCategory::Violation,
+            Category::Violation,
             None,
             &WitnessCheck::Agrees(None),
             regions(),
@@ -822,9 +822,9 @@ mod tests {
     #[test]
     fn tc_191_round_trips_the_fr351_record_and_compares_structurally() {
         let first = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             agrees(record(vec!["outer", "items", "member"])),
             regions(),
@@ -838,9 +838,9 @@ mod tests {
         // those read-back fields -- not from the fixture's own constants --
         // and confirm the record makes it across unchanged.
         let round_tripped = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             agrees(read_back_record.clone()),
             regions(),
@@ -858,9 +858,9 @@ mod tests {
         );
 
         let second = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             agrees(record(vec!["outer", "items", "other_member"])),
             regions(),
@@ -880,9 +880,9 @@ mod tests {
         // actually carry oversized content -- a huge value-path segment.
         let huge_segment = "x".repeat(MAX_ENCODED_BYTES + 1);
         let oversized_result = WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Success),
-            Verdict::from_category(ProofCategory::Success),
-            ProofCategory::Success,
+            Verdict::from_category(Category::Success),
+            Verdict::from_category(Category::Success),
+            Category::Success,
             Some(EvaluatedValue::Boolean(true)),
             agrees(record(vec![huge_segment.as_str()])),
             regions(),
@@ -922,7 +922,7 @@ mod tests {
             items: vec![TerminalRecord::new("item-0", TerminalValue::Refuted)],
         };
         let proof_envelopes = read_backend_provider_envelope(&proof_source).unwrap();
-        assert_eq!(proof_envelopes[0].category(), ProofCategory::Violation);
+        assert_eq!(proof_envelopes[0].category(), Category::Violation);
 
         // FR-070: a witness envelope decoding a function call's
         // counterexample, built for two structurally different functions
@@ -988,9 +988,9 @@ mod tests {
         // FR-072: the replay result, built with exactly this module's own
         // types -- no fifth type is defined anywhere in this test.
         let result = ReplayResult::Witness(WitnessArmResult::settle(
-            Verdict::from_category(ProofCategory::Violation),
-            Verdict::from_category(ProofCategory::Violation),
-            ProofCategory::Violation,
+            Verdict::from_category(Category::Violation),
+            Verdict::from_category(Category::Violation),
+            Category::Violation,
             Some(EvaluatedValue::Boolean(true)),
             agrees(record(vec!["x"])),
             regions(),

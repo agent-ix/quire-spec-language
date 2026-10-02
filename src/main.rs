@@ -4,6 +4,7 @@ mod cli;
 
 use cli::{Command, SyntaxCommand};
 use qsl_cst::CompleteDiagnostic;
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::{render_offered, IdentityCauseFields, SourceReadCause};
 use qsl_foundation::{Code, Diagnostic, LocatedSpan, Phase, SourceIdentity};
 use quire_spec_language::{format::format, parse, Limits};
@@ -64,10 +65,8 @@ impl Refusal<'_> {
                 .and_then(SourceReadCause::identity_fields),
         })
         .unwrap_or_else(|error| format!("{{\"message\":\"unserializable refusal: {error}\"}}"));
-        // FR-301's contract, via Code::exit_code(): a recognized construct this
-        // profile does not admit is unsupported (21); other incomplete work is
-        // 22; a refused syntax request is otherwise invalid input (20).
-        (self.code.exit_code(), output)
+        // FR-285: the code's category decides the exit code.
+        (self.code.category().exit_code(), output)
     }
 }
 
@@ -106,17 +105,30 @@ fn complete_diagnostic(value: &CompleteDiagnostic, bytes: &[u8]) -> (u8, String)
 /// reaches the parser's own size refusal without an unbounded read.
 fn read_bounded(path: &Path, source_bytes: usize) -> Result<Vec<u8>, (u8, String)> {
     let display_path = path.to_string_lossy();
-    let file = std::fs::File::open(path)
-        .map_err(|error| (20, format!("cannot open {display_path}: {error}")))?;
+    let file = std::fs::File::open(path).map_err(|error| {
+        (
+            Category::Refusal.exit_code(),
+            format!("cannot open {display_path}: {error}"),
+        )
+    })?;
     let mut bytes = Vec::new();
     // Unreachable on any 64-bit target: usize -> u64 cannot overflow. A
     // platform where it did would be a build/platform defect, not invalid
-    // input, so FR-301's tool-failure code (30) is the truer classification.
-    let ceiling = u64::try_from(source_bytes)
-        .map_err(|error| (30, format!("invalid source ceiling: {error}")))?;
+    // input, so an internal failure is the truer classification.
+    let ceiling = u64::try_from(source_bytes).map_err(|error| {
+        (
+            Category::InternalFailure.exit_code(),
+            format!("invalid source ceiling: {error}"),
+        )
+    })?;
     file.take(ceiling.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|error| (20, format!("cannot read {display_path}: {error}")))?;
+        .map_err(|error| {
+            (
+                Category::Refusal.exit_code(),
+                format!("cannot read {display_path}: {error}"),
+            )
+        })?;
     Ok(bytes)
 }
 
@@ -171,26 +183,28 @@ enum Output {
 
 fn command_error(error: &quire_spec_language::command::RunError) -> (u8, String) {
     match error.value() {
-        Ok(value) => (error.exit_code(), value.to_string()),
-        // FR-301's contract: serializing the outcome is a tool failure (30),
-        // distinct from the request-level disposition it failed to encode.
-        Err(output) => (30, format!("output failed: {output}")),
+        Ok(value) => (error.category().exit_code(), value.to_string()),
+        // Serializing the outcome is an internal failure, distinct from the
+        // request-level disposition it failed to encode.
+        Err(output) => (
+            Category::InternalFailure.exit_code(),
+            format!("output failed: {output}"),
+        ),
     }
 }
 
 fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
     match command {
-        Command::Syntax { kind, source, path } => {
-            syntax(kind, source, path).map(|text| (0, Output::Line(text)))
-        }
+        Command::Syntax { kind, source, path } => syntax(kind, source, path)
+            .map(|text| (Category::Success.exit_code(), Output::Line(text))),
         Command::Run { path } => quire_spec_language::command::run(path)
             .map(|result| (result.exit_code, Output::Line(result.value.to_string())))
             .map_err(|error| command_error(&error)),
         Command::Compile { path } => quire_spec_language::command::compile(path)
-            .map(|bytes| (0, Output::Artifact(bytes)))
+            .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
             .map_err(|error| command_error(&error)),
         Command::Lower { path, target } => quire_spec_language::command::lower_for(path, target)
-            .map(|bytes| (0, Output::Artifact(bytes)))
+            .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
             .map_err(|error| command_error(&error)),
     }
 }
@@ -201,16 +215,15 @@ fn main() -> ExitCode {
     let arguments: Vec<_> = std::env::args_os().skip(1).take(7).collect();
     let outcome = Command::try_from(arguments.as_slice())
         .map_err(|error| {
-            // FR-301's contract: an unrecognized lowering target names a
-            // real, catalogued capability this build does not implement,
-            // unsupported (21); every other usage failure is invalid
-            // input (20).
-            let code = if matches!(error, cli::UsageError::UnknownTarget(_)) {
-                21
+            // An unrecognized lowering target names a real, catalogued
+            // capability this build does not implement (unsupported);
+            // every other usage failure is invalid input (refusal).
+            let category = if matches!(error, cli::UsageError::UnknownTarget(_)) {
+                Category::Unsupported
             } else {
-                20
+                Category::Refusal
             };
-            (code, error.to_string())
+            (category.exit_code(), error.to_string())
         })
         .and_then(execute);
     let (code, result) = match outcome {
@@ -229,9 +242,9 @@ fn main() -> ExitCode {
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::from(code),
         Err(error) => {
             let _ = writeln!(io::stderr().lock(), "output failed: {error}");
-            // FR-301's contract: a stdout/stderr write failure is a tool
-            // failure (30), not a request-level disposition.
-            ExitCode::from(30)
+            // A stdout/stderr write failure is an internal failure, not a
+            // request-level disposition.
+            ExitCode::from(Category::InternalFailure.exit_code())
         }
     }
 }

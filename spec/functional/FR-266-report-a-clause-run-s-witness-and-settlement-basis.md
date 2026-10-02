@@ -56,7 +56,7 @@ clause run's own; a model-check verdict's basis is FR-127's (ADR-031 SW-3).
   category `refusal`, `undefined`, `incomplete` or `internal-failure` at
   stage `evaluate`), the entry SHALL set `basis` `unavailable` and no
   `witness`, and SHALL put no substitute value in the witness's place.
-- `ClauseRunReport::exit_code()` SHALL be unchanged by these members.
+- The clause run's exit code (FR-285, FR-109) SHALL be unchanged by these members.
 - Two runs of one request SHALL give equal `basis` and `witness`.
 
 ## Acceptance Criteria

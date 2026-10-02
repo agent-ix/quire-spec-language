@@ -150,7 +150,7 @@ mod tests {
                         }),
                     },
                 };
-                assert_eq!(error.exit_code(), exit);
+                assert_eq!(error.category().exit_code(), exit);
                 let value = error.value().unwrap();
                 assert_eq!(value["stage"], "lower");
                 assert_eq!(value["code"], expected_code);

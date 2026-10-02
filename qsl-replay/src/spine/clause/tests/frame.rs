@@ -203,7 +203,7 @@ fn a_frame_respecting_invocation_succeeds_with_its_provenance() {
         qsl_foundation::diagnostic::Category::Success
     );
     assert_eq!(report.disposition.truth(), Some(true));
-    assert_eq!(report.exit_code(), 0);
+    assert_eq!(report.disposition.category().exit_code(), 0);
     assert_eq!(report.provenance.frame, Some(emitted_frame_identity()));
     assert_eq!(report.provenance.documents, expected_documents);
 }
@@ -262,7 +262,7 @@ fn a_change_outside_the_frame_is_a_violation_with_its_witness() {
         qsl_foundation::diagnostic::Category::Violation
     );
     assert_eq!(report.disposition.truth(), Some(false));
-    assert_eq!(report.exit_code(), 10);
+    assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
 /// TC-514 step 2 (FR-115-AC-2): a post that adds `c2` to `config_history`
@@ -296,7 +296,7 @@ fn a_creation_outside_the_frame_is_a_violation_naming_it() {
     assert_eq!(object, "c2");
     assert_eq!(type_name.node, config_version_type());
     assert!(creates.is_empty(), "{creates:?}");
-    assert_eq!(report.exit_code(), 10);
+    assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
 /// TC-514 step 2 (FR-115 Behavior, "the created or deleted object and its
@@ -331,7 +331,7 @@ fn a_deletion_outside_the_frame_is_a_violation_naming_it() {
     assert_eq!(object, "c2");
     assert_eq!(type_name.node, config_version_type());
     assert!(deletes.is_empty(), "{deletes:?}");
-    assert_eq!(report.exit_code(), 10);
+    assert_eq!(report.disposition.category().exit_code(), 10);
 }
 
 /// TC-514 step 2 (FR-115-AC-2): changed-version declaring `created:
@@ -369,7 +369,7 @@ fn a_disagreeing_declared_delta_refuses_at_evaluate() {
         report.disposition.category(),
         qsl_foundation::diagnostic::Category::Refusal
     );
-    assert_eq!(report.exit_code(), 20);
+    assert_eq!(report.disposition.category().exit_code(), 20);
 }
 
 /// TC-514 step 3 (FR-115-AC-3): an expected `package_id` from another unit
@@ -475,8 +475,10 @@ fn an_unknown_or_unnamed_operation_refuses_at_select() {
         assert_eq!(reported, name);
         assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
         assert_eq!(
-            report.exit_code(),
-            qsl_foundation::diagnostic::Code::MissingDeclaration.exit_code()
+            report.disposition.category().exit_code(),
+            qsl_foundation::diagnostic::Code::MissingDeclaration
+                .category()
+                .exit_code()
         );
         assert_eq!(report.provenance.frame, None);
     }
@@ -555,8 +557,10 @@ fn an_unresolved_model_alias_or_object_type_refuses_at_select() {
         assert_eq!(reported, name);
         assert_eq!(report.disposition.stage(), ClauseRunStage::Select);
         assert_eq!(
-            report.exit_code(),
-            qsl_foundation::diagnostic::Code::MissingDeclaration.exit_code()
+            report.disposition.category().exit_code(),
+            qsl_foundation::diagnostic::Code::MissingDeclaration
+                .category()
+                .exit_code()
         );
     }
 }

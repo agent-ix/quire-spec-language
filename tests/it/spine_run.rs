@@ -762,3 +762,70 @@ fn tc_450_step_6_libraries_and_models_both_present_runs() {
         json!({"kind": "completed", "value": {"kind": "integer", "decimal": "7"}})
     );
 }
+
+/// FR-100-AC-11 (TC-786 steps 2 and 3): each `run` exit status is FR-285's
+/// exit code of the outcome's category, and `qsl_replay::spine::run` over
+/// the same input reports a category whose exit code equals the command's:
+/// `invalid_runtime_input` 20, a record result 21, `work_units` 0 22.
+#[test]
+#[trace("TC-786", "FR-100-AC-11")]
+fn tc_786_run_exit_statuses_come_from_the_exit_function() {
+    use qsl_replay::spine::{default_accounting, Call, CallArgument, DEFAULT_WORK_UNITS};
+    let program = std::fs::read(RUN_FIXTURE).unwrap();
+    for (function, parameter, value, work_units, expected) in [
+        ("flag", Some("b"), 2, DEFAULT_WORK_UNITS, 20),
+        ("id", Some("x"), 12, DEFAULT_WORK_UNITS, 20),
+        ("corner", Some("p"), 0, DEFAULT_WORK_UNITS, 21),
+        ("seven", None, 0, 0, 22),
+    ] {
+        let arguments: Vec<CallArgument> = parameter
+            .map(|parameter| CallArgument {
+                parameter: parameter.to_owned(),
+                value,
+            })
+            .into_iter()
+            .collect();
+        let mut request = call(
+            function,
+            Value::Array(
+                arguments
+                    .iter()
+                    .map(|argument| json!({"parameter": argument.parameter, "value": argument.value}))
+                    .collect(),
+            ),
+        );
+        request["work_units"] = json!(work_units);
+        let directory = tempfile::tempdir().unwrap();
+        spine_run_request(directory.path(), &program, request);
+        let output = run(directory.path());
+        assert_eq!(output.status.code(), Some(expected), "{function}");
+
+        let direct = qsl_replay::spine::run(
+            qsl_foundation::SourceIdentity::new(
+                "agent-ix",
+                "test:spine-run",
+                "fixture",
+                "fixture:1",
+            ),
+            "program.native",
+            &program,
+            &std::collections::BTreeMap::new(),
+            &qsl_replay::spine::DependencyInput::default(),
+            qsl_replay::spine::SpineLimits::default(),
+            &Call {
+                function: function.to_owned(),
+                arguments,
+                accounting: default_accounting(work_units),
+            },
+        );
+        let category = match direct {
+            Ok((_, outcome)) => outcome.category(),
+            Err(refusal) => refusal.category(),
+        };
+        assert_eq!(
+            i32::from(category.exit_code()),
+            expected,
+            "{function}: {category}"
+        );
+    }
+}

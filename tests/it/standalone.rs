@@ -595,7 +595,7 @@ fn typed_package_failure_retains_incomplete_classification() {
             unreachable!()
         };
         assert_eq!(package.is_incomplete(), expected == 22);
-        assert_eq!(error.exit_code(), expected);
+        assert_eq!(error.category().exit_code(), expected);
         let value = error.value().unwrap();
         assert!(result_schema().is_valid(&value));
         assert_eq!(value["status"], status);

@@ -50,7 +50,7 @@ fn private_corruption_cannot_turn_failed_checked_arithmetic_into_a_boolean() {
         };
         assert_eq!(diagnostic.phase, Phase::Evaluate);
         assert_eq!(diagnostic.code, Code::RuntimeInvariant);
-        assert_eq!(diagnostic.exit_code(), 30);
+        assert_eq!(diagnostic.code.category().exit_code(), 30);
         assert!(!diagnostic.is_incomplete());
         assert_eq!(
             diagnostic.source,

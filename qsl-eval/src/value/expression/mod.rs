@@ -92,6 +92,18 @@ pub enum CallFailure {
     Fault(qsl_foundation::diagnostic::InternalFault),
 }
 
+impl CallFailure {
+    /// FR-285: an admission refusal is a refusal, a broken S6a invariant an
+    /// internal failure (ADR-013 O-16).
+    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
+        use qsl_foundation::diagnostic::Category;
+        match self {
+            Self::Input(_) => Category::Refusal,
+            Self::Fault(fault) => fault.category(),
+        }
+    }
+}
+
 /// FR-115: [`CheckedPackageEvaluation::evaluate_frame`]'s result: the S6a
 /// evaluation, unchanged, and the evaluated frame witness when the frame
 /// check found a change outside the frame.
@@ -712,6 +724,17 @@ mod tests {
     use qsl_semantics::family::{EvalOutcome, FamilyOutcome};
     use quire_exact::{Integer, NodeKey};
     use quire_semantic_value::checking::CheckingLimits;
+
+    /// FR-285-AC-3 (TC-769 step 3): `CallFailure::Input` exits 20 and
+    /// `CallFailure::Fault` 30.
+    #[trace("TC-769", "FR-285-AC-3")]
+    #[test]
+    fn tc_769_call_failures_exit_by_their_category() {
+        let input = CallFailure::Input(InputRefusal::WrongValueKind { parameter: 0 });
+        assert_eq!(input.category().exit_code(), 20);
+        let fault = CallFailure::Fault(qsl_foundation::diagnostic::InternalFault::new("S6a", "x"));
+        assert_eq!(fault.category().exit_code(), 30);
+    }
 
     /// Each admission refusal maps to its catalog code: a missing name to
     /// `missing_declaration`, a wrong argument or role mapping to

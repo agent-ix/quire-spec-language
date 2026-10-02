@@ -13,10 +13,11 @@ use super::frame_replay::{
 use super::*;
 use crate::{
     replay_state_clause, ClauseIdentityMismatch, DisagreementCause, EvaluatedValue, FamilyPayload,
-    InputSettlement, ObservationForm, ProofCategory, ReplayRefusal, ReplayRequestRefusal,
-    ReplayRequestWire, ReplayResult, ReplaySource, SnapshotValue, StateClauseCounterexample,
-    StateClauseKind, StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
+    InputSettlement, ObservationForm, ReplayRefusal, ReplayRequestRefusal, ReplayRequestWire,
+    ReplayResult, ReplaySource, SnapshotValue, StateClauseCounterexample, StateClauseKind,
+    StateClauseReplayResult, Verdict, WitnessEnvelope, WitnessSettlement,
 };
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -301,7 +302,7 @@ fn assert_reproduces_keeping_identities(case: Case, clause: &str) -> StateClause
         arm.settlement(),
         WitnessSettlement::ReproducedWithEvaluatedWitness
     );
-    assert_eq!(arm.category(), ProofCategory::Violation);
+    assert_eq!(arm.category(), Category::Violation);
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(false)));
     // FR-122-AC-1, FR-268-AC-4: neither clause reaches a decisive
     // occurrence (FR-265), so the result carries no QSpec FR-351 record.
@@ -383,8 +384,8 @@ fn assert_inconclusive_by_verdicts(result: &StateClauseReplayResult) {
     assert_eq!(
         arm.disagreement(),
         Some(&DisagreementCause::Verdicts {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Success),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Success),
         })
     );
     assert_eq!(arm.value(), Some(EvaluatedValue::Boolean(true)));
@@ -437,8 +438,8 @@ fn an_exhausted_evaluation_budget_is_inconclusive_with_no_value() {
     assert_eq!(
         arm.disagreement(),
         Some(&DisagreementCause::NoValue {
-            proved: Verdict::from_category(ProofCategory::Violation),
-            replayed: Verdict::from_category(ProofCategory::Incomplete),
+            proved: Verdict::from_category(Category::Violation),
+            replayed: Verdict::from_category(Category::Incomplete),
         })
     );
     assert_eq!(arm.value(), None);

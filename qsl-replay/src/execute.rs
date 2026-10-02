@@ -34,7 +34,6 @@ use quire_semantic_value::call::InputRefusal;
 
 use crate::bounds::MAX_ENCODED_BYTES;
 use crate::identity::{ObligationIdentity, QualifiedName, RawSourceRef};
-use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestRefusal, ReplayRequestWire, StageLimits};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
@@ -47,6 +46,7 @@ use crate::witness::{
     DecodeRefusal, FrameOperation, ReplaySource, WitnessBinding, WitnessValue, WitnessValueType,
 };
 use qsl_forms::StateClauseKind;
+use qsl_foundation::diagnostic::Category;
 use qsl_semantics::model::observation::{AdmissionFailure, ObservationForm};
 use quire_exact::Identifier;
 
@@ -478,9 +478,9 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
     let (replayed, value) = match evaluation.outcome {
         FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(holds))) => (
             if holds {
-                ProofCategory::Success
+                Category::Success
             } else {
-                ProofCategory::Violation
+                Category::Violation
             },
             Some(EvaluatedValue::Boolean(holds)),
         ),
@@ -491,12 +491,12 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
                 "boolean-function-completes-a-boolean",
             )));
         }
-        FamilyOutcome::Evaluated(Outcome::Refused(_)) => (ProofCategory::Refusal, None),
-        FamilyOutcome::Evaluated(Outcome::Incomplete(_)) => (ProofCategory::Incomplete, None),
+        FamilyOutcome::Evaluated(Outcome::Refused(_)) => (Category::Refusal, None),
+        FamilyOutcome::Evaluated(Outcome::Incomplete(_)) => (Category::Incomplete, None),
         // O-16's `undefined` row is not a proof category, and a
         // family-owned result is not a kernel verdict: neither agrees.
         FamilyOutcome::Evaluated(Outcome::Undefined(_)) | FamilyOutcome::FamilyEvaluated(_) => {
-            (ProofCategory::Inconclusive, None)
+            (Category::Inconclusive, None)
         }
         // FR-063: no arm for the probe variant under `--cfg seam_probe`
         // alone -- this match is the replay facade's own seam over
@@ -510,7 +510,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
             unreachable!("never constructed outside the probe build")
         }
     };
-    let proved = Verdict::from_category(ProofCategory::Violation);
+    let proved = Verdict::from_category(Category::Violation);
     let regions = evaluation
         .location
         .as_ref()
@@ -546,7 +546,7 @@ pub fn replay(wire: ReplayRequestWire) -> Result<ReplayResult, ReplayRefusal> {
 /// kernel `Refusal::CheckedInvariant`, which the seam itself now turns into
 /// `CallFailure::Fault` before `package.call` ever returns -- settles
 /// `Err(ReplayRefusal::Fault(_))`, never `Ok(ReplayResult::..)` with
-/// `ProofCategory::Refusal`. `CallFailure::Input` passes its own refusal
+/// `Category::Refusal`. `CallFailure::Input` passes its own refusal
 /// through unchanged.
 fn call_failure_to_replay_refusal(failure: CallFailure) -> ReplayRefusal {
     match failure {

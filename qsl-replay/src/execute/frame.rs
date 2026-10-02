@@ -25,7 +25,6 @@ use qsl_semantics::model::observation::{DocumentRef, FrameWitness, ObservationLi
 
 use super::{charges, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
 use crate::identity::RawSourceRef;
-use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, Verdict, WitnessArmResult, WitnessCheck,
@@ -36,6 +35,7 @@ use crate::spine::{
 };
 use crate::witness::{ClaimedChange, FrameCounterexample, FrameOperation, ReplaySource};
 use crate::WitnessEnvelope;
+use qsl_foundation::diagnostic::Category;
 
 /// FR-116's `stale_dependency`/`revision-mismatch`: one payload identity
 /// that is not the recompiled package's, or one envelope identity that is
@@ -261,15 +261,13 @@ pub fn replay_frame(
 
     let (replayed, value, found) = match report.disposition {
         ClauseDisposition::FrameViolation(witness) => (
-            ProofCategory::Violation,
+            Category::Violation,
             Some(EvaluatedValue::Boolean(false)),
             Some(*witness),
         ),
-        ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Boolean(true))) => (
-            ProofCategory::Success,
-            Some(EvaluatedValue::Boolean(true)),
-            None,
-        ),
+        ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Boolean(true))) => {
+            (Category::Success, Some(EvaluatedValue::Boolean(true)), None)
+        }
         // FR-115: a false verdict always carries its witness, and a frame
         // check completes a Boolean.
         ClauseDisposition::Evaluate(CallOutcome::Completed(
@@ -280,15 +278,13 @@ pub fn replay_frame(
                 "frame-check-completes-true-or-a-witnessed-violation",
             )))
         }
-        ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => {
-            (ProofCategory::Refusal, None, None)
-        }
+        ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None, None),
         ClauseDisposition::Evaluate(CallOutcome::Incomplete { .. }) => {
-            (ProofCategory::Incomplete, None, None)
+            (Category::Incomplete, None, None)
         }
         // O-16's `undefined` row is not a proof category (as in FR-098).
         ClauseDisposition::Evaluate(CallOutcome::Undefined { .. }) => {
-            (ProofCategory::Inconclusive, None, None)
+            (Category::Inconclusive, None, None)
         }
         ClauseDisposition::Admit(failure) => return Err(ReplayRefusal::Admission(failure)),
         ClauseDisposition::EvaluateFault(fault) => return Err(ReplayRefusal::Fault(fault)),
@@ -313,7 +309,7 @@ pub fn replay_frame(
                 "an-evaluated-frame-check-read-three-documents",
             ))
         })?;
-    let proved = Verdict::from_category(ProofCategory::Violation);
+    let proved = Verdict::from_category(Category::Violation);
     let charges = charges(report.usage.evaluation_consumed.iter().copied());
     // The frame check reports no evaluation location, so the result cites
     // no region; its identities are the payload's and the documents'.

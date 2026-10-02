@@ -29,7 +29,6 @@ use quire_exact::Identifier;
 
 use super::{consumed, domain_packages, labels, one_source, recompile, wire_id, ReplayRefusal};
 use crate::identity::RawSourceRef;
-use crate::proof_result::ProofCategory;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{
     EvaluatedValue, InputArmResult, ReplayResult, SeparatingWitnessRecord, SeparationReason,
@@ -44,6 +43,7 @@ use crate::WitnessEnvelope;
 use qsl_eval::value::{
     CallFailure, CheckedPackageEvaluation, QualifiedName, Separation, SeparationStep, WitnessClaim,
 };
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::Source;
 use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::model::observation::AdmittedObservations;
@@ -241,9 +241,9 @@ pub fn replay_state_clause(
     let (replayed, mut value) = match report.disposition {
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Boolean(holds))) => (
             if holds {
-                ProofCategory::Success
+                Category::Success
             } else {
-                ProofCategory::Violation
+                Category::Violation
             },
             Some(EvaluatedValue::Boolean(holds)),
         ),
@@ -251,13 +251,11 @@ pub fn replay_state_clause(
         ClauseDisposition::Evaluate(CallOutcome::Completed(CallValue::Integer(_))) => {
             return fault("state-clause-completes-a-boolean")
         }
-        ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (ProofCategory::Refusal, None),
-        ClauseDisposition::Evaluate(CallOutcome::Incomplete { .. }) => {
-            (ProofCategory::Incomplete, None)
-        }
+        ClauseDisposition::Evaluate(CallOutcome::Refused(_)) => (Category::Refusal, None),
+        ClauseDisposition::Evaluate(CallOutcome::Incomplete { .. }) => (Category::Incomplete, None),
         // O-16's `undefined` row is not a proof category (as in FR-098).
         ClauseDisposition::Evaluate(CallOutcome::Undefined { .. }) => {
-            (ProofCategory::Inconclusive, None)
+            (Category::Inconclusive, None)
         }
         ClauseDisposition::Admit(failure) => return Err(ReplayRefusal::Admission(failure)),
         ClauseDisposition::EvaluateFault(fault) => return Err(ReplayRefusal::Fault(fault)),
@@ -276,7 +274,7 @@ pub fn replay_state_clause(
             return fault("clause-check-reports-admission-or-evaluation")
         }
     };
-    let proved = Verdict::from_category(ProofCategory::Violation);
+    let proved = Verdict::from_category(Category::Violation);
     // FR-268: an agreeing verdict compares the payload's record with the
     // re-derived one, then checks the record separates the clause.
     let witness = if value == Some(EvaluatedValue::Boolean(false)) {

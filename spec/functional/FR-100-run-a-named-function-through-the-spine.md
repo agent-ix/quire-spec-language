@@ -413,11 +413,9 @@ The conversion of `CheckedInvariant` to an `InternalFault` is
 `qsl_replay::spine::run`'s, since the evaluator still returns it as a
 refusal (FR-096 Status).
 
-The undefined exit status of 10 (FR-100-AC-10, FR-100-AC-11) and the
-derivation of every exit status from FR-285 (ADR-029 CB-4, ruling RU-1) are
-specified and not yet implemented -- TC-786 planned. TC-452 is planned
-again: its code test still asserts exit 20 for an undefined outcome and
-needs updating to exit 10.
+Every exit status is FR-285's `Category::exit_code` of the outcome's
+category, and an undefined outcome exits 10 (FR-100-AC-10, FR-100-AC-11,
+TC-786).
 
 Remaining work (implementation, Linear QSL-381): the program selection and the `source`
 member still carry the revision namespace and revision; they carry the two

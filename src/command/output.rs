@@ -12,6 +12,7 @@ use crate::runtime::{
     EvaluationOutcome, ExecutionOutcome, ExecutionReport, ImplicationEventKind, RuntimePathSegment,
     RuntimeReference, ValidationDiagnostic, ValidationStatus,
 };
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::source::SourceReadCause;
 use qsl_foundation::{ByteDigest, Diagnostic};
 use quire_contract_model as ir;
@@ -34,25 +35,6 @@ impl std::fmt::Display for NativeResult {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(formatter)
     }
-}
-
-/// FR-301's severity order over a diagnostic's possible exit codes: tool
-/// failure (30), invalid (20), unsupported (21), incomplete (22); the exit
-/// codes themselves are not ascending-numeric. `Code::exit_code` is the only
-/// source of a code; this only orders codes it can return, and a code outside
-/// that set ranks as most severe rather than being hidden.
-fn exit_severity(code: u8) -> u8 {
-    match code {
-        20 => 1,
-        21 => 2,
-        22 => 3,
-        _ => 0,
-    }
-}
-
-/// The highest-severity exit code among `codes`, or `None` when empty.
-fn combined_exit_code(codes: impl Iterator<Item = u8>) -> Option<u8> {
-    codes.min_by_key(|code| exit_severity(*code))
 }
 
 fn source(value: &FormalSource) -> types::Source<'_> {
@@ -395,13 +377,6 @@ fn spine_locus(locus: qsl_replay::spine::CallLocus) -> types::SpineLocus {
     }
 }
 
-/// A refusal's exit status: the record's or cause's catalog code exit
-/// status, or 20 when the code names no `Code` (FR-100). Never used for a
-/// kernel-no-record row, which is always exit 20 by the mapping table.
-fn refusal_exit_code(code: qsl_foundation::diagnostic::CatalogCode) -> u8 {
-    qsl_foundation::Code::from_code(code.code()).map_or(20, qsl_foundation::Code::exit_code)
-}
-
 /// FR-100: render `spine-run-result/1`, the outcome mapping's stdout
 /// document and FR-301 exit status, from `qsl_replay::spine::run`'s result.
 pub(super) fn spine_run_result(
@@ -412,48 +387,39 @@ pub(super) fn spine_run_result(
     outcome: qsl_replay::spine::CallOutcome,
 ) -> super::Result<RunResult> {
     use qsl_replay::spine::{CallOutcome, CallRefusal, CallValue};
-    let (exit_code, outcome) = match outcome {
-        CallOutcome::Completed(CallValue::Boolean(value)) => (
-            0,
-            types::SpineOutcome::Completed {
-                value: types::SpineValue::Boolean { value },
+    let exit_code = outcome.category().exit_code();
+    let outcome = match outcome {
+        CallOutcome::Completed(CallValue::Boolean(value)) => types::SpineOutcome::Completed {
+            value: types::SpineValue::Boolean { value },
+        },
+        CallOutcome::Completed(CallValue::Integer(value)) => types::SpineOutcome::Completed {
+            value: types::SpineValue::Integer {
+                decimal: value.to_string(),
             },
-        ),
-        CallOutcome::Completed(CallValue::Integer(value)) => (
-            0,
-            types::SpineOutcome::Completed {
-                value: types::SpineValue::Integer {
-                    decimal: value.to_string(),
-                },
-            },
-        ),
+        },
         CallOutcome::Refused(CallRefusal::Record {
             code,
             fields,
             locus,
             location,
-        }) => (
-            refusal_exit_code(code),
-            types::SpineOutcome::Refused {
-                code: code.code(),
-                cause: code.cause(),
-                fields: Some(fields),
-                locus: locus.map(spine_locus),
-                location: location.as_ref().map(spine_location),
-            },
-        ),
-        CallOutcome::Refused(CallRefusal::Family { code, location }) => (
-            refusal_exit_code(code),
+        }) => types::SpineOutcome::Refused {
+            code: code.code(),
+            cause: code.cause(),
+            fields: Some(fields),
+            locus: locus.map(spine_locus),
+            location: location.as_ref().map(spine_location),
+        },
+        CallOutcome::Refused(CallRefusal::Family { code, location }) => {
             types::SpineOutcome::Refused {
                 code: code.code(),
                 cause: code.cause(),
                 fields: None,
                 locus: None,
                 location: location.as_ref().map(spine_location),
-            },
-        ),
-        CallOutcome::Undefined { reason } => (20, types::SpineOutcome::Undefined { reason }),
-        CallOutcome::Incomplete { limit } => (22, types::SpineOutcome::Incomplete { limit }),
+            }
+        }
+        CallOutcome::Undefined { reason } => types::SpineOutcome::Undefined { reason },
+        CallOutcome::Incomplete { limit } => types::SpineOutcome::Incomplete { limit },
     };
     let document = types::SpineRunReport {
         format: types::Format::SpineRunResult,
@@ -482,25 +448,25 @@ pub(super) fn report(
 ) -> super::Result<RunResult> {
     let (exit_code, outcome) = match report.outcome() {
         ExecutionOutcome::ValidationFailed(failure) => {
-            // FR-301's exit ladder is the highest-severity code present
-            // across every retained diagnostic (including the terminal one):
-            // tool failure (30), invalid (20), unsupported (21), incomplete
-            // (22). ValidationStatus only carries the wire-schema's binary
-            // refused/incomplete distinction and does not drive the code.
+            // FR-285: the most severe item code across every retained
+            // diagnostic (including the terminal one). ValidationStatus
+            // only carries the wire-schema's binary refused/incomplete
+            // distinction, and drives the code only when no diagnostic is
+            // retained.
             let status = match failure.status {
                 ValidationStatus::Refused => types::FailureStatus::Refused,
                 ValidationStatus::Incomplete => types::FailureStatus::Incomplete,
             };
-            let code = combined_exit_code(
+            let code = Category::most_severe(
                 failure
                     .diagnostics
                     .iter()
                     .chain(failure.terminal.as_deref())
-                    .map(|diagnostic| diagnostic.diagnostic.exit_code()),
+                    .map(|diagnostic| diagnostic.diagnostic.code.category().exit_code()),
             )
             .unwrap_or(match failure.status {
-                ValidationStatus::Incomplete => 22,
-                ValidationStatus::Refused => 20,
+                ValidationStatus::Incomplete => Category::Incomplete.exit_code(),
+                ValidationStatus::Refused => Category::Refusal.exit_code(),
             });
             (
                 code,
@@ -523,17 +489,22 @@ pub(super) fn report(
         } => {
             let (code, result) = match result {
                 EvaluationOutcome::Completed(truth) => (
-                    if *truth { 0 } else { 10 },
+                    if *truth {
+                        Category::Success
+                    } else {
+                        Category::Violation
+                    }
+                    .exit_code(),
                     types::Evaluation::Completed { truth: *truth },
                 ),
                 EvaluationOutcome::Refused(error) => (
-                    error.exit_code(),
+                    error.code.category().exit_code(),
                     types::Evaluation::Refused {
                         diagnostic: diagnostic(error),
                     },
                 ),
                 EvaluationOutcome::Incomplete(error) => (
-                    22,
+                    Category::Incomplete.exit_code(),
                     types::Evaluation::Incomplete {
                         diagnostic: diagnostic(error),
                     },
@@ -658,7 +629,7 @@ mod tests {
             CallOutcome::Undefined { reason },
         )
         .unwrap();
-        assert_eq!(result.exit_code, 20, "{reason}");
+        assert_eq!(result.exit_code, 10, "{reason}");
         assert_eq!(
             result.value.as_value(),
             &serde_json::json!({
@@ -682,10 +653,11 @@ mod tests {
 
     /// FR-100-AC-9 (TC-452 step 4): each kernel `Undefined` reason
     /// (`qsl_replay::spine::call::kernel_undefined_reason`) renders
-    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
+    /// `{"kind":"undefined","reason":...}` and exits 10, FR-285's code for
+    /// undefined.
     #[test]
-    #[trace("TC-452", "FR-100-AC-9")]
-    fn undefined_kernel_reasons_render_and_exit_20() {
+    #[trace("TC-452", "FR-100-AC-9", "TC-769", "FR-285-AC-4")]
+    fn undefined_kernel_reasons_render_and_exit_10() {
         for reason in [
             "division-by-zero",
             "ieee-not-finite",
@@ -699,10 +671,11 @@ mod tests {
 
     /// FR-100-AC-9 (TC-452 step 4): each family `Undefined` reason
     /// (`qsl_foundation::diagnostic::UndefinedReason::as_str`) renders
-    /// `{"kind":"undefined","reason":...}` and exits 20 (FND-006).
+    /// `{"kind":"undefined","reason":...}` and exits 10, FR-285's code for
+    /// undefined.
     #[test]
-    #[trace("TC-452", "FR-100-AC-9")]
-    fn undefined_family_reasons_render_and_exit_20() {
+    #[trace("TC-452", "FR-100-AC-9", "TC-786", "FR-100-AC-11")]
+    fn undefined_family_reasons_render_and_exit_10() {
         for reason in ["precondition-false", "absent-key"] {
             assert_undefined_renders(reason);
         }
@@ -956,9 +929,12 @@ mod tests {
             ([21, 22], 21),
             ([20, 22], 20),
         ] {
-            assert_eq!(combined_exit_code(pair.into_iter()), Some(expected));
-            assert_eq!(combined_exit_code(pair.into_iter().rev()), Some(expected));
+            assert_eq!(Category::most_severe(pair), Some(expected));
+            assert_eq!(
+                Category::most_severe(pair.into_iter().rev()),
+                Some(expected)
+            );
         }
-        assert_eq!(combined_exit_code(std::iter::empty()), None);
+        assert_eq!(Category::most_severe(std::iter::empty()), None);
     }
 }

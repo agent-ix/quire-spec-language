@@ -19,7 +19,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_foundation::diagnostic::{CatalogCode, Code, InternalFault, Locus, RefusalRecord};
+use qsl_foundation::diagnostic::{
+    CatalogCode, Category, Code, InternalFault, Locus, RefusalRecord,
+};
 use qsl_foundation::source::Source;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedGraph;
@@ -128,6 +130,17 @@ pub enum CallRefusal {
     },
 }
 
+impl CallRefusal {
+    /// The ADR-013 O-16 category of the record's or cause's typed code
+    /// (FR-100): refusal, unsupported for a profile-gated construct, or
+    /// incomplete for an exhausted resource. A code naming no native `Code`
+    /// is a refusal.
+    pub fn category(&self) -> Category {
+        let (Self::Record { code, .. } | Self::Family { code, .. }) = self;
+        Code::from_code(code.code()).map_or(Category::Refusal, Code::category)
+    }
+}
+
 /// FR-100's outcome mapping (ADR-013 O-16), for every category
 /// `qsl_replay::spine::run` returns as `Ok`. `CheckedInvariant` and a broken
 /// S6a invariant are never carried here (see [`RunRefusal::Fault`]).
@@ -139,7 +152,7 @@ pub enum CallOutcome {
     /// mapping's own rule.
     Refused(CallRefusal),
     /// `Outcome::Undefined(u)` (kebab case) or `FamilyResult::Undefined(u)`
-    /// (the catalog's own `UndefinedReason` spelling): `undefined`, exit 20.
+    /// (the catalog's own `UndefinedReason` spelling): `undefined`, exit 10.
     Undefined {
         /// The reason's tabled spelling.
         reason: &'static str,
@@ -149,6 +162,20 @@ pub enum CallOutcome {
         /// The exhausted counter's `quire.value.accounting/v1` member name.
         limit: &'static str,
     },
+}
+
+impl CallOutcome {
+    /// The outcome's ADR-013 O-16 category as `run` reports it (FR-100): a
+    /// completed call is a success whatever value it completes. A clause
+    /// run reads a `false` completion as a violation itself.
+    pub fn category(&self) -> Category {
+        match self {
+            Self::Completed(_) => Category::Success,
+            Self::Refused(refusal) => refusal.category(),
+            Self::Undefined { .. } => Category::Undefined,
+            Self::Incomplete { .. } => Category::Incomplete,
+        }
+    }
 }
 
 /// Why [`run`] returned no outcome: a spine compile refusal, every
@@ -204,8 +231,8 @@ pub enum RunRefusal {
     },
     /// An internal failure at S6a (FR-100 "Internal failure at S6a"): the
     /// kernel `CheckedInvariant` refusal, `CallFailure::Fault`, or a
-    /// record's locus naming no supplied source. Never `Code::exit_code()`;
-    /// the caller exits 30 directly.
+    /// record's locus naming no supplied source. Category internal failure,
+    /// exit 30.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
 }
@@ -229,9 +256,7 @@ impl RunRefusal {
     }
 
     /// The catalog code. For [`Self::Fault`] this is always
-    /// `runtime_invariant`; its exit status is not `Code::exit_code()`
-    /// (FR-100), which the caller must apply directly rather than through
-    /// this code.
+    /// `runtime_invariant`.
     pub fn code(&self) -> Code {
         match self {
             Self::Compile(refusal) => refusal.code(),
@@ -243,6 +268,12 @@ impl RunRefusal {
             | Self::WrongValueKind { .. } => Code::InvalidRuntimeInput,
             Self::Fault(_) => Code::RuntimeInvariant,
         }
+    }
+
+    /// FR-285: the refusal's ADR-013 O-16 category, read from its code;
+    /// [`Self::Fault`] is an internal failure.
+    pub fn category(&self) -> Category {
+        self.code().category()
     }
 }
 

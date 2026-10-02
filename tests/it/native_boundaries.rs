@@ -261,10 +261,10 @@ fn format_refuses_a_recovering_or_diagnosed_parse_without_output() {
 #[trace("TC-470", "FR-096-AC-12")]
 #[test]
 fn only_runtime_invariant_exits_as_tool_failure() {
-    assert_eq!(Code::RuntimeInvariant.exit_code(), 30);
+    assert_eq!(Code::RuntimeInvariant.category().exit_code(), 30);
     for &code in Code::all() {
         if code != Code::RuntimeInvariant {
-            assert!(matches!(code.exit_code(), 20..=22), "{code}");
+            assert!(matches!(code.category().exit_code(), 20..=22), "{code}");
         }
     }
 }
@@ -298,15 +298,14 @@ fn native_diagnostic_propagates_as_an_error_and_codes_roundtrip() {
             !(code.is_unsupported() && code.is_incomplete()),
             "{code} claims both unsupported and incomplete"
         );
-        // command/output.rs's combined_exit_code() (via exit_severity) encodes FR-301's severity
-        // order over exactly this range; a new code outside it needs a rank.
+        // A native code is never success, violation or inconclusive.
         assert!(
-            matches!(code.exit_code(), 20..=22 | 30),
+            matches!(code.category().exit_code(), 20..=22 | 30),
             "{code} exit_code {} outside {{20, 21, 22, 30}}",
-            code.exit_code()
+            code.category().exit_code()
         );
         assert_eq!(
-            code.exit_code() == 30,
+            code.category().exit_code() == 30,
             code == Code::RuntimeInvariant,
             "{code}"
         );

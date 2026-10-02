@@ -27,7 +27,7 @@ use super::{
     WitnessFailure,
 };
 use crate::identity::TracePosition;
-use crate::proof_result::ProofCategory;
+use qsl_foundation::diagnostic::Category;
 
 mod value;
 use value::{reference_of, Keys, ValueWire};
@@ -191,42 +191,59 @@ impl CauseWire {
     }
 }
 
-/// ADR-013 O-16's category labels, which a verdict presently is.
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-enum VerdictWire {
-    Success,
-    Violation,
-    Refusal,
-    Unsupported,
-    Incomplete,
-    Inconclusive,
-    InternalFailure,
-}
+/// A verdict on the wire: its category's [`Category::as_str`] label. A
+/// proof or replay verdict is never `undefined` (FR-285), so the reader
+/// refuses that label and every label `Category` does not spell.
+#[derive(Clone, Copy)]
+struct VerdictWire(Category);
 
 impl VerdictWire {
     fn of(verdict: Verdict) -> Self {
-        match verdict.category() {
-            ProofCategory::Success => Self::Success,
-            ProofCategory::Violation => Self::Violation,
-            ProofCategory::Refusal => Self::Refusal,
-            ProofCategory::Unsupported => Self::Unsupported,
-            ProofCategory::Incomplete => Self::Incomplete,
-            ProofCategory::Inconclusive => Self::Inconclusive,
-            ProofCategory::InternalFailure => Self::InternalFailure,
-        }
+        Self(verdict.category())
     }
 
     fn read(self) -> Verdict {
-        Verdict::from_category(match self {
-            Self::Success => ProofCategory::Success,
-            Self::Violation => ProofCategory::Violation,
-            Self::Refusal => ProofCategory::Refusal,
-            Self::Unsupported => ProofCategory::Unsupported,
-            Self::Incomplete => ProofCategory::Incomplete,
-            Self::Inconclusive => ProofCategory::Inconclusive,
-            Self::InternalFailure => ProofCategory::InternalFailure,
-        })
+        Verdict::from_category(self.0)
+    }
+}
+
+impl Serialize for VerdictWire {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for VerdictWire {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let label = String::deserialize(deserializer)?;
+        Category::ALL
+            .into_iter()
+            .filter(|category| *category != Category::Undefined)
+            .find(|category| category.as_str() == label)
+            .map(Self)
+            .ok_or_else(|| serde::de::Error::custom(format!("not a verdict: {label}")))
+    }
+}
+
+#[cfg(test)]
+mod verdict_tests {
+    use super::{Category, VerdictWire};
+
+    /// Every verdict category round-trips through its `as_str` label, and
+    /// `undefined` and an unknown label are refused.
+    #[test]
+    fn verdict_labels_round_trip_and_undefined_is_refused() {
+        for category in Category::ALL {
+            let label = serde_json::to_string(&VerdictWire(category)).unwrap();
+            assert_eq!(label, format!("\"{}\"", category.as_str()));
+            let read = serde_json::from_str::<VerdictWire>(&label);
+            if category == Category::Undefined {
+                assert!(read.is_err(), "undefined must not read");
+            } else {
+                assert_eq!(read.unwrap().0, category);
+            }
+        }
+        assert!(serde_json::from_str::<VerdictWire>("\"maybe\"").is_err());
     }
 }
 

@@ -158,12 +158,9 @@ Tag the tests `#[trace("TC-452", "FR-100-AC-7")]` (steps 1 and 2),
 
 ## Status
 
-Planned. FR-100's outcome mapping now exits 10 for every undefined outcome
-(FR-285). The code test `undefined_kernel_reasons_render_and_exit_20` still
-asserts exit 20 and needs updating to exit 10, and the code test traced to
-FR-100-AC-10 (`tc_452_step_5_sum_over_pos_is_sum_out_of_domain_or_completes`)
-moves to TC-786's tag; both changes belong to the implementation work for
-FR-100-AC-11. Before that change, TC-452 passed locally: step 4's `ForeignReference` row updated, now
+Passed locally. Every undefined outcome exits 10 (FR-285):
+`undefined_kernel_reasons_render_and_exit_10` asserts it, and the code test
+for FR-100-AC-10 carries TC-786's tag. Earlier, step 4's `ForeignReference` row updated, now
 that the kernel variant carries both universes. Step 4's ten
 kernel records, asserted by code, cause, exact fields and
 locus, and step 5's `sum-out-of-domain` reason, for both an empty `q` and a

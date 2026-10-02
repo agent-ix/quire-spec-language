@@ -11,7 +11,7 @@
 //! claims. It carries the T-5 [`Locus`] where the limit was reached, absent
 //! only where FR-096 says no producer can know one.
 
-use super::{CatalogCode, CatalogCoded, Locus};
+use super::{CatalogCode, CatalogCoded, Category, Code, Locus};
 
 /// ADR-013 T-4's closed limit kind: one variant per
 /// `stage_limit_exceeded` cause of `quire.native.diagnostics/v1` revision
@@ -163,8 +163,43 @@ impl CatalogCoded for LimitExceeded {
 mod tests {
     use ix_trace_rs::trace;
 
-    use super::{CatalogCoded, LimitExceeded, LimitKind};
+    use super::{CatalogCoded, LimitExceeded, LimitKind, StageFailure};
     use crate::diagnostic::{category_of, CatalogCode, Category};
+
+    /// A stage cause with one fixed catalog code.
+    #[derive(Debug)]
+    struct Cause(&'static str);
+
+    impl CatalogCoded for Cause {
+        fn catalog_code(&self) -> CatalogCode {
+            CatalogCode::new(self.0, "cause")
+        }
+
+        fn catalog_fields(&self) -> Option<std::collections::BTreeMap<&'static str, String>> {
+            None
+        }
+    }
+
+    /// FR-285-AC-3 (TC-769 step 3): a profile-gated refusal exits 21, an
+    /// `ill_typed` one 20, and a reached limit 22.
+    #[trace("TC-769", "FR-285-AC-3")]
+    #[test]
+    fn tc_769_stage_failures_exit_by_their_category() {
+        let exit = |failure: StageFailure<Cause>| failure.category().exit_code();
+        assert_eq!(
+            exit(StageFailure::Refused(Cause("unsupported_construct"))),
+            21
+        );
+        assert_eq!(exit(StageFailure::Refused(Cause("ill_typed"))), 20);
+        assert_eq!(
+            exit(StageFailure::Limit(LimitExceeded::new(
+                LimitKind::TokenCount,
+                10,
+                11
+            ))),
+            22
+        );
+    }
 
     /// FR-096-AC-2 at catalog revision `1-draft.8`: each of the eight kinds
     /// reports `stage_limit_exceeded` with its own cause, and a
@@ -245,6 +280,21 @@ impl<C> StageFailure<C> {
         match self {
             Self::Refused(cause) => Ok(cause),
             Self::Limit(limit) => Err(limit),
+        }
+    }
+}
+
+impl<C: CatalogCoded> StageFailure<C> {
+    /// FR-285: this failure's ADR-013 O-16 category. `Refused` takes its
+    /// cause's: a profile-gated construct (`unsupported_construct`) is
+    /// unsupported, any other refusal is a refusal. `Limit` is incomplete.
+    pub fn category(&self) -> Category {
+        match self {
+            Self::Limit(_) => Category::Incomplete,
+            Self::Refused(cause) => match Code::from_code(cause.catalog_code().code()) {
+                Some(code) if code.is_unsupported() => Category::Unsupported,
+                Some(_) | None => Category::Refusal,
+            },
         }
     }
 }

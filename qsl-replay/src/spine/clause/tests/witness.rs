@@ -16,12 +16,13 @@ use crate::proof_result::SettlementBasis;
 use crate::result::SeparatingWitnessRecord;
 use crate::witness::{derive_separating_witness, Derived};
 use crate::{
-    replay_state_clause, DisagreementCause, InputSettlement, ObservationIdentity, ProofCategory,
-    ReplayRefusal, ReplayResult, ReplaySource, RuntimeValuePath, SeparationReason, SeparationStep,
+    replay_state_clause, DisagreementCause, InputSettlement, ObservationIdentity, ReplayRefusal,
+    ReplayResult, ReplaySource, RuntimeValuePath, SeparationReason, SeparationStep,
     StateClauseCounterexample, StateClauseReplayResult, ValuePathStep, ValuePathSubject, Verdict,
     WitnessEnvelope, WitnessFailure, WitnessSettlement,
 };
 use qsl_eval::value::ClauseEvaluation;
+use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::{Operator, SemanticTerm};
@@ -595,12 +596,12 @@ fn tc_741_clause_reports_carry_the_derived_basis_and_witness() {
         qsl_foundation::diagnostic::Category::Violation
     );
     assert_eq!(refuted.disposition.truth(), Some(false));
-    assert_eq!(refuted.exit_code(), 10);
+    assert_eq!(refuted.disposition.category().exit_code(), 10);
     assert_eq!(refuted.basis, SettlementBasis::DecisiveCounterexample);
     assert_eq!(refuted.witness, Some(all_below_record(&unit)));
 
     let satisfied = run("SomeAtLeast", Snapshot::High, "mid");
-    assert_eq!(satisfied.exit_code(), 0);
+    assert_eq!(satisfied.disposition.category().exit_code(), 0);
     assert_eq!(satisfied.basis, SettlementBasis::DecisiveWitness);
     assert_eq!(
         satisfied.witness,
@@ -625,8 +626,16 @@ fn tc_741_clause_reports_carry_the_derived_basis_and_witness() {
 
     let again = run("AllBelow", Snapshot::High, "mid");
     assert_eq!(
-        (again.basis, &again.witness, again.exit_code()),
-        (refuted.basis, &refuted.witness, refuted.exit_code())
+        (
+            again.basis,
+            &again.witness,
+            again.disposition.category().exit_code()
+        ),
+        (
+            refuted.basis,
+            &refuted.witness,
+            refuted.disposition.category().exit_code()
+        )
     );
 }
 
@@ -1114,7 +1123,7 @@ fn tc_743_an_oversized_record_refuses_and_replay_is_deterministic() {
 #[test]
 fn tc_744_a_mismatch_holds_both_records_and_no_result_record() {
     let unit = witness_unit();
-    let violation = Verdict::from_category(ProofCategory::Violation);
+    let violation = Verdict::from_category(Category::Violation);
     let derived = all_below_record(&unit);
     for given in [Some(after_stop_record(&unit)), None] {
         let result = replay_with(&unit, "AllBelow", given.clone(), witness_source()).unwrap();
@@ -1251,7 +1260,7 @@ fn text(payload: &str) -> Value {
 
 /// A `Witness` cause whose `given` record decides on `element`.
 fn cause_deciding(unit: &Unit, element: Value) -> DisagreementCause {
-    let violation = Verdict::from_category(ProofCategory::Violation);
+    let violation = Verdict::from_category(Category::Violation);
     DisagreementCause::Witness {
         proved: violation,
         replayed: violation,
@@ -1512,7 +1521,7 @@ fn tc_744_a_declared_unit_quantity_round_trips() {
 fn tc_744_member_option_value_and_field_steps_round_trip() {
     let unit = witness_unit();
     let package = &unit.compiled.package;
-    let violation = Verdict::from_category(ProofCategory::Violation);
+    let violation = Verdict::from_category(Category::Violation);
     let mut record = all_below_record(&unit);
     record.value_path.steps = vec![
         ValuePathStep::Member("record".to_owned()),
@@ -1562,7 +1571,7 @@ fn tc_744_member_option_value_and_field_steps_round_trip() {
 fn tc_744_a_refusal_reads_only_catalog_spellings() {
     let unit = witness_unit();
     let package = &unit.compiled.package;
-    let violation = Verdict::from_category(ProofCategory::Violation);
+    let violation = Verdict::from_category(Category::Violation);
     let cause = DisagreementCause::Witness {
         proved: violation,
         replayed: violation,
