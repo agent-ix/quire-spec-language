@@ -41,14 +41,20 @@ FR-340's pair-level tool-failure results.
 
 - The report SHALL list every result in groups, in this order: a
   corpus-level tool-failure result (FR-340, FR-345), pair-level
-  tool-failure results (FR-340), case results, layer results (FR-345), edge
-  results (FR-345).
+  tool-failure results (FR-340), entry-level tool-failure results (FR-345),
+  missing-item tool-failure results (FR-345), case results, layer results
+  (FR-345), edge results (FR-345).
 - Within a group the report SHALL order results by name, comparing the name
   members in this order, each as the bytes of its UTF-8 encoding:
   - a case: its two `RawSourceRef`s, each by its four labels in FR-001
     order, then its selection (versioning) or its edge's parent and child
     layer identities (layering);
   - a pair-level tool failure: its `pair.json` path relative to the corpus;
+  - an entry-level tool failure: its `entry.json` path relative to the
+    corpus;
+  - a missing-item tool failure: the layer identity, or the edge's parent
+    then child layer identity, then the missing kind (`case`,
+    `distinguishing`, `witness`);
   - a layer: its layer identity;
   - an edge: its parent layer identity, then its child layer identity.
 - The gate SHALL write byte-equal reports for two runs over one corpus.
@@ -78,7 +84,7 @@ FR-340's pair-level tool-failure results.
 | FR-344-AC-1 | For result sets containing, respectively, only `holds`; `holds` and a `regression`; a `regression` and an `unresolved (incomplete)`; that plus an `unresolved (unsupported)`; and that plus a `tool failure`, the verdicts are success, violation, incomplete, unsupported and tool failure, with exits 0, 10, 22, 21 and 30. | Test (TC-866) |
 | FR-344-AC-2 | In the result set whose verdict is unsupported and which holds one `regression`, the report lists that `regression` with its name, both classes and the superseding codes. | Test (TC-866) |
 | FR-344-AC-3 | A corpus of three pairs, created on disk in an order other than their names' order, yields a report ordered by case name; two runs give byte-equal reports. | Test (TC-866) |
-| FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes. | Test (TC-866) |
+| FR-344-AC-6 | A layering result set holding one case, the five layer results and the five edge results, built in an order other than the report's, is reported as the case, then the layers by identity bytes, then the edges by parent then child identity bytes; a set adding two entry-level and two missing-item tool failures, built out of order, reports them before the case, entry-level first, each group by its name bytes. | Test (TC-866) |
 | FR-344-AC-4 | A case whose superseding run exceeds its `accounting` work budget names, in its entry, `work_units`, the budget's value and the member `accounting`. | Test (TC-865) |
 | FR-344-AC-5 | The seeded-regression test corpus of TC-864 reports verdict violation, exit 10, and exactly one `regression`, naming the seeded case. | Test (TC-864) |
 

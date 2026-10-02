@@ -176,9 +176,9 @@ relation-family refinement gate)" as `operation-contract`, one claim per
 clause implication, and ADR-012 §3 says the gates "emit
 `operation-contract` claims". QSpec FR-177 is protocol implementation
 refinement (FR-290 `refinement`). Spine `compile` resolves a header profile
-against the `DefinitionLock` `root` row, and a header naming any QSpec AD-003
-layer resolves to that layer (FR-110, "Layer selection"); the catalog's other
-rows are selected by package-selection rules, not by the author. No
+by its identity: a header naming any QSpec AD-003 layer resolves to that
+layer (FR-110, "Layer selection"), and the catalog's qualification rows are
+selected by QSpec's package-selection rules, not by the author. No
 `Relation` checker, form or gate exists: only `FamilyKind::Relation`
 (`qsl-semantics/src/family/mod.rs:101`) and a CST `RelationClause`
 production that S2 refuses (`qsl-forms/src/value.rs:1044`).
@@ -382,9 +382,11 @@ exit criteria map to the PRs that own each deletion:
 
 The #191 and #192 gates are test gates: `xtask refinement` subcommands that
 run a corpus through the spine and compare structured outcomes. They record
-no requirement record, request no backend, emit no witness envelope, and have
+no requirement record, emit no witness envelope, and have
 no `Relation` family hook (ADR-011, ADR-012 §11). A passing gate is evidence
-over its corpus only. It never settles `proved` for any claim.
+over its corpus only. It never settles `proved` for any claim. The only
+backend request either gate makes is #192's negotiation of each layer's
+witness item (RF-3).
 
 A spec-versioning case tests one clause implication of the QSpec FR-290 row
 "Refinement between two operation contracts or state models" on one input.
@@ -507,8 +509,10 @@ A #192 case is one edge and two units, byte-equal except for the identity
 string of one header `profile` declaration, each compiled through spine
 `compile` and classified by RF-2's compile classification. The gate also
 checks that each parent layer is a subset a user would select: each layer
-admits its witness unit, and each parent prohibits its child's
-distinguishing form (FR-345).
+admits its witness unit, and the witness item, requested through QSpec
+FR-331 negotiation with the layer's `witness_request` FR-290 kind and
+extent, settles `supported`; and each parent prohibits its child's
+distinguishing form (QSpec FR-453-AC-5, AC-6; FR-345).
 
 Per case (parent `R`, child `C`), first match wins: tool failure on either
 side → tool failure; `R` refused and `C` refused → holds, both codes
@@ -574,9 +578,9 @@ does not read (the real corpus is under `tests/fixtures/refinement/`).
 - A new revision of a specification adds a pair; old pairs keep running.
 - A new edition or `root` revision changes no pair's meaning: both revisions
   of every pair compile under the running build, so the gate compares within
-  one build and never across two. A header profile resolves by identity
-  alone (FR-110), so a source whose header names an earlier revision label
-  compiles under the running build's definition of that identity.
+  one build and never across two. A header profile carries only its
+  identity (FR-110), so a new revision changes no source: each build
+  compiles every unit under its own definition of that identity.
 - The gate compares classes, never `package_id`s.
 
 ### 3. Abstraction relation (#198)

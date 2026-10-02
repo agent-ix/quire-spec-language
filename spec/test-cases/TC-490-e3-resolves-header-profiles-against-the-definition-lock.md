@@ -33,8 +33,8 @@ identity from the catalog, never from a literal.
 2. Compile it with the identity `test:unknown-profile`.
 3. Compile it with the `ieee_profile` row's identity, then with the
    `edition` row's.
-4. Compile it with the header `profile v = "<R's identity>" version "1"
-   digest "sha256:<64 a>";`.
+4. Compile it with one further token, the word `version`, after the
+   profile's identity string and before its `;`.
 5. Compile a unit with profiles `v` (`R`'s identity), `w` (the
    `ieee_profile` row's identity) and `x` (`test:unknown-profile`). Then
    compile a unit with profiles `v` and `u`, both `R`'s identity.
@@ -62,8 +62,8 @@ criteria each step backs.
   package.
 - Step 3 refuses `unknown_profile`/`wrong-selection-role` twice, once per
   compile, each retaining the selection and required role `root`.
-- Step 4 refuses as a syntax error at the `version` token, before E3, with
-  no package.
+- Step 4 refuses as a syntax error at the token after the identity string,
+  before E3, with no package.
 - Step 5's first unit refuses with exactly two refusals, `w`'s then `x`'s,
   and no package. Its second unit compiles.
 - Step 6: each unit compiles; each lock's `definition_selections` hold the

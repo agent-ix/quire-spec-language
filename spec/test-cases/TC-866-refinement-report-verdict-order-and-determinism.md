@@ -26,7 +26,9 @@ Scope: FR-344-AC-1 to FR-344-AC-3.
    the reverse of their names' order. Run the gate twice.
 4. Feed the report function a layering result set: one case, the five
    layer results and the five edge results, built in reverse of the
-   expected order.
+   expected order. Add two entry-level tool failures (`b/entry.json`,
+   `a/entry.json`) and two missing-item tool failures (E5 /
+   `distinguishing`, state graph / `witness`), in that order.
 
 Each expected verdict and exit is a literal in the test. Tag the tests
 `#[trace("TC-866", "FR-344-AC-n")]`.
@@ -43,4 +45,5 @@ Each expected verdict and exit is a literal in the test. Tag the tests
   `quire.state.core/v1`, `quire.state.graph/v1`, `quire.state.queries/v1`,
   `quire.value.complete/v1`, then the edges (core→queries, core→value,
   graph→model, queries→graph, value→model), each list written out as a
-  literal.
+  literal. The four tool failures come first: `a/entry.json`,
+  `b/entry.json`, then state graph / `witness`, then E5 / `distinguishing`.

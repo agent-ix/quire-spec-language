@@ -23,6 +23,9 @@ Scope: FR-345-AC-4 to FR-345-AC-9.
 Faults are injected only through FR-345's compile seam: the test passes the
 gate's comparison core a wrapper around `qsl_replay::spine::compile`,
 defined in the test module, that returns a chosen result for a named unit.
+Steps 1 to 6 pass a test registry holding one backend that advertises
+`operation-contract` and `value-validity` in `bounded` mode, unless a step
+names another.
 
 1. Build a test-only corpus of `entry.json` entries. For each of E1 to E5
    it holds:
@@ -45,7 +48,8 @@ defined in the test module, that returns a chosen result for a named unit.
    and complete model as child.
 5. Run the gate core with a wrapper that returns a refusal for state core's
    witness, then with one that returns `Ok` for E1's distinguishing unit on
-   the parent side.
+   the parent side. Then run step 1's corpus with a test registry whose one
+   backend advertises only `value-validity`.
 6. Run the gate over an empty corpus; over step 1's corpus without the state
    graph `witness` and the E5 `distinguishing` entry; over step 1's corpus
    with one `entry.json` holding an extra member `expected`.
@@ -59,7 +63,8 @@ Each expected result is a literal in the test. Tag the test
 
 - Step 2: verdict success, exit 0. On each edge the both-refuse case
   `holds` reporting both codes and the distinguishing-form case is
-  `not applicable`; each layer result and each edge result `holds`. The
+  `not applicable`; each layer result `holds`, every witness item settling
+  `supported`; each edge result `holds`. The
   two reports are byte-equal.
 - Step 3: verdict violation, exit 10; exactly five `regression`s, one per
   edge, each naming its case's two `RawSourceRef`s, its edge's two layer
@@ -67,9 +72,13 @@ Each expected result is a literal in the test. Tag the test
 - Step 4: each run gives `tool failure` naming the entry; verdict tool
   failure, exit 30.
 - Step 5: the first run gives a `regression` naming `quire.state.core/v1`;
-  the second gives a `regression` naming E1; each verdict violation, exit
+  the second gives a `regression` naming E1; the third gives a
+  `regression` for each of the four layers whose `witness_request` kind is
+  `operation-contract`, naming disposition `unsupported` and the empty
+  candidate set, while complete value holds. Each verdict violation, exit
   10.
-- Step 6: one tool-failure result naming the corpus; exactly two naming
+- Step 6: exactly one tool-failure result naming the corpus and no other
+  result; exactly two naming
   state graph / `witness` and E5 / `distinguishing`; one naming the
   `entry.json` path and the member `expected`, with every other entry still
   compiled. Each verdict tool failure, exit 30.

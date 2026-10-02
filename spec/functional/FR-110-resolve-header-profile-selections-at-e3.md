@@ -152,11 +152,11 @@ rows (`temporal_profile`, `protocol_profile`).
 
 The emitter SHALL write `definition_selections` as the union, over the
 unit's header profiles, of the selected layer and every layer its
-`requires` closure names, and no layer that requires a selected layer. When
-that union holds `quire.value.complete/v1`, the entries also hold the
-`qualification_catalog` rows the lock's package-selection rules select for
-the unit; otherwise they hold the `edition` row and no other
-`qualification_catalog` row. The two sides of a QSpec AD-003 `requires`
+`requires` closure names, and no layer that requires a selected layer,
+together with the `qualification_catalog` rows QSpec FR-001 selects for
+those layers: the lock's `package_selection` rules when the union holds its
+`package_selection.layer`, and its `package_selection.without_layer` rows
+otherwise. The two sides of a QSpec AD-003 `requires`
 edge therefore compile to distinct packages.
 
 ## Constraints
@@ -172,7 +172,7 @@ edge therefore compile to distinct packages.
 | FR-110-AC-1 | A unit whose one header profile names `quire.value.complete/v1` compiles through spine `compile`. Its emitted lock has empty `profile_selections`, and its `definition_selections` hold `quire.value.complete/v1`, `quire.state.core/v1` and the `qualification_catalog` rows the package-selection rules select for the unit, and no other layer. | Test (TC-490) |
 | FR-110-AC-2 | The same unit with the profile identity `test:unknown-profile` refuses `unknown_profile`/`unsupported-selection` at the span of the identity literal, naming alias `v`, the selection and required role `root`, and produces no package. | Test (TC-490) |
 | FR-110-AC-3 | The same unit with the header profile set to the `ieee_profile` row's identity refuses `unknown_profile`/`wrong-selection-role`, retaining the selection and required role `root`. The `edition` row's identity (`ix:native`) refuses the same way. | Test (TC-490) |
-| FR-110-AC-5 | The same unit with the header `profile v = "quire.value.complete/v1" version "1" digest "sha256:<64 a>";` refuses as a syntax error at the `version` token, before E3, and produces no package. | Test (TC-490) |
+| FR-110-AC-5 | A unit whose header `profile` declaration holds any token after its identity string, before the `;` (QSpec shared grammar `profile = 'profile', ident, '=', string, ';'`), refuses as a syntax error at that token, before E3, and produces no package. | Test (TC-490) |
 | FR-110-AC-6 | A unit with three header profiles, the `root` selection under alias `v`, the `ieee_profile` row's identity under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the `root` selection under two aliases compiles. | Test (TC-490) |
 | FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` hold the layer and every layer its `requires` closure names and no layer that requires it. | Test (TC-490) |
 | FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
