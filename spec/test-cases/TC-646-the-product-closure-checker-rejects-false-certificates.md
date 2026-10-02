@@ -23,8 +23,9 @@ vault; FR-181-AC-5's HP-5 body over the secure vault.
 
 1. Check the `NonInterference` certificate with one member removed; with
    its keys unsorted; with an added member whose `l` components differ, in
-   a component marked `MissingAcceptance`; with the initial product state
-   removed.
+   a component marked `MissingAcceptance`; with one member listed in two
+   components; with two components joined by an edge listed in the reverse
+   order; with the initial product state removed.
 2. Check a certificate for the leaky `NonInterference` listing its 14
    product states with the secure run's components; check a certificate for
    FR-181-AC-5's body listing its reached product states.
@@ -37,8 +38,9 @@ Tag the tests `#[trace("TC-646", "<AC id>")]`.
 
 - Step 1: `Rejected` with rule `SuccessorMissing` naming the member whose successor is missing;
   `Rejected` with rule `Malformed` before any recomputation; `Rejected` with rule `WitnessFails`;
+  `Rejected` with rule `NotPartition`; `Rejected` with rule `BackwardEdge`;
   `Rejected` with rule `InitialMissing`.
-- Step 2: `Rejected` with rule `WitnessFails`; `Rejected` with rule `UndefinedMember` at the first state
+- Step 2: `Rejected` with rule `NotPartition`; `Rejected` with rule `UndefinedMember` at the first state
   with `l = 1`.
 - Step 3: `Stopped` with `{MaxStates, 1}` naming the limit and its
   value; equal results.
