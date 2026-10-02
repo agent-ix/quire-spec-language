@@ -113,6 +113,12 @@ Round 2, reviewed at 734c512bc6d71a2ef893d8b460c0f5b604c857ae (fix commit 734c51
 | --- | --- | --- |
 | FND-005 | fixed | 734c512b: `Expression::respell_names(&self, FnMut(ExprId, Spellings<'_>)) -> Self` (syntax.rs:1447) hands the closure only the node id and `Spellings { reference: Option<&mut String>, binders: Vec<&mut String> }` (syntax.rs:1562), built by `ExprNode::spellings_mut` (an exhaustive match, :832). No child id is in reach, so the function cannot fail. `substitute_names` (checked_dispatch.rs:839-863) calls it and has no `.expect`. `binder_names` is deleted, and the `Bind` step reads `ExprNode::binders` (:788, exhaustive). The binder order is written twice, in `binders` for reading and in `spellings_mut` for writing, so `binders` is not literally the single source. The two agree, and an Accumulate swap would fail the existing `rename_parameters_reads_each_operand_in_its_binders_scope` (fold accumulator `y`, binder `x`). New test: `respell_names_rewrites_references_and_binders`. It passes in ~/dev/worktrees/logs/b1-make-ci-r4.log (make ci exit=0). |
 
+Round 3, reviewed at 846c7fa810c5a4113435650221ae0fd60410783b (fix commit 846c7fa8, rebased onto main c54e3595; same change as e9369474 on origin/task/482-arena-forms).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | 846c7fa8: the two lines "The rename walk, with nothing to rename, rewrites every form into exactly itself: each operand, binder and attribute in its own place." are back above `an_empty_rename_keeps_every_form`'s doc (checked_dispatch.rs:1752-1755), and the four lines match its doc on the pre-review base 3ef889a4. `the_rename_stack_grows_within_the_node_charge` keeps only its own three-line doc (:1731-1733). |
+
 ## New findings (disposition pass 2)
 
 | ID | Severity | Summary | Refs |
