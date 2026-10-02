@@ -46,3 +46,12 @@ detector (`is_mint_path`, typestate_scan.rs:290-355) recognises only
 ## Verdict
 
 Changes needed: FND-001 (high) blocks. FND-002 is a low cleanup.
+
+## Dispositions
+
+Round 1, reviewed at c185ebdcdbfbf5e6ee2616010292644ac7b540d0.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c185ebdc: fix option (a). T12-F `allowed_callers: &[]`, so every QSL call fails, `read_import_view` included. `tc_arch_lint_api_surface_027` now asserts the allow-list is empty and that a call in `checked_v2::read_import_view` is a violation (traced to FR-087-AC-6). The FR-060 T12-F row and ADR-011 T-12 (2) say QSL has no allowed caller and a backend names its own reader. FR-087-AC-6/AC-11 now hold without amendment. |
+| FND-002 | fixed | c185ebdc: deleted both helper tests, the `decode_admitted_keys` helper and their imports. qsl-package now has no diff against origin/main. The quire-exact unit test is kept. |
