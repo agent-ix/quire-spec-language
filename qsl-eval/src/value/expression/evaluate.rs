@@ -1328,6 +1328,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 let slot = self
                     .objects_for(node)?
+                    .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(invariant)?;
                 let value = Self::project(slot, *optional, node.value_type())?;
@@ -1825,6 +1826,7 @@ impl<'a, 'm> Machine<'a, 'm> {
         let field = attribute.field();
         let slot = self
             .objects_for(node)?
+            .objects()
             .attribute(self.scope.types(), current, edge)
             .ok_or_else(invariant)?;
         match field.value_type() {
@@ -2372,6 +2374,7 @@ mod tests {
         PopulationDocument, PopulationMember,
     };
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+    use quire_semantic_value::object_closure::ObjectClosure;
 
     // `TypeForm`'s span carries no identity (ADR-011 §2.2 row E2).
     const SPAN: qsl_foundation::Span = qsl_foundation::Span { start: 0, end: 0 };
@@ -2903,17 +2906,19 @@ mod tests {
             quire_exact::ObjectId::new("a1".to_owned()).expect("non-empty key"),
         );
         let objects = ObjectEnvironment::new(
-            graph.scope().types(),
-            [(
-                reference.clone(),
-                vec![(
-                    "x",
-                    quire_exact::FieldValue::Present(Value::Integer(7_i64.into())),
+            ObjectClosure::new(
+                graph.scope().types(),
+                [(
+                    reference.clone(),
+                    vec![(
+                        "x",
+                        quire_exact::FieldValue::Present(Value::Integer(7_i64.into())),
+                    )],
                 )],
-            )],
-            &[],
-        )
-        .expect("one object with its one required field admits cleanly");
+                &[],
+            )
+            .expect("one object with its one required field admits cleanly"),
+        );
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Reference(reference)];
         let evaluation = Machine::with_pre(

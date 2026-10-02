@@ -1238,7 +1238,7 @@ fn run_function(
                         return Ok(report(ClauseDisposition::Admit(failure)));
                     }
                 };
-                let Some(reference) = environment.find(universe, key) else {
+                let Some(reference) = environment.objects().find(universe, key) else {
                     let mut fields = BTreeMap::new();
                     fields.insert("population", population.clone());
                     fields.insert("object", key.clone());

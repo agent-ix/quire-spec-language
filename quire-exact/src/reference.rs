@@ -11,9 +11,9 @@
 //! QSL `model` mints from its own preimage (ADR-013 QC-15), and replaces the
 //! object identity with `ObjectId`, the object's own authored UTF-8 bytes,
 //! never a digest (ADR-013 §8 OQ-C ruling). The original
-//! `ObjectEnvironment` (a closed reference graph checked against a
-//! `TypeEnvironment`) is dropped entirely: it is a declaration-registry
-//! concern and stays layer 3 in QSL per ADR-013 O-15, not the kernel.
+//! object closure checked against a `TypeEnvironment` is dropped
+//! entirely: it is a declaration-registry concern, not the kernel, and is
+//! `quire-semantic-value`'s `ObjectClosure` (ADR-011 §6.2).
 
 use crate::identity::{EffectiveId, ObjectId, UniverseId};
 

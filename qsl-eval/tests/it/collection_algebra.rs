@@ -604,6 +604,7 @@ mod checked {
     use qsl_semantics::value::{NodeOwner, OwnerSelection, OwnerSubject};
     use quire_exact::NODE_KEY_DOMAIN;
     use quire_semantic_value::checking::{CheckMode, CheckingLimits};
+    use quire_semantic_value::object_closure::ObjectClosure;
     use quire_semantic_value::semantic_node::SemanticGraphCause;
     use serde_json::json;
 
@@ -895,20 +896,22 @@ mod checked {
         let (h1, h2) = (holder(&types, "u1", "h1"), holder(&types, "u1", "h2"));
         let hs = formed(&holders, vec![h2.clone(), h1.clone()]);
         let objects = ObjectEnvironment::new(
-            &types,
-            ["h1", "h2"].map(|identity| {
-                (
-                    ObjectReference::new(
-                        universe_id("u1"),
-                        object_type("M::Obj"),
-                        ObjectId::new(identity).unwrap(),
-                    ),
-                    Vec::new(),
-                )
-            }),
-            &[],
-        )
-        .unwrap();
+            ObjectClosure::new(
+                &types,
+                ["h1", "h2"].map(|identity| {
+                    (
+                        ObjectReference::new(
+                            universe_id("u1"),
+                            object_type("M::Obj"),
+                            ObjectId::new(identity).unwrap(),
+                        ),
+                        Vec::new(),
+                    )
+                }),
+                &[],
+            )
+            .unwrap(),
+        );
         let parameters = [("hs", ValueType::collection(holders)), ("h1", holder_type)];
         let run = |expression: Expression| {
             evaluate(
@@ -984,20 +987,22 @@ mod checked {
         let probe = holder(&types, "u2", "h1");
         let hs = formed(&holders, vec![h1]);
         let objects = ObjectEnvironment::new(
-            &types,
-            [("u1", "h1"), ("u2", "h1")].map(|(universe, identity)| {
-                (
-                    ObjectReference::new(
-                        universe_id(universe),
-                        object_type("M::Obj"),
-                        ObjectId::new(identity).unwrap(),
-                    ),
-                    Vec::new(),
-                )
-            }),
-            &[],
-        )
-        .unwrap();
+            ObjectClosure::new(
+                &types,
+                [("u1", "h1"), ("u2", "h1")].map(|(universe, identity)| {
+                    (
+                        ObjectReference::new(
+                            universe_id(universe),
+                            object_type("M::Obj"),
+                            ObjectId::new(identity).unwrap(),
+                        ),
+                        Vec::new(),
+                    )
+                }),
+                &[],
+            )
+            .unwrap(),
+        );
         let parameters = [
             ("hs", ValueType::collection(holders)),
             ("item", holder_type),

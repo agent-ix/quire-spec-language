@@ -19,6 +19,7 @@ pub mod definition;
 pub mod enumeration;
 pub mod location;
 pub mod loss;
+pub mod object_closure;
 pub mod quantity;
 pub mod semantic_node;
 pub mod stop;

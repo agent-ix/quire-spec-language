@@ -25,6 +25,7 @@ use quire_semantic_value::checking::{CheckMode, CheckingLimits};
 use quire_semantic_value::declaration::{
     FieldDeclaration, FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
+use quire_semantic_value::object_closure::ObjectClosure;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -155,11 +156,13 @@ fn deref_reads_an_inherited_field_through_the_subtype() {
     ]);
     let b1 = reference("M::B", "b1");
     let objects = ObjectEnvironment::new(
-        &types,
-        [(b1.clone(), vec![("x", int(7)), ("y", int(8))])],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types,
+            [(b1.clone(), vec![("x", int(7)), ("y", int(8))])],
+            &[],
+        )
+        .unwrap(),
+    );
     assert_eq!(
         read(&package, &objects, "M::B", "x", &b1),
         Integer::from(7_i64)
@@ -186,14 +189,16 @@ fn deref_through_a_redefined_field_reads_the_redefiner() {
     ]);
     let (a1, b1) = (reference("M::A", "a1"), reference("M::B", "b1"));
     let objects = ObjectEnvironment::new(
-        &types,
-        [
-            (a1.clone(), vec![("x", int(1))]),
-            (b1.clone(), vec![("x", int(2))]),
-        ],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types,
+            [
+                (a1.clone(), vec![("x", int(1))]),
+                (b1.clone(), vec![("x", int(2))]),
+            ],
+            &[],
+        )
+        .unwrap(),
+    );
     assert_eq!(
         read(&package, &objects, "M::A", "x", &a1),
         Integer::from(1_i64)
@@ -216,7 +221,9 @@ fn deref_reads_the_most_derived_redefinition() {
         object("M::C", vec![redefining("x", "M::A", "x")], &["M::B"]),
     ]);
     let c1 = reference("M::C", "c1");
-    let objects = ObjectEnvironment::new(&types, [(c1.clone(), vec![("x", int(9))])], &[]).unwrap();
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(&types, [(c1.clone(), vec![("x", int(9))])], &[]).unwrap(),
+    );
     assert_eq!(
         read(&package, &objects, "M::C", "x", &c1),
         Integer::from(9_i64)
@@ -234,7 +241,9 @@ fn deref_through_a_renamed_redefinition_reads_the_new_name() {
         object("M::B", vec![redefining("y", "M::A", "x")], &["M::A"]),
     ]);
     let b1 = reference("M::B", "b1");
-    let objects = ObjectEnvironment::new(&types, [(b1.clone(), vec![("y", int(4))])], &[]).unwrap();
+    let objects = ObjectEnvironment::new(
+        ObjectClosure::new(&types, [(b1.clone(), vec![("y", int(4))])], &[]).unwrap(),
+    );
     assert_eq!(
         read(&package, &objects, "M::B", "y", &b1),
         Integer::from(4_i64)

@@ -53,6 +53,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
 use quire_semantic_value::loss::{LocatedLoss, ValueLoss};
+use quire_semantic_value::object_closure::ObjectClosure;
 use quire_semantic_value::quantity::UnitTable;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -949,14 +950,14 @@ fn e16_references_compare_identity_triple_only() {
     let env = object_environment();
     let state = |balance| vec![("balance", FieldValue::Present(int(balance)))];
     let a = reference("u1", "a");
-    let before = ObjectEnvironment::new(&env, [(a.clone(), state(1))], &[]).unwrap();
-    let after = ObjectEnvironment::new(
+    let before = ObjectClosure::new(&env, [(a.clone(), state(1))], &[]).unwrap();
+    let after = ObjectClosure::new(
         &env,
         [(a.clone(), state(2)), (reference("u1", "b"), state(1))],
         &[],
     )
     .unwrap();
-    let balance = |objects: &ObjectEnvironment| match objects.attribute(
+    let balance = |objects: &ObjectClosure| match objects.attribute(
         &env,
         &a,
         &FieldRef::new(object_type("M::Obj"), "balance"),

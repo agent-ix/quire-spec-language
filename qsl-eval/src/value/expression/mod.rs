@@ -165,7 +165,7 @@ fn validate(
         while let Some(value) = pending.pop() {
             match value {
                 Value::Reference(reference) => {
-                    if !objects.contains(reference) {
+                    if !objects.objects().contains(reference) {
                         return Err(InputRefusal::DanglingReference { parameter });
                     }
                 }

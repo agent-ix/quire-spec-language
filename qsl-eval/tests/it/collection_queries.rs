@@ -26,6 +26,7 @@ use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, FieldDeclaration, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::location::Location;
+use quire_semantic_value::object_closure::ObjectClosure;
 use sha2::{Digest, Sha256};
 
 const UNLIMITED: ScalarLimits = ScalarLimits {
@@ -872,11 +873,13 @@ fn holder(types: &TypeEnvironment, identity: &str) -> Value {
 fn q10_contains_stops_at_the_first_equal_member_and_size_only_retains() {
     let types = holder_environment();
     let objects = ObjectEnvironment::new(
-        &types,
-        [(object("h1"), Vec::new()), (object("h2"), Vec::new())],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types,
+            [(object("h1"), Vec::new()), (object("h2"), Vec::new())],
+            &[],
+        )
+        .unwrap(),
+    );
     let package = package(types.clone(), Vec::new());
     let holder_type = ValueType::Composite(key("Holder"));
     let set = of(CollectionKind::Set, holder_type.clone(), 0, 2);

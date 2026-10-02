@@ -55,6 +55,7 @@ use quire_semantic_value::declaration::{
     FieldRef, ObjectTypeDeclaration, TypeEnvironment,
 };
 use quire_semantic_value::location::{Location, Origin};
+use quire_semantic_value::object_closure::ObjectClosure;
 
 const MULTIPLICITY_0_1: Multiplicity = Multiplicity {
     lower: 0,
@@ -433,20 +434,22 @@ fn package_with_collection_function(scenario: &Scenario) -> CheckedPackage {
 /// checks over different scopes.
 fn objects(scenario: &Scenario) -> ObjectEnvironment {
     ObjectEnvironment::new(
-        &types(scenario),
-        [
-            (
-                object_reference(&scenario.universe, &scenario.b, "b1"),
-                vec![],
-            ),
-            (
-                object_reference(&scenario.universe, &scenario.a, "c9"),
-                vec![],
-            ),
-        ],
-        &[],
+        ObjectClosure::new(
+            &types(scenario),
+            [
+                (
+                    object_reference(&scenario.universe, &scenario.b, "b1"),
+                    vec![],
+                ),
+                (
+                    object_reference(&scenario.universe, &scenario.a, "c9"),
+                    vec![],
+                ),
+            ],
+            &[],
+        )
+        .unwrap(),
     )
-    .unwrap()
     .with_population(scenario.binding.clone())
     .unwrap()
 }
@@ -1213,8 +1216,7 @@ fn attribute_world_of(
         ],
     )
     .unwrap();
-    let objects = ObjectEnvironment::new(&types, world, &[])
-        .unwrap()
+    let objects = ObjectEnvironment::new(ObjectClosure::new(&types, world, &[]).unwrap())
         .with_population(scenario.binding.clone())
         .unwrap();
     let graph = PackageDeclarations {
@@ -1764,11 +1766,13 @@ fn lookup_expression_foreign_universe_is_foreign_universe_after_one_work_unit() 
         ObjectId::new("b1").unwrap(),
     );
     let object_world = ObjectEnvironment::new(
-        &types(&scenario),
-        [(foreign_reference.clone(), vec![])],
-        &[],
+        ObjectClosure::new(
+            &types(&scenario),
+            [(foreign_reference.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
     )
-    .unwrap()
     .with_population(scenario.binding.clone())
     .unwrap();
 
@@ -1842,11 +1846,13 @@ fn lookup_expression_absent_identity_in_a_foreign_universe_is_refused_not_absent
         ObjectId::new("zz9-never-admitted").unwrap(),
     );
     let object_world = ObjectEnvironment::new(
-        &types(&scenario),
-        [(foreign_reference.clone(), vec![])],
-        &[],
+        ObjectClosure::new(
+            &types(&scenario),
+            [(foreign_reference.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
     )
-    .unwrap()
     .with_population(scenario.binding.clone())
     .unwrap();
 
@@ -2018,10 +2024,11 @@ fn l07_pre_lookup_reads_the_invocation_pre_population_and_a2_keeps_its_pre_type(
         ("r", ValueType::Reference(scenario.a)),
     ];
     let r2 = object_reference(&scenario.universe, &scenario.a, "a2");
-    let object_world = ObjectEnvironment::new(&types(&scenario), [(r2.clone(), vec![])], &[])
-        .unwrap()
-        .with_population(scenario.binding.clone())
-        .unwrap();
+    let object_world = ObjectEnvironment::new(
+        ObjectClosure::new(&types(&scenario), [(r2.clone(), vec![])], &[]).unwrap(),
+    )
+    .with_population(scenario.binding.clone())
+    .unwrap();
 
     let (post_outcome, _) = run(
         &package,
@@ -3147,11 +3154,13 @@ fn tc_294_lookup_refuses_an_unresolved_population_id() {
     let unresolved_id = scenario.binding.population_id();
     let present_reference = object_reference(&scenario.universe, &scenario.b, "b1");
     let environment = ObjectEnvironment::new(
-        &types(&scenario),
-        [(present_reference.clone(), vec![])],
-        &[],
-    )
-    .unwrap();
+        ObjectClosure::new(
+            &types(&scenario),
+            [(present_reference.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
+    );
 
     let checked = check(&package, &parameters, &expression);
     let mut meter = Meter::new(SCALAR_UNLIMITED);
@@ -3622,11 +3631,13 @@ fn a_foreign_universe_lookup_builds_a_record_with_both_universes() {
         ObjectId::new("b1").unwrap(),
     );
     let object_world = ObjectEnvironment::new(
-        &types(&scenario),
-        [(foreign_reference.clone(), vec![])],
-        &[],
+        ObjectClosure::new(
+            &types(&scenario),
+            [(foreign_reference.clone(), vec![])],
+            &[],
+        )
+        .unwrap(),
     )
-    .unwrap()
     .with_population(scenario.binding.clone())
     .unwrap();
     let (evaluation, _) = run_family(

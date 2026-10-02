@@ -14,9 +14,7 @@ use qsl_eval::value::QualifiedName;
 use qsl_semantics::library::{
     resolve_libraries, ImportDeclaration, LibraryName, LibraryPackage, PackageId,
 };
-use qsl_semantics::model::object_environment::{
-    ObjectEnvironment, ObjectEnvironmentCause, ObjectEnvironmentRefusal,
-};
+use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::{
@@ -36,6 +34,9 @@ use quire_semantic_value::declaration::{
     FieldRef, InvalidDeclaration, ObjectTypeDeclaration, RecursionEdges, TypeEnvironment,
 };
 use quire_semantic_value::enumeration::EnumMemberIndex;
+use quire_semantic_value::object_closure::{
+    ObjectClosure, ObjectClosureCause, ObjectClosureRefusal,
+};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
@@ -451,7 +452,7 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
             FieldValue::Present(Value::Reference(node_reference(name))),
         )]
     };
-    let objects = ObjectEnvironment::new(
+    let objects = ObjectClosure::new(
         &env,
         [
             (node_reference("o1"), peer("o2")),
@@ -478,10 +479,10 @@ fn r09_object_reference_cycles_are_admitted_and_compare_by_identity() {
         Ok(Outcome::Completed(false))
     );
     assert_eq!(
-        ObjectEnvironment::new(&env, [(node_reference("o1"), peer("missing"))], &[]).unwrap_err(),
-        ObjectEnvironmentRefusal {
+        ObjectClosure::new(&env, [(node_reference("o1"), peer("missing"))], &[]).unwrap_err(),
+        ObjectClosureRefusal {
             object: Box::new(node_reference("o1")),
-            cause: ObjectEnvironmentCause::DanglingReference(Box::new(node_reference("missing"))),
+            cause: ObjectClosureCause::DanglingReference(Box::new(node_reference("missing"))),
         }
     );
     assert_eq!(ObjectId::new("").map(|_| ()), Err(EmptyObjectIdentity));
