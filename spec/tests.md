@@ -219,12 +219,12 @@ names different artifacts in each.
 | TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally |
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally |
 | TC-438 | The request writer computes the available finite bound, writes a bounded request as its own item, and refuses bad bounds before writing | Unit | P1 | FR-097-AC-3, FR-097-AC-4 | ✅ Passed locally |
-| TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | 🚧 Step 2's `BoundReached` not yet implemented |
+| TC-439 | An exploration outcome maps to its O-16 category and keeps its frontier | Unit | P1 | FR-097-AC-5 | ✅ Passed locally |
 | TC-440 | QSL's extent agrees with IR's requires-bound at the pinned IR revision | Integration | P1 | FR-097-AC-6 | 🚧 Partly passed: every comparable fixture agrees (a recursive type's first unbounded node in the recursion group QSL names) and step 4 passes; the quantity fixture is ignored because the emitter omits a record naming a declared unit |
 | TC-441 | An unbounded collection never refuses for cardinality and stops only on the caller's meter | Unit | P1 | FR-097-AC-7, FR-097-AC-8 | ✅ Passed locally; step 5 checks the interim `UnrepresentableBound` lowering refusal until QSL-42 |
-| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | 🚧 Step 4's `BoundReached` not yet implemented |
-| TC-454 | The sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | 🚧 Steps 1 to 3 and 8 change with the `choice` preimage (not yet implemented) |
-| TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | 🚧 Step 2's `BoundReached` not yet implemented |
+| TC-453 | Exploration orders successors canonically and keys states by their JCS bytes | Unit | P1 | FR-101-AC-1, FR-101-AC-2, FR-101-AC-9 | ✅ Passed locally |
+| TC-454 | The sampler reproduces its vectors, and sampled traces replay | Unit | P1 | FR-101-AC-3, FR-101-AC-4, FR-101-AC-5, FR-101-AC-10 | ✅ Passed locally |
+| TC-455 | Stopped explorations stay incomplete, and unbounded requests require a bound | Unit | P1 | FR-101-AC-6, FR-101-AC-7, FR-101-AC-8 | ✅ Passed locally |
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally for steps 1 to 6, step 6 being a predicate whose body calls another declared function (the QSL-22 Layer 3 exemplar's shape); step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) passes locally; step 5's whitespace-only authority passes with `invalid_source_identity`, cause `blank-label` and `label` `authority` |
@@ -252,7 +252,7 @@ names different artifacts in each.
 | TC-471 | Model successors follow operations, arguments, frames and contracts | Integration | P1 | FR-120-AC-1, FR-120-AC-2, FR-120-AC-3, FR-120-AC-4 | 🚧 Planned |
 | TC-472 | Invariant-violating successors are recorded, and undecided expansions stop the run | Integration | P1 | FR-120-AC-5, FR-120-AC-6, FR-120-AC-7, FR-120-AC-8, FR-120-AC-9, FR-120-AC-13 | 🚧 Planned; ADR-016 G-4 |
 | TC-473 | Model effects and results are trace data, and ambient-state reads refuse at S3 | Integration | P1 | FR-120-AC-10, FR-120-AC-11, FR-120-AC-12 | 🚧 Planned |
-| TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | 🚧 Planned |
+| TC-474 | The engine records findings, stops on an expansion stop, and replays a stopped trace | Integration | P1 | FR-101-AC-12, FR-101-AC-13, FR-101-AC-14, FR-097-AC-5 | ✅ Passed locally |
 | TC-480 | S2 builds enum and predicate forms | Unit | P1 | FR-091-AC-25, FR-091-AC-26 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-481 | The assembler admits source enums and predicates, which check and lowering then use | Integration | P1 | FR-091-AC-27, FR-091-AC-28, FR-091-AC-29, FR-091-AC-30, FR-092-AC-13 | ✅ Passed locally (`qsl-semantics` `check::assemble` tests, `qsl-eval/tests/it/source_call.rs`) |
 | TC-482 | S2 builds dimension and unit forms | Unit | P1 | FR-091-AC-31 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
@@ -311,7 +311,7 @@ names different artifacts in each.
 | TC-533 | A fairness constraint over a supplied trace settles as a missing premise | Unit | P1 | FR-132-AC-1, FR-132-AC-2 | 🚧 Planned |
 | TC-534 | A refuted liveness record names the strong constraint that would exclude its lasso | Integration | P1 | FR-133-AC-1, FR-133-AC-2, FR-133-AC-3 | 🚧 Planned |
 | TC-535 | Candidates carry and are filtered by the fairness kinds their backends advertise | Unit | P1 | FR-134-AC-1, FR-134-AC-2 | 🚧 Planned |
-| TC-536 | Exploration and model-check limits publish their defaults | Unit | P1 | FR-101-AC-15, FR-126-AC-8 | 🚧 Planned |
+| TC-536 | Exploration and model-check limits publish their defaults | Unit | P1 | FR-101-AC-15, FR-126-AC-8 | 🚧 FR-101-AC-15 passes locally; FR-126-AC-8 not yet implemented |
 | TC-537 | An undefined claim evaluation refutes in the explicit-state model checker | Integration | P1 | FR-125-AC-6, FR-126-AC-9 | 🚧 Planned |
 | TC-538 | An undefined-evaluation counterexample settles refuted with its cause | Unit | P1 | FR-127-AC-6 | 🚧 Planned |
 | TC-539 | Replay reproduces an undefined claim evaluation at its position | Integration | P1 | FR-128-AC-5, FR-128-AC-6 | 🚧 Planned |
@@ -898,9 +898,7 @@ typed state key and its `quire.simulation.state-key/v1` digest, the
 `quire.simulation.sampler/v1` generator, replay, the `cancelled`/`caller-cancelled`
 cause, limit exhaustion and the pre-exploration `requires-bound`. TC-453
 backs AC-1, AC-2 and AC-9, TC-454 AC-3 to AC-5 and AC-10, and TC-455 AC-6 to AC-8,
-implemented except the sampler's `choice` preimage member, its
-identity-only generator check (AC-3, AC-10) and `Outcome::BoundReached` for
-a completed `max_depth` horizon (AC-7). The simulation tests in
+all implemented. The simulation tests in
 `qsl-eval/tests/it/finite_simulation.rs` trace to these ids, not to QSpec's
 TC-210 and FR-181-AC-* ids; this repository's TC-210 is a different case.
 TC-439 keeps FR-097-AC-5's `Outcome::category()` map.

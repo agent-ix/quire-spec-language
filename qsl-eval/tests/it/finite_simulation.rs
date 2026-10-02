@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-101: finite exploration and seeded sampling through the public
-//! entries, `explore_request` and `sample_request`. Traces to TC-453,
-//! TC-454 and TC-455.
+//! entries, `explore_request` and `sample_request`. Traces to TC-439,
+//! TC-453, TC-454, TC-455, TC-474 and TC-536.
 //!
 //! `EdgeGraph` is a toy `TransitionSystem` over `String`-labelled states: its
 //! key is the label itself, and its transitions are an explicit, authored
@@ -1701,4 +1701,299 @@ fn sample_request_reports_empty_initial_and_the_step_limit() {
         trace.provenance.expect("sampled trace").stopped,
         StopReason::StepLimit
     );
+}
+
+// ---------------------------------------------------------------------------
+// TC-474: findings, expansion stops, and replay of a stopped trace.
+// ---------------------------------------------------------------------------
+
+/// `resource_exhausted`/`insufficient-next-charge`, an exhausted budget.
+const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+
+/// `runtime_invariant`/`established-invariant-broken`, a broken invariant.
+const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+
+/// TC-474's `Limits`: 100 each.
+fn hundred_limits() -> Limits {
+    Limits {
+        max_states: 100,
+        max_transitions: 100,
+    }
+}
+
+/// TC-474's graph `0 -> {1, 2}`, `1 -> 3`; transition `a` (to 1) sorts
+/// before `b` (to 2).
+fn branch_graph() -> EdgeGraph {
+    EdgeGraph::new(
+        vec!["0"],
+        vec![
+            ("0", op("a"), "1"),
+            ("0", op("b"), "2"),
+            ("1", op("c"), "3"),
+        ],
+    )
+}
+
+/// TC-474's chain `0 -> 1`.
+fn short_chain() -> EdgeGraph {
+    EdgeGraph::new(vec!["0"], vec![("0", op("a"), "1")])
+}
+
+/// `explore_request` over no domains with TC-474's limits.
+fn explore_474(
+    system: &EdgeGraph,
+    limits: Limits,
+    max_depth: Option<usize>,
+) -> qsl_eval::simulation::Exploration<String> {
+    explore_request(
+        system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        limits,
+        max_depth,
+        never_cancels,
+    )
+    .expect("bounded domains explore")
+}
+
+/// `sample_request` over no domains with the v1 sampler.
+fn sample_474(system: &EdgeGraph, seed: u64, max_steps: usize) -> Trace<Transition, String> {
+    sample_request(
+        system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        &sampler_ref(),
+        seed,
+        0,
+        max_steps,
+    )
+    .expect("a bounded, generator-matched sample")
+}
+
+/// TC-474 step 1, FR-101-AC-12, FR-097-AC-5: an expansion stop ends the run
+/// `Stopped` with its cause and the stopped state, then the queue, as the
+/// frontier; the category follows the cause's code.
+#[trace("TC-474", "FR-101-AC-12", "FR-097-AC-5")]
+#[test]
+fn tc_474_an_expansion_stop_ends_exploration_stopped() {
+    use qsl_foundation::diagnostic::Category;
+    for (cause, category) in [
+        (EXHAUSTED, Category::Incomplete),
+        (BROKEN, Category::InternalFailure),
+    ] {
+        let system = branch_graph().with_stop("1", cause);
+        let exploration = explore_474(&system, hundred_limits(), None);
+        assert_eq!(
+            exploration.outcome,
+            Outcome::Stopped {
+                stats: qsl_eval::simulation::Stats {
+                    states: 3,
+                    transitions: 2,
+                    depth: 1,
+                },
+                frontier: vec![key("1"), key("2")],
+                cause,
+            }
+        );
+        assert_eq!(exploration.outcome.category(), category, "{cause}");
+    }
+}
+
+/// TC-474 step 2, FR-101-AC-13: each expanded state with a finding gets one
+/// entry with its digest and depth; horizon states, states a limit put back
+/// in the frontier and a stopped state get none.
+#[trace("TC-474", "FR-101-AC-13")]
+#[test]
+fn tc_474_findings_cover_exactly_the_expanded_states() {
+    let system = branch_graph().with_finding("2", "f");
+    let exploration = explore_474(&system, hundred_limits(), None);
+    assert!(matches!(exploration.outcome, Outcome::Exhaustive(_)));
+    assert_eq!(
+        exploration.findings,
+        vec![qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 1,
+            findings: vec!["f".to_owned()],
+        }]
+    );
+
+    let horizon = explore_474(&system, hundred_limits(), Some(1));
+    assert_eq!(
+        horizon.outcome,
+        Outcome::BoundReached {
+            stats: qsl_eval::simulation::Stats {
+                states: 3,
+                transitions: 2,
+                depth: 1,
+            },
+            depth: 1,
+            frontier: vec![key("1"), key("2")],
+        }
+    );
+    assert_eq!(horizon.findings, vec![]);
+
+    // `max_states` 2 stops while 0 is mid-expansion: 0 goes back into the
+    // frontier, unexpanded, so neither 0 nor 2 has an entry.
+    let bounded_system = branch_graph().with_finding("0", "e").with_finding("2", "f");
+    let bounded = explore_474(
+        &bounded_system,
+        Limits {
+            max_states: 2,
+            ..hundred_limits()
+        },
+        None,
+    );
+    let Outcome::Bounded { ref frontier, .. } = bounded.outcome else {
+        panic!("expected Bounded, got {:?}", bounded.outcome);
+    };
+    assert_eq!(frontier, &vec![key("0"), key("1"), key("2")]);
+    assert_eq!(bounded.findings, vec![]);
+
+    let stopping = branch_graph()
+        .with_stop("1", EXHAUSTED)
+        .with_finding("1", "g");
+    let stopped = explore_474(&stopping, hundred_limits(), None);
+    assert!(matches!(stopped.outcome, Outcome::Stopped { .. }));
+    assert_eq!(stopped.findings, vec![]);
+}
+
+/// TC-474 steps 3 to 5, FR-101-AC-14: a stop at the trace's last state ends
+/// it `Stopped` and replays against the same system; replay refuses
+/// `ReplayError::Stopped` when the recomputed stop differs.
+#[trace("TC-474", "FR-101-AC-14")]
+#[test]
+fn tc_474_a_stopped_trace_replays_and_a_differing_stop_refuses() {
+    let stopping = short_chain().with_stop("1", EXHAUSTED);
+    let trace = sample_474(&stopping, 1, 4);
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].key, key("1"));
+    assert_eq!(
+        trace.provenance.as_ref().expect("sampled trace").stopped,
+        StopReason::Stopped(EXHAUSTED)
+    );
+    assert_eq!(replay(&stopping, &trace), Ok(()));
+
+    assert_eq!(
+        replay(&short_chain(), &trace),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: Some(EXHAUSTED),
+            replayed: None,
+        })
+    );
+    assert_eq!(
+        replay(&short_chain().with_stop("1", BROKEN), &trace),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: Some(EXHAUSTED),
+            replayed: Some(BROKEN),
+        })
+    );
+
+    let unstopped = sample_474(&short_chain(), 1, 1);
+    assert_eq!(unstopped.steps.len(), 1);
+    assert_eq!(
+        unstopped
+            .provenance
+            .as_ref()
+            .expect("sampled trace")
+            .stopped,
+        StopReason::StepLimit
+    );
+    assert_eq!(
+        replay(&stopping, &unstopped),
+        Err(ReplayError::Stopped {
+            step: 1,
+            recorded: None,
+            replayed: Some(EXHAUSTED),
+        })
+    );
+}
+
+/// TC-474 step 6, FR-101-AC-14: a sampled trace records the findings of the
+/// states it expands, and a trace whose recorded findings differ from the
+/// recomputed ones refuses `FindingMismatch` at that state. Seed 424246's
+/// step-0 draw selects index 1 of `n = 2`, successor 2.
+#[trace("TC-474", "FR-101-AC-14")]
+#[test]
+fn tc_474_replay_refuses_a_trace_whose_findings_differ() {
+    let system = branch_graph().with_finding("2", "f");
+    let trace = sample_474(&system, 424_246, 2);
+    assert_eq!(trace.initial, key("0"));
+    assert_eq!(trace.steps.len(), 1);
+    assert_eq!(trace.steps[0].key, key("2"));
+    assert_eq!(
+        trace.provenance.as_ref().expect("sampled trace").stopped,
+        StopReason::NoSuccessors
+    );
+    assert_eq!(
+        trace.findings,
+        vec![qsl_eval::simulation::StateFindings {
+            state: key("2"),
+            depth: 1,
+            findings: vec!["f".to_owned()],
+        }]
+    );
+    assert_eq!(replay(&system, &trace), Ok(()));
+
+    let mut edited = trace.clone();
+    edited.findings[0].findings.clear();
+    assert_eq!(
+        replay(&system, &edited),
+        Err(ReplayError::FindingMismatch { step: 1 })
+    );
+}
+
+// ---------------------------------------------------------------------------
+// TC-536: exploration limits publish their defaults.
+// ---------------------------------------------------------------------------
+
+/// TC-536 steps 1 and 2, FR-101-AC-15: `Limits::default()` publishes
+/// FR-255's defaults; a 3-state chain completes under them, and with
+/// `max_states` 2 it stops `Bounded` at `Limit::States` naming the value
+/// and the `explore.states` setting that raises it.
+#[trace("TC-536", "FR-101-AC-15")]
+#[test]
+fn tc_536_exploration_limits_publish_their_defaults() {
+    assert_eq!(
+        Limits::default(),
+        Limits {
+            max_states: 10_000_000,
+            max_transitions: 100_000_000,
+        }
+    );
+
+    let chain = EdgeGraph::new(vec!["0"], vec![("0", op("t1"), "1"), ("1", op("t2"), "2")]);
+    let completed = explore_outcome(
+        &chain,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        Limits::default(),
+        never_cancels,
+    )
+    .expect("bounded domains explore");
+    assert!(matches!(completed, Outcome::Exhaustive(_)));
+
+    let bounded = explore_outcome(
+        &chain,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        Limits {
+            max_states: 2,
+            ..Limits::default()
+        },
+        never_cancels,
+    )
+    .expect("bounded domains explore");
+    let Outcome::Bounded { limit, .. } = bounded else {
+        panic!("expected Bounded, got {bounded:?}");
+    };
+    assert_eq!(limit, Limit::States(2));
+    assert_eq!(limit.value(), 2);
+    assert_eq!(limit.setting(), "explore.states");
+    assert_eq!(Limit::Transitions(5).setting(), "explore.transitions");
 }

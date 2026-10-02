@@ -57,8 +57,12 @@ pub trait TransitionSystem {
     fn successors(
         &self,
         state: &Self::State,
-    ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop>;
+    ) -> ExpansionResult<Self::TransitionId, Self::State, Self::Finding>;
 }
+
+/// What [`TransitionSystem::successors`] returns: an [`Expansion`] or an
+/// [`ExpansionStop`].
+type ExpansionResult<T, S, F> = Result<Expansion<T, S, F>, ExpansionStop>;
 
 /// Caller-raisable resource limits on one exploration run (ADR-014 B-5,
 /// FR-255). The search horizon is `explore_request`'s `max_depth`, never a

@@ -56,4 +56,4 @@ Tag each test `#[trace("TC-455", "FR-101-AC-n")]` with its AC.
 
 ## Status
 
-🚧 Implemented except step 2's `BoundReached`, not yet implemented.
+✅ Implemented; passes locally.

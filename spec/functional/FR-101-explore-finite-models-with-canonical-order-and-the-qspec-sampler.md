@@ -393,33 +393,13 @@ repository (this repository's TC-210 is a witness-envelope case).
 
 ## Status
 
-AC-1 to AC-11 implemented. AC-12 to AC-14 (findings,
-`ExpansionStop`, `Outcome::Stopped`, `StopReason::Stopped` and the replay
-errors `FindingMismatch` and `Stopped`) are specified and not
-yet implemented; TC-474 is planned. `qsl-eval::simulation` exposes `explore_request`
-and `sample_request` as its only public entries; `explore`, `sample` and
-`Sampler` are `pub(crate)`. Exploration orders successors by ascending JCS
-transition-identity bytes, tie-broken by ascending post-state key bytes, and
-admits initial states in ascending state-key byte order. The state key is
-the JCS encoding of a `TransitionSystem`-supplied typed view, through
-`quire-canonical`; `Trace.initial`, `Step.key` and every `Frontier` entry
-hold `DigestRecord`s under `quire.simulation.state-key/v1`, and replay
-compares recomputed digests. Sampling runs the
-`quire.simulation.sampler/v1` generator under the preimage without
-`choice`; the `choice` preimage
-member, AC-3's vectors under it, and the identity-only check of AC-10 are
-not yet implemented. `CounterSampler` is deleted. `Outcome::BoundReached`
-and the removal of the depth member of `Limit` (AC-7) are not yet
-implemented. `Outcome::Cancelled` carries `cause: CatalogCode::new("cancelled",
-"caller-cancelled")`, asserted literally by both cancellation tests.
-`explore_request` and `sample_request` classify `domains` before calling any
-`TransitionSystem` method, returning `NotSimulated::RequiresBound`,
-`NotSimulated::Extent`, `NotSimulated::GeneratorMismatch` or
-`NotSimulated::EmptyInitial` as this requirement specifies.
-`NotSimulated::KeyEncoding` and `ReplayError::KeyEncoding` (FR-101-AC-11)
-refuse a `TransitionSystem::Key` or `TransitionId` with no RFC 8785 encoding
-instead of panicking. `NotSimulated` gives `catalog_code` and
-`catalog_fields` as inherent methods returning `Option`, `None` for
-`RequiresBound` (a negotiation disposition, never a refusal).
-`qsl-eval/tests/it/finite_simulation.rs` traces to FR-101, TC-453, TC-454
-and TC-455, and carries none of QSpec's `TC-210` or `FR-181-AC-*` tags.
+AC-1 to AC-15 implemented in `qsl_eval::simulation`; TC-439, TC-453 to
+TC-455, TC-474 and TC-536's `Limits` half pass locally in
+`qsl-eval/tests/it/finite_simulation.rs`, which carries none of QSpec's
+`TC-210` or `FR-181-AC-*` tags. `explore_request` and `sample_request` are
+the only public entries; `explore`, `sample` and `Sampler` are
+`pub(crate)`. `Outcome::category()` gives `Stopped` the category of its
+cause's code: incomplete for `resource_exhausted`, the catalog's category
+for any other catalogued code, and internal failure for a code the catalog
+does not define. The `TransitionSystem` reduction hooks are FR-162's and
+not yet implemented.

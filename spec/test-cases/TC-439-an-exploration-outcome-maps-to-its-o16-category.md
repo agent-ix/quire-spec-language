@@ -27,4 +27,4 @@ Verify `explore::Outcome::category()`. Scope: FR-097-AC-5.
 
 ## Status
 
-Backed: `qsl-eval/tests/it/finite_simulation.rs`, `tc_439_explore_outcomes_map_to_their_o16_category`; step 2's `BoundReached` is not yet implemented.
+Backed: `qsl-eval/tests/it/finite_simulation.rs`, `tc_439_explore_outcomes_map_to_their_o16_category`. Passes locally.

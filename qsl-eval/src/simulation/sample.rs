@@ -184,6 +184,10 @@ fn accepts(v: U256, quotient: U256, n64: u64, always_accepts: bool) -> bool {
     always_accepts || v < quotient.mul_u64(n64)
 }
 
+/// [`sample`]'s result: the trace, `None` for a system with no initial
+/// state, or the first encoding refusal reached.
+type SampleResult<T, F> = Result<Option<Trace<T, F>>, EncodingRefusal>;
+
 /// Draw one sampled run from `system`, starting at trace `trace_index mod m`
 /// among `system`'s `m` distinct initial states (no draw selects the
 /// start). Every state on the trace is expanded, the last included, and its
@@ -203,7 +207,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     seed: u64,
     trace_index: u64,
     max_steps: usize,
-) -> Result<Option<Trace<S::TransitionId, S::Finding>>, EncodingRefusal> {
+) -> SampleResult<S::TransitionId, S::Finding> {
     let mut initial = sorted_initial(system)?;
     if initial.is_empty() {
         return Ok(None);
