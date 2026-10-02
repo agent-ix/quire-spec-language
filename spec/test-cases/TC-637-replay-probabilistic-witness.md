@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-637", "FR-202-AC-n")]`.
 ## Expected Results
 
 - Step 1: `refuted` with `1/25` and `343/5000`.
-- Step 2: `invalid-value` twice; `revision-mismatch`; `inconclusive`, `ReplayParity`.
+- Step 2: `invalid-value` twice; `content-mismatch`; `inconclusive`, `ReplayParity`.
 - Step 3: `refuted`; `refuted`; `inconclusive`, `ReplayParity`.
 - Step 4: subsystem evidence that replays `refuted`; equal outcomes.

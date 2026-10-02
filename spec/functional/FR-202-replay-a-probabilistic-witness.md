@@ -115,7 +115,7 @@ pub fn replay_probabilistic_witness(
   event that evaluates the other way, or an unfair witness SHALL settle
   `inconclusive`, `ReplayParity`.
 - A digest with no matching successor SHALL refuse `stale_dependency`/
-  `revision-mismatch`; a step that is not enabled, a value outside its
+  `content-mismatch`; a step that is not enabled, a value outside its
   support, or a choice the scheduler gives probability 0 SHALL refuse
   `invalid_runtime_input`/`invalid-value`.
 
@@ -124,7 +124,7 @@ pub fn replay_probabilistic_witness(
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-202-AC-1 | §15.4's `Deliver`: a one-path set (`send_b` lost, `send_b` lost) with scheduler `send_b` at both live states replays `refuted` with path probability `1/25 > 3/100`. §15.2 at `2 ms`: the one-path set (`request`, `attempt` with `d = 3 ms`, `outcome = Ok`) replays with probability `343/5000 > 1/20`. | Test (TC-637) |
-| FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; with a post-state digest altered it refuses `stale_dependency`/`revision-mismatch`; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
+| FR-202-AC-2 | §15.4's path with its second step changed to `send_a` refuses `invalid_runtime_input`/`invalid-value` (not the scheduler's choice); with `lost` drawn as a value outside `{true, false}` it refuses the same; with a post-state digest altered it refuses `stale_dependency`/`content-mismatch`; the path listed twice settles `inconclusive`, `ReplayParity` (not prefix-free). | Test (TC-637) |
 | FR-202-AC-3 | §15.3's per-window claim is refuted with subsystem evidence: a dyadic `Lower` certificate for `Pr(not E)` with value above `1/100`, which replay accepts through FR-201's checker. FR-200-AC-2's `Coin2` witness replays `refuted` and passes the fairness check; the same witness with the scheduler taking `wait` at the live state forever fails the fairness check and settles `inconclusive`, `ReplayParity`. | Test (TC-637) |
 | FR-202-AC-4 | With `max_witness_paths` 0, §15.4's refutation carries subsystem evidence instead of a path set and still replays `refuted`. Replaying one envelope twice gives equal outcomes. | Test (TC-637) |
 | FR-202-AC-5 | FR-196-AC-5's `Undefined` evidence replays `refuted`; the same evidence with `where` set to 0 settles `inconclusive`, `ReplayParity`. | Test (TC-641) |
