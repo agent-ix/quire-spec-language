@@ -112,23 +112,18 @@ type.
 ### Nesting depth
 
 Checking a function body walks its expressions to type them, to prove their
-static definedness and to lower them. Each walk keeps the expressions it has
-still to finish on a heap stack. Four helpers that the definedness walk
-calls on one expression still recurse once per level of that expression:
-`outcomes` (the facts a condition establishes), `interval` (an integer
-expression's proved range), `stable_path` (a guarded read's path) and
-`shape` (an argument's shape, through `stable_path`). The check stage's
-depth limit (`CheckingLimits`, at most `MAX_CHECKING_DEPTH`) bounds all
-nesting, that recursion included. Typing counts each expression it enters as one level
-and stops on a body nested past the limit with a stage limit of kind
-nesting depth, reported as `stage_limit_exceeded`/`nesting-depth-exceeded`
-(the `quire.native.diagnostics/v1` `stage_limit_exceeded` row; FR-096), before any node of it is lowered. The
-walk that measures a declaration before typing (FR-062's input bytes, node
-count and work) and the syntactic checks of a `pre(…)` operand walk the
-parsed expression on a heap stack too, so a body nested past every limit
-refuses on a limit. The dispatch bridge copies each clause, and renames an
-inherited precondition into a redefinition's parameters, on a heap stack
-as well, so a nested clause reaches the check stage and refuses there.
+static definedness and to lower them. Every such walk, including the
+definedness helpers `outcomes` (the facts a condition establishes),
+`interval` (an integer expression's proved range), `stable_path` (a guarded
+read's path) and `shape` (an argument's shape), keeps the expressions it has
+still to finish on an explicit heap stack, so a body of any depth is checked
+within the check stage's node, input-byte and work limits
+([FR-258](FR-258-check-and-lower-expressions-at-any-depth.md), ADR-030
+D-4.3). The walk that measures a declaration before typing (FR-062's input
+bytes, node count and work) and the syntactic checks of a `pre(…)` operand
+walk the parsed expression on a heap stack too. The dispatch bridge copies
+each clause, and renames an inherited precondition into a redefinition's
+parameters, on a heap stack as well.
 
 Each walk closes a binder's scope when the binder's body is done, and walks
 every operand. A `let`, `count`, `sum`, query or `fold` binder is out of scope
@@ -298,9 +293,9 @@ The list has these properties:
   each declared composite of the package at most once, passes between two
   entries only the finitely many `inner`, `field` and `position` segments
   of one field or position type, and ends at the first reentry. The walk
-  refuses past the check stage's depth limit as every FR-092 walk does.
+  runs over an explicit heap stack, one frame per entered type (FR-258).
   Because rule 3 ends each path at its first reentry, a recursive type's
-  walk is as deep as its composites' nesting, not as deep as the limit.
+  walk is as deep as its composites' nesting.
 - **Lossless.** The expanded leaf set is computed from the list alone, so
   the list determines every text leaf of the type's unfolding, with its path
   and profile. Two types whose text leaves differ in any path or profile
@@ -713,7 +708,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-11 | Structural equality over `record R { t?: Text[0, 64; nfc]; }` and over `record S { t: Option<Text[0, 64; nfc]>; }` each carries one leaf, path `field:t`, `inner`; over `record W { t: Text[0, 64; nfc]; }` one leaf, path `field:t`. Structural equality and `contains` over FR-092's recursive `List`, which reaches no `Text` type, carry no leaves. Structural equality over `record Tree2 { label: Text[0, 8; binary-utf8]; kids: Sequence<Tree2>[0, 3]; }` carries `field:label`, then `field:kids`, `inner`, `recursion:0`; over `record Two { x: Node; y: Node; }` it carries `field:x`, `field:label`; `field:x`, `field:next`, `inner`, `recursion:1`; `field:y`, `field:label`; `field:y`, `field:next`, `inner`, `recursion:1`. `eq` of the Recursive text-leaf vectors, lowered with lock evidence that supplies no text-profile definition, refuses with `missing_declaration`/`missing-selection` naming role `text_profile`, and yields no node; lowered with a node limit (`CheckingLimits`) that admits every node of its package but not also its two leaves, it stops with `stage_limit_exceeded`/`node-count-exceeded` at the node limit's bound, and yields no node. | Test (TC-415) |
 | FR-093-AC-12 | For every node of the checked package of AC-7, of the package of the recursive `f` and of a package holding `record Tree { kids: Sequence<Tree>[0, 3]; }`, the emitted `dependencies` equal the list that rules 1 to 5 of Node dependencies rebuild from the node as written. In ascending digest order, E1 lists P2 and P1; F2 `both` lists P2, P1 and E1; E2 lists L1, F2 and P1; T1, L1 and P1 list none. In the package of the recursive `f`, T4 `Int[0, 9]` lists T2, G4 lists G5 and P4, G5 lists L1, E11 and G6, and G6 lists G4 and E13. In the `Tree` package, G7 lists G9, G8 lists G7 and G9 lists G8. | Test (TC-416) |
 | FR-093-AC-13 | For each application node of QSpec's `positive-operation-identities.json` and `positive-control-operations.json` whose `operation.identity` a row of the application table lowers, the node emitted for a function whose body holds that operation equals the fixture node in `node_tag`, `semantic_form`, `operator`, `operation.identity`, law roles in order, `mode`, member `kind` and `name`, leaf `path`s and modes, and argument term kinds and binding names, and IR's v2 reader admits the emitted package. The comparison reads none of the members Comparison with QSpec's v2 positive fixtures places outside it. The rows AC-3 excludes (`Attribute`, `AllInstances`, `Lookup`, `Dispatch`, `Pre`) are outside the comparison. | Test (TC-416) |
-| FR-093-AC-14 | On a thread with a 2 MiB stack, at the default limits, a function body of 127 nested `a and (…)` checks and one of 128 stops with `stage_limit_exceeded`/`nesting-depth-exceeded`, bound 128, at the first expression past depth 128. Each nested form TC-415 step 10 lists checks at the deepest nesting the default limits admit, or refuses there on its own unproved obligation, and stops with `nesting-depth-exceeded` one level deeper. Each of those forms nested 1,000 deep stops with `nesting-depth-exceeded` at the default limits, at the maximum depth with node, input-byte and work limits unlimited, and at a depth limit of 16. A postcondition `pre(…)` over 1,000 nested levels refuses. | Test (TC-415) |
+| FR-093-AC-14 | On a thread with a 512 KiB stack, at the default limits, a function body of the longest nested `a and (…)` chain the default S1 limits admit checks with no outcome naming a depth. Each nested form TC-415 step 10 lists, nested 1,000 deep with S1 and S3 limits raised to fit it, checks or refuses on its own unproved obligation, the same way it does nested 2 deep. A postcondition `pre(…)` over 1,000 nested `a and (…)` refuses as a forbidden pre-read. | Test (TC-415) |
 | FR-093-AC-15 | With the alias `Total = Integer` and parameters `x: Int[0, 9]` and `s: Sequence<Int[0, 9]>[0, 5]`, reading `v` after `let v = x in v`, `count<Total>(v in s: v < 5)`, `sum<Total>(v in s: v)`, `forall(v in s: v < 5)` or `fold<Total>(acc, v in s: acc + v, identity: 0)` refuses with `missing_declaration`/`missing-name` naming `v`, and reading `acc` after that `fold` refuses naming `acc`. Each of those forms beside a copy of itself that binds the same name checks. After `f`'s four parameters, `let v = x in ((let w = x in w) + (let u = x in v + u))` lowers `v` at level 4 and both `w` and `u` at level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. `if a then value(o) else 0` and `if a then 0 else value(o)`, over `o: Option<Int[0, 9]>`, each refuse with `undefined_expression`/`unproved-presence` alone. `if present(o) then value(o) else 0` checks. | Test (TC-415) |
 | FR-093-AC-16 | The v2 emission arm writes `CheckedPackage::dependency_selections` as FR-322 `dependency_selections`: one `{identity, version, package_id}` entry per library identity, `package_id` in the `quire.package.semantic/v2` domain, in ascending UTF-8 byte order of `identity` (`test/\u{FF61}` before `test/\u{1F600}`, the reverse of UTF-16 order), identical in the lock and the identity preimage. A package linked with two imports reads back Verified through QSL's I2 read with exactly those entries in both members, and its `package_id` differs from the same graph linked with none. QSL's I2 read over QSpec's `dependency-selection-vectors.json` recomputes the recorded `package_id`, refuses each authored entry mutation at the mutated entry, and gives each order vector its recorded outcome at its last recorded locus, since IR's refusal carries one path (`make conformance`). | Test (TC-416) |
 | FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix`, identity `quire.native.diagnostics/v1`, revision namespace `quire-draft` and the value QSpec's `native-diagnostics.md` header declares, digest domain `quire.definition.bytes/v1`, and the SHA-256 of that document's bytes as its digest, and IR's v2 reader admits the package. | Test (TC-416) |

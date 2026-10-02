@@ -294,8 +294,8 @@ compound unit a checked quantity type names, so reaching one of these is a
 fault in `check`, not in the input.
 
 Building a `Reference`, `Population` or compound-unit type node walks the type
-tree within FR-092's depth limit (`CheckingLimits`), with FR-092's refusal
-when the walk would pass it.
+tree as FR-092 does, over an explicit heap stack within the check stage's
+limits (`CheckingLimits`).
 
 ### Golden vectors
 
@@ -690,8 +690,8 @@ Key: `02df6b0ff98d087f2807cd502d84ac503dffe56d1a4af72067975a22f7be7023`
 ## Dependencies
 
 - [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): the
-  `quire.structural-node/v1` preimage, the type and function node shapes, the
-  depth limit and vectors T1 to T4, L1 and L2.
+  `quire.structural-node/v1` preimage, the type and function node shapes, its
+  type walk and vectors T1 to T4, L1 and L2.
 - [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md): the
   `Attribute`, `AllInstances`, `Lookup` and `Dispatch` application rows whose
   members and types this requirement keys.

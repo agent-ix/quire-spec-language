@@ -28,7 +28,7 @@ mutated document except where the row says otherwise.
 | --- | --- | --- | --- |
 | 1 | 1.1 | selected snapshot missing from the provision | `Incomplete`, `unavailable_observation`/`missing-required-artifact` |
 | 2 | 1.2 | snapshot of 1 MiB + 1 byte | `stage_limit_exceeded`, `input-bytes-exceeded` |
-| 3 | 1.2 | a field value nested 10,000 `present` levels deep, within the byte limit | the same code and cause as that field value nested 2 levels deep; no outcome names a depth |
+| 3 | 1.2 | a field value nested 10,000 `present` levels deep, within the byte limit | the same code and cause as that field value nested 2 levels deep (FR-261); no outcome names a depth |
 | 4 | 1.3 | the snapshot's bytes edited (`child.versionNumber` `"3"`), kept under the original digest | `stale_dependency`/`content-mismatch` |
 | 5 | 1.4 | `format` `native-state-input/1` | `unknown_wire`/`unsupported-wire` |
 | 6 | 1.5 | `populations` removed | `invalid_runtime_input`/`missing-member` |

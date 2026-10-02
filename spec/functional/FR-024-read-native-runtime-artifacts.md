@@ -41,8 +41,9 @@ cause determines its stage and code through one exhaustive classification.
 
 ## Behavior
 
-The reader shall bound input bytes before hashing or decoding using the clamped
-artifact-byte ceiling.
+The reader shall bound input bytes before hashing or decoding using the
+caller-configured artifact-byte limit, used as given, with its published
+default.
 The reader shall verify the selected digest before interpreting JSON.
 The reader shall use Serde to decode a closed envelope with all fields present.
 The reader shall reject an unknown version or foreign artifact kind before typed

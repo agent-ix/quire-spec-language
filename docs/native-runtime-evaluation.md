@@ -99,7 +99,7 @@ Entry is recorded after the next non-Group operand node passes cancellation and
 its expression-step budget, immediately before operand work. Grouping preserves
 the original operand region but adds no step. Exhaustion before that entry
 produces no entry event. A completed antecedent records its actual Boolean
-before selecting the consequent. Entry preflights expression, active-depth and
+before selecting the consequent. Entry preflights expression and
 event capacity before committing either the expression step or entry event.
 If an entry cannot be stored, no expression step is charged for that operand's
 first node. AntecedentCompleted is a separate event-capacity check after actual
@@ -155,8 +155,9 @@ source grouping retains lineage while preserving these step counts.
 
 ## Auxiliary bounded work and cancellation
 
-NFR-006 separately bounds deep value comparisons, text inspection, events and
-stack depth. A value-comparison visit charges before inspecting one pair of
+NFR-006 separately bounds deep value comparisons, text inspection and events.
+Nesting depth is not a limit: evaluation walks nested values and expressions
+over explicit heap stacks. A value-comparison visit charges before inspecting one pair of
 value nodes, including record/container roots; text charges one scalar-inspection
 step per side advanced, including the final end check. This bounds long equal
 prefixes and repeated deep comparisons while leaving expression/graph accounting

@@ -109,7 +109,7 @@ so a contradicting assertion is refused rather than absorbed. Evaluation without
 a ledger stands on the trace's own assertions alone and detects no contradiction
 across calls.
 
-Caller-lowered ceilings arrive as explicit values under
+Caller-configured limits arrive as explicit values under
 [NFR-008](../non-functional/NFR-008-bound-temporal-evaluation.md). The evaluator
 consumes no ambient clock, installed default profile, file ordering, ingestion
 order or backend capability report.

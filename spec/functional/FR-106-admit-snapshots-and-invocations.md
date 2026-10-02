@@ -50,9 +50,13 @@ that compares only reference-valued fields (`PopulationMember::field_values`,
   digest to document bytes.
 - A `ClauseSelection`.
 - `ObservationLimits`: document bytes (default 1 MiB), objects per
-  document (default 10,000) and values per document (default 100,000).
-  Documents are read at any nesting depth; the byte, object and value
-  limits bound the read.
+  document (default 10,000) and values per document (default 100,000),
+  each named by its setting
+  ([FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md)).
+  Documents are read through `quire-canonical`'s shared reader at any
+  nesting depth
+  ([FR-261](FR-261-read-other-untrusted-json-at-any-depth.md)); the byte,
+  object and value limits bound the read.
 
 ## Outputs
 
@@ -185,7 +189,8 @@ required; check 10 settles it.
       `missing-required-artifact` (missing observation evidence is
       incomplete input, QSpec state contract).
    2. If the bytes exceed the document byte limit, then admission SHALL
-      refuse `stage_limit_exceeded`/`input-bytes-exceeded`.
+      refuse `stage_limit_exceeded`/`input-bytes-exceeded` naming setting
+      `observation.input_bytes`.
    3. If the document's `sha256-jcs` digest differs from the selected digest,
       then admission SHALL refuse `stale_dependency`/`content-mismatch`
       (QSpec FR-272-AC-14).

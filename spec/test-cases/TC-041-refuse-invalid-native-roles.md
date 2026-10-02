@@ -23,7 +23,9 @@ Construct sequence declarations with maxima 10,000, 10,001 and u32::MAX through
 both actual IR constructors and the JSON model frontend. Cover a used field,
 an unused record field, an unused value, and inner/outer collection wrappers
 under options. Confirm that decoding into a ModelDraft succeeds before judging
-admission, and that raising model work limits cannot admit an oversized maximum.
+admission. At the default `sequence_maximum` of 10,000, 10,001 refuses with
+resource_exhausted naming that limit; raised to 10,001 through ModelLimits, it is
+admitted. Raising other model work limits does not admit it.
 
 ## Expected Results
 

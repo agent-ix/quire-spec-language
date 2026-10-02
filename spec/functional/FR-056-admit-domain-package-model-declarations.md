@@ -103,10 +103,12 @@ has one digest: `18446744073709551615` and `18446744073709551616` both digest
 as `18446744073709552000`. Declarations read an integer within the 64-bit
 signed or unsigned range exactly as written; only the digest reads the double.
 
-If the selected bytes exceed `agent-ix-semantic-ir`'s input-size limit, or
-carry a value enclosed by that reader's depth limit or more arrays and objects,
+If the selected bytes exceed the intake byte limit (`intake.input_bytes`),
 then the compiler SHALL refuse the package with
-`resource_exhausted`/`intake-limit-exceeded`, naming the limit and its bound.
+`resource_exhausted`/`intake-limit-exceeded`, naming the limit, its bound and
+its setting. A document of any nesting depth is read through
+`quire-canonical`'s shared reader and judged on its content
+([FR-260](FR-260-admit-semantic-ir-documents-at-any-depth.md)).
 This refusal comes after FR-154's check 2 and before its check 3.
 
 ### Admission

@@ -48,7 +48,7 @@ The immutable `linking::composed::binding::Report`, its original source units,
 definition closures, admitted domain-package model declarations and their export
 records, and lexical/anchor bindings; exact
 authored formal correspondence needed by the selected proof interface; and finite
-caller-lowered checking limits. A declaration must have completed name binding
+caller-configured checking limits. A declaration must have completed name binding
 before dependent type checking. Concrete observations, populations, clocks,
 invocation values and backend instances are absent from static checking inputs.
 
@@ -113,7 +113,7 @@ redefine the selected profile's complete admitted forms.
 
 ## Work accounting
 
-The compiler SHALL expose a versioned checking-accounting contract, finite default and hard capacities, effective caller-lowered limits and consumed work in every report.
+The compiler SHALL expose a checking-accounting contract, published default capacities, the effective caller-configured limits (each used as given, with no ceiling) and consumed work in every report.
 
 The public contract defines deterministic stage/traversal order and the following
 charges before their work. Retained inputs may be borrowed; copying them cannot
@@ -126,7 +126,6 @@ evade the byte or structure charges. Parser and binding budgets remain separate.
 | Type and dependency work | Each constraint creation/inspection, type-wrapper traversal/copy, resolution attempt and native call/dependency-edge visit, including shared dependencies and cache hits. |
 | Proof and guard work | Each inspected/propagated fact, generated symbolic value/graph node, proof goal and materialized IR node, with both per-goal and total expansion limits. Rational normalization/arithmetic steps have explicit charged work before computation. |
 | Retained output | Each created type/result/cause/runtime-role record and retained dependency or provenance entry, before allocation/copy. |
-| Depth | The active native/type/predicate/proof depth is checked before descent or expansion; bounded input size alone does not waive depth limits. |
 
 If the next charge exceeds an effective limit or overflows its counter, then the compiler SHALL stop unfinished checking work with typed resource exhaustion retaining the dimension, limit, prior usage and source-owned next operation.
 
@@ -143,7 +142,7 @@ configuration provenance, separate from selected semantic identities.
 | FR-040-AC-2 | StateCore refuses predicate/query-extension/graph forms where absent from its catalog; StateQueries admits its typed extension while refusing graph forms; StateGraph admits its eligible graph forms. Unused or unreachable prohibited forms still refuse and a wider caller cannot upgrade a callee. | Test (TC-119) |
 | FR-040-AC-3 | Exact parameter arity/order, nominal model/scalar/unit identity, enum/text/option/sequence constraints and Boolean roots distinguish valid inputs from same-spelled foreign types, ambiguous literals, wrong arguments and forbidden coercions or status-as-Boolean. | Test (TC-119) |
 | FR-040-AC-4 | Inclusive integer extrema and guarded arithmetic preserve exact bounds. Rational normalization-before-bounds, zero denominator, exact division/nonzero guards and result-domain failures follow the selected contract. Missing model/proof representation, including unsupported rational sum-domain transfer, yields an explicit unsupported prerequisite and leaves the corresponding full-feature acceptance outstanding. | Test (TC-119) |
-| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. Domain-package sequence maxima are 1..10,000; declared maxima 0 and 10,001 refuse at model admission. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-lowered exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
+| FR-040-AC-5 | All eight ordered query forms retain their exact binder/result shape. A declared sequence maximum of 0 refuses at model admission, and one above model admission's `sequence_maximum` limit (published default 10,000; FR-015) refuses there naming that limit and admits once the limit is raised to fit it. An admitted collection may be empty at runtime, and checking admits provably empty filter results. Each form, including sum, checks otherwise valid domains at maximum 10,000 with sufficient effective proof limits; caller-limit exhaustion remains distinct from semantic refusal. The declared Amount 1..20/U, N=5, Total 0..100/U, Count 0..5 case checks; N=6 against those result domains, wrong units/representation or an unproved intermediate prefix refuse despite a convenient sample/final sum. | Test (TC-119) |
 | FR-040-AC-6 | Guard-before-use and immutable aliases discharge supported presence/range obligations; reversed guards, invalid alternative joins, foreign receiver/observation and pre-retagged captures refuse at their original loci. Valid composite pre reads and same-invocation immutable parameters retain distinct provenance. | Test (TC-119) |
 | FR-040-AC-7 | Graph/context/operation/capture uses emit typed declaration-owned runtime requirements with exact universe, anchor, scope/completeness and frame selections without observations. Same-named roles, foreign universes and opaque scalar/relationship substitutions cannot satisfy them. | Test (TC-119) |
 | FR-040-AC-8 | Exact authored formal correspondence permits actual supported IR discharge. Omitted, duplicate, changed-source, foreign-declaration or wrong-execution-point correspondence prevents dependent proof without synthetic ownership. Unproved definedness, unsupported prerequisite and resource exhaustion retain distinct typed causes; typing remains inspectable. | Test (TC-119) |

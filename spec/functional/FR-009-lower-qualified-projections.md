@@ -14,7 +14,7 @@ When a backend projection is requested, the compiler shall lower only features q
 
 ## Inputs
 
-A `NativePackage` and caller-lowered projection limits. The initial named target
+A `NativePackage` and caller-configured projection limits. The initial named target
 is `boolean-oracle/v1`, matching the existing code generator's Boolean domain.
 
 ## Outputs
@@ -53,14 +53,16 @@ unreferenced native declarations and object roles remain covered by native
 identity, not an invented IR declaration. A projection is neither a runtime-input
 validation result nor a retained proof attestation.
 
-The compiler shall bound lowering to 10,000 visited native nodes, depth 64 and
-16 MiB serialized output, with caller limits able only to lower these ceilings.
+The compiler shall bound lowering by caller-configurable visited native node and
+serialized output byte limits, with published defaults of 10,000 nodes and
+16 MiB that a caller may raise or lower, each used as given. Nesting depth is not
+a limit (ADR-030 D-1): lowering walks nested nodes over an explicit heap stack.
 If a limit is exhausted, then the compiler shall return no projection; retrying
 uses fresh counters. The compiler shall serialize through Serde with writes
 stopped before exceeding the byte budget. The existing
 binder and backend retain their own additional refusal limits.
-The native checker also caps source nodes at 10,000 and depth at 64; lowering
-retains these ceilings as an additional guard over already checked packages.
+The native checker bounds source nodes by its own node limit (FR-016); lowering
+applies its own node limit as an additional guard over already checked packages.
 
 ## Acceptance Criteria
 

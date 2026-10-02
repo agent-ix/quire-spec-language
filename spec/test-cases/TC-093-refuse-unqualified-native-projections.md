@@ -17,8 +17,8 @@ Verify whole-package refusal and bounded fresh lowering work.
 After successful native checking, request lowering for reference dereference,
 numeric comparison, locals, conditionals and quantification, including a bad
 clause after a healthy clause. Exercise mixed authored packages and revisions.
-For a healthy fixture independently count nodes/depth and emitted bytes; request
-zero, exact, one-below and above-hard limits. Retry with default limits.
+For a healthy fixture independently count nodes and emitted bytes; request
+zero, exact, one-below and raised-above-default limits. Retry with default limits.
 
 ## Expected Results
 

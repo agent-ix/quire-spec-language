@@ -108,12 +108,12 @@ names different artifacts in each.
 | TC-217 | The model binder is a pure function with no cross-run ambient state | Unit | P1 | FR-081-AC-5 | 🚧 Planned; #120 |
 | TC-218 | Redefinition variance checking reports every failing axis, not only the first | Unit | P1 | FR-082-AC-1 | ✅ Passed locally |
 | TC-219 | A missing redefinition target and a supertype cycle each refuse with a named cause | Unit | P1 | FR-082-AC-2, FR-082-AC-6 | ✅ Passed locally |
-| TC-220 | A conformance ancestor walk past the bound refuses instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6, FR-082-AC-7 | ✅ Passed locally; the type-environment ceilings are `stage_limit_exceeded` (ADR-014 B-3) |
+| TC-220 | A conformance ancestor walk that exhausts its edge limit stops incomplete instead of truncating | Unit | P1 | FR-082-AC-3, FR-082-AC-6, FR-082-AC-7 | 🚧 Planned (ADR-030: `ancestor_steps` is a charged edge-count limit, not a depth ceiling) |
 | TC-221 | A narrowing field redefinition requires an established postcondition | Unit | P1 | FR-082-AC-4 | ✅ Passed locally |
 | TC-222 | Dispatch selects the descendant candidate independent of declaration order | Property | P1 | FR-083-AC-1 | ✅ Passed locally |
 | TC-223 | No-applicable-candidate and multiple-undominated-candidates are named separately | Unit | P1 | FR-083-AC-2 | ✅ Passed locally |
 | TC-224 | An ambiguous family produces no dispatch table, not even for subtypes that resolved cleanly | Unit | P1 | FR-083-AC-3 | ✅ Passed locally |
-| TC-225 | A dispatch family deeper than the bound refuses instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | ✅ Passed locally |
+| TC-225 | A dispatch family walk that exhausts its edge limit stops incomplete instead of reporting a false unique winner | Unit | P1 | FR-083-AC-4 | 🚧 Planned (ADR-030: `family_steps` is an edge-count work limit, not a depth ceiling) |
 | TC-226 | Population admission distinguishes unknown closure from a genuine refusal | Unit | P1 | FR-084-AC-1 | ✅ Passed locally |
 | TC-227 | allInstances requires both object and subtype closure, never a partial set | Unit | P1 | FR-084-AC-2 | 🚧 Planned; #120 |
 | TC-228 | lookup returns the declared absence mode for a genuinely unmatched key | Unit | P1 | FR-084-AC-3 | ✅ Passed locally |
@@ -162,7 +162,7 @@ names different artifacts in each.
 | TC-297 | Kernel admits, plan_pairs and compare_keys refuse a population pair | Unit | P1 | FR-089-AC-6 | ✅ Passed locally |
 | TC-376 | Function application checking accepts a well-typed call and refuses wrong arity, an unknown name and a type mismatch | Unit | P1 | FR-065-AC-4 | ✅ Passed locally |
 | TC-377 | Function declaration checking accepts a well-typed declaration, reports its calls, and refuses an ill-typed body | Unit | P1 | FR-065 | ✅ Passed locally; verifies FR-065's behavior generally, not a specific AC |
-| TC-378 | A real recursive-descent fixture shows the nesting-depth limit is the proximate cause of a function-declaration refusal | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | ✅ Passed locally (S-5b) |
+| TC-378 | On a nested fixture, the node limit is the proximate cause of a function-declaration stop | Unit | P1 | FR-062-AC-7, FR-096-AC-11 | 🚧 Planned (ADR-030: node limit replaces the deleted depth limit) |
 | TC-379 | E3 resolves an imported name to its PackageNodeKey and refuses a missing or ambiguous one | Unit | P1 | FR-087-AC-13 | 🚧 Steps 1 and 3 pass locally; steps 2 and 4 unreachable as written; see TC-379 Status |
 | TC-380 | The function-declaration contract check refuses an ill-typed declaration and admits a well-typed one | Unit | P1 | FR-065-AC-7 | ✅ Passed locally |
 | TC-381 | The expression-node limit bounds the whole checked package, not each declaration | Unit | P1 | FR-062-AC-11 | ✅ Passed locally: the whole-package count refuses as `ResourceExhausted` with the node-count stage-limit cause, code `stage_limit_exceeded` |
@@ -180,7 +180,7 @@ names different artifacts in each.
 | TC-394 | Each Value expression construct maps to its Expression variant, with grouping from the CST | Unit | P1 | FR-091-AC-3 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-395 | S2 refuses an inadmissible source and a unit holding a declaration with no dispatch entry | Unit | P1 | FR-091-AC-4, FR-091-AC-5, FR-091-AC-6 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-396 | S2 refuses unrepresented constructs, and the check stage refuses another family's construct with that family's cause | Integration | P1 | FR-091-AC-7, FR-091-AC-8 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`) |
-| TC-397 | S2 bounds expression depth by its explicit limit, independently of S1 | Unit | P1 | FR-091-AC-9 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
+| TC-397 | S2 builds every body S1 admits, whatever its depth | Unit | P1 | FR-091-AC-9 | 🚧 Planned (ADR-030: S2 depth limit deleted) |
 | TC-398 | The Value form builder depends only on layer 2, layer 1, F and K, and its forms hold no ValueType or NodeKey | Unit | P1 | FR-091-AC-11 | ✅ Passed locally: step 1's crate edges (`tests/it/family_outcome_layering.rs`) and step 2 over the existing forms types (`qsl-forms/tests/it/identity_free_forms.rs`) pass locally; step 3's `_`-arm scan passes locally (`identity_free_forms.rs`); step 1's family-module edges pass locally (`identity_free_forms.rs`) |
 | TC-399 | Source compiled through S1, S2 and the assembler checks and evaluates a called function | Integration | P1 | FR-091-AC-12, FR-091-AC-13 | ✅ Passed locally (`qsl-eval/tests/it/source_call.rs`, `qsl-semantics/src/check/assemble/tests.rs`) |
 | TC-400 | The assembler refuses unresolved and ambiguous names, ill-formed bounds and alias cycles, reporting every error | Unit | P1 | FR-091-AC-14, FR-091-AC-15, FR-091-AC-16, FR-091-AC-17 | ✅ Passed locally (`qsl-semantics/src/check/assemble/tests.rs`) |
@@ -189,16 +189,16 @@ names different artifacts in each.
 | TC-403 | Every Value Expression node carries the span of its CST node | Unit | P1 | FR-091-AC-10 | ✅ Passed locally (`qsl-forms/tests/it/value_forms.rs`) |
 | TC-404 | format takes the qsl-cst ParsedSource, formats complete-V1 source and refuses inadmissible input | Unit | P1 | FR-003-AC-7, FR-003-AC-8 | ✅ Passed locally |
 | TC-405 | The assembler admits floating types and refuses unresolved model references | Unit | P1 | FR-091-AC-19, FR-091-AC-23, FR-091-AC-24 | ✅ Passed locally |
-| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Partial: S2 and assembler causes pass locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`); `stage_limit_exceeded` code needs S-5b; the enum, dimension and unit causes pass locally; the topology cause STD-112 |
+| TC-406 | Each S2 and assembler cause maps to its catalog code with an exhaustive match | Unit | P1 | FR-091-AC-21 | 🚧 Partial: S2 and assembler causes pass locally (`qsl-forms/tests/it/value_forms.rs`, `qsl-semantics/src/check/assemble/tests.rs`); `stage_limit_exceeded` code needs S-5b; the enum, dimension and unit causes pass locally; the topology cause STD-112; depth steps re-planned for ADR-030 |
 | TC-407 | A false dispatched precondition reaches the caller as a family-owned undefined result, not a kernel Undefined | Integration | P1 | FR-090-AC-11 | ✅ Passed locally |
 | TC-408 | An absent lookup key reaches the caller as a StateModel undefined result, and an absent-refused lookup as a refusal | Integration | P1 | FR-090-AC-12 | ✅ Passed locally |
 | TC-409 | An enum value's VariantId is its FR-141 member node key, and its rank orders sets and bags | Unit | P1 | FR-088-AC-11 | ✅ Passed locally; steps 2-6 via retagged tests, step 7 new |
 | TC-410 | Each connected supertype component has its own object universe, and a reference key carries the authored object identity | Unit | P1 | FR-084-AC-7 | 🚧 Planned |
 | TC-411 | A quantity UnitId is a declared unit's node key or a compound unit's digest, and the two never compare equal | Unit | P1 | FR-088-AC-12 | ✅ Passed locally; step 3 runs under `make conformance` |
 | TC-412 | The assembler resolves each using alias to a declared profile selection and refuses an undeclared one | Unit | P1 | FR-091-AC-22 | ✅ Passed locally |
-| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | ✅ Passed locally (#384) |
+| TC-413 | Type and declared record nodes key to the structural-node golden vectors, scoped only by owner | Unit | P1 | FR-092-AC-1, FR-092-AC-2, FR-092-AC-3, FR-092-AC-7, FR-092-AC-8, FR-092-AC-9, FR-092-AC-11, FR-092-AC-12 | ✅ Passed locally (#384); depth steps re-planned for ADR-030 |
 | TC-414 | Parameter, literal and function nodes key to the golden vectors, and a function key carries its owner | Unit | P1 | FR-092-AC-4, FR-092-AC-5, FR-092-AC-6, FR-092-AC-10 | ✅ Passed locally (#384) |
-| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Passed locally (#384) except step 6's first half, which needs the QSpec lock accessor |
+| TC-415 | Each checked Value expression lowers to its FR-322 node with its catalogued operation | Unit | P1 | FR-093-AC-1, FR-093-AC-2, FR-093-AC-3, FR-093-AC-4, FR-093-AC-5, FR-093-AC-6, FR-093-AC-8, FR-093-AC-10, FR-093-AC-11, FR-093-AC-14, FR-093-AC-15 | 🚧 Passed locally (#384) except step 6's first half, which needs the QSpec lock accessor; depth steps re-planned for ADR-030 |
 | TC-416 | The v2 emission arm writes the nodes check lowered, and each emitted node recomputes to its node id | Integration | P1 | FR-093-AC-7, FR-093-AC-9, FR-093-AC-12, FR-093-AC-13, FR-093-AC-16, FR-093-AC-17, FR-093-AC-18, FR-093-AC-19 | 🚧 Partial; FR-093-AC-13 passes locally under `make conformance`, `float64.add` `mode` included; FR-093-AC-16 passes locally; FR-093-AC-17 passes locally; FR-093-AC-18 passes locally; FR-093-AC-19 passes locally |
 | TC-417 | Model declaration, Reference and Population nodes key to the golden vectors under ModelOwner | Unit | P1 | FR-094-AC-1, FR-094-AC-2, FR-094-AC-3, FR-094-AC-4, FR-094-AC-7 | ✅ Passed locally (#384) |
 | TC-418 | Clause function nodes key to the golden vectors with the operation member's ModelOwner | Unit | P1 | FR-094-AC-5 | ✅ Passed locally (#384) |
@@ -206,16 +206,16 @@ names different artifacts in each.
 | TC-420 | Occurrence keys and source regions are lexical values, and every checked node has an occurrence | Unit | P1 | FR-095-AC-1, FR-095-AC-2 | ✅ Passed locally |
 | TC-421 | The package source map carries the wire's source map, and a location resolves or refuses by cause | Integration | P1 | FR-095-AC-3, FR-095-AC-4 | ✅ Passed locally; step 4 (QSpec positive fixtures) under `make conformance` |
 | TC-422 | Each Locus variant resolves to regions by its own rule, and the artifact pointer is RFC 6901 | Unit | P1 | FR-095-AC-5, FR-095-AC-6 | ✅ Passed locally |
-| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | ✅ Passed locally: ceilings bind and are recorded, and each refusal asserts `stage_limit_exceeded` with its limit's cause |
+| TC-423 | The default checking ceilings bind wide and long leaf lists, admit large enum packages, and are recorded with the result | Unit | P1 | NFR-011-M-1 (node refusal: step 1), NFR-011-M-2 (step 3), NFR-011-M-3 (byte refusal before work: step 4), NFR-011-M-4 (work refusal: step 5; enum package admitted: step 4) | ✅ Passed locally: ceilings bind and are recorded, and each refusal asserts `stage_limit_exceeded` with its limit's cause; depth steps re-planned for ADR-030 |
 | TC-424 | An admitted source carries the source reference its caller named, and its node keys ignore the revision | Unit | P1 | FR-001-AC-5, FR-001-AC-6, FR-001-AC-7, FR-001-AC-8, FR-001-AC-9, FR-001-AC-10, FR-001-AC-11, FR-001-AC-12 | ✅ Passed locally (S-4b): steps 1 to 5, step 2's `blank-label` cause, `label` field, U+3000 and U+200B cases, step 6 (FR-001-AC-11, label order and `empty-path`) and step 7 (FR-001-AC-12, the edit and binding host causes as `invalid_source_map` with no region) |
 | TC-425 | parse and format take the four source labels and report the source reference | Integration | P1 | FR-010-AC-11 | ✅ Passed locally (S-4b), step 3's `blank-label` cause and `label` field |
 | TC-426 | A check location resolves to the region of the unit it was read from, or to none | Unit | P1 | FR-096-AC-1 | ✅ Passed locally (`qsl-semantics/src/check/region.rs`: steps 2 to 4) |
-| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-16, FR-096-AC-17 | ✅ Passed locally (S-5b); AC-16 (lowering's own work charge located at a node) and AC-17 (Typer's package-wide node count reached from a second declaration) added |
+| TC-427 | A stage limit names its kind, bound, actual counter and locus | Unit | P1 | FR-096-AC-2, FR-096-AC-3, FR-096-AC-4, FR-096-AC-5, FR-096-AC-16, FR-096-AC-17 | ✅ Passed locally (S-5b); AC-16 (lowering's own work charge located at a node) and AC-17 (Typer's package-wide node count reached from a second declaration) added; depth steps re-planned for ADR-030 |
 | TC-428 | A refusal record carries its code, category, locus and the catalog's fields | Unit | P1 | FR-096-AC-6, FR-096-AC-7, FR-096-AC-8, FR-096-AC-13, FR-096-AC-15 | ✅ Passing locally: steps 1 to 6; all twelve kernel refusals with a record carry their target domain or width and `Refusal::code()`/`cause()` return the key table's code and cause (`ForeignReference` included); a kernel `CheckedInvariant` builds no record and `Machine::run` returns it as `Err(InternalFault)` |
 | TC-429 | The I2 reader locates its version refusal and its limits in the artifact | Integration | P1 | FR-096-AC-9, FR-096-AC-10 | ✅ Passed locally (S-5b), on IR-281 |
 | TC-430 | Native run and compile requests and their outputs carry the four source labels | Integration | P1 | FR-026-AC-6, FR-027-AC-4, FR-031-AC-5 | 🚧 Partial (S-4b): steps 2 to 5 pass locally; step 1 passes only with the model source's revision value `draft:1`, not `1`, because the program's model import pins the model artifact that binds it; step 2's `blank-label` cause and `label` field |
 | TC-431 | Runtime input artifacts carry the four labels, and two-label bytes refuse | Unit | P1 | FR-018-AC-8, FR-024-AC-6 | ✅ Passed locally (S-4b), step 2's `blank-label` cause and `label` field |
-| TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally |
+| TC-432 | A family check's stage limit names its kind, bound and actual counter, and the counter is where the limit stops | Unit | P1 | FR-062-AC-12 | ✅ Passed locally; depth steps re-planned for ADR-030 |
 | TC-434 | Model limits have finite defaults, and normalization work stops at the limit | Unit | P1 | NFR-012 (defaults and recording: steps 1 and 2; bounded work: steps 3 and 4; meter memory: step 5; shared paths: step 6; ancestor-steps order: step 7) | ✅ Passed locally |
 | TC-436 | Proof-bound and interval-key constructors refuse empty ranges, and domain keys order by node then path | Unit | P1 | FR-097-AC-1 | ✅ Passed locally |
 | TC-437 | The extent rule names each unbounded type position once, by node and path, under a node-count ceiling | Unit | P1 | FR-097-AC-2 | ✅ Passed locally |
@@ -229,7 +229,7 @@ names different artifacts in each.
 | TC-442 | Spine compile admits a domain package and locks its model selection | Integration | P1 | FR-027-AC-9, FR-056-AC-9 | ✅ Passed locally |
 | TC-443 | A model field's multiplicity and presence give its assembled value type | Unit | P1 | FR-056-AC-10 | ✅ Passed locally |
 | TC-444 | The replay executor recompiles, selects, calls, and refuses each O-26 case | Unit | P1 | FR-098-AC-1, FR-098-AC-2, FR-098-AC-3, FR-098-AC-4, FR-098-AC-5, FR-098-AC-6, FR-098-AC-7 | ✅ Passed locally for steps 1 to 6, step 6 being a predicate whose body calls another declared function (the QSL-22 Layer 3 exemplar's shape); step 7 (FR-098-AC-6, FR-098-AC-7, replay against dependencies) passes locally; step 5's whitespace-only authority passes with `invalid_source_identity`, cause `blank-label` and `label` `authority` |
-| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended) |
+| TC-446 | Spine compile resolves imports against supplied libraries | Integration | P1 | FR-099-AC-1, FR-099-AC-2, FR-099-AC-3, FR-099-AC-4, FR-099-AC-5, FR-099-AC-6, FR-099-AC-7, FR-027-AC-10 | 🚧 Steps 1 to 7 pass locally (step 5's `g::f(3)` result amended); step 8 pending |
 | TC-490 | E3 resolves header profile selections against the DefinitionLock catalog | Integration | P1 | FR-110-AC-1, FR-110-AC-2, FR-110-AC-3, FR-110-AC-5, FR-110-AC-6, FR-110-AC-7, FR-110-AC-8 | 🚧 Partial; step 4 waits on the code change; step 1's layer-closure rows and steps 6-7 (layer selection) planned |
 | TC-491 | library::bundle links a complete-V1 bundle and refuses each closure, facet and limit defect | Integration | P1 | FR-111-AC-1, FR-111-AC-2, FR-111-AC-3, FR-111-AC-4, FR-111-AC-5, FR-111-AC-6, FR-111-AC-7 | ✅ Passed locally: `library::bundle_tests`, keeping the `QSpec-FR-131`/`QSpec-FR-339` tags |
 | TC-450 | CLI run routes a program by its declared edition and calls a 1-draft function | Integration | P1 | FR-100-AC-1, FR-100-AC-2, FR-100-AC-3 | ✅ Passed locally |
@@ -526,6 +526,26 @@ names different artifacts in each.
 | TC-832 | S6a charges union construction at QSpec's accounting point and nothing for case selection | Unit | P1 | FR-322-AC-3 | 🚧 Planned |
 | TC-833 | Union values as collection elements, in queries and in predicates | Unit | P1 | FR-323-AC-1, FR-323-AC-2, FR-323-AC-3, FR-046-AC-9 | 🚧 Planned |
 | TC-834 | Unions compile under the value profile with the same lock selections as records | Integration | P1 | FR-324-AC-1 | 🚧 Planned |
+| TC-720 | A reached limit names its kind, bound, count and setting | Unit | P1 | FR-255-AC-1, FR-255-AC-2, FR-255-AC-3 | 🚧 Planned |
+| TC-721 | Every setting raises its limit through the library, the replay request and the settings operation the driver CLI calls | Integration | P1 | FR-255-AC-4, FR-255-AC-5, FR-255-AC-6 | 🚧 Planned |
+| TC-722 | Deep sources parse on a small stack under raised S1 limits | Unit | P1 | FR-256-AC-1 | 🚧 Planned |
+| TC-723 | S1 parses to its default limits and names the setting it reached | Unit | P1 | FR-256-AC-2, FR-256-AC-3 | 🚧 Planned |
+| TC-724 | Deep forms and control anchors build on a small stack | Unit | P1 | FR-257-AC-1, FR-257-AC-2, FR-257-AC-3 | 🚧 Planned |
+| TC-725 | Deep expressions check, lower and emit on a small stack | Unit | P1 | FR-258-AC-1, FR-258-AC-5 | 🚧 Planned |
+| TC-726 | Deep types key and lower their text leaves on a small stack | Unit | P1 | FR-258-AC-2 | 🚧 Planned |
+| TC-727 | Checker defaults admit any depth that fits, and its limit outcomes name the setting | Unit | P1 | FR-258-AC-3, FR-258-AC-4 | 🚧 Planned |
+| TC-728 | A deep package's identities do not depend on the stack, and byte limits report as limits | Unit | P1 | FR-259-AC-1, FR-259-AC-2 | 🚧 Planned |
+| TC-729 | QSL identities, digests and malformed-input mapping over quire-canonical at any depth | Unit | P1 | FR-259-AC-3 | 🚧 Planned |
+| TC-730 | Intake judges a deep package document on its content | Integration | P1 | FR-260-AC-1, FR-260-AC-2 | 🚧 Planned |
+| TC-731 | Intake reports composite cycles of any length | Integration | P1 | FR-260-AC-3 | 🚧 Planned |
+| TC-732 | The intake byte limit names its setting and clears when raised | Integration | P1 | FR-260-AC-4 | 🚧 Planned |
+| TC-733 | Library preimage and observation reads judge deep documents on their content | Integration | P1 | FR-261-AC-1, FR-261-AC-2, FR-261-AC-3 | 🚧 Planned |
+| TC-734 | A 100,000-deep recursive call completes on work fuel | Unit | P1 | FR-262-AC-1 | 🚧 Planned |
+| TC-735 | Deep values and value types evaluate, key, compare, clone and drop | Unit | P1 | FR-262-AC-2 | 🚧 Planned |
+| TC-736 | A deep source and value replay to the proving run's verdict | Integration | P1 | FR-263-AC-1 | 🚧 Planned |
+| TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
+| TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
+| TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
@@ -674,12 +694,12 @@ the exact backing test:
 - TC-215 (FR-081-AC-3): `tests/model_normalization.rs::n06_a_strictly_more_derived_redefiner_resolves_the_conflict_and_hides_every_contender`
 - TC-218 (FR-082-AC-1): `tests/model_conformance.rs::r03_an_incompatible_operation_redefinition_reports_every_failing_axis`
 - TC-219 (FR-082-AC-2): `tests/model_conformance.rs::r07_zero_inherited_targets_refuses_redefinition_target` and `tests/model_normalization.rs::r01_a_closing_generalization_cycle_names_the_full_rotated_chain`; FR-082-AC-6's unknown-supertype and cycle rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_*_supertype_*` and `::divergence_generalization_cycle_*`
-- TC-220 (FR-082-AC-3): `qsl-semantics/tests/it/model_conformance.rs::an_ancestor_chain_at_the_configured_bound_is_admitted_and_one_longer_refuses` (the caller-supplied `ancestor_steps` ceiling, exactly at and one past it) and `::a_type_with_more_than_128_ancestors_passes_conformance_at_default_limits`; FR-082-AC-6's chain rows: `qsl-semantics/tests/it/type_environment_model.rs::divergence_chain_*`; FR-082-AC-7: `::a_deep_chain_refuses_the_admission_work_budget` and `::a_linear_chain_costs_admission_work_linear_in_its_flattened_slots`
+- TC-220 (FR-082-AC-3, AC-6, AC-7): planned; the existing `qsl-semantics/tests/it/model_conformance.rs` and type-environment depth-ceiling tests are replaced when `ancestor_steps` becomes a charged edge-count limit.
 - TC-221 (FR-082-AC-4): `tests/model_conformance.rs::r08a_*_refuses` and `::r08b_*_discharges_the_obligation`
 - TC-222 (FR-083-AC-1): `tests/model_dispatch.rs::d04_registration_order_does_not_change_the_linked_table`
 - TC-223 (FR-083-AC-2): `tests/model_dispatch.rs::d03_no_candidate_*_no_applicable` and `::d02_an_undominated_multi_way_tie_*`
 - TC-224 (FR-083-AC-3): `tests/model_dispatch.rs::d02_an_undominated_multi_way_tie_*` (the same `Ambiguous` outcome carries no table for the family's other, cleanly-resolving subtype)
-- TC-225 (FR-083-AC-4): `qsl-semantics/tests/it/model_dispatch.rs::a_family_at_the_configured_bound_links_and_one_step_more_refuses` (the caller-supplied `family_steps` ceiling, exactly at and one past it, where the uncounted redefiner would make the family ambiguous), `::a_dispatch_family_with_more_than_128_redefinition_steps_links_at_default_limits` and `::a_dispatch_family_with_more_than_128_redefinition_steps_passes_the_checked_bridge`
+- TC-225 (FR-083-AC-4): planned; the existing `qsl-semantics/tests/it/model_dispatch.rs` depth-ceiling tests are replaced when `family_steps` becomes an edge-count work limit.
 - TC-226 (FR-084-AC-1): `tests/model_population.rs::l02_unknown_closure_is_incomplete_not_refused` (both halves: `open` extent and an unclosed generalization graph) and `::l05_foreign_type_refuses`
 - TC-228 (FR-084-AC-3): `tests/model_population.rs::l03_lookup_undefined_mode`, `::l03_lookup_empty_mode`, `::l03_lookup_refused_mode`
 - TC-229 (FR-084-AC-4): `tests/model_population.rs::l05_conflicting_identity_refuses_after_fourth_member_charge` and `::l05_duplicate_collapses_and_recovers_l01`
@@ -1018,3 +1038,17 @@ union-key order read QSpec's union spelling (FR-440, FR-441), accounting
 | TC-784 | One Value-family source runs through check, package and execute with documents and exit codes | Integration | P1 | FR-299-AC-1, FR-299-AC-2, FR-299-AC-3, FR-299-AC-4 | 🚧 Planned |
 | TC-762 | analyze settles proved, refuted and unsupported items with one record each | Integration | P1 | FR-281-AC-1, FR-281-AC-2, FR-281-AC-3 | 🚧 Planned |
 | TC-763 | analyze settles rejected certificates, unreproduced counterexamples and budgets without a false verdict | Integration | P1 | FR-281-AC-4, FR-281-AC-5, FR-281-AC-6, FR-281-AC-7 | 🚧 Planned |
+
+## Arbitrary nesting depth (FR-255 to FR-264) coverage
+FR-255 to FR-264 carry ADR-030: limit outcomes that name the setting which
+raises them, uniform across the library builder, the replay request and
+the settings operation the driver CLI's `--limit` calls (FR-255), and for each component the iterative walk, the resource
+limit that bounds it and its deep-input criteria: S1 (FR-256), S2 (FR-257),
+S3 (FR-258), identities and QSL's use of `quire-canonical`
+(FR-259), semantic-IR intake (FR-260), the other untrusted JSON reads
+(FR-261), the evaluator (FR-262), replay (FR-263) and the v2 wire (FR-264).
+TC-720 to TC-739 back every AC, all `🚧 Planned`. Each 100,000-deep case
+sets its own limits and runs on a thread with a 512 KiB stack. TC-729 waits
+on the `quire-canonical` capabilities FR-259 names, TC-730 and TC-731 on the
+semantic-IR crate's move onto that reader, and TC-739's malformed-wire step
+on IR's reader enforcing QSpec FR-322's stratified body grammar.

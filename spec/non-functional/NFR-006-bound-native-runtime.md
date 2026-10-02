@@ -20,8 +20,9 @@ If the next charged runtime operation exceeds its selected ceiling, then the nat
 ## Scope
 
 Artifact construction, one validation request and one reference evaluation.
-Limits are inclusive unsigned counters. Defaults equal hard ceilings; callers
-may lower each independently, and larger options clamp to the hard ceiling.
+Limits are inclusive unsigned counters. Each has the published default
+below; a caller sets each independently above or below its default, and the
+value is used as given, with no ceiling (ADR-030 D-1).
 Actual usage is returned on success and on a returned error. Exhaustion returns
 no artifact, validated context or predicate Boolean for the affected stage.
 The validated context remains usable for another evaluation with fresh limits.
@@ -30,23 +31,21 @@ The validated context remains usable for another evaluation with fresh limits.
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Artifact emitted content | At most 1048576 bytes per artifact | 1048576 bytes | negative-abuse-testing |
-| Artifact inspected text content | At most 1048576 UTF-8 bytes per artifact | 1048576 bytes | negative-abuse-testing |
-| Artifact arena nodes | At most 100000 nodes per artifact | 100000 nodes | negative-abuse-testing |
-| Artifact aggregate entries | At most 100000 entries per artifact | 100000 entries | negative-abuse-testing |
-| Artifact structural depth | At most 64 levels per artifact | 64 levels | negative-abuse-testing |
-| Validation inventory | At most 64 artifacts per request | 64 artifacts | negative-abuse-testing |
-| Validation inventory content | At most 8388608 encoded bytes per request | 8388608 bytes | negative-abuse-testing |
-| Validation objects | At most 10000 selected object entries per request | 10000 objects | negative-abuse-testing |
-| Validation work | At most 1000000 visits per request | 1000000 visits | negative-abuse-testing |
-| Validation text inspection | At most 8388608 scalar advances per request | 8388608 advances | negative-abuse-testing |
-| Validation detail diagnostics | At most 256 entries plus a separate optional terminal reason | 256 detail entries | negative-abuse-testing |
-| Evaluation expression steps | At most 1000000 steps per run | 1000000 steps | negative-abuse-testing |
-| Evaluation graph expansions | At most 10000 steps per run across all reaches calls | 10000 steps | negative-abuse-testing |
-| Evaluation deep comparison | At most 100000 value pairs per run | 100000 pairs | negative-abuse-testing |
-| Evaluation text inspection | At most 1048576 scalar advances per run | 1048576 advances | negative-abuse-testing |
-| Evaluation event storage | At most 10000 events per run | 10000 events | negative-abuse-testing |
-| Evaluation active depth | At most 64 active traversal frames | 64 levels | negative-abuse-testing |
+| Artifact emitted content | The selected limit; by default at most 1048576 bytes per artifact | 1048576 bytes by default | negative-abuse-testing |
+| Artifact inspected text content | The selected limit; by default at most 1048576 UTF-8 bytes per artifact | 1048576 bytes by default | negative-abuse-testing |
+| Artifact arena nodes | The selected limit; by default at most 100000 nodes per artifact | 100000 nodes by default | negative-abuse-testing |
+| Artifact aggregate entries | The selected limit; by default at most 100000 entries per artifact | 100000 entries by default | negative-abuse-testing |
+| Validation inventory | The selected limit; by default at most 64 artifacts per request | 64 artifacts by default | negative-abuse-testing |
+| Validation inventory content | The selected limit; by default at most 8388608 encoded bytes per request | 8388608 bytes by default | negative-abuse-testing |
+| Validation objects | The selected limit; by default at most 10000 selected object entries per request | 10000 objects by default | negative-abuse-testing |
+| Validation work | The selected limit; by default at most 1000000 visits per request | 1000000 visits by default | negative-abuse-testing |
+| Validation text inspection | The selected limit; by default at most 8388608 scalar advances per request | 8388608 advances by default | negative-abuse-testing |
+| Validation detail diagnostics | The selected limit; by default at most 256 entries plus a separate optional terminal reason | 256 detail entries by default | negative-abuse-testing |
+| Evaluation expression steps | The selected limit; by default at most 1000000 steps per run | 1000000 steps by default | negative-abuse-testing |
+| Evaluation graph expansions | The selected limit; by default at most 10000 steps per run across all reaches calls | 10000 steps by default | negative-abuse-testing |
+| Evaluation deep comparison | The selected limit; by default at most 100000 value pairs per run | 100000 pairs by default | negative-abuse-testing |
+| Evaluation text inspection | The selected limit; by default at most 1048576 scalar advances per run | 1048576 advances by default | negative-abuse-testing |
+| Evaluation event storage | The selected limit; by default at most 10000 events per run | 10000 events by default | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -56,8 +55,8 @@ field binding, State binding, invocation parameter, created/deleted identity,
 record field or container child edge; each occurrence counts, including duplicates.
 Present contributes one child edge. Root ValueIds in field/State/parameter/result
 positions are checked even when no value node is reachable. Result contributes
-one entry when present. Depth is one at a primitive/empty container and one plus
-the greatest child depth at a nonempty container. Every arena node is checked,
+one entry when present. Nesting depth is not a limit (ADR-030 D-1): node and
+entry limits bound an artifact at any depth. Every arena node is checked,
 without recursively expanding shared nodes. Object/reference identity is a leaf.
 
 Before scanning a string, construction charges its UTF-8 byte length against an
@@ -75,7 +74,6 @@ field/root/parameter/delta binding, container edge, typed value use or storage
 comparison pair. Separate passes and shared values used under multiple native
 types/observations count separately. Population-index lookup is bounded by the
 already limited inventory; it does not recursively expand referenced objects.
-Validation's maximum structural depth is inherited from artifact admission.
 
 Text work in validation counts each Unicode-scalar iterator advance, including
 the final end check; comparing strings counts each side separately. This applies
@@ -85,11 +83,10 @@ ceilings, not claimed as native expression or scalar steps. A report records
 the separate validation counters, without charging input construction again.
 
 Evaluation counters follow the exact vectors and traversal rules in
-[the execution contract](../../docs/native-runtime-evaluation.md). Depth counts
-active non-Group expression frames or active structural-comparison frames in
-their respective traversals; Group is traversed iteratively. A literal at the
-root has depth one. Reaches expands iteratively and does not grow expression
-depth with path length. Values are borrowed; reading a large local/field does
+[the execution contract](../../docs/native-runtime-evaluation.md). Expression
+and structural-comparison traversals run over explicit stacks, and Reaches
+expands iteratively, so no traversal recurses natively in proportion to its
+input. Values are borrowed; reading a large local/field does
 not expand it before a comparison's counters are checked.
 
 Poll cancellation before each charged validation/evaluation unit and loop
@@ -102,10 +99,10 @@ allocator failure or OS scheduling. No wall-clock SLA or thread pool is added.
 
 Rust generated boundary tests measure each dimension independently on a valid
 fixture, admit the exact required work and stop one below or at zero when work
-is required. Test hard ceilings with elevated caller options and one-over input;
-where another ceiling necessarily stops first, retain that coupled outcome and
-use a lowered isolated ceiling rather than claiming an unexecuted hard-boundary
-success. Empty unused dimensions can complete at zero. Invalid input with zero
+is required. Test each default with one-over input, and a raised limit above
+the default with input that fits it and completes; where another limit
+necessarily stops first, retain that coupled outcome and use a lowered
+isolated limit. Empty unused dimensions can complete at zero. Invalid input with zero
 diagnostic capacity retains classification and the separate terminal reason;
 valid input with zero detail capacity can complete.
 
@@ -117,15 +114,9 @@ no timing sleep, concurrent benchmark or hosted CI run is required.
 
 ## Qualification status
 
-Construction metrics M-1..5 are qualified at c8fa41f by TC-057 and SR-096,
-including the explicit coupled node/output ceiling. Validation metrics M-6..11
-are qualified at 45ed1b4 by TC-065/066 and SR-097, including successful maximum
-inventory/content/object/detail counts and hard work/text stop controls.
-Evaluation metrics M-12..17 are qualified at 48f53ae by TC-074/075 and SR-098.
-The review records exact/lowered/hard work boundaries and the explicit upstream
-coupling of the 65-frame expression control. IT-006 is qualified by SR-099;
-Task-015 records the completed qualification/handoff and SR-100 the plan audit.
-These counters do not establish backend fuel parity.
+TC-057 tests the construction metrics, TC-065 and TC-066 the validation
+metrics, and TC-074 and TC-075 the evaluation metrics. These counters do not
+establish backend fuel parity.
 
 ## Dependencies
 

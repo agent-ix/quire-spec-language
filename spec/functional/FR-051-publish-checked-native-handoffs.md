@@ -105,11 +105,12 @@ unknown contracts; invalid UTF-8 or spans; unsorted/duplicate populations;
 non-Boolean leaves; wrong parent/leaf/profile/clock/capture bindings; identity or
 digest mismatch; and any field not derivable from the admitted package.
 
-Limits independently bound input bytes, output bytes, JSON depth, string bytes,
-population entries, expression depth and total visited fields. Work is charged
+Limits independently bound input bytes, output bytes, string bytes, population
+entries, expression nodes and total visited fields; nesting depth is not a limit
+(ADR-030 D-1). Work is charged
 before retention or traversal; exhaustion returns one resource-incomplete report
-and no partial document or validated view. Caller limits may lower but not raise
-the owner maxima, and a retry starts with fresh accounting.
+and no partial document or validated view. Each limit is caller-configurable with a published default, used as given
+above or below that default, and a retry starts with fresh accounting.
 
 No input field or flag can assert that a document is checked, trusted, total or
 owner-produced. No source parser, evaluator, plugin, trait object, callback,

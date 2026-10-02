@@ -108,12 +108,13 @@ out-of-order fields, trailing data, noncanonical JSON, invalid tagged shapes,
 unknown labels/contracts, unsorted or duplicate populations, graph/reference
 errors and every identity/digest mismatch.
 
-Limits independently bound bytes, depth, strings, formula nodes/depth,
+Limits independently bound bytes, strings, formula nodes,
 positions, valuations, captures, support, history span, evaluation steps,
 lineage and total visited work. Work is charged before allocation/traversal.
 Exact ceilings pass; one-over or allocation failure returns one typed resource
 outcome with no partial request, result or Boolean. A retry begins with fresh
-accounting and caller limits may lower but not raise owner maxima.
+accounting. Each limit is caller-configurable with a published default, used as
+given above or below that default; nesting depth is not a limit (ADR-030 D-1).
 
 ## Acceptance Criteria
 

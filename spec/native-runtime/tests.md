@@ -125,11 +125,11 @@ with their actual TC and criterion IDs.
 
 ## Constraint Boundary Tests
 
-TC-057 covers construction bytes/text/nodes/entries/depth. TC-065 covers every
+TC-057 covers construction bytes/text/nodes/entries. TC-065 covers every
 validation inventory/byte/object/work/text/diagnostic dimension, including zero
 detail capacity and the separate terminal reason. TC-074/075 cover exact
-expression/graph cost, comparisons, Unicode advances, events and active depth.
-Hard limits are tested with elevated caller options; coupled ceilings are
+expression/graph cost, comparisons, Unicode advances and events.
+Every limit is tested with elevated caller options, used as given; coupled limits are
 reported explicitly, never relabeled as exact successes. All loops use bounded
 Rust-generated families, not concurrent stress on the shared desktop.
 

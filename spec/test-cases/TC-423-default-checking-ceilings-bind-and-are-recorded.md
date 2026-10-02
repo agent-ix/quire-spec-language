@@ -30,10 +30,10 @@ Scope: NFR-011-M-1 to NFR-011-M-4.
    evidence.
 2. Check the same shape with six records at `CheckingLimits::default()`.
 3. Check `eq` over FR-093's `Node` at `CheckingLimits::default()`, at raised
-   ceilings (nodes, input bytes and work at `u64::MAX`, depth 64), and at
-   lowered ceilings (64 nodes, 4096 input bytes, 5000 work units). Under
-   each set of limits, also check a standalone Boolean name expression
-   against the checked package. Build `CheckingLimits::new(7, 9)`.
+   ceilings (nodes, input bytes and work at `u64::MAX`), and at lowered
+   ceilings (64 nodes, 4096 input bytes, 5000 work units). Under each set of
+   limits, also check a standalone Boolean name expression against the
+   checked package. Build `CheckingLimits::new(7)`.
 4. Declare `enum Country` with 250 cases and 4000 functions
    `fK(x: Country): Boolean { true }`, and check them at
    `CheckingLimits::default()`. Check two such functions with the input-byte
@@ -49,10 +49,10 @@ Scope: NFR-011-M-1 to NFR-011-M-4.
 - Step 1 stops with `StageFailure::Limit` of kind node count, bound
   100000, code `stage_limit_exceeded`/`node-count-exceeded`.
 - Step 2 is admitted.
-- Step 3: the defaults are 100000 nodes, depth 128, 16777216 input bytes and
-  16777216 work units. Each checked package and each checked expression
-  records exactly the limits it was checked under. `new(7, 9)` has 7 nodes,
-  depth 9, 16777216 input bytes and 16777216 work units.
+- Step 3: the defaults are 100000 nodes, 16777216 input bytes and 16777216
+  work units. Each checked package and each checked expression records
+  exactly the limits it was checked under. `new(7)` has 7 nodes, 16777216
+  input bytes and 16777216 work units.
 - Step 4: the 4000-function package is admitted. The two-function package
   stops with a limit of kind input bytes, bound 10000, not on the work
   ceiling.

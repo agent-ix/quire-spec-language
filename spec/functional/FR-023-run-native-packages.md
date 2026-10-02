@@ -21,7 +21,7 @@ When a caller executes a native package with supplied runtime artifacts and an a
 ## Inputs
 
 An immutable NativePackage, owned RuntimeInput, exact ExecutionSelection,
-caller-lowered validation and evaluation limits, and a cancellation poll.
+caller-configured validation and evaluation limits, and a cancellation poll.
 
 ## Outputs
 

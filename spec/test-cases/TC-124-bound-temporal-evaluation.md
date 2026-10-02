@@ -39,7 +39,7 @@ score is claimed.
    `1 + k` outside the domain — and require a stop naming the checked-arithmetic
    dimension, with the expected bound computed from the authored intervals rather
    than read back from the evaluator.
-2. Independently force a stop in each of the eight charged dimensions against
+2. Independently force a stop in each of the seven charged dimensions against
    otherwise evaluable declarations, including horizon overflow, work exhaustion,
    active-instance exhaustion, capture exhaustion and retention exhaustion. Require each to produce an
    incomplete or refused result naming the reached dimension and the affected
@@ -68,16 +68,18 @@ score is claimed.
    changed declared clock parameter and an admitted restoration state. Require each
    to produce a distinct result identity, and require the earlier result neither
    reused nor rewritten. Require an unchanged configuration to reproduce the
-   identical result identity, and require a ceiling above the published default to
-   clamp while a zero ceiling is preserved.
-5. For each of the eight charged dimensions, test a zero ceiling, the exact
+   identical result identity, and require a limit above the published default to
+   be used as given while a zero limit is preserved.
+5. For each of the seven charged dimensions, test a zero ceiling, the exact
    required ceiling, a one-step-insufficient ceiling and a ceiling above the
    published default. Require the first unaffordable operation to remain
    unperformed, require reported usage to reflect only successful charges and to
-   distinguish the four peak dimensions — instances, retention, depth and horizon —
+   distinguish the three peak dimensions — instances, retention and horizon —
    from the four cumulative ones, and require a retry
    under sufficient ceilings to produce the full result from unmutated inputs.
    Exercise counter overflow through the public accounting boundary.
+6. On a thread with a 512 KiB stack, evaluate a temporal formula nested 100,000
+   deep with `visits` raised to fit it, and require a well-formed assessment.
 
 ## Expected Results
 

@@ -20,7 +20,7 @@ When native package construction is requested, the compiler shall emit a version
 
 ## Inputs
 
-A constructor-produced CheckedPackage and caller-lowered PackageLimits. The
+A constructor-produced CheckedPackage and caller-configured PackageLimits. The
 closed artifact and Rust API are specified in
 [the native package contract](../../docs/native-linked-packages.md).
 No runtime population, observed result or caller-supplied support claim is an

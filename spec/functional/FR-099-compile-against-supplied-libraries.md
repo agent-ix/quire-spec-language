@@ -87,6 +87,19 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   S4 against the same dependency input, package input and stage limits, once
   per library within one compile, each charged the full stage limits as
   its own unit.
+- The resolution SHALL charge the import graph it resolves against
+  `DependencyLimits`, whose members are caller-configurable resource limits
+  with published defaults: `libraries`, a node count of the library compiles
+  in the closure (default 4096, setting `dependency.libraries`);
+  `import_edges`, an edge count of the imports resolved across the closure
+  (default 16384, setting `dependency.import_edges`); and `source_bytes`,
+  the summed input bytes of the library sources compiled (default 16777216,
+  setting `dependency.source_bytes`). When a charge would exceed one of
+  them, the resolution SHALL refuse `stage_limit_exceeded` at stage
+  `intake`, at the import whose resolution made the charge, naming the
+  limit kind, the configured bound, the count the charge would have reached
+  and the setting (FR-255). A dependency chain of any length within these
+  limits resolves (ADR-030 D-1).
 - The top-level compile SHALL report the dependency-input, cycle and
   diamond refusals unwrapped wherever in the closure they arise, the cycle
   at the identity string of the import that closes it and the diamond at
@@ -133,6 +146,8 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 | FR-099-AC-5 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }`, a unit importing it `as g` checks `function p using v(y: Int[0, 9]): Boolean pure { g::f(y) }`, and `g::f(true)` refuses `ill_typed` at the argument. The emitted `p` body is a `quire.op.function.call` application whose callee is `{term: "dependency_reference", package: <test/geometry's package_id>, node: <f's node id>}`, whose `result_type` is the Boolean type node, and whose node `dependencies` do not list `f`; `g::f(3)` emits the `Int[0, 9]` type node typing the conversion of `3` to `f`'s parameter, as a call of a local function does. With `test/geometry` also declaring a record `R`, a call `g::mk(y)` of a function returning `R`, a call of a function over `Set<R>`, a call of a function over a tuple holding `R`, a call of a function over `Reference<M::T>` for a model type `M::T`, and a use `g::R`, each refuses `ill_typed`/`operator-ineligible` at the use. | Test (TC-446) |
 | FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, and the import's digest updated to the new `package_id`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
 
+| FR-099-AC-7 | A unit importing `test/a`, which imports `test/b`, which imports `test/c`, compiled with `dependency.libraries` at 2, refuses `stage_limit_exceeded` at stage `intake` at `test/b`'s import of `test/c`, with limit kind node count, bound 2, actual 3 and setting `dependency.libraries`, and no package; with `dependency.libraries` at 3 it compiles. The same unit with `dependency.import_edges` at 2 refuses naming edge count, bound 2, actual 3 and setting `dependency.import_edges`; with `dependency.source_bytes` one byte below the three libraries' summed source bytes it refuses naming input bytes and setting `dependency.source_bytes`. A chain of 200 libraries, each importing the next, compiles at the default limits. | Test (TC-446) |
+
 ## Dependencies
 
 - ADR-015 D-1 to D-3 and D-5; ADR-011 §2.1 E3 and E4, §4; ADR-013 O-02,
@@ -145,6 +160,8 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 - QSpec FR-307 (import binding, supplied libraries, diamond and cycle
   rules), FR-322 (`dependency_selections`, `dependency_reference`,
   FR-322-AC-36).
+- [FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md): the
+  `dependency.*` settings and the limit outcome's fields.
 - IR's v2 reader admits the `dependency_reference` term for the emitted
   package of AC-5 and AC-6 to read back through IR.
 
@@ -153,7 +170,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 Implemented. D-1's spine resolution, D-2, D-3 and
 D-5 are implemented: spine `compile` takes a `DependencyInput`, and the S4
 source resolution (`qsl-replay/src/spine.rs`) compiles each imported library
-from source within `DependencyLimits::depth`, binds it to the recomputed
+from source, binds it to the recomputed
 `package_id`, reads its import view through `qsl_package::read_import_view`,
 and links it through `CheckedPackage::link_with`; E3 types an imported call
 from the library's checked graph (`check::family` `Application::Imported`),

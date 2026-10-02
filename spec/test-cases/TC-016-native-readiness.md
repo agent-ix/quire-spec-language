@@ -15,9 +15,9 @@ Inclusive formatter byte ceilings. Type: Property; priority P1. Traces: FR-003-A
 
 ## Test Procedure
 
-Generate lower ceilings from zero through the exact formatted length including UTF-8/comment/final-newline boundaries. Exercise a near-1-MiB source whose formatting expands beyond 1 MiB under format(source), and under format_with_limit with a ceiling at its formatted length.
+Generate lower ceilings from zero through the exact formatted length including UTF-8/comment/final-newline boundaries. Exercise a near-1-MiB source whose formatting expands beyond the 1 MiB default, under format(source) and under format_with_limit with the limit raised to its formatted length, and request usize::MAX.
 
 ## Expected Results
 
-Every ceiling below the required length returns format-phase resource_exhausted with no String; exact or larger admitted ceilings return identical bytes. format(source) refuses the expanding source with resource_exhausted naming the ceiling, its value and format_with_limit; format_with_limit at the formatted length returns the full output.
+Every ceiling below the required length returns format-phase resource_exhausted with no String; exact or larger admitted ceilings return identical bytes. format(source) refuses the expanding source with resource_exhausted naming the limit, its value and format_with_limit; format_with_limit at the formatted length returns the full output.
 

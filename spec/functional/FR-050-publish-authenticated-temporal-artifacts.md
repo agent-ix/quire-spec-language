@@ -32,7 +32,7 @@ The constructor-private native family admission used by FR-042; exact selected
 temporal definitions and original dependency bytes; a declaration-to-definition
 selection for every temporal declaration; one explicitly selected immutable
 clock configuration per selection; the independent expected artifact/contract/baseline/producer/source/
-dependency/model selections used by the reader; and FR-042's caller-lowered
+dependency/model selections used by the reader; and FR-042's caller-configured
 construction/admission limits.
 
 An L5 trace, observed timestamp, runtime watermark, installed default clock,

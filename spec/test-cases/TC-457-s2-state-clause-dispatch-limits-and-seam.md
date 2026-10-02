@@ -10,8 +10,8 @@ relationships:
 
 ## Description
 
-Verify the S2 entry table's new arms, the depth limit over a clause body,
-and the S2 seam probe.
+Verify the S2 entry table's new arms, deep clause bodies building with no
+S2 limit, and the S2 seam probe.
 
 Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
 
@@ -21,11 +21,10 @@ Scope: FR-102-AC-4, FR-102-AC-5, FR-102-AC-6.
    over the extended `dispatch`.
 2. Build a unit whose only declaration begins `temporal` (a spelling no
    family claims).
-3. Let `d` be `FormsLimits`' nesting-depth limit. Build an invariant whose
-   body is `d - 1` nested `not`s around `true` (depth `d`, since the root
-   counts as depth 1), then `d` nested `not`s (a bare `(e)` is a
-   transparent pass-through and adds no depth, so parentheses cannot bound
-   this).
+3. Build an invariant whose body is 128 nested `not`s around `true` (depth
+   129, since the root counts as depth 1), parsed at the default S1 limits;
+   then, on a thread with a 512 KiB stack, one of 100,000 nested `not`s,
+   parsed under S1 limits raised to fit it.
 4. Run `xtask seam-probe` with the `seam-probe` feature.
 
 Tag the tests `#[trace("TC-457", "FR-102-AC-n")]`. The existing
@@ -36,8 +35,7 @@ moves from `invariant` to `temporal`.
 
 - Step 1: every arm, including `Invariant`, `Pre` and `Post`, is one call.
 - Step 2: `FormsCause::NoDispatchEntry { spelling: "temporal" }`.
-- Step 3: depth `d` builds; depth `d + 1` gives `StageFailure::Limit` with
-  `nesting-depth-exceeded` at the body.
+- Step 3: both bodies build their forms, and no S2 outcome names a depth.
 - Step 4: the E0004 locations equal the checked-in S2 list, unchanged: a
   state clause has no match over a probed enum, so it adds no new location.
 

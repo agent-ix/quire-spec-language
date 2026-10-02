@@ -15,9 +15,9 @@ Located admitted native grammar. Type: Integration; priority P1. Traces: FR-002-
 
 ## Test Procedure
 
-Run the parent/declaration, precedence, grouping/name locus, reserved collect, token/node/depth and joined 512 KiB stack cases through the actual parser.
+Run the parent/declaration, precedence, grouping/name locus, reserved collect, token/node and joined 512 KiB stack cases through the actual parser.
 
 ## Expected Results
 
-Admitted examples parse with original spans; chained comparisons are invalid, balanced collect is unsupported, and exhausted work is incomplete. Flat 20000-operator chains complete on the selected stack. Right-associative `implies`, prefix `not`, `let … in` and `if … else` chains at the longest length the default token and node ceilings admit parse with nesting depth 0 (NFR-001 "Nesting level"); one element longer names the token or node ceiling. A unit nested to exactly the nesting ceiling in bracket pairs parses, and one pair deeper returns resource_exhausted naming nesting depth, the ceiling and the opening bracket's span.
+Admitted examples parse with original spans; chained comparisons are invalid, balanced collect is unsupported, and exhausted work is incomplete. Flat 20000-operator chains complete on the selected stack. Right-associative `implies`, prefix `not`, `let … in` and `if … else` chains at the longest length the default token and node limits admit parse; one element longer names the token or node limit and its setting. No outcome names a nesting depth.
 

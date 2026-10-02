@@ -56,10 +56,9 @@ dependency edges between them.
   and `unknown_required_feature`/`unsupported-feature`.
 - Step 5 matches the golden vector, and each change gives a different
   identity.
-- Step 6 admits each bound and refuses one past it:
-  `stage_limit_exceeded`/`nesting-depth-exceeded` for `depth`,
-  `resource_exhausted`/`insufficient-next-charge` for the others; the raised
-  ceiling admits.
+- Step 6 admits each bound and refuses one past it with
+  `resource_exhausted`/`insufficient-next-charge`; the raised ceiling
+  admits.
 - Step 7: every pair is listed by `quire.native.diagnostics/v1`.
 
 ## Status

@@ -59,10 +59,11 @@ The numbered groups correspond to the requirement's acceptance criteria.
    requiring mutation sensitivity and deterministic permitted reordering.
    Substitute IR canonical and source-byte digests at the native import slot;
    neither selects the model. No manual checksum catalog is needed.
-7. Derive source-byte, entry, role/site/type-node/depth and output-size expectations
+7. Derive source-byte, entry, role/site/type-node and output-size expectations
    from controlled fixed inputs and existing accounting rules, including wrapped
    rational leaves and profile-bearing artifact content. Run zero, exact,
-   one-step-insufficient and above-hard capacities at each boundary; exercise
+   one-step-insufficient capacities at each boundary, and an input above each
+   default with that limit raised to fit it; exercise
    the actual IR canonicalization/content limit. Expected limits cannot come
    from that run's reported consumption. Require refusal before excess work and
    no partially admitted model, changed input or fallback to `/1`.

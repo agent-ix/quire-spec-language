@@ -38,7 +38,6 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 ## Inputs
 
 - A recovery-free `LosslessCst` of a `1-draft` unit (ADR-011 E2).
-- `FormsLimits`.
 
 ## Outputs
 
@@ -80,8 +79,8 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
   qualified spelling names nothing more.
 - S2 SHALL NOT resolve the `using` alias, the model alias, the context type
   or the operation. It keeps their spellings and spans for S3.
-- S2's forms depth limit SHALL apply to a state clause body exactly as it
-  applies to a function body, with the same `StageFailure::Limit` refusal.
+- S2 SHALL build a state clause body of any depth S1 admits, exactly as it
+  builds a function body (FR-257).
 - The new `Expression` variants SHALL each have an owning family: `SelfRef`
   and `Result` belong to `ProtocolClause`, and `Reaches` to `StateModel`
   (ADR-012 §4.3, §15.2).
@@ -94,7 +93,7 @@ parses all of them (`qsl-cst/src/grammar.rs:566-591`, `:864-865`,
 | FR-102-AC-2 | `pre P using v on Config::ConfigVersion::attemptUpdate { true }` builds kind `Precondition` with operation `attemptUpdate`; the same text with `post` builds kind `Postcondition`. | Test (TC-456) |
 | FR-102-AC-3 | `not reaches(self, self, parent)` builds `Not(Reaches { SelfRef, SelfRef, edge: parent })`, and `reaches(self, self, Config::ConfigVersion::parent)` refuses `UnrepresentedConstruct` at the edge; and `self.versionNumber = pre(self.versionNumber)` builds an equality of two `Field` reads of `SelfRef`, the right one under `Pre`. `result` builds `Expression::Result`. None of the single-segment forms refuses. | Test (TC-456) |
 | FR-102-AC-4 | The `dispatch` arms for `Invariant`, `Pre` and `Post` each make exactly one call (the existing `dispatch_entry_is_a_single_thin_call` check passes over them). A unit whose only declaration begins with a spelling no family claims, such as `temporal`, still refuses `NoDispatchEntry`, naming that spelling. | Test (TC-457) |
-| FR-102-AC-5 | A state clause body nested one level deeper than `FormsLimits` allows refuses `StageFailure::Limit` with limit kind `nesting-depth-exceeded` at the body; at exactly the limit it builds. | Test (TC-457) |
+| FR-102-AC-5 | An invariant whose body is 128 nested `not`s around `true`, and one of 100,000 nested `not`s around `true` parsed on a thread with a 512 KiB stack under S1 limits raised to fit it, each build their form on that thread, and no S2 outcome names a depth. | Test (TC-457) |
 | FR-102-AC-6 | With the `seam-probe` feature, the probe variant of `LeadingTokenKind` and of `Expression` still fails to compile at exactly the checked-in S2 seam list, which is unchanged by this feature (FR-063). | Test (TC-457) |
 
 ## Dependencies

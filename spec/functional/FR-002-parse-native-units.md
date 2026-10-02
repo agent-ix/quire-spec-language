@@ -14,7 +14,7 @@ When a source unit is parsed, the compiler shall construct located syntax for ev
 
 ## Inputs
 
-Validated source and token/node/depth budgets.
+Validated source and token/node budgets.
 
 ## Outputs
 

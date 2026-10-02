@@ -221,8 +221,9 @@ observations belong only to the later consumer fixture.
 9. Calculate small fixture bytes, entries, links, type/reference visits and
    canonical writes independently of reported usage. Test each effective limit
    at zero, exact and one-short, including source/dependency content, output,
-   depth, repeated/shared edge visits and diagnostic retention. Test above-hard
-   clamping, arithmetic overflow and fresh retries. No reader/emitter may
+   deep/shared graphs, repeated/shared edge visits and diagnostic retention.
+   Test a limit raised above its default and used as given, arithmetic overflow
+   and fresh retries. No reader/emitter may
    allocate an uncharged expansion or expose an unfinished package.
    Include private Boolean atom/formula records, repeated provenance/operand
    visits and case/valuation inspections in those independent vectors. Lowered

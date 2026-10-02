@@ -416,8 +416,8 @@ review headline finding).** The narrowing recorded here is about which
 contract *parts* have a real construction site; it is not a claim that the
 part which remains -- `check` -- performs the family's admission decision.
 It does not, for either form #214 migrates: `ValueFunctionFamily::check`
-mints an identity and records one diagnostic, refusing only on the
-nesting-depth limit; the real typing, definedness and termination verdict
+mints an identity and records one diagnostic, refusing only on a
+checking resource limit; the real typing, definedness and termination verdict
 for function declarations is made entirely by the unchanged `Typer`,
 invoked unconditionally immediately after, for every declaration, and
 `Expression::Call` (function application) never calls any
@@ -1639,7 +1639,7 @@ section follows TC-264.
 | Construction: undeclared member, payload on a nullary member, missing call on a payload member, or wrong argument count | `SumCase`, S3 construction | `ill_typed`/`type-mismatch` (FR-143) | expected and actual shape | the construction expression |
 | Union recursion that does not escape | `SumCase` declaration check, through the shared recursion graph. Payload positions are named edges (FR-143), so they enter the `NonEscaping` subgraph and not the `Unnamed` (tuple-position) one. | `ill_typed`, from the existing `DeclarationCause::Recursion { edges: NonEscaping, cycle }` (`quire_semantic_value::declaration`) | the cycle | the union declaration |
 | Duplicate member name in one union | `SumCase` declaration check | `invalid_semantic_graph`, from the existing `DeclarationCause::DuplicateMember` (same function) | the member name | the union declaration |
-| Stage limit or meter exhaustion inside a family `check` | `SumCase`, S3 | `StageFailure::Limit(LimitExceeded)` for a caller-configured checking ceiling (node count or work budget) that the family `check` reaches (§2, T-4). `case` nesting depth is not a limit kind: nesting of any depth is admitted, bounded only by those ceilings (QSpec FR-146, "Complete V1 defines no expression depth or nesting limit for checking"; owner ruling 2026-10-01) | the limit record, naming the ceiling, its configured bound and the `CheckingLimits` field that raises it | the charge's locus |
+| Stage limit or meter exhaustion inside a family `check` | `SumCase`, S3 | `StageFailure::Limit(LimitExceeded)`, the node-count limit when the `case` nodes exceed `s3.nodes`, or the work-budget limit when the family `check` exhausts its meter (§2, T-4), each naming its value and setting. `case` nesting depth is never a limit kind: nesting of any depth is admitted, bounded only by those limits (QSpec FR-146; ADR-030 D-1) | the limit record, naming the limit, its value and the setting that raises it (FR-255) | the charge's locus |
 
 The unreachable-arm row explains why the table has no separate code for it.
 The grammar has no wildcard arm, no guard and no nested pattern. An arm is
@@ -1792,7 +1792,7 @@ to the named cases.
 | Adverse, declaration | `union L { Nil, Cons(Integer, L) }` (does not escape) refuses `ill_typed`, and the same union with `Option<L>` is admitted (AD-015 decision row); a union declaring one member name twice refuses `invalid_semantic_graph` | S3 | §16.5 declaration rows |
 | Adverse, parse | a `case` whose scrutinee is an unparenthesized record value is not parsed as a scrutinee; the parenthesized form parses (shared-grammar.md `case` rule) | S1 | parse diagnostic, and the admitted form |
 | Collections | `Set<U>`, `Bag<U>` and `OrderedSet<U>` of a union are admitted and keyed by the FR-144 union key (sets and bags in key order, ordered sets in first-occurrence order); a union with an IEEE-bearing payload makes them refuse `ill_typed`/`operator-ineligible`; `Sequence<U>` is admitted (§16.4, FR-323) | S3 | §16.4 collection row |
-| Limits | a `case` nested 1,000 levels deep is admitted under the default ceilings; the same input with the node ceiling one below its need returns `StageFailure::Limit` naming the node ceiling, and raising it by one admits it. No outcome names a nesting-depth limit | S3 | §16.5 limit row |
+| Limits | a `case` nested 1,000 levels deep is admitted under the default limits; a nested `case` fixture of N nodes checked with `s3.nodes` at N - 1 returns `StageFailure::Limit` with the node-count kind, bound N - 1, count N and setting `s3.nodes`, and the same fixture at N is admitted (FR-062-AC-7 pattern). No outcome names a nesting-depth limit | S3 | §16.5 limit row |
 | Adverse, admission | one supplied union argument for each SC-R3 refusal case: a foreign union key, a non-member `VariantId`, a wrong payload count, and a payload of the wrong type; and a union payload holding a dangling reference, refused by the reference walk | argument admission | `invalid_runtime_input`/`wrong-value-kind` before any charge |
 | Builder | out-of-order clause submission refuses with a clause-order refusal, and in-order submission admits (recipe item 2); diagnostic order by builder state, then source position | S3 | §4.2 |
 | Evaluation | `case` on each member with payload binding (FR-146-AC-11); a scrutinee that evaluates `Undefined` propagates `Undefined`; an injected invariant break yields `InternalFault` (§16.4 S6a row), not a refusal | S6a | O-16 categories |

@@ -19,7 +19,7 @@ When a caller supplies a verified source map for one native clause, the compiler
 ## Inputs
 
 A verified SourceMap, declared language, one existing ClauseBinding, explicit
-formal body-source identity, immutable native models, and caller-lowered limits
+formal body-source identity, immutable native models, and caller-configured limits
 for the existing parse/link/check/package stages. The body contains a complete
 native unit with one clause; no generated header or wrapper is inserted.
 

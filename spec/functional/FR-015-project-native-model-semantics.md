@@ -21,7 +21,7 @@ When a caller supplies formal declarations and explicit native roles, the native
 ## Inputs
 
 One exact FormalSource, one existing validated Contract IR DeclarationEnvironment,
-NativeRoles and caller-lowered ModelLimits. The concrete Rust contract is
+NativeRoles and caller-configured ModelLimits. The concrete Rust contract is
 [native-model-checking.md](../../docs/native-model-checking.md). The selected
 profile is native-state-model/1. Its inputs are typed Rust values, not generated
 Rust layouts or the historical abstract typing hypotheses treated as model wire.
@@ -37,12 +37,13 @@ and returns a LinkedPackage that retains the exact selected models and source.
 
 The native model adapter shall derive primitive bounds, option structure, record fields and collection maxima from the supplied IR declarations.
 
-If native admission reaches a sequence declaration with a maximum greater than 10,000, then the native model adapter shall refuse the entire model with unsupported_construct before publishing an artifact.
+If native admission reaches a sequence declaration with a maximum greater than the caller's `ModelLimits::sequence_maximum` limit (published default 10,000, used as given with no ceiling), then the native model adapter shall refuse the entire model with resource_exhausted naming that limit, its value and the declared maximum, before publishing an artifact.
 
-The sequence ceiling applies to every collection wrapper in used or unused
+The sequence limit applies to every collection wrapper in used or unused
 record fields and values, including nested options and sequences. It constrains
-declared maxima independently of actual runtime length and caller-lowered work
-budgets. Raising ModelLimits cannot raise this admission ceiling. Existing IR
+declared maxima independently of actual runtime length and the other
+caller-configured work limits. A caller raises it through ModelLimits like any
+other limit. Existing IR
 construction requires a positive declared maximum; an admitted sequence may
 still contain zero runtime elements. Source-derived ModelDraft::admit and the
 public Rust NativeModel constructor enforce the same rule.
@@ -64,7 +65,7 @@ authored text maximum, identity-bearing object/universe roles, reference identit
 domains and operation parameter/result/frame bindings. Scalars reuse IR signed
 integer bounds with reject-overflow; no new range engine or numeric widening is
 introduced. Collections under this explicit profile are ordered sequences with
-duplicates retained and a positive IR-authored maximum no greater than 10,000. References use an explicitly
+duplicates retained and a positive IR-authored maximum within the `sequence_maximum` limit. References use an explicitly
 selected acyclic IR identity carrier containing one bounded-text ID field;
 object fields remain acyclic IR records. Native roles distinguish that opaque
 reference carrier from an ordinary record. No recursive object embedding or
@@ -88,11 +89,11 @@ keeps its original digest and refusal behavior; new semantics require link_nativ
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-015-AC-1 | A real source-derived Rust rule model preserves Version 0..1000, Signed -10..10, Count 0..3, Wide i64 bounds, Distance/metre, Duration/second, Node reference fields, duplicate-preserving items and the step operation without enumerating runtime object IDs. | Test (TC-040) |
-| FR-015-AC-2 | Missing/duplicate scalar sites, mismatched representations, unsigned/saturating/rational declarations, missing text bounds and malformed object/operation/frame roles refuse without a model; sequence maxima 10,000 are admitted and 10,001 refuse with unsupported_construct through both public Rust and source-draft admission, including nested and unused declarations. | Test (TC-041) |
+| FR-015-AC-2 | Missing/duplicate scalar sites, mismatched representations, unsigned/saturating/rational declarations, missing text bounds and malformed object/operation/frame roles refuse without a model; at the default `sequence_maximum` of 10,000, sequence maxima 10,000 are admitted and 10,001 refuse with resource_exhausted naming `sequence_maximum` through both public Rust and source-draft admission, including nested and unused declarations, and 10,001 is admitted once the limit is raised to 10,001. | Test (TC-041) |
 | FR-015-AC-3 | Semantic, provenance and unused-declaration mutations change the model artifact; reordering set-like role/declaration inventories preserves it; a legacy or foreign digest cannot select the model. | Test (TC-042) |
 | FR-015-AC-4 | False or foreign model source loci refuse, including constructor-valid IR coordinates; conflicting native bindings for one formal source identity or model owner cannot enter one linked inventory. | Test (TC-043) |
 | FR-015-AC-5 | link_native resolves actual dereference fields and operation roles while existing link retains its unsupported reference/operation behavior and original artifact identity. | Test (TC-044) |
-| FR-015-AC-6 | Exact lowered model/link limits succeed where the input fits; one required operation beyond a limit, including zero and attempted hard-limit elevation, returns resource_exhausted without partial output. | Test (TC-045) |
+| FR-015-AC-6 | Exact lowered model/link limits succeed where the input fits; one required operation beyond a limit, including zero, returns resource_exhausted without partial output, and a limit raised above its default admits an input that fits it. | Test (TC-045) |
 
 ## Dependencies
 

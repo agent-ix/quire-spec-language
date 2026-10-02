@@ -22,7 +22,7 @@ When a native linked unit is checked against exact source and clause bindings, t
 
 An owned LinkedPackage from link_native, a CheckBindings value containing its
 exact FormalSource and complete authored clause/requirement/execution-point
-correspondence, and caller-lowered CheckLimits. No runtime sample participates
+correspondence, and caller-configured CheckLimits. No runtime sample participates
 in type inference or proof. The concrete contract and proof abstraction are
 defined in [native-model-checking.md](../../docs/native-model-checking.md).
 
@@ -109,7 +109,7 @@ and contains no healthy/violating assessment of an unsupplied population.
 
 Implemented and qualified by 24 native checker tests covering TC-025–029 and
 TC-046–053. The original reference/operation judgments execute through actual
-IR proofs. All seven caller budgets, depth-64 expansion and independent guard
+IR proofs. All caller budgets, deep expansion and independent guard
 assignments are exercised; nested and skipped runtime input requirements are
 retained. Task-010 owns final review/handoff. Population validation and execution
 remain downstream requirements, not results of this static qualification.

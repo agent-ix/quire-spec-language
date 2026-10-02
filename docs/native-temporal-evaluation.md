@@ -74,12 +74,14 @@ would require an FR-042 wire extension, recorded as remaining work on
 
 ## Counters
 
-`Limits`, `Usage` and `Dimension` carry eight counters. A refused charge never
-increases usage, and the first unaffordable operation is not performed. Ceilings
-above the defaults are clamped; zero is preserved; the effective clamped ceilings
-participate in result identity.
+`Limits`, `Usage` and `Dimension` carry seven counters. A refused charge never
+increases usage, and the first unaffordable operation is not performed. Each
+limit is a caller-configurable resource limit with the published default below,
+used as given above or below that default; zero is preserved; the effective
+limits participate in result identity. Formula nesting is not a limit: the
+evaluator walks a formula over an explicit heap stack, charged to `visits`.
 
-| Counter | Kind | Default ceiling | Unit |
+| Counter | Kind | Default | Unit |
 | --- | --- | --- | --- |
 | `positions` | cumulative | 1,000,000 | admitted trace positions inspected |
 | `valuations` | cumulative | 1,000,000 | atomic valuation lookups |
@@ -87,13 +89,12 @@ participate in result identity.
 | `captures` | cumulative | 100,000 | retained capture records |
 | `retention` | peak | 1,000,000 | retained valuation records required at one time |
 | `visits` | cumulative | 1,000,000 | temporal graph node visits |
-| `depth` | peak | 64 | temporal formula nesting levels |
 | `horizon` | peak | `i64::MAX` | greatest admitted interval bound |
 
 A position inspected under two operators charges `positions` twice. A valuation
 lookup that finds the leaf absent still charges `valuations`. A shared temporal
 node visited under two parents charges `visits` twice. Grouping nodes are
-traversed iteratively and do not grow `depth`. A capture record charges `captures`
+traversed iteratively. A capture record charges `captures`
 once when retained, not once per later read.
 
 Interval composition, horizon computation and history need use checked `i64`

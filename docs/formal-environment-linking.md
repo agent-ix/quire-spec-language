@@ -87,14 +87,15 @@ executable package and cannot emit a logical verdict.
 
 ## Bounds, ordering and diagnostics
 
-Hard inclusive ceilings are 64 supplied environments, 64 imports, 256 clauses,
-10,000 syntax expression nodes, 64 traversal depth, 1 MiB emitted canonical
-bytes per environment and 8 MiB emitted canonical bytes across the inventory.
-LinkLimits can lower each ceiling, including to zero; larger values clamp to
-the hard ceiling. Check counts before iteration and canonical byte totals before
+Published inclusive defaults are 64 supplied environments, 64 imports, 256
+clauses, 10,000 syntax expression nodes, 1 MiB emitted canonical bytes per
+environment and 8 MiB emitted canonical bytes across the inventory. LinkLimits
+sets each, including to zero or above its default, and each is used as given,
+with no ceiling. Nesting depth is not a limit: traversal uses an explicit heap
+stack. Check counts before iteration and canonical byte totals before
 accepting another artifact. The byte budgets count emitted canonical content,
 not allocator capacity; IR's constructor/input limits bound its internal work.
-Traversal checks the next node/depth before visiting it. A refused request owns
+Traversal checks the next node before visiting it. A refused request owns
 no externally observable partially constructed LinkedPackage and caches no
 request state for later calls.
 

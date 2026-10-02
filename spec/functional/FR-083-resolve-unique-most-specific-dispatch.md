@@ -88,21 +88,19 @@ over its concrete descendants.
 
 ### Family enumeration is bounded
 
-The model checker SHALL bound the redefinition-family walk by the
-caller-supplied `family_steps` ceiling carried in
-`ModelNormalizationLimitsV1`. The ceiling counts the `redefines` edges the
-walk follows, one per redefiner admitted to the family, so a chain of `n`
-redefinitions is admitted at a ceiling of `n`; the same ceiling bounds the
-effective-precondition walk up each linked candidate's `redefines` chain. The
-checker SHALL use the caller's ceiling as given and SHALL NOT substitute a
-fixed implementation ceiling for it. The ceiling is read, never charged. If
-the walk would follow one edge more than the ceiling, the model checker SHALL
-refuse the family outright with a resource-exhaustion cause (`family-steps`)
-naming the ceiling and SHALL NOT report a linked table or an ambiguity result
-for that family. Reaching this ceiling is a `Refused` outcome, never the
-`Incomplete` outcome a denied `ModelNormalizationLimitsV1` charge produces;
-see FR-082's "Ancestor and conformance walks are bounded" for the same
-distinction and its ADR-013 O-21 grounding.
+The model checker SHALL charge every `redefines` edge it follows, in the
+redefinition-family walk and in the effective-precondition walk up each linked
+candidate's `redefines` chain, against the caller's `family_steps` work limit
+in `ModelNormalizationLimitsV1`, before following the edge. `family_steps` is
+an edge count over all those walks together, never a chain depth, so a family
+of any depth links once the limit fits the edges its walks follow. Each walk
+runs over an explicit stack, not native recursion. The limit has a published
+default of 16777216 edges (NFR-012), the order of the S3 work default
+(NFR-011), and no ceiling: the caller raises or lowers it, and the value is
+used as given. If a charge is denied, the model checker SHALL
+stop with the `Incomplete` outcome naming `family_steps`, its configured
+value and the count the denied charge would have reached (ADR-030 D-1), and
+SHALL NOT report a linked table or an ambiguity result for that family.
 
 ## Acceptance Criteria
 
@@ -111,7 +109,7 @@ distinction and its ADR-013 O-21 grounding.
 | FR-083-AC-1 | Given a redefinition family with two branches applicable to one concrete subtype where one branch's owner is a proper descendant of the other's, the linked table selects the descendant's redefinition for that subtype; permuting the family members' declaration order does not change the selection. | Test (TC-222) |
 | FR-083-AC-2 | Given a concrete subtype with no applicable family member, linking reports a no-applicable-candidate failure for it; given a concrete subtype with two undominated candidates, linking reports a multiple-undominated-candidates failure naming both candidates and the dominance relation among the family. | Test (TC-223) |
 | FR-083-AC-3 | Given a family where one subtype is ambiguous and a second subtype in the same family would resolve cleanly on its own, the outcome carries no dispatch table at all — not even an entry for the second, cleanly-resolving subtype. | Test (TC-224) |
-| FR-083-AC-4 | Given a redefinition family whose chain of `redefines` edges exceeds the bound, linking refuses with a resource-exhaustion cause naming the bound and reports neither a linked table nor an ambiguity result; a family at exactly the bound links successfully. | Test (TC-225) |
+| FR-083-AC-4 | Given a redefinition family whose walks follow `n` `redefines` edges in total, and whose walk past edge `n − 1` would find a second undominated candidate, linking with `family_steps` at `n − 1` stops `Incomplete` naming `family_steps`, bound `n − 1` and count `n`, and reports neither a linked table nor an ambiguity result; with `family_steps` at `n` it links and reports the ambiguity. A 10,000-long `redefines` chain links on a thread with a 512 KiB stack with `family_steps` raised to fit it. | Test (TC-225) |
 
 ## Dependencies
 

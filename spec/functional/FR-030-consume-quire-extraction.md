@@ -18,7 +18,7 @@ When a caller selects an authored clause in an original document, the optional Q
 
 An immutable original Source, a caller-loaded Quire SemanticContext, a Selection
 of the authored clause ID, the authored requirement's package and the
-caller-assigned native body identity, and caller-lowered original byte and line
+caller-assigned native body identity, and caller-configured original byte and line
 limits. The extracted-command caller holds the one authored ClauseBinding, the
 formal body identity, admitted models and the native compiler stage limits.
 The caller selects and verifies the original document's

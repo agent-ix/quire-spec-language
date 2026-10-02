@@ -16,8 +16,8 @@ failure cannot stand in for the intended phase's outcome.
 
 ## Test Procedure
 
-Generate deep eligible records, long equal Unicode prefixes, nested expressions and event-heavy quantifiers. Exercise each auxiliary/depth/event limit at exact, one below, zero and hard clamping, plus deterministic cancellation/panic boundaries. Re-run after success using smaller limits and after refused/incomplete runs; retain input-byte snapshots.
+Generate deep eligible records, long equal Unicode prefixes, nested expressions and event-heavy quantifiers. Exercise each auxiliary and event limit at exact, one below, zero and raised above its default, plus deterministic cancellation/panic boundaries. Re-run after success using smaller limits and after refused/incomplete runs; retain input-byte snapshots.
 
 ## Expected Results
 
-Limits stop before excess work with the actual event prefix and no Boolean. Text advances count each side and final end checks. Depth 64/65 controls distinguish work limits from graph path length. Panic unwinds without a success report; all later calls have fresh usage, locals and visited sets. Inputs are unchanged.
+Limits stop before excess work with the actual event prefix and no Boolean. Text advances count each side and final end checks. A 100,000-deep nested expression evaluates on a thread with a 512 KiB stack under work limits sized for it. Panic unwinds without a success report; all later calls have fresh usage, locals and visited sets. Inputs are unchanged.

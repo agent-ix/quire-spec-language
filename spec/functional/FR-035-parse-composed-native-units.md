@@ -20,7 +20,7 @@ When a source selects an admitted composed edition, the compiler SHALL construct
 
 ## Inputs
 
-Exact source bytes and identity, the source header and existing caller-lowered
+Exact source bytes and identity, the source header and existing caller-configured
 source/token/node limits. The `ix:native` / `1-draft` grammar is the
 [shared grammar](https://github.com/agent-ix/quire-specification/blob/main/proposals/quire-v1/shared-grammar.md)
 landed in [standard PR #15](https://github.com/agent-ix/quire-specification/pull/15).

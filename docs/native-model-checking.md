@@ -114,12 +114,13 @@ namespace and positive revision decimal spelling. All included provenance and
 unused declarations participate. There is no general artifact decoder in this
 API and no new non-Rust producer execution.
 
-ModelLimits defaults and hard ceilings are 10,000 roles, 10,000 scalar-site/frame/
-parameter entries in aggregate, 10,000 formal type/declaration nodes, depth 64 and
-1 MiB artifact content bytes. Source::read owns the existing 1 MiB source ceiling.
-Counts/depth are checked before traversal or serialization; emitted content is
-bounded before each append. Caller values can only lower these limits; zero is
-effective. This is content accounting, not an exact allocator-capacity promise.
+ModelLimits published defaults are 10,000 roles, 10,000 scalar-site/frame/
+parameter entries in aggregate, 10,000 formal type/declaration nodes, a sequence
+maximum of 10,000 and 1 MiB artifact content bytes. Source::read owns the
+existing 1 MiB source default. Counts are checked before traversal or
+serialization; emitted content is bounded before each append. A caller raises or
+lowers each limit and it is used as given, with no ceiling; zero is effective.
+Nesting depth is not a limit: walks use explicit heap stacks. This is content accounting, not an exact allocator-capacity promise.
 
 link_native shares exact import, ambiguity and lexical resolution with link.
 LinkedPackage exposes its binding profile, and each LinkedModel exposes its
@@ -250,12 +251,12 @@ are established. They remain conditional on complete, valid native populations.
 
 The proof graph retains shared nodes until materialization. Every generated IR
 node is charged before construction; repeated Boolean aliases cannot create an
-unbounded expansion before accounting. CheckLimits defaults/hard ceilings are
-10,000 native nodes, depth 64, 10,000 proof values, 100,000 proof-graph nodes,
+unbounded expansion before accounting. CheckLimits published defaults are
+10,000 native nodes, 10,000 proof values, 100,000 proof-graph nodes,
 100,000 presence-fact work entries, 100,000 total materialized proof nodes and
 10,000 materialized nodes per goal.
-Caller limits clamp downward, including zero. Expanded IR proof depth is at most
-64, below the IR checker's thread-spawn threshold. No concurrent IR proof checks
+Each caller limit is used as given, above or below its default, including zero.
+Nesting depth is not a limit. No concurrent IR proof checks
 or additional proof worker threads are started. Bound exhaustion returns
 resource_exhausted with no partial CheckedPackage, not undefined_expression.
 

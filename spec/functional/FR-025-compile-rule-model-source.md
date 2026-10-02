@@ -18,8 +18,8 @@ When a caller selects the native-rule-model/1 source profile and supplies an ide
 
 ## Inputs
 
-An immutable FormalSource, explicit source-format selector and caller-lowered
-source-byte, declaration-entry and type-depth limits. The profile promotes the
+An immutable FormalSource, explicit source-format selector and caller-configured
+source-byte and declaration-entry limits. The profile promotes the
 existing source-aware rule-model fixture syntax: root license/package/requirement/
 revision and scalar/record/value/object/operation arrays, with optional enums.
 Declarations, nominal types, object references and operation frames retain the
@@ -35,18 +35,22 @@ Unknown profiles use UnknownWire; malformed declarations use InvalidModelBinding
 exhausted budgets use ResourceExhausted. Native admission/source errors preserve
 their existing codes.
 Duplicate and unknown scalar identities have distinct causes retaining the name.
-Source-byte, entry-category and type-depth limits have distinct typed context,
-including the effective ceiling; callers can inspect the clamped limits.
+Source-byte and entry-category limits have distinct typed context,
+including the effective limit; callers can inspect the limits in force.
 
 ## Behavior
 
 The frontend shall select native-rule-model/1 before interpreting its declarations.
-The frontend shall apply inclusive caller-lowered ceilings of 1 MiB source,
-10,000 declaration/field/variant/frame entries and 64 nested type levels.
+The frontend shall apply inclusive caller-configured source-byte and
+declaration/field/variant/frame entry limits, each used as given, with published
+defaults of 1048576 source bytes and 10000 entries that a caller may raise or
+lower.
+The frontend shall admit a type at any nesting depth that fits those limits,
+without native recursion proportional to the nesting (ADR-030 D-1).
 The frontend shall decode JSON through Serde and require object-shaped records
 with unique known fields.
 The frontend shall retain exact raw JSON occurrences for all declaration loci.
-Its located JSON utility shall require an explicit byte ceiling before reading.
+Its located JSON utility shall require an explicit byte limit before reading.
 Occurrence decoding requires a raw value borrowed directly from that source;
 owned or foreign raw values shall refuse even when their bytes match.
 The frontend shall use existing IR constructors for names, bounds, types and owners.
@@ -75,7 +79,7 @@ bytes or add another formal-model authority. No producer process or I/O is requi
 | FR-025-AC-1 | The existing rule-model source produces the same admitted model bytes/digest and declaration/role loci through the public frontend. | Test |
 | FR-025-AC-2 | All admitted source types and role forms retain their existing meaning; repeated names in different declarations and Unicode/escaped text preserve their actual occurrences. | Test |
 | FR-025-AC-3 | Unknown profiles, malformed/unknown/duplicate fields, duplicate scalar declarations, unknown scalar uses and native admission failures retain source and distinct typed causes without partial success; owned/foreign raw occurrences refuse. | Test |
-| FR-025-AC-4 | Caller-lowered source, entry-category, type-depth and admission limits return incomplete with effective ceilings; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test |
+| FR-025-AC-4 | Caller-configured source, entry-category and admission limits below an input's size return incomplete naming the limit in force, and a source larger than each default (2 MiB, 20,000 entries) is admitted once that limit is raised to fit it; exhausted entry groups stop before their values or later operations decode, and fresh requests can succeed. | Test |
 | FR-025-AC-5 | A public source-derived model reaches native compilation and actual state/operation execution without test-only semantic lowering. | Test |
 
 ## Dependencies

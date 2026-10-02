@@ -60,4 +60,5 @@ Verify NFR-012:
 6. The chain normalizes, and every inherited member fact shares its type's
    path allocation.
 7. The first run is incomplete on `declaration_records` at
-   `normalize.record`; the second refuses `AncestorSteps` naming bound 5.
+   `normalize.record`; the second is incomplete on `ancestor_steps` naming
+   bound 5.

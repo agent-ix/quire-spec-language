@@ -94,11 +94,13 @@ through it, or a crate alias or glob import that reaches it.
   the identity, the entry's `package_id` (`requested`) and the recompiled
   one.
 - The recompile SHALL run under the stage limits the request carries. The
-  request's S1 `text_input_bytes` bounds S1's source bytes, and its S3
-  `work_units` bounds the checker's work budget. No
-  `quire.value.accounting/v1` counter names an S2 or I1 limit, so those
-  stages run under their published defaults. An S1 limit above the reader
-  limit (the FR-071 reader bound, 1 MiB) refuses before the recompile.
+  request's `stage_limits` maps each setting name to its bound, every entry
+  passes through to its stage, and a setting with no entry runs at its
+  published default
+  ([FR-255](FR-255-name-the-setting-that-raises-a-reached-limit.md),
+  [FR-263](FR-263-replay-at-any-depth-under-the-request-limits.md)). An
+  `s1.input_bytes` bound above `replay.input_bytes` refuses before the
+  recompile.
 - The recompiled `package_id` SHALL equal the request's. No
   `CheckedPackage` is built from wire bytes.
 - The executor SHALL resolve the selection by name lookup in the recompiled

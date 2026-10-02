@@ -20,7 +20,7 @@ When a validated context is supplied, the reference evaluator shall execute its 
 
 ## Inputs
 
-A borrowed ValidatedContext, caller-lowered EvaluationLimits and a cancellation
+A borrowed ValidatedContext, caller-configured EvaluationLimits and a cancellation
 poll. The original native AST and CheckedClause types belong to the retained
 CheckedPackage. There is no evaluation entry point for unchecked snapshots.
 
@@ -42,7 +42,7 @@ The selected accounting version is native-ref-cost/1-draft: one step per entered
 non-group expression and one per first-expanded object in each reaches call.
 Exact independent vectors in the contract are mandatory qualification cases.
 [NFR-006](../non-functional/NFR-006-bound-native-runtime.md) separately limits
-deep comparisons, text work, events and active depth. Those implementation work
+deep comparisons, text work and events. Those implementation work
 limits do not introduce a domain or path-length bound.
 
 Unsupported profile forms continue to refuse at the existing frontend, including
@@ -71,7 +71,7 @@ establish all-input validity or backend cost parity.
 | FR-008-AC-15 | Text ordering uses Unicode scalar lexicographic order; eligible records compare declared fields and object/reference equality compares exact identity excluding observation. | Test |
 | FR-008-AC-16 | Every independent accounting vector completes at its exact required expression/graph budgets and stops incomplete one below a nonzero required budget. | Test |
 | FR-008-AC-17 | Nested and repeated implications retain actual event order; event-capacity exhaustion stops with the recorded prefix and no Boolean. | Test |
-| FR-008-AC-18 | Auxiliary comparison/text/depth limits stop before excess work while leaving expression/graph accounting distinct. | Test |
+| FR-008-AC-18 | Auxiliary comparison and text limits stop before excess work while leaving expression/graph accounting distinct. | Test |
 | FR-008-AC-19 | Repeated runs have fresh budgets, locals, visited sets and events; success cannot make a subsequent smaller-budget run succeed or change input bytes. | Test |
 | FR-008-AC-20 | A collect expression with duplicate outputs is refused by the actual frontend without silently deduplicating or reaching reference evaluation. | Test |
 

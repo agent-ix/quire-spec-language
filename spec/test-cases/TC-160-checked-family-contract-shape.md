@@ -20,9 +20,8 @@ since neither is a separate trait item to omit), that the typing context has
 no side door, that requirements are a pure function of a checked node, that
 a reached limit is distinct from both a refusal and `Incomplete`, that
 `Incomplete` is returned only by `evaluate`, never by `check` or the S4 v2
-emitter, that a nesting-depth limit is
-the proximate cause of a deeply-nested form's refusal (not the form's
-absolute size or the host's available stack), that the S4 v2 emitter is
+emitter, that the node limit is the proximate cause of a nested form's
+stop (not the form's depth or the host's available stack), that the S4 v2 emitter is
 all-or-nothing over the nodes a node names, and that every evaluation hook reads only checked input.
 The `Relation` half of FR-062-AC-6 (no `Relation` hook and no `Relation`
 S6a input) is verified by TC-385.
@@ -63,10 +62,10 @@ FR-057-AC-10's value-function row.
    exhaust mid-evaluation and confirm it returns `Incomplete`. Run `check`
    and `qsl_package::emit_checked` across each stage's fixture set and confirm
    neither returns `Incomplete`.
-7. Construct a fixture nested to depth D (for example, D levels of nested
-   function application). Check it with the nesting-depth limit configured
-   to D-1. Check the identical fixture again with the limit configured to
-   D, one greater and nothing else changed.
+7. Construct a fixture of N expression nodes nested N deep (for example,
+   `not` applied N - 1 times to `true`). Check it with the `CheckingLimits`
+   node limit configured to N - 1. Check the identical fixture again with
+   the limit configured to N, one greater and nothing else changed.
 8. Check a package holding `q(a: Length): Boolean { a * a == a * a }`,
    whose `metre^2` compound unit node names the `metre` unit node lowering
    does not build, and `t`, which names no omitted node. Emit it with
@@ -116,11 +115,11 @@ FR-057-AC-10's value-function row.
   work-budget kind, distinct in type from a checked node, a refusal and
   `Incomplete`; the exhausted `evaluate` call returns `Incomplete`; `check`
   and `emit_checked` return `Incomplete` in no observed case.
-- Step 7: with the limit at D-1, `check` returns a `Limit` outcome naming
-  the nesting-depth limit; with the limit at D on the identical fixture,
-  `check` does not return that outcome. Varying only the limit by one flips
-  the result, showing the limit value, not the fixture's absolute size, is
-  the proximate cause.
+- Step 7: with the limit at N - 1, `check` returns a `Limit` outcome naming
+  the node-count limit, bound N - 1, count N and setting `s3.nodes`; with
+  the limit at N on the identical fixture, `check` checks it. Varying only
+  the limit by one flips the result, showing the limit value, not the
+  fixture's depth, is the proximate cause.
 - Step 8: the compound unit node is omitted with `NamesAbsentNode`; `q`'s
   declaration node and every node on its path to the compound unit are
   omitted with `NamesOmittedNode`; `t` and its body are written; the I2

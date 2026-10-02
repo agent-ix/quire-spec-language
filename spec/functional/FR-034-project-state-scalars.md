@@ -21,7 +21,8 @@ target, read-origin and materialization-stop enums are non-exhaustive.
 
 The existing native package and lowering limits; optional runtime input
 materialization takes a constructor-private ValidatedContext from that exact
-checked package, a caller-lowered work ceiling (hard maximum 100,000) and a
+checked package, a caller-configured work limit (published default 100,000,
+used as given with no ceiling) and a
 cancellation poll. Existing runtime validation remains responsible for exact
 model/snapshot/invocation identity, population closure and operation frames.
 As in native runtime validation, a true poll means cancel and a callback panic
@@ -58,7 +59,7 @@ The standalone lower command shall accept the explicit state-scalar-ir/v1 target
 When inputs are requested, the materializer shall accept only a context validated against the projection's exact in-memory checked package and selected authored clause.
 The materializer shall read primitives from the selected snapshot or captured invocation without evaluating predicates or manufacturing values for unavailable data.
 The materializer shall retain inputs in projection read order for the selected clause only.
-If materialization reaches its work ceiling or is cancelled, then the materializer shall return a classified failure without partial inputs.
+If materialization reaches its work limit or is cancelled, then the materializer shall return a classified failure without partial inputs.
 The materializer shall charge each inspected read, parameter, field and arena value against fresh per-call work.
 
 Native linking and runtime validation retain their own failure boundaries:

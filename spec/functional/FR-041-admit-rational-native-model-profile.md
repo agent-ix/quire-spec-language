@@ -21,7 +21,7 @@ When a caller explicitly selects native-state-model/2, the native model adapter 
 ## Inputs
 
 The existing exact `FormalSource`, validated IR `DeclarationEnvironment`,
-`NativeRoles` and caller-lowered `ModelLimits`, with an explicit model-profile
+`NativeRoles` and caller-configured `ModelLimits`, with an explicit model-profile
 selection. The source-derived path selects `native-rule-model/2` through the
 existing `model_source::read` frontend and retains that selection through draft
 admission into `native-state-model/2`.
@@ -105,14 +105,15 @@ import is the boundary requiring refusal. Composed model binding grants no
 permission to skip later value/profile checking. A `/1` source format cannot
 silently emit `/2`, and a `/2` source draft cannot silently admit as `/1`.
 
-The source frontend and model adapter SHALL apply their existing independently caller-lowered hard ceilings and atomic refusal paths to the new variant.
+The source frontend and model adapter SHALL apply their existing independently caller-configured limits and atomic refusal paths to the new variant.
 
-Existing ceilings remain 1 MiB source/artifact content, 10,000 frontend entries,
-10,000 admission roles/entries/type nodes and depth 64 at their respective
-boundaries. Nested rational sites count under the existing wrapper/node rules;
-artifact bytes include the profile and rational content. Zero never disables a
-limit, above-hard requests are clamped and the next unaffordable step refuses
-before its work. No rational fast path bypasses source, locus, role, type-depth,
+The published defaults remain 1 MiB source/artifact content, 10,000 frontend
+entries and 10,000 admission roles/entries/type nodes at their respective
+boundaries; a caller may raise or lower each, and it is used as given. Nesting
+depth is not a limit (ADR-030 D-1). Nested rational sites count under the
+existing wrapper/node rules; artifact bytes include the profile and rational
+content. Zero never disables a limit, and the next unaffordable step refuses
+before its work. No rational fast path bypasses source, locus, role, type-node,
 canonicalization or output-content checks.
 
 ## Acceptance Criteria
@@ -125,7 +126,7 @@ canonicalization or output-content checks.
 | FR-041-AC-4 | Source-derived rational values and record fields under options/sequences retain exact nominal identity, unit and original scalar/site loci. Missing/null unit is dimensionless; named units remain exact. Existing integer/text/enum/object/operation meanings and wrappers are preserved under both compatible profiles. | Test (TC-120) |
 | FR-041-AC-5 | Historical link_native refuses a selected `/2` model, including an otherwise unchanged integer-only model, without a linked package. Composed bind_models accepts actual admitted `/2` exports and refuses stale digests, foreign ownership or wrong exports through its existing typed boundary. | Test (TC-120) |
 | FR-041-AC-6 | `/1` and `/2` over otherwise identical source/declarations/roles yield different profile-bearing native artifacts. Rational bounds, unit and source mutations alter the selected artifact; set-like inventory reorderings remain deterministic, and IR canonical/source digests cannot substitute for native artifact digest. | Test (TC-120) |
-| FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node/depth and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities; above-hard requests cannot raise ceilings. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test (TC-120) |
+| FR-041-AC-7 | Controlled rational/wrapped inputs obey existing source-entry, role/site/node and artifact/canonicalization limits at zero, exact and one-step-insufficient capacities, and an input above a default is admitted once that limit is raised to fit it. Exhaustion yields typed resource incompleteness without partial model or historical fallback. | Test (TC-120) |
 
 ## Dependencies
 

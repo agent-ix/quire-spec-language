@@ -109,38 +109,36 @@ on the strength of its declared shape alone.
 
 ### Ancestor and conformance walks are bounded
 
-The model checker SHALL bound every ancestor-chain and conformance walk it
-performs by the caller-supplied `ancestor_steps` ceiling carried in
-`ModelNormalizationLimitsV1` (and, for population admission, in
-`PopulationAdmissionLimitsV1`). The ceiling counts the types one walk
-expands, the starting type included, so a target `n` generalization steps
-above the starting type is reached at a ceiling of `n`. The checker SHALL use
-the caller's ceiling as given and SHALL NOT substitute a fixed implementation
-ceiling for it. The ceiling is read, never charged. If a walk would expand
-one type more than the ceiling, the model checker SHALL refuse with a
-resource-exhaustion cause (`ancestor-steps`) naming the ceiling and SHALL NOT
-report a conformance or non-conformance verdict for that walk. Reaching this
-ceiling is a `Refused` outcome, never the `Incomplete` outcome
-`ModelNormalizationLimitsV1`'s own axis-charge and record-charge points
-produce when a charge is denied; the two are distinct result variants over
-distinct counters, consistent with ADR-013 O-21 ("an exhausted meter yields
-`Incomplete` with its charge point and limit; a stage limit refuses with
-`LimitExceeded`").
+The model checker SHALL charge every `supertypes` edge an ancestor-chain or
+conformance walk follows against the caller's `ancestor_steps` work limit,
+carried in `ModelNormalizationLimitsV1` (and, for population admission, in
+`PopulationAdmissionLimitsV1`), before following the edge. `ancestor_steps`
+counts the edges one walk follows, so under multiple supertypes it counts
+the walk's closure, never a chain depth; each walk starts a fresh count.
+Each walk runs over an explicit stack, not native recursion. The limit has a
+published default of 16777216 edges (NFR-012) and no ceiling: the caller
+raises or lowers it, and the value is used as given. If a charge is denied,
+the model checker SHALL stop with the `Incomplete` outcome naming
+`ancestor_steps`, its configured value and the count the denied charge would
+have reached (ADR-013 O-21, ADR-030 D-1), and SHALL NOT report a conformance
+or non-conformance verdict for that walk.
 
-The walks above read B-2 ceilings, carried by the accounting-contract limits
-types `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1`, so they
-refuse `resource_exhausted` wherever they run
+The walks above charge B-2 limits, carried by the accounting-contract limits
+types `ModelNormalizationLimitsV1` and `PopulationAdmissionLimitsV1`, so a
+denied charge settles `Incomplete` with `resource_exhausted` wherever they run
 ([ADR-014](../decisions/ADR-014-temporal-trace-and-boundedness-architecture.md)
 §1, NFR-012). The expression checker's type-environment admission below reads
-its own check-stage limits type, `TypeEnvironmentLimits`, whose ceilings are
-stage limits (ADR-014 B-3, FR-096). When a type-environment walk would expand
-more types than its `ancestor_steps` ceiling, the expression checker SHALL
-return `StageFailure::Limit(LimitExceeded)` with limit kind node count, catalog
-`stage_limit_exceeded`/`node-count-exceeded`. When type-environment admission
+its own check-stage limits type, `TypeEnvironmentLimits`, whose limits are
+stage limits (ADR-014 B-3, FR-096): `ancestor_steps`, setting
+`types.ancestor_steps`, and `work_units`, setting `types.work_units`, each
+with a published default of 16777216 and no ceiling (FR-255). When a type's ancestor closure would
+follow more `supertypes` edges than its `ancestor_steps` limit, the
+expression checker SHALL return `StageFailure::Limit(LimitExceeded)` with
+limit kind edge count, catalog `stage_limit_exceeded`/`edge-count-exceeded`. When type-environment admission
 would spend more than its `work_units` budget, the expression checker SHALL
 return `StageFailure::Limit(LimitExceeded)` with limit kind work budget,
 catalog `stage_limit_exceeded`/`work-budget-exceeded`. Each `LimitExceeded` carries the
-configured ceiling, the actual counter (the ceiling plus one for
+configured limit, the actual counter (the limit plus one for
 `ancestor_steps`; for `work_units`, the cumulative total the refused charge
 would have reached), and no `Locus`: the
 object types come from an admitted domain package, not a source unit, which
@@ -154,15 +152,14 @@ give the same verdict the model gives at evaluation:
 
 - A supertype naming no admitted object type, and a `supertypes` cycle, SHALL
   refuse the environment.
-- Admission SHALL use the same `ancestor_steps` ceiling the population
-  binding walks under, counted the same way. An object type whose walk
-  (the type itself plus every ancestor) would expand more types than the
-  ceiling SHALL refuse the environment with a stage limit (`LimitExceeded`,
-  limit kind node count) naming the ceiling. Check time is the stricter side:
-  it refuses the whole environment when any type's worst-case walk exceeds
-  the ceiling, while evaluation refuses only a walk that actually does, so
-  every conformance question the checker answers, evaluation completes with
-  the same answer.
+- Admission SHALL use the same `ancestor_steps` limit the population
+  binding walks under, counted the same way. An object type whose ancestor
+  closure would follow more `supertypes` edges than the limit SHALL refuse
+  the environment with a stage limit (`LimitExceeded`, limit kind edge
+  count) naming the limit. Check time is the stricter side: it charges each
+  type's full closure, while an evaluation walk from that type follows at
+  most those edges and may stop early, so every conformance question the
+  checker answers, evaluation completes with the same answer.
 - Admission SHALL charge the ancestor closure and the attribute flattening
   below to a `work_units` budget: one unit for each ancestor or attribute
   copied into a type's set and each field a lineage names. When the budget
@@ -193,10 +190,10 @@ give the same verdict the model gives at evaluation:
 | --- | --- | --- |
 | FR-082-AC-1 | Given a redefining operation whose parameter type, result multiplicity and effect frame each independently violate their axis, the checker's `Refused` outcome names all three failing axes with their own typed cause, not only the first one checked. | Test (TC-218) |
 | FR-082-AC-2 | Given a member redefinition naming a target absent from any supertype the owner conforms to, and separately a declared `supertypes` cycle, each is refused with its own named cause (redefinition-target, specialization-cycle) and no conformance edge is derived across the cycle. | Test (TC-219) |
-| FR-082-AC-3 | Given a conformance ancestor chain longer than the bound, the checker refuses with a resource-exhaustion cause naming the bound and reports neither conformance nor non-conformance for that walk; a chain at exactly the bound is admitted. | Test (TC-220) |
+| FR-082-AC-3 | Given a conformance walk that follows `n` `supertypes` edges, the checker with `ancestor_steps` at `n − 1` stops `Incomplete` naming `ancestor_steps`, bound `n − 1` and count `n`, and reports neither conformance nor non-conformance for that walk; at `n` it gives the conformance verdict. A 10,000-long chain's conformance walk completes on a thread with a 512 KiB stack at the default `ancestor_steps`, and no outcome names a depth. | Test (TC-220) |
 | FR-082-AC-4 | Given a narrowing field redefinition with no established postcondition fact proving the narrowing, the checker refuses unproved-refinement; given the same redefinition with the obligation established, the checker admits it. | Test (TC-221) |
 | FR-082-AC-5 | Given a redefining operation whose parameter count differs from the redefined operation's, the checker's `Refused` outcome names exactly the arity failure with a type-mismatch cause and checks no per-parameter type or multiplicity axis for that pair; the result-type, result-multiplicity and effect axes are still independently checked and reported when they also fail. | Test (TC-239) |
-| FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` ceiling admits at both with the same answer to every conformance question; and a chain one type past it refuses at check time with a stage limit (`LimitExceeded`, node count) naming the ceiling, as the model's walk over it refuses at evaluation with `ancestor-steps`. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
+| FR-082-AC-6 | Given one set of object types and `supertypes` edges, the expression checker's type environment is never less strict than the model's evaluation-time walk: a supertype naming no admitted type and a `supertypes` cycle refuse at both; a chain whose walk fits the shared `ancestor_steps` limit admits at both with the same answer to every conformance question; and a chain one edge past it refuses at check time with a stage limit (`LimitExceeded`, edge count) naming the limit, as the model's walk over it stops `Incomplete` at evaluation naming `ancestor_steps`. Anything check time admits, evaluation completes. | Test (TC-219, TC-220) |
 | FR-082-AC-7 | Given object types whose ancestor closure and flattened attribute sets would cost more than the admission `work_units` budget, the expression checker's type environment refuses with a stage limit (`LimitExceeded`, work budget) naming the budget; a linear chain admits within four work units per flattened slot. | Test (TC-220) |
 
 ## Dependencies
