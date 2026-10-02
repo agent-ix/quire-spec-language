@@ -368,7 +368,7 @@ by design, and no later stage may recover it.
 | E4 | none | Carried: source map by occurrence key, in the package | Carried verbatim | **Minted**: package identity and digest, v2 schema version | Carried as v2 `bounded_domain` and `model_population`. The per-item requirement records are carried in the in-process `CheckedPackage`, not in the v2 bytes. The v2 `capability_report` follows FR-322: one `{feature, disposition}` entry per `required_features` entry and per selected model capability. A function-only `Value` package has `required_features = ["quire.value.complete/v1"]` and one entry for it with disposition `available`. |
 | E5 | none | Carried as `CheckedSourceMapEntry`, never re-minted | Carried read-only as `CheckedNodeId` and `CheckedDomainPackageRef` | Checked: an unsupported v2 contract version refuses | Carried; `requires-bound` derived once from the IR table |
 | E6 | none | Carried: `Evaluation.location` from the node id | Carried | Package identity bound to the evaluation | none |
-| E7 | none | CG tags from node ids | Obligation id = digest over every `KaniObligationIdentity` member except `source_span` (AD-016 arrow 5; QC-14, landed by agent-ix/quire-specification#140); it gains the clause occurrence key with QC-8. Remaining work: agent-ix/quire-specification#141. | none | **Minted**: disposition per `request_index`, obligation identity with its per-argument bound subset |
+| E7 | none | CG tags from node ids | Obligation id = the ADR-013 O-09 content digest: the RFC 8785 encoding, through ADR-013 §2's one encoder, of the clause node id, the clause occurrence key, the obligation kind and the arguments (each a parameter node id and its declared domain), the source span excluded (AD-016 arrow 5; QC-14, landed by agent-ix/quire-specification#140). The occurrence key keeps two occurrences of one clause apart. Remaining work: agent-ix/quire-specification#141. | none | **Minted**: disposition per `request_index`, obligation identity with its per-argument bound subset |
 | E8 | none | none: resolved at E9 | Obligation id, harness symbol | none | Bound subset carried; `proved` qualifies only over it |
 | E9 | none | Resolved: `WireNodeId` → `NodeKey` by lookup in the recompiled package, then the packet's occurrence key → nested span through the v2 source map of the package that holds the node | Obligation id, node id | Package identity of the replayed package equals the proved package | Same finite domain as the harness |
 
@@ -600,6 +600,15 @@ re-walks them against the scenarios.
   `VerifiedPackage` and this binding are defined in layer-3 `library`. The
   layer-4 `package` reader reads the bytes and calls `library` to verify
   them. #213 S-3 implements the types (ADR-013 T-1).
+  The reader has one consumer, the S4 source resolution (ADR-015 D-1 step
+  6). Spine `compile`, and `replay` when it compiles a dependency (source 2
+  of the dependency binding below), reads each library's emitted v2 bytes
+  through `qsl_package::read_import_view` into the `ImportView` E3 resolves
+  against. No other path reads a checked package from its wire: a library
+  import, CG and `replay` each compile from source, and the bytes read are
+  only the ones that compile just emitted. The reader keeps no refusal-record
+  mapping, multi-entry pinned request or export listing that this consumer
+  does not call.
 - **Dependency binding (E4, E9).** Each dependency in the S4 closure is
   compiled from source through S1 to S4, and its recomputed `package_id`
   equals the `package_id` of the verified view that E3 resolved against.
@@ -1521,3 +1530,5 @@ sections it names.
   is the amendment ticket.
 - ADR-029 (QSL-390): the S6c stage, layers A, P and X, `format` in layer 1,
   and X-12, applied in place.
+- QSL-347: §4: the I2 reader's consumer is the S4 source resolution.
+- QSL-352: E7: the obligation identity stated by its O-09 content.

@@ -444,6 +444,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-034
     type: contains
+  - target: ix://agent-ix/quire-spec-language/US-036
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-350
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-351
@@ -453,6 +455,8 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-353
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-354
+    type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-355
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-185
     type: contains
@@ -872,6 +876,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [US-033](usecase/US-033-write-unbounded-temporal-claims-and-unbounded-declarations.md) | US | Draft |
 | [US-034](usecase/US-034-catch-a-refinement-regression-across-revisions-and-profiles.md) | US | Draft |
 | [US-035](usecase/US-035-qualify-qsl-against-the-complete-v1-conformance-corpus.md) | US | Draft |
+| [US-036](usecase/US-036-check-the-quire-clauses-in-spec-artifacts.md) | US | Draft |
 | [US-016](usecase/US-016-prove-liveness-of-a-contended-model-under-strong-fairness.md) | US | Draft |
 | [US-017](usecase/US-017-learn-which-fairness-premise-a-verdict-depends-on.md) | US | Draft |
 | [US-024](usecase/US-024-check-a-temporal-property-over-every-interleaving-of-a-protocol.md) | US | Draft |
@@ -1004,7 +1009,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-115](functional/FR-115-run-an-operation-frame-over-an-invocation.md) | FR | Specified: `run_clause`'s `Frame` selection; a change outside the frame is a violation verdict with its frame witness; stale identity and version refuse before evaluation; implemented -- TC-514 passed locally |
 | [FR-116](functional/FR-116-replay-a-frame-counterexample.md) | FR | Specified: replay of a `WitnessEnvelope<FrameCounterexample>` through the replay facade, keeping anchor, frame and occurrence identity; IR witness decode waits on agent-ix/quire-contract-ir#109 and agent-ix/quire-contract-codegen#49; implemented -- TC-515 passed locally |
 | [FR-120](functional/FR-120-simulate-a-checked-package-s-state-family.md) | FR | Specified: `ModelSystem`, the model-level `TransitionSystem` over a checked package's state family (QSpec FR-181's successor relation over FR-013 frames, through FR-114 and FR-115), invariant-violating successors recorded rather than pruned (FR-181-AC-4), and effects and results as typed trace data with ambient reads refused at S3 (FR-181-AC-6); runs over the S4 package; fixtures use FR-056's bound scalar reader, on main; not yet implemented -- TC-471 to TC-473 planned |
-| [FR-121](functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md) | FR | Implemented: `qsl_replay::call_site`, a second layer-6 facade entry beside `replay`, compiling against supplied domain packages and dependencies and locating a function's parameters, an operation's anchor, frame and clause identities, or a state clause's identities by declared identity, returning the compiled package's bytes beside its `package_id`, sharing its node-key derivation with `replay` -- TC-516 passed locally |
+| [FR-121](functional/FR-121-locate-a-function-call-site-through-the-replay-facade.md) | FR | Implemented: `qsl_replay::call_site`, a second layer-6 facade entry beside `replay`, compiling against supplied domain packages and dependencies and locating a function's parameters, an operation's anchor, frame and clause identities, or a state clause's identities by declared identity, returning the compiled package's bytes beside its `package_id`, sharing its node-key derivation with `replay` -- TC-516 passed locally for FR-121-AC-1 to AC-13; Remaining work: `CallSiteRefusal::code` (FR-121-AC-14, planned) |
 | [FR-122](functional/FR-122-replay-a-state-clause-counterexample.md) | FR | Specified: replay of a `WitnessEnvelope<StateClauseCounterexample>` through the replay facade, checking the envelope's clause node and `claim` occurrence against the recompile before admission, admitting by FR-106 and evaluating by FR-107; a clause that evaluates `false` reproduces, one that holds settles `inconclusive`; not yet implemented -- TC-517 planned |
 | [FR-265](functional/FR-265-derive-a-state-clause-separating-witness.md) | FR | Specified (ADR-031 SW-1 to SW-6, SW-9): S6a stop reports and the decision-path walk derive a state clause's settlement basis and its one QSpec FR-351 record (deciding quantifier, element, index, value path); not yet implemented -- TC-740 planned |
 | [FR-270](functional/FR-270-gate-stage-entries-to-checked-inputs.md) | FR | Specified (ADR-032 CK-1 to CK-5): `cargo xtask checked-input` fails on a stage entry in `qsl-eval`, `qsl-route` or the replay facade that names a pre-check representation, or on a call to a pre-check stage there; a `make ci` prerequisite; not yet implemented -- TC-745 planned |
@@ -1054,6 +1059,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-352](functional/FR-352-report-capability-coverage.md) | FR | Specified: the run report gives outcome counts, capability coverage and each failing vector in a stable order; not yet implemented -- TC-879 planned |
 | [FR-353](functional/FR-353-settle-the-complete-v1-qualification-verdict.md) | FR | Specified: the `qualify` xtask repository gate: complete-V1 qualified when every capability of the default scope passes; gate exit 0, 1 or 2; not yet implemented -- TC-880, TC-881 planned |
 | [FR-354](functional/FR-354-admit-extensions-from-declarative-grammar-and-typed-node-schemas.md) | FR | Specified: an extension's declaration forms are admitted from its grammar and typed-node schemas and packaged as typed nodes; malformed, colliding, cyclic and unselected extensions refuse; not yet implemented -- TC-882 to TC-884 planned |
+| [FR-355](functional/FR-355-check-the-quire-fences-of-spec-artifacts.md) | FR | Specified: the Check-stage `check_fences` operation checks every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares, and reports each refusal at the artifact's path, line and column |
 | [FR-129](functional/FR-129-check-strong-fairness-constraints.md) | FR | Specified: S3 checks the `strong` fairness kind beside `weak`, an unmarked kind as `weak`, and puts each constraint's resolved kind into the clause identity (ADR-019 SY-1 to SY-5, SV-5); not yet implemented -- TC-530 planned |
 | [FR-130](functional/FR-130-decide-strong-fairness-on-the-explicit-state-product.md) | FR | Specified: EN-1 decides strong fairness by recursive SCC refinement of the retained product, with enabledness read from each model state's enabled set and the CX-5 loop (ADR-019 FS-1 to FS-7); not yet implemented -- TC-531 planned |
 | [FR-131](functional/FR-131-replay-checks-strong-fairness-on-a-model-counterexample.md) | FR | Specified: model-trace replay checks every weak and strong constraint against the loop with enabledness from the model, and an unfair EN-1 lasso settles `ReplayParity` (ADR-019 FS-8, SV-4); not yet implemented -- TC-532 planned |
@@ -1075,7 +1081,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-217](functional/FR-217-replay-a-protocol-counterexample.md) | FR | Specified: the protocol counterexample and its replay through `ProtocolSystem`, with lasso fairness over scheduler constraints and the deadlock check with recomputed blocked threads (ADR-027 PX-1, PX-2); not yet implemented -- TC-662 planned |
 | [FR-218](functional/FR-218-check-every-protocol-control-construct-at-s3.md) | FR | Specified: S3 checks of `parallel` and its join policy, `choice`, `repeat`, `await`, `check`, channel and event nodes, captures, compensation templates, replicated roles and activation, with the edge relation, binder readers and role regions in a `CheckedProtocolClause` (ADR-027 DS-1); not yet implemented -- TC-663 planned |
 | [FR-308](functional/FR-308-build-the-complete-protocol-forms-at-s2.md) | FR | Specified: S2 forms for the complete protocol productions (roles, channels, `parallel` join policies, `repeat` with optional maximum and loop proof, `await`, compensation, `terminal`, `scheduling`, `activation on each`), citing QSpec's shared grammar; not yet implemented -- TC-887 planned |
-| [FR-275](functional/FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md) | FR | Specified (ADR-029): the one call shape over eleven operations, `format` in `qsl-cst` included: typed request, caller limits, `&Cancel`, `Staged`/`StageFailure`; predecessor types; not yet implemented |
+| [FR-275](functional/FR-275-take-a-typed-request-limits-and-cancel-on-every-lifecycle-operation.md) | FR | Specified (ADR-029): the one call shape over twelve operations, `format` in `qsl-cst` included: typed request, caller limits, `&Cancel`, `Staged`/`StageFailure`; predecessor types; not yet implemented |
 | [FR-276](functional/FR-276-cancel-a-lifecycle-operation.md) | FR | Specified (ADR-029): `Cancel` with `Requested` and `Deadline`; stop within one charge; `StageFailure::Cancelled`, `CallFailure::Cancelled`; exit 22; not yet implemented |
 | [FR-219](functional/FR-219-declare-and-select-the-memory-model-of-a-parallel.md) | FR | Specified: the `memory sc|tso|ra` clause of a `parallel` with its nesting and join-policy refusals, request selection of an outermost `parallel`'s model, and the resolved models in the obligation identity (ADR-025 MM-1 to MM-5); not yet implemented -- TC-664 planned |
 | [FR-220](functional/FR-220-check-access-orderings-fences-and-access-classification.md) | FR | Specified: access orderings and the `fence` control, load/store/RMW/local classification over shared footprints, admitted orderings and the single-location access shape (ADR-025 MM-6, MA-1 to MA-4); not yet implemented -- TC-665 planned |

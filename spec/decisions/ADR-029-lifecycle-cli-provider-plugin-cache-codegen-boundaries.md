@@ -133,7 +133,7 @@ reached through the registry.
 | Stage | What the user does | Owner | Library operation (§3) | CLI verb |
 |---|---|---|---|---|
 | Author | Write and format source; see syntax errors as they type | QSL library: S1 `cst` and layer-1 `format`, tool layer `complete::editor` | `parse`, `format` | `parse`, `format` |
-| Check | Admit models and libraries, check the unit, link the checked closure | QSL library: I1, I2, S2 to S4 | `select`, `check` | `check` |
+| Check | Admit models and libraries, check the unit, link the checked closure | QSL library: I1, I2, S2 to S4 | `select`, `check`, `check_fences` | `check` |
 | Compile | Produce the in-process `CheckedPackage` | QSL library: S1 to S4 (`qsl_replay::spine`) | `check` | `check` |
 | Package | Emit `quire.checked-package/v2` bytes with the digest-addressed source provision another party needs to import (I2) or replay (E9) | QSL library: S4 `package` (E4) | `package` | `compile` |
 | Execute | Call a checked function or evaluate a checked clause | QSL library: layer 5, through the execution-backend seam (§7) | `execute` | `run` |
@@ -295,7 +295,10 @@ Every existing local exit mapping is deleted when this function lands.
 
 **CB-5 Verbs and arguments.** The verbs are `parse`, `format`, `check`,
 `compile`, `run`, `analyze`, `monitor`, `prove`, `replay`, `generate`,
-`inspect` and `version`. Every verb takes `--format json|text`, and
+`inspect` and `version`. `check` calls `check_fences` when its arguments
+name a spec artifact inventory and the module manifests that type it, and
+`select` then `check` when they name a unit source. Every verb takes
+`--format json|text`, and
 `inspect` also takes `dot` for graph views. An unknown verb, option, profile
 or provider refuses before any stage runs and names the argument (QSpec
 FR-301-AC-3, exit 20). `version` prints the application version. The CLI
@@ -314,6 +317,7 @@ below takes its request, its limits and `&Cancel`.
 | `format` | Format admissible source (FR-003) | QSL layer 1, `qsl_cst::format` | an admissible `ParsedSource`, format limits | `Staged<FormattedSource>`: the formatted bytes |
 | `select` | Admit the domain packages a unit's `model` declarations select | QSL I1 `model::intake` | domain package documents by digest, the unit's model selections | `Staged<AdmittedModels>` |
 | `check` | Check and link | QSL S3, S4 | `ParsedSource`, `AdmittedModels`, the dependency input (ADR-015 D-1), lock evidence (ADR-011 §2.4) | `Staged<CheckedPackage>` |
+| `check_fences` | Check every `quire` fence of a spec artifact inventory as a state invariant of the object its artifact declares (FR-355) | QSL I1 `model::intake`, S1 to S3 | the artifact inventory, the module manifests that type it | `Staged<FenceReport>` |
 | `package` | Emit the checked package | QSL S4 `package` (E4) | `&CheckedPackage` | `Staged<EmittedPackage>` with its source provision |
 | `execute` | Call a checked function or evaluate a checked clause | QSL layer 5, through §7's seam | `&CheckedPackage`, a `QualifiedName` or clause selection, arguments, `ObjectEnvironment`, accounting limits, the chosen execution backend | `Result<Evaluation<Value>, CallFailure>` |
 | `monitor` | Check a supplied trace offline | QSL layer A | `&CheckedPackage`, clause selections, a trace (§3 OP-3) | `Staged<MonitorOutcome>` |
