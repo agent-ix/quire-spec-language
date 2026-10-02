@@ -267,6 +267,20 @@ quantity over a declared unit, or `Reference<M::T>` for a model type
 `M::T`), refuses `ill_typed`/`operator-ineligible` at the use
 (QSpec FR-322). An imported name stands only as a callee.
 
+A call site discharges an imported function's preconditions exactly as
+it discharges a local function's. A complete-V1 `function` declares no
+precondition clause (QSpec shared grammar `function`), so its parameter
+types are its only precondition. E3 checks each argument of `l::f(x)`
+against `f`'s checked parameter type with the conversions and the QSpec
+FR-146 obligations that a call of a local function with `f`'s signature
+gets, and discharges each obligation from the importing unit's own facts.
+The callee's own body obligations (FR-146 totality, termination and
+partial operations) are discharged from its parameter types when D-1
+compiles the library from source. A library that leaves one unproved
+refuses inside `CompileRefusal::Dependency` and yields no view, so E3
+never re-checks those obligations and never assumes a fact from them at
+the call site.
+
 A reference to an imported function lowers to QSpec FR-322's
 `dependency_reference` term `{term: "dependency_reference", package, node}`,
 with the view's `package_id` and the node's `WireNodeId`, in the node body
@@ -324,3 +338,7 @@ stays acyclic.
   against the admitted dependency packages (QSpec FR-322-AC-36). CG's replay
   adapter fills the request's `dependencies` (ADR-013 C-12, QSpec
   FR-323-AC-7).
+
+## References
+
+- Linear QSL-264 (call-site preconditions of an imported function, D-5).

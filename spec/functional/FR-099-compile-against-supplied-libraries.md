@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-146
+    type: depends_on
 ---
 # FR-099: Compile a complete-V1 unit against supplied libraries
 
@@ -124,6 +126,12 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   declaration other than a function, or a function one of whose nodes in
   the transitive closure of its signature type nodes' `dependencies`
   carries an FR-322 `declaration` or a `ModelOwner`.
+- E3 SHALL check each argument of an imported call `l::f(x)` against `f`'s
+  checked parameter type with the conversions and QSpec FR-146 obligations
+  of a call of a local function with `f`'s signature, and SHALL discharge
+  each obligation from the importing unit's own facts. E3 SHALL NOT re-check
+  `f`'s body obligations, which the library's own compile discharged
+  (ADR-015 D-5).
 - The lowering SHALL write into the importing graph exactly the type nodes
   its own nodes reference, and no other node of an imported signature.
 - E4 SHALL link each import's checked library package through
@@ -147,6 +155,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 | FR-099-AC-6 | Recompiling that unit with `test/geometry` supplied from a source whose `f` body changes to `x < 6`, and the import's digest updated to the new `package_id`, gives `p`'s call node a different node id and the package a different `package_id`. | Test (TC-446) |
 
 | FR-099-AC-7 | A unit importing `test/a`, which imports `test/b`, which imports `test/c`, compiled with `dependency.libraries` at 2, refuses `stage_limit_exceeded` at stage `intake` at `test/b`'s import of `test/c`, with limit kind node count, bound 2, actual 3 and setting `dependency.libraries`, and no package; with `dependency.libraries` at 3 it compiles. The same unit with `dependency.import_edges` at 2 refuses naming edge count, bound 2, actual 3 and setting `dependency.import_edges`; with `dependency.source_bytes` one byte below the three libraries' summed source bytes it refuses naming input bytes and setting `dependency.source_bytes`. A chain of 200 libraries, each importing the next, compiles at the default limits. | Test (TC-446) |
+| FR-099-AC-8 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }` and the importing unit also declaring a local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`, each call `g::f(e)` receives the same verdict, refusal code, cause and locus as `f2(e)` in the same body, for `e` each of `y` with `y: Int[0, 9]`, `3`, `12`, `y` with `y: Int[0, 20]`, and `y` with `y: Int[0, 20]` under `if y <= 9`. With `f`'s body changed to `(10 div x) < 5`, whose divisor `x` may be zero, the compile refuses `CompileRefusal::Dependency` with path `[test/geometry]` carrying `undefined_expression`/`unproved-nonzero` in the library's source, and raises no refusal at the call site. | Test (TC-894) |
 
 ## Dependencies
 
@@ -186,3 +195,7 @@ region is in, a library's or the program's
 Remaining work: a supplied library carries no version. The code's
 `SuppliedLibrary` version, its empty-version refusal and the CLI and replay
 suppliers' version member are removed with it.
+
+## References
+
+- Linear QSL-264 (AC-8: call-site preconditions of an imported function).

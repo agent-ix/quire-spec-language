@@ -546,6 +546,7 @@ names different artifacts in each.
 | TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
 | TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
 | TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4 | 🚧 Planned |
+| TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
 
 ## Provenance (FR-095, ADR-013 S-4) coverage
 
