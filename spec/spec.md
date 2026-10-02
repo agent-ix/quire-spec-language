@@ -291,6 +291,7 @@ relationships:
   - target: ix://agent-ix/quire-spec-language/FR-345
     type: contains
   - target: ix://agent-ix/quire-spec-language/US-034
+    type: contains
   - target: ix://agent-ix/quire-spec-language/FR-350
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-351
