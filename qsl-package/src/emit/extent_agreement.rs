@@ -580,8 +580,7 @@ fn disagreement(
 }
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\";\n";
 
 /// `declarations` checked from source text through S1 to S4, emitted at
 /// its form spans and read back by IR's v2 reader.

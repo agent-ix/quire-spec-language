@@ -106,8 +106,8 @@ fn three_profiles_keep_three_meanings_over_identical_valuations() {
     assert_ne!(outcomes[0].2, outcomes[2].2, "premises are distinct");
 }
 
-/// FR-043-AC-3: a mismatched profile identity, profile revision or clock binding
-/// name refuses before any position is visited.
+/// FR-043-AC-3: a mismatched profile identity or clock binding name refuses
+/// before any position is visited.
 #[trace("TC-122", "FR-043-AC-3")]
 #[test]
 fn a_mismatched_binding_refuses_before_any_position_is_visited() {
@@ -117,9 +117,6 @@ fn a_mismatched_binding_refuses_before_any_position_is_visited() {
             temporal::Dimension::Profile => {
                 supplied.clock.profile_identity = temporal::FIXED_SAMPLE.into();
             }
-            temporal::Dimension::ProfileRevision => {
-                supplied.clock.profile_revision = "1-draft.2".into();
-            }
             temporal::Dimension::Clock => supplied.clock.name = "other".into(),
             other => panic!("no control for {other:?}"),
         }
@@ -127,11 +124,7 @@ fn a_mismatched_binding_refuses_before_any_position_is_visited() {
 
     let body = "always[0,1] holds(view.ready)";
     admitted(&origin("Due", EVENT_POSITION, body), |package, at| {
-        for dimension in [
-            temporal::Dimension::Profile,
-            temporal::Dimension::ProfileRevision,
-            temporal::Dimension::Clock,
-        ] {
+        for dimension in [temporal::Dimension::Profile, temporal::Dimension::Clock] {
             let mut supplied = trace(EVENT_POSITION, "orders");
             supplied.positions = one_true(package, at);
             mutate(&mut supplied, dimension);

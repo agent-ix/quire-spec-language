@@ -25,3 +25,6 @@ pub mod family;
 pub mod library;
 pub mod model;
 pub mod value;
+
+#[cfg(test)]
+mod qspec_diagnostics;

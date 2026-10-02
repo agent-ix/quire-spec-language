@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Seeded sampling over the same successor relation the exploration engine
-//! walks, with the pinned `quire.simulation.sampler/v1` `1-draft.1`
+//! walks, with the `quire.simulation.sampler/v1`
 //! generator (FR-101; QSpec `proposals/quire-v1/definitions/
 //! simulation-sampler.md`).
 
@@ -18,8 +18,6 @@ use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
 
 /// The one generator `sample_request` runs (FR-101).
 const SAMPLER_IDENTITY: &str = "quire.simulation.sampler/v1";
-/// See [`SAMPLER_IDENTITY`].
-const SAMPLER_REVISION: &str = "1-draft.1";
 
 /// A source of draws for sampled exploration.
 ///
@@ -81,7 +79,7 @@ impl U256 {
     }
 }
 
-/// The pinned `quire.simulation.sampler/v1` `1-draft.1` generator: a
+/// The `quire.simulation.sampler/v1` generator: a
 /// counter-mode SHA-256 rejection sampler over `{seed, trace, step, draw}`.
 pub(crate) struct PinnedSampler {
     seed: u64,
@@ -239,16 +237,16 @@ pub(crate) fn sample<S: TransitionSystem>(
     }))
 }
 
-/// Whether `sampler` is the one pinned `quire.simulation.sampler/v1`
-/// `1-draft.1` generator (FR-101). The only site that compares a sampler's
-/// identity/version strings.
+/// Whether `sampler` is the one `quire.simulation.sampler/v1` generator
+/// (FR-101), by identity. The only site that compares a sampler's identity
+/// string.
 #[qsl_attrs::string_edge]
 fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
-    sampler.identity() == SAMPLER_IDENTITY && sampler.version() == SAMPLER_REVISION
+    sampler.identity() == SAMPLER_IDENTITY
 }
 
-/// Sample `system`, first refusing a `sampler` other than the pinned
-/// `quire.simulation.sampler/v1` `1-draft.1` generator and an unbounded
+/// Sample `system`, first refusing a `sampler` other than the
+/// `quire.simulation.sampler/v1` generator and an unbounded
 /// `domains` request, before any `TransitionSystem` method is called or any
 /// draw runs (FR-101).
 ///
@@ -257,8 +255,8 @@ fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
 ///
 /// # Errors
 ///
-/// [`NotSimulated::GeneratorMismatch`] when `sampler`'s identity or version
-/// is not the pinned generator's; [`NotSimulated::RequiresBound`] or
+/// [`NotSimulated::GeneratorMismatch`] when `sampler`'s identity is not the
+/// generator's; [`NotSimulated::RequiresBound`] or
 /// [`NotSimulated::Extent`] as `explore_request`; [`NotSimulated::EmptyInitial`]
 /// when `system.initial()` returns no states; [`NotSimulated::KeyEncoding`]
 /// when a state or transition identity reached during the run has no RFC

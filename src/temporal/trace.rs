@@ -20,8 +20,6 @@ pub struct ClockBinding {
     pub name: String,
     /// Asserted registered temporal profile identity.
     pub profile_identity: String,
-    /// Asserted registered temporal profile revision.
-    pub profile_revision: String,
     /// Declared clock parameters this profile requires — sample period, epoch
     /// and unit, timestamp unit, or sequence authority. The emitted body
     /// carries none of them, so they are retained premises that participate in

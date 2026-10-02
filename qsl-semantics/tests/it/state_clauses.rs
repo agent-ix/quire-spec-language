@@ -3482,44 +3482,6 @@ fn tc465_row8_blank_authority_refuses_blank_label() {
     );
 }
 
-/// Row 9 (check 1.8): the selection's `revision` differs from the
-/// document's own.
-#[trace("TC-465", "FR-106-AC-3")]
-#[test]
-fn tc465_row9_revision_mismatch_refuses_revision_mismatch() {
-    let document = tc465_document();
-    let model_digest_hex = tc465_model_digest_hex(&document);
-    let label = frame_label("current-snap");
-    let value = tc465_healthy_parent(&label, &model_digest_hex);
-    let bytes = value.to_string().into_bytes();
-    let digest = frame_document_digest(&bytes);
-    let selected = qsl_semantics::model::observation::DocumentRef {
-        revision: "2".to_owned(),
-        digest,
-        ..label
-    };
-    let mut snapshots = BTreeMap::new();
-    snapshots.insert(digest, bytes);
-    let result = run_tc465(
-        &document,
-        "ParentOrder",
-        qsl_semantics::model::observation::ClauseSelectionInput::Current {
-            snapshot: selected,
-            anchor: qsl_semantics::model::observation::SelectedAnchor {
-                kind: qsl_semantics::model::observation::AnchorKind::Handler,
-                name: "validate".to_owned(),
-            },
-            self_object: qsl_semantics::model::observation::SelectedObject {
-                population: "ix://example/config-version/config_history".to_owned(),
-                key: "child".to_owned(),
-            },
-        },
-        snapshots,
-        BTreeMap::new(),
-    );
-    assert_tc465_refused(result, "stale_dependency", "revision-mismatch");
-}
-
 /// Row 10 (check 2): `Current` selecting `VersionUnchanged` (a
 /// postcondition).
 #[trace("TC-465", "FR-106-AC-3")]

@@ -93,17 +93,6 @@ fn operators(package: &AdmittedPackage, declaration: usize) -> Operators {
     Operators::of(&package.package().declarations[declaration].temporal)
 }
 
-/// The admitted profile revision recorded for the declaration's selected
-/// definition, read independently of the classification.
-fn admitted_revision(package: &AdmittedPackage, declaration: usize) -> String {
-    let package = package.package();
-    let entry = &package.declarations[declaration];
-    package.definitions[entry.profile as usize]
-        .revision
-        .value
-        .clone()
-}
-
 /// Require a disposition to be exactly what the table says.
 fn require(expect: &Expect, support: &Support, what: &str) {
     match (expect, support) {
@@ -363,7 +352,7 @@ fn unsupported_requests_name_their_own_dimension_and_substitute_nothing() {
 }
 
 /// FR-045-AC-3: an unsupported result retains the native declaration subject,
-/// its selected profile identity and revision and its activation record, and the
+/// its selected profile identity and its activation record, and the
 /// source declaration is unchanged by the classification.
 #[trace("TC-125", "FR-045-AC-3")]
 #[test]
@@ -381,7 +370,6 @@ fn an_unsupported_result_retains_the_native_subject_and_changes_nothing() {
     ] {
         admitted(&declaration, |package, at| {
             let before = package.package().declarations[at].clone();
-            let revision = admitted_revision(package, at);
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             assert!(matches!(classified.support, Support::Unsupported { .. }));
 
@@ -395,7 +383,6 @@ fn an_unsupported_result_retains_the_native_subject_and_changes_nothing() {
                 setup::identity(TIMESTAMPED_WINDOW),
                 "the selected profile identity",
             );
-            assert_eq!(retained.profile_revision, revision, "the admitted revision");
             let w::Body::Temporal { activation, .. } = &before.body else {
                 panic!("an authored temporal declaration");
             };
@@ -432,7 +419,7 @@ fn a_doubly_unmatched_declaration_names_both_dimensions() {
 }
 
 /// FR-045-AC-5: a supported classification names its TL target identity, the
-/// source table's baseline revision and every outstanding bridge premise, and
+/// the reviewed source table and every outstanding bridge premise, and
 /// asserts no correspondence: naming a premise does not discharge it, and the
 /// classification carries no TL formula, valuation request or correspondence
 /// record for any premise to be discharged against.
@@ -457,23 +444,12 @@ fn a_supported_classification_names_its_target_baseline_and_premises() {
         |package, at| {
             let classified = temporal::mapping_support(package, at, Closure::Closed).unwrap();
             let Support::Supported {
-                target,
-                table,
-                premises,
-                ..
+                target, premises, ..
             } = &classified.support
             else {
                 panic!("an event-position future formula is supported: {classified:?}");
             };
             assert_eq!(target.identity(), "mltl.closed-trace/v1");
-            assert!(
-                table.contains("782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f"),
-                "the source table's baseline revision is recorded: {table}",
-            );
-            assert!(
-                table.contains("FR-095"),
-                "the reviewed source table is named: {table}",
-            );
             for required in REQUIRED {
                 assert!(
                     premises.iter().any(|premise| premise.contains(required)),

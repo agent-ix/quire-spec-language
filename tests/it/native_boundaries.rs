@@ -38,7 +38,7 @@ fn parse_complete(text: &str) -> ParsedSource {
 const COMPLETE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\n",
     "// café: a multibyte comment counts in bytes\n",
-    "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+    "profile v = \"quire.value.complete/v1\";\n",
     "type Digit = Int[0, 9];\n",
     "function inc using v(x: Digit): Int[0, 10] pure { x + 1 }\n",
 );
@@ -78,7 +78,7 @@ fn formatter_byte_ceiling_is_inclusive_and_counts_final_newline() {
 fn formatter_cannot_raise_the_hard_content_ceiling() {
     let header = concat!(
         "language\"ix:native\"edition\"1-draft\";",
-        "profile v=\"quire.value.complete/v1\"version\"1\"digest\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";",
+        "profile v=\"quire.value.complete/v1\";",
         "type Digit=Int[0,9];"
     );
     assert_eq!(OUTPUT_BYTE_CEILING, 1_048_576);
@@ -186,7 +186,7 @@ fn format_takes_the_cst_and_depends_on_layer_1_and_f_only() {
 fn format_formats_complete_v1_source_the_arena_parser_refuses() {
     let text = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",
-        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
         "record Point { x: Int[0, 9]; y: Int[0, 9]; }\n",
         "function px using v(p: Point): Int[0, 9] pure {\n",
         "  // the nested block keeps this comment\n",
@@ -217,7 +217,7 @@ fn format_formats_complete_v1_source_the_arena_parser_refuses() {
 fn format_refuses_a_recovering_or_diagnosed_parse_without_output() {
     let recovering = parse_complete(concat!(
         "language \"ix:native\" edition \"1-draft\"; ",
-        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"; ",
+        "profile v = \"quire.value.complete/v1\"; ",
         "record Broken { value: Integer }"
     ));
     assert!(!recovering.cst().recoveries().is_empty());

@@ -13,8 +13,7 @@ use qsl_replay::{
 
 /// A unit of one Boolean predicate `p` of one parameter `x`.
 const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-    \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n\
+    profile v = \"quire.value.complete/v1\";\n\
     function p using v(x: Int[0, 9]): Boolean pure { x < 5 }\n";
 
 /// FR-121-AC-13: a `DeclaredDomain` over `[0, 9]` on the parameter node

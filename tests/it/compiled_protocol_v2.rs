@@ -28,7 +28,7 @@ use quire_spec_language::state::{
     EvaluationRequest, FieldInput, FieldValue, InputSlot, Limits as StateLimits, MissingInput,
     ObjectInput, ObjectKey, ObservationDigest, ObservationIdentity, ObservationKey,
     PopulationInput, Refusal as StateRefusal, StateView, StaticAuthority, Value as StateValue,
-    ValueKind as StateValueKind, OBSERVATION_CONTRACT_REVISION,
+    ValueKind as StateValueKind,
 };
 use quire_spec_language::temporal;
 use setup::{Inputs, TemporalDefinitionExpectation, TemporalExpectation, Unit};
@@ -301,12 +301,10 @@ fn state_authority(
         requirement: observation.clone(),
         producer: producer.clone(),
         observation: observation.clone(),
-        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         static_selection: static_selection.clone(),
         assessment_selection: assessment_selection.clone(),
     };
     AuthorityEvidence {
-        observation_contract_revision: OBSERVATION_CONTRACT_REVISION.into(),
         producer,
         observation,
         compiled,
@@ -714,7 +712,6 @@ fn trace_input(name: &str, profile_identity: &str, parameters: &[(&str, &str)]) 
         clock: temporal::ClockBinding {
             name: name.into(),
             profile_identity: profile_identity.into(),
-            profile_revision: "1-draft.3".into(),
             parameters: parameters
                 .iter()
                 .map(|(name, value)| ((*name).into(), (*value).into()))
@@ -2535,7 +2532,7 @@ fn added_v2_work_is_exactly_bounded_and_a_fresh_retry_is_reproducible() {
             // length. The typed `clock_name` field on each
             // `temporal_bindings` entry moves `entries`, `byte_work`
             // and `output_bytes` but not `references`.
-            (4_825, 2_581, 1_174_347, 85_462)
+            (4_825, 2_581, 1_173_402, 85_462)
         );
         for (dimension, amount) in [
             (WorkDimension::Entries, usage.entries),
@@ -2659,18 +2656,11 @@ fn l5_refuses_each_parameter_axis_before_temporal_evaluation() {
             assert_pre_position_refusal(at, &supplied, dimension);
         }
 
-        for dimension in [
-            temporal::Dimension::Profile,
-            temporal::Dimension::ProfileRevision,
-            temporal::Dimension::Clock,
-        ] {
+        for dimension in [temporal::Dimension::Profile, temporal::Dimension::Clock] {
             let mut supplied = trace_input("sample-clock", temporal::FIXED_SAMPLE, &matching);
             match dimension {
                 temporal::Dimension::Profile => {
                     supplied.clock.profile_identity = temporal::EVENT_POSITION.into();
-                }
-                temporal::Dimension::ProfileRevision => {
-                    supplied.clock.profile_revision = "other-revision".into();
                 }
                 temporal::Dimension::Clock => supplied.clock.name = "other-clock".into(),
                 _ => unreachable!("closed local mutation table"),

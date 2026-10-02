@@ -153,7 +153,6 @@ pub fn trace(profile_alias: &str, clock: &str) -> temporal::Trace {
         clock: temporal::ClockBinding {
             name: clock.into(),
             profile_identity: identity(profile_alias).into(),
-            profile_revision: "1-draft.3".into(),
             parameters: BTreeMap::new(),
         },
         positions: Vec::new(),

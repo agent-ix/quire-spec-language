@@ -764,8 +764,7 @@ mod tests {
     use quire_semantic_value::declaration::TypeEnvironment;
 
     const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\" version \"1\" digest \
-        \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+        profile v = \"quire.value.complete/v1\";\n\
         model M = \"example/protocol-fixture\" version \"1\" digest \
         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
 

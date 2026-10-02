@@ -5,18 +5,15 @@ use qsl_cst::{
     parse, CompleteCause, CompleteCode, CompleteDiagnostic, HostCause, Limits, TokenClass,
 };
 use qsl_foundation::diagnostic::LimitKind;
-use qsl_foundation::selection::{DefinitionDigest, DefinitionRef, ProfileCatalog};
+use qsl_foundation::selection::ProfileCatalog;
 use qsl_foundation::{SourceIdentity, Span};
 use quire_spec_language::complete::{
     self, analyze_document, format_document, DocumentBinding, SourceEdit,
 };
 
-fn ugly(profile: &DefinitionRef) -> String {
+fn ugly(profile: &str) -> String {
     format!(
-        "language \"ix:native\" edition \"1-draft\"; profile Complete=\"{}\" version \"{}\" digest \"{}\"; record Reading{{datum:Decimal[-2,4;18,4;nearest-even];}} function Bits using Complete ():Float32[nearest-even] pure{{float32(bits:0x7fc00001)}}",
-        profile.identity(),
-        profile.version(),
-        profile.digest().digest(),
+        "language \"ix:native\" edition \"1-draft\"; profile Complete=\"{profile}\"; record Reading{{datum:Decimal[-2,4;18,4;nearest-even];}} function Bits using Complete ():Float32[nearest-even] pure{{float32(bits:0x7fc00001)}}",
     )
 }
 
@@ -29,24 +26,16 @@ fn identity(revision: &str) -> SourceIdentity {
     }
 }
 
-fn binding(revision: &str, profile: &DefinitionRef) -> DocumentBinding {
+fn binding(revision: &str, profile: &str) -> DocumentBinding {
     DocumentBinding {
         source: identity(revision),
-        profile: profile.clone(),
+        profile: profile.to_owned(),
     }
 }
 
-fn catalog() -> (ProfileCatalog, DefinitionRef) {
-    let selected = DefinitionRef::new(
-        "quire.value.complete/v1",
-        "1",
-        DefinitionDigest::parse(&format!("sha256:{}", "a".repeat(64))).unwrap(),
-    )
-    .unwrap();
-    (
-        ProfileCatalog::new(vec![selected.clone()]).unwrap(),
-        selected,
-    )
+fn catalog() -> (ProfileCatalog, String) {
+    let selected = "quire.value.complete/v1".to_owned();
+    (ProfileCatalog::new([selected.clone()]).unwrap(), selected)
 }
 
 #[trace("QSpec-TC-223", "QSpec-FR-303-AC-1")]
@@ -321,12 +310,7 @@ fn stale_profile_and_cancelled_editor_requests_are_typed() {
     );
     assert_eq!(unbound.region, None);
     let mut wrong_profile = binding("r1", &profile);
-    wrong_profile.profile = DefinitionRef::new(
-        "unknown",
-        "1",
-        DefinitionDigest::parse(&format!("sha256:{}", "f".repeat(64))).unwrap(),
-    )
-    .unwrap();
+    wrong_profile.profile = "unknown".to_owned();
     let unknown = format_document(&parsed, wrong_profile, &catalog, Limits::default()).unwrap_err();
     assert_eq!(
         (unknown.code, unknown.cause),
@@ -378,115 +362,90 @@ fn formatter_reparse_uses_the_callers_explicit_limits() {
 #[test]
 fn every_catalog_aware_editor_path_refuses_the_exact_failing_profile_selection() {
     let (catalog, profile) = catalog();
-    let known_digest = profile.digest().digest().to_string();
-    let other_digest = format!("sha256:{}", "b".repeat(64));
-    for (revision, selected_identity, selected_version, digest, expected_code, expected_cause) in [
-        (
-            "unknown-profile",
-            "acme.unknown.complete/v1",
-            "1",
-            &known_digest,
-            CompleteCode::UnknownProfile,
-            CompleteCause::UnsupportedSelection,
-        ),
-        (
-            "stale-profile",
-            profile.identity(),
-            "2",
-            &known_digest,
-            CompleteCode::StaleDependency,
-            CompleteCause::RevisionMismatch,
-        ),
-        (
-            "stale-digest",
-            profile.identity(),
-            "1",
-            &other_digest,
-            CompleteCode::StaleDependency,
-            CompleteCause::ByteDigestMismatch,
-        ),
-    ] {
-        let source = ugly(&profile).replacen(
-            " record Reading",
-            &format!(
-                " profile Secondary = \"{selected_identity}\" version \"{selected_version}\" digest \"{digest}\"; record Reading"
-            ),
-            1,
+    let (revision, selected_identity, expected_code, expected_cause) = (
+        "unknown-profile",
+        "acme.unknown.complete/v1",
+        CompleteCode::UnknownProfile,
+        CompleteCause::UnsupportedSelection,
+    );
+    let source = ugly(&profile).replacen(
+        " record Reading",
+        &format!(" profile Secondary = \"{selected_identity}\"; record Reading"),
+        1,
+    );
+    let parsed = parse(
+        identity(revision),
+        "editor.native",
+        source.as_bytes(),
+        Limits::default(),
+    )
+    .unwrap();
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+    let failing_span = parsed.selections().profiles[1].identity_span;
+    let assert_failure = |failure: &CompleteDiagnostic| {
+        assert_eq!(failure.code, expected_code, "{revision}");
+        assert_eq!(failure.cause, expected_cause, "{revision}");
+        assert_eq!(failure.source, *parsed.source().identity(), "{revision}");
+        assert_eq!(
+            failure.byte_span().unwrap().start,
+            failing_span.start,
+            "{revision}"
         );
-        let parsed = parse(
-            identity(revision),
-            "editor.native",
-            source.as_bytes(),
+        assert_eq!(
+            failure.byte_span().unwrap().end,
+            failing_span.end,
+            "{revision}"
+        );
+    };
+
+    assert_failure(
+        analyze_document(&parsed, binding(revision, &profile), false, &catalog)
+            .unwrap_err()
+            .as_ref(),
+    );
+    assert_failure(
+        format_document(
+            &parsed,
+            binding(revision, &profile),
+            &catalog,
             Limits::default(),
         )
-        .unwrap();
-        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
-        let failing_span = parsed.selections().profiles[1].identity_span;
-        let assert_failure = |failure: &CompleteDiagnostic| {
-            assert_eq!(failure.code, expected_code, "{revision}");
-            assert_eq!(failure.cause, expected_cause, "{revision}");
-            assert_eq!(failure.source, *parsed.source().identity(), "{revision}");
-            assert_eq!(
-                failure.byte_span().unwrap().start,
-                failing_span.start,
-                "{revision}"
-            );
-            assert_eq!(
-                failure.byte_span().unwrap().end,
-                failing_span.end,
-                "{revision}"
-            );
-        };
+        .unwrap_err()
+        .as_ref(),
+    );
 
-        assert_failure(
-            analyze_document(&parsed, binding(revision, &profile), false, &catalog)
-                .unwrap_err()
-                .as_ref(),
-        );
-        assert_failure(
-            format_document(
-                &parsed,
-                binding(revision, &profile),
-                &catalog,
-                Limits::default(),
-            )
-            .unwrap_err()
-            .as_ref(),
-        );
-
-        let record = source.find(" record Reading").unwrap() + 1;
-        let edit = SourceEdit {
-            range: Span {
-                start: record,
-                end: record,
-            },
-            replacement: " ".into(),
-        };
-        assert_failure(
-            complete::apply_edit_with_catalog(
-                &parsed,
-                revision,
-                identity(&format!("{revision}-next")),
-                edit.clone(),
-                &catalog,
-                Limits::default(),
-            )
-            .unwrap_err()
-            .as_ref(),
-        );
-        assert_failure(
-            complete::apply_edit_with_catalog(
-                &parsed,
-                "superseded-revision",
-                identity(&format!("{revision}-other")),
-                edit,
-                &catalog,
-                Limits::default(),
-            )
-            .unwrap_err()
-            .as_ref(),
-        );
-    }
+    let record = source.find(" record Reading").unwrap() + 1;
+    let edit = SourceEdit {
+        range: Span {
+            start: record,
+            end: record,
+        },
+        replacement: " ".into(),
+    };
+    assert_failure(
+        complete::apply_edit_with_catalog(
+            &parsed,
+            revision,
+            identity(&format!("{revision}-next")),
+            edit.clone(),
+            &catalog,
+            Limits::default(),
+        )
+        .unwrap_err()
+        .as_ref(),
+    );
+    assert_failure(
+        complete::apply_edit_with_catalog(
+            &parsed,
+            "superseded-revision",
+            identity(&format!("{revision}-other")),
+            edit,
+            &catalog,
+            Limits::default(),
+        )
+        .unwrap_err()
+        .as_ref(),
+    );
 }
 
 #[test]

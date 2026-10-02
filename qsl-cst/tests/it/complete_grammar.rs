@@ -113,7 +113,7 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
 
 fn source(declarations: &str) -> String {
     format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n{declarations}"
+        "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n{declarations}"
     )
 }
 
@@ -499,7 +499,7 @@ fn profile_identity_is_syntactic_and_retained_for_package_resolution() {
     assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
     assert_eq!(parsed.selections().profiles[0].identity_span.start, start);
     assert_eq!(
-        parsed.selections().profiles[0].definition.identity(),
+        parsed.selections().profiles[0].identity,
         "quire.value.unknown/v1"
     );
     assert_eq!(parsed.cst().render(), unknown.as_bytes());
@@ -542,12 +542,11 @@ fn first_diagnostic(id: &str, bytes: &[u8]) -> (CompleteCode, CompleteCause) {
 #[trace("QSpec-TC-047", "QSpec-FR-047-AC-3")]
 #[test]
 fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
-    let profile = |identity: &str, version: &str, digest: &str| {
+    let profile = |identity: &str| {
         format!(
-            "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"{identity}\" version \"{version}\" digest \"{digest}\";\nrecord Reading {{ datum: Integer; }}"
+            "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"{identity}\";\nrecord Reading {{ datum: Integer; }}"
         )
     };
-    let digest = format!("sha256:{}", "a".repeat(64));
     let cases: [(&str, Vec<u8>, CompleteCode, CompleteCause); 10] = [
         (
             "unexpected-token",
@@ -581,13 +580,13 @@ fn complete_source_diagnostics_carry_their_catalogued_typed_cause() {
         ),
         (
             "invalid-identifier",
-            profile("", "1", &digest).into_bytes(),
+            profile("").into_bytes(),
             CompleteCode::InvalidIdentifier,
             CompleteCause::Host(HostCause::SelectionIdentity),
         ),
         (
             "invalid-digest",
-            profile("quire.value.complete/v1", "1", "sha256:AA").into_bytes(),
+            b"language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nmodel M = \"acme/orders\" version \"1\" digest \"sha256:AA\";\nrecord Reading { datum: Integer; }".to_vec(),
             CompleteCode::InvalidDigest,
             CompleteCause::Host(HostCause::SelectionDigest),
         ),

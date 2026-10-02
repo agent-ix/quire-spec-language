@@ -56,17 +56,7 @@ pub(super) enum SelectionPart {
 pub(super) fn selection_schema(production: P) -> Option<&'static [SelectionPart]> {
     use SelectionPart::{Alias, Digest, Exact, Identity, OptionalAlias, Version};
     match production {
-        P::Profile => Some(&[
-            Exact("profile"),
-            Alias,
-            Exact("="),
-            Identity,
-            Exact("version"),
-            Version,
-            Exact("digest"),
-            Digest,
-            Exact(";"),
-        ]),
+        P::Profile => Some(&[Exact("profile"), Alias, Exact("="), Identity, Exact(";")]),
         P::ImportDeclaration => Some(&[
             Exact("import"),
             Identity,
@@ -1636,8 +1626,7 @@ mod tests {
     fn every_declarative_reserved_word_is_refused_as_an_identifier() {
         let prefix = concat!(
             "language \"ix:native\" edition \"1-draft\";\n",
-            "profile Complete = \"quire.value.complete/v1\" version \"1\" digest ",
-            "\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+            "profile Complete = \"quire.value.complete/v1\";\n",
             "record "
         );
         for word in complete_reserved_words(&complete_v1()) {

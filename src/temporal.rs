@@ -34,7 +34,7 @@ use formula::{Evaluator, Tri};
 pub use budget::{Dimension as LimitDimension, Exhaustion, Limits, Usage, ACCOUNTING_VERSION};
 pub use mapping::{
     classify, AuthenticatedSelection, Classification, Operators, Retained, Support, Target,
-    Unmatched, OUTSTANDING_PREMISES, SUPPORT_TABLE,
+    Unmatched, OUTSTANDING_PREMISES,
 };
 pub use profile::{Profile, EVENT_POSITION, FIXED_SAMPLE, TIMESTAMPED_WINDOW};
 pub use progress::{AuthenticatedBinding, Binding, Ledger, Progress};
@@ -253,7 +253,6 @@ fn classify_selected(
             subject,
             name: selected.declaration.name.clone(),
             profile: selected.profile,
-            profile_revision: selected.revision.clone(),
             activation: selected.activation.clone(),
         },
         authenticated,
@@ -313,7 +312,6 @@ struct Selected<'a> {
     body: &'a w::Body,
     activation: &'a w::Activation,
     profile: Profile,
-    revision: String,
 }
 
 fn select(
@@ -345,7 +343,6 @@ fn select(
         body: &entry.body,
         activation,
         profile,
-        revision: definition.revision.value.clone(),
     })
 }
 
@@ -395,13 +392,6 @@ fn run(
         }
         .into());
     }
-    if trace.clock.profile_revision != selected.revision {
-        return Err(Refusal::Binding {
-            dimension: Dimension::ProfileRevision,
-            subject,
-        }
-        .into());
-    }
     // A missing clock binding is a dangling reference; a clock binding whose
     // name lacks the `clock:` spelling names no clock and is a clock-binding
     // mismatch, exactly as when the name was parsed here.
@@ -419,7 +409,6 @@ fn run(
     };
     let premises = Premises {
         profile: selected.profile,
-        profile_revision: selected.revision.clone(),
         clock: trace.clock.name.clone(),
         clock_parameters: trace.clock.parameters.clone(),
         watermark,
@@ -581,13 +570,6 @@ fn authenticate_v2(
     if trace.clock.profile_identity != selected.profile.identity() {
         return Err(Refusal::Binding {
             dimension: Dimension::Profile,
-            subject,
-        }
-        .into());
-    }
-    if trace.clock.profile_revision != selected.revision {
-        return Err(Refusal::Binding {
-            dimension: Dimension::ProfileRevision,
             subject,
         }
         .into());

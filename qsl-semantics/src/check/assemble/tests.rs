@@ -22,8 +22,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::FieldDeclaration;
 use quire_semantic_value::location::{Location, Origin};
 
-const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+const PROFILE_V: &str = "profile v = \"quire.value.complete/v1\";\n";
 
 /// The unit text: the header, `profiles`, then `declarations`.
 fn text(profiles: &str, declarations: &str) -> String {
@@ -519,8 +518,7 @@ fn using_aliases_resolve_to_the_units_profile_selections() {
         .get(&0)
         .expect("f's alias resolved to a recorded selection");
     assert_eq!(selection.alias, "v");
-    assert_eq!(selection.definition.identity(), "quire.value.complete/v1");
-    assert_eq!(selection.definition.version(), "1");
+    assert_eq!(selection.identity, "quire.value.complete/v1");
     assert_eq!(
         &unit_text[selection.span.start..selection.span.end],
         PROFILE_V.trim_end()

@@ -18,7 +18,7 @@ use qsl_foundation::{SourceIdentity, SyntaxLimit};
 /// line and the profile every function names.
 const HEADER: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\n",
-    "profile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+    "profile Complete = \"quire.value.complete/v1\";\n",
 );
 
 fn identity(id: &str) -> SourceIdentity {

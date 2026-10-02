@@ -13,6 +13,5 @@ pub use input::{
     InvalidAdapterArtifact, MissingInput, ObjectInput, ObjectKey, ObservationDigest,
     ObservationIdentity, ObservationKey, PopulationInput, Refusal, StateView, StaticAuthority,
     UnsupportedCanonicalizationDomain, Value, ValueKind, ValuePathSegment,
-    OBSERVATION_CONTRACT_REVISION,
 };
 pub use work::{Dimension, Exhaustion, ExhaustionCause, Limits, Usage, ACCOUNTING_VERSION};

@@ -10,8 +10,7 @@ use qsl_foundation::SourceIdentity;
 /// Complete` declaration names.
 pub const PRELUDE: &str = concat!(
     "language \"ix:native\" edition \"1-draft\";\n",
-    "profile Complete = \"quire.value.complete/v1\" version \"1\" digest ",
-    "\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+    "profile Complete = \"quire.value.complete/v1\";\n",
 );
 
 /// The source identity every generated source is parsed under.

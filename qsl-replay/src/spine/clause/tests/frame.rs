@@ -405,12 +405,6 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
         .expect("UTF-8")
         .replace("\"boolean\":true", "\"boolean\":false")
         .into_bytes();
-    // Another `revision` label on the selected invocation.
-    let mut relabelled = changed_version();
-    let ClauseRunSelection::Frame { invocation, .. } = &mut relabelled.request.selection else {
-        unreachable!("changed_version selects a frame");
-    };
-    invocation.revision = "2".to_owned();
     // Another `model` digest in the invocation document.
     let other_model = frame_input(
         config_version_request,
@@ -432,7 +426,6 @@ fn stale_or_mismatched_documents_refuse_at_admit() {
 
     for (input, code, cause) in [
         (edited, "stale_dependency", "byte-digest-mismatch"),
-        (relabelled, "stale_dependency", "revision-mismatch"),
         (
             other_model,
             "invalid_model_binding",

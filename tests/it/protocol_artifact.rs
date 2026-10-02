@@ -541,12 +541,6 @@ fn profiles_and_a_substituted_domain_package_cannot_borrow_admission() {
     let mut offered = fixture.package.clone();
     offered.models[0].profile = "native-state-model/2".into();
     failure(&fixture.offered(&offered), Error::Invalid(Invalid::Model));
-    let mut offered = fixture.package.clone();
-    offered.definitions[0].revision.value.push_str("-future");
-    failure(
-        &fixture.offered(&offered),
-        Error::Unsupported(Unsupported::Definition),
-    );
     // The accepted selection is a directly admitted native model, so its
     // domain-package naming is null; a payload naming one substitutes it.
     let mut offered = fixture.package.clone();

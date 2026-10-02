@@ -40,8 +40,6 @@ use super::{
 use crate::spine::{compile, default_accounting, Compiled, DependencyInput, SpineLimits};
 
 const PACKAGE_IDENTITY: &str = "test/nodes";
-const PROFILE_DIGEST: &str =
-    "sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16";
 const PLACEHOLDER_DIGEST: &str =
     "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -180,7 +178,7 @@ fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          invariant NoCycle using v on M::Node at current {{ not reaches(self, self, next) }}\n\
          function isPositive using v(n: Integer): Boolean pure {{ n > 0 }}\n\
@@ -1628,7 +1626,7 @@ fn config_version_unit_and_packages_for(
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
@@ -2902,7 +2900,7 @@ fn config_version_step3_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u
     let digest = config_version_step3_model_digest_hex();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \"{PROFILE_DIGEST}\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          pre ReachesTarget using v on Config::ConfigVersion::probe {{ \

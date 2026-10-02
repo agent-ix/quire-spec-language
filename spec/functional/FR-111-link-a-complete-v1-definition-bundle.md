@@ -63,7 +63,14 @@ no stage of the S1 to S4 spine calls it.
   `dependency_edges`, and refuse a root or a reached definition that the
   catalog does not hold. A dependency chain of any length within the limits
   closes (ADR-030 D-1).
-- A root or edge SHALL resolve by definition identity alone.
+- A root or edge SHALL resolve by definition identity alone. A
+  definition's identity is the pair `{authority, identity}` (STD-150): a
+  selection resolves only to the catalog definition with the same authority
+  and identity, whatever revision label or bytes that definition carries.
+  A root naming a catalog identity under another authority, which no other
+  selection names, holds no catalog definition and refuses
+  `unknown_profile`/`unsupported-selection`, naming its index; an edge
+  doing the same refuses `missing_import`/`missing-selection`.
 - If two selections of one identity name different authorities, among the
   roots or anywhere in the closure, then `link_bundle` SHALL refuse
   `ambiguous_declaration`/`conflicting-authority`, naming both.
@@ -84,18 +91,18 @@ no stage of the S1 to S4 spine calls it.
   the inventory SHALL refuse `unknown_required_feature`/`unknown-feature`.
 - The bundle's identity SHALL be the `quire.complete.resolved-graph/2`
   `SemanticDigest` of the preimage `{capabilities, definitions, models}`:
-  the capabilities, the closed definitions (exact reference, role,
-  dependencies, capabilities) and `models`, which is always the empty
-  array, because model selections resolve only through I1 (FR-056). The
-  label stays `/2`, so the identity of an existing bundle is unchanged. No backend, installed
-  runtime or support set is an input, so none changes the identity or the
-  admission.
+  the capabilities, the closed definitions (each definition's
+  `{authority, identity}`, the SHA-256 of its bytes, its role, its
+  dependencies as `{authority, identity}` pairs and its capabilities) and
+  `models`, which is always the empty array, because model selections
+  resolve only through I1 (FR-056). No backend, installed runtime or support
+  set is an input, so none changes the identity or the admission.
 
 ### Refusals
 
 | Case | Code | Cause |
 | --- | --- | --- |
-| a root's identity is in no catalog definition | `unknown_profile` | `unsupported-selection` |
+| a root's `{authority, identity}` is in no catalog definition | `unknown_profile` | `unsupported-selection` |
 | a dependency edge names a definition the catalog does not hold | `missing_import` | `missing-selection` |
 | two selections of one identity name different authorities | `ambiguous_declaration` | `conflicting-authority` |
 | a dependency cycle | `invalid_package` | `definition-cycle` |
@@ -127,7 +134,7 @@ names the field, its bound, the count reached and its setting
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-111-AC-1 | Roots whose closure covers the nine facets and the 176 capabilities link. The `LinkedBundle` holds every closed definition and the nine facets, and its identity is unchanged when the caller's known-backend set is broader or narrower (`CompleteBundle::validate_known_capabilities` alone refuses an unknown capability). | Test (TC-491) |
-| FR-111-AC-2 | A root whose identity the catalog lacks refuses `unknown_profile`/`unsupported-selection`; a root whose identity the catalog holds resolves whatever revision label or bytes the catalog's definition carries; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each refusal names the root's index. | Test (TC-491) |
+| FR-111-AC-2 | A root whose identity the catalog lacks, or holds only under another authority, refuses `unknown_profile`/`unsupported-selection`; a root whose identity the catalog holds resolves whatever revision label or bytes the catalog's definition carries; a dependency edge to an absent definition refuses `missing_import`/`missing-selection`. Each refusal names the root's index. | Test (TC-491) |
 | FR-111-AC-3 | Two roots, or a root and a reached definition, selecting one identity under two authorities refuse `ambiguous_declaration`/`conflicting-authority` naming both; a dependency cycle refuses `invalid_package`/`definition-cycle` naming the cycle in path order. | Test (TC-491) |
 | FR-111-AC-4 | Removing the definitions of one facet refuses `invalid_package`/`feature-set-mismatch` naming that facet; removing one capability refuses `unknown_required_feature`/`unsupported-feature`. | Test (TC-491) |
 | FR-111-AC-5 | The bundle identity matches the `quire.complete.resolved-graph/2` golden vector (preimage `{"capabilities":[…],"definitions":[],"models":[]}`), and changing one definition's role, dependencies, capabilities or bytes changes it. | Test (TC-491) |
@@ -155,9 +162,9 @@ backed. FR-111-AC-1 to AC-7 are backed there. A refusal of the whole link
 the facets, the identity) carries no root index: `BundleRefusal::root` is
 `None`.
 
-Remaining work: resolution by definition identity alone replaces the
-revision and byte comparisons, which `library::bundle` and
-`library::bundle_tests` still make; the `depth` field of `PackageLimits` is
-deleted. QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
+Roots and edges resolve by definition identity alone; a `DefinitionRef`
+is `{authority, identity}`.
+
+Remaining work: the `depth` field of `PackageLimits` is deleted. QSpec follow-up (STD-146): QSpec FR-133 defines no grammar schema or
 typed-node schema member of an extension definition yet; FR-354 reads them
 once QSpec does.

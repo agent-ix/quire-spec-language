@@ -246,7 +246,7 @@ fn control(rng: &mut Rng, depth: usize) -> String {
     }
 }
 
-const COMPLETE_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\nmodel M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\n";
+const COMPLETE_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\nmodel M = \"acme/model\" version \"1\" digest \"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\";\n";
 const HISTORICAL_HEADER: &str = "language \"ix:native\" edition \"0-draft\";\nprofile \"state-finite/0-draft\";\nmodel M = \"test/model\" version \"1\" digest \"unresolved\";\n";
 const COMPOSED_HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile S = \"quire.state.graph/v1\" version \"test:state\" digest \"unresolved-state\";\nprofile T = \"quire.temporal.timestamped-event.finite-window/v1\" version \"test:temporal\" digest \"unresolved-temporal\";\nprofile P = \"quire.protocol.finite-global/v1\" version \"test:protocol\" digest \"unresolved-protocol\";\nmodel M = \"test:orders-and-refunds\" version \"test:model\" digest \"unresolved-model\";\n";
 

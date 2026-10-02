@@ -78,11 +78,11 @@ Native-to-TL mapping support is classified by
 The emitted temporal body — current-input binder, clock binding index,
 activation, ordered captures and the closed temporal operation graph — together
 with the declaration's admitted definition entry, which carries the selected
-profile identity and revision.
+profile identity.
 
 One caller-constructed observation trace supplying:
 
-- its own asserted profile identity and revision, and its clock binding name;
+- its own asserted profile identity and its clock binding name;
 - the declared clock parameters the profile requires — sample period, epoch and
   unit for fixed-sample, timestamp unit for timestamped-event, sequence authority
   for event-position — as opaque retained premises;
@@ -135,10 +135,9 @@ for one instance leaves every sibling instance separately inspectable.
 
 ### Profile and clock selection
 
-The evaluator SHALL refuse a trace whose asserted profile identity or revision
-differs from the declaration's admitted definition entry, and SHALL refuse a
-trace whose clock binding name differs from the declaration's emitted clock
-binding.
+The evaluator SHALL refuse a trace whose asserted profile identity differs
+from the declaration's admitted definition entry, and SHALL refuse a trace
+whose clock binding name differs from the declaration's emitted clock binding.
 
 The evaluator SHALL NOT substitute, widen, default or nearest-match a profile,
 clock, period, epoch, unit or sequence authority.
@@ -255,8 +254,8 @@ closure combination, and SHALL refuse any one-axis substitution.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-043-AC-1 | On one closed-complete position with `p` true, `always[0,1] holds(p)` is false with basis `closed-scope` and `always[0,1] true` is true under both false-extension profiles; the same distinction survives a grouping node and an enclosing connective, and neither the emitted graph nor evaluation folds the two. | Test (TC-122); Inspection |
-| FR-043-AC-2 | The same valuations and the same numeric interval under event-position, fixed-sample and timestamped-event selections yield three results retaining three distinct profile identities, revisions and clock premises, the finite-window case true where the false-extension cases are false; no two of the three share a result identity. | Test (TC-122); Analysis |
-| FR-043-AC-3 | A trace whose asserted profile identity, profile revision or clock binding name differs from the declaration's admitted selection refuses before any position is visited and names that dimension; no default or nearest-compatible selection is inserted. | Test (TC-122); Inspection |
+| FR-043-AC-2 | The same valuations and the same numeric interval under event-position, fixed-sample and timestamped-event selections yield three results retaining three distinct profile identities and clock premises, the finite-window case true where the false-extension cases are false; no two of the three share a result identity. | Test (TC-122); Analysis |
+| FR-043-AC-3 | A trace whose asserted profile identity or clock binding name differs from the declaration's admitted selection refuses before any position is visited and names that dimension; no default or nearest-compatible selection is inserted. | Test (TC-122); Inspection |
 | FR-043-AC-4 | All eight bounded operators evaluate over inclusive intervals including the zero-width `[k,k]` form and a nonzero lower bound; `once[1,1]` is strong previous; `p until[1,2] q` is true with `p` false at the anchor and `q` true at offset one; `release` and `triggered` agree with the Boolean duals of `until` and `since` on the same traces. | Test (TC-122) |
 | FR-043-AC-5 | `until`, `release`, `since` and `triggered` refuse when participating positions share a clock coordinate and either lacks an admitted order key, or when two order keys come from different authorities; the same positions with one admitted order evaluate, and reversing insertion order changes nothing. | Test (TC-122) |
 | FR-043-AC-6 | `not`, `and`, `or` and `implies` evaluate pointwise: with `p` true at the single closed-complete position, `always[0,1] not holds(p)` is false and `eventually[0,1] not holds(p)` is true under false extension, distinguishing pointwise negation from an untimed reading. | Test (TC-122) |

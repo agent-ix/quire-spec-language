@@ -909,8 +909,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             .get(owner as usize)
             .and_then(|declaration| declaration.bindings.get(index as usize))
             .ok_or_else(|| Stop::Refused(Refusal::SurplusBinding(handle.clone())))?;
-        if !is_current_observation_contract_revision(&offered.observation_contract_revision)
-            || !valid_identity(&offered.static_selection.document_identity)
+        if !valid_identity(&offered.static_selection.document_identity)
             || !valid_identity(&offered.static_selection.model_identity)
             || !valid_identity(&offered.static_selection.profile_identity)
             || !valid_identity(&offered.static_selection.configuration_identity)
@@ -933,7 +932,7 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             || offered.assessment_selection.window_identity.is_some()
                 != offered.assessment_selection.window_digest.is_some()
         {
-            return Err(Stop::Refused(Refusal::AuthorityRevision));
+            return Err(Stop::Refused(Refusal::MalformedAuthorityEvidence));
         }
         let compiled = self
             .package
@@ -949,7 +948,6 @@ impl<'a, P: StatePackage + ?Sized> Evaluator<'a, P> {
             || adapter.requirement != requirement.authority
             || adapter.producer != offered.producer
             || adapter.observation != offered.observation
-            || adapter.observation_contract_revision != offered.observation_contract_revision
             || adapter.static_selection != offered.static_selection
             || adapter.assessment_selection != offered.assessment_selection
         {
@@ -2475,14 +2473,6 @@ fn valid_observation_digest(value: &ObservationDigest) -> bool {
 
 fn valid_identity(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096
-}
-
-/// The one reader of an offered `AuthorityEvidence`'s wire observation-contract
-/// revision (ADR-012 section 9): admits it only against the one currently
-/// supported [`OBSERVATION_CONTRACT_REVISION`].
-#[qsl_attrs::string_edge]
-fn is_current_observation_contract_revision(revision: &str) -> bool {
-    revision == OBSERVATION_CONTRACT_REVISION
 }
 
 struct RequiredInputs {

@@ -42,11 +42,11 @@ profiles compiles one declaration per profile from identical clause text.
    admitted position, a fixed-sample trace of one required sample, and a complete
    finite window whose only admitted instant is the anchor. Require the
    finite-window result true and both false-extension results false, and require
-   the three results to retain three distinct profile identities, revisions and
-   clock premises. Compare the three result identities pairwise and require no
+   the three results to retain three distinct profile identities and clock
+   premises. Compare the three result identities pairwise and require no
    two to be equal.
 3. Against one fixed declaration, independently mutate the trace's asserted
-   profile identity, its asserted profile revision, and its clock binding name.
+   profile identity and its clock binding name.
    Require each to refuse naming that dimension with reported `positions` usage
    zero, establishing that the refusal preceded any position visit. Inspect the
    refusal value and require no substituted profile, clock or nearest-compatible
@@ -123,9 +123,9 @@ profiles compiles one declaration per profile from identical clause text.
 
 ## Expected Results
 
-Every truth is tied to its declaration, selected profile identity and revision,
-clock binding and trace premises. `true`, `false`, `pending`, incomplete and
-refused remain five distinct outcomes, and `closed-scope`, `decisive-witness`,
+Every truth is tied to its declaration, selected profile identity, clock
+binding and trace premises. `true`, `false`, `pending`, incomplete and refused
+remain five distinct outcomes, and `closed-scope`, `decisive-witness`,
 `decisive-counterexample`, `unsettled` and `unavailable` remain five distinct
 bases; no missing observation, closed boundary, contradiction or resource stop
 collapses into a Boolean. The three profile interpretations remain three meanings

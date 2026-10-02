@@ -13,8 +13,7 @@ use quire_exact::{Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\";\n";
 
 /// The unit with its declared names supplied: alias, inner function,
 /// parameter and outer function.

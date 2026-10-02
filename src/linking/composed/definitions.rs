@@ -58,18 +58,18 @@ pub struct Inventory<'a> {
 /// A typed reason an exact definition closure cannot be used.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Cause {
-    /// No supplied artifact has this identity and revision.
+    /// No supplied artifact has this identity.
     MissingDefinition(Selection),
-    /// Multiple supplied entries claim one immutable identity/revision.
+    /// Multiple supplied entries claim one definition identity.
     AmbiguousDefinition {
-        /// The identity/revision selection matched by multiple entries.
+        /// The selection whose identity multiple entries claim.
         selection: Selection,
         /// Indices of the supplied entries claiming this selection.
         entries: Vec<usize>,
     },
-    /// No supplied artifact has this compiler-required identity and revision.
+    /// No supplied artifact has this compiler-required identity.
     MissingDependency(RegisteredDefinition),
-    /// Multiple supplied entries claim one compiler-required identity/revision.
+    /// Multiple supplied entries claim one compiler-required identity.
     AmbiguousDependency {
         /// The compiler-required definition matched by multiple entries.
         required: RegisteredDefinition,
@@ -81,7 +81,8 @@ pub enum Cause {
         /// Index of the supplied entry whose digest does not match its bytes.
         entry: usize,
     },
-    /// Native selection differs from the selected supplied artifact.
+    /// The native selection's digest differs from the selected supplied
+    /// artifact's.
     SelectionMismatch {
         /// The selection asserted by the native reference.
         expected: Selection,
@@ -211,7 +212,7 @@ pub struct Report<'a> {
 
 struct Catalog<'a> {
     input: &'a Inventory<'a>,
-    definitions: BTreeMap<(&'a str, &'a str), Vec<usize>>,
+    definitions: BTreeMap<&'a str, Vec<usize>>,
     rules: BTreeMap<&'a str, Vec<usize>>,
     registered: Vec<Option<RegisteredDefinition>>,
     invalid_digest: BTreeSet<usize>,
@@ -467,7 +468,7 @@ impl<'a> Catalog<'a> {
             }
             catalog
                 .definitions
-                .entry((&artifact.selection.identity, &artifact.selection.revision))
+                .entry(&artifact.selection.identity)
                 .or_default()
                 .push(index);
             if ByteDigest::of(artifact.bytes) != artifact.selection.digest {
@@ -476,9 +477,7 @@ impl<'a> Catalog<'a> {
             let mut registered = None;
             for candidate in RegisteredDefinition::all() {
                 work.charge(Dimension::References, 1)?;
-                if candidate.identity() == artifact.selection.identity
-                    && candidate.revision() == artifact.selection.revision
-                {
+                if candidate.identity() == artifact.selection.identity {
                     registered = Some(*candidate);
                     break;
                 }
@@ -500,9 +499,7 @@ impl<'a> Catalog<'a> {
         work: &mut Work,
     ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
         work.charge(Dimension::References, 1)?;
-        let entries = self
-            .definitions
-            .get(&(selection.identity.as_str(), selection.revision.as_str()));
+        let entries = self.definitions.get(selection.identity.as_str());
         let index = match entries.map(Vec::as_slice) {
             None | Some([]) => return Ok(Err(Cause::MissingDefinition(selection.clone()))),
             Some([index]) => *index,
@@ -517,7 +514,7 @@ impl<'a> Catalog<'a> {
         if self.invalid_digest.contains(&index) {
             return Ok(Err(Cause::DefinitionDigest { entry: index }));
         }
-        if supplied.selection != *selection {
+        if supplied.selection.digest != selection.digest {
             return Ok(Err(Cause::SelectionMismatch {
                 expected: selection.clone(),
                 entry: index,
@@ -526,20 +523,18 @@ impl<'a> Catalog<'a> {
         Ok(self.registered[index].ok_or(Cause::UnsupportedDefinition { entry: index }))
     }
 
-    /// Resolve one compiler-required dependency by identity and revision.
+    /// Resolve one compiler-required dependency by identity.
     ///
     /// Unlike [`Self::select`], `required` is compiler-owned registry metadata,
     /// never a caller-typed selection, so there is no caller digest to compare
-    /// against: recognition is by identity and revision alone.
+    /// against: recognition is by identity alone.
     fn select_dependency(
         &self,
         required: RegisteredDefinition,
         work: &mut Work,
     ) -> Result<Result<RegisteredDefinition, Cause>, Exhaustion> {
         work.charge(Dimension::References, 1)?;
-        let entries = self
-            .definitions
-            .get(&(required.identity(), required.revision()));
+        let entries = self.definitions.get(required.identity());
         let index = match entries.map(Vec::as_slice) {
             None | Some([]) => return Ok(Err(Cause::MissingDependency(required))),
             Some([index]) => *index,
@@ -553,8 +548,8 @@ impl<'a> Catalog<'a> {
         if self.invalid_digest.contains(&index) {
             return Ok(Err(Cause::DefinitionDigest { entry: index }));
         }
-        // `self.registered[index]` was recognized by this same identity and
-        // revision in `Catalog::new`, so it is exactly `required` here.
+        // `self.registered[index]` was recognized by this same identity in
+        // `Catalog::new`, so it is exactly `required` here.
         Ok(Ok(required))
     }
 

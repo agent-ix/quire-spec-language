@@ -309,7 +309,7 @@ mod tests {
 
     const HEADER: &str = concat!(
         "language \"ix:native\" edition \"1-draft\";\n",
-        "profile v = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n",
+        "profile v = \"quire.value.complete/v1\";\n",
     );
 
     #[trace("TC-013", "FR-003-AC-1", "FR-003-AC-2", "FR-003-AC-3")]

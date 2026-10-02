@@ -17,8 +17,7 @@ use crate::result::{InputSettlement, WitnessSettlement};
 use crate::spine::SpineStage;
 use crate::witness::{CanonicalAssignment, Witness, WitnessValue};
 
-const PROFILE: &str = "profile v = \"quire.value.complete/v1\" version \"1-draft.2\" digest \
-    \"sha256:c8c7ae9fbe783286369ecc83f006190f83be4c3c8fc585766617c90f27a25b16\";\n";
+const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
 
 /// The proved unit: `small` is the predicate a counterexample refutes.
 ///

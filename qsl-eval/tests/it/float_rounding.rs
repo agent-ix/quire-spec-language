@@ -38,8 +38,7 @@ const NEG_THREE_QUARTER_ULP: u64 = 0xbca8_0000_0000_0000;
 fn add(float: &str, left: u64, right: u64) -> Outcome<Value> {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1\" digest \
-         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          function add using v(f: {float}, g: {float}): {float} pure {{ f + g }}\n"
     );
     let parsed = qsl_cst::parse(
@@ -135,8 +134,7 @@ fn the_evaluator_applies_the_rounding_mode_the_float_type_carries() {
 #[test]
 fn operands_of_different_rounding_modes_are_a_type_mismatch() {
     let text = "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\" version \"1\" digest \
-         \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n\
+         profile v = \"quire.value.complete/v1\";\n\
          function add using v(f: Float64[toward-zero], g: Float64[nearest-even]): \
          Float64[toward-zero] pure { f + g }\n";
     let parsed = qsl_cst::parse(

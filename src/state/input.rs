@@ -8,9 +8,6 @@ use qsl_foundation::digest::ByteDigest;
 
 use crate::protocol_artifact::{wire, ProtocolNumber};
 
-/// Required observation contract semantic revision.
-pub const OBSERVATION_CONTRACT_REVISION: &str = "782c1ce39a197cd52b8b35b50adf2e5e3ecedd0f";
-
 /// Exact selection of one declaration-local value.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EvaluationRequest {
@@ -186,8 +183,6 @@ pub struct AssessmentAuthority {
 /// Independently selected producer/observation inputs and compiled requirement authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthorityEvidence {
-    /// Observation contract revision this evidence was compiled against.
-    pub observation_contract_revision: String,
     /// Reference to the selected producer artifact.
     pub producer: wire::ArtifactRef,
     /// Reference to the selected observation artifact.
@@ -215,8 +210,6 @@ pub struct AuthorityAdapter {
     pub producer: wire::ArtifactRef,
     /// Reference to the observation artifact the adapter grounds.
     pub observation: wire::ArtifactRef,
-    /// Observation contract revision the adapter was published against.
-    pub observation_contract_revision: String,
     /// Static authority selection the adapter grounds.
     pub static_selection: StaticAuthority,
     /// Assessment authority selection the adapter grounds.
@@ -469,9 +462,8 @@ pub enum Refusal {
     PopulationDomain(ObjectKey),
     /// Two supplied objects in the same population share the same storage identity.
     DuplicateObject(ObjectKey),
-    /// The supplied authority evidence's observation contract revision or identities
-    /// do not check out.
-    AuthorityRevision,
+    /// The supplied authority evidence's identities or digests are malformed.
+    MalformedAuthorityEvidence,
     /// The supplied authority evidence does not match what the named binding requires.
     Authority(wire::Handle),
     /// The supplied authority adapter does not ground the offered authority evidence.

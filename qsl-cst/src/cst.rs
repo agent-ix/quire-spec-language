@@ -763,7 +763,7 @@ mod tests {
         pub(super) static IDENTITY_DIGESTS: Cell<usize> = const { Cell::new(0) };
     }
 
-    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\" version \"1\" digest \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\nprofile Complete = \"quire.value.complete/v1\";\n";
 
     fn functions(count: usize, body: &str) -> String {
         let mut text = HEADER.to_string();

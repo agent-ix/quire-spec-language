@@ -230,8 +230,6 @@ impl IntervalKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::selection::DefinitionDigest;
-    use crate::ByteDigest;
     use ix_trace_rs::trace;
 
     fn node(fill: u8) -> WireNodeId {
@@ -239,12 +237,7 @@ mod tests {
     }
 
     fn profile() -> DefinitionRef {
-        DefinitionRef::new(
-            "quire.temporal.event-position/v1",
-            "1",
-            DefinitionDigest::from_digest(ByteDigest::of(b"profile")),
-        )
-        .unwrap()
+        DefinitionRef::new("agent-ix", "quire.temporal.event-position/v1").unwrap()
     }
 
     /// ADR-014 §4: an integer range's constructor refuses an inverted range,

@@ -14,8 +14,7 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use quire_exact::{CollectionKind, Integer};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\" version \"1\" digest \
-    \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\";\n";
+    profile v = \"quire.value.complete/v1\";\n";
 
 fn parse(declarations: &str) -> (String, ParsedSource) {
     let text = format!("{HEADER}{declarations}\n");
@@ -207,7 +206,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
     assert!(selections.models.is_empty());
     let profile = &selections.profiles[0];
     assert_eq!(profile.alias, "v");
-    assert_eq!(profile.definition.identity(), "quire.value.complete/v1");
+    assert_eq!(profile.identity, "quire.value.complete/v1");
     assert_eq!(
         vec![profile.span],
         declaration_spans(parsed.cst(), Production::Profile)

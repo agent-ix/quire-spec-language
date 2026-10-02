@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Exact definition and compiled-model selections: the identity, version and
-//! digest triples a source's `profile`, `import` and `model` declarations
-//! select, the source-located selection lists a parse recovers, and the exact
-//! profile inventory authoring tools check a selection against.
+//! Definition and compiled-model selections: the definition identities a
+//! source's `profile` declarations select, the identity, version and digest
+//! a source's `import` and `model` declarations select, the source-located
+//! selection lists a parse recovers, and the profile inventory authoring
+//! tools check a selection against.
 //!
 //! These are plain values. Layer 1 (`qsl-cst`) produces them from source,
 //! the spine resolves them (E3, I1), and the tool modules check profiles against a
@@ -14,96 +15,62 @@ use std::collections::BTreeSet;
 use crate::digest::{DigestRecord, InvalidDigest};
 use crate::{ByteDigest, Span};
 
-/// Exact versioned definition digest in the profile/import domain.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct DefinitionDigest(ByteDigest);
-
-impl DefinitionDigest {
-    /// Parse the canonical SHA-256 spelling selected by source.
-    pub fn parse(value: &str) -> Result<Self, InvalidDigest> {
-        value.parse().map(Self)
-    }
-
-    /// Wrap an already-computed raw-byte digest.
-    pub fn from_digest(digest: ByteDigest) -> Self {
-        Self(digest)
-    }
-
-    /// Canonical selected value.
-    pub fn digest(self) -> ByteDigest {
-        self.0
-    }
-}
-
-/// Exact definition identity/version/digest triple.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// A definition selection by identity: the publishing authority and the
+/// definition identity. A definition resolves by identity alone; no version
+/// or byte digest is part of a selection.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DefinitionRef {
+    /// Publishing authority.
+    authority: String,
     /// Opaque definition identity.
     identity: String,
-    /// Exact selected version.
-    version: String,
-    /// Exact content digest.
-    digest: DefinitionDigest,
 }
 
-/// Why an identity/version pair failed [`DefinitionRef::new`].
+/// Why an authority/identity pair failed [`DefinitionRef::new`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvalidDefinitionComponent {
+    /// Authority was empty or exceeded 512 bytes.
+    Authority,
     /// Identity was empty or exceeded 512 bytes.
     Identity,
-    /// Version was empty or exceeded 256 bytes.
-    Version,
+}
+
+/// The most bytes a selected identity or authority holds.
+pub const MAX_SELECTION_IDENTITY_BYTES: usize = 512;
+
+/// Whether `identity` is a non-empty selection identity within
+/// [`MAX_SELECTION_IDENTITY_BYTES`].
+pub fn valid_selection_identity(identity: &str) -> bool {
+    !identity.is_empty() && identity.len() <= MAX_SELECTION_IDENTITY_BYTES
 }
 
 impl DefinitionRef {
-    /// Validate a non-empty exact definition selection.
+    /// Validate a non-empty definition selection.
     pub fn new(
+        authority: impl Into<String>,
         identity: impl Into<String>,
-        version: impl Into<String>,
-        digest: DefinitionDigest,
     ) -> Result<Self, InvalidDefinitionComponent> {
-        let (identity, version) = (identity.into(), version.into());
-        Self::validate_components(&identity, &version)?;
-        Ok(Self::from_validated(identity, version, digest))
-    }
-
-    /// Check an identity/version pair against [`Self::new`]'s bounds without
-    /// building a reference, so a parser can locate the failing component
-    /// before it reads the digest.
-    pub fn validate_components(
-        identity: &str,
-        version: &str,
-    ) -> Result<(), InvalidDefinitionComponent> {
-        if identity.is_empty() || identity.len() > 512 {
+        let (authority, identity) = (authority.into(), identity.into());
+        if !valid_selection_identity(&authority) {
+            return Err(InvalidDefinitionComponent::Authority);
+        }
+        if !valid_selection_identity(&identity) {
             return Err(InvalidDefinitionComponent::Identity);
         }
-        if version.is_empty() || version.len() > 256 {
-            return Err(InvalidDefinitionComponent::Version);
-        }
-        Ok(())
+        Ok(Self {
+            authority,
+            identity,
+        })
     }
 
-    fn from_validated(identity: String, version: String, digest: DefinitionDigest) -> Self {
-        Self {
-            identity,
-            version,
-            digest,
-        }
+    /// Publishing authority.
+    pub fn authority(&self) -> &str {
+        &self.authority
     }
 
     /// Opaque definition identity.
     pub fn identity(&self) -> &str {
         &self.identity
-    }
-
-    /// Exact selected version.
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    /// Exact raw-byte definition digest.
-    pub fn digest(&self) -> DefinitionDigest {
-        self.digest
     }
 }
 
@@ -178,10 +145,13 @@ impl ModelRef {
     /// building a reference, so a parser can locate the failing component
     /// before it reads the digest.
     pub fn validate_components(identity: &str, version: &str) -> Result<(), InvalidModelComponent> {
-        DefinitionRef::validate_components(identity, version).map_err(|component| match component {
-            InvalidDefinitionComponent::Identity => InvalidModelComponent::Identity,
-            InvalidDefinitionComponent::Version => InvalidModelComponent::Version,
-        })
+        if !valid_selection_identity(identity) {
+            return Err(InvalidModelComponent::Identity);
+        }
+        if version.is_empty() || version.len() > 256 {
+            return Err(InvalidModelComponent::Version);
+        }
+        Ok(())
     }
 
     fn from_validated(identity: String, version: String, digest: ModelDigest) -> Self {
@@ -217,13 +187,14 @@ pub enum InvalidModelComponent {
     Version,
 }
 
-/// Source-located profile definition selection.
+/// Source-located header profile selection: `profile <alias> = "<identity>";`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileSelection {
     /// Local alias used by declarations.
     pub alias: String,
-    /// Exact definition triple.
-    pub definition: DefinitionRef,
+    /// The selected definition identity, within
+    /// [`MAX_SELECTION_IDENTITY_BYTES`].
+    pub identity: String,
     /// Full profile declaration range.
     pub span: Span,
     /// Exact identity literal range used for located refusals.
@@ -278,14 +249,14 @@ pub struct SourceSelections {
 /// share it.
 pub const MAX_SELECTED_DEFINITIONS: usize = 4_096;
 
-/// Exact profile-selection inventory used by public syntax and editor APIs.
+/// Profile-identity inventory used by public syntax and editor APIs.
 ///
-/// This catalog carries only immutable source-selected references. It grants no
-/// semantic-definition, capability, checked-package, model-reader, or runtime
-/// authority.
+/// This catalog carries only source-selectable profile identities. It grants
+/// no semantic-definition, capability, checked-package, model-reader, or
+/// runtime authority.
 #[derive(Clone, Debug, Default)]
 pub struct ProfileCatalog {
-    profiles: BTreeSet<DefinitionRef>,
+    profiles: BTreeSet<String>,
 }
 
 /// Why [`ProfileCatalog::new`] refused its inventory.
@@ -294,91 +265,51 @@ pub enum ProfileCatalogError {
     /// More than [`MAX_SELECTED_DEFINITIONS`] profiles.
     #[error("profile catalog resource limit exceeded")]
     ResourceLimit,
-    /// One exact profile appeared twice.
-    #[error("duplicate exact profile")]
+    /// One profile identity appeared twice.
+    #[error("duplicate profile identity")]
     DuplicateProfile,
 }
 
 impl ProfileCatalog {
-    /// Build a bounded exact profile inventory.
-    pub fn new(profiles: Vec<DefinitionRef>) -> Result<Self, ProfileCatalogError> {
-        if profiles.len() > MAX_SELECTED_DEFINITIONS {
-            return Err(ProfileCatalogError::ResourceLimit);
-        }
+    /// Build a bounded profile-identity inventory.
+    pub fn new(
+        profiles: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<Self, ProfileCatalogError> {
         let mut catalog = Self::default();
         for profile in profiles {
-            if !catalog.profiles.insert(profile) {
+            if catalog.profiles.len() == MAX_SELECTED_DEFINITIONS {
+                return Err(ProfileCatalogError::ResourceLimit);
+            }
+            if !catalog.profiles.insert(profile.into()) {
                 return Err(ProfileCatalogError::DuplicateProfile);
             }
         }
         Ok(catalog)
     }
 
-    /// How `selected` relates to this inventory: exactly known, a known
-    /// identity at another version or digest, or unknown.
-    pub fn profile_status(&self, selected: &DefinitionRef) -> ProfileStatus {
-        if self.profiles.contains(selected) {
-            ProfileStatus::Exact
-        } else if self.profiles.iter().any(|profile| {
-            profile.identity() == selected.identity() && profile.version() == selected.version()
-        }) {
-            ProfileStatus::Stale(StaleProfile::ByteDigest)
-        } else if self
-            .profiles
-            .iter()
-            .any(|profile| profile.identity() == selected.identity())
-        {
-            ProfileStatus::Stale(StaleProfile::Revision)
-        } else {
-            ProfileStatus::Unknown
-        }
+    /// Whether this inventory holds the profile `identity`.
+    pub fn contains(&self, identity: &str) -> bool {
+        self.profiles.contains(identity)
     }
-}
-
-/// A profile selection's standing against a [`ProfileCatalog`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProfileStatus {
-    /// The exact selection is known.
-    Exact,
-    /// The identity is known, but not at this selection.
-    Stale(StaleProfile),
-    /// No known profile has this identity.
-    Unknown,
-}
-
-/// How a known profile identity differs from its selection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaleProfile {
-    /// No known profile has the selected version.
-    Revision,
-    /// A known profile has the selected version with another digest.
-    ByteDigest,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn profile(index: usize) -> DefinitionRef {
-        DefinitionRef::new(
-            format!("acme.profile.{index}"),
-            "1",
-            DefinitionDigest::from_digest(ByteDigest::of(&index.to_be_bytes())),
-        )
-        .unwrap()
+    fn profile(index: usize) -> String {
+        format!("acme.profile.{index}")
     }
 
     /// TC-180 (FR-131-AC-2): the profile inventory admits exactly
     /// `MAX_SELECTED_DEFINITIONS` distinct profiles, refuses one more as a
-    /// resource limit, and refuses a repeated exact profile as a duplicate.
+    /// resource limit, and refuses a repeated profile as a duplicate.
     #[test]
     fn profile_catalog_bounds_and_duplicates_are_refused_by_their_own_error() {
         let full: Vec<_> = (0..MAX_SELECTED_DEFINITIONS).map(profile).collect();
         let catalog = ProfileCatalog::new(full.clone()).unwrap();
-        assert_eq!(
-            catalog.profile_status(&full[MAX_SELECTED_DEFINITIONS - 1]),
-            ProfileStatus::Exact
-        );
+        assert!(catalog.contains(&full[MAX_SELECTED_DEFINITIONS - 1]));
+        assert!(!catalog.contains(&profile(MAX_SELECTED_DEFINITIONS)));
 
         let mut over = full.clone();
         over.push(profile(MAX_SELECTED_DEFINITIONS));

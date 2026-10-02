@@ -16,7 +16,7 @@ use serde::Serialize;
 use std::sync::Arc;
 
 use qsl_foundation::selection::{
-    DefinitionDigest, DefinitionRef, InvalidDefinitionComponent, MAX_SELECTED_DEFINITIONS,
+    DefinitionRef, InvalidDefinitionComponent, MAX_SELECTED_DEFINITIONS,
 };
 use qsl_foundation::{ByteDigest, Code};
 
@@ -45,14 +45,13 @@ impl ReaderAuthority {
     }
 }
 
-// `DefinitionDigest` and `DefinitionRef` are layer-F values
-// (`qsl_foundation::selection`): this module maps their validation
-// errors onto `PackageError`.
+// `DefinitionRef` is a layer-F value (`qsl_foundation::selection`): this
+// module maps its validation errors onto `PackageError`.
 impl From<InvalidDefinitionComponent> for PackageError {
     fn from(component: InvalidDefinitionComponent) -> Self {
         match component {
+            InvalidDefinitionComponent::Authority => Self::InvalidDefinitionAuthority,
             InvalidDefinitionComponent::Identity => Self::InvalidDefinitionIdentity,
-            InvalidDefinitionComponent::Version => Self::InvalidDefinitionVersion,
         }
     }
 }
@@ -110,7 +109,7 @@ impl DefinitionRole {
     }
 }
 
-/// Immutable catalog definition used for exact package-graph resolution.
+/// Immutable catalog definition used for package-graph resolution.
 #[derive(Clone, Debug)]
 pub struct Definition {
     exact: DefinitionRef,
@@ -199,27 +198,22 @@ impl Default for PackageLimits {
 }
 
 impl Definition {
-    /// Bind an owning reader's typed definition interpretation to the exact
-    /// supplied definition artifact bytes selected by native source.
+    /// Bind an owning reader's typed definition interpretation, published
+    /// by `authority` as `identity`, to the supplied definition artifact
+    /// bytes.
     pub fn from_exact_bytes(
-        _authority: &ReaderAuthority,
+        _reader: &ReaderAuthority,
+        authority: impl Into<String>,
         identity: impl Into<String>,
-        version: impl Into<String>,
         role: DefinitionRole,
         dependencies: BTreeSet<DefinitionRef>,
         capabilities: BTreeSet<CapabilityId>,
         exact_bytes: &[u8],
     ) -> Result<Self, PackageError> {
-        let identity = identity.into();
-        let version = version.into();
         if exact_bytes.is_empty() {
             return Err(PackageError::InvalidDefinitionArtifactBytes);
         }
-        let exact = DefinitionRef::new(
-            identity,
-            version,
-            DefinitionDigest::from_digest(ByteDigest::of(exact_bytes)),
-        )?;
+        let exact = DefinitionRef::new(authority, identity)?;
         Ok(Self {
             exact,
             role,
@@ -229,26 +223,26 @@ impl Definition {
         })
     }
 
-    /// Exact computed definition reference.
+    /// The definition's authority and identity.
     pub fn exact(&self) -> &DefinitionRef {
         &self.exact
     }
 
-    /// Exact canonical definition bytes whose digest appears in [`Self::exact`].
+    /// Exact canonical definition bytes.
     pub fn exact_bytes(&self) -> &[u8] {
         &self.exact_bytes
     }
 }
 
-/// Exact known definition catalog used for profile/package graph validation.
+/// Known definition catalog used for profile/package graph validation, keyed
+/// by definition identity.
 #[derive(Clone, Debug, Default)]
 pub struct DefinitionCatalog {
-    definitions: BTreeMap<DefinitionRef, Arc<Definition>>,
+    definitions: BTreeMap<String, Arc<Definition>>,
 }
 
 impl DefinitionCatalog {
-    /// Build a catalog and refuse duplicate exact records. Multiple versions of
-    /// one logical identity may coexist so stale selections can be diagnosed.
+    /// Build a catalog and refuse a definition identity held twice.
     pub fn new(definitions: Vec<Definition>) -> Result<Self, PackageError> {
         Self::with_limits(definitions, PackageLimits::default())
     }
@@ -300,7 +294,7 @@ impl DefinitionCatalog {
             }
             if catalog
                 .definitions
-                .insert(definition.exact.clone(), Arc::new(definition))
+                .insert(definition.exact.identity().to_owned(), Arc::new(definition))
                 .is_some()
             {
                 return Err(PackageError::DuplicateDefinition);
@@ -309,20 +303,13 @@ impl DefinitionCatalog {
         Ok(catalog)
     }
 
-    fn exact(&self, selected: &DefinitionRef) -> Option<&Arc<Definition>> {
-        self.definitions.get(selected)
-    }
-
-    fn contains_identity(&self, identity: &str) -> bool {
+    /// The definition `selected` names: the catalog definition with the
+    /// same authority and identity (STD-150). A selection of the identity
+    /// under another authority names nothing.
+    fn resolve(&self, selected: &DefinitionRef) -> Option<&Arc<Definition>> {
         self.definitions
-            .keys()
-            .any(|definition| definition.identity() == identity)
-    }
-
-    fn contains_version(&self, identity: &str, version: &str) -> bool {
-        self.definitions
-            .keys()
-            .any(|definition| definition.identity() == identity && definition.version() == version)
+            .get(selected.identity())
+            .filter(|definition| definition.exact == *selected)
     }
 }
 
@@ -527,25 +514,21 @@ pub struct BundleRefusal {
 }
 
 /// The closed catalogued cause tag of a bundle refusal, under
-/// `quire.native.diagnostics/v1` revision `1-draft.8`. Layer 3's own subset of
+/// `quire.native.diagnostics/v1`. Layer 3's own subset of
 /// the cause vocabulary: the parser's `qsl_cst::CompleteCause` is layer 1's,
 /// and linking never sees a syntax cause.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ResolutionCause {
     /// `unknown_profile`: the selection is not supported by this consumer.
     UnsupportedSelection,
-    /// `stale_dependency`: the selected version differs from the known one.
-    RevisionMismatch,
-    /// `stale_dependency`: the selected version is known with another digest.
-    ByteDigestMismatch,
     /// `resource_exhausted`: the next charge exceeds its limit.
     InsufficientNextCharge,
     /// `missing_import`: no known definition has the selected identity.
     MissingSelection,
-    /// `ambiguous_declaration`: one definition identity is selected at two
-    /// distinct exact selections.
+    /// `ambiguous_declaration`: one definition identity is selected under
+    /// two authorities.
     ConflictingAuthority,
-    /// `invalid_package`: a catalog holds one exact selection twice.
+    /// `invalid_package`: a catalog holds one definition identity twice.
     DuplicateMember,
     /// `invalid_package`: a definition member is malformed.
     InvalidValue,
@@ -558,7 +541,7 @@ pub enum ResolutionCause {
     /// `unknown_required_feature`: a known capability the closure does not
     /// provide.
     UnsupportedFeature,
-    /// `stage_limit_exceeded` (revision `1-draft.6`): the package
+    /// `stage_limit_exceeded`: the package
     /// graph's own dependency-chain depth ceiling
     /// ([`PackageLimitKind::Depth`]), the one [`PackageLimitKind`] that maps
     /// cleanly onto a T-4 [`qsl_foundation::diagnostic::LimitKind`]. The
@@ -572,8 +555,6 @@ impl ResolutionCause {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::UnsupportedSelection => "unsupported-selection",
-            Self::RevisionMismatch => "revision-mismatch",
-            Self::ByteDigestMismatch => "byte-digest-mismatch",
             Self::InsufficientNextCharge => "insufficient-next-charge",
             Self::MissingSelection => "missing-selection",
             Self::ConflictingAuthority => "conflicting-authority",
@@ -594,9 +575,6 @@ impl ResolutionCause {
                 code,
                 Code::UnknownLanguage | Code::UnknownEdition | Code::UnknownProfile
             ),
-            Self::RevisionMismatch | Self::ByteDigestMismatch => {
-                matches!(code, Code::StaleDependency | Code::SourceDigestMismatch)
-            }
             Self::InsufficientNextCharge => code == Code::ResourceExhausted,
             Self::MissingSelection => code == Code::MissingImport,
             Self::ConflictingAuthority => code == Code::AmbiguousDeclaration,
@@ -645,38 +623,20 @@ pub fn link_bundle(
     }
 
     for (index, selected) in roots.iter().enumerate() {
-        if catalog.exact(selected).is_none() {
-            let (code, cause_tag, cause) = if catalog.contains_identity(selected.identity()) {
-                let tag = if catalog.contains_version(selected.identity(), selected.version()) {
-                    ResolutionCause::ByteDigestMismatch
-                } else {
-                    ResolutionCause::RevisionMismatch
-                };
-                (
-                    Code::StaleDependency,
-                    tag,
-                    PackageError::StaleDefinition(selected.clone()),
-                )
-            } else {
-                (
-                    Code::UnknownProfile,
-                    ResolutionCause::UnsupportedSelection,
-                    PackageError::MissingDefinition(selected.clone()),
-                )
-            };
-            return Err(BundleRefusal {
-                code,
-                cause_tag,
-                cause,
-                root: Some(index),
-            });
+        if catalog.resolve(selected).is_none() {
+            return Err(refusal(
+                Code::UnknownProfile,
+                Some(index),
+                PackageError::MissingDefinition(selected.clone()),
+            ));
         }
     }
 
     let mut resolved = BTreeMap::new();
-    let mut provenance = BTreeMap::<DefinitionRef, usize>::new();
-    let mut provenance_order = BTreeMap::<DefinitionRef, usize>::new();
-    let mut next_provenance_order = 0_usize;
+    // The first selection of each identity and the root whose closure made
+    // it, so a later selection of the identity under another authority
+    // refuses naming both.
+    let mut selections = BTreeMap::<String, (DefinitionRef, usize)>::new();
     let mut active = Vec::new();
     let mut done = BTreeSet::new();
     let mut traversed_edges = 0_usize;
@@ -687,7 +647,16 @@ pub fn link_bundle(
             if done.contains(&selected) {
                 continue;
             }
-            let Some(definition) = catalog.exact(&selected) else {
+            match selections.get(selected.identity()) {
+                Some((first, first_root)) if *first != selected => {
+                    return Err(conflict(first, *first_root, &selected, index));
+                }
+                Some(_) => {}
+                None => {
+                    selections.insert(selected.identity().to_owned(), (selected.clone(), index));
+                }
+            }
+            let Some(definition) = catalog.resolve(&selected) else {
                 return Err(refusal(
                     Code::MissingImport,
                     root_index,
@@ -710,13 +679,6 @@ pub fn link_bundle(
                 }
                 resolved.insert(selected, definition.clone());
                 continue;
-            }
-            if let std::collections::btree_map::Entry::Vacant(entry) =
-                provenance.entry(selected.clone())
-            {
-                entry.insert(index);
-                provenance_order.insert(selected.clone(), next_provenance_order);
-                next_provenance_order = next_provenance_order.saturating_add(1);
             }
             if let Some(start) = active.iter().position(|definition| definition == &selected) {
                 return Err(refusal(
@@ -762,20 +724,6 @@ pub fn link_bundle(
             work.push((selected, true));
             for dependency in definition.dependencies.iter().rev() {
                 work.push((dependency.clone(), false));
-            }
-        }
-    }
-
-    let mut closed_logical = BTreeMap::<&str, (&DefinitionRef, usize)>::new();
-    let mut discovered: Vec<_> = resolved.keys().collect();
-    discovered.sort_by_key(|selected| provenance_order[*selected]);
-    for selected in discovered {
-        let selected_root = provenance[selected];
-        if let Some((previous, previous_root)) =
-            closed_logical.insert(selected.identity(), (selected, selected_root))
-        {
-            if previous != selected {
-                return Err(conflict(previous, previous_root, selected, selected_root));
             }
         }
     }
@@ -874,20 +822,18 @@ fn conflict(
     )
 }
 
-/// The catalogued cause tag of a bundle refusal. A stale root is tagged at its
-/// call site, which knows whether the version or only the digest differs.
+/// The catalogued cause tag of a bundle refusal.
 fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
     use ResolutionCause as Tag;
     match cause {
-        PackageError::InvalidDefinitionIdentity
-        | PackageError::InvalidDefinitionVersion
+        PackageError::InvalidDefinitionAuthority
+        | PackageError::InvalidDefinitionIdentity
         | PackageError::InvalidDefinitionArtifactBytes => Tag::InvalidValue,
         PackageError::DuplicateDefinition => Tag::DuplicateMember,
         PackageError::MissingDefinition(_) if code == Code::UnknownProfile => {
             Tag::UnsupportedSelection
         }
         PackageError::MissingDefinition(_) => Tag::MissingSelection,
-        PackageError::StaleDefinition(_) => Tag::RevisionMismatch,
         PackageError::ConflictingDefinitions(_) => Tag::ConflictingAuthority,
         PackageError::DefinitionCycle(_) => Tag::DefinitionCycle,
         PackageError::MissingCapability(_) => Tag::UnsupportedFeature,
@@ -910,8 +856,9 @@ fn cause_tag(code: Code, cause: &PackageError) -> ResolutionCause {
 /// The digest-domain label of a bundle's identity.
 const RESOLVED_GRAPH_DOMAIN: &[u8] = b"quire.complete.resolved-graph/2";
 
-/// A bundle's identity preimage: every closed definition (its exact
-/// reference, role, dependencies and capabilities) in key order, `models`,
+/// A bundle's identity preimage: every closed definition (its reference,
+/// the SHA-256 of its bytes, role, dependencies and capabilities) in key
+/// order, `models`,
 /// which is always empty because model selections resolve only through I1
 /// (FR-111, FR-056), then the bundle's capabilities.
 #[derive(Serialize)]
@@ -924,26 +871,24 @@ struct ResolvedGraphPreimage<'a> {
 #[derive(Serialize)]
 struct ResolvedDefinitionPreimage<'a> {
     exact: ExactRefPreimage<'a>,
+    digest: String,
     role: &'static str,
     dependencies: Vec<ExactRefPreimage<'a>>,
     capabilities: Vec<&'a str>,
 }
 
-/// An exact `{identity, version, digest}` reference; the digest is spelled
-/// `sha256:<hex>`, as `ByteDigest` displays it.
+/// A `{authority, identity}` definition reference.
 #[derive(Serialize)]
 struct ExactRefPreimage<'a> {
+    authority: &'a str,
     identity: &'a str,
-    version: &'a str,
-    digest: String,
 }
 
 impl<'a> From<&'a DefinitionRef> for ExactRefPreimage<'a> {
     fn from(exact: &'a DefinitionRef) -> Self {
         Self {
+            authority: exact.authority(),
             identity: exact.identity(),
-            version: exact.version(),
-            digest: exact.digest().digest().to_string(),
         }
     }
 }
@@ -966,6 +911,7 @@ fn resolved_graph_identity(
             .values()
             .map(|definition| ResolvedDefinitionPreimage {
                 exact: ExactRefPreimage::from(&definition.exact),
+                digest: ByteDigest::of(&definition.exact_bytes).to_string(),
                 role: definition.role.identity_name(),
                 dependencies: definition
                     .dependencies
@@ -992,26 +938,23 @@ fn resolved_graph_identity(
 /// Typed complete-package refusal.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum PackageError {
+    /// Definition authority was empty or outside its bound.
+    #[error("invalid definition authority")]
+    InvalidDefinitionAuthority,
     /// Definition identity was empty or outside its bound.
     #[error("invalid definition identity")]
     InvalidDefinitionIdentity,
-    /// Definition version was empty or outside its bound.
-    #[error("invalid definition version")]
-    InvalidDefinitionVersion,
     /// Supplied definition artifact bytes were empty. Size is a caller
     /// limit ([`PackageLimits::single_artifact_bytes`]), checked where the
     /// artifact is admitted into a catalog or linked bundle.
     #[error("invalid exact definition artifact bytes")]
     InvalidDefinitionArtifactBytes,
-    /// An exact definition appeared more than once in a catalog.
-    #[error("duplicate exact definition")]
+    /// One definition identity appeared more than once in a catalog.
+    #[error("duplicate definition identity")]
     DuplicateDefinition,
-    /// A selected exact definition was absent.
+    /// No catalog definition has the selected identity.
     #[error("missing definition {0:?}")]
     MissingDefinition(DefinitionRef),
-    /// A known logical definition was selected with stale version/digest.
-    #[error("stale definition {0:?}")]
-    StaleDefinition(DefinitionRef),
     /// Two selections conflict on one logical identity.
     #[error("conflicting definition selections {0:?}")]
     ConflictingDefinitions(Box<DefinitionConflict>),
