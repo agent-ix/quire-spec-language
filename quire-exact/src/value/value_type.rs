@@ -211,7 +211,10 @@ fn take_type(slot: &mut ValueType) -> ValueType {
 
 impl fmt::Debug for ValueType {
     /// Prints what `#[derive(Debug)]` printed, in compact and alternate
-    /// mode, from `Value`'s `Debug` worklist instead of recursion.
+    /// mode, from `Value`'s `Debug` worklist instead of recursion. Leaves
+    /// print through their own `Debug`. In alternate mode a leaf gets plain
+    /// `{:#?}`, so the width, fill, precision and hex flags of the caller's
+    /// format spec reach compact-mode leaves only.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         DebugWriter::new(formatter)
             .write(Step::Type(self))
@@ -461,7 +464,10 @@ mod tests {
             let copy = value_type.clone();
             assert!(value_type == copy);
             assert_eq!(hash_of(&value_type), hash_of(&copy));
-            assert!(value_type != ValueType::option(copy.clone()));
+            let wrapped = ValueType::option(copy.clone());
+            assert!(value_type != wrapped);
+            assert_ne!(hash_of(&value_type), hash_of(&wrapped));
+            drop(wrapped);
 
             let mut sink = ParenCount::default();
             fmt::write(&mut sink, format_args!("{value_type:?}")).expect("format");
@@ -488,7 +494,7 @@ mod tests {
     }
 
     /// Every sample compares equal to and hashes equal to its clone, and
-    /// unequal to every other sample.
+    /// compares unequal to and hashes differently from every other sample.
     #[test]
     #[trace("TC-735", "FR-262-AC-2")]
     fn tc_735_value_types_equal_and_hash_equal_their_clones_only() {
@@ -499,6 +505,7 @@ mod tests {
             assert_eq!(hash_of(value_type), hash_of(&copy));
             for (other_index, other) in samples.iter().enumerate() {
                 assert_eq!(value_type == other, index == other_index);
+                assert_eq!(hash_of(value_type) == hash_of(other), index == other_index);
             }
         }
         let bounded = |maximum| {
@@ -509,6 +516,7 @@ mod tests {
             ))
         };
         assert!(bounded(3) != bounded(4));
+        assert_ne!(hash_of(&bounded(3)), hash_of(&bounded(4)));
     }
 
     /// The `Debug` worklist is the one heap stack these walks keep, and it

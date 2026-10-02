@@ -179,7 +179,10 @@ impl EnumMember {
 /// `Clone`, `PartialEq`, `Hash`, `Debug` and `Drop` are hand-written so that
 /// no walk over a type uses the host stack in proportion to its nesting
 /// depth: a type of any depth clones, compares, hashes, formats and drops on
-/// a small fixed stack, such as a no_std target's.
+/// a small fixed stack, such as a no_std target's. `Debug` prints what
+/// `#[derive(Debug)]` printed, except that in alternate mode a leaf gets
+/// plain `{:#?}`, so the caller's format flags reach compact-mode leaves
+/// only.
 #[derive(Eq)]
 pub enum ValueType {
     /// `Boolean`.
