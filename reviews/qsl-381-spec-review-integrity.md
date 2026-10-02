@@ -36,3 +36,17 @@ findings, depth limits remain in ADR-012, the native-runtime contract and
 TCs, NFR-008 and the native-profile FRs. Clean: FR-096, FR-062, FR-091,
 FR-102, FR-106, FR-056, NFR-001, NFR-009, NFR-011, NFR-012 and FR-082/083
 at this head carry no depth limit.
+
+## Dispositions
+
+Round 1, reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 16a9154f: TC-429 drops QSL's claim on IR's depth limit. |
+| FND-002 | fixed | 99139757: TC-012 uses FR-256's chain criterion. |
+| FND-003 | fixed | 16a9154f: ADR-012 §16.5 uses the node-count limit. |
+| FND-004 | fixed | 16a9154f: No active depth remains in the native runtime contract, TC-130 or native-runtime/tests.md. |
+| FND-005 | fixed | 16a9154f: NFR-008 has no depth limit and no clamp. |
+| FND-006 | fixed | 16a9154f: FR-002, FR-009, FR-016, FR-033 and FR-051 hold no depth-64 cap or lower-only limit. |
+| FND-007 | fixed | 16a9154f: FR-003, FR-024, FR-041, FR-042 and TC-045 hold no clamp or hard ceiling. |

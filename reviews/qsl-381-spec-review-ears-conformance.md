@@ -33,3 +33,14 @@ behaviour. Statements use SHALL with When/If triggers. Exceptions below.
 
 Changes requested (two medium). The 100,000-deep criteria are testable;
 two deep-document ACs lack a precise refusal oracle.
+
+## Dispositions
+
+Round 1, reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 16a9154f: FR-261-AC-1 names `PreimageDefect::MemberType("edition")`. |
+| FND-002 | fixed | 16a9154f: FR-260-AC-1 names FR-056's reader-refusal rule and the retained diagnostic. |
+| FND-003 | fixed | 16a9154f: FR-264-AC-3 names `malformed_wire`. |
+| FND-004 | fixed | 16a9154f: FR-256-AC-2 builds each chain to the longest length the default S1 limits admit. |

@@ -30,3 +30,13 @@ quire-canonical is a separate repository (git dependency in Cargo.toml).
 
 Changes requested. Check 3 fails for Filament (O-4) and quire-canonical
 (D-4.5, FR-259). IR, CG and RT are correctly named only.
+
+## Dispositions
+
+Round 1, reviewed at 76e47d3a96aacde91f7964e872d50dcd87dfbc15.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 16a9154f: O-4 and FR-260 name cycle reporting as Filament-owned. |
+| FND-002 | fixed | 16a9154f: ADR-030 D-4.5 and FR-259 name the quire-canonical capabilities QSL relies on. |
+| FND-003 | fixed | 16a9154f: D-7 is QSL's slices and what each waits on. |
