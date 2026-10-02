@@ -41,3 +41,11 @@ overwriting fails AC-1 and AC-2.
 ## Verdict
 
 Mergeable apart from one low, non-blocking wording or oracle finding.
+
+## Dispositions
+
+Round 1, reviewed at b1902bff7d80a40b6354172c104cc5f869000b40.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | b1902bff: `a_second_node_for_a_declaration_is_refused` now wraps the returned `DeclarationRebound` in `CheckCause::InternalFault(KeyFault::CorrespondenceConflict(..))` and asserts `runtime_invariant`/`established-invariant-broken`. Both variants' codes are now asserted. |
