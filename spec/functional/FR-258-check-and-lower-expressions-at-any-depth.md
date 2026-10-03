@@ -48,19 +48,13 @@ for checking; this requirement carries that rule through QSL's checker.
    vector of nodes per checked body, with each child named by a typed index, so
    that cloning, comparing, hashing, formatting for debug and dropping a
    checked body visit its nodes without native recursion.
-3. **Iterative walks.** Every walk over parsed forms, checked nodes or
-   `ValueType` SHALL keep its pending steps on a heap stack. The walks over
-   checked nodes (definedness facts and their interval and outcome
-   evaluation, claims collection, the observation walk, `descendants` and
-   `catalogued_step`) and the FR-093 text-leaf walk SHALL run on the walker
-   toolkit (FR-356). Typing and expression lowering run
-   frame machines of their own, each frame the continuation of one typed
-   form with the results it still waits on; their stacks are heap stacks, and
-   moving them onto the toolkit is the remainder of this requirement
-   (Status). The checker is in the qualified core, so no checker walk SHALL
-   grow or switch the native stack. Each stack SHALL grow by at most a
-   constant per node or composite already charged against `s3.nodes` or
-   `s3.work_units`.
+3. **No native recursion.** Typing, definedness facts, obligation
+   collection, expression lowering, the FR-092 type-keying walk and every
+   other walk over parsed forms, checked nodes or `ValueType` SHALL run at any
+   depth without native recursion. The checker is in the qualified core, so
+   no checker walk SHALL grow or switch the native stack. Each stack SHALL
+   grow by at most a constant per node or composite already charged against
+   `s3.nodes` or `s3.work_units`.
 4. **Iterative text-leaf walk.** FR-093's text-leaf walk SHALL run on the
    walker toolkit with one typed frame per entered type, holding the
    type being walked and, for a composite, its field cursor and the open-list
@@ -114,12 +108,6 @@ for checking; this requirement carries that rule through QSL's checker.
   the library builder are backed (TC-727). Remainder: B5 (the setting names
   `s3.nodes` and `s3.work_units` in an outcome, the replay request's
   `stage_limits` entry and FR-255's settings operation).
-- FR-258 Behavior 3: the checked-node walks are on the toolkit. Remainder:
-  `Typer::run` (typing.rs) and expression lowering's frame stacks
-  (lowering.rs), each a continuation machine over many heterogeneous frames
-  whose results the toolkit's enter/exit protocol would carry on side stacks;
-  they keep heap stacks, so nothing recurses, and move onto the toolkit in a
-  follow-up slice of their own.
 
 ## References
 

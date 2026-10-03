@@ -345,18 +345,12 @@ fn join(left: Option<Rc<Facts>>, right: Option<Rc<Facts>>) -> Option<Rc<Facts>> 
             intervals: left
                 .intervals
                 .intersect_with(&right.intervals, &|left, right| {
-                    Some(
-                        Interval::of_proved(left)
-                            .hull(&Interval::of_proved(right))
-                            .proved(),
-                    )
+                    Interval::of_proved(left)
+                        .hull(&Interval::of_proved(right))
+                        .proved()
                 }),
-            present: left
-                .present
-                .intersect_with(&right.present, &|_, _| Some(())),
-            nonzero: left
-                .nonzero
-                .intersect_with(&right.nonzero, &|_, _| Some(())),
+            present: left.present.intersect_with(&right.present, &|_, _| ()),
+            nonzero: left.nonzero.intersect_with(&right.nonzero, &|_, _| ()),
         })),
     }
 }

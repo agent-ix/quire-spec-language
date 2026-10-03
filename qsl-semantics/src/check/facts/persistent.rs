@@ -116,14 +116,10 @@ impl<K: Eq + Hash + Clone, V: Clone> PersistentMap<K, V> {
     }
 
     /// The entries both maps hold, each valued by `combine` of the two
-    /// values; an entry `combine` refuses is dropped. `combine` must return
-    /// a value equal to its argument when both arguments are equal, since a
-    /// subtree the two maps share is kept as it is.
-    pub(super) fn intersect_with(
-        &self,
-        other: &Self,
-        combine: &dyn Fn(&V, &V) -> Option<V>,
-    ) -> Self {
+    /// values; an entry only one map holds is dropped. `combine` must be
+    /// idempotent, `combine(v, v)` equal to `v`, since a subtree the two maps
+    /// share is kept as it is without calling it.
+    pub(super) fn intersect_with(&self, other: &Self, combine: &dyn Fn(&V, &V) -> V) -> Self {
         Self {
             root: merge(&self.root, &other.root, 0, combine),
         }
@@ -201,7 +197,7 @@ fn merge<K: Eq + Hash + Clone, V: Clone>(
     left: &Link<K, V>,
     right: &Link<K, V>,
     depth: usize,
-    combine: &dyn Fn(&V, &V) -> Option<V>,
+    combine: &dyn Fn(&V, &V) -> V,
 ) -> Link<K, V> {
     let (a, b) = match (left, right) {
         (Some(a), Some(b)) => (a, b),
@@ -233,15 +229,13 @@ fn merge<K: Eq + Hash + Clone, V: Clone>(
             let mut merged = None;
             for (key, value) in entries {
                 if let Some(other) = lookup(b, depth, key) {
-                    if let Some(combined) = combine(value, other) {
-                        merged = Some(insert_at(
-                            &merged,
-                            depth,
-                            hash_of(key),
-                            key.clone(),
-                            combined,
-                        ));
-                    }
+                    merged = Some(insert_at(
+                        &merged,
+                        depth,
+                        hash_of(key),
+                        key.clone(),
+                        combine(value, other),
+                    ));
                 }
             }
             merged
@@ -250,15 +244,13 @@ fn merge<K: Eq + Hash + Clone, V: Clone>(
             let mut merged = None;
             for (key, value) in entries {
                 if let Some(other) = lookup(a, depth, key) {
-                    if let Some(combined) = combine(other, value) {
-                        merged = Some(insert_at(
-                            &merged,
-                            depth,
-                            hash_of(key),
-                            key.clone(),
-                            combined,
-                        ));
-                    }
+                    merged = Some(insert_at(
+                        &merged,
+                        depth,
+                        hash_of(key),
+                        key.clone(),
+                        combine(other, value),
+                    ));
                 }
             }
             merged
@@ -350,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn intersect_keeps_common_keys_combined_and_shares_what_it_can() {
+    fn intersect_keeps_common_keys_combined_and_drops_the_rest() {
         let mut base: PersistentMap<u32, u32> = PersistentMap::default();
         for key in 0..100 {
             base.insert(key, key);
@@ -361,9 +353,24 @@ mod tests {
         let mut right = base.clone();
         right.insert(2_000, 2);
         right.insert(5, 20);
-        let joined = left.intersect_with(&right, &|a, b| Some(*a.max(b)));
+        let joined = left.intersect_with(&right, &|a, b| *a.max(b));
+        // A key both hold takes the combined value; one only a map holds is
+        // dropped; a subtree both share keeps its entries.
         assert_eq!(joined.get(&5), Some(&50));
         assert_eq!(joined.get(&7), Some(&7));
         assert!(!joined.contains(&1_000) && !joined.contains(&2_000));
+        // Maps built apart (no shared subtree) combine every common key.
+        let mut apart: PersistentMap<u32, u32> = PersistentMap::default();
+        for key in 0..100 {
+            apart.insert(key, key + 1);
+        }
+        let combined = base.intersect_with(&apart, &|a, b| *a.max(b));
+        assert!((0..100).all(|key| combined.get(&key) == Some(&(key + 1))));
+        let disjoint: PersistentMap<u32, u32> = {
+            let mut map = PersistentMap::default();
+            map.insert(500, 0);
+            map
+        };
+        assert!(!base.intersect_with(&disjoint, &|a, _| *a).contains(&5));
     }
 }
