@@ -164,6 +164,11 @@ pub enum Code {
     /// catalog revision `1-draft.8`). The exhausted kind is a `SyntaxLimit`
     /// or [`LimitKind`] carried alongside, not part of this code.
     StageLimitExceeded,
+    /// A document is not in its canonical form (QSpec FR-271): a domain
+    /// package or observation document carries a number with no exact RFC
+    /// 8785 spelling (FR-056, FR-106), or a checked-package/v2 wire's bytes
+    /// are not RFC 8785 bytes.
+    NoncanonicalWire,
 }
 
 impl Code {
@@ -217,6 +222,7 @@ impl Code {
             Self::CardinalityOutOfBound => "cardinality_out_of_bound",
             Self::DuplicateSelection => "duplicate_selection",
             Self::StageLimitExceeded => "stage_limit_exceeded",
+            Self::NoncanonicalWire => "noncanonical_wire",
         }
     }
 
@@ -270,6 +276,7 @@ impl Code {
             Self::CardinalityOutOfBound,
             Self::DuplicateSelection,
             Self::StageLimitExceeded,
+            Self::NoncanonicalWire,
         ]
     }
 
@@ -872,7 +879,7 @@ impl InternalFault {
 /// `unsupported_projection`) and the incomplete ones (`resource_exhausted`,
 /// `incomplete_population`, `unavailable_observation`) that this table
 /// files under `Refusal`.
-const CATALOG_CATEGORIES: [(&str, Category); 48] = [
+const CATALOG_CATEGORIES: [(&str, Category); 49] = [
     ("invalid_syntax", Category::Refusal),
     ("unsupported_construct", Category::Refusal),
     ("unknown_language", Category::Refusal),
@@ -913,6 +920,7 @@ const CATALOG_CATEGORIES: [(&str, Category); 48] = [
     ("cancelled", Category::Incomplete),
     ("duplicate_selection", Category::Refusal),
     ("stage_limit_exceeded", Category::Refusal),
+    ("noncanonical_wire", Category::Refusal),
     ("unsupported_projection", Category::Refusal),
     ("invalid_capability", Category::Refusal),
     ("projection_binding", Category::Refusal),

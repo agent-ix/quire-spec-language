@@ -594,6 +594,26 @@ fn refuses_duplicate_top_level_member() {
     );
 }
 
+/// A wire whose bytes are not the RFC 8785 bytes of the document they hold
+/// (one space after the opening brace) is refused by IR `noncanonical_wire`,
+/// which maps to the native `Code::NoncanonicalWire`, not
+/// `Code::InvalidPackage`.
+#[test]
+fn maps_noncanonical_bytes_to_the_native_noncanonical_wire_code() {
+    let preimage = identity_preimage(vec![]);
+    let bytes = inject_top_level_member(&jcs(&valid_envelope(&preimage)), " ");
+    let outcome = read(&bytes, &pinned_for(&preimage));
+    assert!(
+        matches!(
+            &outcome,
+            Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
+                if refusal.code == CheckedPackageRefusalCode::NoncanonicalWire
+        ),
+        "expected Refused(Envelope(NoncanonicalWire)), got {outcome:?}"
+    );
+    assert_eq!(envelope_code(&outcome), Some(Code::NoncanonicalWire));
+}
+
 #[test]
 fn refuses_unrecognized_top_level_member() {
     let preimage = identity_preimage(vec![]);

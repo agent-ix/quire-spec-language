@@ -65,7 +65,8 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
 9. Decode a request with a `sha256-jcs` byte-provision entry holding a
    repeated member name, then one holding arrays nested 1,000 deep. Map an
    allocation failure of 4096 requested bytes from intake's read of such an
-   entry.
+   entry. Decode entries holding `18446744073709551616` at `/package/count`
+   and `0.1000000000000000000001` at `/a~1b/0`.
 
 ## Expected Results
 
@@ -93,4 +94,7 @@ FR-071-AC-9, FR-071-AC-10, FR-071-AC-11.
   intake refuses at one of its limits, refuses
   `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its
   bound; the allocation failure refuses
-  `resource_exhausted`/`allocation-failed` carrying 4096.
+  `resource_exhausted`/`allocation-failed` carrying 4096; the two number
+  entries refuse `noncanonical_wire`, `inexact-integer` at
+  `/package/count` and `inexact-number` at `/a~1b/0`, each keeping its
+  `document_pointer`.

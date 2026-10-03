@@ -287,11 +287,12 @@ pub enum V2ReadRefusal {
     /// Covers envelope-shape, digest-domain, canonical-form, semantic-graph
     /// and lock refusals -- every I04 refusal this slice does not classify
     /// more specifically than IR itself already does. `malformed_wire`,
-    /// `duplicate_member`, `unknown_member`, `noncanonical_wire` and
-    /// `digest_domain_mismatch` all name defects in the wire's own envelope
-    /// shape and share `Code::InvalidPackage`: this crate does not mirror
-    /// IR's own closed refusal-code vocabulary with a duplicate set of
-    /// variants (team decision, no-copy rule).
+    /// `duplicate_member`, `unknown_member` and `digest_domain_mismatch`
+    /// all name defects in the wire's own envelope shape and share
+    /// `Code::InvalidPackage`; `noncanonical_wire` is the native catalog's
+    /// own code (QSpec FR-271) and maps to `Code::NoncanonicalWire`. This
+    /// crate does not mirror IR's own closed refusal-code vocabulary with a
+    /// duplicate set of variants (team decision, no-copy rule).
     #[error("checked-package/v2 wire refused ({refusal:?})")]
     Envelope {
         /// IR's refusal. Boxed: IR's refusal is the largest payload, and
@@ -465,9 +466,11 @@ impl V2ReadRefusal {
 /// Maps IR's closed I04 refusal-code vocabulary onto this crate's own FR-010
 /// codes. Exhaustive on purpose: a new IR variant must be triaged here
 /// rather than silently falling into a catch-all bucket. A contract-version
-/// refusal is `unknown_wire` (ADR-013 O-22). Every envelope-shape code
-/// (malformed/noncanonical wire, duplicate or unknown member, digest-domain
-/// mismatch) collapses to the crate's own
+/// refusal is `unknown_wire` (ADR-013 O-22). Non-canonical bytes are the
+/// native catalog's own `noncanonical_wire` (QSpec FR-271, FR-056), shared
+/// with intake's refusal of a model document number with no exact RFC 8785
+/// spelling. Every other envelope-shape code (malformed wire, duplicate or
+/// unknown member, digest-domain mismatch) collapses to the crate's own
 /// pre-existing `Code::InvalidPackage`, exactly as `UnsupportedNodeTag`
 /// already does -- no per-IR-variant `Code` is minted to mirror IR's own
 /// closed vocabulary (team decision, no-copy rule). IR's full
@@ -481,10 +484,10 @@ impl V2ReadRefusal {
 fn map_refusal_code(code: CheckedPackageRefusalCode) -> Code {
     match code {
         CheckedPackageRefusalCode::UnknownContractVersion => Code::UnknownWire,
+        CheckedPackageRefusalCode::NoncanonicalWire => Code::NoncanonicalWire,
         CheckedPackageRefusalCode::MalformedWire
         | CheckedPackageRefusalCode::DuplicateMember
         | CheckedPackageRefusalCode::UnknownMember
-        | CheckedPackageRefusalCode::NoncanonicalWire
         | CheckedPackageRefusalCode::DigestDomainMismatch
         | CheckedPackageRefusalCode::UnsupportedNodeTag
         | CheckedPackageRefusalCode::InvalidSemanticGraph

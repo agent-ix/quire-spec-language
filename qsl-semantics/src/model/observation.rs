@@ -536,13 +536,31 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 /// `stage_limit_exceeded`/`input-bytes-exceeded` (FR-259 B4). A read or
 /// encoding that cannot reserve memory refuses
 /// `resource_exhausted`/`allocation-failed` carrying `requested` (FR-259 B6).
+///
+/// A document the reader reads that holds a number with no exact RFC 8785
+/// spelling refuses `noncanonical_wire` (`inexact-integer` or
+/// `inexact-number`) with the `document_pointer` of the first such number,
+/// before the digest is compared (FR-056's rule, FR-106 check 1.3). The rule
+/// reads every number of the document, including members admission reads no
+/// further, such as an invocation's `post`, `result`, `created` and
+/// `deleted` under a precondition.
 fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
     let parsed_digest = match quire_canonical::read(bytes, u64::MAX) {
-        Ok(document) => Some(
-            *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
-                .map_err(digest_encode_refusal)?
-                .as_bytes(),
-        ),
+        Ok(document) => {
+            if let Some((pointer, inexact, _)) =
+                crate::model::intake::first_inexact_number(document.root())
+            {
+                return Err(refuse(
+                    AdmissionRecord::new(Code::NoncanonicalWire, inexact.as_str())
+                        .with("document_pointer", pointer.as_str()),
+                ));
+            }
+            Some(
+                *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
+                    .map_err(digest_encode_refusal)?
+                    .as_bytes(),
+            )
+        }
         Err(error) => match digest_read_refusal(error) {
             Some(refusal) => return Err(refusal),
             None => None,
