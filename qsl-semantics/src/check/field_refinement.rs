@@ -38,7 +38,7 @@
 )]
 
 use super::facts::{established_field_fact, Established};
-use super::ir::{Connective, Node, NodeKind, OrderedKind};
+use super::ir::{BodyBuilder, CheckedLiteral, Connective, Node, NodeId, NodeKind, OrderedKind};
 use super::refusal::ProvedInterval;
 use crate::model::conformance::{missing_member, AxisFailure, ConformanceOutcome};
 use crate::model::domain_package::PostconditionClause;
@@ -57,31 +57,28 @@ use quire_semantic_value::location::{Location, Origin};
 const CLAUSE_SELF_SLOT: usize = 0;
 
 fn clause_location() -> Location {
-    Location {
-        origin: Origin::Expression,
-        path: Vec::new(),
-    }
+    Location::root(Origin::Expression)
 }
 
 /// The synthetic `self.<field>` projection node every [`PostconditionClause`]
 /// guard is built over: `self` at [`CLAUSE_SELF_SLOT`], projected at stable
 /// path step zero (the one field a clause ever names, so the step index
 /// itself carries no further meaning), declared at `value_type`.
-fn self_field_node(value_type: ValueType) -> Node {
-    let self_node = Node {
+fn self_field_node(body: &mut BodyBuilder, value_type: ValueType) -> NodeId {
+    let self_node = body.push(Node {
         kind: NodeKind::Local(CLAUSE_SELF_SLOT),
         value_type: ValueType::Integer,
         location: clause_location(),
-    };
-    Node {
+    });
+    body.push(Node {
         kind: NodeKind::Field {
-            operand: Box::new(self_node),
+            operand: self_node,
             index: 0,
             optional: false,
         },
         value_type,
         location: clause_location(),
-    }
+    })
 }
 
 /// `domain`'s value type: `None` (a non-scalar, or unknown, domain) is the
@@ -121,9 +118,9 @@ fn field_domain_type(domain: Option<(i64, i64)>) -> Result<ValueType, ModelRefus
 /// The synthetic `present(self.<field>)` guard a [`PostconditionClause::Presence`]
 /// clause describes. Always unbounded (`ValueType::Integer`): presence
 /// never depends on a scalar domain, so this can never fail.
-fn presence_condition() -> Node {
+fn presence_condition(body: &mut BodyBuilder) -> Node {
     Node {
-        kind: NodeKind::Present(Box::new(self_field_node(ValueType::Integer))),
+        kind: NodeKind::Present(self_field_node(body, ValueType::Integer)),
         value_type: ValueType::Boolean,
         location: clause_location(),
     }
@@ -132,23 +129,19 @@ fn presence_condition() -> Node {
 /// The synthetic `self.<field> <operator> <literal>` guard a
 /// [`PostconditionClause::Comparison`] clause describes.
 fn comparison_condition(
+    body: &mut BodyBuilder,
     domain: Option<(i64, i64)>,
     operator: OrderingOperator,
     literal: i64,
 ) -> Result<Node, ModelRefusal> {
-    let field = self_field_node(field_domain_type(domain)?);
-    let literal_node = Node {
-        kind: NodeKind::Literal(Value::Integer(Integer::from(literal))),
+    let field = self_field_node(body, field_domain_type(domain)?);
+    let literal_node = body.push(Node {
+        kind: NodeKind::Literal(CheckedLiteral(Value::Integer(Integer::from(literal)))),
         value_type: ValueType::Integer,
         location: clause_location(),
-    };
+    });
     Ok(Node {
-        kind: NodeKind::Order(
-            operator,
-            OrderedKind::Integers,
-            Box::new(field),
-            Box::new(literal_node),
-        ),
+        kind: NodeKind::Order(operator, OrderedKind::Integers, field, literal_node),
         value_type: ValueType::Boolean,
         location: clause_location(),
     })
@@ -168,27 +161,28 @@ fn established_facts(
     clauses: &[&PostconditionClause],
     domain: Option<(i64, i64)>,
 ) -> Result<Established, ModelRefusal> {
-    let condition = |clause: &&PostconditionClause| -> Result<Node, ModelRefusal> {
-        match clause {
-            PostconditionClause::Presence { .. } => Ok(presence_condition()),
-            PostconditionClause::Comparison {
-                operator, literal, ..
-            } => comparison_condition(domain, *operator, *literal),
-        }
+    let mut body = BodyBuilder::default();
+    let condition = |body: &mut BodyBuilder, clause: &PostconditionClause| match clause {
+        PostconditionClause::Presence { .. } => Ok(presence_condition(body)),
+        PostconditionClause::Comparison {
+            operator, literal, ..
+        } => comparison_condition(body, domain, *operator, *literal),
     };
-    let mut conditions = clauses.iter().map(condition);
-    let Some(first) = conditions.next() else {
+    let Some((first, rest)) = clauses.split_first() else {
         return Ok(Established::default());
     };
-    let mut folded = first?;
-    for next in conditions {
+    let mut folded = condition(&mut body, first)?;
+    for next in rest {
+        let next = condition(&mut body, next)?;
+        let (left, right) = (body.push(folded), body.push(next));
         folded = Node {
-            kind: NodeKind::Connective(Connective::And, Box::new(folded), Box::new(next?)),
+            kind: NodeKind::Connective(Connective::And, left, right),
             value_type: ValueType::Boolean,
             location: clause_location(),
         };
     }
-    Ok(established_field_fact(&folded, CLAUSE_SELF_SLOT))
+    let guard = body.finish(folded);
+    Ok(established_field_fact(guard.root(), CLAUSE_SELF_SLOT))
 }
 
 /// A human-readable `[lower, upper]` rendering of a [`ProvedInterval`], with

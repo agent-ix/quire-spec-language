@@ -10,8 +10,7 @@
 //! QSpec STD-111 published: a `state_clause` node's body is a
 //! `quire.op.state.clause` application (FR-341), an `operation_anchor`
 //! node's body is FR-342's three-binding aggregate, and a `frame` node's
-//! body is FR-340's own non-`SemanticTerm` `frame` term
-//! ([`SemanticTerm::Frame`]). The key covers the clause kind, its anchor and
+//! body is FR-340's own `frame` term ([`BodyTerm::Frame`]). The key covers the clause kind, its anchor and
 //! its checked body and nothing else: two declarations with equal kind,
 //! anchor and body share one node and differ in their `claim` occurrence
 //! (FR-088, FR-104-AC-6), and the declared name enters no key.
@@ -23,8 +22,10 @@ use quire_exact::{EffectiveId, NodeKey, Origin, ValueType};
 use super::{fault, Binder, Binders, Lowering};
 use crate::check::claims::BinderSite;
 use crate::check::family::OccurrenceRole;
-use crate::check::ir::Node;
-use crate::check::node_key::{FrameField, NodeRef, NodeTag, Operation, Operator, SemanticTerm};
+use crate::check::ir::CheckedNode;
+use crate::check::node_key::{
+    BodyTerm, FrameField, GroupTerm, LeafTerm, MemberTerm, NodeTag, Operation, Operator,
+};
 use crate::check::refusal::{CheckRefusal, KeyFault};
 use crate::check::state_clause::PopulationDomain;
 use crate::model::domain_package::DomainPackageRecord;
@@ -70,7 +71,7 @@ pub(crate) struct StateClauseInput<'a> {
     /// in slot order.
     pub(crate) parameters: &'a [(String, ValueType)],
     /// The checked Boolean body.
-    pub(crate) body: &'a Node,
+    pub(crate) body: CheckedNode<'a>,
     /// The name each body slot was bound under, indexed by slot.
     pub(crate) body_slots: &'a [String],
     /// The object types whose model nodes name the clause's population
@@ -176,10 +177,7 @@ impl Lowering<'_> {
             });
         }
         let parameters: Vec<NodeKey> = scope.iter().map(|binder| binder.parameter).collect();
-        let mut binders = Binders {
-            slot_names: clause.body_slots,
-            scope,
-        };
+        let mut binders = Binders::new(clause.body_slots, &scope);
         let condition = self.expression(clause.body, &mut binders)?;
         let boolean = self.type_node(&ValueType::Boolean, location)?;
         let (anchor, binding) = match &clause.anchor {
@@ -202,26 +200,21 @@ impl Lowering<'_> {
             "state_clause",
             Some(boolean),
             None,
-            SemanticTerm::Application {
-                operator: Operator::StateClause,
-                operation: Operation {
+            BodyTerm::application(
+                Operator::StateClause,
+                Operation {
                     member: Some(Member::StateClause {
                         clause: clause.kind,
                     }),
                     ..Operation::plain("quire.op.state.clause")
                 },
-                result_type: NodeRef(boolean),
-                arguments: vec![
-                    SemanticTerm::Aggregate {
-                        members: parameters
-                            .iter()
-                            .map(|parameter| SemanticTerm::reference(*parameter))
-                            .collect(),
-                    },
-                    SemanticTerm::reference(anchor),
-                    condition,
+                boolean,
+                vec![
+                    MemberTerm::Group(GroupTerm::references(parameters.iter().copied())),
+                    MemberTerm::reference(anchor),
+                    MemberTerm::Leaf(condition),
                 ],
-            },
+            ),
         )?;
         self.record(key, OccurrenceRole::Claim, location.clone());
         let mut population_objects = Vec::with_capacity(clause.population_types.len());
@@ -296,13 +289,11 @@ impl Lowering<'_> {
             "operation_anchor",
             Some(declaring),
             None,
-            SemanticTerm::Aggregate {
-                members: vec![
-                    SemanticTerm::binding("context", SemanticTerm::reference(declaring)),
-                    SemanticTerm::binding("operation", operation),
-                    SemanticTerm::binding("frame", SemanticTerm::reference(frame)),
-                ],
-            },
+            BodyTerm::aggregate(vec![
+                MemberTerm::bound("context", LeafTerm::reference(declaring)),
+                MemberTerm::bound("operation", operation),
+                MemberTerm::bound("frame", LeafTerm::reference(frame)),
+            ]),
         )?;
         Ok(OperationBinding {
             anchor,
@@ -341,7 +332,7 @@ impl Lowering<'_> {
             .collect();
         let creates = self.frame_objects(&effect.creates, location)?;
         let deletes = self.frame_objects(&effect.deletes, location)?;
-        // FR-340: the frame body is not a `SemanticTerm` at all -- it holds
+        // FR-340: the frame body is no other term at all -- it holds
         // no application, and it never nests inside another term (the
         // schema scopes this shape to a `state`/`frame` node's own body).
         let frame = self.insert(
@@ -350,7 +341,7 @@ impl Lowering<'_> {
             "frame",
             Some(declaring),
             None,
-            SemanticTerm::frame(modifies, creates, deletes),
+            BodyTerm::frame(modifies, creates, deletes),
         )?;
         Ok((declaring, frame))
     }

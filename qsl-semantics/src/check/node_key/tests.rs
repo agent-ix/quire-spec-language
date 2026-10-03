@@ -183,14 +183,19 @@ fn key(fill: u8) -> NodeKey {
     NodeKey::from_digest([fill; 32])
 }
 
-fn reference(fill: u8) -> SemanticTerm {
-    SemanticTerm::Reference {
+fn reference(fill: u8) -> LeafTerm {
+    LeafTerm::Reference {
         target: NodeRef(key(fill)),
     }
 }
 
-fn add(arguments: Vec<SemanticTerm>) -> SemanticTerm {
-    SemanticTerm::Application {
+/// [`reference`] as an argument.
+fn argument(fill: u8) -> MemberTerm {
+    MemberTerm::Leaf(reference(fill))
+}
+
+fn add(arguments: Vec<MemberTerm>) -> BodyTerm {
+    BodyTerm::Application(ApplicationTerm {
         operator: Operator::Binary,
         operation: Operation {
             identity: "quire.op.integer.add".to_owned(),
@@ -201,7 +206,7 @@ fn add(arguments: Vec<SemanticTerm>) -> SemanticTerm {
         },
         result_type: NodeRef(key(3)),
         arguments,
-    }
+    })
 }
 
 fn identifiers(names: &[&str]) -> Vec<Identifier> {
@@ -211,7 +216,7 @@ fn identifiers(names: &[&str]) -> Vec<Identifier> {
         .collect()
 }
 
-fn node<'a>(body: &'a SemanticTerm) -> ApplicationNode<'a> {
+fn node<'a>(body: &'a BodyTerm) -> ApplicationNode<'a> {
     ApplicationNode {
         node_tag: NodeTag::Expression,
         semantic_form: "binary",
@@ -228,7 +233,7 @@ fn preimage_json(node: &ApplicationNode<'_>) -> Value {
 
 #[test]
 fn preimage_bytes_are_pinned() {
-    let body = add(vec![reference(1), reference(9)]);
+    let body = add(vec![argument(1), argument(9)]);
     let declaration = identifiers(&["pkg", "total"]);
     let node = ApplicationNode {
         node_tag: NodeTag::Function,
@@ -295,7 +300,7 @@ fn keys_of(members: &[NodeInput<'_>], handles: &[NodeKey]) -> Result<GroupKeys, 
 }
 
 /// The input of an application node inside a group.
-fn in_group<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
+fn in_group<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
     NodeInput {
         owner: None,
         node_tag: NodeTag::Expression,
@@ -307,17 +312,22 @@ fn in_group<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
 }
 
 #[test]
-fn group_references_are_rewritten_in_every_nested_term() {
-    let first = SemanticTerm::Aggregate {
-        members: vec![
-            SemanticTerm::Binding {
-                name: "x".to_owned(),
-                value: Box::new(reference(2)),
-            },
-            add(vec![reference(1), add(vec![reference(2), reference(9)])]),
-        ],
-    };
-    let second = add(vec![reference(1)]);
+fn group_references_are_rewritten_in_every_stratum() {
+    let first = add(vec![
+        MemberTerm::bound("x", reference(2)),
+        MemberTerm::Group(GroupTerm::new(vec![
+            GroupMember::Leaf(reference(1)),
+            GroupMember::Binding(Binding::new("y", reference(2))),
+        ])),
+        MemberTerm::binding(
+            "z",
+            BindingValue::Tuple(TupleTerm::new(vec![TupleMember::Group(GroupTerm::new(
+                vec![GroupMember::Binding(Binding::new("w", reference(1)))],
+            ))])),
+        ),
+        argument(9),
+    ]);
+    let second = add(vec![argument(1)]);
     let group =
         keys_of(&[in_group(&first), in_group(&second)], &[key(1), key(2)]).expect("the group keys");
 
@@ -325,15 +335,16 @@ fn group_references_are_rewritten_in_every_nested_term() {
 
     let group_reference = |ordinal: usize| json!({"term": "group_reference", "ordinal": ordinal});
     let (own, other) = (group.ordinals[0], group.ordinals[1]);
-    let members = &preimage["body"]["members"];
-    assert_eq!(members[0]["value"], group_reference(other));
-    assert_eq!(members[1]["arguments"][0], group_reference(own));
+    let arguments = &preimage["body"]["arguments"];
+    assert_eq!(arguments[0]["value"], group_reference(other));
+    assert_eq!(arguments[1]["members"][0], group_reference(own));
+    assert_eq!(arguments[1]["members"][1]["value"], group_reference(other));
     assert_eq!(
-        members[1]["arguments"][1]["arguments"][0],
-        group_reference(other)
+        arguments[2]["value"]["members"][0]["members"][0]["value"],
+        group_reference(own)
     );
     assert_eq!(
-        members[1]["arguments"][1]["arguments"][1],
+        arguments[3],
         json!({"term": "reference", "target": {"domain": NODE_KEY_DOMAIN, "digest": key(9).to_string()}}),
         "a reference outside the group stays a reference"
     );
@@ -347,12 +358,12 @@ fn group_references_are_rewritten_in_every_nested_term() {
 #[test]
 fn the_key_does_not_depend_on_group_member_handles() {
     let first_bodies = [
-        add(vec![reference(2), reference(9)]),
-        add(vec![reference(1), reference(1)]),
+        add(vec![argument(2), argument(9)]),
+        add(vec![argument(1), argument(1)]),
     ];
     let second_bodies = [
-        add(vec![reference(8), reference(9)]),
-        add(vec![reference(7), reference(7)]),
+        add(vec![argument(8), argument(9)]),
+        add(vec![argument(7), argument(7)]),
     ];
     let first = keys_of(
         &[in_group(&first_bodies[0]), in_group(&first_bodies[1])],
@@ -372,7 +383,7 @@ fn the_key_does_not_depend_on_group_member_handles() {
 
 #[test]
 fn declaration_and_recursion_each_enter_the_key() {
-    let body = add(vec![reference(1), reference(9)]);
+    let body = add(vec![argument(1), argument(9)]);
     let declaration = identifiers(&["pkg", "total"]);
     let other_declaration = identifiers(&["pkg", "sum"]);
     let bare = node(&body);
@@ -406,17 +417,13 @@ fn declaration_and_recursion_each_enter_the_key() {
 
 #[test]
 fn a_body_without_an_application_is_refused() {
-    let literal = SemanticTerm::literal(key(3), LiteralValue::Integer(Integer::from(1_i64)));
-    let bare_reference = reference(1);
-    let aggregate = SemanticTerm::Aggregate {
-        members: vec![literal.clone(), reference(2)],
-    };
-    let nested = SemanticTerm::Binding {
-        name: "x".to_owned(),
-        value: Box::new(SemanticTerm::Aggregate {
-            members: vec![literal, add(Vec::new())],
-        }),
-    };
+    let literal = LeafTerm::literal(key(3), LiteralValue::Integer(Integer::from(1_i64)));
+    let bare_reference = BodyTerm::Leaf(reference(1));
+    let aggregate = BodyTerm::aggregate(vec![
+        MemberTerm::Leaf(literal.clone()),
+        MemberTerm::bound("x", literal),
+        argument(2),
+    ]);
 
     for body in [&bare_reference, &aggregate] {
         assert_eq!(
@@ -424,7 +431,7 @@ fn a_body_without_an_application_is_refused() {
             Err(NodeKeyRefusal::NoApplication)
         );
     }
-    assert!(application_node_key(&node(&nested)).is_ok());
+    assert!(application_node_key(&node(&add(Vec::new()))).is_ok());
 }
 
 /// FR-092: an integer literal is its canonical decimal string at any
@@ -437,14 +444,17 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
         .parse()
         .expect("canonical integer");
     let body = add(vec![
-        SemanticTerm::literal(key(4), LiteralValue::Integer(huge)),
-        SemanticTerm::literal(key(4), LiteralValue::Integer(Integer::from(-7_i64))),
-        SemanticTerm::literal(
+        MemberTerm::Leaf(LeafTerm::literal(key(4), LiteralValue::Integer(huge))),
+        MemberTerm::Leaf(LeafTerm::literal(
+            key(4),
+            LiteralValue::Integer(Integer::from(-7_i64)),
+        )),
+        MemberTerm::Leaf(LeafTerm::literal(
             key(5),
             LiteralValue::Rational(
                 Rational::new(Integer::from(2_i64), Integer::from(-4_i64)).expect("nonzero"),
             ),
-        ),
+        )),
     ]);
     let preimage = preimage_json(&node(&body));
     let arguments = &preimage["body"]["arguments"];
@@ -461,25 +471,14 @@ fn integer_and_rational_literals_are_spelled_as_strings() {
 fn a_member_position_outside_the_exact_range_is_refused() {
     let safe = JCS_SAFE_INTEGER;
     let positioned = |position: u64| {
-        let SemanticTerm::Application {
-            operator,
-            mut operation,
-            result_type,
-            arguments,
-        } = add(Vec::new())
-        else {
+        let BodyTerm::Application(mut application) = add(Vec::new()) else {
             unreachable!("add builds an application")
         };
-        operation.member = Some(Member::Position {
+        application.operation.member = Some(Member::Position {
             declaration: key(12),
             position,
         });
-        SemanticTerm::Application {
-            operator,
-            operation,
-            result_type,
-            arguments,
-        }
+        BodyTerm::Application(application)
     };
     let edge = positioned(safe);
     let beyond = positioned(safe + 1);
@@ -496,7 +495,7 @@ fn a_member_position_outside_the_exact_range_is_refused() {
 
 #[test]
 fn a_recursion_group_needs_members_with_distinct_handles() {
-    let body = add(vec![reference(1)]);
+    let body = add(vec![argument(1)]);
     assert_eq!(keys_of(&[], &[]), Err(NodeKeyRefusal::InvalidGroup));
     assert_eq!(
         keys_of(&[in_group(&body), in_group(&body)], &[key(1), key(1)]),
@@ -515,9 +514,7 @@ fn a_recursion_group_needs_members_with_distinct_handles() {
 #[test]
 fn a_one_member_group_keys_to_g1() {
     let handle = key(0x5a);
-    let body = SemanticTerm::Aggregate {
-        members: vec![SemanticTerm::reference(handle)],
-    };
+    let body = BodyTerm::aggregate(vec![MemberTerm::reference(handle)]);
     let node = NodeInput {
         owner: None,
         node_tag: NodeTag::CompositeType,
@@ -550,12 +547,9 @@ fn a_one_member_group_keys_to_g1() {
 
 #[test]
 fn empty_names_and_forms_are_refused() {
-    let body = add(vec![reference(1)]);
+    let body = add(vec![argument(1)]);
     let empty_name: [Identifier; 0] = [];
-    let empty_binding = SemanticTerm::Binding {
-        name: String::new(),
-        value: Box::new(add(Vec::new())),
-    };
+    let empty_binding = add(vec![MemberTerm::bound("", reference(1))]);
 
     assert_eq!(
         application_node_key(&ApplicationNode {
@@ -577,50 +571,6 @@ fn empty_names_and_forms_are_refused() {
     );
 }
 
-/// A body `depth` terms deep: `depth - 1` bindings around one application.
-fn nested(depth: u64) -> SemanticTerm {
-    (1..depth).fold(add(Vec::new()), |inner, _| SemanticTerm::Binding {
-        name: "x".to_owned(),
-        value: Box::new(inner),
-    })
-}
-
-#[test]
-fn a_body_deeper_than_the_checking_limit_is_refused() {
-    let at_limit = nested(MAX_CHECKING_DEPTH);
-    let beyond = nested(MAX_CHECKING_DEPTH + 1);
-    let nested_arguments = (1..=MAX_CHECKING_DEPTH).fold(reference(1), |inner, _| add(vec![inner]));
-
-    assert!(application_node_key(&node(&at_limit)).is_ok());
-    assert_eq!(
-        application_node_key(&node(&beyond)),
-        Err(NodeKeyRefusal::TooDeep {
-            limit: MAX_CHECKING_DEPTH,
-            actual: MAX_CHECKING_DEPTH + 1,
-        })
-    );
-    assert_eq!(
-        application_node_key(&node(&nested_arguments)),
-        Err(NodeKeyRefusal::TooDeep {
-            limit: MAX_CHECKING_DEPTH,
-            actual: MAX_CHECKING_DEPTH + 1,
-        }),
-        "application arguments count toward depth"
-    );
-}
-
-/// A recursion group member whose body is at the checking limit,
-/// application arguments nested `MAX_CHECKING_DEPTH` deep (about twice as
-/// many JSON levels), keys: reading its shape back from its RFC 8785 bytes
-/// is not bounded by `serde_json`'s default 128-level parse limit.
-#[test]
-fn a_group_member_at_the_checking_limit_keys() {
-    let at_limit = (1..MAX_CHECKING_DEPTH).fold(reference(1), |inner, _| add(vec![inner]));
-    assert!(application_node_key(&node(&at_limit)).is_ok());
-    let keys = keys_of(&[in_group(&at_limit)], &[key(50)]).expect("the member keys");
-    assert_eq!(keys.members.len(), 1);
-}
-
 /// M1: the operation encoding (law, all three mode kinds, a `position`
 /// member, `position:N`/`inner`/`field:` leaf segments) and literal terms
 /// (integer, text with an escaped quote, null), pinned against
@@ -634,8 +584,9 @@ fn operation_and_literal_bytes_are_pinned() {
             identity: "test.law/v1".to_owned(),
         },
     };
-    let literal = |fill: u8, value: LiteralValue| SemanticTerm::literal(key(fill), value);
-    let body = SemanticTerm::Application {
+    let literal =
+        |fill: u8, value: LiteralValue| MemberTerm::Leaf(LeafTerm::literal(key(fill), value));
+    let body = BodyTerm::Application(ApplicationTerm {
         operator: Operator::Binary,
         operation: Operation {
             identity: "quire.op.decimal.div".to_owned(),
@@ -666,7 +617,7 @@ fn operation_and_literal_bytes_are_pinned() {
             literal(5, LiteralValue::Text("a\"b".to_owned())),
             literal(6, LiteralValue::None),
         ],
-    };
+    });
     let node_ref = |fill: u8| {
         format!(
             r#"{{"digest":"{}","domain":"quire.checked-semantic-node/v1"}}"#,
@@ -724,7 +675,7 @@ struct VectorPreimage {
     semantic_type: NodeRef,
     declaration: Option<VectorDeclaration>,
     recursion: Option<Value>,
-    body: SemanticTerm,
+    body: BodyTerm,
 }
 
 #[derive(Deserialize)]
@@ -818,13 +769,11 @@ fn owner() -> Owner {
     Owner::Source(SourceOwner::new("a", "u").expect("nonempty owner"))
 }
 
-fn empty_aggregate() -> SemanticTerm {
-    SemanticTerm::Aggregate {
-        members: Vec::new(),
-    }
+fn empty_aggregate() -> BodyTerm {
+    BodyTerm::aggregate(Vec::new())
 }
 
-fn structural<'a>(body: &'a SemanticTerm) -> NodeInput<'a> {
+fn structural<'a>(body: &'a BodyTerm) -> NodeInput<'a> {
     NodeInput {
         owner: None,
         node_tag: NodeTag::ScalarType,
@@ -909,7 +858,7 @@ fn an_owner_enters_a_declared_structural_key_only() {
         }),
         Err(NodeKeyRefusal::OwnerDeclarationMismatch)
     );
-    let application = add(vec![reference(1)]);
+    let application = add(vec![argument(1)]);
     assert_eq!(
         node_key(&NodeInput {
             owner: Some(&u),

@@ -42,7 +42,7 @@ Tag the tests `#[trace("TC-378", "FR-062-AC-7")]` and
 
 ## Status
 
-Planned for the node-limit form above. The present
-`the_typer_depth_stop_is_located_at_the_node_whose_entry_failed`
-(`qsl-semantics/src/check/family.rs`) drives the depth limit ADR-030
-deletes and is replaced by this case.
+Backed: `real_checker_node_limit_is_the_proximate_cause` and
+`package_checking_locates_a_node_limit_at_its_node_and_a_declaration_limit_at_the_declaration`
+(`qsl-semantics/src/check/family.rs`). No outcome yet names the setting
+`s3.nodes`; ticket B5 adds it.

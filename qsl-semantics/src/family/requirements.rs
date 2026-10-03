@@ -672,7 +672,6 @@ mod tests {
         let mut cx = CheckContext::new(
             &types,
             StageLimits {
-                nesting_depth: 8,
                 input_bytes: u64::MAX,
                 node_count,
             },

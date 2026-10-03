@@ -78,7 +78,16 @@ One set of package declarations holds the declarations of one source unit.
 They SHALL be checked under that unit's `RawSourceRef` (FR-001), and their
 source owner is that reference's `SourceOwner{authority, identity}`.
 
-A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. For a
+A `quire_semantic_value::location::Location` names a declaration origin and a child-index path. The
+path SHALL be a parent chain shared with the location it was taken from, so
+taking a child costs the same at any depth and a location at depth `d` holds
+no copy of the `d` steps above it (ADR-030 D-1, FR-258). The index sequence is
+built only on output: the FR-269 cause wire writes a location as its
+declaration and the child-index array, built from the chain, and reads that
+array back into a chain. Resolving every location of one checked unit to a
+region SHALL remember the node each chain link reaches, so the work is the
+size of the unit, not its size times its depth. Clone, equality, ordering,
+hash, debug and drop of a location SHALL NOT recurse with its depth. For a
 declaration the assembler built from the unit, it SHALL resolve to a
 `SourceRegion` under the unit's `RawSourceRef`, as follows:
 
@@ -170,7 +179,7 @@ Each producer's locus is the position at which its charge failed:
 
 | Producer | Limits | Locus |
 | --- | --- | --- |
-| S3, a family `check`, for a declaration as a whole | the declaration's preimage input bytes, node count and work charge | `Locus::Region` over that declaration's span |
+| S3, a family `check`, for a declaration as a whole | the declaration's preimage input bytes and work charge | `Locus::Region` over that declaration's span |
 | S3, `Typer` and lowering, under `CheckingLimits` | the package-wide node count (NFR-011) | `Locus::Region` over the node whose entry failed the charge, resolved from its `quire_semantic_value::location::Location`. For the package-wide node count this is the node of whichever declaration was being checked when the running count passed the bound |
 | S3, lowering's own work charge, under `CheckingLimits` (NFR-011) | the shared work meter lowering charges per node past a declaration's own precheck | `Locus::Region` over the node whose lowering charge crossed the bound, resolved from its `quire_semantic_value::location::Location` |
 | I2 reader, IR's reported limits | IR's `Bytes`, `Nodes`, `Edges`, `Occurrences`, `Diagnostics` and `Work` as input bytes, node count, edge count, occurrence count, diagnostic count and work budget | `Locus::Artifact` with the `raw-artifact-digest` digest record of the supplied bytes (FR-201, O-18) and the RFC 6901 pointer IR reports for the value at which the charge failed |
@@ -360,7 +369,7 @@ name.
 | FR-096-AC-14 | With `type Small = Int[0, 3]` checked under `CheckMode::Kernel`, S6a evaluation of `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 3]>[0, 2]` holding `2, 2` returns `FamilyOutcome::Evaluated(Outcome::Undefined(Undefined::SumOutOfDomain))`, located at the `sum` node, with no refusal record and no charge after `integer-arithmetic.arithmetic`; it is not `Outcome::Refused(Refusal::IntegerOutOfDomain)`. The same `sum` for `q` holding `1, 2` completes with `3`. `sum<Small>(x in q: x)` for `q` of `Sequence<Int[0, 9]>[0, 2]` holding `5, 0` returns the same undefined outcome, located at the summand node, with no addition. | Test (TC-500) |
 | FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
 | FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
-| FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound preimage node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` passes its own precheck and types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test (TC-427) |
+| FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test (TC-427) |
 | FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test (TC-429) |
 
 ## Dependencies

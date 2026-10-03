@@ -296,13 +296,13 @@ impl CatalogCoded for ModelCause {
 const FIXTURE_F: &str = "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nfunction f using v(x: Int[0, 9]): Integer pure { x + 5 }\n";
 
 fn fixture_f_location() -> Location {
-    Location {
-        origin: Origin::Body {
+    Location::at(
+        Origin::Body {
             function: "f".to_owned(),
             index: 0,
         },
-        path: vec![1],
-    }
+        &[1],
+    )
 }
 
 fn evaluation(outcome: FamilyOutcome<Value>) -> qsl_eval::value::Evaluation {

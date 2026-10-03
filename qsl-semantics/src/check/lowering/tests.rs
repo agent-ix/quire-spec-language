@@ -4,7 +4,7 @@
 //! repository's own FR-092 text at compile time, so the spec and the test
 //! cannot drift apart.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_forms::{
@@ -25,6 +25,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
 mod binder_scope;
+mod deep_bodies;
 mod depth;
 mod differential;
 mod expression_depth;
@@ -70,6 +71,149 @@ fn spec_vectors(spec: &str) -> BTreeMap<String, (String, String)> {
         vectors.insert(name.to_owned(), (key, preimage));
     }
     vectors
+}
+
+/// The heading text after `**name**: ` of each golden vector `spec`
+/// publishes.
+fn spec_descriptions(spec: &str) -> BTreeMap<String, String> {
+    spec.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("**")?;
+            let (name, description) = rest.split_once("**: ")?;
+            Some((name.to_owned(), description.to_owned()))
+        })
+        .collect()
+}
+
+/// `spec`'s vector-key table rows, `| name | description | `key` |`.
+fn key_table_rows(spec: &str) -> Vec<(String, String, String)> {
+    spec.lines()
+        .filter_map(|line| {
+            let cells: Vec<&str> = line
+                .strip_prefix("| ")?
+                .strip_suffix(" |")?
+                .split(" | ")
+                .collect();
+            let [name, description, key] = cells[..] else {
+                return None;
+            };
+            let key = key.strip_prefix('`')?.strip_suffix('`')?;
+            Some((name.to_owned(), description.to_owned(), key.to_owned()))
+        })
+        .filter(|(_, _, key)| key.len() == 64)
+        .collect()
+}
+
+/// `spec`'s recursion-group tables: each group's digest and its rows, an
+/// ordinal and the member's vector name.
+fn group_tables(spec: &str) -> Vec<(String, Vec<(u64, String)>)> {
+    let mut tables = Vec::new();
+    let mut lines = spec.lines().peekable();
+    while let Some(line) = lines.next() {
+        let Some((_, rest)) = line.split_once(", group digest `") else {
+            continue;
+        };
+        let Some(digest) = rest.strip_suffix("`:") else {
+            continue;
+        };
+        let mut rows = Vec::new();
+        for row in lines.by_ref().skip(3) {
+            let Some(row) = row.strip_prefix("| ") else {
+                break;
+            };
+            let mut cells = row.split(" | ");
+            let ordinal = cells
+                .next()
+                .and_then(|cell| cell.parse().ok())
+                .expect("an ordinal");
+            let member = cells.next().expect("a member");
+            let name = member.split(' ').next().expect("a vector name");
+            rows.push((ordinal, name.to_owned()));
+        }
+        tables.push((digest.to_owned(), rows));
+    }
+    tables
+}
+
+/// Every table `spec` publishes about its golden vectors agrees with the
+/// vectors: the key table with each heading and key, each heading's ordinal
+/// and each group table's ordinals and digest with the vector's preimage,
+/// and no two vectors share a key.
+fn assert_published_tables_agree(spec: &str) {
+    let vectors = spec_vectors(spec);
+    let descriptions = spec_descriptions(spec);
+    let keys: std::collections::BTreeSet<&String> = vectors.values().map(|(key, _)| key).collect();
+    assert_eq!(keys.len(), vectors.len(), "two vectors share a key");
+    for (name, description, key) in key_table_rows(spec) {
+        let Some((vector_key, _)) = vectors.get(&name) else {
+            continue;
+        };
+        assert_eq!(&key, vector_key, "{name}: the key table's key");
+        assert_eq!(
+            Some(&description),
+            descriptions.get(&name),
+            "{name}: the key table's description"
+        );
+    }
+    let recursion = |name: &str| -> Json {
+        serde_json::from_str::<Json>(&vectors[name].1).expect("a preimage is JSON")["recursion"]
+            .clone()
+    };
+    for (name, description) in &descriptions {
+        let Some(ordinal) = description
+            .split("ordinal ")
+            .nth(1)
+            .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+            .and_then(|digits| digits.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        if vectors.contains_key(name) {
+            assert_eq!(
+                recursion(name)["ordinal"],
+                json!(ordinal),
+                "{name}: the heading's ordinal"
+            );
+        }
+    }
+    let mut in_tables = std::collections::BTreeSet::new();
+    for (digest, rows) in group_tables(spec) {
+        for (ordinal, name) in rows {
+            let recursion = recursion(&name);
+            assert_eq!(
+                recursion["ordinal"],
+                json!(ordinal),
+                "{name}: its table's ordinal"
+            );
+            if !recursion["group"].is_null() {
+                assert_eq!(
+                    recursion["group"],
+                    json!(digest),
+                    "{name}: its table's digest"
+                );
+            }
+            assert!(
+                in_tables.insert(name.clone()),
+                "{name} is in two group tables"
+            );
+        }
+    }
+    let grouped: std::collections::BTreeSet<String> = vectors
+        .keys()
+        .filter(|name| !recursion(name).is_null())
+        .cloned()
+        .collect();
+    assert_eq!(
+        in_tables, grouped,
+        "every grouped vector is in a group table"
+    );
+}
+
+/// FR-092's key table, headings, ordinals, group tables and vectors agree.
+#[trace("FR-092-AC-11", "TC-413")]
+#[test]
+fn fr_092_published_tables_agree_with_its_vectors() {
+    assert_published_tables_agree(FR_092);
 }
 
 fn vector_key(name: &str) -> String {
@@ -145,7 +289,6 @@ fn type_nodes(
         &[],
         scope.types().units().clone(),
         &lock,
-        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,
@@ -333,42 +476,59 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     }
 }
 
-/// TC-413 step 5 (FR-092-AC-7): the type walk is bounded by the check
-/// stage's depth limit.
-#[trace("FR-092-AC-7", "TC-413")]
-#[test]
-fn a_type_nested_past_the_depth_limit_refuses() {
-    let nested = |depth: usize| {
-        (0..depth).fold(boolean(), |inner, _| {
-            TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![inner])
+/// Every node key of the package holding `function p(x: T): Boolean {
+/// true }` for `T` 100,000 `Option`s around `Boolean`, checked and dropped
+/// on a thread with a `stack`-byte stack, under limits raised to fit it.
+fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
+    std::thread::Builder::new()
+        .stack_size(stack)
+        .spawn(|| {
+            let parameter = (0..100_000).fold(boolean(), |inner, _| {
+                TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![inner])
+            });
+            let limits = CheckingLimits::new(u64::MAX)
+                .with_input_bytes(u64::MAX)
+                .with_work_budget(u64::MAX);
+            let checked = PackageDeclarations {
+                functions: vec![function(
+                    "p",
+                    &[("x", parameter)],
+                    boolean(),
+                    None,
+                    Expression::boolean(true),
+                )],
+                ..PackageDeclarations::new(fixture_source())
+            }
+            .check(limits)
+            .unwrap_or_else(|refusals| panic!("the deep option parameter checks: {refusals:?}"));
+            let options = checked
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == "option")
+                .count();
+            assert_eq!(options, 100_000);
+            checked
+                .semantic_graph()
+                .nodes()
+                .map(SemanticNode::key)
+                .collect()
         })
-    };
-    let limits = CheckingLimits::new(u64::MAX, 4).expect("a depth of 4 is allowed");
-    let checked = |depth: usize| {
-        PackageDeclarations {
-            functions: vec![function(
-                "p",
-                &[("x", nested(depth))],
-                boolean(),
-                None,
-                Expression::boolean(true),
-            )],
-            ..PackageDeclarations::new(fixture_source())
-        }
-        .check(limits)
-    };
-    assert!(checked(4).is_ok(), "four nested options are keyed");
-    let refusals = checked(5).expect_err("five nested options refuse");
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            refusal.cause,
-            CheckCause::ResourceExhausted(ref exceeded)
-                if exceeded.kind == CheckingLimitKind::Depth && exceeded.limit == 4
-        )),
-        "{refusals:?}"
+        .expect("the check thread spawns")
+        .join()
+        .expect("the check completes")
+}
+
+/// TC-413 step 5 (FR-092-AC-7, FR-258-AC-2): FR-092's type-keying walk keys
+/// a parameter typed with 100,000 nested `Option`s around `Boolean` on a
+/// 512 KiB stack, to the keys the same package has on an 8 MiB stack.
+#[trace("FR-092-AC-7", "TC-413")]
+#[trace("FR-258-AC-2", "TC-726")]
+#[test]
+fn a_100000_deep_option_type_keys_on_a_small_stack() {
+    assert_eq!(
+        deep_option_keys(512 * 1024),
+        deep_option_keys(8 * 1024 * 1024)
     );
-    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
-    assert_eq!(refusals[0].cause.cause(), Some("nesting-depth-exceeded"));
 }
 
 /// `function name(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then
@@ -1185,7 +1345,7 @@ fn equal_literals_are_one_node_with_one_occurrence_each() {
         .collect();
     let paths: Vec<Vec<usize>> = occurrences
         .into_iter()
-        .map(|location| location.path)
+        .map(|location| location.path())
         .collect();
     assert_eq!(paths, vec![vec![0], vec![1], vec![2]], "source order");
     assert!(graph
@@ -1432,13 +1592,13 @@ fn a_law_comes_only_from_the_lock_evidence() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(
         refusals[0].location,
-        Location {
-            origin: Origin::Body {
+        Location::at(
+            Origin::Body {
                 function: "te".to_owned(),
                 index: 0,
             },
-            path: vec![0],
-        },
+            &[0]
+        ),
         "the refusal names the equality node's region"
     );
     assert_eq!(
@@ -1989,7 +2149,6 @@ fn tc_441_an_unbounded_population_refuses_to_lower() {
         &[],
         scope.types().units().clone(),
         &lock,
-        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,

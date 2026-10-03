@@ -188,8 +188,8 @@ to `x`'s node.
 | `Query{visit: Sum}` (`sum<N>`) | `collection` | `quire.op.collection.sum.integer` | member `type_argument` of `T(node)` | `[ref(c), binding{name: x, value: ref(summand)}]` |
 | `Flatten` whose operand is not a `Query{visit: Map}` (`flatten(c)`) | `collection` | `quire.op.collection.flatten` | leaves `result_inner` | `[ref(c)]` |
 | `Flatten` over a `Query{visit: Map}` (`flatMap(x in c: e)`, and `flatten(map(x in c: e))`) | `collection` | `quire.op.collection.flat_map`; no node is built for the inner map | leaves `result_inner` | `[ref(c), binding{name: x, value: ref(e)}]` |
-| `Fold{identity: Some(i)}` (`fold<A>`) | `collection` | `quire.op.collection.fold` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: binding{name: x, value: ref(step)}}, ref(i)]` |
-| `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: binding{name: x, value: ref(step)}}]` |
+| `Fold{identity: Some(i)}` (`fold<A>`) | `collection` | `quire.op.collection.fold` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}, ref(i)]` |
+| `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}]` |
 | `Size` | `collection` | `quire.op.collection.size` | member `type_argument` of `T(node)` | `[ref(c)]` |
 | `Contains` | `collection` | `quire.op.collection.contains` | leaves `inner:0` | `[ref(c), ref(v)]` |
 | `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, whose `result_type` is the model node of `r`'s object type `T`, and over it `quire.op.record.project` | the projection's member `field{declaration: T's model node, name: f}` | the projection's `[ref(deref node)]` |
@@ -476,25 +476,25 @@ fix the leaf spelling.
 |---|---|---|
 | T13 | `Text[0, 8; binary-utf8]` | `90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7` |
 | T14 | `Text[0, 4; nfc]` | `41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef` |
-| G16 | `record Node`, ordinal 0 | `12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4` |
-| G17 | `Option<Node>`, ordinal 1 | `57d82ab7977af236dc5f898b98693d88499665ac53e19a25df7919ee867a6f13` |
-| G18 | `Option<A>`, ordinal 0 | `c50e48e0850cfad1b96eb970873a2f40bb9a76bc7570b4cb0fd5ecbcd8aeef04` |
-| G19 | `record B`, ordinal 1 | `193c4ff199f62645b8410fee31906c24407a0b8f44c9531546d2feb26afa7e6f` |
-| G20 | `record A`, ordinal 2 | `871ecfc1333281aeeba9465655892aeebc4f55d920add6eaa2883d3ba5eaf999` |
-| G21 | `Option<B>`, ordinal 3 | `70d8b14aa580fd43e3b74db225dd15e921dd086f02e9ccb60ff1f880940dab65` |
-| S4 | `Sequence<Node>` | `31a87726ba061f8a52d37f2b1fdc5cd37639e451398e41ad194441e0c6065166` |
-| S5 | `Sequence<Node>[0, 3]` | `0d46108bcd90e1c86a9b292c11fe2d6368a041c9b117df067059ad793868c343` |
-| P10 | parameter `a: Node`, level 0 | `28de329c02d58a0d8950b48f884f7bfe9b8c349ef1401d3570cdd93413aa98ce` |
-| P11 | parameter `b: Node`, level 1 | `bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7` |
-| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | `179e6f8dbe0f7943bc07142cb3426073a72ed652c8a1a97d265dea817da0f24f` |
-| P13 | parameter `x: A`, level 0 | `5c4dbf18699020a60de695300b93f610c4a9900b0c975c5106095bce1f601376` |
-| P14 | parameter `y: A`, level 1 | `518c4adf51b804f39682ed5590a0480540dbe3f44b0560b6c30ce841b92f5dda` |
-| P15 | parameter `a: Option<Node>`, level 0 | `5edb6e8d2054522ce9131bb1129c12cbef280ee76cba8ed93b8cc8cfaf5bcec1` |
-| P16 | parameter `b: Option<Node>`, level 1 | `af2b0e4ae044dd50d47cd580242dc4b41cde13fdd0e0f562a97f155050a6fce8` |
-| E14 | `a = b` over `Node` | `6e4707ec004a6cfbfc21a73bb4857c755ce28194c7bee9dbbb800c5efc62d68f` |
-| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | `8454754296f1be332b100359cbcd716de7931c28cc4717218fb9689b00175184` |
-| E16 | `x = y` over `A` | `2c4bc1a531910aea486974e46bacb6526d271f456f8dc85c92ddfdd86283c27b` |
-| E17 | `a = b` over `Option<Node>` | `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0` |
+| G16 | `record Node`, ordinal 1 | `254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92` |
+| G17 | `Option<Node>`, ordinal 0 | `bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a` |
+| G18 | `Option<A>`, ordinal 0 | `f9c7262322e073156d9dc0ef5d3c445f91b761d3703aac962dba56d04fc41724` |
+| G19 | `record B`, ordinal 2 | `212816792d8849f2bb0a34d5120c0c629592c4ae41f7979183f9e88caa6fdfa9` |
+| G20 | `record A`, ordinal 3 | `e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549` |
+| G21 | `Option<B>`, ordinal 1 | `bbe19be83cc74f05b9c2e6f10c21382bb9541cd23dbd8f58595f871664f9289a` |
+| S4 | `Sequence<Node>` | `83650c577fe83a9ca6dc895e8c41225d5a07de5da73096568691852796cd19ae` |
+| S5 | `Sequence<Node>[0, 3]` | `700ef2e8de893e9b9a4a3d15c7f8738beea77a5ab464630dc022d6df2cfee136` |
+| P10 | parameter `a: Node`, level 0 | `874cdff3836c463865b597d314969af6694553cce4f72a6c6c74d2036089aed2` |
+| P11 | parameter `b: Node`, level 1 | `96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de` |
+| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | `a82d16b7b8c5fc3fbf62ec98752612d316d5dad59b0378dbfb9dad6bc39e183d` |
+| P13 | parameter `x: A`, level 0 | `5011d0ed22707e6bf00400bd6cfa58aac9d1dbe29b2ea8ea41d1cafb014c1147` |
+| P14 | parameter `y: A`, level 1 | `5fd8df16388a2ab558c30a7fb49d89d94cf0d6bf2476fab16b3c04f48db105af` |
+| P15 | parameter `a: Option<Node>`, level 0 | `819ae9f4bc589aceafb8c6752005a8f578f1174c7c5d4eb29212c9a31b55b97d` |
+| P16 | parameter `b: Option<Node>`, level 1 | `12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16` |
+| E14 | `a = b` over `Node` | `279fe484a00a414a45aa294fe5c75d18b9369869e8cc09fdb44595f45f66aee0` |
+| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | `428856f13b77ff877c0b09981e201c1012cafc458d0afaaac77ff6ed351aa811` |
+| E16 | `x = y` over `A` | `fee1dbbe09ef51cdd22f8356a02789634d80517768817014ee403dde7ed26647` |
+| E17 | `a = b` over `Option<Node>` | `37f993ecc47e86a33a759370b8e932f1c8081dba225749ba039198ab9c9df4ce` |
 
 **T13**: `Text[0, 8; binary-utf8]`
 
@@ -512,173 +512,173 @@ Key: `90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7`
 
 Key: `41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef`
 
-**G16**: `record Node`, ordinal 0
+**G16**: `record Node`, ordinal 1
 
 ```json
-{"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"5479ad5c83c36a2788eafecaa0a608d82573b59b3bc46c44c917bc082ace8254","ordinal":0,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"label","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Node"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4`
+Key: `254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92`
 
-**G17**: `Option<Node>`, ordinal 1
+**G17**: `Option<Node>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"5479ad5c83c36a2788eafecaa0a608d82573b59b3bc46c44c917bc082ace8254","ordinal":1,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `57d82ab7977af236dc5f898b98693d88499665ac53e19a25df7919ee867a6f13`
+Key: `bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a`
 
 **G18**: `Option<A>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":3,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":0,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `c50e48e0850cfad1b96eb970873a2f40bb9a76bc7570b4cb0fd5ecbcd8aeef04`
+Key: `f9c7262322e073156d9dc0ef5d3c445f91b761d3703aac962dba56d04fc41724`
 
-**G19**: `record B`, ordinal 1
+**G19**: `record B`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0","ordinal":1,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"tag","term":"binding","value":{"target":{"digest":"41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"a","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["B"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `193c4ff199f62645b8410fee31906c24407a0b8f44c9531546d2feb26afa7e6f`
+Key: `212816792d8849f2bb0a34d5120c0c629592c4ae41f7979183f9e88caa6fdfa9`
 
-**G20**: `record A`, ordinal 2
+**G20**: `record A`, ordinal 3
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":3,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0","ordinal":2,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"target":{"digest":"90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["A"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":3,"size":4},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `871ecfc1333281aeeba9465655892aeebc4f55d920add6eaa2883d3ba5eaf999`
+Key: `e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549`
 
-**G21**: `Option<B>`, ordinal 3
+**G21**: `Option<B>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0","ordinal":3,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":2,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f","ordinal":1,"size":4},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `70d8b14aa580fd43e3b74db225dd15e921dd086f02e9ccb60ff1f880940dab65`
+Key: `bbe19be83cc74f05b9c2e6f10c21382bb9541cd23dbd8f58595f871664f9289a`
 
 **S4**: `Sequence<Node>`
 
 ```json
-{"body":{"members":[{"target":{"digest":"12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"target":{"digest":"254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":null,"semantic_form":"sequence","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `31a87726ba061f8a52d37f2b1fdc5cd37639e451398e41ad194441e0c6065166`
+Key: `83650c577fe83a9ca6dc895e8c41225d5a07de5da73096568691852796cd19ae`
 
 **S5**: `Sequence<Node>[0, 3]`
 
 ```json
-{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"31a87726ba061f8a52d37f2b1fdc5cd37639e451398e41ad194441e0c6065166","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"min","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}},{"name":"max","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"3","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"bounded_domain","recursion":null,"semantic_form":"collection_bounds","semantic_type":{"digest":"83650c577fe83a9ca6dc895e8c41225d5a07de5da73096568691852796cd19ae","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `0d46108bcd90e1c86a9b292c11fe2d6368a041c9b117df067059ad793868c343`
+Key: `700ef2e8de893e9b9a4a3d15c7f8738beea77a5ab464630dc022d6df2cfee136`
 
 **P10**: parameter `a: Node`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `28de329c02d58a0d8950b48f884f7bfe9b8c349ef1401d3570cdd93413aa98ce`
+Key: `874cdff3836c463865b597d314969af6694553cce4f72a6c6c74d2036089aed2`
 
 **P11**: parameter `b: Node`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7`
+Key: `96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de`
 
 **P12**: parameter `s: Sequence<Node>[0, 3]`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"s","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"0d46108bcd90e1c86a9b292c11fe2d6368a041c9b117df067059ad793868c343","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"s","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"700ef2e8de893e9b9a4a3d15c7f8738beea77a5ab464630dc022d6df2cfee136","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `179e6f8dbe0f7943bc07142cb3426073a72ed652c8a1a97d265dea817da0f24f`
+Key: `a82d16b7b8c5fc3fbf62ec98752612d316d5dad59b0378dbfb9dad6bc39e183d`
 
 **P13**: parameter `x: A`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"871ecfc1333281aeeba9465655892aeebc4f55d920add6eaa2883d3ba5eaf999","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"x","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `5c4dbf18699020a60de695300b93f610c4a9900b0c975c5106095bce1f601376`
+Key: `5011d0ed22707e6bf00400bd6cfa58aac9d1dbe29b2ea8ea41d1cafb014c1147`
 
 **P14**: parameter `y: A`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"871ecfc1333281aeeba9465655892aeebc4f55d920add6eaa2883d3ba5eaf999","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"y","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `518c4adf51b804f39682ed5590a0480540dbe3f44b0560b6c30ce841b92f5dda`
+Key: `5fd8df16388a2ab558c30a7fb49d89d94cf0d6bf2476fab16b3c04f48db105af`
 
 **P15**: parameter `a: Option<Node>`, level 0
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"57d82ab7977af236dc5f898b98693d88499665ac53e19a25df7919ee867a6f13","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"a","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"0","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `5edb6e8d2054522ce9131bb1129c12cbef280ee76cba8ed93b8cc8cfaf5bcec1`
+Key: `819ae9f4bc589aceafb8c6752005a8f578f1174c7c5d4eb29212c9a31b55b97d`
 
 **P16**: parameter `b: Option<Node>`, level 1
 
 ```json
-{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"57d82ab7977af236dc5f898b98693d88499665ac53e19a25df7919ee867a6f13","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"name","term":"binding","value":{"term":"literal","type":{"digest":"0062ac9eee212061689152b5b0d62c5b3a6ca69ce83c1897b8c0624837ab5659","domain":"quire.checked-semantic-node/v1"},"value":"b","value_kind":"text"}},{"name":"level","term":"binding","value":{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}}],"term":"aggregate"},"declaration":null,"node_tag":"value","recursion":null,"semantic_form":"parameter","semantic_type":{"digest":"bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `af2b0e4ae044dd50d47cd580242dc4b41cde13fdd0e0f562a97f155050a6fce8`
+Key: `12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16`
 
 **E14**: `a = b` over `Node`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"28de329c02d58a0d8950b48f884f7bfe9b8c349ef1401d3570cdd93413aa98ce","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"874cdff3836c463865b597d314969af6694553cce4f72a6c6c74d2036089aed2","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `6e4707ec004a6cfbfc21a73bb4857c755ce28194c7bee9dbbb800c5efc62d68f`
+Key: `279fe484a00a414a45aa294fe5c75d18b9369869e8cc09fdb44595f45f66aee0`
 
 **E15**: `contains(s, b)` over `Sequence<Node>[0, 3]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"179e6f8dbe0f7943bc07142cb3426073a72ed652c8a1a97d265dea817da0f24f","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"a82d16b7b8c5fc3fbf62ec98752612d316d5dad59b0378dbfb9dad6bc39e183d","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `8454754296f1be332b100359cbcd716de7931c28cc4717218fb9689b00175184`
+Key: `428856f13b77ff877c0b09981e201c1012cafc458d0afaaac77ff6ed351aa811`
 
 **E16**: `x = y` over `A`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"5c4dbf18699020a60de695300b93f610c4a9900b0c975c5106095bce1f601376","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"518c4adf51b804f39682ed5590a0480540dbe3f44b0560b6c30ce841b92f5dda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"5011d0ed22707e6bf00400bd6cfa58aac9d1dbe29b2ea8ea41d1cafb014c1147","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"5fd8df16388a2ab558c30a7fb49d89d94cf0d6bf2476fab16b3c04f48db105af","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `2c4bc1a531910aea486974e46bacb6526d271f456f8dc85c92ddfdd86283c27b`
+Key: `fee1dbbe09ef51cdd22f8356a02789634d80517768817014ee403dde7ed26647`
 
 **E17**: `a = b` over `Option<Node>`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"5edb6e8d2054522ce9131bb1129c12cbef280ee76cba8ed93b8cc8cfaf5bcec1","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"af2b0e4ae044dd50d47cd580242dc4b41cde13fdd0e0f562a97f155050a6fce8","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"819ae9f4bc589aceafb8c6752005a8f578f1174c7c5d4eb29212c9a31b55b97d","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0`
+Key: `37f993ecc47e86a33a759370b8e932f1c8081dba225749ba039198ab9c9df4ce`
 
-G16-G17, group digest `5479ad5c83c36a2788eafecaa0a608d82573b59b3bc46c44c917bc082ace8254`:
+G16-G17, group digest `4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G16 `Node` | `48941cd392fb2016446dcf8d97800d86c49aa8245cf24059b1898720f7f48c22` | `7a49f3f01641ff7adf2eea5f8c494c0a82d536535da4123194f9c56c4f23166e` |
-| 1 | G17 `Option<Node>` | `581d248695dafdd3eaa1e684a6ff9085b68d9f192adfa77cf9d5162ca8048266` | `c2ed1d827853bc7815578d453189cff97a1cf9751934e6d0a591a3d8312f5c69` |
+| Ordinal | Member |
+|---|---|
+| 0 | G17 `Option<Node>` |
+| 1 | G16 `Node` |
 
-G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0`:
+G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G18 `Option<A>` | `12b7c54627ccf76f4aea35baad2db8f0fb96198bcf4b2a7c2175344d2b24b87d` | `9fda411f5813f0a323845e7683ac88c9cda6046391b4d56b262426937ce03326` |
-| 1 | G19 `B` | `184d0868899c7e726ab53ad66f8e4c3d052cbd74719a4217885a169ea42d0ecb` | `6e0ba537121f0427ff289ba7cefd2f922a80662047290af8a557f4a1e3ccb731` |
-| 2 | G20 `A` | `36833168fd92bea4e7c82f9f6f5159d8a8f2eec3b2d6522ba6be5d1be5c7ff36` | `ca73f785d623459b510ed8e012d359387abaa9fdbb48e1020a3724e8a12eab04` |
-| 3 | G21 `Option<B>` | `5049b247603f321a7904b9548e7e679a988fea550900a0afadb405afec1ab97c` | `225dd48ffda2cef36053d63e818df1b3d1725776b1ebb96580b3cf218f43bfd2` |
+| Ordinal | Member |
+|---|---|
+| 0 | G18 `Option<A>` |
+| 1 | G21 `Option<B>` |
+| 2 | G19 `B` |
+| 3 | G20 `A` |
 
 ## Constraints
 

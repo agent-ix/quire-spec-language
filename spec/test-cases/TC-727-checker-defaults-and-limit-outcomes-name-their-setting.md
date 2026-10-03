@@ -28,8 +28,8 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
    Check it again with `s3.nodes` at 5,000 through the builder, through a
    replay request's `stage_limits` entry and through
    FR-255's settings operation given `s3.nodes=5000`.
-3. Measure the same function's work `w`; check it with `s3.work_units` at
-   `w - 1`, then at `w` through each entry point.
+3. Measure the same function's declaration work `w`; check it with
+   `s3.work_units` at `w - 1`, then at `w` through each entry point.
 
 Tag the tests `#[trace("TC-727", "FR-258-AC-3")]`, `#[trace("TC-727", "FR-258-AC-4")]`.
 
@@ -42,8 +42,17 @@ Tag the tests `#[trace("TC-727", "FR-258-AC-3")]`, `#[trace("TC-727", "FR-258-AC
   1,501, setting `s3.nodes`, at the node whose entry failed; each raised
   run checks.
 - Step 3: `stage_limit_exceeded`/`work-budget-exceeded`, bound `w - 1`,
-  setting `s3.work_units`; each raised run checks.
+  count `w`, setting `s3.work_units`, at the declaration's span; at `w` the
+  declaration's own charge is admitted and a later lowering charge stops it.
 
 ## Status
 
-Planned.
+Backed: step 1 by `the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults`
+(`qsl-package/src/emit/tests/deep_bodies.rs`) and
+`the_checking_defaults_hold_no_depth`; steps 2 and 3 through package
+checking and the library builder by
+`a_1000_term_sum_stops_on_the_node_limit_at_the_failing_node` and
+`a_1000_term_sum_stops_on_a_work_budget_one_below_its_work`
+(`qsl-semantics/src/check/family.rs`). Remainder: B5 (the setting names in
+an outcome, the replay request's `stage_limits` entry and FR-255's settings
+operation).

@@ -138,10 +138,7 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
         // `region::DeclarationRegions::refusal_region` reads a
         // `ProtocolAnchor` cause's own span directly instead, so this
         // `Location` is never resolved.
-        location: quire_semantic_value::location::Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        },
+        location: quire_semantic_value::location::Location::root(Origin::Expression),
         cause: CheckCause::ProtocolAnchor(Box::new(cause)),
     }
 }

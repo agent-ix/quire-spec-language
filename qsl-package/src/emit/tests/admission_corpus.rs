@@ -498,7 +498,7 @@ impl Outcome {
         self.node(node).is_some_and(|candidate| {
             matches!(
                 candidate.body(),
-                SemanticTerm::Application { operation, .. }
+                qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm { operation, .. })
                     if operation.identity() == identity
             )
         })

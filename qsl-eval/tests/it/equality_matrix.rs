@@ -2077,7 +2077,7 @@ fn x02_decimal_arithmetic_takes_its_target_and_retains_the_loss() {
     // own rounding loss.
     assert_eq!(losses.len(), 1);
     assert!(matches!(losses[0].loss, ValueLoss::Decimal(_)));
-    assert_eq!(losses[0].location.path, Vec::<usize>::new());
+    assert_eq!(losses[0].location.path(), Vec::<usize>::new());
     check_in(
         &package,
         &parameters,
@@ -2578,7 +2578,7 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
         [LocatedLoss {
             location,
             loss: ValueLoss::Decimal(_),
-        }] => assert_eq!(location.path, vec![0]),
+        }] => assert_eq!(location.path(), vec![0]),
         other => panic!("one decimal loss, not {other:?}"),
     }
     let direct = Expression::binary(

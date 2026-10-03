@@ -76,55 +76,37 @@ impl ScopeStack {
     }
 }
 
-/// Explicit stage-entry limits (FR-062 "Explicit limits bound every stage
-/// entry, including recursion"; ADR-013 T-4). `check` is a recursive stage
-/// (ADR-011 §2.3) and bounds its own recursion by `nesting_depth`, checked
-/// before each recursive step -- never by the native call stack.
+/// Explicit stage-entry limits (FR-062 "Explicit resource limits bound
+/// every stage entry, at any depth"; ADR-013 T-4): one declaration's input
+/// bytes, and the node ceiling a family classifies its claims under. No
+/// limit bounds nesting depth (ADR-030 D-1, FR-258): every walk `check`
+/// makes runs over an explicit heap stack whose growth these limits, the
+/// contract meter and `Typer`'s node counter charge.
 ///
-/// **`input_bytes` and `node_count` restored.** PR #262 review
-/// deleted these, along with `work_budget`: nothing in #214's one migrated
-/// stage entry produced or read them. They are restored with a real
-/// producer and a real consumer that changes behaviour (ADR-012 §14.1's own
-/// row for this ticket), matching the shape `CheckContext::enter_nesting`
-/// already established for `nesting_depth`:
+/// - **Producer**: `crate::check::family::measure_declaration`'s preimage
+///   pass builds a length-prefixed byte buffer over the declaration's
+///   structure. `input_bytes` is that buffer's own logical byte length
+///   (accumulated as the pass writes; see `DeclarationMeter`'s own doc).
+/// - **Consumer**: `CheckContext::check_input_bytes` compares that metric
+///   against `input_bytes` and returns `LimitKind::InputBytes` when it is
+///   exceeded. `ValueFunctionFamily::check` (`crate::check::family`) calls
+///   it before minting succeeds. `node_count` is not compared against any
+///   measured count at stage entry: it is the ceiling claim classification
+///   walks under, and a family's `check` reads it from
+///   `CheckContext::limits`.
 ///
-/// - **Producer**: `crate::check::family::measure_declaration`'s
-///   preimage pass already builds a length-prefixed byte buffer
-///   over the declaration's structure and walks every [`qsl_forms::
-///   Expression`] node in it to do so -- real work this contract already
-///   does, not a synthetic counter added only to satisfy this struct.
-///   `input_bytes` is that buffer's own logical byte length (accumulated as
-///   the pass writes, not read back from the buffer afterward -- see
-///   `DeclarationMeter`'s own doc for why); `node_count` is the number of
-///   `Expression` nodes the same pass visits.
-/// - **Consumer**: `CheckContext::check_input_bytes` and
-///   `CheckContext::check_node_count` each compare their metric against
-///   this struct's matching field and return
-///   `LimitKind`'s matching variant
-///   on the first one exceeded, exactly like `enter_nesting`'s own
-///   `NestingDepth` case -- `ValueFunctionFamily::check`
-///   (`crate::check::family`) calls both before minting succeeds, so a
-///   declaration whose preimage is too large or has too many nodes is
-///   refused with a `Limit` outcome naming the exhausted kind, not admitted
-///   silently.
-///
-/// **`work_budget` is not a field here (PR #302 review finding 3).** An
-/// earlier version of this struct also carried `work_budget: u64`, compared
-/// against the same preimage pass's own field-write count -- but "how many
-/// times the encoder wrote" is not a caller-configured budget in any
-/// meaningful sense; two declarations of equal real complexity could differ
-/// in write count for reasons internal to the encoding, not to any resource
-/// a caller actually wants to bound. `LimitKind::WorkBudget` is
-/// restored instead through `CheckContext::meter` -- the *shared kernel*
-/// budget every family's `check` already receives (FR-062 "checked input"):
+/// **The work budget is not a field here.** `LimitKind::WorkBudget` is
+/// produced through `CheckContext::meter`, the shared kernel budget every
+/// family's `check` receives (FR-062 "checked input"):
 /// `ValueFunctionFamily::check` charges it one `ChargePoint::
 /// DeclarationCheck`, sized by the same preimage pass's field-write count,
 /// and maps a denied charge to `Limit{WorkBudget}` naming the meter's own
-/// configured `work_units` bound. This is a real, cumulative budget across
-/// every declaration `check` runs against one `meter` instance, not a
-/// per-declaration high-water field re-read from scratch each time --
-/// `nesting_depth`/`input_bytes`/`node_count` bound one declaration's own
-/// shape; `work_budget` bounds the checking stage's total spend.
+/// configured `work_units` bound. `input_bytes` bounds one declaration's own
+/// shape; the work budget bounds the checking stage's total spend.
+///
+/// **The node count has no stage-entry check.** The package-wide node limit
+/// is charged by `Typer`, at the node whose entry crosses it, against
+/// `CheckingLimits::nodes`.
 ///
 /// `input_bytes`/`node_count`'s one production call site
 /// (`crate::check::mod::PackageDeclarations::check`) reads both from the
@@ -134,11 +116,10 @@ impl ScopeStack {
 /// (`qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StageLimits {
-    pub(crate) nesting_depth: u64,
     /// Maximum length-prefixed preimage byte count for one checked
     /// declaration.
     pub(crate) input_bytes: u64,
-    /// Maximum `Expression` node count for one checked declaration.
+    /// The node ceiling a family classifies a declaration's claims under.
     pub(crate) node_count: u64,
 }
 
@@ -156,7 +137,6 @@ pub struct CheckContext<'a, D> {
     pub(crate) meter: &'a mut Meter,
     pub(crate) diagnostics: &'a mut DiagnosticSink,
     pub(crate) scopes: &'a mut ScopeStack,
-    depth: u64,
 }
 
 impl<'a, D> CheckContext<'a, D> {
@@ -173,7 +153,6 @@ impl<'a, D> CheckContext<'a, D> {
             meter,
             diagnostics,
             scopes,
-            depth: 0,
         }
     }
 
@@ -187,30 +166,6 @@ impl<'a, D> CheckContext<'a, D> {
         self.limits
     }
 
-    /// Charge one step of recursive descent, refusing before the native
-    /// stack would (FR-062-AC-7): the nesting-depth limit is the proximate
-    /// cause of a refusal at exactly `limits.nesting_depth` levels, not the
-    /// host stack. Bounds the caller's own explicit recursion (an iterative
-    /// walk with an explicit counter satisfies this identically to native
-    /// recursion, ADR-011 §2.3).
-    pub(crate) fn enter_nesting(&mut self) -> Result<(), LimitExceeded> {
-        if self.depth >= self.limits.nesting_depth {
-            // The refused entry would have taken the depth one level past
-            // the current one.
-            return Err(LimitExceeded::new(
-                LimitKind::NestingDepth,
-                self.limits.nesting_depth,
-                u128::from(self.depth) + 1,
-            ));
-        }
-        self.depth += 1;
-        Ok(())
-    }
-
-    pub(crate) fn leave_nesting(&mut self) {
-        self.depth = self.depth.saturating_sub(1);
-    }
-
     /// Refuse `amount` (a declaration's own preimage byte length,
     /// `StageLimits`'s own doc) once it exceeds `limits.input_bytes`
     /// (restoring the deleted `input_bytes` field with a real
@@ -220,19 +175,6 @@ impl<'a, D> CheckContext<'a, D> {
             return Err(LimitExceeded::new(
                 LimitKind::InputBytes,
                 self.limits.input_bytes,
-                u128::from(amount),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Refuse `amount` (a declaration's own visited `Expression` node
-    /// count) once it exceeds `limits.node_count`.
-    pub(crate) fn check_node_count(&self, amount: u64) -> Result<(), LimitExceeded> {
-        if amount > self.limits.node_count {
-            return Err(LimitExceeded::new(
-                LimitKind::NodeCount,
-                self.limits.node_count,
                 u128::from(amount),
             ));
         }

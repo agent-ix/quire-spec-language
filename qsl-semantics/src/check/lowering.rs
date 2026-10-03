@@ -36,6 +36,7 @@
 
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
 use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+use std::ops::ControlFlow;
 
 /// How [`Lowering`] hashes a node's content to find its key.
 type ContentHash = fn(&NodeContent) -> u64;
@@ -57,11 +58,17 @@ use super::check::{EnumBinding, Scope};
 use super::claims::BinderSite;
 use super::family::{OccurrenceMap, OccurrenceRole};
 use super::identity::ModelCorrespondence;
-use super::ir::{Arithmetic, Connective, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit};
+use super::ir::{
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, NodeId, NodeKind, OrderedKind, RecordSlot,
+    Slot, Visit,
+};
 use super::node_key::{
     group_keys, node_key, LawRole, LeafSegment, LiteralValue, NodeInput, NodeKeyRefusal, NodeTag,
     Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
-    SemanticTerm, SourceOwner, WireNodeRef,
+    SourceOwner, WireNodeRef,
+};
+use super::node_key::{
+    AggregateTerm, Binding, BindingValue, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, KeyFault, StageLimitCause,
@@ -228,7 +235,7 @@ impl SemanticNode {
 
     /// The node's FR-322 body. A reference to a member of the node's own
     /// recursion group names that member's key.
-    pub fn body(&self) -> &SemanticTerm {
+    pub fn body(&self) -> &BodyTerm {
         &self.content.body
     }
 
@@ -247,24 +254,26 @@ impl SemanticNode {
         if self.content.node_tag != NodeTag::Function {
             return None;
         }
-        let SemanticTerm::Aggregate { members } = &self.content.body else {
+        let BodyTerm::Aggregate(AggregateTerm { members }) = &self.content.body else {
             return None;
         };
         // FR-092 "Function nodes": the parameters binding is first among a
         // function node's members (`lowering`'s own emitter always pushes it
         // before `body`/`decreases`), so this reads it positionally rather
         // than re-deriving the role by comparing the binding's name.
-        let SemanticTerm::Binding { value, .. } = members.first()? else {
+        let MemberTerm::Binding(Binding {
+            value: BindingValue::Group(parameters),
+            ..
+        }) = members.first()?
+        else {
             return None;
         };
-        let SemanticTerm::Aggregate { members } = value.as_ref() else {
-            return None;
-        };
-        members
+        parameters
+            .members
             .iter()
             .map(|member| match member {
-                SemanticTerm::Reference { target } => Some(target.0),
-                _ => None,
+                GroupMember::Leaf(LeafTerm::Reference { target }) => Some(target.0),
+                GroupMember::Leaf(_) | GroupMember::Binding(_) => None,
             })
             .collect()
     }
@@ -319,11 +328,11 @@ pub(crate) struct FunctionInput<'a> {
     /// The declared result type.
     pub(crate) result: &'a ValueType,
     /// The checked body.
-    pub(crate) body: &'a Node,
+    pub(crate) body: CheckedNode<'a>,
     /// The name each body slot was bound under, indexed by slot.
     pub(crate) body_slots: &'a [String],
     /// The checked measure, when one is written.
-    pub(crate) measure: Option<&'a Node>,
+    pub(crate) measure: Option<CheckedNode<'a>>,
     /// The name each measure slot was bound under, indexed by slot.
     pub(crate) measure_slots: &'a [String],
     /// The object type `T` of each `Population<T>[N]` parameter, by
@@ -349,6 +358,49 @@ struct Binders<'s> {
     slot_names: &'s [String],
     /// Each binder in scope, outermost first.
     scope: Vec<Binder>,
+    /// Each binder in scope by its slot. A slot is bound once at a time, so
+    /// a local read finds its binder in constant time at any nesting.
+    by_slot: HashMap<Slot, Binder>,
+}
+
+impl<'s> Binders<'s> {
+    /// The scope that holds `parameters`.
+    fn new(slot_names: &'s [String], parameters: &[Binder]) -> Self {
+        let mut binders = Self {
+            slot_names,
+            scope: Vec::new(),
+            by_slot: HashMap::new(),
+        };
+        for parameter in parameters {
+            binders.push(*parameter);
+        }
+        binders
+    }
+
+    /// Bring `binder` into scope.
+    fn push(&mut self, binder: Binder) {
+        self.by_slot.insert(binder.slot, binder);
+        self.scope.push(binder);
+    }
+
+    /// Take the innermost binder out of scope.
+    fn pop(&mut self) {
+        if let Some(binder) = self.scope.pop() {
+            self.by_slot.remove(&binder.slot);
+        }
+    }
+
+    /// Take every binder past the first `len` out of scope.
+    fn truncate(&mut self, len: usize) {
+        while self.scope.len() > len {
+            self.pop();
+        }
+    }
+
+    /// The binder in scope for `slot`.
+    fn find(&self, slot: Slot) -> Option<&Binder> {
+        self.by_slot.get(&slot)
+    }
 }
 
 /// Every member of a node's preimage outside every recursion group: what
@@ -361,7 +413,7 @@ struct NodeContent {
     semantic_type: Option<NodeKey>,
     declaration: Option<Vec<Identifier>>,
     owner: Option<Owner>,
-    body: SemanticTerm,
+    body: BodyTerm,
 }
 
 impl NodeContent {
@@ -424,7 +476,6 @@ pub(crate) struct Lowering<'a> {
     /// `DeclarationKey` (FR-303).
     correspondence: ModelCorrespondence,
     lock: &'a LockEvidence,
-    depth_limit: u64,
     graph: SemanticGraph,
     occurrences: &'a mut OccurrenceMap<Location>,
     /// Each lowered function's key, by function index.
@@ -537,24 +588,14 @@ fn preimage_refusal(location: &Location, refusal: NodeKeyRefusal) -> CheckRefusa
             })),
         ),
         NodeKeyRefusal::InvalidGroup => fault(location, KeyFault::InvalidGroup),
-        NodeKeyRefusal::TooDeep { limit, actual } => refuse(
-            location,
-            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                stage: CheckingStage::Typing,
-                kind: CheckingLimitKind::Depth,
-                limit,
-                actual: u128::from(actual),
-                region: None,
-            })),
-        ),
         refusal => refuse(location, CheckCause::NodePreimage(refusal)),
     }
 }
 
 /// One step of [`Lowering::type_node`]'s loop.
 enum TypeStep<'v> {
-    /// Build the node of this type at this nesting depth.
-    Descend(&'v ValueType, u64),
+    /// Build the node of this type.
+    Descend(&'v ValueType),
     /// This node is built: hand its key to the frame waiting for it.
     Built(NodeKey),
 }
@@ -577,10 +618,8 @@ struct CompositeFrame<'v> {
     /// Where its `declaration` occurrence is located.
     site: Location,
     shape: &'v CompositeShape,
-    /// The nesting depth the composite was reached at.
-    depth: u64,
     /// The members built so far, in declaration order.
-    members: Vec<SemanticTerm>,
+    members: Vec<MemberTerm>,
     /// The record field whose type node is being built.
     awaiting: Option<&'v FieldDeclaration>,
 }
@@ -590,14 +629,14 @@ impl CompositeFrame<'_> {
     /// binding (an optional one's through `optional`), or a tuple
     /// position's reference.
     fn accept(&mut self, key: NodeKey) {
-        let reference = SemanticTerm::reference(key);
+        let reference = LeafTerm::reference(key);
         self.members.push(match self.awaiting.take() {
-            None => reference,
-            Some(field) => SemanticTerm::binding(
+            None => MemberTerm::Leaf(reference),
+            Some(field) => MemberTerm::binding(
                 field.name(),
                 match field.presence() {
-                    Presence::Required => reference,
-                    Presence::Optional => SemanticTerm::binding("optional", reference),
+                    Presence::Required => BindingValue::Leaf(reference),
+                    Presence::Optional => BindingValue::named_leaf("optional", reference),
                 },
             ),
         });
@@ -614,10 +653,10 @@ enum OpenComposite<'v> {
 
 /// One step of [`Lowering::expression`]'s loop.
 enum LowerStep<'n> {
-    /// Lower this checked node at this nesting depth (the body root is 0).
-    Descend(&'n Node, u64),
+    /// Lower this checked node.
+    Descend(CheckedNode<'n>),
     /// A node is lowered to this term: hand it to the frame waiting for it.
-    Lowered(SemanticTerm),
+    Lowered(LeafTerm),
 }
 
 /// A checked node waiting for the terms of its operands.
@@ -630,7 +669,7 @@ enum LowerFrame<'n> {
     Binder(Box<BinderFrame<'n>>),
     /// `deref(r).f` over the reference `r`, of object type `object`.
     Attribute {
-        node: &'n Node,
+        node: CheckedNode<'n>,
         object: NodeKey,
         name: &'n str,
     },
@@ -644,12 +683,12 @@ enum LowerFrame<'n> {
 /// A checked node's operands, in order.
 #[derive(Clone, Copy)]
 enum Operands<'n> {
-    One(&'n Node),
-    Two(&'n Node, &'n Node),
-    Three(&'n Node, &'n Node, &'n Node),
-    Each(&'n [Node]),
+    One(&'n NodeId),
+    Two(&'n NodeId, &'n NodeId),
+    Three(&'n NodeId, &'n NodeId, &'n NodeId),
+    Each(&'n [NodeId]),
     /// A dispatch call's receiver, then its arguments.
-    Receiver(&'n Node, &'n [Node]),
+    Receiver(&'n NodeId, &'n [NodeId]),
 }
 
 impl<'n> Operands<'n> {
@@ -663,8 +702,8 @@ impl<'n> Operands<'n> {
         }
     }
 
-    fn get(self, index: usize) -> Option<&'n Node> {
-        match (self, index) {
+    fn get(self, index: usize) -> Option<NodeId> {
+        let operand = match (self, index) {
             (Self::One(first) | Self::Two(first, _) | Self::Three(first, _, _), 0)
             | (Self::Receiver(first, _), 0) => Some(first),
             (Self::Two(_, second) | Self::Three(_, second, _), 1) => Some(second),
@@ -672,7 +711,8 @@ impl<'n> Operands<'n> {
             (Self::Each(nodes), index) => nodes.get(index),
             (Self::Receiver(_, arguments), index) => arguments.get(index.checked_sub(1)?),
             (Self::One(_) | Self::Two(..) | Self::Three(..), _) => None,
-        }
+        };
+        operand.copied()
     }
 }
 
@@ -687,76 +727,71 @@ enum Keyed {
 
 /// A node over its operands' terms.
 struct OperandsFrame<'n> {
-    node: &'n Node,
-    depth: u64,
+    node: CheckedNode<'n>,
     operands: Operands<'n>,
     /// The next operand to lower.
     next: usize,
     /// The terms so far: a call's callee reference, then each operand's.
-    terms: Vec<SemanticTerm>,
+    terms: Vec<LeafTerm>,
     keyed: Keyed,
 }
 
 /// `let name = value in body`.
 struct LetFrame<'n> {
-    node: &'n Node,
-    depth: u64,
+    node: CheckedNode<'n>,
     slot: Slot,
-    value: &'n Node,
-    body: &'n Node,
+    value: CheckedNode<'n>,
+    body: CheckedNode<'n>,
     /// The value's term and the binder's name, once the value is lowered.
-    bound: Option<(SemanticTerm, String)>,
+    bound: Option<(LeafTerm, String)>,
 }
 
 /// A one-binder operation's operands `[ref(source), binding{name,
 /// ref(body)}]`, the binder typed at `source`'s element type.
 struct BinderFrame<'n> {
-    node: &'n Node,
-    depth: u64,
+    node: CheckedNode<'n>,
     slot: Slot,
-    source: &'n Node,
-    body: &'n Node,
+    source: CheckedNode<'n>,
+    body: CheckedNode<'n>,
     operator: Operator,
     operation: Operation,
     /// The source's term and the binder's name, once the source is lowered.
-    bound: Option<(SemanticTerm, String)>,
+    bound: Option<(LeafTerm, String)>,
 }
 
 /// A record value's members, one binding per declared field.
 struct RecordFrame<'n> {
-    node: &'n Node,
-    depth: u64,
+    node: CheckedNode<'n>,
     semantic_type: NodeKey,
     fields: Vec<FieldDeclaration>,
     slots: &'n [RecordSlot],
-    members: Vec<SemanticTerm>,
+    members: Vec<MemberTerm>,
 }
 
 /// `fold`/`reduce` over `source`.
 struct FoldFrame<'n> {
-    node: &'n Node,
-    depth: u64,
+    node: CheckedNode<'n>,
     accumulator: Slot,
     binder: Slot,
-    source: &'n Node,
-    step: &'n Node,
-    identity: Option<&'n Node>,
+    source: CheckedNode<'n>,
+    step: CheckedNode<'n>,
+    identity: Option<CheckedNode<'n>>,
     stage: FoldStage,
 }
 
 #[allow(
     clippy::large_enum_variant,
-    reason = "this stage lives inside the already boxed FoldFrame; boxing its SemanticTerm payload would add a second allocation per fold"
+    reason = "this stage lives inside the already boxed FoldFrame; boxing its LeafTerm payload would add a second allocation per fold"
 )]
 enum FoldStage {
     /// The source is being lowered.
     Source,
     /// The identity is being lowered.
-    Identity(SemanticTerm),
+    Identity(LeafTerm),
     /// The step is being lowered under the accumulator and element binders.
     Step {
-        source: SemanticTerm,
-        identity: Option<SemanticTerm>,
+        source: LeafTerm,
+        identity: Option<LeafTerm>,
         accumulator: String,
         binder: String,
     },
@@ -901,11 +936,19 @@ struct StackEntry<'w> {
 }
 
 /// One FR-093 text-leaf walk ("Text leaves").
+///
+/// The walk runs on the walker toolkit ([`quire_walk::walk`]), one typed
+/// frame per entered type (FR-258), so its native stack use is the same at
+/// every depth. Its heap stack holds, for each type on the current path,
+/// that type's frame and its not yet entered siblings: every one an element
+/// of a declared type the check stage already charged (FR-062's declaration
+/// preimage bytes for a parameter's type, and one work unit for each
+/// composite the walk enters).
 struct LeafWalk<'w> {
     /// The package's declared composites.
     types: &'w TypeEnvironment,
-    /// The check stage's depth limit.
-    depth_limit: u64,
+    /// Where the walked type is compared: every refusal names it.
+    location: &'w Location,
     /// The checking work meter: each composite the walk enters charges one
     /// unit, and each leaf charges its materialized key bytes.
     meter: &'w mut Meter,
@@ -918,60 +961,161 @@ struct LeafWalk<'w> {
     /// The leaves appended so far, each at its interned path (`None` for
     /// the empty path).
     leaves: Vec<(Option<usize>, Leaf)>,
-    /// The open composites, each with the path length it was entered at.
-    open: Vec<(NodeKey, usize)>,
+    /// The open composites, in the order the walk entered them.
+    open: Vec<NodeKey>,
+    /// The path length each open composite was entered at.
+    entered_at: BTreeMap<NodeKey, usize>,
     /// The node-limit units left.
     budget: u64,
     /// The node limit, which a refusal names.
     limit: u64,
 }
 
+/// One type the text-leaf walk reaches.
+#[derive(Clone, Copy)]
+enum LeafVisit<'w> {
+    /// `value_type`, reached one `segment` below the path (none for the
+    /// compared type itself).
+    Type {
+        segment: Option<WalkSegment<'w>>,
+        value_type: &'w ValueType,
+    },
+    /// A record field (rule 5): `field:<name>`, then the field's type, an
+    /// optional field's through `inner`.
+    Field(&'w FieldDeclaration),
+}
+
+/// One entered type: what leaving it undoes.
+struct LeafFrame {
+    /// Whether entering it pushed a path segment.
+    segment: bool,
+    /// The open-list length on entry, when it opened a composite.
+    opened: Option<usize>,
+}
+
+impl<'w> quire_walk::Walk for LeafWalk<'w> {
+    type Node = LeafVisit<'w>;
+    type Frame = LeafFrame;
+    type Stop = CheckRefusal;
+
+    fn enter(
+        &mut self,
+        visit: LeafVisit<'w>,
+        children: &mut quire_walk::Children<'_, LeafVisit<'w>>,
+    ) -> ControlFlow<CheckRefusal, LeafFrame> {
+        let mut queued = Vec::new();
+        let frame = match visit {
+            LeafVisit::Type {
+                segment,
+                value_type,
+            } => {
+                if let Some(segment) = segment {
+                    self.push(segment);
+                }
+                let opened = self.enter_type(value_type, &mut queued);
+                LeafFrame {
+                    segment: segment.is_some(),
+                    opened: into_flow(opened)?,
+                }
+            }
+            LeafVisit::Field(field) => {
+                let name = field.name();
+                if !quire_exact::is_identifier(name) {
+                    return ControlFlow::Break(refuse(
+                        self.location,
+                        CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
+                    ));
+                }
+                self.push(WalkSegment::Field(name));
+                queued.push(LeafVisit::Type {
+                    segment: (field.presence() == Presence::Optional).then_some(WalkSegment::Inner),
+                    value_type: field.value_type(),
+                });
+                LeafFrame {
+                    segment: true,
+                    opened: None,
+                }
+            }
+        };
+        children.extend(queued);
+        ControlFlow::Continue(frame)
+    }
+
+    fn exit(&mut self, frame: LeafFrame) -> ControlFlow<CheckRefusal> {
+        if let Some(open) = frame.opened {
+            for closed in self.open.drain(open..) {
+                self.entered_at.remove(&closed);
+            }
+        }
+        if frame.segment {
+            self.stack.pop();
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// `result` as the walk's control flow.
+fn into_flow<T>(result: Result<T, CheckRefusal>) -> ControlFlow<CheckRefusal, T> {
+    match result {
+        Ok(value) => ControlFlow::Continue(value),
+        Err(refusal) => ControlFlow::Break(refusal),
+    }
+}
+
 impl<'w> LeafWalk<'w> {
-    /// Walk `value_type` at the walk's path, appending each text leaf and
-    /// recursion leaf in the order the walk reaches it.
-    fn walk(
+    /// Walk `value_type`, appending each text leaf and recursion leaf in the
+    /// order the walk reaches it.
+    fn run(&mut self, value_type: &'w ValueType) -> Result<(), CheckRefusal> {
+        let root = LeafVisit::Type {
+            segment: None,
+            value_type,
+        };
+        match quire_walk::walk(self, root) {
+            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Break(refusal) => Err(refusal),
+        }
+    }
+
+    /// Extend the path by `segment`.
+    fn push(&mut self, segment: WalkSegment<'w>) {
+        self.stack.push(StackEntry {
+            segment,
+            interned: None,
+        });
+    }
+
+    /// Enter `value_type` at the walk's path: append its leaf, or queue the
+    /// types inside it. Returns the open-list length on entry when it opens
+    /// a composite.
+    fn enter_type(
         &mut self,
         value_type: &'w ValueType,
-        location: &Location,
-        depth: u64,
-    ) -> Result<(), CheckRefusal> {
-        if depth > self.depth_limit {
-            return Err(refuse(
-                location,
-                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                    stage: CheckingStage::Typing,
-                    kind: CheckingLimitKind::Depth,
-                    limit: self.depth_limit,
-                    actual: u128::from(depth),
-                    region: None,
-                })),
-            ));
-        }
+        queued: &mut Vec<LeafVisit<'w>>,
+    ) -> Result<Option<usize>, CheckRefusal> {
+        let location = self.location;
         match value_type {
             // Rule 1.
             ValueType::Text(text) => self.append(Leaf::Text(text.profile()), location)?,
             // Rule 2.
-            ValueType::Option(payload) => {
-                self.within(WalkSegment::Inner, payload, location, depth + 1)?;
-            }
-            ValueType::Collection(collection) => {
-                self.within(
-                    WalkSegment::Inner,
-                    collection.element(),
-                    location,
-                    depth + 1,
-                )?;
-            }
+            ValueType::Option(payload) => queued.push(LeafVisit::Type {
+                segment: Some(WalkSegment::Inner),
+                value_type: payload,
+            }),
+            ValueType::Collection(collection) => queued.push(LeafVisit::Type {
+                segment: Some(WalkSegment::Inner),
+                value_type: collection.element(),
+            }),
             ValueType::Composite(declaration) => {
                 // A composite from which no text type is reachable adds no
                 // leaf, open or not, so the walk does not enter it (rules 3
                 // and 4).
                 if !self.reaches_text(*declaration, location)? {
-                    return Ok(());
+                    return Ok(None);
                 }
                 // Rule 3: an open composite ends the path.
                 if let Some(entered) = self.entered(*declaration) {
-                    return self.append(Leaf::Recursion(entered), location);
+                    self.append(Leaf::Recursion(entered), location)?;
+                    return Ok(None);
                 }
                 // Rules 4 and 5.
                 let types = self.types;
@@ -980,10 +1124,23 @@ impl<'w> LeafWalk<'w> {
                 };
                 charge_work(self.meter, 1)
                     .map_err(|refusal| preimage_refusal(location, refusal))?;
-                self.open.push((*declaration, self.stack.len()));
-                let walked = self.fields(composite.shape(), location, depth);
-                self.open.pop();
-                walked?;
+                let open = self.open.len();
+                self.open.push(*declaration);
+                self.entered_at.insert(*declaration, self.stack.len());
+                match composite.shape() {
+                    CompositeShape::Record(fields) => {
+                        queued.extend(fields.iter().map(LeafVisit::Field));
+                    }
+                    CompositeShape::Tuple(positions) => {
+                        queued.extend((0_u64..).zip(positions).map(|(position, value_type)| {
+                            LeafVisit::Type {
+                                segment: Some(WalkSegment::Position(position)),
+                                value_type,
+                            }
+                        }));
+                    }
+                }
+                return Ok(Some(open));
             }
             // Rule 6.
             ValueType::Boolean
@@ -997,74 +1154,14 @@ impl<'w> LeafWalk<'w> {
             | ValueType::Reference(_)
             | ValueType::Population(_) => {}
         }
-        Ok(())
-    }
-
-    /// Walk `value_type` one `segment` further down the path.
-    fn within(
-        &mut self,
-        segment: WalkSegment<'w>,
-        value_type: &'w ValueType,
-        location: &Location,
-        depth: u64,
-    ) -> Result<(), CheckRefusal> {
-        self.stack.push(StackEntry {
-            segment,
-            interned: None,
-        });
-        let walked = self.walk(value_type, location, depth);
-        self.stack.pop();
-        walked
-    }
-
-    /// Rules 4 and 5: a record's fields, an optional one's through `inner`,
-    /// or a tuple's positions.
-    fn fields(
-        &mut self,
-        shape: &'w CompositeShape,
-        location: &Location,
-        depth: u64,
-    ) -> Result<(), CheckRefusal> {
-        match shape {
-            CompositeShape::Record(fields) => {
-                for field in fields {
-                    let name = field.name();
-                    if !quire_exact::is_identifier(name) {
-                        return Err(refuse(
-                            location,
-                            CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
-                        ));
-                    }
-                    self.stack.push(StackEntry {
-                        segment: WalkSegment::Field(name),
-                        interned: None,
-                    });
-                    let walked = if field.presence() == Presence::Optional {
-                        self.within(WalkSegment::Inner, field.value_type(), location, depth + 1)
-                    } else {
-                        self.walk(field.value_type(), location, depth + 1)
-                    };
-                    self.stack.pop();
-                    walked?;
-                }
-            }
-            CompositeShape::Tuple(positions) => {
-                for (position, value_type) in (0_u64..).zip(positions) {
-                    self.within(
-                        WalkSegment::Position(position),
-                        value_type,
-                        location,
-                        depth + 1,
-                    )?;
-                }
-            }
-        }
-        Ok(())
+        Ok(None)
     }
 
     /// Whether a text type is reachable from the composite `declaration`
-    /// (FR-093 "Text leaves"), each composite visited once and the answer
-    /// kept for the lowering's later walks.
+    /// (FR-093 "Text leaves"). One search answers it for every composite
+    /// reachable from `declaration` whose answer is not yet known, and keeps
+    /// each answer for the lowering's later walks, so a chain of composites
+    /// is searched once, not once per link.
     fn reaches_text(
         &mut self,
         declaration: NodeKey,
@@ -1074,64 +1171,78 @@ impl<'w> LeafWalk<'w> {
             return Ok(*reaches);
         }
         let types = self.types;
-        let mut visited = BTreeSet::new();
-        let root = ValueType::Composite(declaration);
-        let mut pending = vec![&root];
-        let mut reaches = false;
-        while let Some(value_type) = pending.pop() {
-            match value_type {
-                ValueType::Text(_) => {
-                    reaches = true;
-                    break;
+        // Each composite reached and not yet answered, with the unanswered
+        // composites its members name; and those whose members name a text
+        // type, or a composite known to reach one.
+        let mut names: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+        let mut reaching: Vec<NodeKey> = Vec::new();
+        let mut pending = vec![declaration];
+        while let Some(composite) = pending.pop() {
+            if names.contains_key(&composite) {
+                continue;
+            }
+            let mut members: Vec<&ValueType> = match types.composite(composite).map(|c| c.shape()) {
+                Some(CompositeShape::Record(fields)) => {
+                    fields.iter().map(FieldDeclaration::value_type).collect()
                 }
-                ValueType::Option(payload) => pending.push(payload),
-                ValueType::Collection(collection) => pending.push(collection.element()),
-                ValueType::Composite(composite) => {
-                    if self.reach.get(composite) == Some(&true) {
-                        reaches = true;
-                        break;
-                    }
-                    if !visited.insert(*composite) {
-                        continue;
-                    }
-                    match types.composite(*composite).map(|c| c.shape()) {
-                        Some(CompositeShape::Record(fields)) => {
-                            pending.extend(fields.iter().map(|field| field.value_type()));
-                        }
-                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions.iter()),
+                Some(CompositeShape::Tuple(positions)) => positions.iter().collect(),
+                None => return Err(fault(location, KeyFault::UnknownComposite(composite))),
+            };
+            let mut named = Vec::new();
+            let mut direct = false;
+            while let Some(value_type) = members.pop() {
+                match value_type {
+                    ValueType::Text(_) => direct = true,
+                    ValueType::Option(payload) => members.push(payload),
+                    ValueType::Collection(collection) => members.push(collection.element()),
+                    ValueType::Composite(next) => match self.reach.get(next) {
+                        Some(true) => direct = true,
+                        Some(false) => {}
                         None => {
-                            return Err(fault(location, KeyFault::UnknownComposite(*composite)))
+                            named.push(*next);
+                            pending.push(*next);
                         }
-                    }
+                    },
+                    ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::Int(_)
+                    | ValueType::Rational(_)
+                    | ValueType::Decimal(_)
+                    | ValueType::Float(_)
+                    | ValueType::Quantity(_)
+                    | ValueType::Enum(_)
+                    | ValueType::Reference(_)
+                    | ValueType::Population(_) => {}
                 }
-                ValueType::Boolean
-                | ValueType::Integer
-                | ValueType::Int(_)
-                | ValueType::Rational(_)
-                | ValueType::Decimal(_)
-                | ValueType::Float(_)
-                | ValueType::Quantity(_)
-                | ValueType::Enum(_)
-                | ValueType::Reference(_)
-                | ValueType::Population(_) => {}
+            }
+            if direct {
+                reaching.push(composite);
+            }
+            names.insert(composite, named);
+        }
+        // A composite reaches a text type when one it names does: follow the
+        // names backwards from every composite that reaches one directly.
+        let mut named_by: BTreeMap<NodeKey, Vec<NodeKey>> = BTreeMap::new();
+        for (composite, named) in &names {
+            for next in named {
+                named_by.entry(*next).or_default().push(*composite);
             }
         }
-        if !reaches {
-            // No composite this search visited reaches a text type.
-            for composite in visited {
-                self.reach.insert(composite, false);
+        let mut reaches = BTreeSet::new();
+        while let Some(composite) = reaching.pop() {
+            if reaches.insert(composite) {
+                reaching.extend(named_by.get(&composite).into_iter().flatten().copied());
             }
         }
-        self.reach.insert(declaration, reaches);
-        Ok(reaches)
+        for composite in names.keys() {
+            self.reach.insert(*composite, reaches.contains(composite));
+        }
+        Ok(reaches.contains(&declaration))
     }
 
     /// The path length `declaration` was entered at, when it is open.
     fn entered(&self, declaration: NodeKey) -> Option<usize> {
-        self.open
-            .iter()
-            .find(|(open, _)| *open == declaration)
-            .map(|(_, entered)| *entered)
+        self.entered_at.get(&declaration).copied()
     }
 
     /// Intern the current path, sharing every prefix an earlier leaf
@@ -1213,7 +1324,6 @@ impl<'a> Lowering<'a> {
         models: &'a [AdmittedModel],
         units: UnitTable,
         lock: &'a LockEvidence,
-        depth_limit: u64,
         function_count: usize,
         occurrences: &'a mut OccurrenceMap<Location>,
         meter: &'a mut Meter,
@@ -1225,7 +1335,6 @@ impl<'a> Lowering<'a> {
             units,
             correspondence: ModelCorrespondence::default(),
             lock,
-            depth_limit,
             graph: SemanticGraph::default(),
             occurrences,
             functions: vec![None; function_count],
@@ -1375,7 +1484,7 @@ impl<'a> Lowering<'a> {
         semantic_form: &'static str,
         semantic_type: Option<NodeKey>,
         declaration: Option<Vec<Identifier>>,
-        body: SemanticTerm,
+        body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
         let owner = declaration
             .as_ref()
@@ -1401,7 +1510,7 @@ impl<'a> Lowering<'a> {
         semantic_form: &'static str,
         semantic_type: Option<NodeKey>,
         owner: Owner,
-        body: SemanticTerm,
+        body: BodyTerm,
     ) -> Result<NodeKey, CheckRefusal> {
         self.insert_node(
             location,
@@ -1491,22 +1600,6 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    fn check_depth(&self, depth: u64, location: &Location) -> Result<(), CheckRefusal> {
-        if depth > self.depth_limit {
-            return Err(refuse(
-                location,
-                CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                    stage: CheckingStage::Typing,
-                    kind: CheckingLimitKind::Depth,
-                    limit: self.depth_limit,
-                    actual: u128::from(depth),
-                    region: None,
-                })),
-            ));
-        }
-        Ok(())
-    }
-
     // ------------------------------------------------------------------
     // FR-092 type nodes
     // ------------------------------------------------------------------
@@ -1519,9 +1612,7 @@ impl<'a> Lowering<'a> {
             form,
             None,
             None,
-            SemanticTerm::Aggregate {
-                members: Vec::new(),
-            },
+            BodyTerm::aggregate(Vec::new()),
         )
     }
 
@@ -1530,19 +1621,15 @@ impl<'a> Lowering<'a> {
         &mut self,
         value: Integer,
         location: &Location,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+    ) -> Result<LeafTerm, CheckRefusal> {
         let integer = self.scalar("integer", location)?;
-        Ok(SemanticTerm::literal(integer, LiteralValue::Integer(value)))
+        Ok(LeafTerm::literal(integer, LiteralValue::Integer(value)))
     }
 
     /// A text literal typed at the builtin text scalar node (T3).
-    fn text_literal(
-        &mut self,
-        value: &str,
-        location: &Location,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+    fn text_literal(&mut self, value: &str, location: &Location) -> Result<LeafTerm, CheckRefusal> {
         let text = self.scalar("text", location)?;
-        Ok(SemanticTerm::literal(
+        Ok(LeafTerm::literal(
             text,
             LiteralValue::Text(value.to_owned()),
         ))
@@ -1553,12 +1640,12 @@ impl<'a> Lowering<'a> {
         &mut self,
         form: &'static str,
         base: NodeKey,
-        bindings: Vec<(&'static str, SemanticTerm)>,
+        bindings: Vec<(&'static str, LeafTerm)>,
         location: &Location,
     ) -> Result<NodeKey, CheckRefusal> {
         let members = bindings
             .into_iter()
-            .map(|(name, value)| SemanticTerm::binding(name, value))
+            .map(|(name, value)| MemberTerm::bound(name, value))
             .collect();
         self.insert(
             location,
@@ -1566,7 +1653,7 @@ impl<'a> Lowering<'a> {
             form,
             Some(base),
             None,
-            SemanticTerm::Aggregate { members },
+            BodyTerm::aggregate(members),
         )
     }
 
@@ -1605,12 +1692,10 @@ impl<'a> Lowering<'a> {
         'a: 'v,
     {
         let mut frames: Vec<TypeFrame<'v>> = Vec::new();
-        let mut step = TypeStep::Descend(value_type, 0);
+        let mut step = TypeStep::Descend(value_type);
         loop {
             step = match step {
-                TypeStep::Descend(value_type, depth) => {
-                    self.descend(value_type, location, depth, &mut frames)?
-                }
+                TypeStep::Descend(value_type) => self.descend(value_type, location, &mut frames)?,
                 TypeStep::Built(key) => match frames.pop() {
                     None => return Ok(key),
                     Some(TypeFrame::Option) => TypeStep::Built(self.option_type(key, location)?),
@@ -1626,31 +1711,29 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// Start `value_type`'s node at `depth`: a type with no type inside it
+    /// Start `value_type`'s node: a type with no type inside it
     /// is built now; an `option`, a collection or a composite not yet built
     /// pushes its frame and descends into its first inner type.
     fn descend<'v>(
         &mut self,
         value_type: &'v ValueType,
         location: &Location,
-        depth: u64,
         frames: &mut Vec<TypeFrame<'v>>,
     ) -> Result<TypeStep<'v>, CheckRefusal>
     where
         'a: 'v,
     {
-        self.check_depth(depth, location)?;
         let key = match value_type {
             ValueType::Option(payload) => {
                 frames.push(TypeFrame::Option);
-                return Ok(TypeStep::Descend(payload, depth + 1));
+                return Ok(TypeStep::Descend(payload));
             }
             ValueType::Collection(collection) => {
                 frames.push(TypeFrame::Collection(collection));
-                return Ok(TypeStep::Descend(collection.element(), depth + 1));
+                return Ok(TypeStep::Descend(collection.element()));
             }
             ValueType::Composite(declaration) => {
-                return match self.open_composite(*declaration, location, depth)? {
+                return match self.open_composite(*declaration, location)? {
                     OpenComposite::Built(key) => Ok(TypeStep::Built(key)),
                     OpenComposite::Open(composite) => self.advance(composite, location, frames),
                 };
@@ -1774,9 +1857,7 @@ impl<'a> Lowering<'a> {
             "option",
             None,
             None,
-            SemanticTerm::Aggregate {
-                members: vec![SemanticTerm::reference(payload)],
-            },
+            BodyTerm::aggregate(vec![MemberTerm::reference(payload)]),
         )
     }
 
@@ -1793,9 +1874,7 @@ impl<'a> Lowering<'a> {
             collection_form(collection.kind()),
             None,
             None,
-            SemanticTerm::Aggregate {
-                members: vec![SemanticTerm::reference(element)],
-            },
+            BodyTerm::aggregate(vec![MemberTerm::reference(element)]),
         )?;
         // An unbounded `K<T>` is its composite node alone: it has no
         // `collection_bounds` domain (ADR-014 N-3), which is the form IR's
@@ -1813,14 +1892,13 @@ impl<'a> Lowering<'a> {
         )
     }
 
-    /// Start the declared record or tuple `declaration` at `depth`: its node
+    /// Start the declared record or tuple `declaration`: its node
     /// if it is built, its placeholder if it is being built (it reached
     /// itself), or its open frame.
     fn open_composite<'v>(
         &mut self,
         declaration: NodeKey,
         location: &Location,
-        depth: u64,
     ) -> Result<OpenComposite<'v>, CheckRefusal>
     where
         'a: 'v,
@@ -1857,7 +1935,6 @@ impl<'a> Lowering<'a> {
             name,
             site: type_declaration(composite.name()),
             shape,
-            depth,
             members: Vec::with_capacity(members),
             awaiting: None,
         }))
@@ -1871,7 +1948,6 @@ impl<'a> Lowering<'a> {
         location: &Location,
         frames: &mut Vec<TypeFrame<'v>>,
     ) -> Result<TypeStep<'v>, CheckRefusal> {
-        let member = composite.depth + 1;
         let at = composite.members.len();
         let next = match composite.shape {
             CompositeShape::Record(fields) => fields.get(at).map(|field| {
@@ -1887,13 +1963,12 @@ impl<'a> Lowering<'a> {
         };
         frames.push(TypeFrame::Composite(composite));
         Ok(match presence {
-            Presence::Required => TypeStep::Descend(value_type, member),
+            Presence::Required => TypeStep::Descend(value_type),
             // An optional field's member is the `option` node over its
             // declared type, one level further down.
             Presence::Optional => {
-                self.check_depth(member, location)?;
                 frames.push(TypeFrame::Option);
-                TypeStep::Descend(value_type, member + 1)
+                TypeStep::Descend(value_type)
             }
         })
     }
@@ -1924,7 +1999,7 @@ impl<'a> Lowering<'a> {
             form,
             None,
             Some(name),
-            SemanticTerm::Aggregate { members },
+            BodyTerm::aggregate(members),
         )?;
         // FR-322: a node carrying `declaration` has a `declaration`
         // occurrence.
@@ -1987,9 +2062,7 @@ impl<'a> Lowering<'a> {
                 semantic_type: None,
                 declaration: Some(name),
                 owner: None,
-                body: SemanticTerm::Aggregate {
-                    members: Vec::new(),
-                },
+                body: BodyTerm::aggregate(Vec::new()),
             },
             NominalNode::EnumDeclaration(binding.declaration.preimage()),
         )?;
@@ -2012,7 +2085,7 @@ impl<'a> Lowering<'a> {
                     semantic_type: Some(declaration),
                     declaration: None,
                     owner: None,
-                    body: SemanticTerm::literal(
+                    body: BodyTerm::literal(
                         declaration,
                         LiteralValue::Enum(member.case().to_owned()),
                     ),
@@ -2097,17 +2170,18 @@ impl<'a> Lowering<'a> {
         // budget, before any leaf's law is read (FR-093 "Text leaves").
         let mut walk = LeafWalk {
             types: self.scope.types(),
-            depth_limit: self.depth_limit,
+            location,
             meter: &mut *self.meter,
             reach: &mut self.text_reach,
             stack: Vec::new(),
             prefixes: Vec::new(),
             leaves: Vec::new(),
             open: Vec::new(),
+            entered_at: BTreeMap::new(),
             budget: self.node_budget,
             limit: self.node_limit,
         };
-        walk.walk(compared, location, 0)?;
+        walk.run(compared)?;
         self.node_budget = walk.budget;
         let found = std::mem::take(&mut walk.leaves);
         let paths = found
@@ -2176,12 +2250,10 @@ impl<'a> Lowering<'a> {
             "parameter",
             Some(semantic_type),
             None,
-            SemanticTerm::Aggregate {
-                members: vec![
-                    SemanticTerm::binding("name", name_literal),
-                    SemanticTerm::binding("level", level_literal),
-                ],
-            },
+            BodyTerm::aggregate(vec![
+                MemberTerm::bound("name", name_literal),
+                MemberTerm::bound("level", level_literal),
+            ]),
         )?;
         self.record(key, OccurrenceRole::Expression, location.clone());
         Ok(key)
@@ -2294,7 +2366,7 @@ impl<'a> Lowering<'a> {
                     key
                 }
             };
-            let bodies: Vec<SemanticTerm> = component
+            let bodies: Vec<BodyTerm> = component
                 .iter()
                 .map(|at| drafts[*at].content.body.map_keys(&mut substitute))
                 .collect();
@@ -2376,7 +2448,7 @@ impl<'a> Lowering<'a> {
         component: &[usize],
         drafts: &[Draft],
         handles: &[NodeKey],
-        bodies: &[SemanticTerm],
+        bodies: &[BodyTerm],
         types: &[Option<NodeKey>],
         resolved: &mut BTreeMap<NodeKey, NodeKey>,
     ) -> Result<(), CheckRefusal> {
@@ -2510,28 +2582,19 @@ impl<'a> Lowering<'a> {
         }
         let result = self.type_node(function.result, function.location)?;
         self.record(result, OccurrenceRole::Type, function.location.clone());
-        let mut members = vec![SemanticTerm::binding(
+        let mut members = vec![MemberTerm::binding(
             FUNCTION_PARAMETERS,
-            SemanticTerm::Aggregate {
-                members: parameters
-                    .iter()
-                    .map(|binder| SemanticTerm::reference(binder.parameter))
-                    .collect(),
-            },
+            BindingValue::Group(GroupTerm::references(
+                parameters.iter().map(|binder| binder.parameter),
+            )),
         )];
-        let mut binders = Binders {
-            slot_names: function.body_slots,
-            scope: parameters.clone(),
-        };
+        let mut binders = Binders::new(function.body_slots, &parameters);
         let body = self.expression(function.body, &mut binders)?;
-        members.push(SemanticTerm::binding("body", body));
+        members.push(MemberTerm::bound("body", body));
         if let Some(measure) = function.measure {
-            let mut binders = Binders {
-                slot_names: function.measure_slots,
-                scope: parameters.clone(),
-            };
+            let mut binders = Binders::new(function.measure_slots, &parameters);
             let measure = self.expression(measure, &mut binders)?;
-            members.push(SemanticTerm::binding("decreases", measure));
+            members.push(MemberTerm::bound("decreases", measure));
         }
         let semantic_form = match function.kind {
             qsl_forms::DeclarationKind::Predicate => "predicate",
@@ -2550,7 +2613,7 @@ impl<'a> Lowering<'a> {
                     semantic_form,
                     Some(result),
                     owner,
-                    SemanticTerm::Aggregate { members },
+                    BodyTerm::aggregate(members),
                 )?
             }
             None => {
@@ -2561,7 +2624,7 @@ impl<'a> Lowering<'a> {
                     semantic_form,
                     Some(result),
                     Some(declaration),
-                    SemanticTerm::Aggregate { members },
+                    BodyTerm::aggregate(members),
                 )?;
                 self.record(key, OccurrenceRole::Declaration, function.location.clone());
                 key
@@ -2603,7 +2666,7 @@ impl<'a> Lowering<'a> {
             },
             parameter,
         );
-        binders.scope.push(Binder {
+        binders.push(Binder {
             slot,
             parameter,
             semantic_type,
@@ -2615,33 +2678,28 @@ impl<'a> Lowering<'a> {
     /// binder's, so a `Population<T>[N]` binding keeps its `T`.
     fn value_type_node(
         &mut self,
-        node: &Node,
+        node: CheckedNode<'_>,
         binders: &Binders<'_>,
     ) -> Result<NodeKey, CheckRefusal> {
-        if let NodeKind::Local(slot) = &node.kind {
-            if let Some(binder) = binders
-                .scope
-                .iter()
-                .rev()
-                .find(|binder| binder.slot == *slot)
-            {
+        if let NodeKind::Local(slot) = node.kind() {
+            if let Some(binder) = binders.find(*slot) {
                 return Ok(binder.semantic_type);
             }
         }
-        self.type_node(&node.value_type, &node.location)
+        self.type_node(node.value_type(), node.location())
     }
 
     /// Key an application node for checked `node` and return a reference to
     /// it.
     fn application(
         &mut self,
-        node: &Node,
+        node: CheckedNode<'_>,
         operator: Operator,
         operation: Operation,
-        arguments: Vec<SemanticTerm>,
-    ) -> Result<SemanticTerm, CheckRefusal> {
-        let result_type = self.type_node(&node.value_type, &node.location)?;
-        self.typed_application(&node.location, result_type, operator, operation, arguments)
+        arguments: Vec<MemberTerm>,
+    ) -> Result<LeafTerm, CheckRefusal> {
+        let result_type = self.type_node(node.value_type(), node.location())?;
+        self.typed_application(node.location(), result_type, operator, operation, arguments)
     }
 
     /// Key an application node typed at `result_type`, denoted by the
@@ -2652,43 +2710,38 @@ impl<'a> Lowering<'a> {
         result_type: NodeKey,
         operator: Operator,
         operation: Operation,
-        arguments: Vec<SemanticTerm>,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+        arguments: Vec<MemberTerm>,
+    ) -> Result<LeafTerm, CheckRefusal> {
         let key = self.insert(
             location,
             NodeTag::Expression,
             operator.semantic_form(),
             Some(result_type),
             None,
-            SemanticTerm::Application {
-                operator,
-                operation,
-                result_type: super::node_key::NodeRef(result_type),
-                arguments,
-            },
+            BodyTerm::application(operator, operation, result_type, arguments),
         )?;
         self.record(key, OccurrenceRole::Expression, location.clone());
-        Ok(SemanticTerm::reference(key))
+        Ok(LeafTerm::reference(key))
     }
 
     /// Key a `value` node for checked `node` and return a reference to it.
     fn value_node(
         &mut self,
-        node: &Node,
+        node: CheckedNode<'_>,
         form: &'static str,
         semantic_type: NodeKey,
-        body: SemanticTerm,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+        body: BodyTerm,
+    ) -> Result<LeafTerm, CheckRefusal> {
         let key = self.insert(
-            &node.location,
+            node.location(),
             NodeTag::Value,
             form,
             Some(semantic_type),
             None,
             body,
         )?;
-        self.record(key, OccurrenceRole::Expression, node.location.clone());
-        Ok(SemanticTerm::reference(key))
+        self.record(key, OccurrenceRole::Expression, node.location().clone());
+        Ok(LeafTerm::reference(key))
     }
 
     /// The `type_argument` member naming `value_type`'s node.
@@ -2706,8 +2759,9 @@ impl<'a> Lowering<'a> {
     /// to its node, or to its binder's parameter node for a local read.
     ///
     /// The nodes still to lower and the nodes waiting on their operands are
-    /// kept on an explicit heap stack, so a body nested to the
-    /// depth limit lowers in the same host stack as a flat one. Nodes are
+    /// kept on an explicit heap stack, so a body of any depth lowers in the
+    /// same host stack as a flat one. Each frame waits on a node typing
+    /// already charged against the node ceiling. Nodes are
     /// built, charged and refused in the order the earlier recursive
     /// lowering reached them -- each node's own type and member nodes before
     /// its operands, its operands in order, then its own node -- so every
@@ -2715,13 +2769,13 @@ impl<'a> Lowering<'a> {
     /// expression bound are no longer in scope.
     fn expression(
         &mut self,
-        root: &Node,
+        root: CheckedNode<'_>,
         binders: &mut Binders<'_>,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+    ) -> Result<LeafTerm, CheckRefusal> {
         let scope = binders.scope.len();
         let lowered = self.lower(root, binders);
         if lowered.is_err() {
-            binders.scope.truncate(scope);
+            binders.truncate(scope);
         }
         lowered
     }
@@ -2730,16 +2784,14 @@ impl<'a> Lowering<'a> {
     /// term to the frame waiting for it.
     fn lower(
         &mut self,
-        root: &Node,
+        root: CheckedNode<'_>,
         binders: &mut Binders<'_>,
-    ) -> Result<SemanticTerm, CheckRefusal> {
+    ) -> Result<LeafTerm, CheckRefusal> {
         let mut frames: Vec<LowerFrame<'_>> = Vec::new();
-        let mut step = LowerStep::Descend(root, 0);
+        let mut step = LowerStep::Descend(root);
         loop {
             step = match step {
-                LowerStep::Descend(node, depth) => {
-                    self.lower_node(node, depth, binders, &mut frames)?
-                }
+                LowerStep::Descend(node) => self.lower_node(node, binders, &mut frames)?,
                 LowerStep::Lowered(term) => match frames.pop() {
                     None => return Ok(term),
                     Some(frame) => self.accept_term(frame, term, binders, &mut frames)?,
@@ -2748,44 +2800,41 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// Start lowering checked `node` at `depth`: a literal or local read is
+    /// Start lowering checked `node`: a literal or local read is
     /// lowered now; a node the FR-093 table builds no node for lowers its
     /// operand in its place; any other node builds its own type and member
     /// nodes, pushes its frame and descends into its first operand.
     #[deny(clippy::wildcard_enum_match_arm)]
     fn lower_node<'n>(
         &mut self,
-        node: &'n Node,
-        depth: u64,
+        node: CheckedNode<'n>,
         binders: &Binders<'_>,
         frames: &mut Vec<LowerFrame<'n>>,
     ) -> Result<LowerStep<'n>, CheckRefusal> {
-        self.check_depth(depth, &node.location)?;
         let plain = Operation::plain;
-        let (keyed, operands) = match &node.kind {
-            NodeKind::Literal(value) => return self.literal(node, value).map(LowerStep::Lowered),
+        let (keyed, operands) = match node.kind() {
+            NodeKind::Literal(CheckedLiteral(value)) => {
+                return self.literal(node, value).map(LowerStep::Lowered)
+            }
             NodeKind::Local(slot) => {
                 let key = binders
-                    .scope
-                    .iter()
-                    .rev()
-                    .find(|binder| binder.slot == *slot)
+                    .find(*slot)
                     .map(|binder| binder.parameter)
                     .ok_or_else(|| {
                         refuse(
-                            &node.location,
+                            node.location(),
                             CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                         )
                     })?;
-                self.record(key, OccurrenceRole::Expression, node.location.clone());
-                return Ok(LowerStep::Lowered(SemanticTerm::reference(key)));
+                self.record(key, OccurrenceRole::Expression, node.location().clone());
+                return Ok(LowerStep::Lowered(LeafTerm::reference(key)));
             }
             NodeKind::Coerce(operand, interval) => {
-                if !super::ir::coerce_builds_narrow(&operand.value_type, interval) {
-                    return Ok(LowerStep::Descend(operand, depth + 1));
+                if !super::ir::coerce_builds_narrow(node.at(*operand).value_type(), interval) {
+                    return Ok(LowerStep::Descend(node.at(*operand)));
                 }
                 let member =
-                    self.type_argument(&ValueType::Int(interval.clone()), &node.location)?;
+                    self.type_argument(&ValueType::Int(interval.clone()), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Convert,
@@ -2800,13 +2849,12 @@ impl<'a> Lowering<'a> {
             NodeKind::Let { slot, value, body } => {
                 frames.push(LowerFrame::Let(Box::new(LetFrame {
                     node,
-                    depth,
                     slot: *slot,
-                    value,
-                    body,
+                    value: node.at(*value),
+                    body: node.at(*body),
                     bound: None,
                 })));
-                return Ok(LowerStep::Descend(value, depth + 1));
+                return Ok(LowerStep::Descend(node.at(*value)));
             }
             NodeKind::If {
                 condition,
@@ -2881,14 +2929,14 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Ieee(operator, rounding, left, right) => {
-                let ValueType::Float(float) = &left.value_type else {
-                    return Err(fault(&node.location, KeyFault::UntypedIeeeOperand));
+                let ValueType::Float(float) = node.at(*left).value_type() else {
+                    return Err(fault(node.location(), KeyFault::UntypedIeeeOperand));
                 };
                 let width = match float.width() {
                     quire_exact::IeeeWidth::Binary32 => "float32",
                     quire_exact::IeeeWidth::Binary64 => "float64",
                 };
-                let law = self.law(LawRole::IeeeProfile, &node.location)?;
+                let law = self.law(LawRole::IeeeProfile, node.location())?;
                 let identity = format!("quire.op.ieee.{width}.{}", arithmetic_suffix(*operator));
                 (
                     Keyed::Application(
@@ -2905,15 +2953,15 @@ impl<'a> Lowering<'a> {
             NodeKind::ConvertDecimal(operand, target) => {
                 // FR-149 scale reduction: a decimal of larger maximum scale,
                 // or a rational whose denominators exceed 1.
-                let reduces = if let ValueType::Decimal(source) = &operand.value_type {
+                let reduces = if let ValueType::Decimal(source) = node.at(*operand).value_type() {
                     source.max_scale() > target.max_scale()
-                } else if let ValueType::Rational(domain) = &operand.value_type {
+                } else if let ValueType::Rational(domain) = node.at(*operand).value_type() {
                     *domain.denominator().upper() > Integer::one()
                 } else {
                     false
                 };
                 let member =
-                    self.type_argument(&ValueType::Decimal(target.clone()), &node.location)?;
+                    self.type_argument(&ValueType::Decimal(target.clone()), node.location())?;
                 let operation = if reduces {
                     Operation {
                         member: Some(member),
@@ -2943,8 +2991,9 @@ impl<'a> Lowering<'a> {
                 let mut operation =
                     plain(&format!("quire.op.{family}.{}", ordering_suffix(*operator)));
                 if let OrderedKind::Texts = kind {
-                    operation.laws = vec![self.law(LawRole::TextProfile, &node.location)?];
-                    operation.mode = text_profile(&left.value_type).map(OperationMode::TextProfile);
+                    operation.laws = vec![self.law(LawRole::TextProfile, node.location())?];
+                    operation.mode =
+                        text_profile(node.at(*left).value_type()).map(OperationMode::TextProfile);
                 }
                 (
                     Keyed::Application(Operator::Binary, operation),
@@ -2956,7 +3005,8 @@ impl<'a> Lowering<'a> {
                     EqualityOperator::Equal => "eq",
                     EqualityOperator::NotEqual => "ne",
                 };
-                let operation = self.equality(&left.value_type, suffix, &node.location)?;
+                let operation =
+                    self.equality(node.at(*left).value_type(), suffix, node.location())?;
                 (
                     Keyed::Application(Operator::Binary, operation),
                     Operands::Two(left, right),
@@ -2978,7 +3028,8 @@ impl<'a> Lowering<'a> {
                 Operands::One(operand),
             ),
             NodeKind::Field { operand, index, .. } => {
-                let member = self.field_member(&operand.value_type, *index, &node.location)?;
+                let member =
+                    self.field_member(node.at(*operand).value_type(), *index, node.location())?;
                 (
                     Keyed::Application(
                         Operator::Query,
@@ -2996,13 +3047,14 @@ impl<'a> Lowering<'a> {
                 // FR-093/FR-094 (QC-24): `quire.op.model.deref` over the
                 // reference, typed at its object type `T`'s model node, and
                 // over it the `record.project` of field `name` of `T`.
-                let object = self.referenced_object(&reference.value_type, &node.location)?;
+                let object =
+                    self.referenced_object(node.at(*reference).value_type(), node.location())?;
                 frames.push(LowerFrame::Attribute {
                     node,
                     object,
                     name: &field.name,
                 });
-                return Ok(LowerStep::Descend(reference, depth + 1));
+                return Ok(LowerStep::Descend(node.at(*reference)));
             }
             NodeKind::Present(operand) => (
                 Keyed::Application(Operator::Present, plain("quire.op.option.present")),
@@ -3023,18 +3075,17 @@ impl<'a> Lowering<'a> {
                     .flatten()
                     .ok_or_else(|| {
                         refuse(
-                            &node.location,
+                            node.location(),
                             CheckCause::UnsupportedFeature {
-                                loci: vec![node.location.clone()],
+                                loci: vec![node.location().clone()],
                             },
                         )
                     })?;
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
-                terms.push(SemanticTerm::reference(callee));
+                terms.push(LeafTerm::reference(callee));
                 return self.next_operand(
                     Box::new(OperandsFrame {
                         node,
-                        depth,
                         operands: Operands::Each(arguments),
                         next: 0,
                         terms,
@@ -3049,14 +3100,13 @@ impl<'a> Lowering<'a> {
                 callee, arguments, ..
             } => {
                 let mut terms = Vec::with_capacity(arguments.len() + 1);
-                terms.push(SemanticTerm::DependencyReference {
+                terms.push(LeafTerm::DependencyReference {
                     package: PackageRef(callee.package),
                     node: WireNodeRef(callee.node),
                 });
                 return self.next_operand(
                     Box::new(OperandsFrame {
                         node,
-                        depth,
                         operands: Operands::Each(arguments),
                         next: 0,
                         terms,
@@ -3069,14 +3119,14 @@ impl<'a> Lowering<'a> {
                 declaration,
                 arguments,
             } => {
-                let semantic_type = self.composite(*declaration, &node.location)?;
+                let semantic_type = self.composite(*declaration, node.location())?;
                 (
                     Keyed::Value("tuple_value", semantic_type),
                     Operands::Each(arguments),
                 )
             }
             NodeKind::Record { declaration, slots } => {
-                let semantic_type = self.composite(*declaration, &node.location)?;
+                let semantic_type = self.composite(*declaration, node.location())?;
                 let Some(CompositeShape::Record(fields)) = self
                     .scope
                     .types()
@@ -3084,18 +3134,17 @@ impl<'a> Lowering<'a> {
                     .map(|c| c.shape().clone())
                 else {
                     return Err(refuse(
-                        &node.location,
+                        node.location(),
                         CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
                     ));
                 };
                 if fields.len() != slots.len() {
-                    return Err(fault(&node.location, KeyFault::RecordSlotCount));
+                    return Err(fault(node.location(), KeyFault::RecordSlotCount));
                 }
                 let members = Vec::with_capacity(slots.len());
                 return self.record_members(
                     Box::new(RecordFrame {
                         node,
-                        depth,
                         semantic_type,
                         fields,
                         slots,
@@ -3113,7 +3162,7 @@ impl<'a> Lowering<'a> {
                     collection_form(collection_type.kind())
                 );
                 let leaves =
-                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                    self.leaves(LeafSource::ResultInner(node.value_type()), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Collection,
@@ -3127,9 +3176,9 @@ impl<'a> Lowering<'a> {
             }
             NodeKind::ConvertCollection { target, operand } => {
                 let member =
-                    self.type_argument(&ValueType::collection(target.clone()), &node.location)?;
+                    self.type_argument(&ValueType::collection(target.clone()), node.location())?;
                 let leaves =
-                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                    self.leaves(LeafSource::ResultInner(node.value_type()), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Convert,
@@ -3143,13 +3192,14 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::ConvertScalar(target, operand) => {
-                let Some(target) = super::ir::scalar_conversion_target(target, &operand.value_type)
+                let Some(target) =
+                    super::ir::scalar_conversion_target(target, node.at(*operand).value_type())
                 else {
-                    return Ok(LowerStep::Descend(operand, depth + 1));
+                    return Ok(LowerStep::Descend(node.at(*operand)));
                 };
                 let target = target.clone();
-                let member = self.type_argument(&target, &node.location)?;
-                let operation = if let ValueType::Quantity(_) = &operand.value_type {
+                let member = self.type_argument(&target, node.location())?;
+                let operation = if let ValueType::Quantity(_) = node.at(*operand).value_type() {
                     // FR-093 `quire.op.quantity.convert`: a quantity's
                     // magnitude is an exact rational, and its conversion is
                     // exact (`value::quantity`'s `QuantityTarget::Exact`).
@@ -3170,9 +3220,9 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::IeeeToRational(operand, domain) => {
-                let law = self.law(LawRole::IeeeProfile, &node.location)?;
+                let law = self.law(LawRole::IeeeProfile, node.location())?;
                 let member =
-                    self.type_argument(&ValueType::Rational(domain.clone()), &node.location)?;
+                    self.type_argument(&ValueType::Rational(domain.clone()), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Convert,
@@ -3196,8 +3246,8 @@ impl<'a> Lowering<'a> {
                         Operator::Collection,
                         Operation {
                             leaves: self.leaves(
-                                LeafSource::ResultInner(&node.value_type),
-                                &node.location,
+                                LeafSource::ResultInner(node.value_type()),
+                                node.location(),
                             )?,
                             ..plain("quire.op.collection.map")
                         },
@@ -3208,48 +3258,46 @@ impl<'a> Lowering<'a> {
                     Visit::Count => (
                         Operator::Collection,
                         Operation {
-                            member: Some(self.type_argument(&node.value_type, &node.location)?),
+                            member: Some(self.type_argument(node.value_type(), node.location())?),
                             ..plain("quire.op.collection.count")
                         },
                     ),
                     Visit::Sum => (
                         Operator::Collection,
                         Operation {
-                            member: Some(self.type_argument(&node.value_type, &node.location)?),
+                            member: Some(self.type_argument(node.value_type(), node.location())?),
                             ..plain("quire.op.collection.sum.integer")
                         },
                     ),
                 };
                 frames.push(LowerFrame::Binder(Box::new(BinderFrame {
                     node,
-                    depth,
                     slot: *slot,
-                    source,
-                    body,
+                    source: node.at(*source),
+                    body: node.at(*body),
                     operator,
                     operation,
                     bound: None,
                 })));
-                return Ok(LowerStep::Descend(source, depth + 1));
+                return Ok(LowerStep::Descend(node.at(*source)));
             }
             NodeKind::Flatten(operand) => {
                 let leaves =
-                    self.leaves(LeafSource::ResultInner(&node.value_type), &node.location)?;
+                    self.leaves(LeafSource::ResultInner(node.value_type()), node.location())?;
                 if let NodeKind::Query {
                     visit: Visit::Map,
                     slot,
                     source,
                     body,
-                } = &operand.kind
+                } = node.at(*operand).kind()
                 {
                     // FR-093: `flatMap`, and `flatten(map(..))`, is one
                     // `flat_map` node; no node is built for the inner map.
                     frames.push(LowerFrame::Binder(Box::new(BinderFrame {
                         node,
-                        depth,
                         slot: *slot,
-                        source,
-                        body,
+                        source: node.at(*source),
+                        body: node.at(*body),
                         operator: Operator::Collection,
                         operation: Operation {
                             leaves,
@@ -3257,7 +3305,7 @@ impl<'a> Lowering<'a> {
                         },
                         bound: None,
                     })));
-                    return Ok(LowerStep::Descend(source, depth + 1));
+                    return Ok(LowerStep::Descend(node.at(*source)));
                 }
                 (
                     Keyed::Application(
@@ -3279,18 +3327,17 @@ impl<'a> Lowering<'a> {
             } => {
                 frames.push(LowerFrame::Fold(Box::new(FoldFrame {
                     node,
-                    depth,
                     accumulator: *accumulator,
                     binder: *binder,
-                    source,
-                    step,
-                    identity: identity.as_deref(),
+                    source: node.at(*source),
+                    step: node.at(*step),
+                    identity: identity.map(|identity| node.at(identity)),
                     stage: FoldStage::Source,
                 })));
-                return Ok(LowerStep::Descend(source, depth + 1));
+                return Ok(LowerStep::Descend(node.at(*source)));
             }
             NodeKind::Size(operand) => {
-                let member = self.type_argument(&node.value_type, &node.location)?;
+                let member = self.type_argument(node.value_type(), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Collection,
@@ -3303,11 +3350,12 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::Contains(collection, item) => {
-                let leaves = if let ValueType::Collection(collection_type) = &collection.value_type
+                let leaves = if let ValueType::Collection(collection_type) =
+                    node.at(*collection).value_type()
                 {
                     self.leaves(
                         LeafSource::Compared(collection_type.element()),
-                        &node.location,
+                        node.location(),
                     )?
                 } else {
                     Vec::new()
@@ -3324,7 +3372,7 @@ impl<'a> Lowering<'a> {
                 )
             }
             NodeKind::AllInstances { population } => {
-                let object = self.referenced_object(&node.value_type, &node.location)?;
+                let object = self.referenced_object(node.value_type(), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Query,
@@ -3343,7 +3391,7 @@ impl<'a> Lowering<'a> {
                 reference,
                 absence,
             } => {
-                let object = self.referenced_object(&node.value_type, &node.location)?;
+                let object = self.referenced_object(node.value_type(), node.location())?;
                 (
                     Keyed::Application(
                         Operator::Query,
@@ -3366,10 +3414,11 @@ impl<'a> Lowering<'a> {
                 // FR-105 (pending STD-111's spelling): the edge is named as
                 // an attribute read names its field, by the operands'
                 // static object type's model node and the field's name.
-                let object = self.referenced_object(&source.value_type, &node.location)?;
+                let object =
+                    self.referenced_object(node.at(*source).value_type(), node.location())?;
                 let name = Identifier::new(edge.name.clone()).map_err(|_| {
                     refuse(
-                        &node.location,
+                        node.location(),
                         CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                     )
                 })?;
@@ -3395,7 +3444,8 @@ impl<'a> Lowering<'a> {
             } => {
                 // FR-094: the member names the receiver's static object
                 // type's model node, whichever supertype declares it.
-                let object = self.referenced_object(&receiver.value_type, &node.location)?;
+                let object =
+                    self.referenced_object(node.at(*receiver).value_type(), node.location())?;
                 let member = self
                     .scope
                     .dispatch_operations
@@ -3403,13 +3453,13 @@ impl<'a> Lowering<'a> {
                     .map(|operation| operation.member.clone())
                     .ok_or_else(|| {
                         refuse(
-                            &node.location,
+                            node.location(),
                             CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch),
                         )
                     })?;
                 let name = Identifier::new(member).map_err(|_| {
                     refuse(
-                        &node.location,
+                        node.location(),
                         CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                     )
                 })?;
@@ -3450,7 +3500,6 @@ impl<'a> Lowering<'a> {
         self.next_operand(
             Box::new(OperandsFrame {
                 node,
-                depth,
                 operands,
                 next: 0,
                 terms: Vec::with_capacity(operands.len()),
@@ -3469,22 +3518,25 @@ impl<'a> Lowering<'a> {
     ) -> Result<LowerStep<'n>, CheckRefusal> {
         if let Some(operand) = frame.operands.get(frame.next) {
             frame.next += 1;
-            let depth = frame.depth + 1;
+            let operand = frame.node.at(operand);
             frames.push(LowerFrame::Operands(frame));
-            return Ok(LowerStep::Descend(operand, depth));
+            return Ok(LowerStep::Descend(operand));
         }
         let OperandsFrame {
             node, terms, keyed, ..
         } = *frame;
         match keyed {
-            Keyed::Application(operator, operation) => {
-                self.application(node, operator, operation, terms)
-            }
+            Keyed::Application(operator, operation) => self.application(
+                node,
+                operator,
+                operation,
+                terms.into_iter().map(MemberTerm::Leaf).collect(),
+            ),
             Keyed::Value(form, semantic_type) => self.value_node(
                 node,
                 form,
                 semantic_type,
-                SemanticTerm::Aggregate { members: terms },
+                BodyTerm::aggregate(terms.into_iter().map(MemberTerm::Leaf).collect()),
             ),
         }
         .map(LowerStep::Lowered)
@@ -3506,16 +3558,16 @@ impl<'a> Lowering<'a> {
             };
             match slot {
                 RecordSlot::Present(value) => {
-                    let depth = frame.depth + 1;
+                    let value = frame.node.at(*value);
                     frames.push(LowerFrame::Record(frame));
-                    return Ok(LowerStep::Descend(value, depth));
+                    return Ok(LowerStep::Descend(value));
                 }
                 RecordSlot::Null | RecordSlot::Absent => {
                     let option = ValueType::option(field.value_type().clone());
-                    let option = self.type_node(&option, &frame.node.location)?;
-                    let member = SemanticTerm::binding(
+                    let option = self.type_node(&option, frame.node.location())?;
+                    let member = MemberTerm::bound(
                         field.name(),
-                        SemanticTerm::literal(option, LiteralValue::None),
+                        LeafTerm::literal(option, LiteralValue::None),
                     );
                     frame.members.push(member);
                 }
@@ -3531,7 +3583,7 @@ impl<'a> Lowering<'a> {
             node,
             "record_value",
             semantic_type,
-            SemanticTerm::Aggregate { members },
+            BodyTerm::aggregate(members),
         )
         .map(LowerStep::Lowered)
     }
@@ -3541,7 +3593,7 @@ impl<'a> Lowering<'a> {
     fn accept_term<'n>(
         &mut self,
         frame: LowerFrame<'n>,
-        term: SemanticTerm,
+        term: LeafTerm,
         binders: &mut Binders<'_>,
         frames: &mut Vec<LowerFrame<'n>>,
     ) -> Result<LowerStep<'n>, CheckRefusal> {
@@ -3554,36 +3606,36 @@ impl<'a> Lowering<'a> {
             LowerFrame::Let(mut frame) => match frame.bound.take() {
                 None => {
                     let value_type = self.value_type_node(frame.value, binders)?;
-                    let name = self.bind(binders, frame.slot, value_type, &frame.node.location)?;
+                    let name = self.bind(binders, frame.slot, value_type, frame.node.location())?;
                     frame.bound = Some((term, name));
-                    let (body, depth) = (frame.body, frame.depth + 1);
+                    let body = frame.body;
                     frames.push(LowerFrame::Let(frame));
-                    Ok(LowerStep::Descend(body, depth))
+                    Ok(LowerStep::Descend(body))
                 }
                 Some((value, name)) => {
-                    binders.scope.pop();
+                    binders.pop();
                     self.application(
                         frame.node,
                         Operator::Let,
                         plain("quire.op.control.let"),
-                        vec![SemanticTerm::binding(name, value), term],
+                        vec![MemberTerm::bound(name, value), MemberTerm::Leaf(term)],
                     )
                     .map(LowerStep::Lowered)
                 }
             },
             LowerFrame::Binder(mut frame) => match frame.bound.take() {
                 None => {
-                    let location = &frame.node.location;
-                    let element = element_type(&frame.source.value_type, location)?;
+                    let location = frame.node.location();
+                    let element = element_type(frame.source.value_type(), location)?;
                     let element = self.type_node(&element, location)?;
                     let name = self.bind(binders, frame.slot, element, location)?;
                     frame.bound = Some((term, name));
-                    let (body, depth) = (frame.body, frame.depth + 1);
+                    let body = frame.body;
                     frames.push(LowerFrame::Binder(frame));
-                    Ok(LowerStep::Descend(body, depth))
+                    Ok(LowerStep::Descend(body))
                 }
                 Some((source, name)) => {
-                    binders.scope.pop();
+                    binders.pop();
                     let BinderFrame {
                         node,
                         operator,
@@ -3594,22 +3646,22 @@ impl<'a> Lowering<'a> {
                         node,
                         operator,
                         operation,
-                        vec![source, SemanticTerm::binding(name, term)],
+                        vec![MemberTerm::Leaf(source), MemberTerm::bound(name, term)],
                     )
                     .map(LowerStep::Lowered)
                 }
             },
             LowerFrame::Attribute { node, object, name } => {
                 let dereferenced = self.typed_application(
-                    &node.location,
+                    node.location(),
                     object,
                     Operator::Deref,
                     plain("quire.op.model.deref"),
-                    vec![term],
+                    vec![MemberTerm::Leaf(term)],
                 )?;
                 let name = Identifier::new(name).map_err(|_| {
                     refuse(
-                        &node.location,
+                        node.location(),
                         CheckCause::NodePreimage(NodeKeyRefusal::EmptyBindingName),
                     )
                 })?;
@@ -3623,13 +3675,13 @@ impl<'a> Lowering<'a> {
                         }),
                         ..plain("quire.op.record.project")
                     },
-                    vec![dereferenced],
+                    vec![MemberTerm::Leaf(dereferenced)],
                 )
                 .map(LowerStep::Lowered)
             }
             LowerFrame::Record(mut frame) => {
                 if let Some(field) = frame.fields.get(frame.members.len()) {
-                    let member = SemanticTerm::binding(field.name(), term);
+                    let member = MemberTerm::bound(field.name(), term);
                     frame.members.push(member);
                 }
                 self.record_members(frame, frames)
@@ -3642,7 +3694,7 @@ impl<'a> Lowering<'a> {
     fn accept_fold<'n>(
         &mut self,
         mut frame: Box<FoldFrame<'n>>,
-        term: SemanticTerm,
+        term: LeafTerm,
         binders: &mut Binders<'_>,
         frames: &mut Vec<LowerFrame<'n>>,
     ) -> Result<LowerStep<'n>, CheckRefusal> {
@@ -3650,9 +3702,8 @@ impl<'a> Lowering<'a> {
             FoldStage::Source => match frame.identity {
                 Some(identity) => {
                     frame.stage = FoldStage::Identity(term);
-                    let depth = frame.depth + 1;
                     frames.push(LowerFrame::Fold(frame));
-                    return Ok(LowerStep::Descend(identity, depth));
+                    return Ok(LowerStep::Descend(identity));
                 }
                 None => (term, None),
             },
@@ -3663,17 +3714,17 @@ impl<'a> Lowering<'a> {
                 accumulator,
                 binder,
             } => {
-                binders.scope.pop();
-                binders.scope.pop();
+                binders.pop();
+                binders.pop();
                 let node = frame.node;
-                let member = self.type_argument(&node.value_type, &node.location)?;
+                let member = self.type_argument(node.value_type(), node.location())?;
                 let mut arguments = vec![
-                    source,
-                    SemanticTerm::binding(accumulator, SemanticTerm::binding(binder, term)),
+                    MemberTerm::Leaf(source),
+                    MemberTerm::binding(accumulator, BindingValue::named_leaf(binder, term)),
                 ];
                 let identity_name = match identity {
                     Some(identity) => {
-                        arguments.push(identity);
+                        arguments.push(MemberTerm::Leaf(identity));
                         "quire.op.collection.fold"
                     }
                     None => "quire.op.collection.reduce",
@@ -3694,26 +3745,30 @@ impl<'a> Lowering<'a> {
         // The source and identity are lowered: bind the accumulator and the
         // element, then lower the step under them.
         let node = frame.node;
-        let element = element_type(&frame.source.value_type, &node.location)?;
-        let element = self.type_node(&element, &node.location)?;
-        let accumulator_type = self.type_node(&node.value_type, &node.location)?;
-        let accumulator =
-            self.bind(binders, frame.accumulator, accumulator_type, &node.location)?;
-        let binder = self.bind(binders, frame.binder, element, &node.location)?;
+        let element = element_type(frame.source.value_type(), node.location())?;
+        let element = self.type_node(&element, node.location())?;
+        let accumulator_type = self.type_node(node.value_type(), node.location())?;
+        let accumulator = self.bind(
+            binders,
+            frame.accumulator,
+            accumulator_type,
+            node.location(),
+        )?;
+        let binder = self.bind(binders, frame.binder, element, node.location())?;
         frame.stage = FoldStage::Step {
             source,
             identity,
             accumulator,
             binder,
         };
-        let (step, depth) = (frame.step, frame.depth + 1);
+        let step = frame.step;
         frames.push(LowerFrame::Fold(frame));
-        Ok(LowerStep::Descend(step, depth))
+        Ok(LowerStep::Descend(step))
     }
 
     /// A literal's node: `value`/`literal` for a Boolean, integer or
     /// rational, the enum member's nominal node for an enum member.
-    fn literal(&mut self, node: &Node, value: &Value) -> Result<SemanticTerm, CheckRefusal> {
+    fn literal(&mut self, node: CheckedNode<'_>, value: &Value) -> Result<LeafTerm, CheckRefusal> {
         let literal = match value {
             Value::Boolean(value) => LiteralValue::Boolean(*value),
             Value::Integer(value) => LiteralValue::Integer(value.clone()),
@@ -3722,8 +3777,8 @@ impl<'a> Lowering<'a> {
                 // FR-093: the enum member's QSpec `enum_value` node, whose
                 // key is its `VariantId` (ADR-013 O-14).
                 let key = NodeKey::from_digest(*member.variant().as_bytes());
-                self.record(key, OccurrenceRole::Expression, node.location.clone());
-                return Ok(SemanticTerm::reference(key));
+                self.record(key, OccurrenceRole::Expression, node.location().clone());
+                return Ok(LeafTerm::reference(key));
             }
             Value::Decimal(_)
             | Value::Float(_)
@@ -3733,14 +3788,14 @@ impl<'a> Lowering<'a> {
             | Value::Composite(_)
             | Value::Collection(_)
             | Value::Reference(_)
-            | Value::Population(_) => return Err(fault(&node.location, KeyFault::UnbuiltLiteral)),
+            | Value::Population(_) => return Err(fault(node.location(), KeyFault::UnbuiltLiteral)),
         };
-        let semantic_type = self.type_node(&node.value_type, &node.location)?;
+        let semantic_type = self.type_node(node.value_type(), node.location())?;
         self.value_node(
             node,
             "literal",
             semantic_type,
-            SemanticTerm::literal(semantic_type, literal),
+            BodyTerm::literal(semantic_type, literal),
         )
     }
 
@@ -3940,45 +3995,32 @@ pub(super) fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
 /// The location of the `declaration` occurrence of the type declared as
 /// `name`.
 pub(crate) fn type_declaration(name: &str) -> Location {
-    Location {
-        origin: Origin::TypeDeclaration {
-            name: name.to_owned(),
-        },
-        path: Vec::new(),
-    }
+    Location::root(Origin::TypeDeclaration {
+        name: name.to_owned(),
+    })
 }
 
 /// The nodes `node` names: its semantic type and every node its body
 /// references.
 fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
+    let body = &node.content.body;
     let mut named: Vec<NodeKey> = node.content.semantic_type.into_iter().collect();
-    let mut terms = vec![&node.content.body];
-    while let Some(term) = terms.pop() {
-        match term {
-            SemanticTerm::Literal { ty, .. } => named.push(ty.0),
-            SemanticTerm::Reference { target } => named.push(target.0),
-            SemanticTerm::Application {
-                result_type,
-                arguments,
-                ..
-            } => {
-                named.push(result_type.0);
-                terms.extend(arguments);
-            }
-            SemanticTerm::Aggregate { members } => terms.extend(members),
-            SemanticTerm::Binding { value, .. } => terms.push(value),
-            // A dependency's node is not a node of this graph.
-            SemanticTerm::DependencyReference { .. } => {}
-            SemanticTerm::Frame {
-                modifies,
-                creates,
-                deletes,
-            } => {
-                named.extend(modifies.iter().map(|field| field.declaration().0));
-                named.extend(creates.iter().chain(deletes).map(|node| node.0));
-            }
+    match body {
+        BodyTerm::Application(application) => named.push(application.result_type.0),
+        BodyTerm::Frame(frame) => {
+            named.extend(frame.modifies.iter().map(|field| field.declaration().0));
+            named.extend(
+                frame
+                    .creates
+                    .iter()
+                    .chain(&frame.deletes)
+                    .map(|node| node.0),
+            );
         }
+        BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
+    // A dependency's node is not a node of this graph.
+    named.extend(body.leaves().into_iter().filter_map(LeafTerm::key));
     named
 }
 
@@ -4043,7 +4085,7 @@ fn enclosing_declarations(
     // A declared type's `declaration` occurrence names its declared name
     // (FR-322), which the assembler located.
     let declared = roots(occurrences, |location| {
-        matches!(location.origin, Origin::TypeDeclaration { .. }) && location.path.is_empty()
+        matches!(location.origin, Origin::TypeDeclaration { .. }) && location.depth() == 0
     })
     .into_iter()
     .filter(|(key, _)| !anchors.contains_key(key))
@@ -4064,10 +4106,7 @@ fn roots(
         if !admits(location) {
             continue;
         }
-        let root = Location {
-            origin: location.origin.clone(),
-            path: Vec::new(),
-        };
+        let root = Location::root(location.origin.clone());
         match roots.entry(key) {
             btree_map::Entry::Vacant(entry) => {
                 entry.insert(root);
@@ -4113,10 +4152,7 @@ fn relax(
 /// The package root location a `generated` occurrence names when no
 /// declaration reaches its node.
 pub(crate) fn generated_location() -> Location {
-    Location {
-        origin: Origin::Expression,
-        path: Vec::new(),
-    }
+    Location::root(Origin::Expression)
 }
 
 #[cfg(test)]

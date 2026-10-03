@@ -280,7 +280,7 @@ node (T3) for a text value.
 | `Option<T>` | `composite_type` / `option` | itself | `aggregate{[reference(T)]}` |
 | `K<T>` for a collection kind `K` | `composite_type` / `sequence`, `set`, `bag`, `ordered_set` | itself | `aggregate{[reference(T)]}` |
 | `K<T>[min, max]` | `bounded_domain` / `collection_bounds` | the `K<T>` node | bindings `min`, `max` |
-| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f?: T` is `f` = `binding{name: "optional", value: reference(Option<T>)}`, so `f?: T` and `f: Option<T>` differ |
+| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f?: T` is `f` = `aggregate{binding{name: "optional", value: reference(Option<T>)}}`, a Group, so `f?: T` and `f: Option<T>` differ and no binding holds a binding |
 | a declared `tuple Q(T0, ...)` | `composite_type` / `tuple`, with `declaration` and `owner` | itself | `aggregate{[reference(T0), ...]}` in position order |
 
 Each binding is `{term: "binding", name, value}` and each body with bindings
@@ -404,7 +404,7 @@ builds; they are listed here because F2 and E2 depend on them.
 | T12 | Decimal[-100000, 100000; 2, 2; nearest-even] | `b5616d031335fd951ca74ed52996b665a5673769662dfcc6ee7194a0fb5dc9cc` |
 | D1 | record Point, owner (a, u) | `45ff50317a846ffbc0853f4a4837507f244a3d302d0fa8605a7edf36da532ae4` |
 | D2 | record Point, owner (a, w) | `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88` |
-| D3 | record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u) | `05067eac40eb72b83e944e9d7a97b285c47a569a0404c2d973862d46aafc91f6` |
+| D3 | record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u) | `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252` |
 | D4 | record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u) | `11e8d0d336ec22793fc88addb6b493975d8064dcd2de4c2184f15a1302925600` |
 | D5 | tuple Pair(Int[0, 9], Int[0, 9]), owner (a, u) | `e519e1b5b543cfa0cf021c9e489d6d5bac5d13b6545a124e8247200195aed560` |
 | P1 | parameter a: Boolean, level 0 | `838088fb2300dd016cf10707e297afbd2f6209eb7e20c24757d515fda8ee6cf1` |
@@ -426,8 +426,8 @@ builds; they are listed here because F2 and E2 depend on them.
 | E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
 | E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
 | G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
-| G2 | `record List { next?: List; }`, ordinal 0 | `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636` |
-| G3 | `Option<List>`, ordinal 1 | `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae` |
+| G2 | `record List { next?: List; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
+| G3 | `Option<List>`, ordinal 0 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
 | G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
 | G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
 | G6 | `f(x - 1)`, ordinal 2 | `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840` |
@@ -556,10 +556,10 @@ Key: `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88`
 **D3**: record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `05067eac40eb72b83e944e9d7a97b285c47a569a0404c2d973862d46aafc91f6`
+Key: `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252`
 
 **D4**: record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u)
 
@@ -705,10 +705,13 @@ declared member is under owner (`a`, `u`):
   and `function pong`, the same body calling `ping`, a mutually recursive
   pair whose bodies differ only in which function they call, a group of six.
 
-Each group's signatures, in group order, and its group digest are below.
-The anonymous pass orders G4 to G6, G2 and G3 and G7 to G9 completely. For
-G10 to G15 it leaves three pairs of equal anonymous signatures, and the full
-pass orders each pair by the names `ping` and `pong`.
+Each group's members in group order and its group digest are below, and the
+tests assert both against the lowered graph. The group order separates G4 to
+G6, G2 and G3 and G7 to G9 by their content alone. G10 to G15 holds three
+pairs of members that differ only in which function they call, ordered by the
+names `ping` and `pong`. Only G1's signatures are published, because a unit
+test asserts them; the signatures of the other groups are intermediate values
+that the group digest binds.
 
 **L5**: literal `0`
 
@@ -758,21 +761,21 @@ Key: `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e`
 
 Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
 
-**G2**: `record List { next?: List; }`, ordinal 0
+**G2**: `record List { next?: List; }`, ordinal 1
 
 ```json
-{"body":{"members":[{"name":"next","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":0,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636`
+Key: `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b`
 
-**G3**: `Option<List>`, ordinal 1
+**G3**: `Option<List>`, ordinal 0
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":1,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae`
+Key: `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b`
 
 **G4**: function `f`, ordinal 1
 
@@ -877,39 +880,39 @@ G1, group digest `4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b1
 |---|---|---|---|
 | 0 | G1 | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` |
 
-G2-G3, group digest `c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660`:
+G2-G3, group digest `c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G2 `List` | `597649119d3c999ef649f87ed744b3d744ca4e00804501844b2e03b5afae0ee1` | `9d185dc6e7992d708d2399672036b0c37d3904a42995bdad24d7eb8734216018` |
-| 1 | G3 `Option<List>` | `5e72aa9ed1dbb764923d3ab79e2bd94a4f47354dc8b81156904f2757a08d9e1e` | `3fd8713484ef742d2d10a182ad17f1d6c195d5c9341332c7d6b40d6f9e7fab5f` |
+| Ordinal | Member |
+|---|---|
+| 0 | G3 `Option<List>` |
+| 1 | G2 `List` |
 
 G4-G6, group digest `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G5 conditional | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` |
-| 1 | G4 `f` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `c9fd4dba85eed73a0de9e90dd1fa4e1a6cc1704649447b02b74c1711bb9d2cad` |
-| 2 | G6 call | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `2f6d9adc0049dfa1bc615e7aff49df9f59c6aad3d915f7a2890779339fb50ba4` |
+| Ordinal | Member |
+|---|---|
+| 0 | G5 conditional |
+| 1 | G4 `f` |
+| 2 | G6 call |
 
 G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G7 `Tree` | `1a9e910b451eedeb1dbaaa173d871637655c112bca6cbf8d9f75b099bb60c737` | `f5a34062f94b31dfb8aa4b9f751fec3b21f9b3cac747530cdbe17b07f4932f17` |
-| 1 | G8 `Sequence<Tree>` | `3775af7b9c7af621ec1d1298105962edd74e00cbc9c2d93b5418d01839bec5a4` | `7e043c029fe763c3e825ac4a798dc3fc8e0ecd2b9c0193072a47e744b8369b77` |
-| 2 | G9 `Sequence<Tree>[0, 3]` | `fa0d0a0301803db710840ce7bdee7d49e317c2839559694bb1ea65be5d3e2a2d` | `fa0d0a0301803db710840ce7bdee7d49e317c2839559694bb1ea65be5d3e2a2d` |
+| Ordinal | Member |
+|---|---|
+| 0 | G7 `Tree` |
+| 1 | G8 `Sequence<Tree>` |
+| 2 | G9 `Sequence<Tree>[0, 3]` |
 
 G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa`:
 
-| Ordinal | Member | Anonymous signature | Full signature |
-|---|---|---|---|
-| 0 | G12 conditional in `ping` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `a12abd67c2361ee759d6a3e66779721a619ddf8d54a1b6a7258924dc06cf9c65` |
-| 1 | G13 conditional in `pong` | `4d44301461c0af30b4de0d11ceb8d03db50c3248cb144bd50b7111111d22e24b` | `a4c91c06d164df255f535982d9ac8dc4ef99c51abe79180795bd1f1df815fe48` |
-| 2 | G10 `ping` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `2a3e7409858e5570380cf5ccef819d73da685f9b1aa39e30aed8a6e1433f9395` |
-| 3 | G11 `pong` | `4eab5ac7dd3f75eced5c6e5dbf48b230a5be7ce400eb28bc2ba2e28a8f551924` | `8158c700f25d06bb06974e7c7f9ffa1587ef05d2e835373aec4b65501c38ba99` |
-| 4 | G14 `ping(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `dbc24afb445fa39f541b71fb0ae972a84864891316f185aaa5006cf0c6c2e431` |
-| 5 | G15 `pong(x - 1)` | `8732b7655fc2c7103dcccfa754ec175365601bbe145d29db1a5acb8f700b1359` | `f989ebfae08ce217678d4973bafc13c5c0cc10252a204a8f5913b2e52fed4b27` |
+| Ordinal | Member |
+|---|---|
+| 0 | G12 conditional in `ping` |
+| 1 | G13 conditional in `pong` |
+| 2 | G10 `ping` |
+| 3 | G11 `pong` |
+| 4 | G14 `ping(x - 1)` |
+| 5 | G15 `pong(x - 1)` |
 
 ## Constraints
 

@@ -153,7 +153,10 @@ stage, kind, bound and actual counter (ADR-013 §7 slice S-5b, FR-096); that
 cause's code is always `stage_limit_exceeded` and its cause the limit kind's
 (`check/refusal.rs`, `CheckCause::code` and `CheckCause::cause`).
 The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
-`stage_limit_exceeded`/`node-count-exceeded` directly. Step 10's present
-tests (`check/lowering/tests/expression_depth.rs`,
-`check/lowering/model/tests/expression_depth.rs`) drive the depth limit
-ADR-030 deletes; step 10 as written above is planned.
+`stage_limit_exceeded`/`node-count-exceeded` directly. Step 10 is backed by
+`every_nested_form_checks_at_1000_levels_as_at_2_on_a_small_stack`
+(`check/lowering/tests/expression_depth.rs`,
+`check/lowering/model/tests/expression_depth.rs`), which compares the
+outcome at 1,000 levels with the outcome at 2, and by
+`the_longest_and_chain_s1_admits_checks_and_emits_at_the_defaults`
+(`qsl-package/src/emit/tests/deep_bodies.rs`) for the longest `and` chain.

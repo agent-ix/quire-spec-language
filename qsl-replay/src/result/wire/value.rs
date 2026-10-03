@@ -4,13 +4,25 @@
 //!
 //! Each form holds the kind's own payload exactly: integers as canonical
 //! decimal strings, a rational in lowest terms, a decimal as coefficient and
-//! scale, a float as its bit pattern, text as its admitted payload. The
-//! reader mints no declaration identity (ADR-013 O-04, O-05): a record or
-//! tuple declaration, a declared unit and an object type each resolve by
-//! lookup among the identities the checked package admitted, and a name the
-//! package does not hold refuses.
+//! scale, a float as its bit pattern in decimal, text as its admitted
+//! payload. Every number that can exceed 2^53 is a decimal string, since the
+//! one encoder, `quire-canonical`'s, refuses a larger JSON number. The reader
+//! mints no declaration identity (ADR-013 O-04, O-05): a record or tuple
+//! declaration, a declared unit and an object type each resolve by lookup
+//! among the identities the checked package admitted, and a name the package
+//! does not hold refuses.
+//!
+//! One encoder and one reader serve a value of any depth. A form that holds
+//! another value or type is written from an explicit heap stack through
+//! `quire-canonical`'s event [`Writer`], each form with a fixed shape through
+//! its [`FixedShape`] serde encoding. The document is read by
+//! `quire_canonical::read` into an arena and decoded on an explicit heap
+//! stack, its fixed-shape forms through their serde derives.
+
+use std::cell::Cell;
 
 use qsl_package::CheckedPackage;
+use quire_canonical::{FixedShape, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{
     admit_text, form_collection, from_admitted_slots, CardinalityBound, CollectionKind,
     CollectionType, Decimal, DecimalType, EffectiveId, EnumMember, EnumShape, FieldValue,
@@ -21,8 +33,9 @@ use quire_exact::{
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
-use super::{digest, hex, present, CauseCodecError};
+use super::{digest, hex, malformed, present, CauseCodecError};
 
 /// The limits a text payload is re-admitted and a collection re-formed
 /// under. Both are already bounded by the size of the document they were
@@ -159,8 +172,20 @@ fn integer(text: &str, member: &'static str) -> Result<Integer, CauseCodecError>
         .map_err(|_| CauseCodecError::Integer(member))
 }
 
+/// A canonical decimal `u64`.
+fn unsigned(text: &str, member: &'static str) -> Result<u64, CauseCodecError> {
+    let value = text
+        .parse::<u64>()
+        .map_err(|_| CauseCodecError::Integer(member))?;
+    if value.to_string() == text {
+        Ok(value)
+    } else {
+        Err(CauseCodecError::Integer(member))
+    }
+}
+
 /// A rational in lowest terms with a positive denominator.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RationalWire {
     numerator: String,
@@ -192,14 +217,14 @@ impl RationalWire {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, FixedShape)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum UnitDomainWire {
     Declared,
     Compound,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UnitWire {
     domain: UnitDomainWire,
@@ -218,7 +243,7 @@ impl UnitWire {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, FixedShape)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum WidthWire {
     Binary32,
@@ -241,7 +266,7 @@ impl WidthWire {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, FixedShape)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum KindWire {
     Sequence,
@@ -271,7 +296,7 @@ impl KindWire {
 }
 
 /// An inclusive integer interval.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct IntervalWire {
     lower: String,
@@ -295,68 +320,44 @@ impl IntervalWire {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+/// A collection's cardinality bound, each end a decimal string.
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct BoundWire {
-    minimum: u64,
-    maximum: u64,
+    minimum: String,
+    maximum: String,
 }
 
-/// A collection type: kind, element type and optional cardinality bound.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct CollectionTypeWire {
-    collection: KindWire,
-    element: Box<TypeWire>,
-    #[serde(
-        default,
-        deserialize_with = "present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    bound: Option<BoundWire>,
-}
-
-impl CollectionTypeWire {
-    fn of(collection_type: &CollectionType) -> Self {
+impl BoundWire {
+    fn of(bound: &CardinalityBound) -> Self {
         Self {
-            collection: KindWire::of(collection_type.kind()),
-            element: Box::new(TypeWire::of(collection_type.element())),
-            bound: collection_type.bound().map(|bound| BoundWire {
-                minimum: bound.minimum(),
-                maximum: bound.maximum(),
-            }),
+            minimum: bound.minimum().to_string(),
+            maximum: bound.maximum().to_string(),
         }
     }
 
-    fn read(self, keys: Keys<'_>) -> Result<CollectionType, CauseCodecError> {
-        let bound = self
-            .bound
-            .map(|bound| {
-                CardinalityBound::new(bound.minimum, bound.maximum)
-                    .map_err(|_| CauseCodecError::Value("bound"))
-            })
-            .transpose()?;
-        Ok(CollectionType::new(
-            self.collection.read(),
-            self.element.read(keys)?,
-            bound,
-        ))
+    fn read(self) -> Result<CardinalityBound, CauseCodecError> {
+        CardinalityBound::new(
+            unsigned(&self.minimum, "minimum")?,
+            unsigned(&self.maximum, "maximum")?,
+        )
+        .map_err(|_| CauseCodecError::Value("bound"))
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(deny_unknown_fields)]
 pub(super) struct TextTypeWire {
-    min: u64,
-    max: u64,
+    min: String,
+    max: String,
     profile: String,
 }
 
 impl TextTypeWire {
     fn of(text_type: &TextType) -> Self {
         Self {
-            min: text_type.min(),
-            max: text_type.max(),
+            min: text_type.min().to_string(),
+            max: text_type.max().to_string(),
             profile: text_type.profile().as_str().to_owned(),
         }
     }
@@ -364,7 +365,12 @@ impl TextTypeWire {
     fn read(self) -> Result<TextType, CauseCodecError> {
         let profile =
             TextProfile::from_code(&self.profile).ok_or(CauseCodecError::Value("profile"))?;
-        TextType::new(self.min, self.max, profile).map_err(|_| CauseCodecError::Value("text type"))
+        TextType::new(
+            unsigned(&self.min, "min")?,
+            unsigned(&self.max, "max")?,
+            profile,
+        )
+        .map_err(|_| CauseCodecError::Value("text type"))
     }
 }
 
@@ -372,10 +378,12 @@ fn rounding(text: &str) -> Result<RoundingMode, CauseCodecError> {
     RoundingMode::from_code(text).ok_or(CauseCodecError::Value("rounding"))
 }
 
-/// A value type, by its kind.
-#[derive(Serialize, Deserialize)]
+/// A value type that holds no other type, by its kind. The forms that hold
+/// one, `option` and `collection`, are written and read by
+/// [`ElementEncode`] and [`Decoder`].
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub(super) enum TypeWire {
+pub(super) enum TypeLeafWire {
     Boolean,
     Integer,
     Int {
@@ -388,8 +396,8 @@ pub(super) enum TypeWire {
     Decimal {
         lower: String,
         upper: String,
-        min_scale: u64,
-        max_scale: u64,
+        min_scale: String,
+        max_scale: String,
         rounding: String,
     },
     Float {
@@ -407,15 +415,8 @@ pub(super) enum TypeWire {
         ordered: bool,
         variants: Vec<String>,
     },
-    Option {
-        payload: Box<TypeWire>,
-    },
     Composite {
         declaration: String,
-    },
-    Collection {
-        #[serde(rename = "type")]
-        collection_type: CollectionTypeWire,
     },
     Reference {
         object_type: String,
@@ -426,13 +427,13 @@ pub(super) enum TypeWire {
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        maximum: Option<u64>,
+        maximum: Option<String>,
     },
 }
 
-impl TypeWire {
-    fn of(value_type: &ValueType) -> Self {
-        match value_type {
+impl TypeLeafWire {
+    fn of(value_type: &ValueType) -> Option<Self> {
+        Some(match value_type {
             ValueType::Boolean => Self::Boolean,
             ValueType::Integer => Self::Integer,
             ValueType::Int(interval) => Self::Int {
@@ -445,8 +446,8 @@ impl TypeWire {
             ValueType::Decimal(decimal) => Self::Decimal {
                 lower: decimal.lower().to_string(),
                 upper: decimal.upper().to_string(),
-                min_scale: u64::from(decimal.min_scale()),
-                max_scale: u64::from(decimal.max_scale()),
+                min_scale: decimal.min_scale().to_string(),
+                max_scale: decimal.max_scale().to_string(),
                 rounding: decimal.rounding().as_str().to_owned(),
             },
             ValueType::Float(float) => Self::Float {
@@ -466,20 +467,17 @@ impl TypeWire {
                     .map(|variant| hex(variant.as_bytes()))
                     .collect(),
             },
-            ValueType::Option(payload) => Self::Option {
-                payload: Box::new(Self::of(payload)),
-            },
             ValueType::Composite(declaration) => Self::Composite {
                 declaration: hex(declaration.as_bytes()),
-            },
-            ValueType::Collection(collection_type) => Self::Collection {
-                collection_type: CollectionTypeWire::of(collection_type),
             },
             ValueType::Reference(object_type) => Self::Reference {
                 object_type: hex(object_type.as_bytes()),
             },
-            ValueType::Population(maximum) => Self::Population { maximum: *maximum },
-        }
+            ValueType::Population(maximum) => Self::Population {
+                maximum: maximum.map(|maximum| maximum.to_string()),
+            },
+            ValueType::Option(_) | ValueType::Collection(_) => return None,
+        })
     }
 
     fn read(self, keys: Keys<'_>) -> Result<ValueType, CauseCodecError> {
@@ -504,8 +502,8 @@ impl TypeWire {
                 DecimalType::new(
                     integer(&lower, "lower")?,
                     integer(&upper, "upper")?,
-                    min_scale,
-                    max_scale,
+                    unsigned(&min_scale, "min_scale")?,
+                    unsigned(&max_scale, "max_scale")?,
                     rounding(&mode)?,
                 )
                 .map_err(|_| CauseCodecError::Value("decimal type"))?,
@@ -529,34 +527,27 @@ impl TypeWire {
                 }
                 ValueType::Enum(shape)
             }
-            Self::Option { payload } => ValueType::option(payload.read(keys)?),
             Self::Composite { declaration } => {
                 ValueType::Composite(keys.composite(&declaration, "declaration")?.key())
-            }
-            Self::Collection { collection_type } => {
-                ValueType::collection(collection_type.read(keys)?)
             }
             Self::Reference { object_type } => {
                 ValueType::Reference(keys.object_type(&object_type, "object_type")?)
             }
-            Self::Population { maximum } => ValueType::Population(maximum),
+            Self::Population { maximum } => ValueType::Population(
+                maximum
+                    .map(|maximum| unsigned(&maximum, "maximum"))
+                    .transpose()?,
+            ),
         })
     }
 }
 
-/// One record or tuple slot.
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "slot", rename_all = "kebab-case", deny_unknown_fields)]
-pub(super) enum SlotWire {
-    Present { value: ValueWire },
-    Absent,
-    Null,
-}
-
-/// A deciding element, by its value kind.
-#[derive(Serialize, Deserialize)]
+/// A value that holds no other value or type, by its kind. The forms that
+/// hold one, `option`, `composite` and `collection`, are written and read by
+/// [`ElementEncode`] and [`Decoder`].
+#[derive(Serialize, Deserialize, FixedShape)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub(super) enum ValueWire {
+pub(super) enum ScalarWire {
     Boolean {
         value: bool,
     },
@@ -572,7 +563,7 @@ pub(super) enum ValueWire {
     },
     Float {
         width: WidthWire,
-        bits: u64,
+        bits: String,
     },
     Quantity {
         magnitude: RationalWire,
@@ -587,24 +578,6 @@ pub(super) enum ValueWire {
         variant: String,
         rank: u32,
     },
-    Option {
-        payload_type: TypeWire,
-        #[serde(
-            default,
-            deserialize_with = "present",
-            skip_serializing_if = "Option::is_none"
-        )]
-        payload: Option<Box<ValueWire>>,
-    },
-    Composite {
-        declaration: String,
-        slots: Vec<SlotWire>,
-    },
-    Collection {
-        #[serde(rename = "type")]
-        collection_type: CollectionTypeWire,
-        elements: Vec<ValueWire>,
-    },
     Reference {
         universe: String,
         #[serde(rename = "type")]
@@ -613,9 +586,9 @@ pub(super) enum ValueWire {
     },
 }
 
-impl ValueWire {
-    pub(super) fn of(value: &Value) -> Result<Self, CauseCodecError> {
-        Ok(match value {
+impl ScalarWire {
+    fn of(value: &Value) -> Option<Self> {
+        Some(match value {
             Value::Boolean(value) => Self::Boolean { value: *value },
             Value::Integer(integer) => Self::Integer {
                 decimal: integer.to_string(),
@@ -629,7 +602,7 @@ impl ValueWire {
             },
             Value::Float(float) => Self::Float {
                 width: WidthWire::of(float.width()),
-                bits: float.bits(),
+                bits: float.bits().to_string(),
             },
             Value::Quantity(quantity) => Self::Quantity {
                 magnitude: RationalWire::of(quantity.magnitude()),
@@ -643,46 +616,19 @@ impl ValueWire {
                 variant: hex(member.variant().as_bytes()),
                 rank: member.rank(),
             },
-            Value::Option(option) => Self::Option {
-                payload_type: TypeWire::of(option.payload_type()),
-                payload: option.payload().map(Self::of).transpose()?.map(Box::new),
-            },
-            Value::Composite(composite) => Self::Composite {
-                declaration: hex(composite.declaration().as_bytes()),
-                slots: composite
-                    .slots()
-                    .iter()
-                    .map(|slot| {
-                        Ok(match slot {
-                            FieldValue::Present(value) => SlotWire::Present {
-                                value: Self::of(value)?,
-                            },
-                            FieldValue::Absent => SlotWire::Absent,
-                            FieldValue::Null => SlotWire::Null,
-                        })
-                    })
-                    .collect::<Result<_, CauseCodecError>>()?,
-            },
-            Value::Collection(collection) => Self::Collection {
-                collection_type: CollectionTypeWire::of(collection.collection_type()),
-                elements: collection
-                    .elements()
-                    .iter()
-                    .map(Self::of)
-                    .collect::<Result<_, _>>()?,
-            },
             Value::Reference(reference) => Self::Reference {
                 universe: hex(reference.universe().as_bytes()),
                 object_type: hex(reference.object_type().as_bytes()),
                 object_identity: reference.object().as_str().to_owned(),
             },
-            // A state clause cannot name a population (ADR-016 FE-4), so no
-            // claim's domain holds one.
-            Value::Population(_) => return Err(CauseCodecError::UnsupportedElement),
+            Value::Option(_)
+            | Value::Composite(_)
+            | Value::Collection(_)
+            | Value::Population(_) => return None,
         })
     }
 
-    pub(super) fn read(self, keys: Keys<'_>) -> Result<Value, CauseCodecError> {
+    fn read(self, keys: Keys<'_>) -> Result<Value, CauseCodecError> {
         Ok(match self {
             Self::Boolean { value } => Value::Boolean(value),
             Self::Integer { decimal } => Value::Integer(integer(&decimal, "decimal")?),
@@ -690,12 +636,15 @@ impl ValueWire {
             Self::Decimal { coefficient, scale } => {
                 Value::Decimal(Decimal::new(integer(&coefficient, "coefficient")?, scale))
             }
-            Self::Float { width, bits } => Value::Float(match width {
-                WidthWire::Binary32 => IeeeValue::binary32(
-                    u32::try_from(bits).map_err(|_| CauseCodecError::Value("bits"))?,
-                ),
-                WidthWire::Binary64 => IeeeValue::binary64(bits),
-            }),
+            Self::Float { width, bits } => {
+                let bits = unsigned(&bits, "bits")?;
+                Value::Float(match width {
+                    WidthWire::Binary32 => IeeeValue::binary32(
+                        u32::try_from(bits).map_err(|_| CauseCodecError::Value("bits"))?,
+                    ),
+                    WidthWire::Binary64 => IeeeValue::binary64(bits),
+                })
+            }
             Self::Quantity { magnitude, unit } => {
                 Value::Quantity(Quantity::new(magnitude.read()?, keys.unit(&unit)?))
             }
@@ -713,53 +662,6 @@ impl ValueWire {
                 VariantId::from_digest(digest(&variant, "variant")?),
                 rank,
             )),
-            Self::Option {
-                payload_type,
-                payload,
-            } => {
-                let payload_type = payload_type.read(keys)?;
-                match payload {
-                    None => OptionValue::none(payload_type),
-                    Some(payload) => OptionValue::present(payload_type, payload.read(keys)?)
-                        .map_err(|_| CauseCodecError::Value("payload"))?,
-                }
-            }
-            Self::Composite { declaration, slots } => {
-                let declaration = keys.composite(&declaration, "declaration")?;
-                let slots = slots
-                    .into_iter()
-                    .map(|slot| {
-                        Ok(match slot {
-                            SlotWire::Present { value } => FieldValue::Present(value.read(keys)?),
-                            SlotWire::Absent => FieldValue::Absent,
-                            SlotWire::Null => FieldValue::Null,
-                        })
-                    })
-                    .collect::<Result<Box<[_]>, CauseCodecError>>()?;
-                keys.shaped(declaration, slots)?
-            }
-            Self::Collection {
-                collection_type,
-                elements,
-            } => {
-                let collection_type = collection_type.read(keys)?;
-                let elements = elements
-                    .into_iter()
-                    .map(|element| element.read(keys))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let count = elements.len();
-                let mut meter = Meter::new(READER_LIMITS);
-                // Forming checks each element's type and the bound; a
-                // collapsed duplicate means the document listed one twice.
-                match form_collection(&collection_type, elements, &mut meter) {
-                    Ok(Outcome::Completed(Value::Collection(formed)))
-                        if formed.elements().len() == count =>
-                    {
-                        Value::Collection(formed)
-                    }
-                    _ => return Err(CauseCodecError::Value("elements")),
-                }
-            }
             Self::Reference {
                 universe,
                 object_type,
@@ -771,5 +673,453 @@ impl ValueWire {
                 object_identity,
             )?),
         })
+    }
+}
+
+/// A deciding element's FR-269 encoding, as the JSON the cause document
+/// holds in its place: written by [`encode_element`], and refused when a
+/// `quire-canonical` limit or number bound is reached.
+pub(super) fn encode_element(value: &Value) -> Result<Box<RawValue>, CauseCodecError> {
+    let encode = ElementEncode {
+        value,
+        unsupported: Cell::new(false),
+    };
+    match quire_canonical::to_vec(&encode, Limits::new(u64::MAX)) {
+        Ok(bytes) => {
+            let text =
+                String::from_utf8(bytes).map_err(|_| CauseCodecError::Value("canonical text"))?;
+            Ok(RawValue::from_string(text)?)
+        }
+        Err(_) if encode.unsupported.get() => Err(CauseCodecError::UnsupportedElement),
+        Err(error) => Err(CauseCodecError::Canonical(error)),
+    }
+}
+
+/// A deciding element as `quire-canonical` encodes it: forms with a fixed
+/// shape through their serde encoding, the forms that hold another value or
+/// type from an explicit heap stack of pending steps.
+struct ElementEncode<'v> {
+    value: &'v Value,
+    /// Set when the value holds a kind with no encoding.
+    unsupported: Cell<bool>,
+}
+
+/// One step of [`ElementEncode`].
+enum Emit<'v> {
+    /// Encode a value.
+    Value(&'v Value),
+    /// Encode a value type.
+    Type(&'v ValueType),
+    /// Encode a collection type.
+    Collection(&'v CollectionType),
+    /// Encode a cardinality bound.
+    Bound(CardinalityBound),
+    /// Encode a composite's slot.
+    Slot(&'v FieldValue),
+    /// A member name of the open object.
+    Name(&'static str),
+    /// Open an array.
+    BeginArray,
+    /// Close the open array.
+    EndArray,
+    /// Close the open object.
+    EndObject,
+}
+
+impl ElementEncode<'_> {
+    /// Open an object holding `kind`; its remaining members are `next`.
+    fn open_kind<'v, S: Sink + ?Sized>(
+        writer: &mut Writer<'_, S>,
+        kind: &str,
+        next: impl IntoIterator<Item = Emit<'v>>,
+        pending: &mut Vec<Emit<'v>>,
+    ) -> Result<(), quire_canonical::Error> {
+        writer.begin_object()?;
+        writer.name("kind")?;
+        writer.string(kind)?;
+        let steps: Vec<Emit<'v>> = next.into_iter().collect();
+        pending.extend(steps.into_iter().rev());
+        Ok(())
+    }
+}
+
+impl quire_canonical::Encode for ElementEncode<'_> {
+    fn encode_into<S: Sink + ?Sized>(
+        &self,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        let mut pending = vec![Emit::Value(self.value)];
+        while let Some(step) = pending.pop() {
+            match step {
+                Emit::Name(name) => writer.name(name)?,
+                Emit::BeginArray => writer.begin_array()?,
+                Emit::EndArray => writer.end_array()?,
+                Emit::EndObject => writer.end_object()?,
+                Emit::Bound(bound) => writer.serialize(&BoundWire::of(&bound))?,
+                Emit::Slot(FieldValue::Absent) => {
+                    writer.begin_object()?;
+                    writer.name("slot")?;
+                    writer.string("absent")?;
+                    writer.end_object()?;
+                }
+                Emit::Slot(FieldValue::Null) => {
+                    writer.begin_object()?;
+                    writer.name("slot")?;
+                    writer.string("null")?;
+                    writer.end_object()?;
+                }
+                Emit::Slot(FieldValue::Present(value)) => {
+                    writer.begin_object()?;
+                    writer.name("slot")?;
+                    writer.string("present")?;
+                    pending.extend([Emit::EndObject, Emit::Value(value), Emit::Name("value")]);
+                }
+                Emit::Value(value) => match value {
+                    Value::Option(option) => {
+                        let mut next = vec![
+                            Emit::Name("payload_type"),
+                            Emit::Type(option.payload_type()),
+                        ];
+                        if let Some(payload) = option.payload() {
+                            next.extend([Emit::Name("payload"), Emit::Value(payload)]);
+                        }
+                        next.push(Emit::EndObject);
+                        Self::open_kind(writer, "option", next, &mut pending)?;
+                    }
+                    Value::Composite(composite) => {
+                        writer.begin_object()?;
+                        writer.name("kind")?;
+                        writer.string("composite")?;
+                        writer.name("declaration")?;
+                        writer.string(&hex(composite.declaration().as_bytes()))?;
+                        writer.name("slots")?;
+                        writer.begin_array()?;
+                        let mut next: Vec<Emit<'_>> =
+                            composite.slots().iter().map(Emit::Slot).collect();
+                        next.extend([Emit::EndArray, Emit::EndObject]);
+                        pending.extend(next.into_iter().rev());
+                    }
+                    Value::Collection(collection) => {
+                        let mut next = vec![
+                            Emit::Name("type"),
+                            Emit::Collection(collection.collection_type()),
+                            Emit::Name("elements"),
+                            Emit::BeginArray,
+                        ];
+                        next.extend(collection.elements().iter().map(Emit::Value));
+                        next.extend([Emit::EndArray, Emit::EndObject]);
+                        Self::open_kind(writer, "collection", next, &mut pending)?;
+                    }
+                    // A state clause cannot name a population (ADR-016 FE-4),
+                    // so no claim's domain holds one.
+                    Value::Population(_) => {
+                        self.unsupported.set(true);
+                        return Err(quire_canonical::Error::Serialize(
+                            "a population has no deciding-element encoding".to_owned(),
+                        ));
+                    }
+                    scalar => match ScalarWire::of(scalar) {
+                        Some(wire) => writer.serialize(&wire)?,
+                        None => {
+                            return Err(quire_canonical::Error::Internal {
+                                invariant: "a value is a scalar or one of the forms matched above",
+                            })
+                        }
+                    },
+                },
+                Emit::Type(value_type) => match value_type {
+                    ValueType::Option(payload) => Self::open_kind(
+                        writer,
+                        "option",
+                        [Emit::Name("payload"), Emit::Type(payload), Emit::EndObject],
+                        &mut pending,
+                    )?,
+                    ValueType::Collection(collection_type) => Self::open_kind(
+                        writer,
+                        "collection",
+                        [
+                            Emit::Name("type"),
+                            Emit::Collection(collection_type),
+                            Emit::EndObject,
+                        ],
+                        &mut pending,
+                    )?,
+                    leaf => match TypeLeafWire::of(leaf) {
+                        Some(wire) => writer.serialize(&wire)?,
+                        None => {
+                            return Err(quire_canonical::Error::Internal {
+                                invariant: "a type is a leaf or one of the forms matched above",
+                            })
+                        }
+                    },
+                },
+                Emit::Collection(collection_type) => {
+                    writer.begin_object()?;
+                    writer.name("collection")?;
+                    writer.serialize(&KindWire::of(collection_type.kind()))?;
+                    writer.name("element")?;
+                    let mut next = vec![Emit::Type(collection_type.element())];
+                    if let Some(bound) = collection_type.bound() {
+                        next.extend([Emit::Name("bound"), Emit::Bound(bound)]);
+                    }
+                    next.push(Emit::EndObject);
+                    pending.extend(next.into_iter().rev());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Fields of one document object: its members, with every name checked
+/// against the form's own.
+struct Fields<'d> {
+    members: Vec<(&'d str, NodeRef<'d>)>,
+}
+
+impl<'d> Fields<'d> {
+    /// `node`'s members, refusing a node that is no object and any member
+    /// not in `allowed`.
+    fn of(node: NodeRef<'d>, allowed: &[&str]) -> Result<Self, CauseCodecError> {
+        let Node::Object(members) = node.node() else {
+            return Err(malformed("a deciding-element form is not an object"));
+        };
+        let members: Vec<_> = members.collect();
+        if members.iter().any(|(name, _)| !allowed.contains(name)) {
+            return Err(malformed("a deciding-element form holds an unknown member"));
+        }
+        Ok(Self { members })
+    }
+
+    fn get(&self, name: &str) -> Option<NodeRef<'d>> {
+        self.members
+            .iter()
+            .find(|(member, _)| *member == name)
+            .map(|(_, node)| *node)
+    }
+
+    fn require(&self, name: &str) -> Result<NodeRef<'d>, CauseCodecError> {
+        self.get(name)
+            .ok_or_else(|| malformed("a deciding-element form is missing a member"))
+    }
+}
+
+/// `node` as a string.
+fn string_of<'d>(node: NodeRef<'d>) -> Result<&'d str, CauseCodecError> {
+    match node.node() {
+        Node::String(text) => Ok(text),
+        _ => Err(malformed("a deciding-element member is not a string")),
+    }
+}
+
+/// `node`'s `kind` member, when it has a string one.
+fn kind_of<'d>(node: NodeRef<'d>) -> Option<&'d str> {
+    match node.get("kind")?.node() {
+        Node::String(kind) => Some(kind),
+        _ => None,
+    }
+}
+
+/// A fixed-shape form read from its document node: the node's canonical
+/// text through the form's serde derive, whose depth the form fixes.
+fn fixed<T: serde::de::DeserializeOwned>(node: NodeRef<'_>) -> Result<T, CauseCodecError> {
+    let bytes = quire_canonical::to_vec(&node, Limits::new(u64::MAX))?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+/// One pending step of [`decode_element`].
+enum Decode<'d, 'k> {
+    /// Decode a value.
+    Value(NodeRef<'d>),
+    /// Decode a value type.
+    Type(NodeRef<'d>),
+    /// Decode a collection type.
+    Collection(NodeRef<'d>),
+    /// Build an `option` value from its decoded payload type and payload.
+    OptionValue { present: bool },
+    /// Build a record or tuple value from its decoded present slots.
+    CompositeValue {
+        declaration: &'k CompositeDeclaration,
+        slots: Vec<SlotKind>,
+    },
+    /// Build a collection value from its decoded type and elements.
+    CollectionValue { count: usize },
+    /// Build an `option` type from its decoded payload type.
+    OptionType,
+    /// Build a collection type from its decoded element type.
+    CollectionType {
+        kind: CollectionKind,
+        bound: Option<CardinalityBound>,
+    },
+    /// Make the decoded collection type a value type.
+    WrapCollection,
+}
+
+/// Which slot of a composite a document names.
+#[derive(Clone, Copy)]
+enum SlotKind {
+    Present,
+    Absent,
+    Null,
+}
+
+/// FR-269: the deciding element `node` holds, decoded on an explicit heap
+/// stack so a value or type of any depth reads in constant host stack. A
+/// form missing a member, holding a member it does not define or holding one
+/// of the wrong kind refuses, as the serde-read forms do.
+pub(super) fn decode_element(node: NodeRef<'_>, keys: Keys<'_>) -> Result<Value, CauseCodecError> {
+    let mut pending = vec![Decode::Value(node)];
+    let mut values: Vec<Value> = Vec::new();
+    let mut types: Vec<ValueType> = Vec::new();
+    let mut collections: Vec<CollectionType> = Vec::new();
+    let underflow = || malformed("a deciding-element form lacks a part it needs");
+    while let Some(step) = pending.pop() {
+        match step {
+            Decode::Value(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload_type", "payload"])?;
+                    let payload = fields.get("payload");
+                    pending.push(Decode::OptionValue {
+                        present: payload.is_some(),
+                    });
+                    if let Some(payload) = payload {
+                        pending.push(Decode::Value(payload));
+                    }
+                    pending.push(Decode::Type(fields.require("payload_type")?));
+                }
+                Some("composite") => {
+                    let fields = Fields::of(node, &["kind", "declaration", "slots"])?;
+                    let declaration =
+                        keys.composite(string_of(fields.require("declaration")?)?, "declaration")?;
+                    let Node::Array(items) = fields.require("slots")?.node() else {
+                        return Err(malformed("a composite's slots are not an array"));
+                    };
+                    let mut kinds = Vec::new();
+                    let mut present = Vec::new();
+                    for slot in items {
+                        let slot_fields = Fields::of(slot, &["slot", "value"])?;
+                        let value = slot_fields.get("value");
+                        match (string_of(slot_fields.require("slot")?)?, value) {
+                            ("present", Some(value)) => {
+                                kinds.push(SlotKind::Present);
+                                present.push(value);
+                            }
+                            ("absent", None) => kinds.push(SlotKind::Absent),
+                            ("null", None) => kinds.push(SlotKind::Null),
+                            _ => {
+                                return Err(malformed(
+                                    "a composite slot is not present, absent or null",
+                                ))
+                            }
+                        }
+                    }
+                    pending.push(Decode::CompositeValue {
+                        declaration,
+                        slots: kinds,
+                    });
+                    pending.extend(present.into_iter().rev().map(Decode::Value));
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type", "elements"])?;
+                    let Node::Array(elements) = fields.require("elements")?.node() else {
+                        return Err(malformed("a collection's elements are not an array"));
+                    };
+                    let elements: Vec<_> = elements.collect();
+                    pending.push(Decode::CollectionValue {
+                        count: elements.len(),
+                    });
+                    pending.extend(elements.into_iter().rev().map(Decode::Value));
+                    pending.push(Decode::Collection(fields.require("type")?));
+                }
+                _ => values.push(fixed::<ScalarWire>(node)?.read(keys)?),
+            },
+            Decode::Type(node) => match kind_of(node) {
+                Some("option") => {
+                    let fields = Fields::of(node, &["kind", "payload"])?;
+                    pending.push(Decode::OptionType);
+                    pending.push(Decode::Type(fields.require("payload")?));
+                }
+                Some("collection") => {
+                    let fields = Fields::of(node, &["kind", "type"])?;
+                    pending.push(Decode::WrapCollection);
+                    pending.push(Decode::Collection(fields.require("type")?));
+                }
+                _ => types.push(fixed::<TypeLeafWire>(node)?.read(keys)?),
+            },
+            Decode::Collection(node) => {
+                let fields = Fields::of(node, &["collection", "element", "bound"])?;
+                let kind = fixed::<KindWire>(fields.require("collection")?)?.read();
+                let bound = fields
+                    .get("bound")
+                    .map(|bound| fixed::<BoundWire>(bound)?.read())
+                    .transpose()?;
+                pending.push(Decode::CollectionType { kind, bound });
+                pending.push(Decode::Type(fields.require("element")?));
+            }
+            Decode::OptionType => {
+                let payload = types.pop().ok_or_else(underflow)?;
+                types.push(ValueType::option(payload));
+            }
+            Decode::CollectionType { kind, bound } => {
+                let element = types.pop().ok_or_else(underflow)?;
+                collections.push(CollectionType::new(kind, element, bound));
+            }
+            Decode::WrapCollection => {
+                let collection = collections.pop().ok_or_else(underflow)?;
+                types.push(ValueType::collection(collection));
+            }
+            Decode::OptionValue { present } => {
+                let payload = if present {
+                    Some(values.pop().ok_or_else(underflow)?)
+                } else {
+                    None
+                };
+                let payload_type = types.pop().ok_or_else(underflow)?;
+                values.push(match payload {
+                    None => OptionValue::none(payload_type),
+                    Some(payload) => OptionValue::present(payload_type, payload)
+                        .map_err(|_| CauseCodecError::Value("payload"))?,
+                });
+            }
+            Decode::CompositeValue { declaration, slots } => {
+                let present = slots
+                    .iter()
+                    .filter(|slot| matches!(slot, SlotKind::Present))
+                    .count();
+                let mut decoded = values
+                    .split_off(values.len().checked_sub(present).ok_or_else(underflow)?)
+                    .into_iter();
+                let slots = slots
+                    .into_iter()
+                    .map(|slot| match slot {
+                        SlotKind::Present => decoded.next().map(FieldValue::Present),
+                        SlotKind::Absent => Some(FieldValue::Absent),
+                        SlotKind::Null => Some(FieldValue::Null),
+                    })
+                    .collect::<Option<Box<[_]>>>()
+                    .ok_or_else(underflow)?;
+                values.push(keys.shaped(declaration, slots)?);
+            }
+            Decode::CollectionValue { count } => {
+                let collection_type = collections.pop().ok_or_else(underflow)?;
+                let elements =
+                    values.split_off(values.len().checked_sub(count).ok_or_else(underflow)?);
+                let mut meter = Meter::new(READER_LIMITS);
+                // Forming checks each element's type and the bound; a
+                // collapsed duplicate means the document listed one twice.
+                match form_collection(&collection_type, elements, &mut meter) {
+                    Ok(Outcome::Completed(Value::Collection(formed)))
+                        if formed.elements().len() == count =>
+                    {
+                        values.push(Value::Collection(formed));
+                    }
+                    _ => return Err(CauseCodecError::Value("elements")),
+                }
+            }
+        }
+    }
+    match (values.pop(), values.is_empty()) {
+        (Some(value), true) => Ok(value),
+        _ => Err(underflow()),
     }
 }

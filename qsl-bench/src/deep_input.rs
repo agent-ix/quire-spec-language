@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 
 use qsl_replay::spine::{compile, CompileRefusal, Compiled, DependencyInput, SpineLimits};
 use qsl_replay::SourceIdentity;
-use quire_semantic_value::checking::{CheckingLimits, MAX_CHECKING_DEPTH};
+use quire_semantic_value::checking::CheckingLimits;
 
 /// The deepest input the generator builds.
 pub const MAX_DEPTH: usize = 100_000;
@@ -178,12 +178,8 @@ impl DeepInput {
     /// Stage limits raised to fit this input: every size and work limit
     /// covers the source, so what refuses it is the stage's own outcome.
     ///
-    /// The checker's depth cap keeps its default: it bounds S3's expression
-    /// walk until ADR-030 slice 1 deletes it with the S3 walks' conversion,
-    /// so it is the limit outcome a deep expression gets. It does not bound
-    /// a type: S3 resolves a type form of any depth on an explicit stack, so
-    /// an `Option` nest checks or refuses on its own merits. S1 and S2 take
-    /// no depth limit.
+    /// No stage takes a depth limit: S1, S2 and the checker each walk an
+    /// input of any depth on an explicit stack (FR-258).
     pub fn limits(&self) -> SpineLimits {
         let bytes = self.source.len();
         let mut limits = SpineLimits::default();
@@ -191,9 +187,9 @@ impl DeepInput {
         limits.source.tokens = limits.source.tokens.max(bytes);
         limits.source.nodes = limits.source.nodes.max(bytes.saturating_mul(16));
         let wide = u64::try_from(bytes).unwrap_or(u64::MAX).saturating_mul(64);
-        if let Ok(checking) = CheckingLimits::new(wide, MAX_CHECKING_DEPTH) {
-            limits.checking = checking.with_input_bytes(wide).with_work_budget(wide);
-        }
+        limits.checking = CheckingLimits::new(wide)
+            .with_input_bytes(wide)
+            .with_work_budget(wide);
         limits
     }
 

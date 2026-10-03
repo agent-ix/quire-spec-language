@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 
 use super::facts::{ArgumentShape, CallSite, EdgeKind};
-use super::ir::{Node, NodeKind, Slot};
+use super::ir::{CheckedNode, NodeKind, Slot};
 use super::refusal::{CheckCause, CheckRefusal, MeasureObligation};
 use quire_exact::ValueType;
 use quire_semantic_value::location::Location;
@@ -33,21 +33,21 @@ impl Element {
 pub(crate) struct Member<'a> {
     pub(crate) name: &'a str,
     pub(crate) parameters: &'a [(String, ValueType)],
-    pub(crate) measure: Option<&'a Node>,
+    pub(crate) measure: Option<CheckedNode<'a>>,
     pub(crate) calls: &'a [CallSite],
 }
 
-fn unwrap_coerce(node: &Node) -> &Node {
-    match &node.kind {
-        NodeKind::Coerce(operand, _) => operand,
+fn unwrap_coerce(node: CheckedNode<'_>) -> CheckedNode<'_> {
+    match node.kind() {
+        NodeKind::Coerce(operand, _) => node.at(*operand),
         _ => node,
     }
 }
 
 /// The measure elements, `None` at a position that is not an element.
-fn elements(member: &Member<'_>, measure: &Node) -> Vec<Option<Element>> {
-    let parts: Vec<&Node> = match &measure.kind {
-        NodeKind::Tuple { arguments, .. } => arguments.iter().collect(),
+fn elements(member: &Member<'_>, measure: CheckedNode<'_>) -> Vec<Option<Element>> {
+    let parts: Vec<CheckedNode<'_>> = match measure.kind() {
+        NodeKind::Tuple { arguments, .. } => arguments.iter().map(|id| measure.at(*id)).collect(),
         _ => vec![measure],
     };
     parts
@@ -60,15 +60,15 @@ fn elements(member: &Member<'_>, measure: &Node) -> Vec<Option<Element>> {
                     .get(slot)
                     .map(|(_, value_type)| value_type)
             };
-            match &part.kind {
+            match part.kind() {
                 NodeKind::Local(slot) => match parameter(*slot)? {
                     ValueType::Integer | ValueType::Int(_) => Some(Element::Integer(*slot)),
                     ValueType::Composite(_) => Some(Element::Structural(*slot)),
                     _ => None,
                 },
-                NodeKind::Size(operand) => match unwrap_coerce(operand).kind {
-                    NodeKind::Local(slot) => match parameter(slot)? {
-                        ValueType::Collection(_) => Some(Element::Cardinality(slot)),
+                NodeKind::Size(operand) => match unwrap_coerce(part.at(*operand)).kind() {
+                    NodeKind::Local(slot) => match parameter(*slot)? {
+                        ValueType::Collection(_) => Some(Element::Cardinality(*slot)),
                         _ => None,
                     },
                     _ => None,
@@ -578,6 +578,7 @@ mod tests {
     use quire_exact::{Integer, IntegerInterval, NodeKey};
 
     use super::*;
+    use crate::check::ir::{BodyBuilder, CheckedBody, Node};
     use quire_semantic_value::location::Origin;
 
     /// The earlier component partition, kept only as this module's
@@ -659,10 +660,7 @@ mod tests {
     fn call(callee: usize, kind: EdgeKind, position: usize) -> CallSite {
         CallSite {
             callee,
-            location: Location {
-                origin: Origin::Expression,
-                path: vec![position],
-            },
+            location: Location::at(Origin::Expression, &[position]),
             arguments: Vec::new(),
             kind,
         }
@@ -782,17 +780,14 @@ mod tests {
         Node {
             kind: NodeKind::Local(slot),
             value_type: ValueType::Integer,
-            location: Location {
-                origin: Origin::Expression,
-                path: Vec::new(),
-            },
+            location: Location::root(Origin::Expression),
         }
     }
 
     /// Per member, a measure drawn so that every obligation can fail: a
     /// missing measure, `n` or `m` alone, the pair `(n, m)` (another
     /// arity), or `b` (not an element). Odd seeds have no measures at all.
-    fn measures(seed: u64, count: usize) -> Vec<Option<Node>> {
+    fn measures(seed: u64, count: usize) -> Vec<Option<CheckedBody>> {
         let mut rng = SplitMix(seed ^ 0x5EED);
         (0..count)
             .map(|_| {
@@ -801,17 +796,21 @@ mod tests {
                 }
                 match rng.below(20) {
                     0 => None,
-                    1..=10 => Some(local(0)),
-                    11..=13 => Some(local(1)),
-                    14..=17 => Some(Node {
-                        kind: NodeKind::Tuple {
-                            declaration: NodeKey::from_digest([3; 32]),
-                            arguments: vec![local(0), local(1)],
-                        },
-                        value_type: ValueType::Integer,
-                        location: local(0).location,
-                    }),
-                    _ => Some(local(2)),
+                    1..=10 => Some(BodyBuilder::default().finish(local(0))),
+                    11..=13 => Some(BodyBuilder::default().finish(local(1))),
+                    14..=17 => {
+                        let mut body = BodyBuilder::default();
+                        let arguments = vec![body.push(local(0)), body.push(local(1))];
+                        Some(body.finish(Node {
+                            kind: NodeKind::Tuple {
+                                declaration: NodeKey::from_digest([3; 32]),
+                                arguments,
+                            },
+                            value_type: ValueType::Integer,
+                            location: local(0).location,
+                        }))
+                    }
+                    _ => Some(BodyBuilder::default().finish(local(2))),
                 }
             })
             .collect()
@@ -820,7 +819,7 @@ mod tests {
     fn measured_members<'a>(
         names: &'a [String],
         parameters: &'a [(String, ValueType)],
-        measures: &'a [Option<Node>],
+        measures: &'a [Option<CheckedBody>],
         calls: &'a [Vec<CallSite>],
     ) -> Vec<Member<'a>> {
         names
@@ -830,7 +829,7 @@ mod tests {
             .map(|((name, measure), calls)| Member {
                 name,
                 parameters,
-                measure: measure.as_ref(),
+                measure: measure.as_ref().map(CheckedBody::root),
                 calls,
             })
             .collect()
@@ -969,10 +968,7 @@ mod scaling {
                 .map(|index| {
                     vec![CallSite {
                         callee: index,
-                        location: Location {
-                            origin: Origin::Expression,
-                            path: Vec::new(),
-                        },
+                        location: Location::root(Origin::Expression),
                         arguments: Vec::new(),
                         kind: EdgeKind::Ordinary,
                     }]

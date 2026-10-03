@@ -18,10 +18,11 @@
 //! (`lowering::enclosing_declarations`), so it resolves here like any other
 //! body, clause, attempt or declared-name location.
 
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
-use qsl_forms::DeclarationSpans;
+use qsl_forms::{DeclarationSpans, ExpressionSpans, SpanId};
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::source_map::SourceMap;
 use qsl_foundation::Span;
@@ -29,11 +30,63 @@ use qsl_foundation::Span;
 use super::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::location::{Location, Origin};
 
+/// The span node each location of a checked unit reaches, remembered by the
+/// address of the location's last link and the span tree it was read in. A
+/// node's span is its parent's child, so a located arena resolves each node
+/// in constant time, never by walking its whole path again. The memo keeps a
+/// clone of every location it remembered a link of, so no remembered address
+/// is freed and reused by another chain while the memo lives, and a span tree
+/// of another origin never reads another tree's entry.
+#[derive(Default)]
+struct SpanMemo {
+    reached: RefCell<HashMap<(usize, usize), Option<SpanId>>>,
+    held: RefCell<Vec<Location>>,
+}
+
+impl SpanMemo {
+    /// The node of `spans` that `location`'s path reaches.
+    fn reach(&self, spans: &ExpressionSpans, location: &Location) -> Option<SpanId> {
+        let mut reached = self.reached.borrow_mut();
+        let tree = std::ptr::from_ref(spans) as usize;
+        // The unresolved links from the tip up to a link already reached.
+        let mut pending: Vec<(usize, usize)> = Vec::new();
+        let mut node = spans.root();
+        for (address, index) in location.ancestry() {
+            if let Some(known) = reached.get(&(address, tree)) {
+                node = (*known)?;
+                break;
+            }
+            pending.push((address, index));
+        }
+        if !pending.is_empty() {
+            self.held.borrow_mut().push(location.clone());
+        }
+        for (address, index) in pending.into_iter().rev() {
+            let next = spans.child(node, index);
+            reached.insert((address, tree), next);
+            node = next?;
+        }
+        Some(node)
+    }
+
+    /// The span `location`'s path reaches in `spans`.
+    fn at(&self, spans: &ExpressionSpans, location: &Location) -> Option<Span> {
+        spans.span(self.reach(spans, location)?)
+    }
+}
+
+/// The source a region is read from, and the document it is embedded in.
+#[derive(Clone, Copy)]
+struct Document<'a> {
+    source: &'a RawSourceRef,
+    embedding: Option<&'a SourceMap>,
+}
+
 /// The region `location` names, given each function's and each state
 /// clause's form spans by declaration index.
 fn resolve<'s>(
-    source: &RawSourceRef,
-    embedding: Option<&SourceMap>,
+    memo: &SpanMemo,
+    document: Document<'_>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     type_spans: &BTreeMap<String, Span>,
@@ -41,18 +94,18 @@ fn resolve<'s>(
     location: &Location,
 ) -> Option<SourceRegion> {
     let span = match &location.origin {
-        Origin::Body { index, .. } => spans(*index)?.body.at(&location.path)?,
-        Origin::StateClause { index, .. } => clause_spans(*index)?.body.at(&location.path)?,
-        Origin::Measure { index, .. } => spans(*index)?.measure.as_ref()?.at(&location.path)?,
-        Origin::TypeDeclaration { name } if location.path.is_empty() => *type_spans.get(name)?,
-        Origin::ProtocolAttempt { protocol, attempt } if location.path.is_empty() => {
+        Origin::Body { index, .. } => memo.at(&spans(*index)?.body, location)?,
+        Origin::StateClause { index, .. } => memo.at(&clause_spans(*index)?.body, location)?,
+        Origin::Measure { index, .. } => memo.at(spans(*index)?.measure.as_ref()?, location)?,
+        Origin::TypeDeclaration { name } if location.depth() == 0 => *type_spans.get(name)?,
+        Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
         Origin::TypeDeclaration { .. } | Origin::ProtocolAttempt { .. } | Origin::Expression => {
             return None
         }
     };
-    region(source, embedding, span)
+    region(document.source, document.embedding, span)
 }
 
 /// `span` as a region of `source`. For a body embedded in a document
@@ -84,8 +137,11 @@ impl PackageDeclarations {
     /// for a position in a tree not read from it.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
-            &self.source,
-            self.embedding.as_deref(),
+            &SpanMemo::default(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.declared_type_spans,
@@ -144,8 +200,11 @@ impl DeclarationRegions {
     /// [`PackageDeclarations::region`] over the declarations taken.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
-            &self.source,
-            self.embedding.as_deref(),
+            &SpanMemo::default(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             &self.type_spans,
@@ -217,14 +276,40 @@ impl CheckedGraph {
     /// only the checked package resolves an `Evaluation.location`.
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
-            &self.source,
-            self.embedding.as_deref(),
+            &SpanMemo::default(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.type_spans,
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
             location,
         )
+    }
+
+    /// [`Self::region`] as a function that remembers the span node each
+    /// location reaches, so resolving every location of a deep body costs
+    /// the body's size, not its size times its depth. The function keeps a
+    /// clone of each location it remembers, so any location may be asked
+    /// about, graph-owned or not.
+    pub fn memoized_regions(&self) -> impl Fn(&Location) -> Option<SourceRegion> + '_ {
+        let memo = SpanMemo::default();
+        move |location| {
+            resolve(
+                &memo,
+                Document {
+                    source: &self.source,
+                    embedding: self.embedding.as_deref(),
+                },
+                |index| self.form_spans.get(index)?.as_ref(),
+                |index| Some(&self.state_clauses.get(index)?.spans),
+                &self.type_spans,
+                |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
+                location,
+            )
+        }
     }
 
     /// FR-096: the region of function `index`'s whole declaration form, or
@@ -339,23 +424,23 @@ mod tests {
     }
 
     fn body(path: &[usize]) -> Location {
-        Location {
-            origin: Origin::Body {
+        Location::at(
+            Origin::Body {
                 function: "f".into(),
                 index: 0,
             },
-            path: path.to_vec(),
-        }
+            path,
+        )
     }
 
     fn measure(path: &[usize]) -> Location {
-        Location {
-            origin: Origin::Measure {
+        Location::at(
+            Origin::Measure {
                 function: "f".into(),
                 index: 0,
             },
-            path: path.to_vec(),
-        }
+            path,
+        )
     }
 
     /// The node `path` reaches from `root`, one `Expression::children`
@@ -451,30 +536,21 @@ mod tests {
             Expression::boolean(true),
             DeclaredClauseKind::Precondition,
         ));
-        let synthesized = Location {
-            origin: Origin::Body {
-                function: "synthesized".into(),
-                index: 1,
-            },
-            path: Vec::new(),
-        };
-        let standalone = Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        };
+        let synthesized = Location::root(Origin::Body {
+            function: "synthesized".into(),
+            index: 1,
+        });
+        let standalone = Location::root(Origin::Expression);
         let unresolved = [
             synthesized,
             standalone,
             body(&[3]),
             body(&[2, 1, 0]),
             measure(&[0]),
-            Location {
-                origin: Origin::Body {
-                    function: "f".into(),
-                    index: 9,
-                },
-                path: Vec::new(),
-            },
+            Location::root(Origin::Body {
+                function: "f".into(),
+                index: 9,
+            }),
         ];
         let regions = declarations.regions();
         for location in &unresolved {
@@ -721,19 +797,17 @@ mod tests {
         .is_some());
     }
 
-    /// FR-096 (SR-745 FND-003): each of nesting depth, node count,
-    /// input bytes and work budget is a `CheckRefusal` with code
-    /// `stage_limit_exceeded`, carrying its kind, bound and counter, located
-    /// at a specific source text. Depth is located at the node whose entry
-    /// failed the charge (`Typer`'s own per-node check); node count, input
-    /// bytes and work budget are the family's own per-declaration precheck
-    /// (`check_node_count`/`check_input_bytes`/`ValueFunctionFamily::check`'s
-    /// own work charge), fired before `Typer` starts, and located at the
-    /// whole declaration's span. `Typer`'s own package-wide node count and
-    /// lowering's own work charge, which locate at a node rather than the
-    /// declaration, are separate cases below
-    /// (`a_typer_stop_reaches_the_package_wide_node_count`,
-    /// `a_lowering_stop_is_located_by_its_location`).
+    /// FR-096 (SR-745 FND-003): each of node count, input bytes and work
+    /// budget is a `CheckRefusal` with code `stage_limit_exceeded`, carrying
+    /// its kind, bound and counter, located at a specific source text. Input
+    /// bytes and the declaration's own work charge are the family's
+    /// per-declaration stage-entry checks
+    /// (`check_input_bytes`/`ValueFunctionFamily::check`'s own work charge),
+    /// fired before `Typer` starts, and located at the whole declaration's
+    /// span. The node count is `Typer`'s package-wide charge and is located
+    /// at the node whose entry failed it. Lowering's own work charge locates
+    /// at a node too, in a separate case below
+    /// (`a_lowering_stop_is_located_by_its_location`).
     #[trace("TC-427", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
     fn a_checking_limit_stop_is_located_at_its_node() {
@@ -757,20 +831,12 @@ mod tests {
                 declaration_text,
             ),
             (
-                CheckingLimits::new(2, 64).unwrap(),
+                CheckingLimits::new(2),
                 CheckingLimitKind::Nodes,
                 "node-count-exceeded",
                 2,
-                7,
-                declaration_text,
-            ),
-            (
-                CheckingLimits::new(u64::MAX, 1).unwrap(),
-                CheckingLimitKind::Depth,
-                "nesting-depth-exceeded",
-                1,
-                2,
-                "a",
+                3,
+                "b",
             ),
         ] {
             let unit = unit();
@@ -857,15 +923,11 @@ mod tests {
     }
 
     /// FR-096 (SR-746 FND-001): `Typer`'s package-wide node count
-    /// (`check.rs`'s `enter`), not the family's own per-declaration preimage
-    /// `check_node_count` precheck (which the previous case above
-    /// exercises, and which review found this file
-    /// had no test past). `g1` and `g2` each preimage-measure 3 nodes,
-    /// individually under the bound, so each passes its own precheck; with
-    /// the bound one past `g1`'s count, `Typer`'s package-wide counter,
-    /// seeded from `g1`'s final total, crosses the bound two nodes into
-    /// `g2`'s own body walk, at `not a` (`g2`'s inner `not`), not at `g1`'s
-    /// or `g2`'s declaration span.
+    /// (`check.rs`'s `enter`). `g1` and `g2` each hold 3 nodes, individually
+    /// under the bound; with the bound one past `g1`'s count, `Typer`'s
+    /// package-wide counter, seeded from `g1`'s final total, crosses the
+    /// bound two nodes into `g2`'s own body walk, at `not a` (`g2`'s inner
+    /// `not`), not at `g1`'s or `g2`'s declaration span.
     #[trace("TC-427", "FR-096-AC-17")]
     #[test]
     fn a_typer_stop_reaches_the_package_wide_node_count() {
@@ -919,13 +981,8 @@ mod tests {
         }
 
         let g2_from = TWO_FUNCTIONS.find("function g2").unwrap();
-        let g1_count = measure_resolved(&empty_scope(), &not_not_a("g1", 0)).node_count;
-        let g2_count = measure_resolved(&empty_scope(), &not_not_a("g2", g2_from)).node_count;
-        assert_eq!(
-            (g1_count, g2_count),
-            (3, 3),
-            "sanity: both fixtures are 3 nodes each"
-        );
+        // `not not a` is three nodes in each function.
+        let g1_count = 3;
 
         let source = admitted_source(
             SourceIdentity::new("a", "u", "git", "1"),
@@ -936,12 +993,11 @@ mod tests {
             ..PackageDeclarations::new(source)
         };
         let regions = declarations.regions();
-        // One past g1's own count: g1 passes its precheck (3 <= 4) and
-        // fully types; g2 also passes its own precheck (3 <= 4) in
-        // isolation, but Typer's package-wide counter, seeded at g1's
+        // One past g1's own count: g1 fully types (3 <= 4); g2 is under 4 in
+        // isolation too, but Typer's package-wide counter, seeded at g1's
         // final 3, crosses 4 on g2's second node.
         let refusals = declarations
-            .check(CheckingLimits::new(g1_count + 1, 64).unwrap())
+            .check(CheckingLimits::new(g1_count + 1))
             .expect_err("g2's Typer walk crosses the package-wide node bound");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");
@@ -952,20 +1008,19 @@ mod tests {
         assert_eq!(limit.kind, CheckingLimitKind::Nodes);
         assert_eq!(limit.limit, g1_count + 1);
         assert_eq!(limit.actual, u128::from(g1_count + 2));
-        assert_eq!(limit.region, None, "Typer's own node stop names no region");
         assert_eq!(
             refusal.location,
-            Location {
-                origin: Origin::Body {
-                    function: "g2".into(),
-                    index: 1,
-                },
-                path: vec![0],
-            }
+            Location::root(Origin::Body {
+                function: "g2".into(),
+                index: 1,
+            }),
+            "the stage limit is g2's: its locus names the node"
         );
-        let region = regions
-            .refusal_region(refusal)
-            .expect("the position was read from the unit");
+        let region = limit
+            .region
+            .clone()
+            .expect("the stop names its node's region");
+        assert_eq!(regions.refusal_region(refusal), Some(region.clone()));
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(

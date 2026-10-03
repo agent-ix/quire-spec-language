@@ -313,7 +313,7 @@ fn p02_self_call_without_a_decrease_or_a_measure_is_refused() {
             index: 0
         }
     );
-    assert!(refused.location.path.is_empty());
+    assert!(refused.location.depth() == 0);
     assert_eq!(
         unproved_decrease(check(vec![looping(Some(name("n")))])),
         (names(&["loop", "loop"]), MeasureObligation::Decrease)
@@ -504,7 +504,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
     let missing = refusal(check(vec![calling("undeclaredHost")]));
     assert_eq!(missing.cause.code().as_str(), "missing_declaration");
     assert_eq!(missing.cause.cause(), Some("missing-name"));
-    assert_eq!(missing.location.path, vec![2]);
+    assert_eq!(missing.location.path(), vec![2]);
 
     let model = PackageDeclarations {
         model_operations: vec!["M::pay".to_owned()],
@@ -517,7 +517,7 @@ fn p05_unreachable_calls_still_resolve_and_model_operations_are_ineligible() {
         ineligible.cause,
         CheckCause::IllTyped(IllTypedCause::OperatorIneligible)
     );
-    assert_eq!(ineligible.location.path, vec![2]);
+    assert_eq!(ineligible.location.path(), vec![2]);
 }
 
 fn chain(types: &TypeEnvironment, heads: &[i64]) -> Value {
@@ -1032,7 +1032,7 @@ fn p10_stable_paths_ieee_conversion_references_duplicates_and_node_limits() {
         functions: vec![down()],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
-    .check(CheckingLimits::new(4, 128).unwrap());
+    .check(CheckingLimits::new(4));
     let exhausted = refusal(limited);
     assert_eq!(exhausted.cause.code().as_str(), "stage_limit_exceeded");
     assert_eq!(exhausted.cause.cause(), Some("node-count-exceeded"));
@@ -1080,7 +1080,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
         functions: vec![small("a")],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
-    .check(CheckingLimits::new(4, 128).unwrap())
+    .check(CheckingLimits::new(4))
     .expect("one small declaration admits under a budget of 4");
 
     // Two declarations under a budget wide enough for both still admit --
@@ -1089,7 +1089,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
         functions: vec![small("a"), small("b")],
         ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
     }
-    .check(CheckingLimits::new(100, 128).unwrap())
+    .check(CheckingLimits::new(100))
     .expect("two small declarations admit under a generous package-wide budget");
 
     // The same two declarations, under the reviewer's own measured budget
@@ -1101,7 +1101,7 @@ fn nodes_limit_is_enforced_across_the_whole_package_not_per_declaration() {
             functions: vec![small("a"), small("b")],
             ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
         }
-        .check(CheckingLimits::new(4, 128).unwrap()),
+        .check(CheckingLimits::new(4)),
     );
     assert_eq!(
         exhausted.cause,

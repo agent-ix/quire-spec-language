@@ -5,16 +5,25 @@
 //! Facts are only ever added by the accepted guard forms: `present(p)` for a
 //! stable path `p`, and an integer ordering or equality between a stable
 //! integer path (or `size(p)`) and an integer literal. A comparison of two
-//! non-literal operands yields no fact. The walk keeps its pending nodes on a
-//! heap stack; the guard-fact helpers it calls recurse over a
-//! typed tree whose depth the checking limits already bound.
+//! non-literal operands yields no fact. The walk and every guard-fact helper
+//! it calls run on the walker toolkit, and each path's facts are persistent
+//! (one trie path more than its parent's), so no depth of typed expression is
+//! a limit and no chain of nested guards copies facts per level (ADR-030
+//! D-1).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::marker::PhantomData;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
+mod persistent;
+
+use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
-    Arithmetic, Connective, DispatchTable, Node, NodeKind, Observation, OrderedKind, Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
+    OrderedKind, Slot, Visit,
 };
 use super::observation::Observations;
 use super::refusal::{
@@ -52,13 +61,14 @@ enum Subject {
     Size(StablePath),
 }
 
-/// The facts proved on one reachable path.
-#[derive(Clone, Debug, Default)]
+/// The facts proved on one reachable path. Each is a persistent map, so a
+/// path's facts are its parent's plus one entry at the cost of one trie
+/// path, and a chain of nested guards shares them all.
+#[derive(Clone, Default)]
 struct Facts {
-    intervals: BTreeMap<Subject, ProvedInterval>,
-    present: BTreeSet<StablePath>,
-    nonzero: BTreeSet<StablePath>,
-    aliases: BTreeMap<Slot, StablePath>,
+    intervals: PersistentMap<Subject, ProvedInterval>,
+    present: PersistentMap<StablePath, ()>,
+    nonzero: PersistentMap<StablePath, ()>,
 }
 
 /// How a call argument relates to the caller's parameters.
@@ -327,24 +337,21 @@ fn prefix_sums(summand: &Interval, size: &Interval) -> Interval {
 
 /// Join two outcomes of a branch point: keep common interval subjects as
 /// their hull, and the common presence and nonzero facts.
-fn join(left: Option<Facts>, right: Option<Facts>) -> Option<Facts> {
+fn join(left: Option<Rc<Facts>>, right: Option<Rc<Facts>>) -> Option<Rc<Facts>> {
     match (left, right) {
         (None, other) | (other, None) => other,
-        (Some(left), Some(right)) => Some(Facts {
+        (Some(left), Some(right)) if Rc::ptr_eq(&left, &right) => Some(left),
+        (Some(left), Some(right)) => Some(Rc::new(Facts {
             intervals: left
                 .intervals
-                .iter()
-                .filter_map(|(subject, interval)| {
-                    right.intervals.get(subject).map(|other| {
-                        let hull = Interval::of_proved(interval).hull(&Interval::of_proved(other));
-                        (subject.clone(), hull.proved())
-                    })
-                })
-                .collect(),
-            present: left.present.intersection(&right.present).cloned().collect(),
-            nonzero: left.nonzero.intersection(&right.nonzero).cloned().collect(),
-            aliases: left.aliases,
-        }),
+                .intersect_with(&right.intervals, &|left, right| {
+                    Interval::of_proved(left)
+                        .hull(&Interval::of_proved(right))
+                        .proved()
+                }),
+            present: left.present.intersect_with(&right.present, &|_, _| ()),
+            nonzero: left.nonzero.intersect_with(&right.nonzero, &|_, _| ()),
+        })),
     }
 }
 
@@ -394,6 +401,11 @@ pub(crate) struct Definedness<'a> {
     /// paths through model attribute reads and `pre(e)`, each attribute
     /// step keyed by its observation.
     observations: Option<&'a Observations>,
+    /// The stable path each `let` slot aliases, resolved when the `let` was
+    /// walked. A slot is bound by exactly one `let` and read only inside its
+    /// body, so one table serves every path of the walk and no `let` copies
+    /// the facts of the paths above it.
+    aliases: BTreeMap<Slot, StablePath>,
 }
 
 impl<'a> Definedness<'a> {
@@ -408,6 +420,7 @@ impl<'a> Definedness<'a> {
             dispatch_tables,
             dispatch_operations,
             observations: None,
+            aliases: BTreeMap::new(),
         }
     }
 
@@ -419,114 +432,126 @@ impl<'a> Definedness<'a> {
     }
 
     /// Check every obligation on a path that can execute.
-    pub(crate) fn check(&mut self, root: &Node) -> Result<(), CheckRefusal> {
+    pub(crate) fn check(&mut self, root: CheckedNode<'_>) -> Result<(), CheckRefusal> {
+        self.aliases.clear();
         self.walk(root, Facts::default())
     }
 
-    fn stable_path(&self, node: &Node, facts: &Facts) -> Option<StablePath> {
-        match &node.kind {
-            NodeKind::Local(slot) => Some(facts.aliases.get(slot).cloned().unwrap_or(StablePath {
-                root: *slot,
-                steps: Vec::new(),
-            })),
-            NodeKind::Field { operand, index, .. } => {
-                let mut path = self.stable_path(operand, facts)?;
-                path.steps.push(Step::Field(*index));
-                Some(path)
-            }
-            NodeKind::Value(operand) => {
-                let mut path = self.stable_path(operand, facts)?;
-                if !facts.present.contains(&path) {
-                    return None;
+    /// The stable path `node` reads under `facts`, if it reads one: the
+    /// projection chain is followed to its root on a loop, then its steps
+    /// are applied root first.
+    fn stable_path(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<StablePath> {
+        // The steps from `node` down to the root, outermost first.
+        let mut steps = Vec::new();
+        let mut current = node;
+        let root = loop {
+            match current.kind() {
+                NodeKind::Local(slot) => break *slot,
+                NodeKind::Field { operand, index, .. } => {
+                    steps.push(PathStep::Field(*index));
+                    current = current.at(*operand);
                 }
-                path.steps.push(Step::Value);
-                Some(path)
+                NodeKind::Value(operand) => {
+                    steps.push(PathStep::Value);
+                    current = current.at(*operand);
+                }
+                // FR-104: in a state clause a stable path also takes the
+                // steps `deref(value(p)).f` and `self.f` take, each keyed by
+                // the observation it reads at; `pre(e)` retags no step
+                // itself, since the reads under it already carry `pre`.
+                NodeKind::Attribute {
+                    reference, field, ..
+                } => {
+                    let observation = self.observations?.of_read(current.location())?;
+                    steps.push(PathStep::Attribute(Step::Attribute(
+                        field.clone(),
+                        observation,
+                    )));
+                    current = current.at(*reference);
+                }
+                NodeKind::Pre(operand) if self.observations.is_some() => {
+                    current = current.at(*operand);
+                }
+                _ => return None,
             }
-            // FR-104: in a state clause a stable path also takes the steps
-            // `deref(value(p)).f` and `self.f` take, each keyed by the
-            // observation it reads at; `pre(e)` retags no step itself, since
-            // the reads under it already carry `pre`.
-            NodeKind::Attribute {
-                reference, field, ..
-            } => {
-                let observation = self.observations?.of_read(&node.location)?;
-                let mut path = self.stable_path(reference, facts)?;
-                path.steps.push(Step::Attribute(field.clone(), observation));
-                Some(path)
+        };
+        let mut path = self.aliases.get(&root).cloned().unwrap_or(StablePath {
+            root,
+            steps: Vec::new(),
+        });
+        for step in steps.into_iter().rev() {
+            match step {
+                PathStep::Field(index) => path.steps.push(Step::Field(index)),
+                PathStep::Value => {
+                    if !facts.present.contains(&path) {
+                        return None;
+                    }
+                    path.steps.push(Step::Value);
+                }
+                PathStep::Attribute(step) => path.steps.push(step),
             }
-            NodeKind::Pre(operand) if self.observations.is_some() => {
-                self.stable_path(operand, facts)
-            }
-            _ => None,
         }
+        Some(path)
     }
 
-    fn subject(&self, node: &Node, facts: &Facts) -> Option<Subject> {
-        match &node.kind {
-            NodeKind::Coerce(operand, _) => self.subject(operand, facts),
-            NodeKind::Size(operand) => self.stable_path(operand, facts).map(Subject::Size),
-            _ if matches!(node.value_type, ValueType::Integer | ValueType::Int(_)) => {
+    fn subject(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<Subject> {
+        let mut node = node;
+        while let NodeKind::Coerce(operand, _) = node.kind() {
+            node = node.at(*operand);
+        }
+        match node.kind() {
+            NodeKind::Size(operand) => self
+                .stable_path(node.at(*operand), facts)
+                .map(Subject::Size),
+            _ if matches!(node.value_type(), ValueType::Integer | ValueType::Int(_)) => {
                 self.stable_path(node, facts).map(Subject::Value)
             }
             _ => None,
         }
     }
 
-    fn interval(&self, node: &Node, facts: &Facts) -> Interval {
-        let fact = |subject: Subject, fallback: Interval| {
-            facts
-                .intervals
-                .get(&subject)
-                .map_or(fallback, Interval::of_proved)
+    /// The interval `node` lies in under `facts`, evaluated bottom up on the
+    /// walker toolkit.
+    fn interval(&self, node: CheckedNode<'_>, facts: &Facts) -> Interval {
+        let mut walk = IntervalWalk {
+            definedness: self,
+            facts,
+            values: Vec::new(),
+            nodes: PhantomData,
         };
-        match &node.kind {
-            NodeKind::Literal(Value::Integer(value)) => Interval::point(value),
-            NodeKind::Arithmetic(operator, left, right) => {
-                let (left, right) = (self.interval(left, facts), self.interval(right, facts));
-                match operator {
-                    Arithmetic::Add => left.add(&right),
-                    Arithmetic::Subtract => left.add(&right.negate()),
-                    Arithmetic::Multiply => left.mul(&right),
-                }
-            }
-            NodeKind::Negate(operand) => self.interval(operand, facts).negate(),
-            NodeKind::Coerce(_, target) => Interval::of_domain(target),
-            NodeKind::Size(operand) => {
-                let bound = match &operand.value_type {
-                    ValueType::Collection(collection) => cardinality(collection),
-                    _ => Interval::unbounded(),
-                };
-                match self.stable_path(operand, facts) {
-                    Some(path) => fact(Subject::Size(path), bound),
-                    None => bound,
-                }
-            }
-            _ => match self.stable_path(node, facts) {
-                Some(path) => fact(Subject::Value(path), declared(&node.value_type)),
-                None => declared(&node.value_type),
-            },
-        }
+        let ControlFlow::Continue(()) = quire_walk::walk(&mut walk, node);
+        walk.values.pop().unwrap_or_else(Interval::unbounded)
     }
 
-    fn literal(node: &Node) -> Option<Integer> {
-        match &node.kind {
-            NodeKind::Literal(Value::Integer(value)) => Some(value.clone()),
-            NodeKind::Negate(operand) => Self::literal(operand).map(|value| value.neg()),
-            NodeKind::Coerce(operand, _) => Self::literal(operand),
-            _ => None,
+    /// The integer literal `node` is, through any `-` and coercions.
+    fn literal(node: CheckedNode<'_>) -> Option<Integer> {
+        let mut node = node;
+        let mut negated = false;
+        loop {
+            match node.kind() {
+                NodeKind::Literal(CheckedLiteral(Value::Integer(value))) => {
+                    return Some(if negated { value.neg() } else { value.clone() });
+                }
+                NodeKind::Negate(operand) => {
+                    negated = !negated;
+                    node = node.at(*operand);
+                }
+                NodeKind::Coerce(operand, _) => node = node.at(*operand),
+                _ => return None,
+            }
         }
     }
 
     /// Apply `subject R k` to `facts`, or `None` when it is unsatisfiable.
     fn relate(
         &self,
-        subject: &Node,
+        subject: CheckedNode<'_>,
         relation: Relation,
         literal: &Integer,
-        facts: &Facts,
-    ) -> Option<Facts> {
+        facts: &Rc<Facts>,
+    ) -> Option<Rc<Facts>> {
         let Some(key) = self.subject(subject, facts) else {
-            return Some(facts.clone());
+            return Some(Rc::clone(facts));
         };
         let current = self.interval(subject, facts);
         let one = Integer::one();
@@ -563,28 +588,28 @@ impl<'a> Definedness<'a> {
         if refined.is_empty() {
             return None;
         }
-        let mut facts = facts.clone();
+        let mut facts = Facts::clone(facts);
         if let (Relation::NotEqual, true, Subject::Value(path)) =
             (relation, literal.is_zero(), &key)
         {
-            facts.nonzero.insert(path.clone());
+            facts.nonzero.insert(path.clone(), ());
         }
         facts.intervals.insert(key, refined.proved());
-        Some(facts)
+        Some(Rc::new(facts))
     }
 
     fn comparison(
         &self,
-        left: &Node,
-        right: &Node,
+        left: CheckedNode<'_>,
+        right: CheckedNode<'_>,
         relation: Relation,
-        facts: &Facts,
-    ) -> (Option<Facts>, Option<Facts>) {
+        facts: &Rc<Facts>,
+    ) -> Outcomes {
         let (subject, relation, literal) = match (Self::literal(left), Self::literal(right)) {
             (None, Some(literal)) => (left, relation, literal),
             (Some(literal), None) => (right, relation.flipped(), literal),
             (Some(_), Some(_)) | (None, None) => {
-                return (Some(facts.clone()), Some(facts.clone()));
+                return (Some(Rc::clone(facts)), Some(Rc::clone(facts)));
             }
         };
         (
@@ -593,26 +618,39 @@ impl<'a> Definedness<'a> {
         )
     }
 
-    /// The facts on the true and false outcomes of a reachable condition.
-    fn outcomes(&self, condition: &Node, facts: &Facts) -> (Option<Facts>, Option<Facts>) {
-        match &condition.kind {
-            NodeKind::Literal(Value::Boolean(true)) => (Some(facts.clone()), None),
-            NodeKind::Literal(Value::Boolean(false)) => (None, Some(facts.clone())),
-            NodeKind::Not(operand) => {
-                let (when_true, when_false) = self.outcomes(operand, facts);
-                (when_false, when_true)
+    /// The facts on the true and false outcomes of a reachable condition,
+    /// on the walker toolkit: a connective's right operand is evaluated
+    /// under the facts its left operand's outcome establishes.
+    fn outcomes(&self, condition: CheckedNode<'_>, facts: &Rc<Facts>) -> Outcomes {
+        let mut walk = OutcomeWalk {
+            definedness: self,
+            results: Vec::new(),
+            nodes: PhantomData,
+        };
+        let ControlFlow::Continue(()) = quire_walk::walk(
+            &mut walk,
+            OutcomeNode::Evaluate(condition, Rc::clone(facts)),
+        );
+        walk.results.pop().unwrap_or_default()
+    }
+
+    /// The outcomes of a condition that is not a negation, `pre` or
+    /// connective: a literal, or a guard form that adds a fact.
+    fn guard(&self, condition: CheckedNode<'_>, facts: &Rc<Facts>) -> Outcomes {
+        match condition.kind() {
+            NodeKind::Literal(CheckedLiteral(Value::Boolean(true))) => {
+                (Some(Rc::clone(facts)), None)
             }
-            // FR-104: `pre(c)` holds exactly when `c` holds at `pre`; the
-            // facts `c` establishes are keyed by the observations its own
-            // reads carry.
-            NodeKind::Pre(operand) if self.observations.is_some() => self.outcomes(operand, facts),
-            NodeKind::Present(operand) => match self.stable_path(operand, facts) {
+            NodeKind::Literal(CheckedLiteral(Value::Boolean(false))) => {
+                (None, Some(Rc::clone(facts)))
+            }
+            NodeKind::Present(operand) => match self.stable_path(condition.at(*operand), facts) {
                 Some(path) => {
-                    let mut when_true = facts.clone();
-                    when_true.present.insert(path);
-                    (Some(when_true), Some(facts.clone()))
+                    let mut when_true = Facts::clone(facts);
+                    when_true.present.insert(path, ());
+                    (Some(Rc::new(when_true)), Some(Rc::clone(facts)))
                 }
-                None => (Some(facts.clone()), Some(facts.clone())),
+                None => (Some(Rc::clone(facts)), Some(Rc::clone(facts))),
             },
             NodeKind::Order(operator, OrderedKind::Integers, left, right) => {
                 let relation = match operator {
@@ -621,64 +659,45 @@ impl<'a> Definedness<'a> {
                     OrderingOperator::Greater => Relation::Greater,
                     OrderingOperator::GreaterOrEqual => Relation::GreaterOrEqual,
                 };
-                self.comparison(left, right, relation, facts)
+                self.comparison(condition.at(*left), condition.at(*right), relation, facts)
             }
             NodeKind::Equality(operator, _, left, right)
-                if matches!(left.value_type, ValueType::Integer | ValueType::Int(_))
-                    && matches!(right.value_type, ValueType::Integer | ValueType::Int(_)) =>
+                if is_integer(condition.at(*left)) && is_integer(condition.at(*right)) =>
             {
                 let relation = match operator {
                     EqualityOperator::Equal => Relation::Equal,
                     EqualityOperator::NotEqual => Relation::NotEqual,
                 };
-                self.comparison(left, right, relation, facts)
+                self.comparison(condition.at(*left), condition.at(*right), relation, facts)
             }
-            NodeKind::Connective(connective, left, right) => {
-                let (left_true, left_false) = self.outcomes(left, facts);
-                let right_under = |facts: Option<Facts>| match facts {
-                    Some(facts) => self.outcomes(right, &facts),
-                    None => (None, None),
-                };
-                match connective {
-                    Connective::And => {
-                        let (right_true, right_false) = right_under(left_true);
-                        (right_true, join(left_false, right_false))
-                    }
-                    Connective::Or => {
-                        let (right_true, right_false) = right_under(left_false);
-                        (join(left_true, right_true), right_false)
-                    }
-                    Connective::Implies => {
-                        let (right_true, right_false) = right_under(left_true);
-                        (join(left_false, right_true), right_false)
-                    }
-                }
-            }
-            _ => (Some(facts.clone()), Some(facts.clone())),
+            _ => (Some(Rc::clone(facts)), Some(Rc::clone(facts))),
         }
     }
 
-    fn refuse(node: &Node, obligation: Obligation) -> CheckRefusal {
+    fn refuse(node: CheckedNode<'_>, obligation: Obligation) -> CheckRefusal {
         CheckRefusal {
-            location: node.location.clone(),
+            location: node.location().clone(),
             cause: CheckCause::Unproved(obligation),
         }
     }
 
-    fn shape(&self, argument: &Node, facts: &Facts) -> ArgumentShape {
-        let argument = match &argument.kind {
-            NodeKind::Coerce(operand, _) => operand,
+    fn shape(&self, argument: CheckedNode<'_>, facts: &Facts) -> ArgumentShape {
+        let argument = match argument.kind() {
+            NodeKind::Coerce(operand, _) => argument.at(*operand),
             _ => argument,
         };
-        let parameter = |node: &Node| match node.kind {
-            NodeKind::Local(slot) if slot < self.parameters => Some(slot),
+        let parameter = |node: CheckedNode<'_>| match node.kind() {
+            NodeKind::Local(slot) if *slot < self.parameters => Some(*slot),
             _ => None,
         };
         if let Some(slot) = parameter(argument) {
             return ArgumentShape::Parameter(slot);
         }
-        if let NodeKind::Arithmetic(Arithmetic::Subtract, left, right) = &argument.kind {
-            if let (Some(slot), Some(decrement)) = (parameter(left), Self::literal(right)) {
+        if let NodeKind::Arithmetic(Arithmetic::Subtract, left, right) = argument.kind() {
+            if let (Some(slot), Some(decrement)) = (
+                parameter(argument.at(*left)),
+                Self::literal(argument.at(*right)),
+            ) {
                 if decrement >= Integer::one() {
                     return ArgumentShape::Decremented(slot);
                 }
@@ -692,97 +711,60 @@ impl<'a> Definedness<'a> {
         }
     }
 
-    /// Walk `root` under `facts`, depth first in evaluation order, keeping
-    /// the pending nodes on a heap stack rather than the host stack.
-    /// A node's obligation is discharged once its operands are
-    /// walked, and a node whose later operands run under facts its first
+    /// Walk `root` under `facts`, depth first in evaluation order, on the
+    /// walker toolkit. A node's obligation is discharged once its operands
+    /// are walked, and a node whose later operands run under facts its first
     /// operand establishes (`if`, a connective, `let`) walks them once that
     /// operand is walked: the order, and so the first refusal and the order
     /// of [`Self::calls`], is the recursive walk's.
-    fn walk(&mut self, root: &Node, facts: Facts) -> Result<(), CheckRefusal> {
-        let mut pending = vec![Pending::Walk(root, Rc::new(facts))];
-        while let Some(step) = pending.pop() {
-            match step {
-                Pending::Walk(node, facts) => Self::open(node, facts, &mut pending),
-                Pending::Branch(node, facts) => self.branch(node, &facts, &mut pending),
-                Pending::Discharge(node, facts) => self.discharge(node, &facts)?,
-            }
-        }
-        Ok(())
-    }
-
-    /// Push the steps that walk `node` under `facts`.
-    fn open<'n>(node: &'n Node, facts: Rc<Facts>, pending: &mut Vec<Pending<'n>>) {
-        match &node.kind {
-            NodeKind::If {
-                condition: first, ..
-            }
-            | NodeKind::Connective(_, first, _)
-            | NodeKind::Let { value: first, .. } => {
-                pending.push(Pending::Branch(node, Rc::clone(&facts)));
-                pending.push(Pending::Walk(first, facts));
-            }
-            NodeKind::Fold {
-                source,
-                step,
-                identity,
-                ..
-            } => {
-                // The source, then the identity or the nonempty obligation
-                // of a reduction, then the step.
-                pending.push(Pending::Walk(step, Rc::clone(&facts)));
-                match identity {
-                    Some(identity) => pending.push(Pending::Walk(identity, Rc::clone(&facts))),
-                    None => pending.push(Pending::Discharge(node, Rc::clone(&facts))),
-                }
-                pending.push(Pending::Walk(source, facts));
-            }
-            _ => {
-                pending.push(Pending::Discharge(node, Rc::clone(&facts)));
-                let children = node.children();
-                pending.extend(
-                    children
-                        .into_iter()
-                        .rev()
-                        .map(|child| Pending::Walk(child, Rc::clone(&facts))),
-                );
-            }
+    fn walk(&mut self, root: CheckedNode<'_>, facts: Facts) -> Result<(), CheckRefusal> {
+        let mut walk = DefinednessWalk {
+            definedness: self,
+            nodes: PhantomData,
+        };
+        match quire_walk::walk(&mut walk, DefinedNode::Walk(root, Rc::new(facts))) {
+            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Break(refusal) => Err(refusal),
         }
     }
 
-    /// `node`'s first operand is walked under `facts`: push the walks of the
-    /// operands that run under the facts its outcome establishes.
-    fn branch<'n>(&self, node: &'n Node, facts: &Facts, pending: &mut Vec<Pending<'n>>) {
-        match &node.kind {
+    /// `node`'s first operand is walked under `facts`: enter the operands
+    /// that run under the facts its outcome establishes.
+    fn branch<'n>(
+        &mut self,
+        node: CheckedNode<'n>,
+        facts: &Rc<Facts>,
+        children: &mut quire_walk::Children<'_, DefinedNode<'n>>,
+    ) {
+        match node.kind() {
             NodeKind::If {
                 condition,
                 then,
                 otherwise,
             } => {
-                let (when_true, when_false) = self.outcomes(condition, facts);
-                if let Some(when_false) = when_false {
-                    pending.push(Pending::Walk(otherwise, Rc::new(when_false)));
-                }
+                let (when_true, when_false) = self.outcomes(node.at(*condition), facts);
                 if let Some(when_true) = when_true {
-                    pending.push(Pending::Walk(then, Rc::new(when_true)));
+                    children.push(DefinedNode::Walk(node.at(*then), when_true));
+                }
+                if let Some(when_false) = when_false {
+                    children.push(DefinedNode::Walk(node.at(*otherwise), when_false));
                 }
             }
             NodeKind::Connective(connective, left, right) => {
-                let (when_true, when_false) = self.outcomes(left, facts);
+                let (when_true, when_false) = self.outcomes(node.at(*left), facts);
                 let under = match connective {
                     Connective::And | Connective::Implies => when_true,
                     Connective::Or => when_false,
                 };
                 if let Some(under) = under {
-                    pending.push(Pending::Walk(right, Rc::new(under)));
+                    children.push(DefinedNode::Walk(node.at(*right), under));
                 }
             }
             NodeKind::Let { slot, value, body } => {
-                let mut inner = facts.clone();
-                if let Some(path) = self.stable_path(value, facts) {
-                    inner.aliases.insert(*slot, path);
+                if let Some(path) = self.stable_path(node.at(*value), facts) {
+                    self.aliases.insert(*slot, path);
                 }
-                pending.push(Pending::Walk(body, Rc::new(inner)));
+                children.push(DefinedNode::Walk(node.at(*body), Rc::clone(facts)));
             }
             _ => {}
         }
@@ -790,10 +772,10 @@ impl<'a> Definedness<'a> {
 
     /// Discharge `node`'s own obligation, its operands walked under `facts`,
     /// and record the call sites it makes.
-    fn discharge(&mut self, node: &Node, facts: &Facts) -> Result<(), CheckRefusal> {
-        match &node.kind {
+    fn discharge(&mut self, node: CheckedNode<'_>, facts: &Facts) -> Result<(), CheckRefusal> {
+        match node.kind() {
             NodeKind::Coerce(operand, target) => {
-                let proved = self.interval(operand, facts);
+                let proved = self.interval(node.at(*operand), facts);
                 let required = Interval::of_domain(target);
                 if proved.within(&required) {
                     Ok(())
@@ -812,15 +794,15 @@ impl<'a> Definedness<'a> {
                 right,
                 domain,
             } => {
-                let divisor = self.interval(right, facts);
+                let divisor = self.interval(node.at(*right), facts);
                 let nonzero = divisor.excludes_zero()
                     || self
-                        .stable_path(right, facts)
+                        .stable_path(node.at(*right), facts)
                         .is_some_and(|path| facts.nonzero.contains(&path));
                 if !nonzero {
                     return Err(Self::refuse(node, Obligation::Nonzero));
                 }
-                let dividend = self.interval(left, facts);
+                let dividend = self.interval(node.at(*left), facts);
                 let zero = End::Finite(Integer::zero());
                 let numerator = if divisor.lower > zero {
                     Interval {
@@ -860,7 +842,7 @@ impl<'a> Definedness<'a> {
                 domain,
             } => {
                 let (ValueType::Rational(left), ValueType::Rational(right)) =
-                    (&left.value_type, &right.value_type)
+                    (node.at(*left).value_type(), node.at(*right).value_type())
                 else {
                     return Err(Self::refuse(node, Obligation::RationalRange));
                 };
@@ -873,7 +855,7 @@ impl<'a> Definedness<'a> {
                     Err(Self::refuse(node, Obligation::RationalRange))
                 }
             }
-            NodeKind::RationalNegate(operand, domain) => match &operand.value_type {
+            NodeKind::RationalNegate(operand, domain) => match node.at(*operand).value_type() {
                 ValueType::Rational(source) if domain.contains_domain(&source.negated()) => Ok(()),
                 _ => Err(Self::refuse(node, Obligation::RationalRange)),
             },
@@ -883,7 +865,7 @@ impl<'a> Definedness<'a> {
                 ..
             } => {
                 let zero = Integer::zero();
-                match &right.value_type {
+                match node.at(*right).value_type() {
                     ValueType::Decimal(divisor)
                         if divisor.lower() > &zero || divisor.upper() < &zero =>
                     {
@@ -903,14 +885,14 @@ impl<'a> Definedness<'a> {
                 body,
                 ..
             } => {
-                let ValueType::Int(domain) = &node.value_type else {
+                let ValueType::Int(domain) = node.value_type() else {
                     return Ok(());
                 };
-                let size = match &source.value_type {
+                let size = match node.at(*source).value_type() {
                     ValueType::Collection(collection) => cardinality(collection),
                     _ => Interval::unbounded(),
                 };
-                let proved = prefix_sums(&self.interval(body, facts), &size);
+                let proved = prefix_sums(&self.interval(node.at(*body), facts), &size);
                 let required = Interval::of_domain(domain);
                 if proved.within(&required) {
                     Ok(())
@@ -924,7 +906,7 @@ impl<'a> Definedness<'a> {
                     ))
                 }
             }
-            NodeKind::Value(operand) => match self.stable_path(operand, facts) {
+            NodeKind::Value(operand) => match self.stable_path(node.at(*operand), facts) {
                 Some(path) if facts.present.contains(&path) => Ok(()),
                 _ => Err(Self::refuse(node, Obligation::Presence)),
             },
@@ -934,11 +916,11 @@ impl<'a> Definedness<'a> {
                 identity: None,
                 ..
             } => {
-                let bound = match &source.value_type {
+                let bound = match node.at(*source).value_type() {
                     ValueType::Collection(collection) => cardinality(collection),
                     _ => Interval::unbounded(),
                 };
-                let size = match self.stable_path(source, facts) {
+                let size = match self.stable_path(node.at(*source), facts) {
                     Some(path) => facts
                         .intervals
                         .get(&Subject::Size(path))
@@ -961,11 +943,11 @@ impl<'a> Definedness<'a> {
             } => {
                 let arguments = arguments
                     .iter()
-                    .map(|argument| self.shape(argument, facts))
+                    .map(|argument| self.shape(node.at(*argument), facts))
                     .collect();
                 self.calls.push(CallSite {
                     callee: *function,
-                    location: node.location.clone(),
+                    location: node.location().clone(),
                     arguments,
                     kind: EdgeKind::Ordinary,
                 });
@@ -987,7 +969,7 @@ impl<'a> Definedness<'a> {
                 let operation_index = *operation;
                 let Some(declared_operation) = self.dispatch_operations.get(operation_index) else {
                     return Err(CheckRefusal {
-                        location: node.location.clone(),
+                        location: node.location().clone(),
                         cause: CheckCause::InvalidDispatchDeclaration(Box::new(
                             InvalidDispatchDeclaration::OperationOutOfRange {
                                 operation: operation_index,
@@ -1000,7 +982,7 @@ impl<'a> Definedness<'a> {
                     .get(table_index)
                     .map(DispatchTable::callees)
                     .ok_or_else(|| CheckRefusal {
-                        location: node.location.clone(),
+                        location: node.location().clone(),
                         cause: CheckCause::InvalidDispatchDeclaration(Box::new(
                             InvalidDispatchDeclaration::TableOutOfRange {
                                 member: declared_operation.member.clone(),
@@ -1011,7 +993,7 @@ impl<'a> Definedness<'a> {
                 for callee in callees {
                     self.calls.push(CallSite {
                         callee,
-                        location: node.location.clone(),
+                        location: node.location().clone(),
                         arguments: Vec::new(),
                         kind: EdgeKind::Dispatch,
                     });
@@ -1023,15 +1005,305 @@ impl<'a> Definedness<'a> {
     }
 }
 
-/// One pending step of [`Definedness::walk`].
-enum Pending<'n> {
+/// [`Definedness::walk`]'s walk.
+struct DefinednessWalk<'d, 'a, 'n> {
+    definedness: &'d mut Definedness<'a>,
+    nodes: PhantomData<CheckedNode<'n>>,
+}
+
+/// A node of the definedness walk.
+enum DefinedNode<'n> {
     /// Walk a node under the facts of its path.
-    Walk(&'n Node, Rc<Facts>),
-    /// The node's first operand is walked: walk the operands that run under
+    Walk(CheckedNode<'n>, Rc<Facts>),
+    /// The node's first operand is walked: enter the operands that run under
     /// the facts its outcome establishes.
-    Branch(&'n Node, Rc<Facts>),
+    Branch(CheckedNode<'n>, Rc<Facts>),
+    /// The node's obligation, between two of its operands.
+    Discharge(CheckedNode<'n>, Rc<Facts>),
+}
+
+/// What the definedness walk keeps for an entered node.
+enum DefinedFrame<'n> {
+    /// Nothing is left to do when the node is exited.
+    Done,
     /// The node's operands are walked: discharge its own obligation.
-    Discharge(&'n Node, Rc<Facts>),
+    Discharge(CheckedNode<'n>, Rc<Facts>),
+}
+
+impl<'n> quire_walk::Walk for DefinednessWalk<'_, '_, 'n> {
+    type Node = DefinedNode<'n>;
+    type Frame = DefinedFrame<'n>;
+    type Stop = CheckRefusal;
+
+    fn enter(
+        &mut self,
+        node: DefinedNode<'n>,
+        children: &mut quire_walk::Children<'_, DefinedNode<'n>>,
+    ) -> ControlFlow<CheckRefusal, DefinedFrame<'n>> {
+        match node {
+            DefinedNode::Branch(node, facts) => {
+                self.definedness.branch(node, &facts, children);
+                ControlFlow::Continue(DefinedFrame::Done)
+            }
+            DefinedNode::Discharge(node, facts) => match self.definedness.discharge(node, &facts) {
+                Ok(()) => ControlFlow::Continue(DefinedFrame::Done),
+                Err(refusal) => ControlFlow::Break(refusal),
+            },
+            DefinedNode::Walk(node, facts) => match node.kind() {
+                NodeKind::If {
+                    condition: first, ..
+                }
+                | NodeKind::Connective(_, first, _)
+                | NodeKind::Let { value: first, .. } => {
+                    children.push(DefinedNode::Walk(node.at(*first), Rc::clone(&facts)));
+                    children.push(DefinedNode::Branch(node, facts));
+                    ControlFlow::Continue(DefinedFrame::Done)
+                }
+                NodeKind::Fold {
+                    source,
+                    step,
+                    identity,
+                    ..
+                } => {
+                    // The source, then the identity or the nonempty
+                    // obligation of a reduction, then the step.
+                    children.push(DefinedNode::Walk(node.at(*source), Rc::clone(&facts)));
+                    match identity {
+                        Some(identity) => {
+                            children.push(DefinedNode::Walk(node.at(*identity), Rc::clone(&facts)))
+                        }
+                        None => children.push(DefinedNode::Discharge(node, Rc::clone(&facts))),
+                    }
+                    children.push(DefinedNode::Walk(node.at(*step), facts));
+                    ControlFlow::Continue(DefinedFrame::Done)
+                }
+                _ => {
+                    for child in node.children() {
+                        children.push(DefinedNode::Walk(child, Rc::clone(&facts)));
+                    }
+                    ControlFlow::Continue(DefinedFrame::Discharge(node, facts))
+                }
+            },
+        }
+    }
+
+    fn exit(&mut self, frame: DefinedFrame<'n>) -> ControlFlow<CheckRefusal> {
+        match frame {
+            DefinedFrame::Done => ControlFlow::Continue(()),
+            DefinedFrame::Discharge(node, facts) => {
+                match self.definedness.discharge(node, &facts) {
+                    Ok(()) => ControlFlow::Continue(()),
+                    Err(refusal) => ControlFlow::Break(refusal),
+                }
+            }
+        }
+    }
+}
+
+/// The facts on a condition's true and false outcomes, each `None` when
+/// that outcome cannot occur. The facts are shared, so a connective holds its
+/// left outcomes without copying them.
+type Outcomes = (Option<Rc<Facts>>, Option<Rc<Facts>>);
+
+/// [`Definedness::interval`]'s walk: each node's exit leaves its interval on
+/// `values`, built from its operands' intervals, which their exits left
+/// there.
+struct IntervalWalk<'d, 'a, 'f, 'n> {
+    definedness: &'d Definedness<'a>,
+    facts: &'f Facts,
+    values: Vec<Interval>,
+    nodes: PhantomData<CheckedNode<'n>>,
+}
+
+/// What an interval walk keeps for an entered node.
+enum IntervalFrame {
+    /// The node's interval is already on `values`.
+    Done,
+    Arithmetic(Arithmetic),
+    Negate,
+}
+
+impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
+    type Node = CheckedNode<'n>;
+    type Frame = IntervalFrame;
+    type Stop = Infallible;
+
+    fn enter(
+        &mut self,
+        node: CheckedNode<'n>,
+        children: &mut quire_walk::Children<'_, CheckedNode<'n>>,
+    ) -> ControlFlow<Infallible, IntervalFrame> {
+        let (definedness, facts) = (self.definedness, self.facts);
+        let fact = |subject: Subject, fallback: Interval| {
+            facts
+                .intervals
+                .get(&subject)
+                .map_or(fallback, Interval::of_proved)
+        };
+        let leaf = match node.kind() {
+            NodeKind::Arithmetic(operator, left, right) => {
+                children.push(node.at(*left));
+                children.push(node.at(*right));
+                return ControlFlow::Continue(IntervalFrame::Arithmetic(*operator));
+            }
+            NodeKind::Negate(operand) => {
+                children.push(node.at(*operand));
+                return ControlFlow::Continue(IntervalFrame::Negate);
+            }
+            NodeKind::Literal(CheckedLiteral(Value::Integer(value))) => Interval::point(value),
+            NodeKind::Coerce(_, target) => Interval::of_domain(target),
+            NodeKind::Size(operand) => {
+                let operand = node.at(*operand);
+                let bound = match operand.value_type() {
+                    ValueType::Collection(collection) => cardinality(collection),
+                    _ => Interval::unbounded(),
+                };
+                match definedness.stable_path(operand, facts) {
+                    Some(path) => fact(Subject::Size(path), bound),
+                    None => bound,
+                }
+            }
+            _ => match definedness.stable_path(node, facts) {
+                Some(path) => fact(Subject::Value(path), declared(node.value_type())),
+                None => declared(node.value_type()),
+            },
+        };
+        self.values.push(leaf);
+        ControlFlow::Continue(IntervalFrame::Done)
+    }
+
+    fn exit(&mut self, frame: IntervalFrame) -> ControlFlow<Infallible> {
+        match frame {
+            IntervalFrame::Done => {}
+            IntervalFrame::Arithmetic(operator) => {
+                let right = self.values.pop().unwrap_or_else(Interval::unbounded);
+                let left = self.values.pop().unwrap_or_else(Interval::unbounded);
+                self.values.push(match operator {
+                    Arithmetic::Add => left.add(&right),
+                    Arithmetic::Subtract => left.add(&right.negate()),
+                    Arithmetic::Multiply => left.mul(&right),
+                });
+            }
+            IntervalFrame::Negate => {
+                let operand = self.values.pop().unwrap_or_else(Interval::unbounded);
+                self.values.push(operand.negate());
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// [`Definedness::outcomes`]'s walk: each condition's exit leaves its
+/// outcomes on `results`, and the toolkit enters a connective's right
+/// operand only after its left operand has been exited, so the right
+/// operand's facts are read from the left's outcomes at the moment it is
+/// entered.
+struct OutcomeWalk<'d, 'a, 'n> {
+    definedness: &'d Definedness<'a>,
+    results: Vec<Outcomes>,
+    nodes: PhantomData<CheckedNode<'n>>,
+}
+
+/// A node of an outcome walk.
+enum OutcomeNode<'n> {
+    /// Evaluate a condition's outcomes under these facts.
+    Evaluate(CheckedNode<'n>, Rc<Facts>),
+    /// The right operand of a connective whose left operand's outcomes are
+    /// on `results`.
+    Right(Connective, CheckedNode<'n>),
+}
+
+/// What an outcome walk keeps for an entered node.
+enum OutcomeFrame {
+    /// The node's outcomes are already on `results`.
+    Done,
+    /// Swap the outcomes of the operand: a `not`.
+    Negate,
+    /// Combine the left and right outcomes below the top of `results`.
+    Connective(Connective),
+}
+
+impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
+    type Node = OutcomeNode<'n>;
+    type Frame = OutcomeFrame;
+    type Stop = Infallible;
+
+    fn enter(
+        &mut self,
+        node: OutcomeNode<'n>,
+        children: &mut quire_walk::Children<'_, OutcomeNode<'n>>,
+    ) -> ControlFlow<Infallible, OutcomeFrame> {
+        let definedness = self.definedness;
+        match node {
+            OutcomeNode::Evaluate(node, facts) => match node.kind() {
+                NodeKind::Not(operand) => {
+                    children.push(OutcomeNode::Evaluate(node.at(*operand), facts));
+                    ControlFlow::Continue(OutcomeFrame::Negate)
+                }
+                // FR-104: `pre(c)` holds exactly when `c` holds at `pre`;
+                // the facts `c` establishes are keyed by the observations
+                // its own reads carry.
+                NodeKind::Pre(operand) if definedness.observations.is_some() => {
+                    children.push(OutcomeNode::Evaluate(node.at(*operand), facts));
+                    ControlFlow::Continue(OutcomeFrame::Done)
+                }
+                NodeKind::Connective(connective, left, right) => {
+                    children.push(OutcomeNode::Evaluate(node.at(*left), facts));
+                    children.push(OutcomeNode::Right(*connective, node.at(*right)));
+                    ControlFlow::Continue(OutcomeFrame::Connective(*connective))
+                }
+                _ => {
+                    self.results.push(definedness.guard(node, &facts));
+                    ControlFlow::Continue(OutcomeFrame::Done)
+                }
+            },
+            OutcomeNode::Right(connective, right) => {
+                let (left_true, left_false) = self.results.last().cloned().unwrap_or_default();
+                let under = match connective {
+                    Connective::And | Connective::Implies => left_true,
+                    Connective::Or => left_false,
+                };
+                match under {
+                    Some(under) => children.push(OutcomeNode::Evaluate(right, under)),
+                    None => self.results.push((None, None)),
+                }
+                ControlFlow::Continue(OutcomeFrame::Done)
+            }
+        }
+    }
+
+    fn exit(&mut self, frame: OutcomeFrame) -> ControlFlow<Infallible> {
+        match frame {
+            OutcomeFrame::Done => {}
+            OutcomeFrame::Negate => {
+                let (when_true, when_false) = self.results.pop().unwrap_or_default();
+                self.results.push((when_false, when_true));
+            }
+            OutcomeFrame::Connective(connective) => {
+                let (right_true, right_false) = self.results.pop().unwrap_or_default();
+                let (left_true, left_false) = self.results.pop().unwrap_or_default();
+                self.results.push(match connective {
+                    Connective::And => (right_true, join(left_false, right_false)),
+                    Connective::Or => (join(left_true, right_true), right_false),
+                    Connective::Implies => (join(left_false, right_true), right_false),
+                });
+            }
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// One step of a stable path, before the facts it is checked against are
+/// applied root first.
+enum PathStep {
+    Field(usize),
+    Value,
+    Attribute(Step),
+}
+
+/// Whether `node` is an integer.
+fn is_integer(node: CheckedNode<'_>) -> bool {
+    matches!(node.value_type(), ValueType::Integer | ValueType::Int(_))
 }
 
 /// What a guard's true outcome establishes about a field, as
@@ -1066,9 +1338,9 @@ pub(crate) struct Established {
 /// accepted `PostconditionClause` forms describe and hands it here, so what
 /// they actually prove is decided by this same arithmetic a real checked
 /// postcondition already runs, never restated from a clause's own literal.
-pub(crate) fn established_field_fact(condition: &Node, self_slot: Slot) -> Established {
+pub(crate) fn established_field_fact(condition: CheckedNode<'_>, self_slot: Slot) -> Established {
     let checker = Definedness::new(self_slot + 1, &[], &[]);
-    let (when_true, _) = checker.outcomes(condition, &Facts::default());
+    let (when_true, _) = checker.outcomes(condition, &Rc::new(Facts::default()));
     let Some(facts) = when_true else {
         return Established::default();
     };

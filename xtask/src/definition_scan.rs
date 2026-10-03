@@ -448,8 +448,6 @@ mod tests {
         }
         for symbol in [
             "CheckingLimits",
-            "DepthAboveMaximum",
-            "MAX_CHECKING_DEPTH",
             "DEFAULT_CHECKING_NODES",
             "DEFAULT_CHECKING_INPUT_BYTES",
             "DEFAULT_CHECKING_WORK_BUDGET",

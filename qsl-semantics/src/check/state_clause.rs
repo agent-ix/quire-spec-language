@@ -29,7 +29,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::Definedness;
-use super::ir::{DispatchTable, Node, NodeKind, Observation};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
 use super::lowering::{AdmittedModel, LoweredClause};
 use super::observation::Observations;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
@@ -292,7 +292,7 @@ pub struct ClauseClaim {
 #[derive(Debug)]
 pub struct TypedStateClause {
     pub(crate) parameters: Vec<(String, ValueType)>,
-    pub(crate) body: Node,
+    pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
     pub(crate) slot_names: Vec<String>,
     pub(crate) observations: Observations,
@@ -420,7 +420,7 @@ fn check_clause(
         result_slot: has_result.then_some(1),
     });
     let body = typer.infer(&form.body, Some(&ValueType::Boolean), location)?;
-    if body.value_type() != &ValueType::Boolean {
+    if body.root().value_type() != &ValueType::Boolean {
         return Err(CheckRefusal {
             location: location.clone(),
             cause: CheckCause::NonBooleanRoot,
@@ -429,14 +429,14 @@ fn check_clause(
     let slots = typer.slots();
     let slot_names = typer.slot_names().to_vec();
     let formed_units = typer.into_formed_units();
-    let observations = Observations::of(&body, form.observation(), parameters.len());
+    let observations = Observations::of(body.root(), form.observation(), parameters.len());
     Definedness::new(
         parameters.len(),
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     )
     .with_observations(&observations)
-    .check(&body)?;
+    .check(body.root())?;
 
     // The populations the clause ranges over: its context's, already
     // resolved by the assembler (FR-104 "Resolution"), then each one a
@@ -444,9 +444,9 @@ fn check_clause(
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population);
-    for node in body.descendants() {
+    for node in body.root().descendants() {
         if let NodeKind::Reaches { source, .. } = node.kind() {
-            if let ValueType::Reference(object) = source.value_type() {
+            if let ValueType::Reference(object) = node.at(*source).value_type() {
                 let walked =
                     population_of(input.models, *object, input.scope.types()).map_err(|keys| {
                         ambiguous_population(input.scope, *object, &keys, node.location())
@@ -495,7 +495,7 @@ pub struct CheckedStateClause {
     pub(crate) context: EffectiveId,
     pub(crate) operation: Option<ClauseOperation>,
     pub(crate) parameters: Vec<(String, ValueType)>,
-    pub(crate) body: Node,
+    pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
     pub(crate) observations: Observations,
     pub(crate) identity: NodeKey,
@@ -548,8 +548,8 @@ impl CheckedStateClause {
     }
 
     /// The checked Boolean body.
-    pub fn body(&self) -> &Node {
-        &self.body
+    pub fn body(&self) -> CheckedNode<'_> {
+        self.body.root()
     }
 
     /// The evaluation slot count.

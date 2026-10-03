@@ -15,11 +15,6 @@ pub enum CheckMode {
     Kernel,
 }
 
-/// The largest expression nesting depth a checker may declare. The typing,
-/// facts and lowering walks run over explicit heap stacks, so this bounds the
-/// checked tree's size rather than protecting the host stack.
-pub const MAX_CHECKING_DEPTH: u64 = 128;
-
 /// NFR-011's default checking node ceiling: twice NFR-001's default
 /// syntax-node ceiling (50,000). It is one budget for the typed expression
 /// nodes and FR-093's text and recursion leaves together; the factor of two
@@ -44,10 +39,13 @@ pub const DEFAULT_CHECKING_WORK_BUDGET: u64 = DEFAULT_CHECKING_INPUT_BYTES;
 /// default: an implementation ceiling is not a domain bound (NFR-001). A
 /// checked package records the limits it was checked under (the checked
 /// graph's `effective_limits`).
+///
+/// Nesting depth is not a limit (ADR-030 D-1): every checking walk runs over
+/// an explicit heap stack whose growth these ceilings charge, so an
+/// expression or a type of any depth checks within them (FR-258).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CheckingLimits {
     nodes: u64,
-    depth: u64,
     /// The checked-family contract's own preimage byte-length bound (the
     /// checked family's `StageLimits::input_bytes`, its one
     /// caller-configurable knob). Defaults to
@@ -62,37 +60,20 @@ pub struct CheckingLimits {
     work_budget: u64,
 }
 
-/// A declared checking depth above [`MAX_CHECKING_DEPTH`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, thiserror::Error)]
-#[error("checking depth {depth} exceeds the maximum {MAX_CHECKING_DEPTH}")]
-pub struct DepthAboveMaximum {
-    /// The requested depth.
-    pub depth: u64,
-}
-
 impl CheckingLimits {
     /// Admit at most `nodes` expression nodes and text-leaf units per
-    /// checked package or expression, nested at most `depth` deep, with the
-    /// default input-byte and work ceilings.
-    pub fn new(nodes: u64, depth: u64) -> Result<Self, DepthAboveMaximum> {
-        if depth > MAX_CHECKING_DEPTH {
-            return Err(DepthAboveMaximum { depth });
-        }
-        Ok(Self {
+    /// checked package or expression (`s3.nodes`), with the default
+    /// input-byte and work ceilings. Any node count is admitted.
+    pub fn new(nodes: u64) -> Self {
+        Self {
             nodes,
-            depth,
             ..Self::default()
-        })
+        }
     }
 
     /// The declared node limit.
     pub fn nodes(self) -> u64 {
         self.nodes
-    }
-
-    /// The declared depth limit.
-    pub fn depth(self) -> u64 {
-        self.depth
     }
 
     /// The checked-family contract's own preimage byte-length bound.
@@ -127,12 +108,11 @@ impl CheckingLimits {
 
 impl Default for CheckingLimits {
     /// NFR-011's default ceilings: [`DEFAULT_CHECKING_NODES`] nodes,
-    /// [`MAX_CHECKING_DEPTH`] depth, [`DEFAULT_CHECKING_INPUT_BYTES`] input
-    /// bytes and a [`DEFAULT_CHECKING_WORK_BUDGET`] work budget.
+    /// [`DEFAULT_CHECKING_INPUT_BYTES`] input bytes and a
+    /// [`DEFAULT_CHECKING_WORK_BUDGET`] work budget.
     fn default() -> Self {
         Self {
             nodes: DEFAULT_CHECKING_NODES,
-            depth: MAX_CHECKING_DEPTH,
             input_bytes: DEFAULT_CHECKING_INPUT_BYTES,
             work_budget: DEFAULT_CHECKING_WORK_BUDGET,
         }
@@ -143,21 +123,16 @@ impl Default for CheckingLimits {
 mod tests {
     use super::*;
 
-    /// A depth above [`MAX_CHECKING_DEPTH`] is refused naming it; the
-    /// maximum itself is admitted with the default byte and work ceilings.
+    /// `new` admits any node count and keeps the default byte and work
+    /// ceilings.
     #[test]
-    fn new_refuses_a_depth_above_the_maximum() {
-        assert_eq!(
-            CheckingLimits::new(10, MAX_CHECKING_DEPTH + 1),
-            Err(DepthAboveMaximum {
-                depth: MAX_CHECKING_DEPTH + 1
-            })
-        );
-        let limits = CheckingLimits::new(10, MAX_CHECKING_DEPTH).expect("maximum admitted");
-        assert_eq!(limits.nodes(), 10);
-        assert_eq!(limits.depth(), MAX_CHECKING_DEPTH);
-        assert_eq!(limits.input_bytes(), DEFAULT_CHECKING_INPUT_BYTES);
-        assert_eq!(limits.work_budget(), DEFAULT_CHECKING_WORK_BUDGET);
+    fn new_admits_any_node_count() {
+        for nodes in [0, 1, u64::MAX] {
+            let limits = CheckingLimits::new(nodes);
+            assert_eq!(limits.nodes(), nodes);
+            assert_eq!(limits.input_bytes(), DEFAULT_CHECKING_INPUT_BYTES);
+            assert_eq!(limits.work_budget(), DEFAULT_CHECKING_WORK_BUDGET);
+        }
     }
 
     /// The builders set only their own ceiling.
@@ -169,6 +144,5 @@ mod tests {
         assert_eq!(limits.input_bytes(), 7);
         assert_eq!(limits.work_budget(), 9);
         assert_eq!(limits.nodes(), DEFAULT_CHECKING_NODES);
-        assert_eq!(limits.depth(), MAX_CHECKING_DEPTH);
     }
 }

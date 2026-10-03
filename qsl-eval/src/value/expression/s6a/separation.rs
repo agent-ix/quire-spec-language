@@ -23,7 +23,7 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 pub use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
-use qsl_semantics::check::{CheckedGraph, Operator, SemanticTerm};
+use qsl_semantics::check::{ApplicationTerm, BodyTerm, CheckedGraph, Operator};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::location::Location;
@@ -294,7 +294,7 @@ pub(crate) fn occurrence_at(
     let applies = |key: quire_exact::NodeKey, wanted: Option<Operator>| {
         matches!(
             semantic.node(key).map(|node| node.body()),
-            Some(SemanticTerm::Application { operator: applied, .. })
+            Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
                 if wanted.is_none_or(|wanted| *applied == wanted)
         )
     };

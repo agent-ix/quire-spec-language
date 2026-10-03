@@ -7,7 +7,7 @@
 //! so producer and replay derive the record the same way.
 
 use qsl_foundation::diagnostic::InternalFault;
-use qsl_semantics::check::{CheckedStateClause, Connective, Node, NodeKind, Visit};
+use qsl_semantics::check::{CheckedNode, CheckedStateClause, Connective, NodeKind, Visit};
 use qsl_semantics::family::FamilyOutcome;
 use quire_exact::{Outcome, Value};
 
@@ -59,14 +59,14 @@ pub(crate) fn derive_separating_witness(
     else {
         return Ok(None);
     };
-    let decision = |node: &Node| {
+    let decision = |node: CheckedNode<'_>| {
         evaluation
             .decision(node.location())
             .ok_or_else(|| InternalFault::new("witness", "decision-path-node-recorded"))
     };
     let mut node = clause.body();
     loop {
-        node = match node.kind() {
+        let next = match node.kind() {
             NodeKind::Let { body, .. } => body,
             NodeKind::If {
                 then, otherwise, ..
@@ -107,6 +107,7 @@ pub(crate) fn derive_separating_witness(
             // added later ends the walk too.
             _ => return Ok(Some(closed_scope())),
         };
+        node = node.at(*next);
     }
 }
 

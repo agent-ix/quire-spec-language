@@ -6,24 +6,26 @@
 //! The loop either descends into the next operand ([`Goal`]) or hands the
 //! node it just typed to the frame below, which types its next operand or
 //! finishes its own node. The host stack a check needs is therefore the same
-//! at every nesting depth: an expression nested to the maximum checking
-//! depth checks, and one nested deeper refuses on the depth limit, on a
-//! small thread in a debug build.
+//! at every nesting depth, and an expression of any depth checks within the
+//! node ceiling (FR-258). Each frame is pushed for a form whose node
+//! `Typer::enter` has already charged against that ceiling, so the frame
+//! stack grows by at most a constant per charged node.
 //!
 //! Operands are typed in the order the earlier recursive typer typed
-//! them, and every depth check, node charge, binding, formed unit and
-//! refusal happens at the same point of that order, so every checked tree,
-//! slot and refusal is that typer's. A nesting level `Typer::enter` entered
-//! is left by a [`Frame::Leave`] once the form above it is typed.
+//! them, and every node charge, binding, formed unit and refusal happens at
+//! the same point of that order, so every checked tree, slot and refusal is
+//! that typer's.
 
 use std::borrow::Cow;
 
 use super::{
-    catalogued_step, coerce, contains_pre_eligible_read, contextual, ineligible, is_integer,
-    mismatch, node, refuse, LocalKind, Typer,
+    catalogued_step, contains_pre_eligible_read, contextual, ineligible, is_integer, mismatch,
+    node, refuse, LocalKind, Typer,
 };
 use crate::check::family::Application;
-use crate::check::ir::{Connective, Node, NodeKind, RecordSlot, Slot, Visit};
+use crate::check::ir::{
+    CheckedBody, CheckedLiteral, Connective, Node, NodeId, NodeKind, RecordSlot, Slot, Visit,
+};
 use crate::check::refusal::{CheckCause, CheckRefusal, WrongSnapshotCause};
 use crate::check::DispatchOperation;
 use qsl_forms::{
@@ -113,8 +115,6 @@ enum Step<'e, 'r> {
 
 /// A form waiting on the node of one of its operands.
 enum Frame<'e, 'r> {
-    /// Leave the nesting level entered for the form above this frame.
-    Leave,
     /// Admit the typed node where this type is expected ([`coerce`]).
     Coerce(Want<'r>),
     /// Admit the typed node as a dispatch argument of this parameter type,
@@ -263,7 +263,7 @@ struct ApplicationFrame<'e, 'r> {
     application: Application<'r>,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
-    typed: Vec<Node>,
+    typed: Vec<NodeId>,
 }
 
 /// A record literal, admitting its initializers in source order.
@@ -288,7 +288,7 @@ struct CollectionFrame<'e> {
     collection_type: CollectionType,
     elements: Vec<ExprRef<'e>>,
     location: Location,
-    typed: Vec<Node>,
+    typed: Vec<NodeId>,
 }
 
 /// A one-binder query `q(binder in source: body)`.
@@ -401,7 +401,7 @@ struct DispatchArgumentsFrame<'e, 'r> {
     operation: &'r DispatchOperation,
     arguments: Vec<ExprRef<'e>>,
     location: Location,
-    typed: Vec<Node>,
+    typed: Vec<NodeId>,
 }
 
 /// `(first, second)` in source order: `second` is the left operand when
@@ -422,12 +422,13 @@ impl<'a> Typer<'a> {
         expression: &Expression,
         required: &ValueType,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        self.run(Goal::Expect(
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let root = self.run(Goal::Expect(
             expression.root(),
             Expected::Checked(Cow::Borrowed(required)),
             location.clone(),
-        ))
+        ))?;
+        Ok(std::mem::take(&mut self.body).finish(root))
     }
 
     /// Type `expression`, with `hint` as the expected type of a contextual
@@ -437,12 +438,13 @@ impl<'a> Typer<'a> {
         expression: &Expression,
         hint: Option<&ValueType>,
         location: &Location,
-    ) -> Result<Node, CheckRefusal> {
-        self.run(Goal::Infer(
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let root = self.run(Goal::Infer(
             expression.root(),
             hint.map(Cow::Borrowed),
             location.clone(),
-        ))
+        ))?;
+        Ok(std::mem::take(&mut self.body).finish(root))
     }
 
     /// The loop: descend into the next goal, or hand the node just typed to
@@ -480,7 +482,6 @@ impl<'a> Typer<'a> {
             }
             Goal::Infer(expression, hint, location) => {
                 self.enter(&location)?;
-                frames.push(Frame::Leave);
                 self.infer_form(expression, hint, location, frames)
             }
         }
@@ -506,7 +507,6 @@ impl<'a> Typer<'a> {
                 otherwise,
             } => {
                 self.enter(&location)?;
-                frames.push(Frame::Leave);
                 Ok(Self::conditional(
                     Branches::Expected(expected),
                     (
@@ -520,7 +520,6 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Let { name, value, body } => {
                 self.enter(&location)?;
-                frames.push(Frame::Leave);
                 Ok(Self::binding(
                     Branches::Expected(expected),
                     (name, expression.at(*value), expression.at(*body)),
@@ -594,7 +593,7 @@ impl<'a> Typer<'a> {
     }
 
     /// FR-065's dispatch seam over [`Expression`] (ADR-012 §4.3): start
-    /// inferring `expression`'s type, its nesting level already entered.
+    /// inferring `expression`'s type, its node already charged.
     ///
     /// **`Expression::Call` is thin (FR-065-CON-3).** Its arm makes one call
     /// into [`Application::resolve`] -- `Value`'s application check -- and
@@ -630,12 +629,12 @@ impl<'a> Typer<'a> {
     {
         let typed = match expression.node() {
             ExprNode::Boolean(value) => node(
-                NodeKind::Literal(Value::Boolean(*value)),
+                NodeKind::Literal(CheckedLiteral(Value::Boolean(*value))),
                 ValueType::Boolean,
                 &location,
             ),
             ExprNode::Integer(value) => node(
-                NodeKind::Literal(Value::Integer(value.clone())),
+                NodeKind::Literal(CheckedLiteral(Value::Integer(value.clone()))),
                 ValueType::Integer,
                 &location,
             ),
@@ -704,7 +703,6 @@ impl<'a> Typer<'a> {
                         operand_location,
                         location,
                     })));
-                    frames.push(Frame::Leave);
                     return Ok(Step::Descend(Goal::Infer(
                         reference,
                         None,
@@ -1001,7 +999,6 @@ impl<'a> Typer<'a> {
                     let inner = receiver.at(*inner);
                     self.enter(&receiver_location)?;
                     frames.push(frame);
-                    frames.push(Frame::Leave);
                     let inner_location = receiver_location.child(0);
                     return Ok(Step::Descend(Goal::Infer(inner, None, inner_location)));
                 }
@@ -1134,7 +1131,7 @@ impl<'a> Typer<'a> {
 
     /// Start one equality operand, hinted with its typed peer's type: a
     /// non-collection `convert<T>(e)` is compared as converted, its own
-    /// nesting level entered here and `converted` set to its target; a
+    /// node charged here and `converted` set to its target; a
     /// contextual operand with a typed peer is checked as the peer's type;
     /// any other operand is inferred.
     fn equality_operand<'e, 'r>(
@@ -1164,9 +1161,8 @@ impl<'a> Typer<'a> {
     }
 
     /// A typed equality operand, the equality operand it compares as, and
-    /// the type its peer is hinted with. A converted operand leaves the
-    /// nesting level [`Self::equality_operand`] entered for it; its IEEE
-    /// source is refused.
+    /// the type its peer is hinted with. A converted operand's IEEE source
+    /// is refused.
     fn equality_typed(
         &mut self,
         typed: Node,
@@ -1174,7 +1170,6 @@ impl<'a> Typer<'a> {
     ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
         match converted {
             Some((target, location)) => {
-                self.leave();
                 if matches!(typed.value_type, ValueType::Float(_)) {
                     return Err(mismatch(&location));
                 }
@@ -1342,6 +1337,7 @@ impl<'a> Typer<'a> {
     /// Check a dispatch call's next argument, or build the call once every
     /// argument is checked.
     fn dispatch_arguments<'e, 'r>(
+        &mut self,
         frame: Box<DispatchArgumentsFrame<'e, 'r>>,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Step<'e, 'r> {
@@ -1370,7 +1366,7 @@ impl<'a> Typer<'a> {
                 } = *frame;
                 Step::Typed(node(
                     NodeKind::Dispatch {
-                        receiver: Box::new(receiver),
+                        receiver: self.push(receiver),
                         table: operation.table,
                         operation: operation_index,
                         arguments: typed,
@@ -1394,17 +1390,13 @@ impl<'a> Typer<'a> {
         'a: 'r,
     {
         match frame {
-            Frame::Leave => {
-                self.leave();
-                Ok(Step::Typed(typed))
-            }
-            Frame::Coerce(required) => coerce(typed, &required).map(Step::Typed),
+            Frame::Coerce(required) => self.coerce(typed, &required).map(Step::Typed),
             Frame::Upcast(required, location) => {
                 self.upcast(typed, &required, &location).map(Step::Typed)
             }
-            Frame::If(frame) => Self::accept_if(frame, typed, frames),
+            Frame::If(frame) => self.accept_if(frame, typed, frames),
             Frame::Let(frame) => self.accept_let(frame, typed, frames),
-            Frame::Connective(frame) => Ok(Self::accept_connective(frame, typed, frames)),
+            Frame::Connective(frame) => Ok(self.accept_connective(frame, typed, frames)),
             Frame::Peer(frame) => self.accept_peer(frame, typed, frames),
             Frame::Unary(frame) => self.accept_unary(*frame, typed).map(Step::Typed),
             // FR-104: in a state clause, a field read through a reference
@@ -1448,19 +1440,19 @@ impl<'a> Typer<'a> {
                 )
                 .map(Step::Typed),
             Frame::Application(mut frame) => {
-                frame.typed.push(typed);
+                frame.typed.push(self.push(typed));
                 Ok(Self::application(frame, frames))
             }
             Frame::Record(mut frame) => {
                 if let Some(index) = frame.awaiting.take() {
                     if let Some(slot) = frame.supplied.get_mut(index) {
-                        *slot = Some(RecordSlot::Present(Box::new(typed)));
+                        *slot = Some(RecordSlot::Present(self.push(typed)));
                     }
                 }
                 Self::record_step(frame, frames)
             }
             Frame::Collection(mut frame) => {
-                frame.typed.push(typed);
+                frame.typed.push(self.push(typed));
                 Ok(Self::collection(frame, frames))
             }
             Frame::Query(frame) => self.accept_query(frame, typed, frames),
@@ -1499,7 +1491,7 @@ impl<'a> Typer<'a> {
                 let (operation_index, operation) =
                     self.dispatch_operation(&typed, member, arguments.len(), &location)?;
                 let count = arguments.len();
-                Ok(Self::dispatch_arguments(
+                Ok(self.dispatch_arguments(
                     Box::new(DispatchArgumentsFrame {
                         receiver: typed,
                         operation_index,
@@ -1512,13 +1504,14 @@ impl<'a> Typer<'a> {
                 ))
             }
             Frame::DispatchArguments(mut frame) => {
-                frame.typed.push(typed);
-                Ok(Self::dispatch_arguments(frame, frames))
+                frame.typed.push(self.push(typed));
+                Ok(self.dispatch_arguments(frame, frames))
             }
         }
     }
 
     fn accept_if<'e, 'r>(
+        &mut self,
         frame: Box<IfFrame<'e, 'r>>,
         typed: Node,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -1573,9 +1566,9 @@ impl<'a> Typer<'a> {
                 };
                 Ok(Step::Typed(node(
                     NodeKind::If {
-                        condition: Box::new(condition),
-                        then: Box::new(then),
-                        otherwise: Box::new(otherwise),
+                        condition: self.push(condition),
+                        then: self.push(then),
+                        otherwise: self.push(otherwise),
                     },
                     value_type,
                     &location,
@@ -1616,8 +1609,8 @@ impl<'a> Typer<'a> {
                 Ok(Step::Typed(node(
                     NodeKind::Let {
                         slot,
-                        value: Box::new(value),
-                        body: Box::new(body),
+                        value: self.push(value),
+                        body: self.push(body),
                     },
                     value_type,
                     &location,
@@ -1627,6 +1620,7 @@ impl<'a> Typer<'a> {
     }
 
     fn accept_connective<'e, 'r>(
+        &mut self,
         frame: Box<ConnectiveFrame<'e>>,
         typed: Node,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -1650,7 +1644,7 @@ impl<'a> Typer<'a> {
                 ))
             }
             Pair::Second(left) => Step::Typed(node(
-                NodeKind::Connective(connective, Box::new(left), Box::new(typed)),
+                NodeKind::Connective(connective, self.push(left), self.push(typed)),
                 ValueType::Boolean,
                 &location,
             )),
@@ -1761,7 +1755,7 @@ impl<'a> Typer<'a> {
         match form {
             Unary::Negate(hint) => self.negate(operand, hint.as_deref(), &location),
             Unary::Not => Ok(node(
-                NodeKind::Not(Box::new(operand)),
+                NodeKind::Not(self.push(operand)),
                 ValueType::Boolean,
                 &location,
             )),
@@ -1770,7 +1764,7 @@ impl<'a> Typer<'a> {
                     return Err(mismatch(&location));
                 }
                 Ok(node(
-                    NodeKind::Present(Box::new(operand)),
+                    NodeKind::Present(self.push(operand)),
                     ValueType::Boolean,
                     &location,
                 ))
@@ -1780,13 +1774,17 @@ impl<'a> Typer<'a> {
                     return Err(mismatch(&location));
                 };
                 let payload = ValueType::clone(payload);
-                Ok(node(NodeKind::Value(Box::new(operand)), payload, &location))
+                Ok(node(
+                    NodeKind::Value(self.push(operand)),
+                    payload,
+                    &location,
+                ))
             }
             Unary::Deref => Err(mismatch(&location)),
             Unary::Pre => {
                 let value_type = operand.value_type.clone();
                 Ok(node(
-                    NodeKind::Pre(Box::new(operand)),
+                    NodeKind::Pre(self.push(operand)),
                     value_type,
                     &location,
                 ))
@@ -1795,13 +1793,13 @@ impl<'a> Typer<'a> {
             Unary::Size => {
                 self.element_type(&operand)?;
                 Ok(node(
-                    NodeKind::Size(Box::new(operand)),
+                    NodeKind::Size(self.push(operand)),
                     ValueType::Integer,
                     &location,
                 ))
             }
             Unary::Convert(target) => self.convert(&target, operand, &location),
-            Unary::AllInstances(target) => Self::all_instances(&target, operand, &location),
+            Unary::AllInstances(target) => self.all_instances(&target, operand, &location),
         }
     }
 
@@ -1877,8 +1875,8 @@ impl<'a> Typer<'a> {
             } => {
                 let raw = typed;
                 self.unbind(2);
-                let catalogued = catalogued_step(&raw, accumulator, &frame.value_type);
-                let step = coerce(raw, &frame.value_type)?;
+                let catalogued = catalogued_step(&self.body, &raw, accumulator, &frame.value_type);
+                let step = self.coerce(raw, &frame.value_type)?;
                 let fold = Fold {
                     source,
                     step,
@@ -1898,11 +1896,11 @@ impl<'a> Typer<'a> {
                         frames.push(Frame::Accumulate(frame));
                         Ok(Step::Descend(goal))
                     }
-                    None => Self::fold(*frame, fold, None).map(Step::Typed),
+                    None => self.fold(*frame, fold, None).map(Step::Typed),
                 }
             }
             AccumulateStage::Identity(fold) => {
-                Self::fold(*frame, fold, Some(typed)).map(Step::Typed)
+                self.fold(*frame, fold, Some(typed)).map(Step::Typed)
             }
         }
     }
@@ -1910,6 +1908,7 @@ impl<'a> Typer<'a> {
     /// A `fold`/`reduce` node over its typed source, step and identity: an
     /// unordered source needs a catalogued step.
     fn fold(
+        &mut self,
         frame: AccumulateFrame<'_>,
         fold: Fold,
         identity: Option<Node>,
@@ -1921,9 +1920,9 @@ impl<'a> Typer<'a> {
             NodeKind::Fold {
                 accumulator: fold.accumulator,
                 binder: fold.binder,
-                source: Box::new(fold.source),
-                step: Box::new(fold.step),
-                identity: identity.map(Box::new),
+                source: self.push(fold.source),
+                step: self.push(fold.step),
+                identity: identity.map(|identity| self.push(identity)),
             },
             frame.value_type,
             &frame.location,
@@ -1972,8 +1971,8 @@ impl<'a> Typer<'a> {
                     NodeKind::Query {
                         visit,
                         slot,
-                        source: Box::new(source),
-                        body: Box::new(body),
+                        source: self.push(source),
+                        body: self.push(body),
                     },
                     value_type,
                     &location,

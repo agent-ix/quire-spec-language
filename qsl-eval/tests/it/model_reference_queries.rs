@@ -952,13 +952,7 @@ fn l14_lookup_expression_undefined_mode() {
     );
     // The lookup is the checked expression's root, so its locus is the
     // root's: `Origin::Expression`, an empty path.
-    assert_eq!(
-        absent.location,
-        Some(Location {
-            origin: Origin::Expression,
-            path: Vec::new(),
-        })
-    );
+    assert_eq!(absent.location, Some(Location::root(Origin::Expression)));
     match absent.outcome {
         FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => {
             let record = cause.undefined_record();
@@ -1492,13 +1486,7 @@ fn lookup_expression_refuses_a_non_conforming_reference_type_at_check_time() {
         refusal.cause,
         CheckCause::IllTyped(IllTypedCause::TypeMismatch)
     );
-    assert_eq!(
-        refusal.location,
-        Location {
-            origin: Origin::Expression,
-            path: vec![1],
-        }
-    );
+    assert_eq!(refusal.location, Location::at(Origin::Expression, &[1]));
 
     let parameters = [
         ("p", ValueType::Population(Some(3))),

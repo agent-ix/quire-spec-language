@@ -11,17 +11,17 @@ relationships:
 ## Description
 
 Verify that the expression-node limit configured through
-`CheckingLimits::new(nodes, depth)` is one budget shared by every declaration
+`CheckingLimits::new(nodes)` is one budget shared by every declaration
 in a checked package: two declarations that each fit under it are refused
 together when their combined node count exceeds it. Scope: FR-062-AC-11.
 
 ## Test Procedure
 
 1. Declare `a() -> Integer = 1 + 1`. Check a package holding `a` alone with
-   `CheckingLimits::new(4, 128)`.
+   `CheckingLimits::new(4)`.
 2. Declare `b() -> Integer = 1 + 1`. Check a package holding `a` and `b`
-   with `CheckingLimits::new(100, 128)`.
-3. Check the package holding `a` and `b` with `CheckingLimits::new(4, 128)`.
+   with `CheckingLimits::new(100)`.
+3. Check the package holding `a` and `b` with `CheckingLimits::new(4)`.
 
 ## Expected Results
 

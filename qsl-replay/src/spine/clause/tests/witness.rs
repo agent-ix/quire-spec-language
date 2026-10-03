@@ -25,7 +25,7 @@ use qsl_eval::value::ClauseEvaluation;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{Operator, SemanticTerm};
+use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
@@ -278,10 +278,11 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
             matches!(&location.origin, quire_semantic_value::location::Origin::StateClause {
                 clause: name, ..
             } if name == clause)
-                && location.path == path
+                && location.path() == path
                 && matches!(
                     semantic.node(*key).map(|node| node.body()),
-                    Some(SemanticTerm::Application { operator: applied, .. }) if *applied == operator
+                    Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
+                        if *applied == operator
                 )
         })
         .map(|(key, origin, _)| {
@@ -441,7 +442,9 @@ fn tc_740_a_satisfied_exists_or_negated_forall_derives_a_decisive_witness() {
         panic!("EqualsAll's body is an equality");
     };
     assert!(
-        evaluation.stop(left.location()).is_some(),
+        evaluation
+            .stop(forall.body().at(*left).location())
+            .is_some(),
         "its forall stopped"
     );
     assert_eq!(derive(&unit, "EqualsAll", Snapshot::High, "mid"), closed());
@@ -1060,13 +1063,13 @@ fn tc_743_the_separation_check_names_its_failing_step() {
 #[test]
 fn tc_744_an_undefined_step_maps_to_undefined_evaluation() {
     let unit = witness_unit();
-    let at = quire_semantic_value::location::Location {
-        origin: quire_semantic_value::location::Origin::StateClause {
+    let at = quire_semantic_value::location::Location::at(
+        quire_semantic_value::location::Origin::StateClause {
             clause: "AllBelow".to_owned(),
             index: 0,
         },
-        path: vec![0],
-    };
+        &[0],
+    );
     let evaluation = qsl_eval::value::Evaluation {
         outcome: FamilyOutcome::Evaluated(Outcome::Undefined(
             quire_exact::Undefined::DivisionByZero,
@@ -1237,14 +1240,37 @@ fn tc_744_a_failed_separation_check_disagrees_naming_its_step() {
     );
 }
 
-/// The `witness` unit with a record declaration, so a composite deciding
-/// element names a declaration the checked package holds.
+/// The `witness` unit with record declarations, so a composite deciding
+/// element names a declaration the checked package holds: `Point` (two
+/// required fields), `Gaps` (two optional fields and a required one) and
+/// `Chain` (one optional field naming itself).
 fn codec_unit() -> Unit {
     let text = format!(
-        "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n",
+        "{}record Point {{ x: Int[0, 9]; y: Int[0, 9]; }}\n\
+         record Gaps {{ alpha: Int[0, 9]?; beta: Int[0, 9]?; gamma: Int[0, 9]; }}\n\
+         record Chain {{ next: Chain?; }}\n",
         witness_unit_text()
     );
     unit_for(text, config_version_domain_document())
+}
+
+/// The key of `codec_unit`'s record with `fields` fields.
+fn record_key(unit: &Unit, fields: usize) -> quire_exact::NodeKey {
+    unit.compiled
+        .package
+        .graph()
+        .scope()
+        .types()
+        .composites()
+        .find(|declaration| {
+            matches!(
+                declaration.shape(),
+                quire_semantic_value::declaration::CompositeShape::Record(declared)
+                    if declared.len() == fields
+            )
+        })
+        .unwrap_or_else(|| panic!("a record of {fields} fields is declared"))
+        .key()
 }
 
 /// A text value of `Text[0, 64; nfc]` holding `payload`.
@@ -1273,6 +1299,78 @@ fn cause_deciding(unit: &Unit, element: Value) -> DisagreementCause {
     }
 }
 
+/// A deciding element whose type nests 100,000 `Option`s, and one whose
+/// value nests 100,000 records, each round-trip through the cause codec on a
+/// 512 KiB stack: the encoder keeps the value's and type's members on a heap
+/// stack and the reader holds the document and decodes it from one, so no
+/// depth is a limit (ADR-030 D-1). Each reads back and encodes to the same
+/// document, and the cause, its document and the read result drop on the
+/// same stack.
+#[trace("TC-744", "FR-269-AC-4")]
+#[test]
+fn a_100000_deep_deciding_element_round_trips_on_a_small_stack() {
+    const DEEP: usize = 100_000;
+    let unit = codec_unit();
+    let chain = record_key(&unit, 1);
+    let template = all_below_record(&unit);
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn_scoped(scope, || {
+                let package = &unit.compiled.package;
+                let deep_type = (0..DEEP).fold(quire_exact::ValueType::Boolean, |inner, _| {
+                    quire_exact::ValueType::option(inner)
+                });
+                let deep_record = (0..DEEP).fold(
+                    quire_exact::from_admitted_slots(
+                        chain,
+                        Box::new([quire_exact::FieldValue::Absent]),
+                    ),
+                    |next, _| {
+                        quire_exact::from_admitted_slots(
+                            chain,
+                            Box::new([quire_exact::FieldValue::Present(next)]),
+                        )
+                    },
+                );
+                // The `none` itself and each of its type's levels; each record
+                // holding the next.
+                let elements = [
+                    (
+                        "option type",
+                        quire_exact::OptionValue::none(deep_type),
+                        r#""kind":"option""#,
+                        DEEP + 1,
+                    ),
+                    ("record value", deep_record, r#""slot":"present""#, DEEP),
+                ];
+                for (label, element, level, levels) in elements {
+                    let violation = Verdict::from_category(Category::Violation);
+                    let cause = DisagreementCause::Witness {
+                        proved: violation,
+                        replayed: violation,
+                        given: Some(Box::new(SeparatingWitnessRecord {
+                            deciding_element: element,
+                            ..template.clone()
+                        })),
+                        derived: None,
+                        failure: WitnessFailure::Mismatch,
+                    };
+                    let text = cause
+                        .to_json()
+                        .unwrap_or_else(|error| panic!("{label}: encodes: {error}"));
+                    assert_eq!(text.matches(level).count(), levels, "{label}: every level");
+                    let read = DisagreementCause::from_json(&text, package)
+                        .unwrap_or_else(|error| panic!("{label}: reads: {error}"));
+                    assert_eq!(read.to_json().unwrap(), text, "{label}: encodes back");
+                }
+            })
+            .expect("the thread spawns")
+            .join()
+            .expect("the deep elements round-trip on a 512 KiB stack");
+    });
+}
+
 /// TC-744 step 3 (FR-269-AC-3): a deciding element of each value kind
 /// round-trips through the cause codec, reading back equal and encoding
 /// back to the same document; an element naming a declaration the package
@@ -1288,7 +1386,8 @@ fn tc_744_every_deciding_element_kind_round_trips() {
     let unit = codec_unit();
     let package = &unit.compiled.package;
     let types = package.graph().scope().types();
-    let point = types.composites().next().expect("Point is declared").key();
+    let point = record_key(&unit, 2);
+    let gaps = record_key(&unit, 3);
     let object_type = types
         .object_types()
         .next()
@@ -1348,6 +1447,28 @@ fn tc_744_every_deciding_element_kind_round_trips() {
         (
             "absent option",
             OptionValue::none(ValueType::Composite(point)),
+        ),
+        (
+            "option of option payload type",
+            OptionValue::none(ValueType::option(ValueType::option(digit.clone()))),
+        ),
+        (
+            "option of sequence payload type",
+            OptionValue::none(ValueType::option(ValueType::collection(
+                CollectionType::new(CollectionKind::Sequence, ValueType::Integer, None),
+            ))),
+        ),
+        (
+            "composite with an absent and a null slot",
+            quire_exact::from_admitted_slots(
+                gaps,
+                vec![
+                    FieldValue::Absent,
+                    FieldValue::Null,
+                    FieldValue::Present(int(3)),
+                ]
+                .into(),
+            ),
         ),
         (
             "composite",

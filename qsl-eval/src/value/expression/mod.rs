@@ -497,18 +497,20 @@ fn resolve_quantifier<'g>(
     clause: &'g qsl_semantics::check::CheckedStateClause,
     quantifier: &qsl_foundation::source::provenance::OccurrenceKey,
 ) -> Option<(
-    Vec<&'g qsl_semantics::check::Node>,
-    &'g qsl_semantics::check::Node,
+    Vec<qsl_semantics::check::CheckedNode<'g>>,
+    qsl_semantics::check::CheckedNode<'g>,
 )> {
     use qsl_semantics::check::{NodeKind, Visit};
     let key = graph.semantic_graph().resolve_wire(quantifier.node())?;
     let location = graph.occurrence(key, quantifier.origin())?;
     let applies_quantify = matches!(
         graph.semantic_graph().node(key).map(|node| node.body()),
-        Some(qsl_semantics::check::SemanticTerm::Application {
-            operator: qsl_semantics::check::Operator::Quantify,
-            ..
-        })
+        Some(qsl_semantics::check::BodyTerm::Application(
+            qsl_semantics::check::ApplicationTerm {
+                operator: qsl_semantics::check::Operator::Quantify,
+                ..
+            }
+        ))
     );
     if !applies_quantify {
         return None;
@@ -525,18 +527,18 @@ fn resolve_quantifier<'g>(
             NodeKind::Let { body, .. } => {
                 let mut inner = lets;
                 inner.push(node);
-                pending.push((body, inner));
+                pending.push((node.at(*body), inner));
             }
             NodeKind::If {
                 then, otherwise, ..
             } => {
-                pending.push((then, lets.clone()));
-                pending.push((otherwise, lets));
+                pending.push((node.at(*then), lets.clone()));
+                pending.push((node.at(*otherwise), lets));
             }
-            NodeKind::Not(operand) => pending.push((operand, lets)),
+            NodeKind::Not(operand) => pending.push((node.at(*operand), lets)),
             NodeKind::Connective(_, left, right) => {
-                pending.push((left, lets.clone()));
-                pending.push((right, lets));
+                pending.push((node.at(*left), lets.clone()));
+                pending.push((node.at(*right), lets));
             }
             // Every other node ends a decision path (ADR-031 SW-2).
             _ => {}

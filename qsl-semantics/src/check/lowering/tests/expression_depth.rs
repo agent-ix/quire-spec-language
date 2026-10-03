@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-415 step 10 (FR-093-AC-14): a function body nested to the
-//! check stage's depth limit checks, and one nested past it refuses on the
-//! named depth limit; neither overflows the stack. Each check runs on a
-//! spawned thread with a 2 MiB stack, the default test-thread size, in
-//! whatever profile the suite runs in. A debug build once aborted
-//! at 20 nested `a and (…)`: typing, the definedness walk and lowering each
-//! recursed once per level, and measuring the declaration recursed once per
-//! level before any limit was checked.
+//! TC-415 step 10 (FR-093-AC-14): a function body of any depth checks, or
+//! refuses on its own unproved obligation, the same way at 1,000 levels as
+//! at 2; no limit names a depth and nothing overflows the stack. Each check
+//! runs on a spawned thread with a 512 KiB stack, in whatever profile the
+//! suite runs in. A debug build once aborted at 20 nested `a and (…)`:
+//! typing, the definedness walk and lowering each recursed once per level,
+//! and measuring the declaration recursed once per level before any limit
+//! was checked.
 
 use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::{Obligation, WrongSnapshotCause};
-use quire_semantic_value::checking::{CheckMode, MAX_CHECKING_DEPTH};
+use quire_semantic_value::checking::CheckMode;
 
 /// The stack each check runs on.
-const STACK: usize = 2 * 1024 * 1024;
+const STACK: usize = 512 * 1024;
 
-/// How many levels the refused bodies nest.
-const TOO_DEEP: usize = 1_000;
+/// How many levels the deep bodies nest.
+const DEEP: usize = 1_000;
 
 fn handle(label: &str) -> NodeKey {
     NodeKey::from_digest(qsl_foundation::ByteDigest::of(label.as_bytes()).as_bytes())
@@ -77,6 +77,10 @@ pub(super) enum Form {
     /// `g(g(… a))`: each argument is typed against its parameter, the
     /// typer's upcast step.
     Call,
+    /// `let b0 = x + 0 in if b0 > 0 then (let b1 = x + 1 in if b1 > 0 then
+    /// (… a) else a) else a`: nested guards on distinct subjects, each
+    /// level's facts one more than its parent's.
+    DistinctGuards,
     /// `(x < x) = ((x < x) = (… a))`.
     Comparison,
     /// `if ((a and x < 1) and x < 1) … then a else a`: a guard whose facts
@@ -119,7 +123,7 @@ pub(super) enum Form {
     Tuple,
 }
 
-pub(super) const FORMS: [Form; 25] = [
+pub(super) const FORMS: [Form; 26] = [
     Form::And,
     Form::AndLeft,
     Form::IfThen,
@@ -129,6 +133,7 @@ pub(super) const FORMS: [Form; 25] = [
     Form::Call,
     Form::Comparison,
     Form::Guard,
+    Form::DistinctGuards,
     Form::Add,
     Form::AddLeft,
     Form::Negate,
@@ -148,35 +153,6 @@ pub(super) const FORMS: [Form; 25] = [
 ];
 
 impl Form {
-    /// The deepest nesting the default limits admit: the body's deepest
-    /// expression is then at the depth limit. A form that nests two
-    /// expressions per level (`value(….next)`, `count`'s `… = 0`, a literal
-    /// inside a call) admits 63.
-    fn deepest(self) -> usize {
-        match self {
-            Self::Field | Self::Count | Self::Collection | Self::Tuple => 63,
-            Self::Guard => 125,
-            Self::Comparison | Self::Narrowed | Self::Record => 126,
-            Self::And
-            | Self::AndLeft
-            | Self::IfThen
-            | Self::IfCondition
-            | Self::Let
-            | Self::Not
-            | Self::Call
-            | Self::Add
-            | Self::AddLeft
-            | Self::Negate
-            | Self::Forall
-            | Self::Sum
-            | Self::Fold
-            | Self::Map
-            | Self::Filter
-            | Self::Contains
-            | Self::Convert => 127,
-        }
-    }
-
     /// `f`'s declaration with this form nested `levels` times.
     fn function(self, levels: usize) -> FunctionDeclaration {
         let a = || name_expr("a");
@@ -235,7 +211,8 @@ impl Form {
             | Self::Not
             | Self::Call
             | Self::Comparison
-            | Self::Guard => (
+            | Self::Guard
+            | Self::DistinctGuards => (
                 vec![("a", boolean()), ("x", int_form(0, 1))],
                 boolean(),
                 a(),
@@ -257,6 +234,22 @@ impl Form {
                     body,
                 ),
                 Self::Guard => binary(BinaryOperator::And, body, x_below_one()),
+                Self::DistinctGuards => {
+                    let slot = format!("b{level}");
+                    Expression::let_in(
+                        slot.clone(),
+                        binary(
+                            BinaryOperator::Add,
+                            x(),
+                            integer_expr(i64::try_from(level).unwrap_or(0)),
+                        ),
+                        Expression::if_then_else(
+                            binary(BinaryOperator::Greater, name_expr(&slot), integer_expr(0)),
+                            body,
+                            a(),
+                        ),
+                    )
+                }
                 Self::Add => binary(BinaryOperator::Add, x(), body),
                 Self::AddLeft => binary(BinaryOperator::Add, body, x()),
                 Self::Negate => Expression::negate(body),
@@ -333,6 +326,7 @@ impl Form {
             | Self::Not
             | Self::Call
             | Self::Comparison
+            | Self::DistinctGuards
             | Self::Add
             | Self::AddLeft
             | Self::Negate
@@ -399,149 +393,76 @@ pub(super) fn check_on_small_stack(
         })
         .expect("the check thread spawns")
         .join()
-        .expect("the check completes on a 2 MiB stack")
+        .expect("the check completes on a 512 KiB stack")
 }
 
-/// Every refusal is the typing stage's depth limit `limit`, and there is at
-/// least one.
-fn assert_depth_refusals(form: Form, refusals: &[CheckRefusal], limit: u64) {
-    assert!(!refusals.is_empty(), "{form:?}");
-    for refusal in refusals {
-        assert_eq!(
-            refusal.cause,
-            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                stage: CheckingStage::Typing,
-                kind: CheckingLimitKind::Depth,
-                limit,
-                actual: u128::from(limit) + 1,
-                region: None,
-            })),
-            "{form:?}: {refusal:?}"
-        );
-    }
-}
-
-/// The ticket's reproduction: 127 nested `a and (…)` put the innermost `a`
-/// at the default depth limit and check; 128 refuse naming it.
-#[trace("FR-093-AC-14", "TC-415")]
-#[test]
-fn a_127_level_and_chain_checks_on_a_small_stack_and_128_refuses() {
-    let graph = check_on_small_stack(Form::And, 127, CheckingLimits::default())
-        .unwrap_or_else(|refusals| panic!("127 levels check: {refusals:?}"));
-    let connectives = graph
-        .semantic_graph()
-        .nodes()
-        .filter(|node| node.semantic_form() == "binary")
-        .count();
-    // `a and (…)` at every level is one node: each level's operand
-    // differs, so no two are one content.
-    assert_eq!(connectives, 127);
-    let refusals = check_on_small_stack(Form::And, 128, CheckingLimits::default())
-        .expect_err("128 levels pass the depth limit");
-    assert_depth_refusals(Form::And, &refusals, MAX_CHECKING_DEPTH);
-}
-
-/// Every nested form checks at the deepest nesting the default limits
-/// admit, through typing, the definedness walk and lowering, and one level
-/// deeper refuses on the depth limit. The unguarded field chain reaches the
-/// definedness walk and refuses there on its first unproved `value`.
-#[trace("FR-093-AC-14", "TC-415")]
-#[test]
-fn every_nested_form_checks_at_the_depth_limit_on_a_small_stack() {
-    for form in FORMS {
-        let deepest = form.deepest();
-        match (
-            form,
-            check_on_small_stack(form, deepest, CheckingLimits::default()),
-        ) {
-            (Form::Field, Err(refusals)) => assert!(
-                refusals
-                    .iter()
-                    .all(|refusal| refusal.cause == CheckCause::Unproved(Obligation::Presence)),
-                "{form:?}: {refusals:?}"
-            ),
-            (Form::Field, Ok(_)) => panic!("an unguarded `value` is unproved"),
-            (_, Ok(_)) => {}
-            (_, Err(refusals)) => panic!("{form:?} at {deepest} levels checks: {refusals:?}"),
+/// What a check gives: checked, or the distinct causes it refused on.
+fn outcome(checked: Result<CheckedGraph, Vec<CheckRefusal>>) -> Result<(), Vec<CheckCause>> {
+    checked.map(|_| ()).map_err(|refusals| {
+        let mut causes: Vec<CheckCause> = Vec::new();
+        for refusal in refusals {
+            if !causes.contains(&refusal.cause) {
+                causes.push(refusal.cause);
+            }
         }
-        let refusals = check_on_small_stack(form, deepest + 1, CheckingLimits::default())
-            .expect_err("one level more passes the depth limit");
-        assert_depth_refusals(form, &refusals, MAX_CHECKING_DEPTH);
-    }
+        causes
+    })
 }
 
-/// 1,000 levels of every form refuse naming the depth limit, at the
-/// default limits, at the maximum depth with nodes and work unlimited, and
-/// at a caller depth of 16.
+/// Every nested form, nested 1,000 deep, checks or refuses on its own
+/// unproved obligation exactly as it does nested 2 deep, through typing,
+/// the definedness walk and lowering: the unguarded field chain refuses on
+/// its unproved `value` both times, and every other form checks.
 #[trace("FR-093-AC-14", "TC-415")]
 #[test]
-fn a_1000_level_nesting_of_every_form_refuses_on_the_depth_limit() {
-    let maximum = CheckingLimits::new(u64::MAX, MAX_CHECKING_DEPTH)
-        .expect("the maximum depth is admitted")
-        .with_work_budget(u64::MAX)
-        .with_input_bytes(u64::MAX);
-    let narrowed = CheckingLimits::new(u64::MAX, 16).expect("16 is admitted");
+fn every_nested_form_checks_at_1000_levels_as_at_2_on_a_small_stack() {
     for form in FORMS {
-        for (limits, limit) in [
-            (CheckingLimits::default(), MAX_CHECKING_DEPTH),
-            (maximum, MAX_CHECKING_DEPTH),
-            (narrowed, 16),
-        ] {
-            let refusals = check_on_small_stack(form, TOO_DEEP, limits)
-                .expect_err("1,000 levels pass the depth limit");
-            assert_depth_refusals(form, &refusals, limit);
+        let shallow = outcome(check_on_small_stack(form, 2, CheckingLimits::default()));
+        match (form, &shallow) {
+            (Form::Field, Err(causes)) => {
+                assert_eq!(causes, &[CheckCause::Unproved(Obligation::Presence)]);
+            }
+            (Form::Field, Ok(())) => panic!("an unguarded `value` is unproved"),
+            (_, Ok(())) => {}
+            (_, Err(causes)) => panic!("{form:?} at 2 levels checks: {causes:?}"),
         }
+        let deep = outcome(check_on_small_stack(form, DEEP, CheckingLimits::default()));
+        assert_eq!(deep, shallow, "{form:?} at {DEEP} levels");
     }
 }
 
 /// `pre(…)`'s syntactic checks walk the whole operand before typing enters
-/// it: a postcondition `pre` over 1,000 nested levels with no eligible read
-/// refuses as a forbidden pre-read, and one whose eligible read sits under
-/// 1,000 `let`s refuses on the depth limit once typing reaches it.
+/// it: a postcondition `pre` over 1,000 nested `a and (…)` with no eligible
+/// read refuses as a forbidden pre-read.
 #[trace("FR-093-AC-14", "TC-415")]
 #[test]
 fn a_postcondition_pre_over_1000_levels_refuses_on_a_small_stack() {
     let graph = PackageDeclarations::new(fixture_source())
         .check(CheckingLimits::default())
         .expect("an empty package checks");
-    let refusals = std::thread::scope(|scope| {
+    let refused = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(STACK)
             .spawn_scoped(scope, || {
                 let parameters = vec![("a".to_owned(), ValueType::Boolean)];
                 let mut unread = name_expr("a");
-                let mut bound = Expression::pre(name_expr("a"));
-                for level in 0..TOO_DEEP {
+                for _ in 0..DEEP {
                     unread = binary(BinaryOperator::And, name_expr("a"), unread);
-                    bound = Expression::let_in(format!("b{level}"), name_expr("a"), bound);
                 }
-                [unread, bound].map(|operand| {
-                    graph.check_postcondition_expression(
-                        parameters.clone(),
-                        &Expression::pre(operand),
-                        Some(&ValueType::Boolean),
-                        CheckMode::Linked,
-                        CheckingLimits::default(),
-                    )
-                })
+                graph.check_postcondition_expression(
+                    parameters,
+                    &Expression::pre(unread),
+                    Some(&ValueType::Boolean),
+                    CheckMode::Linked,
+                    CheckingLimits::default(),
+                )
             })
             .expect("the check thread spawns")
             .join()
-            .expect("the check completes on a 2 MiB stack")
+            .expect("the check completes on a 512 KiB stack")
     });
-    let [unread, bound] = refusals;
     assert_eq!(
-        unread.expect_err("no eligible read").cause,
+        refused.expect_err("no eligible read").cause,
         CheckCause::WrongSnapshot(WrongSnapshotCause::ForbiddenPreRead)
-    );
-    assert_eq!(
-        bound.expect_err("1,000 `let`s pass the depth limit").cause,
-        CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-            stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::Depth,
-            limit: MAX_CHECKING_DEPTH,
-            actual: u128::from(MAX_CHECKING_DEPTH) + 1,
-            region: None,
-        }))
     );
 }

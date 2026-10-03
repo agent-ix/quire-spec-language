@@ -37,6 +37,7 @@
 //! literal contributes none.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::ControlFlow;
 
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::digest::WireNodeId;
@@ -44,9 +45,11 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::InternalFault;
 use quire_exact::{IntegerInterval, NodeKey, Origin, ValueType};
 
-use super::ir::{coerce_builds_narrow, scalar_conversion_target, Node, NodeKind, Slot, Visit};
+use super::ir::{
+    coerce_builds_narrow, scalar_conversion_target, CheckedNode, NodeKind, Slot, Visit,
+};
 use super::lowering::SemanticGraph;
-use super::node_key::SemanticTerm;
+use super::node_key::{ApplicationTerm, BodyTerm, LeafTerm, MemberTerm};
 use super::refusal::KeyFault;
 use super::{
     family::{OccurrenceMap, OccurrenceRole},
@@ -298,8 +301,8 @@ impl RequirementRecord {
 
 /// Whether checked `node` lowers to a scalar operation application.
 #[deny(clippy::wildcard_enum_match_arm)]
-fn is_scalar_application(node: &Node) -> bool {
-    match &node.kind {
+fn is_scalar_application(node: CheckedNode<'_>) -> bool {
+    match node.kind() {
         NodeKind::Arithmetic(..)
         | NodeKind::Negate(_)
         | NodeKind::Divide { .. }
@@ -313,9 +316,9 @@ fn is_scalar_application(node: &Node) -> bool {
         | NodeKind::Order(..)
         | NodeKind::IeeeToRational(..) => true,
         NodeKind::ConvertScalar(target, operand) => {
-            scalar_conversion_target(target, &operand.value_type).is_some()
+            scalar_conversion_target(target, node.at(*operand).value_type()).is_some()
         }
-        NodeKind::Equality(_, _, left, _) => scalar_equality(&left.value_type),
+        NodeKind::Equality(_, _, left, _) => scalar_equality(node.at(*left).value_type()),
         NodeKind::Literal(_)
         | NodeKind::Coerce(..)
         | NodeKind::Local(_)
@@ -380,11 +383,15 @@ struct Guard {
 
 /// One node the walk has entered and not yet left.
 struct Frame<'n> {
-    node: &'n Node,
+    node: CheckedNode<'n>,
     /// The innermost guard the node is walked under.
     guard: Option<usize>,
-    children: Vec<&'n Node>,
-    next: usize,
+    /// How many children the node has.
+    child_count: usize,
+    /// How many of its children have been left.
+    left: usize,
+    /// The guard its next child is walked under.
+    child_guard: Option<usize>,
     /// The binders the node's finished children read.
     reads: BTreeSet<BinderSite>,
     /// The binders the first child reads, once it is finished: an `if`'s
@@ -393,20 +400,6 @@ struct Frame<'n> {
     /// Where a binder this node binds is located: its own location, or an
     /// enclosing `flatten`'s, whose `flat_map` node binds it (FR-093).
     binding: Location,
-}
-
-impl<'n> Frame<'n> {
-    fn new(node: &'n Node, guard: Option<usize>, binding: Location) -> Self {
-        Self {
-            node,
-            guard,
-            children: node.children(),
-            next: 0,
-            reads: BTreeSet::new(),
-            first_reads: BTreeSet::new(),
-            binding,
-        }
-    }
 }
 
 /// The extent roots of a body's binders.
@@ -434,12 +427,12 @@ impl Roots {
 /// The binder sites `node` binds, at `binding`: a query's slot, a fold's
 /// accumulator and element. A read of one of them is a root only of the
 /// applications inside `node`.
-fn bound_by(node: &Node, binding: &Location) -> Vec<BinderSite> {
+fn bound_by(node: CheckedNode<'_>, binding: &Location) -> Vec<BinderSite> {
     let site = |slot: Slot| BinderSite {
         binder: binding.clone(),
         slot,
     };
-    match &node.kind {
+    match node.kind() {
         NodeKind::Query { slot, .. } => vec![site(*slot)],
         NodeKind::Fold {
             accumulator,
@@ -460,8 +453,8 @@ struct Classify<'w> {
 }
 
 /// The element type of a query or fold source.
-fn element_type(source: &Node) -> Result<&ValueType, ClassifyFailure> {
-    match &source.value_type {
+fn element_type(source: CheckedNode<'_>) -> Result<&ValueType, ClassifyFailure> {
+    match source.value_type() {
         ValueType::Collection(collection) => Ok(collection.element()),
         _ => Err(ClassifyFailure::Fault(InternalFault::new(
             STAGE,
@@ -476,9 +469,9 @@ fn element_type(source: &Node) -> Result<&ValueType, ClassifyFailure> {
 /// each extent classified over `types` with at most `position_limit` type
 /// positions per claim.
 ///
-/// The walk keeps its pending nodes on an explicit stack.
+/// The walk runs on the walker toolkit.
 pub(crate) fn claims_of(
-    body: &Node,
+    body: CheckedNode<'_>,
     parameters: &[(String, ValueType)],
     location: &Location,
     types: &TypeEnvironment,
@@ -488,67 +481,107 @@ pub(crate) fn claims_of(
     for (slot, (_, value_type)) in parameters.iter().enumerate() {
         roots.bind(slot, location, value_type);
     }
-    let mut guards: Vec<Guard> = Vec::new();
-    let mut claims = Vec::new();
-    let mut stack = vec![Frame::new(body, None, body.location.clone())];
-    while let Some(frame) = stack.last_mut() {
-        if let Some(&child) = frame.children.get(frame.next) {
-            let index = frame.next;
-            frame.next += 1;
-            let mut guard = frame.guard;
-            let mut guard_on = |location: &Location, holds: bool, reads: &BTreeSet<BinderSite>| {
-                guards.push(Guard {
-                    location: location.clone(),
-                    holds,
-                    reads: reads.clone(),
-                    outer: frame.guard,
-                });
-                guard = Some(guards.len() - 1);
-            };
-            match (&frame.node.kind, index) {
-                (NodeKind::If { condition, .. }, 1 | 2) => {
-                    guard_on(&condition.location, index == 1, &frame.first_reads);
-                }
-                (NodeKind::Connective(connective, left, _), 1) => {
-                    let holds = !matches!(connective, super::ir::Connective::Or);
-                    guard_on(&left.location, holds, &frame.first_reads);
-                }
-                (NodeKind::Let { slot, .. }, 1) => {
-                    roots.slots.insert(*slot, frame.first_reads.clone());
-                }
-                (NodeKind::Query { slot, source, .. }, 1) => {
-                    roots.bind(*slot, &frame.binding, element_type(source)?);
-                }
-                (
-                    NodeKind::Fold {
-                        accumulator,
-                        binder,
-                        source,
-                        ..
-                    },
-                    _,
-                ) if index + 1 == frame.children.len() => {
-                    roots.bind(*accumulator, &frame.binding, &frame.node.value_type);
-                    roots.bind(*binder, &frame.binding, element_type(source)?);
-                }
-                _ => {}
+    let mut walk = ClaimsWalk {
+        roots,
+        guards: Vec::new(),
+        claims: Vec::new(),
+        frames: Vec::new(),
+        types,
+        position_limit,
+    };
+    match quire_walk::walk(&mut walk, ClaimNode::Visit(body)) {
+        ControlFlow::Continue(()) => Ok(walk.claims),
+        ControlFlow::Break(failure) => Err(failure),
+    }
+}
+
+/// [`claims_of`]'s walk. It keeps the entered nodes' [`Frame`]s on a stack of
+/// its own, pushed when a node is entered and popped when it is exited.
+struct ClaimsWalk<'n, 't> {
+    roots: Roots,
+    guards: Vec<Guard>,
+    claims: Vec<ValueClaim>,
+    frames: Vec<Frame<'n>>,
+    types: &'t TypeEnvironment,
+    position_limit: u64,
+}
+
+/// A node of the claims walk.
+enum ClaimNode<'n> {
+    /// A node of the body.
+    Visit(CheckedNode<'n>),
+    /// Child `index` of the innermost entered node is about to be visited:
+    /// the guard it runs under and the binders it makes known.
+    Before(usize),
+}
+
+impl<'n> ClaimsWalk<'n, '_> {
+    /// What walking child `index` of the innermost frame decides: the guard
+    /// the child runs under, and the roots it binds (the outer body's
+    /// bookkeeping the recursive walk did between two children).
+    fn before(&mut self, index: usize) -> Result<(), ClassifyFailure> {
+        let Some(frame) = self.frames.last_mut() else {
+            return Ok(());
+        };
+        let node = frame.node;
+        let mut guard = frame.guard;
+        let mut guard_on = |location: &Location, holds: bool, reads: &BTreeSet<BinderSite>| {
+            self.guards.push(Guard {
+                location: location.clone(),
+                holds,
+                reads: reads.clone(),
+                outer: frame.guard,
+            });
+            guard = Some(self.guards.len() - 1);
+        };
+        match (node.kind(), index) {
+            (NodeKind::If { condition, .. }, 1 | 2) => {
+                guard_on(
+                    node.at(*condition).location(),
+                    index == 1,
+                    &frame.first_reads,
+                );
             }
-            let binding = match (&frame.node.kind, &child.kind) {
-                (
-                    NodeKind::Flatten(_),
-                    NodeKind::Query {
-                        visit: Visit::Map, ..
-                    },
-                ) => frame.node.location.clone(),
-                _ => child.location.clone(),
-            };
-            stack.push(Frame::new(child, guard, binding));
-            continue;
+            (NodeKind::Connective(connective, left, _), 1) => {
+                let holds = !matches!(connective, super::ir::Connective::Or);
+                guard_on(node.at(*left).location(), holds, &frame.first_reads);
+            }
+            (NodeKind::Let { slot, .. }, 1) => {
+                self.roots.slots.insert(*slot, frame.first_reads.clone());
+            }
+            (NodeKind::Query { slot, source, .. }, 1) => {
+                self.roots
+                    .bind(*slot, &frame.binding, element_type(node.at(*source))?);
+            }
+            (
+                NodeKind::Fold {
+                    accumulator,
+                    binder,
+                    source,
+                    ..
+                },
+                _,
+            ) if index + 1 == frame.child_count => {
+                self.roots
+                    .bind(*accumulator, &frame.binding, node.value_type());
+                self.roots
+                    .bind(*binder, &frame.binding, element_type(node.at(*source))?);
+            }
+            _ => {}
         }
-        let Some(frame) = stack.pop() else { break };
+        frame.child_guard = guard;
+        Ok(())
+    }
+
+    /// The node `node` is left: its claim, if it is a scalar application, and
+    /// its reads handed to its parent.
+    fn leave(&mut self) -> Result<(), ClassifyFailure> {
+        let Some(frame) = self.frames.pop() else {
+            return Ok(());
+        };
         let mut reads = frame.reads;
-        if let NodeKind::Local(slot) = &frame.node.kind {
-            let Some(read) = roots.slots.get(slot) else {
+        if let NodeKind::Local(slot) = frame.node.kind() {
+            let Some(read) = self.roots.slots.get(slot) else {
                 return Err(ClassifyFailure::Fault(InternalFault::new(
                     STAGE,
                     "local-slot-bound",
@@ -557,33 +590,112 @@ pub(crate) fn claims_of(
             reads.extend(read.iter().cloned());
         }
         if is_scalar_application(frame.node) {
-            let narrow = stack.last().and_then(|parent| match &parent.node.kind {
-                NodeKind::Coerce(operand, interval)
-                    if coerce_builds_narrow(&operand.value_type, interval) =>
-                {
-                    Some(interval)
-                }
-                _ => None,
-            });
+            let narrow = self
+                .frames
+                .last()
+                .and_then(|parent| match parent.node.kind() {
+                    NodeKind::Coerce(operand, interval)
+                        if coerce_builds_narrow(
+                            parent.node.at(*operand).value_type(),
+                            interval,
+                        ) =>
+                    {
+                        Some(interval)
+                    }
+                    _ => None,
+                });
             let walk = Classify {
-                guards: &guards,
-                root_types: &roots.types,
-                types,
-                position_limit,
+                guards: &self.guards,
+                root_types: &self.roots.types,
+                types: self.types,
+                position_limit: self.position_limit,
             };
-            claims.push(walk.claim(frame.node, narrow, frame.guard, &reads)?);
+            self.claims
+                .push(walk.claim(frame.node, narrow, frame.guard, &reads)?);
         }
         for bound in bound_by(frame.node, &frame.binding) {
             reads.remove(&bound);
         }
-        if let Some(parent) = stack.last_mut() {
-            if parent.next == 1 {
+        if let Some(parent) = self.frames.last_mut() {
+            if parent.left == 0 {
                 parent.first_reads.clone_from(&reads);
             }
+            parent.left += 1;
             parent.reads.extend(reads);
         }
+        Ok(())
     }
-    Ok(claims)
+}
+
+/// What the claims walk keeps for an entered node.
+enum ClaimFrame {
+    /// A body node, whose [`Frame`] is on the walk's stack.
+    Visited,
+    /// A [`ClaimNode::Before`] hook, which has nothing to leave.
+    Hook,
+}
+
+impl<'n> quire_walk::Walk for ClaimsWalk<'n, '_> {
+    type Node = ClaimNode<'n>;
+    type Frame = ClaimFrame;
+    type Stop = ClassifyFailure;
+
+    fn enter(
+        &mut self,
+        node: ClaimNode<'n>,
+        children: &mut quire_walk::Children<'_, ClaimNode<'n>>,
+    ) -> ControlFlow<ClassifyFailure, ClaimFrame> {
+        let node = match node {
+            ClaimNode::Before(index) => {
+                return match self.before(index) {
+                    Ok(()) => ControlFlow::Continue(ClaimFrame::Hook),
+                    Err(failure) => ControlFlow::Break(failure),
+                };
+            }
+            ClaimNode::Visit(node) => node,
+        };
+        let (guard, binding) = match self.frames.last() {
+            None => (None, node.location().clone()),
+            Some(parent) => (
+                parent.child_guard,
+                match (parent.node.kind(), node.kind()) {
+                    (
+                        NodeKind::Flatten(_),
+                        NodeKind::Query {
+                            visit: Visit::Map, ..
+                        },
+                    ) => parent.node.location().clone(),
+                    _ => node.location().clone(),
+                },
+            ),
+        };
+        let kids = node.children();
+        self.frames.push(Frame {
+            node,
+            guard,
+            child_count: kids.len(),
+            left: 0,
+            child_guard: guard,
+            reads: BTreeSet::new(),
+            first_reads: BTreeSet::new(),
+            binding,
+        });
+        for (index, child) in kids.into_iter().enumerate() {
+            children.push(ClaimNode::Before(index));
+            children.push(ClaimNode::Visit(child));
+        }
+        ControlFlow::Continue(ClaimFrame::Visited)
+    }
+
+    fn exit(&mut self, frame: ClaimFrame) -> ControlFlow<ClassifyFailure> {
+        match frame {
+            ClaimFrame::Hook => ControlFlow::Continue(()),
+            ClaimFrame::Visited => match self.leave() {
+                Ok(()) => ControlFlow::Continue(()),
+                Err(failure) => ControlFlow::Break(failure),
+            },
+        }
+    }
 }
 
 impl Classify<'_> {
@@ -592,7 +704,7 @@ impl Classify<'_> {
     /// operand subtrees read `reads`.
     fn claim(
         &self,
-        node: &Node,
+        node: CheckedNode<'_>,
         narrow: Option<&IntegerInterval>,
         guard: Option<usize>,
         reads: &BTreeSet<BinderSite>,
@@ -632,11 +744,11 @@ impl Classify<'_> {
         }
         let bound = match narrow {
             Some(interval) => SiteBound::Narrowed(interval.clone()),
-            None => SiteBound::Own(node.value_type.clone()),
+            None => SiteBound::Own(node.value_type().clone()),
         };
         Ok(ValueClaim {
             site: ClaimSite {
-                location: node.location.clone(),
+                location: node.location().clone(),
                 bound,
                 path_condition,
             },
@@ -690,11 +802,11 @@ pub(crate) fn key_claims(
         at.entry(location).or_default().push((node, origin));
     }
     let application = |key: NodeKey| match graph.node(key).map(|node| node.body()) {
-        Some(SemanticTerm::Application {
+        Some(BodyTerm::Application(ApplicationTerm {
             operation,
             arguments,
             ..
-        }) => Some((operation.identity(), arguments.as_slice())),
+        })) => Some((operation.identity(), arguments.as_slice())),
         _ => None,
     };
     let scalar =
@@ -725,7 +837,7 @@ pub(crate) fn key_claims(
                     // bound instead of failing closed.
                     application(*narrow).is_some_and(|(identity, arguments)| {
                         operation_role(identity) == OperationRole::Narrow
-                            && matches!(arguments, [SemanticTerm::Reference { target }] if target.0 == *key)
+                            && matches!(arguments, [MemberTerm::Leaf(LeafTerm::Reference { target })] if target.0 == *key)
                     })
                 })
                 .and_then(|(narrow, _)| graph.node(*narrow)?.semantic_type())

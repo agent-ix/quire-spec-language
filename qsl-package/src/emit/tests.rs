@@ -33,6 +33,7 @@ use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
 mod admission_corpus;
+mod deep_bodies;
 mod golden;
 mod identity_depth;
 
@@ -786,12 +787,9 @@ fn declared<'w>(wire: &'w Value, name: &str) -> &'w Value {
 fn a_record_and_a_tuple_are_written_with_their_declarations() {
     let package = declared_types(Vec::new(), Vec::new());
     for name in ["Point", "Pair"] {
-        let site = Location {
-            origin: quire_semantic_value::location::Origin::TypeDeclaration {
-                name: name.to_owned(),
-            },
-            path: Vec::new(),
-        };
+        let site = Location::root(quire_semantic_value::location::Origin::TypeDeclaration {
+            name: name.to_owned(),
+        });
         assert!(
             package
                 .graph()
@@ -1155,7 +1153,10 @@ fn a_recursion_group_holding_an_application_is_written() {
         assert!(
             members
                 .iter()
-                .filter(|node| matches!(node.body(), SemanticTerm::Application { .. }))
+                .filter(|node| matches!(
+                    node.body(),
+                    qsl_semantics::check::BodyTerm::Application(_)
+                ))
                 .count()
                 >= 2,
             "{function}'s group holds application nodes"
@@ -1275,9 +1276,12 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
 fn the_package_crate_builds_no_term_and_mints_no_key() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let forbidden = [
-        "SemanticTerm::reference(",
-        "SemanticTerm::binding(",
-        "SemanticTerm::literal(",
+        "LeafTerm::reference(",
+        "LeafTerm::literal(",
+        "MemberTerm::binding(",
+        "MemberTerm::bound(",
+        "BodyTerm::literal(",
+        "BodyTerm::application(",
         "node_key(",
         "group_keys(",
         "NodeKey::from_digest(",

@@ -3636,11 +3636,11 @@ fn config_version_compiled() -> Compiled {
 /// `node`'s body, expecting a `quire.op.state.clause` application, and the
 /// `clause` its `state_clause` member names.
 fn state_clause_kind(node: &qsl_semantics::check::SemanticNode) -> &'static str {
-    let qsl_semantics::check::SemanticTerm::Application {
+    let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
         operator,
         operation,
         ..
-    } = node.body()
+    }) = node.body()
     else {
         panic!(
             "state_clause body must be an application, got {:?}",
@@ -3696,35 +3696,39 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .filter(|node| node.semantic_form() == "operation_anchor")
         .collect();
     assert_eq!(anchors.len(), 1, "{anchors:?}");
-    let qsl_semantics::check::SemanticTerm::Aggregate { members } = anchors[0].body() else {
+    let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm { members }) =
+        anchors[0].body()
+    else {
         panic!("operation_anchor body must be an aggregate");
     };
     let [context, operation, frame_ref] = members.as_slice() else {
         panic!("operation_anchor has exactly 3 bindings, got {members:?}");
     };
-    let qsl_semantics::check::SemanticTerm::Binding { name, value } = operation else {
+    let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding { name, value }) =
+        operation
+    else {
         panic!("operation_anchor's second member is a binding");
     };
     assert_eq!(name, "operation");
-    let qsl_semantics::check::SemanticTerm::Literal {
+    let qsl_semantics::check::BindingValue::Leaf(qsl_semantics::check::LeafTerm::Literal {
         value: qsl_semantics::check::LiteralValue::Text(text),
         ..
-    } = value.as_ref()
+    }) = value
     else {
         panic!("operation's own value is a text literal");
     };
     assert_eq!(text, "attemptUpdate");
-    let qsl_semantics::check::SemanticTerm::Binding {
+    let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
         name: context_name,
         value: context_value,
-    } = context
+    }) = context
     else {
         panic!("operation_anchor's first member is a binding");
     };
     assert_eq!(context_name, "context");
-    let qsl_semantics::check::SemanticTerm::Reference {
+    let qsl_semantics::check::BindingValue::Leaf(qsl_semantics::check::LeafTerm::Reference {
         target: context_ref,
-    } = context_value.as_ref()
+    }) = context_value
     else {
         panic!("context's value is a reference");
     };
@@ -3766,13 +3770,20 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .filter(|node| node.semantic_form() == "state_clause")
         .filter(|node| state_clause_kind(node) == "invariant")
     {
-        let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = node.body() else {
+        let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
+            arguments,
+            ..
+        }) = node.body()
+        else {
             panic!("state_clause body must be an application");
         };
         let [_, anchor_argument, _] = arguments.as_slice() else {
             panic!("state_clause has exactly 3 arguments, got {arguments:?}");
         };
-        let qsl_semantics::check::SemanticTerm::Reference { target } = anchor_argument else {
+        let qsl_semantics::check::MemberTerm::Leaf(qsl_semantics::check::LeafTerm::Reference {
+            target,
+        }) = anchor_argument
+        else {
             panic!("state_clause's anchor argument is a reference");
         };
         assert_eq!(
@@ -3786,14 +3797,14 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         .filter(|node| node.semantic_form() == "frame")
         .collect();
     assert_eq!(frames.len(), 1, "{frames:?}");
-    let qsl_semantics::check::SemanticTerm::Frame {
+    let qsl_semantics::check::BodyTerm::Frame(qsl_semantics::check::FrameTerm {
         modifies,
         creates,
         deletes,
-    } = frames[0].body()
+    }) = frames[0].body()
     else {
         panic!(
-            "frame body must be SemanticTerm::Frame, got {:?}",
+            "frame body must be BodyTerm::Frame, got {:?}",
             frames[0].body()
         );
     };
@@ -3813,17 +3824,17 @@ fn s4_emits_exactly_the_fr_105_state_nodes() {
         Some(context_ref.0),
         "the frame's own semantic_type is the declaring object type"
     );
-    let qsl_semantics::check::SemanticTerm::Binding {
+    let qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
         name: frame_name,
         value: frame_value,
-    } = frame_ref
+    }) = frame_ref
     else {
         panic!("operation_anchor's third member is a binding");
     };
     assert_eq!(frame_name, "frame");
-    let qsl_semantics::check::SemanticTerm::Reference {
+    let qsl_semantics::check::BindingValue::Leaf(qsl_semantics::check::LeafTerm::Reference {
         target: frame_target,
-    } = frame_value.as_ref()
+    }) = frame_value
     else {
         panic!("frame's value is a reference");
     };
@@ -4088,8 +4099,12 @@ fn state_clause_nodes(
 /// `reference` to the anchor, then the condition).
 fn state_clause_condition(
     node: &qsl_semantics::check::SemanticNode,
-) -> &qsl_semantics::check::SemanticTerm {
-    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = node.body() else {
+) -> &qsl_semantics::check::MemberTerm {
+    let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
+        arguments,
+        ..
+    }) = node.body()
+    else {
         panic!("state_clause body must be an application");
     };
     let [_, _, condition] = arguments.as_slice() else {
@@ -4131,67 +4146,50 @@ fn single_state_node_key(graph: &qsl_semantics::check::CheckedGraph, form: &str)
     *key
 }
 
-/// `term` itself, or -- when it is a `reference` to an `expression` node
-/// (FR-093's application-node preimage: every nested application is its own
-/// node, named from its parent by reference) -- that node's own body.
+/// The body of the `expression` node `leaf` references (FR-093's
+/// application-node preimage: every nested application is its own node,
+/// named from its parent by reference), or `None` for any other leaf.
 fn resolve_expression<'g>(
     graph: &'g qsl_semantics::check::CheckedGraph,
-    term: &'g qsl_semantics::check::SemanticTerm,
-) -> &'g qsl_semantics::check::SemanticTerm {
-    if let qsl_semantics::check::SemanticTerm::Reference { target } = term {
-        if let Some(node) = graph.semantic_graph().node(target.0) {
-            if node.node_tag() == qsl_semantics::check::NodeTag::Expression {
-                return node.body();
-            }
-        }
-    }
-    term
+    leaf: &qsl_semantics::check::LeafTerm,
+) -> Option<&'g qsl_semantics::check::BodyTerm> {
+    let qsl_semantics::check::LeafTerm::Reference { target } = leaf else {
+        return None;
+    };
+    let node = graph.semantic_graph().node(target.0)?;
+    (node.node_tag() == qsl_semantics::check::NodeTag::Expression).then(|| node.body())
 }
 
-/// Depth-first search of `term`, following references into `expression`
-/// nodes ([`resolve_expression`]) but never into model, type or parameter
-/// nodes, for the first application `matches` accepts. The expression
-/// graph is content-addressed, so it is acyclic and the walk terminates.
+/// Depth-first search of the expression nodes `leaves` reference
+/// ([`resolve_expression`]), never into model, type or parameter nodes, for
+/// the first application `matches` accepts. The expression graph is
+/// content-addressed, so it is acyclic and the walk terminates.
 fn find_application<'g>(
     graph: &'g qsl_semantics::check::CheckedGraph,
-    term: &'g qsl_semantics::check::SemanticTerm,
-    matches: &dyn Fn(&qsl_semantics::check::SemanticTerm) -> bool,
-) -> Option<&'g qsl_semantics::check::SemanticTerm> {
-    let term = resolve_expression(graph, term);
-    match term {
-        qsl_semantics::check::SemanticTerm::Application { arguments, .. } => {
-            if matches(term) {
-                return Some(term);
+    leaves: Vec<&qsl_semantics::check::LeafTerm>,
+    matches: &dyn Fn(&qsl_semantics::check::ApplicationTerm) -> bool,
+) -> Option<&'g qsl_semantics::check::ApplicationTerm> {
+    leaves.into_iter().find_map(|leaf| {
+        let body = resolve_expression(graph, leaf)?;
+        if let qsl_semantics::check::BodyTerm::Application(application) = body {
+            if matches(application) {
+                return Some(application);
             }
-            arguments
-                .iter()
-                .find_map(|argument| find_application(graph, argument, matches))
         }
-        qsl_semantics::check::SemanticTerm::Aggregate { members } => members
-            .iter()
-            .find_map(|member| find_application(graph, member, matches)),
-        qsl_semantics::check::SemanticTerm::Binding { value, .. } => {
-            find_application(graph, value, matches)
-        }
-        _ => None,
-    }
+        find_application(graph, body.leaves(), matches)
+    })
 }
 
-/// [`find_application`] for the first application whose operator is
-/// `operator` -- e.g. the `quire.op.state.pre`/`quire.op.model.
+/// [`find_application`] for the first application under `term` whose
+/// operator is `operator` -- e.g. the `quire.op.state.pre`/`quire.op.model.
 /// reaches_field` subterm FR-105-AC-2 requires, nested inside the
 /// equality/negation the clause's own condition wraps it in.
 fn find_application_by_operator<'g>(
     graph: &'g qsl_semantics::check::CheckedGraph,
-    term: &'g qsl_semantics::check::SemanticTerm,
+    term: &qsl_semantics::check::MemberTerm,
     operator: qsl_semantics::check::Operator,
-) -> Option<&'g qsl_semantics::check::SemanticTerm> {
-    find_application(graph, term, &|found| {
-        matches!(
-            found,
-            qsl_semantics::check::SemanticTerm::Application { operator: op, .. } if *op == operator
-        )
-    })
+) -> Option<&'g qsl_semantics::check::ApplicationTerm> {
+    find_application(graph, term.leaves(), &|found| found.operator == operator)
 }
 
 /// The `Member::Field` of the first field-read application under `term`
@@ -4199,30 +4197,19 @@ fn find_application_by_operator<'g>(
 /// (FR-105's condition-lowering rule).
 fn find_field_read_member<'g>(
     graph: &'g qsl_semantics::check::CheckedGraph,
-    term: &'g qsl_semantics::check::SemanticTerm,
+    term: &qsl_semantics::check::MemberTerm,
     field_name: &str,
 ) -> Option<&'g qsl_semantics::value::Member> {
-    let is_field_read = |found: &qsl_semantics::check::SemanticTerm| {
-        let qsl_semantics::check::SemanticTerm::Application {
-            operator,
-            operation,
-            ..
-        } = found
-        else {
-            return false;
-        };
-        *operator != qsl_semantics::check::Operator::Reaches
+    let is_field_read = |found: &qsl_semantics::check::ApplicationTerm| {
+        found.operator != qsl_semantics::check::Operator::Reaches
             && matches!(
-                operation.member(),
+                found.operation.member(),
                 Some(qsl_semantics::value::Member::Field { name, .. }) if name.as_str() == field_name
             )
     };
-    let qsl_semantics::check::SemanticTerm::Application { operation, .. } =
-        find_application(graph, term, &is_field_read)?
-    else {
-        unreachable!("find_application only returns an application");
-    };
-    operation.member()
+    find_application(graph, term.leaves(), &is_field_read)?
+        .operation
+        .member()
 }
 
 /// `key`'s wire `node_id` object (`quire.checked-semantic-node/v1`).
@@ -4289,16 +4276,24 @@ fn clause_parameters(
     graph: &qsl_semantics::check::CheckedGraph,
     clause: &qsl_semantics::check::SemanticNode,
 ) -> Vec<(NodeKey, String)> {
-    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = clause.body() else {
+    let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
+        arguments,
+        ..
+    }) = clause.body()
+    else {
         panic!("state_clause body must be an application");
     };
-    let Some(qsl_semantics::check::SemanticTerm::Aggregate { members }) = arguments.first() else {
+    let Some(qsl_semantics::check::MemberTerm::Group(parameters)) = arguments.first() else {
         panic!("state_clause's first argument is the parameter aggregate: {arguments:?}");
     };
-    members
+    parameters
+        .members
         .iter()
         .map(|member| {
-            let qsl_semantics::check::SemanticTerm::Reference { target } = member else {
+            let qsl_semantics::check::GroupMember::Leaf(
+                qsl_semantics::check::LeafTerm::Reference { target },
+            ) = member
+            else {
                 panic!("each parameter aggregate member is a reference, got {member:?}");
             };
             let node = graph
@@ -4310,24 +4305,25 @@ fn clause_parameters(
                 (qsl_semantics::check::NodeTag::Value, "parameter"),
                 "each parameter aggregate member names a value/parameter node"
             );
-            let qsl_semantics::check::SemanticTerm::Aggregate { members: bindings } = node.body()
+            let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm {
+                members: bindings,
+            }) = node.body()
             else {
                 panic!("a parameter node's body is an aggregate");
             };
             let name = bindings
                 .iter()
                 .find_map(|binding| match binding {
-                    qsl_semantics::check::SemanticTerm::Binding { name, value }
-                        if name == "name" =>
-                    {
-                        match value.as_ref() {
-                            qsl_semantics::check::SemanticTerm::Literal {
-                                value: qsl_semantics::check::LiteralValue::Text(text),
-                                ..
-                            } => Some(text.clone()),
-                            _ => None,
-                        }
-                    }
+                    qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
+                        name,
+                        value:
+                            qsl_semantics::check::BindingValue::Leaf(
+                                qsl_semantics::check::LeafTerm::Literal {
+                                    value: qsl_semantics::check::LiteralValue::Text(text),
+                                    ..
+                                },
+                            ),
+                    }) if name == "name" => Some(text.clone()),
                     _ => None,
                 })
                 .expect("a parameter node binds its name as a text literal");
@@ -4339,7 +4335,9 @@ fn clause_parameters(
 /// `clause`'s condition argument's own reference target: the root
 /// `expression` node of its lowered condition.
 fn clause_condition_node(clause: &qsl_semantics::check::SemanticNode) -> NodeKey {
-    let qsl_semantics::check::SemanticTerm::Reference { target } = state_clause_condition(clause)
+    let qsl_semantics::check::MemberTerm::Leaf(qsl_semantics::check::LeafTerm::Reference {
+        target,
+    }) = state_clause_condition(clause)
     else {
         panic!("a state_clause's condition argument references its expression node");
     };
@@ -4428,16 +4426,21 @@ fn s4_state_clause_and_anchor_dependencies_beyond_the_frame() {
             node.node_tag() == qsl_semantics::check::NodeTag::Expression
                 && matches!(
                     node.body(),
-                    qsl_semantics::check::SemanticTerm::Application { operation, .. }
+                    qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm { operation, .. })
                         if operation.member() == Some(&version_number_member)
                 )
         })
         .expect("a versionNumber field-read expression node");
-    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = field_read.body()
+    let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
+        arguments,
+        ..
+    }) = field_read.body()
     else {
         unreachable!("the find above matched an application body");
     };
-    let [qsl_semantics::check::SemanticTerm::Reference { target: receiver }] = arguments.as_slice()
+    let [qsl_semantics::check::MemberTerm::Leaf(qsl_semantics::check::LeafTerm::Reference {
+        target: receiver,
+    })] = arguments.as_slice()
     else {
         panic!("the field read has one argument, a reference to its receiver, got {arguments:?}");
     };
@@ -4536,23 +4539,23 @@ fn s4_version_unchanged_condition_holds_a_pre_application_over_the_versionnumber
             .unwrap_or_else(|| {
                 panic!("condition holds a quire.op.state.pre application: {condition:?}")
             });
-    let qsl_semantics::check::SemanticTerm::Application {
+    let qsl_semantics::check::ApplicationTerm {
         operation,
         arguments,
         ..
-    } = pre_application
-    else {
-        unreachable!("find_application_by_operator only returns an Application");
-    };
+    } = pre_application;
     assert_eq!(operation.identity(), "quire.op.state.pre");
     let [pre_operand] = arguments.as_slice() else {
         panic!("quire.op.state.pre takes exactly one argument, got {arguments:?}");
     };
 
-    let qsl_semantics::check::SemanticTerm::Application {
+    let Some(qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
         operation: field_read_operation,
         ..
-    } = resolve_expression(graph, pre_operand)
+    })) = pre_operand
+        .leaves()
+        .first()
+        .and_then(|leaf| resolve_expression(graph, leaf))
     else {
         panic!("pre's own operand is the versionNumber field read, got {pre_operand:?}");
     };
@@ -4578,12 +4581,9 @@ fn s4_no_cycle_condition_holds_a_reaches_field_application_naming_parent() {
     let config_version_node = config_version_node_key(graph);
 
     let condition = state_clause_condition(named_clause_node(graph, "NoCycle"));
-    let qsl_semantics::check::SemanticTerm::Application { operation, .. } =
+    let qsl_semantics::check::ApplicationTerm { operation, .. } =
         find_application_by_operator(graph, condition, qsl_semantics::check::Operator::Reaches)
-            .unwrap_or_else(|| panic!("NoCycle's condition holds a reaches application"))
-    else {
-        unreachable!("find_application_by_operator only returns an application");
-    };
+            .unwrap_or_else(|| panic!("NoCycle's condition holds a reaches application"));
     assert_eq!(operation.identity(), "quire.op.model.reaches_field");
     assert_eq!(
         operation.member(),
@@ -4613,16 +4613,12 @@ fn s4_parent_order_self_parent_read_shares_no_cycles_member_shape() {
         find_field_read_member(graph, state_clause_condition(parent_order), "parent")
             .expect("ParentOrder's condition reads self.parent");
 
-    let qsl_semantics::check::SemanticTerm::Application { operation, .. } =
-        find_application_by_operator(
-            graph,
-            state_clause_condition(no_cycle),
-            qsl_semantics::check::Operator::Reaches,
-        )
-        .expect("NoCycle holds a reaches application")
-    else {
-        unreachable!("find_application_by_operator only returns an application");
-    };
+    let qsl_semantics::check::ApplicationTerm { operation, .. } = find_application_by_operator(
+        graph,
+        state_clause_condition(no_cycle),
+        qsl_semantics::check::Operator::Reaches,
+    )
+    .expect("NoCycle holds a reaches application");
     let no_cycle_member = operation.member().expect("reaches_field carries a member");
 
     assert_eq!(
@@ -4698,10 +4694,17 @@ fn node_keys(compiled: &Compiled) -> BTreeSet<NodeKey> {
 
 /// `clause`'s anchor argument's reference target.
 fn clause_anchor_target(clause: &qsl_semantics::check::SemanticNode) -> NodeKey {
-    let qsl_semantics::check::SemanticTerm::Application { arguments, .. } = clause.body() else {
+    let qsl_semantics::check::BodyTerm::Application(qsl_semantics::check::ApplicationTerm {
+        arguments,
+        ..
+    }) = clause.body()
+    else {
         panic!("state_clause body must be an application");
     };
-    let Some(qsl_semantics::check::SemanticTerm::Reference { target }) = arguments.get(1) else {
+    let Some(qsl_semantics::check::MemberTerm::Leaf(qsl_semantics::check::LeafTerm::Reference {
+        target,
+    })) = arguments.get(1)
+    else {
         panic!("state_clause's second argument is a reference to its anchor: {arguments:?}");
     };
     target.0
@@ -4954,15 +4957,24 @@ fn s4_pre_clauses_via_config_version_and_sub_share_one_anchor_at_config_version(
         .semantic_graph()
         .node(anchor)
         .expect("the anchor node is in the graph");
-    let qsl_semantics::check::SemanticTerm::Aggregate { members } = anchor_node.body() else {
+    let qsl_semantics::check::BodyTerm::Aggregate(qsl_semantics::check::AggregateTerm { members }) =
+        anchor_node.body()
+    else {
         panic!("operation_anchor body must be an aggregate");
     };
-    let Some(qsl_semantics::check::SemanticTerm::Binding { name, value }) = members.first() else {
+    let Some(qsl_semantics::check::MemberTerm::Binding(qsl_semantics::check::Binding {
+        name,
+        value,
+    })) = members.first()
+    else {
         panic!("operation_anchor's first member is the context binding: {members:?}");
     };
     assert_eq!(name, "context");
     let config_version_node = config_version_node_key(graph);
-    let qsl_semantics::check::SemanticTerm::Reference { target: context } = value.as_ref() else {
+    let qsl_semantics::check::BindingValue::Leaf(qsl_semantics::check::LeafTerm::Reference {
+        target: context,
+    }) = value
+    else {
         panic!("the context binding's value is a reference, got {value:?}");
     };
     assert_eq!(

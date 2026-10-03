@@ -9,6 +9,7 @@ use qsl_foundation::SourceIdentity;
 use quire_exact::{Integer, RationalDomain, Role};
 
 use super::*;
+use crate::check::ir::{BodyBuilder, Node};
 use crate::check::node_key::NodeTag;
 use crate::check::{CheckedGraph, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
@@ -106,7 +107,7 @@ impl Checked {
                 operation.is_none_or(|operation| {
                     matches!(
                         self.graph.semantic_graph().node(*node).map(|node| node.body()),
-                        Some(SemanticTerm::Application { operation: applied, .. })
+                        Some(BodyTerm::Application(ApplicationTerm { operation: applied, .. }))
                             if applied.identity() == operation
                     )
                 })
@@ -554,13 +555,13 @@ fn tc_160_checking_a_unit_twice_gives_equal_records() {
 }
 
 fn body(index: usize, path: &[usize]) -> Location {
-    Location {
-        origin: CheckOrigin::Body {
+    Location::at(
+        CheckOrigin::Body {
             function: "f".into(),
             index,
         },
-        path: path.to_vec(),
-    }
+        path,
+    )
 }
 
 fn claim_at(location: Location) -> ValueClaim {
@@ -787,33 +788,35 @@ fn tc_160_a_root_of_an_undeclared_composite_is_a_fault() {
         value_type,
         location: location.clone(),
     };
-    let add = node(
-        NodeKind::Arithmetic(
-            crate::check::Arithmetic::Add,
-            Box::new(node(
-                NodeKind::Field {
-                    operand: Box::new(node(
-                        NodeKind::Local(0),
-                        ValueType::Composite(NodeKey::from_digest([9; 32])),
-                    )),
-                    index: 0,
-                    optional: false,
-                },
-                ValueType::Integer,
-            )),
-            Box::new(node(
-                NodeKind::Literal(quire_exact::Value::Integer(Integer::from(1_i64))),
-                ValueType::Integer,
-            )),
-        ),
+    let mut body = BodyBuilder::default();
+    let record = body.push(node(
+        NodeKind::Local(0),
+        ValueType::Composite(NodeKey::from_digest([9; 32])),
+    ));
+    let field = body.push(node(
+        NodeKind::Field {
+            operand: record,
+            index: 0,
+            optional: false,
+        },
         ValueType::Integer,
-    );
+    ));
+    let one = body.push(node(
+        NodeKind::Literal(crate::check::ir::CheckedLiteral(
+            quire_exact::Value::Integer(Integer::from(1_i64)),
+        )),
+        ValueType::Integer,
+    ));
+    let add = body.finish(node(
+        NodeKind::Arithmetic(crate::check::Arithmetic::Add, field, one),
+        ValueType::Integer,
+    ));
     let parameters = [(
         "r".to_owned(),
         ValueType::Composite(NodeKey::from_digest([9; 32])),
     )];
     let Err(ClassifyFailure::Fault(fault)) = claims_of(
-        &add,
+        add.root(),
         &parameters,
         &location,
         &TypeEnvironment::default(),
@@ -947,10 +950,10 @@ impl Checked {
             .semantic_graph()
             .node(NodeKey::from_digest(*key.node().as_bytes()))
             .expect("the application is lowered");
-        let SemanticTerm::Application { arguments, .. } = node.body() else {
+        let BodyTerm::Application(ApplicationTerm { arguments, .. }) = node.body() else {
             panic!("an application at `{needle}`");
         };
-        let Some(SemanticTerm::Reference { target }) = arguments.get(argument) else {
+        let Some(MemberTerm::Leaf(LeafTerm::Reference { target })) = arguments.get(argument) else {
             panic!("operand {argument} at `{needle}` is a reference: {arguments:?}");
         };
         wire(target.0)
