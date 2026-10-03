@@ -231,7 +231,5 @@ derivation with `qsl_replay::replay`'s own selection
 (`callable_parameter_keys`) and its operation resolution with FR-115's
 `Frame` selection and its clause lookup with FR-106's clause selection,
 and `CallSiteRefusal::code` giving each refusal the code `replay` gives
-it, verified by TC-516.
-
-Remaining work (Linear QSL-352): `FunctionSite`'s `function` and
-`declaration` members (AC-15).
+it, verified by TC-516, with `FunctionSite`'s `function` and `declaration`
+members (AC-15) read from the same function node.
