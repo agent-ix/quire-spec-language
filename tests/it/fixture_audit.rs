@@ -111,7 +111,7 @@ fn write_json(path: &Path, value: &Value) {
     fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
 }
 
-#[trace("TC-009", "FR-012-AC-10", "NFR-005-M-2")]
+#[trace("TC-009", "FR-012-AC-10", "NFR-005-M-1")]
 #[test]
 fn cli_usage_with_no_external_runtime_path() {
     passed(
