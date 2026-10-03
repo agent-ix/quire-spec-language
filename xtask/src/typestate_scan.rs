@@ -814,12 +814,18 @@ mod tests {
 
     /// Every item allowed to hand back an owned stage-output type, by
     /// (file, `Self` type, name), and why.
-    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 11] = [
+    const STAGE_CONSTRUCTORS: [(&str, Option<&str>, &str); 12] = [
         // S3: the checker.
         (
             S3_CONSTRUCTOR.file,
             Some(S3_CONSTRUCTOR.receiver),
             S3_CONSTRUCTOR.name,
+        ),
+        // S3 under a caller's cancel handle.
+        (
+            S3_CONSTRUCTOR.file,
+            Some(S3_CONSTRUCTOR.receiver),
+            "check_with_cancel",
         ),
         // S4: the link step, and its dependency-bearing form (E4).
         ("qsl-package/src/checked.rs", Some("CheckedPackage"), "link"),
