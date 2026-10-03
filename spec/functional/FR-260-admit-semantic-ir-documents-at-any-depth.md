@@ -51,6 +51,10 @@ limit (ADR-030 D-4.6).
 6. **Cycles of any length.** When a document's composite types form a cycle,
    intake SHALL report it as a cycle naming its types, whatever the cycle's
    length.
+7. **Derived views.** Intake SHALL build its `serde_json` view and its
+   semantic-IR `Json` view from the reader tree, and SHALL drop its
+   `serde_json` view, with native stack use that does not grow with the
+   document's depth.
 
 ## Acceptance Criteria
 
@@ -60,6 +64,7 @@ limit (ADR-030 D-4.6).
 | FR-260-AC-2 | `PackageDocument::parse` refuses a package document holding the escape `"\udc00"` in a string `invalid_model_binding`/`malformed-declaration` at `$`, carrying that escape's byte offset. | Test (TC-730) |
 | FR-260-AC-3 | A package whose composite types form a cycle of 300 types, and one whose composite types form a cycle of 100,000 types with `intake.input_bytes` raised to fit, are each refused with semantic-IR's composite-cycle refusal naming every type on the cycle, on a thread with a 512 KiB stack. | Test (TC-731) |
 | FR-260-AC-4 | A document one byte longer than `intake.input_bytes` at bound `B` is refused `resource_exhausted`/`intake-limit-exceeded` naming the input-bytes limit, bound `B`, actual `B + 1` and setting `intake.input_bytes`. With the setting raised to `B + 1` through the intake limits' builder and through FR-255's settings operation given `intake.input_bytes=<B + 1>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), the same document is judged on its content. | Test (TC-732) |
+| FR-260-AC-5 | On a thread with a 512 KiB stack, intake's builders turn a reader tree nested 100,000 deep (arrays, and objects) into both views, and a `PackageDocument` holding a 100,000-deep `serde_json` view drops. A view build whose leaf conversion fails after a 100,000-deep sibling has finished returns that failure. A shallow document builds the `serde_json` tree that `serde_json` reads from the same text, and a `Json` view with the members in document order and each number by its lexeme. | Test (TC-730) |
 
 ## Dependencies
 
