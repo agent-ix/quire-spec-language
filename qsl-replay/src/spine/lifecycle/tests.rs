@@ -440,8 +440,7 @@ fn wide(bytes: usize) -> SpineLimits {
     limits.source.source_bytes = bytes;
     limits.source.tokens = usize::MAX / 2;
     limits.source.nodes = usize::MAX / 2;
-    limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX, 64)
-        .expect("a depth below the ceiling")
+    limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
         .with_input_bytes(u64::MAX)
         .with_work_budget(u64::MAX);
     limits
