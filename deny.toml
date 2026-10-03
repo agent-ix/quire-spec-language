@@ -6,10 +6,13 @@
 # that would catch a future contributor reintroducing one -- it is not
 # satisfied merely by the crate graph's current absence of the three crates.
 #
-# Scoped to `check bans` only (`make cargo-deny-bans`, `cargo deny check
-# bans`): this file configures no license or advisory policy, so it does not
-# claim to gate either, and a bare `cargo deny check` should not be run
-# against it for that reason.
+# ADR-013 §2: `quire-canonical` is QSL's one RFC 8785 implementation, so the
+# `quire-canonical` entry denies a second copy of it in the resolved graph.
+#
+# Scoped to `check bans` only (`make cargo-deny-bans`, which runs `cargo deny
+# --workspace check bans` over every workspace crate): this file configures no
+# license or advisory policy, so it does not claim to gate either, and a bare
+# `cargo deny check` should not be run against it for that reason.
 [graph]
 all-features = true
 
@@ -20,6 +23,7 @@ deny = [
     { name = "inventory" },
     { name = "linkme" },
     { name = "ctor" },
-    # Two copies of the RFC 8785 encoder could produce different package_ids.
+    # ADR-013 §2: one RFC 8785 implementation. Two copies of the encoder
+    # could produce different package_ids.
     { crate = "quire-canonical", deny-multiple-versions = true },
 ]

@@ -41,8 +41,11 @@ checked-input:
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
 # a link-time/plugin-discovery mechanism instead of the ordinary value FR-075
-# requires. Scoped to `check bans` -- deny.toml configures no license or
-# advisory policy.
+# requires. ADR-013 §2: deny.toml's `quire-canonical` entry denies a second
+# copy of QSL's one RFC 8785 implementation. The recipe runs with
+# `--workspace`, so both checks cover every workspace crate, not only the
+# root package's graph. Scoped to `check bans` -- deny.toml configures no
+# license or advisory policy.
 #
 # Install: `cargo install cargo-deny --locked`. This target FAILS when
 # `cargo-deny` is not on PATH, with that install command --
