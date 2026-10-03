@@ -222,15 +222,6 @@ fn vector_key(name: &str) -> String {
 
 /// Assert `node` is vector `name`, bytes and key.
 fn assert_vector(graph: &SemanticGraph, key: NodeKey, name: &str) {
-    {
-        use std::io::Write;
-        let mut log = std::fs::OpenOptions::new().create(true).append(true).open("/home/peter/dev/worktrees/logs/qsl-483-nodes.tsv").unwrap();
-        let mut text = String::new();
-        for node in graph.nodes() {
-            text.push_str(&format!("{}\t{}\n", node.key(), std::str::from_utf8(node.preimage()).unwrap()));
-        }
-        log.write_all(text.as_bytes()).unwrap();
-    }
     let (expected_key, expected_preimage) = &vectors()[name];
     let node = graph
         .node(key)

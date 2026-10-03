@@ -476,25 +476,25 @@ fix the leaf spelling.
 |---|---|---|
 | T13 | `Text[0, 8; binary-utf8]` | `90156d6406244cce35d880a73c3280afa7ca4d3b912251cb3217d74126ff39d7` |
 | T14 | `Text[0, 4; nfc]` | `41382183c79ab43356015828827799c0bb66da4eb126f4e43a8a6822f348dbef` |
-| G16 | `record Node`, ordinal 0 | `12993602f5710f82bbf852543383c01b3ce75fae2dd269a556175352dc766af4` |
-| G17 | `Option<Node>`, ordinal 1 | `57d82ab7977af236dc5f898b98693d88499665ac53e19a25df7919ee867a6f13` |
-| G18 | `Option<A>`, ordinal 0 | `c50e48e0850cfad1b96eb970873a2f40bb9a76bc7570b4cb0fd5ecbcd8aeef04` |
-| G19 | `record B`, ordinal 1 | `193c4ff199f62645b8410fee31906c24407a0b8f44c9531546d2feb26afa7e6f` |
-| G20 | `record A`, ordinal 2 | `871ecfc1333281aeeba9465655892aeebc4f55d920add6eaa2883d3ba5eaf999` |
-| G21 | `Option<B>`, ordinal 3 | `70d8b14aa580fd43e3b74db225dd15e921dd086f02e9ccb60ff1f880940dab65` |
-| S4 | `Sequence<Node>` | `31a87726ba061f8a52d37f2b1fdc5cd37639e451398e41ad194441e0c6065166` |
-| S5 | `Sequence<Node>[0, 3]` | `0d46108bcd90e1c86a9b292c11fe2d6368a041c9b117df067059ad793868c343` |
-| P10 | parameter `a: Node`, level 0 | `28de329c02d58a0d8950b48f884f7bfe9b8c349ef1401d3570cdd93413aa98ce` |
-| P11 | parameter `b: Node`, level 1 | `bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7` |
-| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | `179e6f8dbe0f7943bc07142cb3426073a72ed652c8a1a97d265dea817da0f24f` |
-| P13 | parameter `x: A`, level 0 | `5c4dbf18699020a60de695300b93f610c4a9900b0c975c5106095bce1f601376` |
-| P14 | parameter `y: A`, level 1 | `518c4adf51b804f39682ed5590a0480540dbe3f44b0560b6c30ce841b92f5dda` |
-| P15 | parameter `a: Option<Node>`, level 0 | `5edb6e8d2054522ce9131bb1129c12cbef280ee76cba8ed93b8cc8cfaf5bcec1` |
-| P16 | parameter `b: Option<Node>`, level 1 | `af2b0e4ae044dd50d47cd580242dc4b41cde13fdd0e0f562a97f155050a6fce8` |
-| E14 | `a = b` over `Node` | `6e4707ec004a6cfbfc21a73bb4857c755ce28194c7bee9dbbb800c5efc62d68f` |
-| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | `8454754296f1be332b100359cbcd716de7931c28cc4717218fb9689b00175184` |
-| E16 | `x = y` over `A` | `2c4bc1a531910aea486974e46bacb6526d271f456f8dc85c92ddfdd86283c27b` |
-| E17 | `a = b` over `Option<Node>` | `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0` |
+| G16 | `record Node`, ordinal 1 | `254c67edeb1cb30145b46978b64babd0665ed9b272d939462664a6a5b6377f92` |
+| G17 | `Option<Node>`, ordinal 0 | `bed40a03a87c4e458b5f7676994e0af4f70618ca8b3a1871705030513487d61a` |
+| G18 | `Option<A>`, ordinal 0 | `f9c7262322e073156d9dc0ef5d3c445f91b761d3703aac962dba56d04fc41724` |
+| G19 | `record B`, ordinal 2 | `212816792d8849f2bb0a34d5120c0c629592c4ae41f7979183f9e88caa6fdfa9` |
+| G20 | `record A`, ordinal 3 | `e304bb361f848ec82a005b094230c80b849cb6a324e2b8bf70c7a48b9409d549` |
+| G21 | `Option<B>`, ordinal 1 | `bbe19be83cc74f05b9c2e6f10c21382bb9541cd23dbd8f58595f871664f9289a` |
+| S4 | `Sequence<Node>` | `83650c577fe83a9ca6dc895e8c41225d5a07de5da73096568691852796cd19ae` |
+| S5 | `Sequence<Node>[0, 3]` | `700ef2e8de893e9b9a4a3d15c7f8738beea77a5ab464630dc022d6df2cfee136` |
+| P10 | parameter `a: Node`, level 0 | `874cdff3836c463865b597d314969af6694553cce4f72a6c6c74d2036089aed2` |
+| P11 | parameter `b: Node`, level 1 | `96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de` |
+| P12 | parameter `s: Sequence<Node>[0, 3]`, level 0 | `a82d16b7b8c5fc3fbf62ec98752612d316d5dad59b0378dbfb9dad6bc39e183d` |
+| P13 | parameter `x: A`, level 0 | `5011d0ed22707e6bf00400bd6cfa58aac9d1dbe29b2ea8ea41d1cafb014c1147` |
+| P14 | parameter `y: A`, level 1 | `5fd8df16388a2ab558c30a7fb49d89d94cf0d6bf2476fab16b3c04f48db105af` |
+| P15 | parameter `a: Option<Node>`, level 0 | `819ae9f4bc589aceafb8c6752005a8f578f1174c7c5d4eb29212c9a31b55b97d` |
+| P16 | parameter `b: Option<Node>`, level 1 | `12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16` |
+| E14 | `a = b` over `Node` | `279fe484a00a414a45aa294fe5c75d18b9369869e8cc09fdb44595f45f66aee0` |
+| E15 | `contains(s, b)` over `Sequence<Node>[0, 3]` | `428856f13b77ff877c0b09981e201c1012cafc458d0afaaac77ff6ed351aa811` |
+| E16 | `x = y` over `A` | `fee1dbbe09ef51cdd22f8356a02789634d80517768817014ee403dde7ed26647` |
+| E17 | `a = b` over `Option<Node>` | `37f993ecc47e86a33a759370b8e932f1c8081dba225749ba039198ab9c9df4ce` |
 
 **T13**: `Text[0, 8; binary-utf8]`
 
@@ -635,34 +635,34 @@ Key: `12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16`
 **E14**: `a = b` over `Node`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"28de329c02d58a0d8950b48f884f7bfe9b8c349ef1401d3570cdd93413aa98ce","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"874cdff3836c463865b597d314969af6694553cce4f72a6c6c74d2036089aed2","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `6e4707ec004a6cfbfc21a73bb4857c755ce28194c7bee9dbbb800c5efc62d68f`
+Key: `279fe484a00a414a45aa294fe5c75d18b9369869e8cc09fdb44595f45f66aee0`
 
 **E15**: `contains(s, b)` over `Sequence<Node>[0, 3]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"179e6f8dbe0f7943bc07142cb3426073a72ed652c8a1a97d265dea817da0f24f","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"bd3d0f259771dbd6aa6bdf0fc135e60d16cecd1e4474b677a3e695cfaa9386b7","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"a82d16b7b8c5fc3fbf62ec98752612d316d5dad59b0378dbfb9dad6bc39e183d","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"96dc03779860fe098669bbfe27b1712ff81e9c76d8569d7ce4b45770098572de","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.collection.contains","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:label"]},{"laws":[],"mode":null,"path":["field:next","inner","recursion:0"]}],"member":null,"mode":null},"operator":"collection","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"collection","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `8454754296f1be332b100359cbcd716de7931c28cc4717218fb9689b00175184`
+Key: `428856f13b77ff877c0b09981e201c1012cafc458d0afaaac77ff6ed351aa811`
 
 **E16**: `x = y` over `A`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"5c4dbf18699020a60de695300b93f610c4a9900b0c975c5106095bce1f601376","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"518c4adf51b804f39682ed5590a0480540dbe3f44b0560b6c30ce841b92f5dda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"5011d0ed22707e6bf00400bd6cfa58aac9d1dbe29b2ea8ea41d1cafb014c1147","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"5fd8df16388a2ab558c30a7fb49d89d94cf0d6bf2476fab16b3c04f48db105af","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["field:name"]},{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"nfc"},"path":["field:b","inner","field:tag"]},{"laws":[],"mode":null,"path":["field:b","inner","field:a","inner","recursion:0"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `2c4bc1a531910aea486974e46bacb6526d271f456f8dc85c92ddfdd86283c27b`
+Key: `fee1dbbe09ef51cdd22f8356a02789634d80517768817014ee403dde7ed26647`
 
 **E17**: `a = b` over `Option<Node>`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"5edb6e8d2054522ce9131bb1129c12cbef280ee76cba8ed93b8cc8cfaf5bcec1","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"af2b0e4ae044dd50d47cd580242dc4b41cde13fdd0e0f562a97f155050a6fce8","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"819ae9f4bc589aceafb8c6752005a8f578f1174c7c5d4eb29212c9a31b55b97d","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"12ea3f30008896cbe0986aaa49c7a0b233b89c774442b1e7523c6d38dea05a16","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.structural.eq","laws":[],"leaves":[{"laws":[{"definition":{"authority":"agent-ix","identity":"quire.value.text.unicode-17.0.0/v1"},"role":"text_profile"}],"mode":{"kind":"text_profile","value":"binary-utf8"},"path":["inner","field:label"]},{"laws":[],"mode":null,"path":["inner","field:next","inner","recursion:1"]}],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0`
+Key: `37f993ecc47e86a33a759370b8e932f1c8081dba225749ba039198ab9c9df4ce`
 
 G16-G17, group digest `4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f`:
 
