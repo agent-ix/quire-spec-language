@@ -177,9 +177,10 @@ impl SourceOwner {
 /// The owner of a model-owned node (FR-094, ADR-013 O-04, C-02): QSpec's
 /// content-only `ModelOwner{kind: "model", identity, node}`. `identity` is
 /// the declaring domain package's `DomainPackageRef` identity; `node` is the
-/// declaration's IR node identity. The owner carries no version: the
-/// version is selection evidence in the lock's `model_selections`, so a
-/// version-only change of the domain package keys the same node.
+/// declaration's IR node identity. The owner carries no version, and the
+/// lock's `model_selections` selects the package by identity and digest, so
+/// a change of the domain package that leaves a node's content unchanged keys
+/// the same node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, FixedShape)]
 pub struct ModelOwner {
     identity: String,

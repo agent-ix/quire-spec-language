@@ -2265,9 +2265,9 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 /// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
 /// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
 /// declared supertype. The lock and the identity preimage select the domain
-/// package by identity, version and the `sha256-jcs` digest of the supplied
-/// document, while the emitted model nodes are keyed by the content-only
-/// `ModelOwner`, which carries no version. QSL's I2 read, given that digest
+/// package by identity and the `sha256-jcs` digest of the supplied
+/// document, with no version, while the emitted model nodes are keyed by the
+/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given that digest
 /// as domain package evidence, returns Verified exporting `keep` and `held`.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
@@ -2634,7 +2634,7 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
 }
 
 /// FR-322 `dependency_selections`, FR-307, ADR-011 §2.4: the E4
-/// closure is written as one `{identity, version, package_id}` entry per
+/// closure is written as one `{identity, package_id}` entry per
 /// library identity, in ascending UTF-8 byte order, identically in the lock
 /// and the identity preimage. The package reads back Verified through IR's
 /// reader, and the entries enter its `package_id`. A dependency's own

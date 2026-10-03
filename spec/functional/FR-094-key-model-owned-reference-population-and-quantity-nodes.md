@@ -113,7 +113,7 @@ role it also plays, because a checked node names it only through a
 `relationship_end` member.
 
 The body is empty because the owner already determines the declaration's
-content: the lock selects the domain package's bytes by version and digest,
+content: the lock selects the domain package's bytes by identity and digest,
 and intake admits one selection of an identity per check (QSpec FR-321), so
 within one check `identity` names one set of bytes. Across checks, the node
 id is the same for every version and digest selected under one `identity`,

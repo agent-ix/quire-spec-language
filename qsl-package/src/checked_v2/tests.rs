@@ -1726,7 +1726,7 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
 /// mutation in both); and each order vector gets its recorded outcome, a
 /// refusal located at its last recorded locus (the repeating or misordered
 /// entry). Skipped when `QSPEC_DIR` is unset; `make conformance` requires it.
-#[trace("TC-253", "FR-087-AC-3")]
+#[trace("TC-253", "TC-416", "FR-087-AC-3", "FR-093-AC-16")]
 #[test]
 fn conformance_dependency_selection_vectors() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
