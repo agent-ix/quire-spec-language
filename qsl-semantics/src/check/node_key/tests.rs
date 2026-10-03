@@ -907,9 +907,8 @@ fn an_owner_enters_a_declared_structural_key_only() {
         Err(NodeKeyRefusal::OwnerDeclarationMismatch)
     );
     // FR-094: a model-owned node's `declaration` is `null`.
-    let model = Owner::Model(
-        ModelOwner::new("acme/orders", "1.0.0", "ix://acme/orders/Order").expect("nonempty"),
-    );
+    let model =
+        Owner::Model(ModelOwner::new("acme/orders", "ix://acme/orders/Order").expect("nonempty"));
     assert_eq!(
         node_key(&NodeInput {
             owner: Some(&model),

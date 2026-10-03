@@ -18,8 +18,9 @@ itself, and treats an unmapped `EffectiveId` or domain package as an internal
 fault.
 
 This catches a key computed from an `EffectiveId` (which moves when the
-normalization rules change), an owner that drops the domain-package version
-(which merges two versions' `Order`), a member naming the supertype that
+normalization rules change), an owner that carries the domain-package
+version (which gives one `Order` declaration two ids across a version-only
+change), a member naming the supertype that
 declares an operation instead of the receiver's static type, and a
 correspondence left caller-supplied.
 
@@ -62,7 +63,8 @@ Tag the tests `#[trace("FR-094-AC-n", "TC-417")]` with the AC each backs.
   byte for byte. M1's preimage has the `ModelOwner` of FR-094-AC-1 and
   `declaration` `null`; R1's has no `owner`. The correspondence holds exactly
   (M1, `Order`'s key) and (M3, `Invoice`'s key).
-- Step 2: M2 and R2, each differing from step 1's key.
+- Step 2: the same M1 and R1 as step 1, byte for byte, and the same
+  correspondence entry for M1.
 - Step 3: M4.
 - Step 4: P5 over PO1, whose `semantic_type` is S1, and P6. E4 with
   `result_type` S2, E5 with R1, E6 with R3, E7 and E8 (member `field` naming

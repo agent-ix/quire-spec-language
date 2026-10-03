@@ -66,7 +66,6 @@ fn vectors() -> BTreeMap<String, (String, String)> {
             .to_owned();
         vectors.insert(name.to_owned(), (key, preimage));
     }
-    assert_eq!(vectors.len(), 39, "FR-094 publishes 39 golden vectors");
     vectors
 }
 
@@ -468,7 +467,8 @@ fn lower<T>(
 // ---------------------------------------------------------------------
 
 /// TC-417 steps 1-2 (FR-094-AC-1, AC-2): `r`'s type node is R1 over M1 and
-/// `s`'s model node M3; under `2.0.0`, M2 and R2. The correspondence holds
+/// `s`'s model node M3; under `2.0.0`, the same M1 and R1, because the
+/// content-only `ModelOwner` carries no version. The correspondence holds
 /// exactly the two model nodes.
 #[trace("FR-094-AC-1", "FR-094-AC-2", "FR-094-CON-2", "TC-417")]
 #[test]
@@ -494,7 +494,7 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     let m1 = preimage(graph.node(vector_key("M1")).unwrap());
     assert_eq!(
         m1["owner"],
-        json!({"kind": "model", "identity": "acme/orders", "version": "1.0.0", "node": "ix://acme/orders/Order"})
+        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order"})
     );
     assert!(m1["declaration"].is_null());
     assert!(preimage(graph.node(vector_key("R1")).unwrap())
@@ -535,12 +535,15 @@ fn reference_types_key_over_their_model_nodes_and_record_the_correspondence() {
     let graph_2 = checked_2.semantic_graph();
     assert_eq!(
         parameter(graph_2, "r", 0).semantic_type(),
-        Some(vector_key("R2"))
+        Some(vector_key("R1"))
     );
-    assert_holds(graph_2, "M2");
-    assert_holds(graph_2, "R2");
-    assert_ne!(vector_key("M1"), vector_key("M2"));
-    assert_ne!(vector_key("R1"), vector_key("R2"));
+    for vector in ["M1", "R1", "M3", "R5"] {
+        assert_holds(graph_2, vector);
+    }
+    assert_eq!(
+        checked_2.resolve_declaration(vector_key("M1")),
+        Some(&key("Order"))
+    );
 }
 
 /// FR-093 `Equality` row (FR-093-AC-3): `r = s` over two
@@ -898,7 +901,7 @@ fn clause_functions_key_under_their_operation_members_model_owner() {
     let c1 = preimage(graph.node(vector_key("C1")).unwrap());
     assert_eq!(
         c1["owner"],
-        json!({"kind": "model", "identity": "acme/orders", "version": "1.0.0", "node": "ix://acme/orders/Order/size"})
+        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order/size"})
     );
     assert!(c1["declaration"].is_null());
 
@@ -915,29 +918,34 @@ fn clause_functions_key_under_their_operation_members_model_owner() {
 }
 
 /// TC-418 step 2 (FR-094-AC-5): under `2.0.0`, the receiver parameter
-/// keys to P9 over R2 and `Order.size`'s precondition to C3, which
-/// references P9 and differs from C1.
+/// keys to P7 over R1 and `Order.size`'s clauses to C1 and C2 again: the
+/// content-only `ModelOwner` carries no version, so a version-only change
+/// of the domain package keys the same clause functions.
 #[trace("FR-094-AC-5", "TC-418")]
 #[test]
-fn a_clause_function_under_another_package_version_is_another_node() {
-    let acme = admitted("2.0.0");
-    let checked = check_declarations(dispatch(&acme, "Order/size"));
-    let graph = checked.semantic_graph();
-    for vector in ["R2", "P9", "C3"] {
+fn a_version_only_change_keys_the_same_clause_functions() {
+    let size = |version: &str| {
+        let acme = admitted(version);
+        check_declarations(dispatch(&acme, "Order/size"))
+    };
+    let (first, second) = (size("1.0.0"), size("2.0.0"));
+    let graph = second.semantic_graph();
+    for vector in ["R1", "P7", "C1", "C2"] {
         assert_holds(graph, vector);
     }
-    let c3 = preimage(graph.node(vector_key("C3")).unwrap());
-    assert_eq!(c3["owner"]["version"], json!("2.0.0"));
+    let c1 = preimage(graph.node(vector_key("C1")).unwrap());
     assert_eq!(
-        c3["body"]["members"][0]["value"]["members"][0]["target"]["digest"],
-        json!(vector_key("P9").to_string())
+        c1["owner"],
+        json!({"kind": "model", "identity": "acme/orders", "node": "ix://acme/orders/Order/size"})
     );
-    assert_ne!(vector_key("C3"), vector_key("C1"));
+    let keys = |graph: &SemanticGraph| graph.nodes().map(SemanticNode::key).collect::<Vec<_>>();
+    assert_eq!(keys(graph), keys(first.semantic_graph()));
 }
 
 /// FR-094: a check selects one version of each domain package identity;
 /// two admitted versions of `acme/orders` refuse as a broken invariant
-/// instead of keying owners from whichever comes first.
+/// instead of resolving declarations against whichever admitted view comes
+/// first.
 #[trace("FR-094-AC-5", "TC-418")]
 #[test]
 fn two_admitted_versions_of_one_model_identity_refuse() {

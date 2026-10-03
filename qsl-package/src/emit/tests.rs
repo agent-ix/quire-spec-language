@@ -2223,8 +2223,9 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 /// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
 /// declared supertype. The lock and the identity preimage select the domain
 /// package by identity, version and the `sha256-jcs` digest of the supplied
-/// document, and QSL's I2 read, given that digest as domain package
-/// evidence, returns Verified exporting `keep` and `held`.
+/// document, while the emitted model nodes are keyed by the content-only
+/// `ModelOwner`, which carries no version. QSL's I2 read, given that digest
+/// as domain package evidence, returns Verified exporting `keep` and `held`.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
 fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
@@ -2268,6 +2269,26 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     assert!(
         nodes(&wire).iter().any(|node| node["node_tag"] == "model"),
         "a model node is emitted"
+    );
+    // FR-094-AC-1 (QSpec FR-322-AC-28): each emitted model node is keyed by
+    // the content-only `ModelOwner`, `{kind, identity, node}` with no
+    // version, the key IR's reader recomputes from the lock selection.
+    let model_key = |artifact: &str| {
+        sha256_hex(
+            format!(
+                r#"{{"body":{{"members":[],"term":"aggregate"}},"declaration":null,"node_tag":"model","owner":{{"identity":"acme/orders","kind":"model","node":"ix://acme/orders/{artifact}"}},"recursion":null,"semantic_form":"object_type","semantic_type":null,"version":"quire.structural-node/v1"}}"#
+            )
+            .as_bytes(),
+        )
+    };
+    let emitted: BTreeSet<String> = nodes(&wire)
+        .iter()
+        .filter(|node| node["node_tag"] == "model")
+        .map(|node| node["node_id"]["digest"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        emitted,
+        BTreeSet::from([model_key("Gadget"), model_key("Widget")])
     );
     match read {
         Read::Verified { package, .. } => {
