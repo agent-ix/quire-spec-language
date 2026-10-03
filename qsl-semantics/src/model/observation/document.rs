@@ -28,7 +28,14 @@ use quire_semantic_value::object_closure::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DocumentKind {
     Snapshot,
+    /// An invocation read whole: its call and its post side, for a
+    /// postcondition or a `Frame` run.
     Invocation,
+    /// An invocation read for a precondition: its call alone. Its `post`,
+    /// `result`, `created` and `deleted` members are neither required nor
+    /// read (FR-106 "Behavior": a precondition's input is the pre-call
+    /// observation).
+    InvocationCall,
 }
 
 #[derive(Clone, Debug)]
@@ -105,16 +112,23 @@ pub(super) enum ResultValue {
     Value(SnapshotValue),
 }
 
+/// An invocation's pre-call half: what a precondition reads of it.
 #[derive(Clone, Debug)]
-pub(super) struct InvocationDocument {
+pub(super) struct InvocationCall {
     pub(super) model: ModelHeader,
     pub(super) context: String,
     pub(super) operation: String,
     pub(super) self_object: SelectedObject,
     pub(super) pre: DocumentRef,
-    pub(super) post: DocumentRef,
     /// The invocation's own `parameters` member, in document order.
     pub(super) parameters: Vec<(String, SnapshotValue)>,
+}
+
+/// A whole invocation: its call and its post side.
+#[derive(Clone, Debug)]
+pub(super) struct InvocationDocument {
+    pub(super) call: InvocationCall,
+    pub(super) post: DocumentRef,
     pub(super) result: ResultValue,
     pub(super) created: Vec<SelectedObject>,
     pub(super) deleted: Vec<SelectedObject>,
@@ -123,6 +137,7 @@ pub(super) struct InvocationDocument {
 enum Body {
     Snapshot(SnapshotDocument),
     Invocation(Box<InvocationDocument>),
+    InvocationCall(Box<InvocationCall>),
 }
 
 pub(super) struct ReadDocument {
@@ -137,14 +152,23 @@ impl ReadDocument {
     pub(super) fn as_snapshot(&self) -> Option<&SnapshotDocument> {
         match &self.body {
             Body::Snapshot(snapshot) => Some(snapshot),
-            Body::Invocation(_) => None,
+            Body::Invocation(_) | Body::InvocationCall(_) => None,
         }
     }
 
     pub(super) fn as_invocation(&self) -> Option<&InvocationDocument> {
         match &self.body {
             Body::Invocation(invocation) => Some(invocation),
-            Body::Snapshot(_) => None,
+            Body::Snapshot(_) | Body::InvocationCall(_) => None,
+        }
+    }
+
+    /// The call half of an invocation read for a precondition
+    /// ([`DocumentKind::InvocationCall`]).
+    pub(super) fn as_invocation_call(&self) -> Option<&InvocationCall> {
+        match &self.body {
+            Body::InvocationCall(call) => Some(call),
+            Body::Snapshot(_) | Body::Invocation(_) => None,
         }
     }
 }
@@ -224,7 +248,7 @@ pub(super) fn read_document(
     // 1.4: format.
     let expected_format = match kind {
         DocumentKind::Snapshot => "quire.state.snapshot/v1",
-        DocumentKind::Invocation => "quire.state.invocation/v1",
+        DocumentKind::Invocation | DocumentKind::InvocationCall => "quire.state.invocation/v1",
     };
     if object.member("format").and_then(|value| value.as_str()) != Some(expected_format) {
         return Err(refuse(admission_record(
@@ -233,10 +257,28 @@ pub(super) fn read_document(
         )));
     }
 
-    // 1.5/1.6: member presence, in the member order FR-106 states.
+    // 1.5/1.6: member presence, in the member order FR-106 states. An
+    // invocation read for a precondition requires none of its post side
+    // (`post`, `result`, `created`, `deleted`), but still names them, so
+    // they are not unknown members.
+    const INVOCATION_MEMBERS: &[&str] = &[
+        "format",
+        "identity",
+        "model",
+        "context",
+        "operation",
+        "self",
+        "pre",
+        "post",
+        "parameters",
+        "result",
+        "created",
+        "deleted",
+    ];
     let always_required: &[&str] = match kind {
         DocumentKind::Snapshot => &["format", "identity", "observation", "model", "populations"],
-        DocumentKind::Invocation => &[
+        DocumentKind::Invocation => INVOCATION_MEMBERS,
+        DocumentKind::InvocationCall => &[
             "format",
             "identity",
             "model",
@@ -244,11 +286,7 @@ pub(super) fn read_document(
             "operation",
             "self",
             "pre",
-            "post",
             "parameters",
-            "result",
-            "created",
-            "deleted",
         ],
     };
     let allowed: &[&str] = match kind {
@@ -260,7 +298,7 @@ pub(super) fn read_document(
             "model",
             "populations",
         ],
-        DocumentKind::Invocation => always_required,
+        DocumentKind::Invocation | DocumentKind::InvocationCall => INVOCATION_MEMBERS,
     };
     for member in always_required {
         if !object.contains_key(member) {
@@ -320,6 +358,9 @@ pub(super) fn read_document(
         DocumentKind::Snapshot => Body::Snapshot(read_snapshot_body(object, model)?),
         DocumentKind::Invocation => {
             Body::Invocation(Box::new(read_invocation_body(object, model)?))
+        }
+        DocumentKind::InvocationCall => {
+            Body::InvocationCall(Box::new(read_invocation_call(object, model)?))
         }
     };
     Ok(ReadDocument {
@@ -600,10 +641,12 @@ fn read_populations(
     Ok(populations)
 }
 
-fn read_invocation_body(
+/// Reads an invocation's call half: `context`, `operation`, `self`, `pre`
+/// and `parameters`, and nothing of its post side.
+fn read_invocation_call(
     object: &[(String, OrderedJson)],
     model: ModelHeader,
-) -> Result<InvocationDocument, AdmissionFailure> {
+) -> Result<InvocationCall, AdmissionFailure> {
     let context = object
         .member("context")
         .and_then(|value| value.as_str())
@@ -622,10 +665,6 @@ fn read_invocation_body(
         .member("pre")
         .ok_or_else(|| missing_member("pre"))
         .and_then(|value| read_document_ref(value, "pre"))?;
-    let post = object
-        .member("post")
-        .ok_or_else(|| missing_member("post"))
-        .and_then(|value| read_document_ref(value, "post"))?;
     let parameter_items = object
         .member("parameters")
         .and_then(|value| value.as_object())
@@ -636,6 +675,27 @@ fn read_invocation_body(
             read_raw_value(&value.clone().into_value()).ok_or_else(|| wrong_kind(name.clone()))?;
         parameters.push((name.clone(), raw));
     }
+    Ok(InvocationCall {
+        model,
+        context,
+        operation,
+        self_object,
+        pre,
+        parameters,
+    })
+}
+
+/// Reads a whole invocation: its call half, then `post`, `result`,
+/// `created` and `deleted`.
+fn read_invocation_body(
+    object: &[(String, OrderedJson)],
+    model: ModelHeader,
+) -> Result<InvocationDocument, AdmissionFailure> {
+    let call = read_invocation_call(object, model)?;
+    let post = object
+        .member("post")
+        .ok_or_else(|| missing_member("post"))
+        .and_then(|value| read_document_ref(value, "post"))?;
     let result = match object.member("result") {
         Some(OrderedJson::Null) => ResultValue::Null,
         Some(value) => ResultValue::Value(
@@ -658,13 +718,8 @@ fn read_invocation_body(
         .map(|item| read_object_ref(item, "deleted"))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(InvocationDocument {
-        model,
-        context,
-        operation,
-        self_object,
-        pre,
+        call,
         post,
-        parameters,
         result,
         created,
         deleted,

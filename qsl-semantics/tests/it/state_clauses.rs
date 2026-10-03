@@ -1388,18 +1388,18 @@ fn assert_frame_refused(
     }
 }
 
-/// TC-464 (FR-106 check 11, precondition): `root`'s `versionNumber` changes
-/// from 1 to 2 -- authorized (`attemptUpdate`'s frame `modifies
-/// [versionNumber]`) -- no other defect; admission admits.
-#[trace("TC-465", "FR-106-AC-5")]
+/// TC-464 (precondition over an invocation): `root`'s `versionNumber`
+/// changes from 1 to 2; a precondition admits the pre side alone, with no
+/// post observation.
+#[trace("TC-464", "FR-106-AC-9")]
 #[test]
 fn attempt_update_precondition_admits_an_authorized_change() {
     let pre = [("root", 1, None)];
     let post = [("root", 2, None)];
     let observations = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &[])
-        .expect("an authorized versionNumber change admits");
+        .expect("a precondition over an invocation admits");
     assert!(observations.pre.is_some());
-    assert!(observations.post.is_some());
+    assert!(observations.post.is_none());
 }
 
 /// TC-464 (FR-106 check 11, postcondition): the same authorized change,
@@ -1422,7 +1422,7 @@ fn attempt_update_postcondition_admits_an_authorized_change() {
 fn attempt_update_refuses_an_unauthorized_create() {
     let pre = [("root", 1, None)];
     let post = [("root", 1, None), ("child", 1, None)];
-    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &["child"], &[]);
+    let result = run_frame_clause("AttemptUpdatePost", &pre, &post, "root", &["child"], &[]);
     assert_frame_refused(
         result,
         "frame_violation",
@@ -1438,7 +1438,7 @@ fn attempt_update_refuses_an_unauthorized_create() {
 fn attempt_update_refuses_an_unauthorized_delete() {
     let pre = [("root", 1, None), ("child", 1, Some("root"))];
     let post = [("root", 1, None)];
-    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &["child"]);
+    let result = run_frame_clause("AttemptUpdatePost", &pre, &post, "root", &[], &["child"]);
     assert_frame_refused(
         result,
         "frame_violation",
@@ -1454,7 +1454,7 @@ fn attempt_update_refuses_an_unauthorized_delete() {
 fn attempt_update_refuses_a_change_outside_modifies() {
     let pre = [("root", 1, None), ("child", 1, None)];
     let post = [("root", 1, Some("child")), ("child", 1, None)];
-    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &[]);
+    let result = run_frame_clause("AttemptUpdatePost", &pre, &post, "root", &[], &[]);
     assert_frame_refused(
         result,
         "frame_violation",
@@ -1471,7 +1471,7 @@ fn attempt_update_refuses_a_change_outside_modifies() {
 fn attempt_update_refuses_a_declared_delta_mismatch() {
     let pre = [("root", 1, None)];
     let post = [("root", 1, None)];
-    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &["child"], &[]);
+    let result = run_frame_clause("AttemptUpdatePost", &pre, &post, "root", &["child"], &[]);
     assert_frame_refused(
         result,
         "population_delta_mismatch",
@@ -2269,6 +2269,7 @@ fn tc464_step5_an_invocation_target_in_an_incomplete_archive_is_incomplete() {
     let archive = "ix://example/config-version/archive";
     let result = run_tc465_probe_with(
         &document,
+        "ReachesTarget",
         |pre| {
             pre["populations"]
                 .as_array_mut()
@@ -2321,7 +2322,8 @@ const TC465_CLAUSES: &str = "invariant ParentOrder using v on Config::ConfigVers
     post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate { \
     self.versionNumber = pre(self.versionNumber) }\n\
     pre ReachesTarget using v on Config::ConfigVersion::probe { \
-    reaches(self, target, parent) }\n";
+    reaches(self, target, parent) }\n\
+    post ProbeHolds using v on Config::ConfigVersion::probe { true }\n";
 
 fn tc465_document_with(operation: serde_json::Value) -> Vec<u8> {
     config_version_document_with_operations(vec![operation, probe_operation()])
@@ -3172,13 +3174,14 @@ fn run_tc465_probe(
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
 > {
-    run_tc465_probe_with(document, |_| {}, mutate_invocation)
+    run_tc465_probe_with(document, "ReachesTarget", |_| {}, mutate_invocation)
 }
 
 /// [`run_tc465_probe`], with the pre snapshot's JSON mutated by
 /// `mutate_pre` before it is digested.
 fn run_tc465_probe_with(
     document: &[u8],
+    clause: &str,
     mutate_pre: impl FnOnce(&mut serde_json::Value),
     mutate_invocation: impl FnOnce(&mut serde_json::Value),
 ) -> Result<
@@ -3220,7 +3223,7 @@ fn run_tc465_probe_with(
     invocations.insert(invocation.digest, invocation_bytes);
     run_tc465(
         document,
-        "ReachesTarget",
+        clause,
         qsl_semantics::model::observation::ClauseSelectionInput::Invocation { invocation },
         snapshots,
         invocations,
@@ -4518,14 +4521,19 @@ fn tc465_row37_wrong_parameter_kind_refuses_wrong_value_kind() {
 }
 
 /// Row 38 (check 10): probe invocation with `result` `{"boolean": true}`
-/// for an operation with no declared result.
+/// for an operation with no declared result. Check 10's result rule is a
+/// postcondition's (a precondition reads no result, FR-106 "Behavior"), so
+/// it runs for `probe`'s postcondition `ProbeHolds`.
 #[trace("TC-465", "FR-106-AC-3")]
 #[test]
 fn tc465_row38_result_for_a_no_result_operation_refuses_unknown_member() {
     let document = tc465_document();
-    let result = run_tc465_probe(&document, |value| {
-        value["result"] = json!({"boolean": true})
-    });
+    let result = run_tc465_probe_with(
+        &document,
+        "ProbeHolds",
+        |_| {},
+        |value| value["result"] = json!({"boolean": true}),
+    );
     assert_tc465_refused(result, "invalid_runtime_input", "unknown-member");
 }
 
@@ -4685,27 +4693,19 @@ fn tc465_check_order_reports_the_earlier_numbered_check_across_pre_and_post() {
     assert_tc465_refused(result, "invalid_runtime_input", "wrong-value-kind");
 }
 
-/// SR-750 FND-006: a precondition does not require `self` in the post
-/// snapshot. `root` (self) is absent from post and declared deleted, but
-/// `attemptUpdate`'s frame (`frame_test_document`, modifies
-/// `[versionNumber]` only) grants no `deletes` -- before this fix, check 9
-/// ran against post for a precondition too and would have refused
-/// `wrong-role-mapping` (self unresolved in post) before check 11 ever
-/// ran; after this fix, check 9 never resolves `self` against post for a
-/// precondition, so check 11's own frame violation (the unauthorized
-/// deletion) is the one reported instead.
-#[trace("TC-465", "FR-106-AC-3")]
+/// A precondition does not require `self` in the post snapshot, nor run
+/// check 11: `root` (self) is absent from post and declared deleted, which
+/// `attemptUpdate`'s frame (modifies `[versionNumber]` only) does not
+/// grant, yet the precondition admits the pre side alone.
+#[trace("TC-464", "FR-106-AC-9")]
 #[test]
 fn precondition_does_not_require_self_in_the_post_snapshot() {
     let pre = [("root", 1, None), ("child", 1, None)];
     let post = [("child", 1, None)];
-    let result = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &["root"]);
-    assert_frame_refused(
-        result,
-        "frame_violation",
-        "unauthorized-change",
-        Some("root"),
-    );
+    let observations = run_frame_clause("AttemptUpdatePre", &pre, &post, "root", &[], &["root"])
+        .expect("a precondition reads no post side");
+    assert!(observations.post.is_none());
+    assert!(observations.deleted.is_empty());
 }
 
 /// SR-750 FND-007: `created`/`deleted` naming a population neither the pre

@@ -423,17 +423,14 @@ impl<'a> ClauseSetup<'a> {
             return Err(InputRefusal::ObservationsMismatch.into());
         }
         // The clause's own observation (FR-107): `current` for an
-        // invariant, `post` for a postcondition. A precondition's own
-        // observation is `pre`, and it reads every model read there
-        // (FR-104): an invocation also carries its post snapshot, which the
-        // clause never reads apart from `pre`; a pre-call observation
-        // carries the pre snapshot alone.
+        // invariant, `post` for a postcondition, and `pre` for a
+        // precondition, which reads every model read there and never the
+        // post side (FR-104, FR-106), whether selected by `PreCall` or by
+        // `Invocation`.
         let current = match declaration.observation() {
             qsl_semantics::check::Observation::Current => observations.current.as_ref(),
             qsl_semantics::check::Observation::Post => observations.post.as_ref(),
-            qsl_semantics::check::Observation::Pre => {
-                observations.post.as_ref().or(observations.pre.as_ref())
-            }
+            qsl_semantics::check::Observation::Pre => observations.pre.as_ref(),
         }
         .ok_or_else(|| {
             CallFailure::Fault(InternalFault::new(
@@ -470,12 +467,9 @@ impl<'a> ClauseSetup<'a> {
             .pre
             .as_ref()
             .map(|observation| s6a::separation::observation_identity(&observation.identity));
-        // A precondition reads the pre snapshot, so its value paths name it
-        // whether the run is pre-call or over an invocation (FR-104).
-        let own = match (declaration.observation(), &pre) {
-            (qsl_semantics::check::Observation::Pre, Some(pre)) => pre.clone(),
-            _ => s6a::separation::observation_identity(&current.identity),
-        };
+        // The clause's own observation names its value paths: the pre
+        // snapshot for a precondition (FR-104).
+        let own = s6a::separation::observation_identity(&current.identity);
         let trail = s6a::separation::Trail::new(own, pre);
         Ok(Self {
             declaration,

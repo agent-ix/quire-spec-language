@@ -488,7 +488,8 @@ fn clause_input_document(input: &ClauseSelectionInput) -> &DocumentRef {
 
 /// Every document admission read for `input`, in FR-106 check 1's read
 /// order: the current or pre-call snapshot, or the invocation and then its
-/// pre and post snapshots.
+/// pre snapshot and, for a postcondition, its post snapshot (a precondition
+/// reads no post side).
 fn admitted_documents(
     input: &ClauseSelectionInput,
     observations: &AdmittedObservations,

@@ -124,7 +124,7 @@ impl StateClauseReplayResult {
     }
     /// The identity and digest of every document admission read, in read
     /// order: the current or pre-call snapshot, or the invocation and then
-    /// its pre and post snapshots.
+    /// its pre snapshot and, for a postcondition, its post snapshot.
     pub fn documents(&self) -> &[DocumentRef] {
         &self.documents
     }

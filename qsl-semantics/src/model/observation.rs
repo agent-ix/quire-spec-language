@@ -362,9 +362,9 @@ pub struct AdmittedObservations {
     /// The pre observation: an invocation's pre snapshot, or a pre-call
     /// observation's one snapshot.
     pub pre: Option<Observation>,
-    /// The post observation: present for an invocation, whose two
-    /// snapshots FR-106 admits for a precondition as for a postcondition;
-    /// absent for a current or a pre-call observation.
+    /// The post observation: present for an invocation selected for a
+    /// postcondition; absent for a current observation and for a pre-call
+    /// observation, whether selected by `PreCall` or by `Invocation`.
     pub post: Option<Observation>,
     /// The selected self object's reference.
     pub self_object: ObjectReference,
@@ -666,6 +666,22 @@ pub fn admit_observations(
         .ok_or_else(|| fault("unresolved-context-name"))?
         .to_owned();
 
+    // A precondition's pre-call observation, selected by `PreCall` or by
+    // `Invocation`, is admitted against this one context.
+    let pre_call_context = || -> Result<PreCallContext<'_>, AdmissionFailure> {
+        Ok(PreCallContext {
+            views: &views,
+            types,
+            context_view,
+            context_name: &context_name,
+            clause: clause.identity,
+            operation: clause
+                .operation
+                .as_ref()
+                .ok_or_else(|| fault("clause-declares-no-operation"))?,
+        })
+    };
+
     match &selection.input {
         ClauseSelectionInput::Current {
             snapshot,
@@ -687,37 +703,49 @@ pub fn admit_observations(
             snapshot,
             self_object,
             parameters,
-        } => admit_pre_call(
-            &PreCallContext {
-                views: &views,
+        } => {
+            let context = pre_call_context()?;
+            let read = read_document(
+                DocumentKind::Snapshot,
+                provisions.snapshots,
+                snapshot,
+                limits,
+            )?;
+            let parameters: Vec<(String, SnapshotValue)> = parameters
+                .iter()
+                .map(|(name, value)| (name.as_str().to_owned(), value.clone()))
+                .collect();
+            admit_pre_call(
+                &context,
+                PreCallInput {
+                    call: None,
+                    invocation_usage: AdmissionUsage::default(),
+                    pre: read,
+                    self_object,
+                    parameters: &parameters,
+                },
+                limits,
+            )
+        }
+        ClauseSelectionInput::Invocation { invocation } => match clause.kind {
+            StateClauseKind::Precondition => {
+                admit_pre_call_invocation(&pre_call_context()?, provisions, invocation, limits)
+            }
+            StateClauseKind::Postcondition => admit_operation(
+                &views,
                 types,
                 context_view,
-                context_name: &context_name,
-                clause: clause.identity,
-                operation: clause
-                    .operation
-                    .as_ref()
-                    .ok_or_else(|| fault("clause-declares-no-operation"))?,
-            },
-            provisions,
-            snapshot,
-            self_object,
-            parameters,
-            limits,
-        ),
-        ClauseSelectionInput::Invocation { invocation } => admit_operation(
-            &views,
-            types,
-            context_view,
-            &context_name,
-            clause.identity,
-            clause.kind,
-            clause.operation.as_ref(),
-            provisions,
-            invocation,
-            limits,
-            model_limits.ancestor_steps,
-        ),
+                &context_name,
+                clause.identity,
+                clause.operation.as_ref(),
+                provisions,
+                invocation,
+                limits,
+                model_limits.ancestor_steps,
+            ),
+            // Check 2 above refused an invariant's `Invocation` selection.
+            StateClauseKind::Invariant => Err(fault("invariant-selected-by-invocation")),
+        },
     }
 }
 
@@ -954,7 +982,7 @@ fn admit_invocation_documents(
         let invocation = invocation_read
             .as_invocation()
             .ok_or_else(|| fault("expected-invocation-document"))?;
-        (invocation.pre.clone(), invocation.post.clone())
+        (invocation.call.pre.clone(), invocation.post.clone())
     };
     let pre_read = read_document(
         DocumentKind::Snapshot,
@@ -989,28 +1017,21 @@ fn admit_invocation_documents(
     }
 
     // Check 4: model, for each document in the order it was read.
-    check_model(context_view, &invocation.model)?;
+    check_model(context_view, &invocation.call.model)?;
     check_model(context_view, &pre_snapshot.model)?;
     check_model(context_view, &post_snapshot.model)?;
 
     // Check 5: operation.
-    if invocation.context != context_name || invocation.operation != operation.declaration.name() {
-        return Err(refuse(AdmissionRecord::new(
-            Code::WrongSnapshot,
-            "wrong-invocation",
-        )));
-    }
+    check_operation(&invocation.call, context_name, operation)?;
 
     // Checks 6 to 8: pre's own check 6, then post's, then pre's check 7,
     // then post's, then pre's check 8, then post's -- never fully
     // finishing one snapshot's checks 6 to 8 before starting the other's
     // check 6 (SR-750 FND-005).
-    let self_object = &invocation.self_object;
-    // FR-106 check 9: `self` is required in the current snapshot and an
-    // invocation's pre snapshot always, but in the post snapshot only for
-    // a postcondition (SR-750 FND-006) -- a precondition of an operation
-    // that deletes `self` must not wrongly refuse `wrong-role-mapping`
-    // over `self`'s absence from post.
+    let self_object = &invocation.call.self_object;
+    // FR-106 check 9: `self` is required in the post snapshot only for a
+    // postcondition (SR-750 FND-006), never for a `Frame` run, whose
+    // operation may delete it.
     let post_self_population = post_self.then_some(self_object.population.as_str());
     let pre_values =
         document::admit_population_values(views, types, &pre_snapshot.populations, limits)?;
@@ -1020,7 +1041,11 @@ fn admit_invocation_documents(
         &pre_snapshot.populations,
         &pre_values.completeness,
         Some(&self_object.population),
-        &document::parameter_populations(views, &operation.declaration, &invocation.parameters),
+        &document::parameter_populations(
+            views,
+            &operation.declaration,
+            &invocation.call.parameters,
+        ),
     )?;
     document::check_population_completeness(
         &post_snapshot.populations,
@@ -1072,7 +1097,7 @@ fn admit_invocation_documents(
     let parameters = document::admit_parameters(
         &mut parameter_references,
         &operation.declaration,
-        &invocation.parameters,
+        &invocation.call.parameters,
     )?;
     let result = document::admit_result(
         &mut result_references,
@@ -1090,7 +1115,8 @@ fn admit_invocation_documents(
     })
 }
 
-/// What a `PreCall` admission reads about the selected precondition.
+/// What a pre-call admission reads about the selected precondition,
+/// whether the precondition is selected by `PreCall` or by `Invocation`.
 struct PreCallContext<'a> {
     views: &'a [ModelView],
     types: &'a TypeEnvironment,
@@ -1100,26 +1126,87 @@ struct PreCallContext<'a> {
     operation: &'a OperationFacts,
 }
 
-/// FR-106 checks 1, 3, 4 and 6 to 10 over a `PreCall` selection: the one
-/// pre snapshot, the self object and the parameters. Check 5 names an
-/// invocation's operation, and check 11 compares a pre and a post
-/// snapshot; a pre-call observation has neither, so neither runs.
-fn admit_pre_call(
+/// FR-106 check 5: an invocation's `context` and `operation` must be the
+/// selected clause's.
+fn check_operation(
+    call: &document::InvocationCall,
+    context_name: &str,
+    operation: &OperationFacts,
+) -> Result<(), AdmissionFailure> {
+    if call.context != context_name || call.operation != operation.declaration.name() {
+        return Err(refuse(AdmissionRecord::new(
+            Code::WrongSnapshot,
+            "wrong-invocation",
+        )));
+    }
+    Ok(())
+}
+
+/// One pre-call observation's documents, already read by check 1: the
+/// call half of the invocation that carried it (`None` for a `PreCall`
+/// selection) and that invocation's read usage, its pre snapshot, the self
+/// object and the parameters.
+struct PreCallInput<'a> {
+    call: Option<&'a document::InvocationCall>,
+    invocation_usage: AdmissionUsage,
+    pre: document::ReadDocument,
+    self_object: &'a SelectedObject,
+    parameters: &'a [(String, SnapshotValue)],
+}
+
+/// A precondition selected by `Invocation` (FR-106 "Behavior"): check 1
+/// reads the invocation's call half and then its `pre` snapshot, and
+/// nothing of its post side -- not its `post` snapshot, `result`,
+/// `created` or `deleted` -- and check 11 does not run. The rest is
+/// [`admit_pre_call`], the one path a `PreCall` selection takes too, so
+/// both admit the same observation.
+fn admit_pre_call_invocation(
     context: &PreCallContext<'_>,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
-    self_object: &SelectedObject,
-    parameters: &BTreeMap<Identifier, SnapshotValue>,
     limits: ObservationLimits,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
-    // Check 1.
-    let read = read_document(
-        DocumentKind::Snapshot,
-        provisions.snapshots,
+    let invocation_read = read_document(
+        DocumentKind::InvocationCall,
+        provisions.invocations,
         selected,
         limits,
     )?;
-    let snapshot = read
+    let call = invocation_read
+        .as_invocation_call()
+        .ok_or_else(|| fault("expected-invocation-document"))?;
+    let pre_read = read_document(
+        DocumentKind::Snapshot,
+        provisions.snapshots,
+        &call.pre,
+        limits,
+    )?;
+    admit_pre_call(
+        context,
+        PreCallInput {
+            call: Some(call),
+            invocation_usage: invocation_read.usage,
+            pre: pre_read,
+            self_object: &call.self_object,
+            parameters: &call.parameters,
+        },
+        limits,
+    )
+}
+
+/// FR-106 checks 3 to 10 over one pre-call observation, read by check 1:
+/// the pre snapshot, the self object and the parameters, and for an
+/// invocation its own model (check 4) and operation (check 5). Check 11
+/// compares a pre and a post snapshot; a pre-call observation has no post
+/// side, so it does not run.
+fn admit_pre_call(
+    context: &PreCallContext<'_>,
+    input: PreCallInput<'_>,
+    limits: ObservationLimits,
+) -> Result<AdmittedObservations, AdmissionFailure> {
+    let call = input.call;
+    let snapshot = input
+        .pre
         .as_snapshot()
         .ok_or_else(|| fault("expected-snapshot-document"))?;
 
@@ -1131,15 +1218,19 @@ fn admit_pre_call(
         )));
     }
 
-    // Check 4: model.
+    // Check 4: model, for each document in the order it was read.
+    if let Some(call) = call {
+        check_model(context.context_view, &call.model)?;
+    }
     check_model(context.context_view, &snapshot.model)?;
+
+    // Check 5: operation.
+    if let Some(call) = call {
+        check_operation(call, context.context_name, context.operation)?;
+    }
 
     // Checks 6 to 8, with every declared population a reference parameter
     // names required alongside `self`'s.
-    let parameters: Vec<(String, SnapshotValue)> = parameters
-        .iter()
-        .map(|(name, value)| (name.as_str().to_owned(), value.clone()))
-        .collect();
     let values = document::admit_population_values(
         context.views,
         context.types,
@@ -1149,11 +1240,11 @@ fn admit_pre_call(
     document::check_population_completeness(
         &snapshot.populations,
         &values.completeness,
-        Some(&self_object.population),
+        Some(&input.self_object.population),
         &document::parameter_populations(
             context.views,
             &context.operation.declaration,
-            &parameters,
+            input.parameters,
         ),
     )?;
     document::check_population_closure(
@@ -1170,23 +1261,29 @@ fn admit_pre_call(
         context.context_view,
         context.context_name,
         &admitted.environment,
-        self_object,
+        input.self_object,
     )?;
 
     // Check 10: parameters, resolved against the pre snapshot. A pre-call
     // observation carries no result.
     let mut references =
         document::References::over(context.views, context.types, &snapshot.populations);
-    let parameters =
-        document::admit_parameters(&mut references, &context.operation.declaration, &parameters)?;
+    let parameters = document::admit_parameters(
+        &mut references,
+        &context.operation.declaration,
+        input.parameters,
+    )?;
 
-    let usage = read.usage.merged_with(admitted.usage);
+    let usage = input
+        .invocation_usage
+        .merged_with(input.pre.usage)
+        .merged_with(admitted.usage);
     Ok(AdmittedObservations {
         usage,
         clause: context.clause,
         current: None,
         pre: Some(Observation {
-            identity: read.identity,
+            identity: input.pre.identity,
             environment: admitted.environment,
             populations: admitted.completeness,
         }),
@@ -1206,7 +1303,6 @@ fn admit_operation(
     context_view: &ModelView,
     context_name: &str,
     clause_identity: quire_exact::NodeKey,
-    kind: StateClauseKind,
     operation: Option<&OperationFacts>,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
@@ -1220,7 +1316,7 @@ fn admit_operation(
         context_view,
         context_name,
         operation,
-        kind == StateClauseKind::Postcondition,
+        true,
         provisions,
         selected,
         limits,

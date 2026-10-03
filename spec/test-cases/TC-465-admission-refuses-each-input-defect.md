@@ -62,7 +62,7 @@ mutated document except where the row says otherwise.
 | 35 | 10 | probe invocation with `parameters` `{}` | `invalid_runtime_input`/`missing-member` at `target` |
 | 36 | 10 | probe invocation with an extra parameter `other` naming `{config_history, root}` | `invalid_runtime_input`/`unknown-member` at `other` |
 | 37 | 10 | probe invocation with `target` `{"integer": "1"}` | `invalid_runtime_input`/`wrong-value-kind` at `target` |
-| 38 | 10 | probe invocation with `result` `{"boolean": true}` | `invalid_runtime_input`/`unknown-member` at `result` |
+| 38 | 10 | probe invocation with `result` `{"boolean": true}`, selected for the postcondition `ProbeHolds` | `invalid_runtime_input`/`unknown-member` at `result` |
 | 39 | 11.1 over 11.2 | a package variant where `Sub` specializes `ConfigVersion` and is a member type of `config_history`; post changes `child`'s type to `Sub`, sets `child.parent` absent and deletes `root` | `frame_violation`/`unauthorized-change` naming `child`'s type change |
 | 40 | 11, population order | pre and post list `archive` (complete, object `a1` with `parent` absent) before `config_history`; post sets `a1.parent` to a present reference and `child.parent` absent | `frame_violation`/`unauthorized-change` naming `a1` and `parent` in `archive` |
 | 41 | 11, one-sided population | post adds a population `archive` absent from pre, holding object `a1` (`parent` absent), with `created` unchanged | `frame_violation`/`unauthorized-change` naming the creation of `a1` in `archive` (pre side admitted as empty) |
@@ -86,7 +86,11 @@ also admits a `Sub` object, since `Sub` conforms to `ConfigVersion`
 (FR-106 check 6.5); row 44's `Other` conforms to no type of the package but
 itself, so its reference refuses. Rows 35 to 38 and 43 use
 TC-466 step 3's `probe` package variant: `probe(target: ConfigVersion)` on
-`ConfigVersion`, no result, empty frame, with `ReachesTarget` selected. Their
+`ConfigVersion`, no result, empty frame. Rows 35 to 37 and 43 select the
+precondition `ReachesTarget`. Row 38 selects a postcondition on `probe`,
+`post ProbeHolds using v on Config::ConfigVersion::probe { true }`, because
+the result check is a postcondition's: a precondition selected by
+`Invocation` never reads `result` (FR-106-AC-9). Their
 base invocation has `operation` `probe`, `self` `{config_history, child}`,
 `parameters` `{"target": {"reference": {"population":
 config_history, "key": "root"}}}`, `result` `null`, and the healthy-parent
