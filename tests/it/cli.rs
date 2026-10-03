@@ -113,7 +113,7 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "parsed");
     assert_eq!(value["source"]["identity"], "exact:é");
-    assert_eq!(value["source"]["revision"]["value"], "revision:😀");
+    assert!(value["source"].get("revision").is_none());
     assert_eq!(value["source"]["digest"], hex(bytes));
     assert_eq!(value["path"], path.to_string_lossy().as_ref());
     assert!(value["path"].as_str().unwrap().contains('\u{fffd}'));
@@ -139,7 +139,7 @@ fn cli_parses_and_formats_without_claiming_execution() {
     let value: serde_json::Value = serde_json::from_slice(&parsed.stdout).unwrap();
     assert_eq!(value["status"], "parsed");
     assert_eq!(value["clauses"], 4);
-    assert_eq!(value["source"]["revision"]["value"], "fixture:1");
+    assert!(value["source"].get("revision").is_none());
     assert_eq!(value["source"]["identity"], "test:parent");
     assert_eq!(value["path"], "tests/fixtures/parent.native");
     assert_eq!(
@@ -332,7 +332,8 @@ fn malformed_operands_report_the_selected_command_before_io() {
 }
 
 /// TC-425 (FR-010-AC-11): `parse` and `format` take the four source labels
-/// before the file; `parse` reports the source as its `RawSourceRef`.
+/// before the file; `parse` reports the source as its `RawSourceRef`:
+/// authority, identity and digest, and no other member.
 #[trace("TC-425", "FR-010-AC-11")]
 #[test]
 fn parse_and_format_take_the_four_source_labels() {
@@ -352,7 +353,6 @@ fn parse_and_format_take_the_four_source_labels() {
         serde_json::json!({
             "authority": "agent-ix",
             "identity": "specs/a.quire",
-            "revision": {"namespace": "git", "value": "3f2a"},
             "digest_domain": "quire.source.bytes/v1",
             "digest": hex(include_bytes!("../fixtures/parent.native")),
         })

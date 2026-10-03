@@ -42,7 +42,7 @@ Tag the tests `#[trace("TC-421", "FR-095-AC-n")]` with the AC each backs.
 ## Expected Results
 
 - Step 1: each key maps to exactly its wire regions in wire order, under the
-  wire's authority, identity, revision and digest; each node has exactly its
+  wire's authority, identity and digest; each node has exactly its
   one entry.
 - Step 2: `NoRegion` and `DuplicateOccurrence`.
 - Step 3: `ReversedRegion` and a node-id defect, each `invalid_source_map`;

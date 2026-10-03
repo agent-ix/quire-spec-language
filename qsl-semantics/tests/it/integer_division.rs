@@ -2,15 +2,14 @@
 //! TC-192 integer division profiles over the real `value` boundary.
 //!
 //! The signed table and DIV-01–DIV-13 exercise every closed division law;
-//! every `DefinitionRef` is built from the compiled-in lock's own catalog
-//! entries rather than authored ad hoc.
+//! every `DefinitionRef` is built from the catalog's own entries rather than
+//! authored ad hoc.
 
 use std::num::NonZeroU32;
 
 use ix_trace_rs::trace;
 use qsl_semantics::value::{
     divide, modulo, AdmittedIntegerDivision, CatalogRole, DefinitionLock, DefinitionReference,
-    DefinitionRevision,
 };
 use quire_exact::{
     ChargePoint, DivisionProfile, Incomplete, InjectedDenial, Integer, IntegerDomain,
@@ -44,22 +43,10 @@ fn role(profile: DivisionProfile) -> CatalogRole {
     }
 }
 
-/// A well-formed [`DefinitionReference`] for `role`, built from the catalog's
-/// own identity/authority/revision fields. There is no digest to carry over:
-/// the catalog holds none, so this uses a placeholder that admission never
-/// inspects.
+/// The [`DefinitionReference`] for `role`: the catalog entry's
+/// `{authority, identity}`.
 fn reference(role: CatalogRole) -> DefinitionReference {
-    let entry = *lock().entry(role).unwrap();
-    DefinitionReference {
-        authority: entry.authority.to_owned(),
-        identity: entry.identity.to_owned(),
-        revision: DefinitionRevision {
-            namespace: entry.revision_namespace.to_owned(),
-            value: entry.revision_value.to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "0".repeat(64),
-    }
+    lock().entry(role).reference()
 }
 
 fn admitted(profile: DivisionProfile) -> AdmittedIntegerDivision {
@@ -537,7 +524,7 @@ fn div_13_the_first_short_counter_in_field_order_is_reported() {
 
 #[trace("QSpec-TC-192", "TC-202", "FR-078-AC-3")]
 #[test]
-fn div_09_missing_conflicting_or_stale_division_definitions_refuse_admission() {
+fn div_09_missing_conflicting_or_foreign_division_definitions_refuse_admission() {
     let refuse = |cause| {
         Err(PackageRefusal {
             code: PackageRefusalCode::InvalidPackage,
@@ -559,17 +546,13 @@ fn div_09_missing_conflicting_or_stale_division_definitions_refuse_admission() {
         ),
         refuse(PackageCause::ConflictingDefinition)
     );
-    let mut stale = floor.clone();
-    stale.revision.value = "1-draft.2".into();
+    // A definition is `{authority, identity}`: the catalogued identity under
+    // another authority is another definition.
+    let mut foreign = floor.clone();
+    foreign.authority = "other".into();
     assert_eq!(
-        lock().admit_integer_division(&[stale], None),
-        refuse(PackageCause::RevisionMismatch)
-    );
-    let mut wrong_domain = floor.clone();
-    wrong_domain.digest_domain = "quire.definition.jcs/v1".into();
-    assert_eq!(
-        lock().admit_integer_division(&[wrong_domain], None),
-        refuse(PackageCause::DigestDomainMismatch)
+        lock().admit_integer_division(&[foreign], None),
+        refuse(PackageCause::IncompatibleDefinition)
     );
     assert_eq!(
         lock().admit_integer_division(&[reference(CatalogRole::Root)], None),

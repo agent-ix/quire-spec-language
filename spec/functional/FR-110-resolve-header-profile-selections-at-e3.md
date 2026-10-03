@@ -30,8 +30,9 @@ header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header
 profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
 This requirement specifies the `Value` family's catalog,
-`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which reads
-QSpec's `complete-value-lock.json` by reference, including its
+`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which names
+each definition the QSL build implements by `{authority, identity}`, the
+identities QSpec's `complete-value-lock.json` names, including its
 `header_selectable_layers` rows. A clause profile (FR-322 roles
 `temporal_profile` and `protocol_profile`) resolves in its clause family's
 catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
@@ -49,11 +50,12 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 - The unit's profile selections as S2 carries them
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
   identity, declaration span, identity-literal span).
-- `DefinitionLock::pinned()`, the closed catalog of QSpec
-  `complete-value-lock.json` rows, including its `header_selectable_layers`
-  rows (each layer's identity, the layers it requires and its admitted-form
-  definition file), read from the `quire-specification` crate's
-  compiled-in bytes, which the resolution reads itself.
+- `DefinitionLock::pinned()`, the closed catalog of the definitions QSpec
+  `complete-value-lock.json` names, each by `{authority, identity}`,
+  including its `header_selectable_layers` rows (each layer's identity, the
+  layers it requires and its admitted-form definition file). It holds no
+  revision, no digest and no QSpec document; `make conformance` compares it
+  with QSpec's lock, read at run time.
 
 ## Outputs
 
@@ -176,6 +178,7 @@ edge therefore compile to distinct packages.
 | FR-110-AC-6 | A unit with three header profiles, the `root` selection under alias `v`, the `ieee_profile` row's identity under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the `root` selection under two aliases compiles. | Test (TC-490) |
 | FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` hold the layer and every layer its `requires` closure names and no layer that requires it. | Test (TC-490) |
 | FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
+| FR-110-AC-9 | Under `make conformance`, `DefinitionLock::pinned()`'s catalog rows (role, authority and identity, in order), its package-selection rules, its trigger vocabulary and its selection refusal codes equal QSpec's `complete-value-lock.json`, and QSpec's selection vectors give the outcomes the lock's rules compute. | Test (TC-490) |
 
 ## Dependencies
 
@@ -204,7 +207,10 @@ and `a_token_after_a_header_profile_identity_is_a_syntax_error`,
 `qsl-replay/src/spine.rs`). A header profile is
 `profile <alias> = "<identity>";` and resolves by identity alone.
 
+The emitted lock rows are `{authority, identity}`, with no revision and no
+digest, and `DefinitionLock` names each catalog definition the same way
+(`CatalogRole::identity`), compared with QSpec's lock by AC-9; the `quire-specification` crate dependency is
+deleted.
+
 Remaining work: layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented. `DefinitionLock` still reads its catalog from
-the `quire-specification` crate's compiled-in lock bytes, because the
-emitted lock rows still carry a revision and digest.
+rows are not yet implemented.

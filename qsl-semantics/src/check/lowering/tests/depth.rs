@@ -56,12 +56,6 @@ fn text_definition() -> DefinitionReference {
     DefinitionReference {
         authority: "agent-ix".to_owned(),
         identity: "unicode-text".to_owned(),
-        revision: crate::value::definition::DefinitionRevision {
-            namespace: "unicode".to_owned(),
-            value: "17.0.0".to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "ab".repeat(32),
     }
 }
 

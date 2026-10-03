@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::RationalDomain;
 use quire_exact::{
     compare_ieee, convert_ieee_width, evaluate_ieee, exact_to_ieee, ieee_intrinsic_identities,
@@ -128,22 +128,10 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).unwrap()
 }
 
-/// A well-formed [`DefinitionReference`] for the IEEE profile role, built
-/// from the catalog's own identity/authority/revision fields. There is no
-/// digest to carry over: the catalog holds none, so this uses a placeholder
-/// that admission never inspects.
+/// The [`DefinitionReference`] for the IEEE profile role: the catalog
+/// entry's `{authority, identity}`.
 fn ieee_reference(lock: &DefinitionLock) -> DefinitionReference {
-    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
-    DefinitionReference {
-        authority: entry.authority.to_owned(),
-        identity: entry.identity.to_owned(),
-        revision: DefinitionRevision {
-            namespace: entry.revision_namespace.to_owned(),
-            value: entry.revision_value.to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "0".repeat(64),
-    }
+    lock.entry(CatalogRole::IeeeProfile).reference()
 }
 
 fn f32v(bits: u32) -> IeeeValue {
@@ -755,8 +743,8 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
         .unwrap();
     assert_eq!(admitted.definition(), &reference);
 
-    let mut revision = reference.clone();
-    revision.revision.value = "1-draft.2".to_owned();
+    let mut foreign = reference.clone();
+    foreign.authority = "other".to_owned();
     let mut version = reference.clone();
     version.identity = "quire.value.ieee754-2019-default/v2".to_owned();
     let cases = [
@@ -769,8 +757,8 @@ fn semantic_admission_refuses_missing_repeated_mismatched_or_reserved_bindings()
             PackageCause::ConflictingDefinition,
         ),
         (
-            lock.admit_ieee_profile(&[revision], &[]),
-            PackageCause::RevisionMismatch,
+            lock.admit_ieee_profile(&[foreign], &[]),
+            PackageCause::IncompatibleDefinition,
         ),
         (
             lock.admit_ieee_profile(&[version], &[]),

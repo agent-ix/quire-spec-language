@@ -357,6 +357,18 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
              Value::Collection is refused as UnbuiltLiteral",
         ),
         (
+            K::CompositeType(CompositeTypeForm::Union),
+            "lowering builds no union type; the checker has no union type form",
+        ),
+        (
+            K::Value(ValueForm::UnionValue),
+            "lowering builds no union value; the checker has no union type form",
+        ),
+        (
+            K::Expression(ExpressionForm::Case),
+            "lowering builds no case expression; the value expression grammar has none",
+        ),
+        (
             K::Value(ValueForm::OptionValue),
             "lowering builds no option literal (UnbuiltLiteral)",
         ),
@@ -390,6 +402,7 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::State(StateForm::Snapshot), NO_TAG),
         (K::Temporal(TemporalForm::TemporalClause), NO_TAG),
         (K::Temporal(TemporalForm::Formula), NO_TAG),
+        (K::Temporal(TemporalForm::Fairness), NO_TAG),
         (K::Temporal(TemporalForm::Clock), NO_TAG),
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),

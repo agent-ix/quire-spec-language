@@ -132,19 +132,11 @@ fn record_types() -> TypeEnvironment {
 /// The lock evidence of these packages: the catalog's text-profile
 /// definition, which the emitted lock selects.
 fn lock_evidence() -> qsl_semantics::check::LockEvidence {
-    let entry = *DefinitionLock::pinned()
-        .entry(CatalogRole::TextProfile)
-        .expect("the catalog names a text profile");
+    let entry = *DefinitionLock::pinned().entry(CatalogRole::TextProfile);
     qsl_semantics::check::LockEvidence::default().with_text_profile(
         qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: qsl_semantics::value::DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: entry.digest.to_owned(),
         },
     )
 }
@@ -152,19 +144,11 @@ fn lock_evidence() -> qsl_semantics::check::LockEvidence {
 /// The package's one admitted IEEE profile: the catalog's own definition.
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
-    let entry = lock
-        .entry(CatalogRole::IeeeProfile)
-        .expect("the catalog names an IEEE profile");
+    let entry = lock.entry(CatalogRole::IeeeProfile);
     lock.admit_ieee_profile(
         &[qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: qsl_semantics::value::DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: entry.digest.to_owned(),
         }],
         &[],
     )

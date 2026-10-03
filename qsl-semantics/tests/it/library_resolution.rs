@@ -40,13 +40,7 @@ fn hex(label: &str) -> String {
 
 fn selection(identity: &str) -> Value {
     json!({
-        "definition": {
-            "authority": "agent-ix",
-            "digest": hex(identity),
-            "digest_domain": "quire.definition.bytes/v1",
-            "identity": identity,
-            "revision": {"namespace": "semver", "value": "1"},
-        },
+        "definition": {"authority": "agent-ix", "identity": identity},
         "role": "edition",
     })
 }

@@ -280,10 +280,12 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 }
 
 /// The wire lock's edition and definition selections are the
-/// `DefinitionLock` catalog's rows, digests included, the diagnostics
-/// catalog is QSpec's native diagnostics document as
-/// `native_diagnostics_catalog` reads it, and IR admits them.
-#[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17")]
+/// `DefinitionLock` catalog's rows, each exactly `{authority, identity}`;
+/// the diagnostics catalog is QSpec's native diagnostics `DefinitionRef`,
+/// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
+/// source row, and each source-map region's source, keeps its
+/// `quire.source.bytes/v1` digest; and IR's reader admits the package.
+#[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17", "FR-093-AC-20")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
@@ -291,14 +293,8 @@ fn the_lock_selects_the_catalog_definitions() {
     let wire = wire(&emission);
     let lock = DefinitionLock::pinned();
     let row = |role: CatalogRole| {
-        let entry = lock.entry(role).unwrap();
-        json!({
-            "authority": entry.authority,
-            "identity": entry.identity,
-            "revision": {"namespace": entry.revision_namespace, "value": entry.revision_value},
-            "digest_domain": "quire.definition.bytes/v1",
-            "digest": entry.digest,
-        })
+        let entry = lock.entry(role);
+        json!({"authority": entry.authority, "identity": entry.identity})
     };
     assert_eq!(
         wire["lock"]["edition"],
@@ -311,25 +307,68 @@ fn the_lock_selects_the_catalog_definitions() {
         .map(|role| row(*role))
         .collect();
     assert_eq!(wire["lock"]["definition_selections"], json!(expected));
+    assert_eq!(wire["lock"]["profile_selections"], json!([]));
     assert_eq!(wire["lock"]["dependency_selections"], json!([]));
-    assert_eq!(
-        wire["lock"]["sources"][0]["digest"],
-        json!(sha256_hex(TEXT))
-    );
+    let source = json!({
+        "authority": "a",
+        "identity": "u",
+        "digest_domain": "quire.source.bytes/v1",
+        "digest": sha256_hex(TEXT),
+    });
+    assert_eq!(wire["lock"]["sources"], json!([source]));
+    for entry in wire["source_map"].as_array().unwrap() {
+        for region in entry["regions"].as_array().unwrap() {
+            assert_eq!(region["source"], source);
+        }
+    }
     assert_eq!(
         wire["identity_preimage"]["edition"],
         wire["lock"]["edition"]
     );
-    let catalog = &wire["diagnostics"]["catalog"];
-    let diagnostics = native_diagnostics_catalog();
-    assert_eq!(catalog["authority"], json!("agent-ix"));
-    assert_eq!(catalog["identity"], json!("quire.native.diagnostics/v1"));
     assert_eq!(
-        catalog["revision"],
-        json!({"namespace": "quire-draft", "value": diagnostics.revision.value})
+        wire["identity_preimage"]["definition_selections"],
+        wire["lock"]["definition_selections"]
     );
-    assert_eq!(catalog["digest_domain"], json!("quire.definition.bytes/v1"));
-    assert_eq!(catalog["digest"], json!(diagnostics.digest));
+    let diagnostics = native_diagnostics_catalog();
+    assert_eq!(
+        wire["diagnostics"]["catalog"],
+        json!({"authority": diagnostics.authority, "identity": diagnostics.identity})
+    );
+    assert_eq!(
+        wire["diagnostics"]["catalog"],
+        json!({"authority": "agent-ix", "identity": "quire.native.diagnostics/v1"})
+    );
+}
+
+/// An operation law's `definition` is the catalog row of its role, exactly
+/// `{authority, identity}`, and is one of the lock's `definition_selections`
+/// rows; IR's reader admits the package (IR FR-038's law join).
+#[trace("TC-416", "FR-093-AC-20")]
+#[test]
+fn a_law_names_its_definition_by_authority_and_identity() {
+    let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
+    assert!(matches!(read_back(&emission), Read::Verified { .. }));
+    let wire = wire(&emission);
+    let ieee = DefinitionLock::pinned()
+        .entry(CatalogRole::IeeeProfile)
+        .reference();
+    let ieee = json!({"authority": ieee.authority, "identity": ieee.identity});
+    let laws: Vec<&Value> = wire["semantic_graph"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| node["body"]["term"] == "application")
+        .flat_map(|node| node["body"]["operation"]["laws"].as_array().unwrap())
+        .collect();
+    assert!(!laws.is_empty(), "the float addition carries its IEEE law");
+    for law in laws {
+        assert_eq!(law["role"], json!("ieee_profile"));
+        assert_eq!(law["definition"], ieee);
+    }
+    assert!(wire["lock"]["definition_selections"]
+        .as_array()
+        .unwrap()
+        .contains(&ieee));
 }
 
 /// FR-322's `application_node_preimage` of a wire node, or FR-092's

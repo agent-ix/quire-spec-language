@@ -632,12 +632,6 @@ fn operation_and_literal_bytes_are_pinned() {
         definition: DefinitionReference {
             authority: "agent-ix".to_owned(),
             identity: "test.law/v1".to_owned(),
-            revision: crate::value::definition::DefinitionRevision {
-                namespace: "test".to_owned(),
-                value: "1".to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: key(11).to_string(),
         },
     };
     let literal = |fill: u8, value: LiteralValue| SemanticTerm::literal(key(fill), value);
@@ -686,9 +680,8 @@ fn operation_and_literal_bytes_are_pinned() {
             r#"{{"term":"literal","type":{five},"value":"a\"b","value_kind":"text"}},"#,
             r#"{{"term":"literal","type":{six},"value":null,"value_kind":"none"}}],"#,
             r#""operation":{{"identity":"quire.op.decimal.div","#,
-            r#""laws":[{{"definition":{{"authority":"agent-ix","digest":"{law_digest}","#,
-            r#""digest_domain":"quire.definition.bytes/v1","identity":"test.law/v1","#,
-            r#""revision":{{"namespace":"test","value":"1"}}}},"role":"text_profile"}}],"#,
+            r#""laws":[{{"definition":{{"authority":"agent-ix","identity":"test.law/v1"}},"#,
+            r#""role":"text_profile"}}],"#,
             r#""leaves":[{{"laws":[],"mode":{{"kind":"text_profile","value":"nfc"}},"path":["position:1","inner"]}},"#,
             r#"{{"laws":[],"mode":{{"kind":"absence","value":"empty"}},"path":["field:name"]}}],"#,
             r#""member":{{"declaration":{twelve},"kind":"position","position":2}},"#,
@@ -703,7 +696,6 @@ fn operation_and_literal_bytes_are_pinned() {
         six = node_ref(6),
         twelve = node_ref(12),
         three = node_ref(3),
-        law_digest = key(11),
     );
 
     let computed = application_node_key(&node(&body)).expect("node has an application");

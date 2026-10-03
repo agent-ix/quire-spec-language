@@ -7,36 +7,22 @@ use qsl_forms::Accumulation;
 
 use super::*;
 use crate::check::check::EnumBinding;
-use crate::value::definition::{CatalogRole, DefinitionLock, DefinitionRevision};
+use crate::value::definition::{CatalogRole, DefinitionLock};
 
 /// The text-profile definition the lock evidence of these fixtures selects.
 fn text_definition() -> DefinitionReference {
     DefinitionReference {
         authority: "agent-ix".to_owned(),
         identity: "unicode-text".to_owned(),
-        revision: DefinitionRevision {
-            namespace: "unicode".to_owned(),
-            value: "17.0.0".to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "ab".repeat(32),
     }
 }
 
 /// The pinned lock's IEEE profile definition.
 fn ieee_definition() -> DefinitionReference {
-    let entry = *DefinitionLock::pinned()
-        .entry(CatalogRole::IeeeProfile)
-        .expect("the pinned lock names an IEEE profile");
+    let entry = *DefinitionLock::pinned().entry(CatalogRole::IeeeProfile);
     DefinitionReference {
         authority: entry.authority.to_owned(),
         identity: entry.identity.to_owned(),
-        revision: DefinitionRevision {
-            namespace: entry.revision_namespace.to_owned(),
-            value: entry.revision_value.to_owned(),
-        },
-        digest_domain: "quire.definition.bytes/v1".to_owned(),
-        digest: "0".repeat(64),
     }
 }
 

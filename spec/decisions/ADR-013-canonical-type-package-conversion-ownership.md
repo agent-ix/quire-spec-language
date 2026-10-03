@@ -253,7 +253,7 @@ In the code, `model` builds one universe per model over every root type
 | --- | --- |
 | Owner | QSL, check stage (binding source regions to a node). QSL is the only minter (AD-016). |
 | Implementing ticket | #213 S-4. |
-| Public type | An occurrence is keyed by (checked node id, `role`, `ordinal`), exactly the FR-322 `source_map` key. It carries one or more regions; each region is (`RawSourceRef`, byte start, byte end), where `RawSourceRef` names the source document by authority, identity, revision and `quire.source.bytes/v1` digest. Every node has at least one occurrence (FR-322). |
+| Public type | An occurrence is keyed by (checked node id, `role`, `ordinal`), exactly the FR-322 `source_map` key. It carries one or more regions; each region is (`RawSourceRef`, byte start, byte end), where `RawSourceRef` names the source document by authority and identity and binds it to its bytes by its `quire.source.bytes/v1` digest (QSpec STD-150). Every node has at least one occurrence (FR-322). |
 | Serialized authority | v2 `source_map` entries (`SourceMapEntry`: `node_id`, `role`, `ordinal`, `regions`; FR-322). |
 | Conversions | node id → occurrences through the package source map (O-12, C-14). Occurrences are excluded from the node-identity and package-identity preimages (FR-322 `identity_projection`). The O-09 obligation identity includes the clause occurrence key, never its regions. The occurrence key (node id, role, ordinal) of the failing node is carried in the counterexample packet (O-25, QC-8), and ADR-011 E9 resolves spans by it. Remaining work: agent-ix/quire-specification#141. |
 | Validation and diagnostics | IR refuses a source-map entry naming an unknown node. |

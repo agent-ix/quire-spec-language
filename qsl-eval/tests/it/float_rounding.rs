@@ -8,7 +8,7 @@ use qsl_package::CheckedPackage;
 use qsl_semantics::check::PackageDeclarations;
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, DefinitionReference};
 use quire_exact::{IeeeFlag, IeeeValue, Meter, Outcome, Refusal, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 
@@ -163,17 +163,11 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
 
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+    let entry = lock.entry(CatalogRole::IeeeProfile);
     lock.admit_ieee_profile(
         &[DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: "0".repeat(64),
         }],
         &[],
     )

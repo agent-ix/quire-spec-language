@@ -57,7 +57,6 @@ fn record(index: usize, records: usize) -> CompositeDeclaration {
 fn text_profile() -> DefinitionReference {
     DefinitionLock::pinned()
         .entry(CatalogRole::TextProfile)
-        .expect("QSpec's lock has a `text_profile` row")
         .reference()
 }
 

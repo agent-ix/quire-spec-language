@@ -64,9 +64,7 @@ impl ProfileRefusal {
 /// profile is returned, in source order.
 pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<ProfileRefusal>> {
     let lock = DefinitionLock::pinned();
-    let root = *lock
-        .entry(CatalogRole::Root)
-        .expect("the closed catalog holds a `root` row");
+    let root = *lock.entry(CatalogRole::Root);
     let refusals: Vec<ProfileRefusal> = profiles
         .iter()
         .filter_map(|profile| {
@@ -117,7 +115,7 @@ mod tests {
             return;
         };
         let lock = DefinitionLock::pinned();
-        let root = *lock.entry(CatalogRole::Root).unwrap();
+        let root = *lock.entry(CatalogRole::Root);
         let causes = [
             ProfileCause::UnsupportedSelection,
             ProfileCause::WrongSelectionRole,

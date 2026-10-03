@@ -1518,7 +1518,6 @@ dependencies = [
  "quire-canonical",
  "quire-exact",
  "quire-semantic-value",
- "quire-specification-qualification",
  "quire-walk",
  "serde",
  "serde_json",
@@ -1574,7 +1573,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#ebea67821976a7e695d88cb42503e636a05b44a7"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#afb01a23d1e047feff3159d96551663702187957"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-canonical",
@@ -1665,14 +1664,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "quire-specification-qualification"
-version = "0.0.0"
-source = "git+https://github.com/agent-ix/quire-specification?branch=main#a18859de42eaef7b21101d05c8c9eb2bd62958cf"
-
-[[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#ead78f3f1bea336e2cb230a2ed1b98fa10a913e1"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#ec4563ff33e03135ac4d0d9500cc53b0a956ecb6"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",

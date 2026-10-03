@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSpec's `quire.value.definition-lock/v1` catalog, per-package selection
-//! admission, integer-division profile admission and IEEE profile admission.
+//! The `Value` family's definition catalog, per-package selection admission,
+//! integer-division profile admission and IEEE profile admission.
 //!
 //! [`divide`] and [`modulo`] evaluate integer division under an admitted law.
 //! They call `quire_exact::divide`/`modulo` and carry the kernel
 //! [`Outcome`](quire_exact::Outcome) straight through.
 //!
 //! Profile misuse is refused here, at semantic admission, before any expression
-//! is evaluated. Selection refusals use the lock's closed
+//! is evaluated. Selection refusals use QSpec's closed
 //! `selection_refusal_codes`; definition-closure refusals use the I04
 //! `invalid_package` code with its closed `cause_tag` vocabulary.
 //!
-//! [`DefinitionLock::pinned`] reads QSpec's `complete-value-lock.json` by
-//! reference, from the `quire_specification` crate's compiled-in bytes: each
-//! catalog row names the authority, identity, revision, artifact path and
-//! raw-byte digest of one role's definition, and the package-selection rules
-//! and trigger vocabulary come from the same document. QSL holds no copy of
-//! any of it. Admission recognizes a caller-supplied [`DefinitionReference`]
-//! by identity and revision. The v2 emitter writes each row as the package
+//! [`DefinitionLock::pinned`] is the catalog ADR-011 §2.4 names: each
+//! [`CatalogRole`] names the definition the QSL build implements for it, by
+//! authority and identity ([`CatalogRole::identity`]), and each role's
+//! package-selection rule is QSpec FR-001's. A definition is named by its
+//! authority and identity alone, so the catalog holds no revision, no digest
+//! and no QSpec document. Admission recognizes a caller-supplied [`DefinitionReference`]
+//! by authority and identity. The v2 emitter writes each row as the package
 //! lock's edition and definition selections ([`CatalogEntry::reference`]).
+//! `make conformance` compares the catalog and its selection rules with
+//! QSpec's `complete-value-lock.json`, read at run time.
 
 use std::collections::BTreeSet;
 
@@ -32,8 +34,7 @@ use quire_exact::{
     QuotientRemainder,
 };
 
-/// The lock's `trigger_vocabulary`. [`DefinitionLock::read`] refuses a lock
-/// whose vocabulary is not exactly [`Trigger::ALL`].
+/// QSpec's closed package-selection `trigger_vocabulary`.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Trigger {
     /// The package evaluates an IEEE `float32`/`float64` type, value or operation.
@@ -65,7 +66,8 @@ impl Trigger {
     }
 }
 
-/// A qualification-catalog role; each variant is the lock role of the same name.
+/// A qualification-catalog role; each variant is the QSpec lock role of the
+/// same name.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CatalogRole {
     /// The language edition definition.
@@ -80,8 +82,6 @@ pub enum CatalogRole {
     CompoundUnitSchema,
     /// The compound-unit test vectors.
     CompoundUnitVectors,
-    /// The manifest listing the always-selected rule roles.
-    RuleManifest,
     /// The text profile, selected when the package is `text_bearing`.
     TextProfile,
     /// The IEEE binary32/binary64 profile, selected when the package is
@@ -113,16 +113,30 @@ pub enum CatalogRole {
     RuleFr149,
 }
 
+/// How QSpec FR-001's package-selection rules select one role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SelectionRule {
+    /// Every package selects the role.
+    Always,
+    /// A package selects the role exactly when the trigger is present.
+    When(Trigger),
+    /// A package with the trigger selects exactly one of the roles that
+    /// share it; one without the trigger selects none of them.
+    OneOf(Trigger),
+}
+
+/// The publishing authority of every catalog definition.
+const AUTHORITY: &str = "agent-ix";
+
 impl CatalogRole {
-    /// Every role in lock catalog order.
-    pub const ALL: [Self; 21] = [
+    /// Every role in QSpec's lock catalog order.
+    pub const ALL: [Self; 20] = [
         Self::Edition,
         Self::Root,
         Self::Accounting,
         Self::CompoundUnit,
         Self::CompoundUnitSchema,
         Self::CompoundUnitVectors,
-        Self::RuleManifest,
         Self::TextProfile,
         Self::IeeeProfile,
         Self::IntegerDivisionEuclidean,
@@ -148,7 +162,6 @@ impl CatalogRole {
             Self::CompoundUnit => "compound_unit",
             Self::CompoundUnitSchema => "compound_unit_schema",
             Self::CompoundUnitVectors => "compound_unit_vectors",
-            Self::RuleManifest => "rule_manifest",
             Self::TextProfile => "text_profile",
             Self::IeeeProfile => "ieee_profile",
             Self::IntegerDivisionEuclidean => "integer_division_euclidean",
@@ -163,6 +176,59 @@ impl CatalogRole {
             Self::RuleFr147 => "rule_fr_147",
             Self::RuleFr148 => "rule_fr_148",
             Self::RuleFr149 => "rule_fr_149",
+        }
+    }
+
+    /// The identity of the definition the QSL build implements for this
+    /// role, published by `agent-ix` (ADR-011 §2.4).
+    pub fn identity(self) -> &'static str {
+        match self {
+            Self::Edition => "ix:native",
+            Self::Root => "quire.value.complete/v1",
+            Self::Accounting => "quire.value.accounting/v1",
+            Self::CompoundUnit => "quire.value.compound-unit/v1",
+            Self::CompoundUnitSchema => "quire.value.compound-unit.schema/v1",
+            Self::CompoundUnitVectors => "quire.value.compound-unit.vectors/v1",
+            Self::TextProfile => "quire.value.text.unicode-17.0.0/v1",
+            Self::IeeeProfile => "quire.value.ieee754-2019-default/v1",
+            Self::IntegerDivisionEuclidean => "quire.value.integer-division.euclidean/v1",
+            Self::IntegerDivisionFloor => "quire.value.integer-division.floor/v1",
+            Self::IntegerDivisionTruncating => "quire.value.integer-division.truncating/v1",
+            Self::RulePackageContract => "quire.rule.package-contract/v1",
+            Self::RuleSharedGrammar => "quire.rule.shared-grammar/v1",
+            Self::RuleAd005 => "quire.rule.ad-005/v1",
+            Self::RuleFr140 => "quire.rule.fr-140/v1",
+            Self::RuleFr141 => "quire.rule.fr-141/v1",
+            Self::RuleFr142 => "quire.rule.fr-142/v1",
+            Self::RuleFr147 => "quire.rule.fr-147/v1",
+            Self::RuleFr148 => "quire.rule.fr-148/v1",
+            Self::RuleFr149 => "quire.rule.fr-149/v1",
+        }
+    }
+
+    /// The QSpec FR-001 package-selection rule that selects this role.
+    fn selection_rule(self) -> SelectionRule {
+        match self {
+            Self::TextProfile => SelectionRule::When(Trigger::TextBearing),
+            Self::IeeeProfile => SelectionRule::When(Trigger::IeeeOperation),
+            Self::IntegerDivisionEuclidean
+            | Self::IntegerDivisionFloor
+            | Self::IntegerDivisionTruncating => SelectionRule::OneOf(Trigger::IntegerDivRem),
+            Self::Edition
+            | Self::Root
+            | Self::Accounting
+            | Self::CompoundUnit
+            | Self::CompoundUnitSchema
+            | Self::CompoundUnitVectors
+            | Self::RulePackageContract
+            | Self::RuleSharedGrammar
+            | Self::RuleAd005
+            | Self::RuleFr140
+            | Self::RuleFr141
+            | Self::RuleFr142
+            | Self::RuleFr147
+            | Self::RuleFr148
+            | Self::RuleFr149 => SelectionRule::Always,
         }
     }
 
@@ -183,7 +249,6 @@ impl CatalogRole {
             | Self::CompoundUnit
             | Self::CompoundUnitSchema
             | Self::CompoundUnitVectors
-            | Self::RuleManifest
             | Self::TextProfile
             | Self::IeeeProfile
             | Self::RulePackageContract
@@ -199,20 +264,9 @@ impl CatalogRole {
     }
 }
 
-/// A definition revision `{ namespace, value }`.
-#[derive(
-    Clone, Debug, Deserialize, Eq, Serialize, FixedShape, Hash, Ord, PartialEq, PartialOrd,
-)]
-#[serde(deny_unknown_fields)]
-pub struct DefinitionRevision {
-    /// Revision namespace.
-    pub namespace: String,
-    /// Revision value.
-    pub value: String,
-}
-
-/// A retained DefinitionRef as it appears in the lock and in a checked package.
-/// This is untrusted data; only admission turns it into authority.
+/// A retained DefinitionRef as it appears in a checked package: QSpec's
+/// closed `{authority, identity}`, with no revision and no digest. This is
+/// untrusted data; only admission turns it into authority.
 #[derive(
     Clone, Debug, Deserialize, Eq, Serialize, FixedShape, Hash, Ord, PartialEq, PartialOrd,
 )]
@@ -222,37 +276,19 @@ pub struct DefinitionReference {
     pub authority: String,
     /// Definition identity.
     pub identity: String,
-    /// Exact revision.
-    pub revision: DefinitionRevision,
-    /// Digest domain.
-    pub digest_domain: String,
-    /// Lowercase hex raw-byte SHA-256.
-    pub digest: String,
 }
 
-/// One qualification-catalog entry: a closed role's artifact path, the exact
-/// identity/revision a caller-supplied [`DefinitionReference`] for that role
-/// is checked against, and the definition's raw-byte digest, all read from
-/// QSpec's `complete-value-lock.json`.
+/// One qualification-catalog entry: a closed role and the authority and
+/// identity a caller-supplied [`DefinitionReference`] for that role is
+/// checked against.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CatalogEntry {
     /// Catalog role.
     pub role: CatalogRole,
-    /// Path relative to the standard's own definitions directory.
-    pub artifact_path: &'static str,
     /// Publishing authority.
     pub authority: &'static str,
     /// Definition identity.
     pub identity: &'static str,
-    /// Revision namespace.
-    pub revision_namespace: &'static str,
-    /// Revision value.
-    pub revision_value: &'static str,
-    /// Digest domain (`quire.definition.bytes/v1`).
-    pub digest_domain: &'static str,
-    /// Lowercase hex SHA-256 of the definition's bytes. FR-110 compares a
-    /// header profile's digest with the `root` row's.
-    pub digest: &'static str,
 }
 
 impl CatalogEntry {
@@ -261,250 +297,61 @@ impl CatalogEntry {
         DefinitionReference {
             authority: self.authority.to_owned(),
             identity: self.identity.to_owned(),
-            revision: DefinitionRevision {
-                namespace: self.revision_namespace.to_owned(),
-                value: self.revision_value.to_owned(),
-            },
-            digest_domain: self.digest_domain.to_owned(),
-            digest: self.digest.to_owned(),
         }
     }
 }
 
-/// The parts of QSpec's lock this reader uses, borrowed from the compiled-in
-/// bytes.
-#[derive(Deserialize)]
-struct LockDocument<'a> {
-    #[serde(borrow)]
-    revision: &'a str,
-    #[serde(borrow)]
-    trigger_vocabulary: Vec<&'a str>,
-    #[serde(borrow)]
-    selection_refusal_codes: Vec<&'a str>,
-    #[serde(borrow)]
-    qualification_catalog: Vec<LockEntry<'a>>,
-    #[serde(borrow)]
-    package_selection: LockSelection<'a>,
-}
-
-#[derive(Deserialize)]
-struct LockEntry<'a> {
-    #[serde(borrow)]
-    role: &'a str,
-    #[serde(borrow)]
-    artifact_path: &'a str,
-    #[serde(borrow)]
-    definition: LockDefinition<'a>,
-}
-
-#[derive(Deserialize)]
-struct LockDefinition<'a> {
-    #[serde(borrow)]
-    authority: &'a str,
-    #[serde(borrow)]
-    identity: &'a str,
-    #[serde(borrow)]
-    revision: LockRevision<'a>,
-    #[serde(borrow)]
-    digest_domain: &'a str,
-    #[serde(borrow)]
-    digest: &'a str,
-}
-
-#[derive(Deserialize)]
-struct LockRevision<'a> {
-    #[serde(borrow)]
-    namespace: &'a str,
-    #[serde(borrow)]
-    value: &'a str,
-}
-
-#[derive(Deserialize)]
-struct LockSelection<'a> {
-    #[serde(borrow)]
-    always: Vec<&'a str>,
-    #[serde(borrow)]
-    conditional: Vec<LockConditional<'a>>,
-    #[serde(borrow)]
-    exactly_one: Vec<LockExactlyOne<'a>>,
-}
-
-#[derive(Deserialize)]
-struct LockConditional<'a> {
-    #[serde(borrow)]
-    trigger: &'a str,
-    #[serde(borrow)]
-    role: &'a str,
-}
-
-#[derive(Deserialize)]
-struct LockExactlyOne<'a> {
-    #[serde(borrow)]
-    trigger: &'a str,
-    #[serde(borrow)]
-    roles: Vec<&'a str>,
-}
-
-/// Why QSpec's lock bytes do not read as this crate's [`DefinitionLock`].
-#[derive(Debug, thiserror::Error)]
-pub enum LockReadError {
-    /// The bytes are not the lock's JSON shape.
-    #[error("the lock is not well-formed: {0}")]
-    Malformed(#[from] serde_json::Error),
-    /// The lock names a role [`CatalogRole`] does not have.
-    #[error("the lock names unknown role `{0}`")]
-    UnknownRole(String),
-    /// A [`CatalogRole`] has no catalog row, or more than one.
-    #[error("role `{}` has {count} catalog rows, not one", role.as_str())]
-    RoleRowCount {
-        /// The role.
-        role: CatalogRole,
-        /// How many rows name it.
-        count: usize,
-    },
-    /// The package-selection rules name a trigger outside [`Trigger::ALL`].
-    #[error("the package-selection rules name unknown trigger `{0}`")]
-    UnknownTrigger(String),
-    /// `trigger_vocabulary` is not exactly [`Trigger::ALL`].
-    #[error("trigger_vocabulary {0:?} is not the closed trigger set")]
-    TriggerVocabulary(Vec<String>),
-    /// `selection_refusal_codes` is not exactly [`SelectionRefusalCode::ALL`].
-    #[error("selection_refusal_codes {0:?} is not the closed refusal set")]
-    RefusalCodes(Vec<String>),
-}
-
-/// QSpec's `quire.value.definition-lock/v1` catalog and package-selection
-/// rules, read from `complete-value-lock.json` by reference.
+/// The `Value` family's catalog: one entry per [`CatalogRole`] and QSpec
+/// FR-001's package-selection rules over them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DefinitionLock {
-    revision: &'static str,
-    catalog: Vec<CatalogEntry>,
+    catalog: [CatalogEntry; CatalogRole::ALL.len()],
     always: Vec<CatalogRole>,
     conditional: Vec<(Trigger, CatalogRole)>,
     exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
 }
 
-fn role(code: &str) -> Result<CatalogRole, LockReadError> {
-    CatalogRole::from_code(code).ok_or_else(|| LockReadError::UnknownRole(code.to_owned()))
-}
-
 impl DefinitionLock {
-    /// QSpec's lock, read from the compiled-in
-    /// `quire_specification::COMPLETE_VALUE_LOCK` bytes on each call. A
-    /// caller that needs it more than once reads it once and passes it down.
-    ///
-    /// # Panics
-    ///
-    /// If those compiled-in bytes do not read ([`DefinitionLock::read`]);
-    /// `the_compiled_in_lock_reads` holds them to it.
+    /// The catalog of the definitions the QSL build implements: each role's
+    /// entry and its selection rule, in catalog order.
     pub fn pinned() -> Self {
-        Self::read(quire_specification::COMPLETE_VALUE_LOCK)
-            .unwrap_or_else(|error| panic!("QSpec's complete-value-lock.json: {error}"))
-    }
-
-    /// Read a `quire.value.definition-lock/v1` document, borrowing its
-    /// strings. Every lock role must be a [`CatalogRole`] with exactly one
-    /// row, `trigger_vocabulary` must be exactly [`Trigger::ALL`] and name
-    /// every selection trigger, and `selection_refusal_codes` must be the
-    /// closed refusal set.
-    pub fn read(bytes: &'static str) -> Result<Self, LockReadError> {
-        let document: LockDocument<'static> = serde_json::from_str(bytes)?;
-        let catalog = document
-            .qualification_catalog
-            .iter()
-            .map(|entry| {
-                let definition = &entry.definition;
-                Ok(CatalogEntry {
-                    role: role(entry.role)?,
-                    artifact_path: entry.artifact_path,
-                    authority: definition.authority,
-                    identity: definition.identity,
-                    revision_namespace: definition.revision.namespace,
-                    revision_value: definition.revision.value,
-                    digest_domain: definition.digest_domain,
-                    digest: definition.digest,
-                })
-            })
-            .collect::<Result<Vec<_>, LockReadError>>()?;
+        let catalog = CatalogRole::ALL.map(|role| CatalogEntry {
+            role,
+            authority: AUTHORITY,
+            identity: role.identity(),
+        });
+        let mut always = Vec::new();
+        let mut conditional = Vec::new();
+        let mut exactly_one: Vec<(Trigger, Vec<CatalogRole>)> = Vec::new();
         for role in CatalogRole::ALL {
-            let count = catalog.iter().filter(|entry| entry.role == role).count();
-            if count != 1 {
-                return Err(LockReadError::RoleRowCount { role, count });
+            match role.selection_rule() {
+                SelectionRule::Always => always.push(role),
+                SelectionRule::When(trigger) => conditional.push((trigger, role)),
+                SelectionRule::OneOf(trigger) => {
+                    match exactly_one.iter_mut().find(|(group, _)| *group == trigger) {
+                        Some((_, roles)) => roles.push(role),
+                        None => exactly_one.push((trigger, vec![role])),
+                    }
+                }
             }
         }
-        let vocabulary: BTreeSet<&str> = document.trigger_vocabulary.iter().copied().collect();
-        let closed: BTreeSet<&str> = Trigger::ALL.into_iter().map(Trigger::as_str).collect();
-        if vocabulary != closed || vocabulary.len() != document.trigger_vocabulary.len() {
-            return Err(LockReadError::TriggerVocabulary(
-                document
-                    .trigger_vocabulary
-                    .iter()
-                    .map(|code| (*code).to_owned())
-                    .collect(),
-            ));
-        }
-        let trigger = |code: &str| {
-            Trigger::from_code(code).ok_or_else(|| LockReadError::UnknownTrigger(code.to_owned()))
-        };
-        let selection = document.package_selection;
-        let always = selection
-            .always
-            .iter()
-            .map(|code| role(code))
-            .collect::<Result<Vec<_>, _>>()?;
-        let conditional = selection
-            .conditional
-            .iter()
-            .map(|rule| Ok((trigger(rule.trigger)?, role(rule.role)?)))
-            .collect::<Result<Vec<_>, LockReadError>>()?;
-        let exactly_one = selection
-            .exactly_one
-            .iter()
-            .map(|rule| {
-                let roles = rule
-                    .roles
-                    .iter()
-                    .map(|code| role(code))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok((trigger(rule.trigger)?, roles))
-            })
-            .collect::<Result<Vec<_>, LockReadError>>()?;
-        let refusals: BTreeSet<&str> = document.selection_refusal_codes.iter().copied().collect();
-        let closed: BTreeSet<&str> = SelectionRefusalCode::ALL
-            .into_iter()
-            .map(SelectionRefusalCode::as_str)
-            .collect();
-        if refusals != closed || refusals.len() != document.selection_refusal_codes.len() {
-            return Err(LockReadError::RefusalCodes(
-                document
-                    .selection_refusal_codes
-                    .iter()
-                    .map(|code| (*code).to_owned())
-                    .collect(),
-            ));
-        }
-        Ok(Self {
-            revision: document.revision,
+        Self {
             catalog,
             always,
             conditional,
             exactly_one,
-        })
+        }
     }
 
-    /// The lock's revision identifier.
-    pub fn revision(&self) -> &'static str {
-        self.revision
-    }
-
-    /// The closed qualification catalog, in lock order.
+    /// The closed qualification catalog, in catalog order.
     pub fn catalog(&self) -> &[CatalogEntry] {
         &self.catalog
     }
 
-    /// The catalog entry for `role`.
-    pub fn entry(&self, role: CatalogRole) -> Option<&CatalogEntry> {
-        self.catalog.iter().find(|entry| entry.role == role)
+    /// The catalog entry for `role`. The catalog has one entry per role, in
+    /// the declaration order of [`CatalogRole::ALL`], so the lookup is total.
+    pub fn entry(&self, role: CatalogRole) -> &CatalogEntry {
+        &self.catalog[role as usize]
     }
 
     /// Roles every package selects.
@@ -611,39 +458,24 @@ impl DefinitionLock {
         Ok(AdmittedIntegerDivision { profile })
     }
 
-    /// Resolve `reference` to a division law by identity and revision.
+    /// Resolve `reference` to a division law by authority and identity.
     #[qsl_attrs::string_edge]
     fn resolve_division(
         &self,
         reference: &DefinitionReference,
     ) -> Result<DivisionProfile, PackageRefusal> {
-        let (profile, expected) = DivisionProfile::ALL
+        DivisionProfile::ALL
             .into_iter()
-            .find_map(|profile| {
-                let entry = self.catalog().iter().find(|entry| {
-                    entry.role.division_profile() == Some(profile)
+            .find(|profile| {
+                self.catalog().iter().any(|entry| {
+                    entry.role.division_profile() == Some(*profile)
+                        && entry.authority == reference.authority
                         && entry.identity == reference.identity
-                })?;
-                Some((profile, entry))
+                })
             })
             .ok_or(PackageRefusal::invalid_package(
                 PackageCause::IncompatibleDefinition,
-            ))?;
-        let cause = if reference.authority != expected.authority {
-            Some(PackageCause::IncompatibleDefinition)
-        } else if reference.revision.namespace != expected.revision_namespace
-            || reference.revision.value != expected.revision_value
-        {
-            Some(PackageCause::RevisionMismatch)
-        } else if reference.digest_domain != expected.digest_domain {
-            Some(PackageCause::DigestDomainMismatch)
-        } else {
-            None
-        };
-        match cause {
-            Some(cause) => Err(PackageRefusal::invalid_package(cause)),
-            None => Ok(profile),
-        }
+            ))
     }
 
     /// Resolve each trigger spelling to its [`Trigger`].
@@ -750,26 +582,13 @@ impl DefinitionLock {
         retained: &[DefinitionReference],
         declarations: &[&str],
     ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
-        let expected = self
-            .entry(CatalogRole::IeeeProfile)
-            .ok_or(PackageRefusal::invalid_package(PackageCause::MissingMember))?;
-        for reference in retained {
-            let cause = if reference.identity != expected.identity
-                || reference.authority != expected.authority
-            {
-                Some(PackageCause::IncompatibleDefinition)
-            } else if reference.revision.namespace != expected.revision_namespace
-                || reference.revision.value != expected.revision_value
-            {
-                Some(PackageCause::RevisionMismatch)
-            } else if reference.digest_domain != expected.digest_domain {
-                Some(PackageCause::DigestDomainMismatch)
-            } else {
-                None
-            };
-            if let Some(cause) = cause {
-                return Err(PackageRefusal::invalid_package(cause));
-            }
+        let expected = self.entry(CatalogRole::IeeeProfile);
+        if retained.iter().any(|reference| {
+            reference.identity != expected.identity || reference.authority != expected.authority
+        }) {
+            return Err(PackageRefusal::invalid_package(
+                PackageCause::IncompatibleDefinition,
+            ));
         }
         let definition = match retained {
             [] => return Err(PackageRefusal::invalid_package(PackageCause::MissingMember)),

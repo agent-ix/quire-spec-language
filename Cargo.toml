@@ -9,9 +9,6 @@ exclude = ["fuzz"]
 # layer-SV leaf `quire-semantic-value` can mint the compound-unit id
 # through it; a crate that writes through `io::Write` turns on `std`.
 quire-canonical = { git = "https://github.com/agent-ix/quire-canonical", branch = "main", default-features = false }
-# QSpec's authored definition documents (the complete value lock and the
-# native diagnostics catalog), read by reference rather than copied.
-quire-specification = { package = "quire-specification-qualification", git = "https://github.com/agent-ix/quire-specification", branch = "main" }
 
 [package]
 name = "quire-spec-language"

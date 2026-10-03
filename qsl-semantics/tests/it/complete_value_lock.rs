@@ -1,24 +1,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! QSpec's `quire.value.definition-lock/v1` catalog, read by reference, and
-//! its package selection admission, exercised directly against the
-//! compiled-in lock with QSpec's own package-selection vectors.
+//! The `Value` family's definition catalog and its package-selection
+//! admission. The conformance tests compare them with QSpec's
+//! `complete-value-lock.json` and its package-selection vectors, read at run
+//! time from the quire-specification checkout `QSPEC_DIR` names (`make
+//! conformance`); nothing of QSpec is copied into this repository.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{
-    native_diagnostics_catalog, CatalogRole, DefinitionLock, LockReadError, Trigger,
-};
+use qsl_semantics::value::{CatalogRole, DefinitionLock, Trigger};
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
+
+/// The QSpec definitions directory inside a quire-specification checkout.
+const DEFINITIONS: &str = "proposals/quire-v1/definitions";
 
 fn lock() -> DefinitionLock {
     DefinitionLock::pinned()
 }
 
-fn document() -> Value {
-    serde_json::from_str(quire_specification::COMPLETE_VALUE_LOCK).unwrap()
+/// QSpec's definition document `name`, read from `$QSPEC_DIR`; `None` when
+/// `QSPEC_DIR` is unset.
+fn qspec_document(name: &str) -> Option<Value> {
+    let qspec = std::env::var_os("QSPEC_DIR")?;
+    let path = Path::new(&qspec).join(DEFINITIONS).join(name);
+    let bytes =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("reading {}: {error}", path.display()));
+    Some(
+        serde_json::from_slice(&bytes)
+            .unwrap_or_else(|error| panic!("parsing {}: {error}", path.display())),
+    )
 }
 
 fn strings(value: &Value) -> Vec<&str> {
@@ -30,62 +42,65 @@ fn strings(value: &Value) -> Vec<&str> {
         .collect()
 }
 
-/// The lock text with `from` replaced once by `to`, as a `'static` string.
-fn mutated(from: &str, to: &str) -> &'static str {
-    let lock = quire_specification::COMPLETE_VALUE_LOCK;
-    assert!(lock.contains(from), "the lock text holds {from:?}");
-    lock.replacen(from, to, 1).leak()
-}
-
+/// Every role has exactly one catalog entry, which names its definition by
+/// a nonempty authority and identity, and no two roles name one identity.
 #[test]
 fn the_catalog_covers_every_role_exactly_once() {
     let lock = lock();
-    let roles: BTreeSet<_> = lock.catalog().iter().map(|entry| entry.role).collect();
-    assert_eq!(roles, CatalogRole::ALL.into_iter().collect());
+    let roles: Vec<_> = lock.catalog().iter().map(|entry| entry.role).collect();
+    assert_eq!(roles, CatalogRole::ALL);
+    let identities: BTreeSet<_> = lock.catalog().iter().map(|entry| entry.identity).collect();
+    assert_eq!(identities.len(), CatalogRole::ALL.len());
     for entry in lock.catalog() {
         assert_eq!(
             CatalogRole::from_code(entry.role.as_str()),
             Some(entry.role)
         );
         assert!(!entry.identity.is_empty(), "{:?}", entry.role);
-        assert!(!entry.artifact_path.is_empty(), "{:?}", entry.role);
-        assert!(!entry.authority.is_empty(), "{:?}", entry.role);
-        assert!(!entry.revision_namespace.is_empty(), "{:?}", entry.role);
-        assert!(!entry.revision_value.is_empty(), "{:?}", entry.role);
-        assert_eq!(lock.entry(entry.role), Some(entry));
+        assert_eq!(entry.authority, "agent-ix", "{:?}", entry.role);
+        assert_eq!(lock.entry(entry.role), entry);
+        assert_eq!(
+            serde_json::to_value(entry.reference()).unwrap(),
+            serde_json::json!({"authority": entry.authority, "identity": entry.identity})
+        );
     }
 }
 
-/// The compiled-in QSpec lock reads, so `DefinitionLock::pinned` cannot
-/// panic, and it is QSpec's document: every row member and every
-/// package-selection rule equals an independent parse of the same bytes.
+/// The catalog is QSpec's lock: every `qualification_catalog` row's role,
+/// authority and identity, in order, every package-selection rule, the
+/// trigger vocabulary and the selection refusal codes. Skipped (and
+/// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
+#[trace("TC-490", "FR-110-AC-9")]
 #[test]
-fn the_compiled_in_lock_reads() {
-    let read = DefinitionLock::read(quire_specification::COMPLETE_VALUE_LOCK)
-        .expect("QSpec's complete-value-lock.json reads");
-    assert_eq!(read, lock());
-    let document = document();
-    assert_eq!(read.revision(), document["revision"]);
-    let rows = document["qualification_catalog"].as_array().unwrap();
-    assert_eq!(rows.len(), read.catalog().len());
-    for (row, entry) in rows.iter().zip(read.catalog()) {
-        let definition = &row["definition"];
-        assert_eq!(row["role"], entry.role.as_str());
-        assert_eq!(row["artifact_path"], entry.artifact_path);
-        assert_eq!(definition["authority"], entry.authority);
-        assert_eq!(definition["identity"], entry.identity);
-        assert_eq!(
-            definition["revision"]["namespace"],
-            entry.revision_namespace
-        );
-        assert_eq!(definition["revision"]["value"], entry.revision_value);
-        assert_eq!(definition["digest_domain"], entry.digest_domain);
-        assert_eq!(definition["digest"], entry.digest);
-    }
+fn conformance_catalog_matches_qspec_complete_value_lock() {
+    let Some(document) = qspec_document("complete-value-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let lock = lock();
+    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["role"].as_str().unwrap(),
+                row["definition"]["authority"].as_str().unwrap(),
+                row["definition"]["identity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let catalog: Vec<(&str, &str, &str)> = lock
+        .catalog()
+        .iter()
+        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
+        .collect();
+    assert_eq!(catalog, rows);
+
     let selection = &document["package_selection"];
-    let always: Vec<&str> = read.always_roles().iter().map(|r| r.as_str()).collect();
+    let always: Vec<&str> = lock.always_roles().iter().map(|r| r.as_str()).collect();
     assert_eq!(always, strings(&selection["always"]));
-    let conditional: Vec<(&str, &str)> = read
+    let conditional: Vec<(&str, &str)> = lock
         .conditional_roles()
         .iter()
         .map(|(trigger, role)| (trigger.as_str(), role.as_str()))
@@ -102,7 +117,7 @@ fn the_compiled_in_lock_reads() {
         })
         .collect();
     assert_eq!(conditional, expected);
-    let exactly_one: Vec<(&str, Vec<&str>)> = read
+    let exactly_one: Vec<(&str, Vec<&str>)> = lock
         .exactly_one_roles()
         .iter()
         .map(|(trigger, roles)| (trigger.as_str(), roles.iter().map(|r| r.as_str()).collect()))
@@ -114,107 +129,28 @@ fn the_compiled_in_lock_reads() {
         .map(|rule| (rule["trigger"].as_str().unwrap(), strings(&rule["roles"])))
         .collect();
     assert_eq!(exactly_one, expected);
-}
 
-/// A lock naming a role QSL has no `CatalogRole` for, a role twice, or no
-/// row for a role does not read.
-#[test]
-fn a_lock_with_an_unknown_duplicated_or_missing_role_does_not_read() {
-    assert!(matches!(
-        DefinitionLock::read(mutated("\"role\": \"edition\"", "\"role\": \"editio\"")),
-        Err(LockReadError::UnknownRole(role)) if role == "editio"
-    ));
-    assert!(matches!(
-        DefinitionLock::read(mutated("\"role\": \"root\"", "\"role\": \"edition\"")),
-        Err(LockReadError::RoleRowCount {
-            role: CatalogRole::Edition,
-            count: 2
-        })
-    ));
-    let mut document = document();
-    document["qualification_catalog"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|row| row["role"] != "accounting");
-    let missing = serde_json::to_string(&document).unwrap().leak();
-    assert!(matches!(
-        DefinitionLock::read(missing),
-        Err(LockReadError::RoleRowCount {
-            role: CatalogRole::Accounting,
-            count: 0
-        })
-    ));
-}
-
-/// A selection rule naming a trigger outside the closed vocabulary, or a
-/// vocabulary other than `Trigger::ALL`, does not read.
-#[test]
-fn a_lock_with_an_unknown_trigger_or_vocabulary_does_not_read() {
-    assert!(matches!(
-        DefinitionLock::read(mutated(
-            "{\"trigger\": \"text_bearing\", \"role\"",
-            "{\"trigger\": \"text_bearin\", \"role\""
-        )),
-        Err(LockReadError::UnknownTrigger(trigger)) if trigger == "text_bearin"
-    ));
-    let missing = mutated(
-        "[\"ieee_operation\", \"integer_div_rem\", \"text_bearing\"]",
-        "[\"ieee_operation\", \"integer_div_rem\"]",
-    );
-    assert!(matches!(
-        DefinitionLock::read(missing),
-        Err(LockReadError::TriggerVocabulary(_))
-    ));
-    let extra = mutated(
-        "[\"ieee_operation\", \"integer_div_rem\", \"text_bearing\"]",
-        "[\"ieee_operation\", \"integer_div_rem\", \"text_bearing\", \"host_float\"]",
-    );
-    assert!(matches!(
-        DefinitionLock::read(extra),
-        Err(LockReadError::TriggerVocabulary(_))
-    ));
-}
-
-/// A `selection_refusal_codes` set missing a code, or naming one twice, does
-/// not read.
-#[test]
-fn a_lock_with_another_refusal_code_set_does_not_read() {
-    let dropped = mutated(", \"selection_untriggered_profile\"", "");
-    assert!(matches!(
-        DefinitionLock::read(dropped),
-        Err(LockReadError::RefusalCodes(codes)) if codes.len() == 7
-    ));
-    let duplicated = mutated(
-        "\"selection_untriggered_profile\"]",
-        "\"selection_untriggered_profile\", \"selection_untriggered_profile\"]",
-    );
-    assert!(matches!(
-        DefinitionLock::read(duplicated),
-        Err(LockReadError::RefusalCodes(codes)) if codes.len() == 9
-    ));
-}
-
-/// The diagnostics catalog's `DefinitionRef` is QSpec's document: its
-/// identity and revision from the document's header, its digest the SHA-256
-/// of the document's bytes.
-#[test]
-fn the_native_diagnostics_catalog_reads_its_header() {
-    let catalog = native_diagnostics_catalog();
-    let document = quire_specification::NATIVE_DIAGNOSTICS;
-    assert_eq!(catalog.identity, "quire.native.diagnostics/v1");
-    assert!(document.contains(&format!(
-        "Interpretation identity: `{}`; revision: `{}`.",
-        catalog.identity, catalog.revision.value
-    )));
+    let vocabulary: BTreeSet<&str> = strings(&document["trigger_vocabulary"])
+        .into_iter()
+        .collect();
     assert_eq!(
-        catalog.digest,
-        format!("{:x}", Sha256::digest(document.as_bytes()))
+        vocabulary,
+        Trigger::ALL.into_iter().map(Trigger::as_str).collect()
     );
-    assert_eq!(catalog.digest_domain, "quire.definition.bytes/v1");
-}
-
-fn selection_vectors() -> Value {
-    serde_json::from_str(quire_specification::COMPLETE_VALUE_SELECTION_VECTORS).unwrap()
+    let refusals: BTreeSet<&str> = strings(&document["selection_refusal_codes"])
+        .into_iter()
+        .collect();
+    assert_eq!(
+        refusals,
+        SelectionRefusalCode::ALL
+            .into_iter()
+            .map(SelectionRefusalCode::as_str)
+            .collect()
+    );
+    println!(
+        "conformance: {} catalog rows match QSpec's lock",
+        catalog.len()
+    );
 }
 
 /// The vector's selected roles: the always roles less any omitted, then its
@@ -233,11 +169,18 @@ fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
 }
 
 /// Every accepted QSpec vector admits, with exactly its triggers and roles,
-/// and a division law exactly when `integer_div_rem` is present.
-#[trace("QSpec-TC-192")]
+/// and a division law exactly when `integer_div_rem` is present. Every
+/// refused vector, including the two ordering vectors, refuses with exactly
+/// its `expected_code`, and the refused vectors together reach every closed
+/// refusal code. Skipped (and passing) when `QSPEC_DIR` is unset; `make
+/// conformance` requires it.
+#[trace("QSpec-TC-192", "TC-490", "FR-110-AC-9")]
 #[test]
-fn admit_selection_accepts_every_accepted_qspec_vector() {
-    let vectors = selection_vectors();
+fn conformance_admit_selection_matches_qspec_selection_vectors() {
+    let Some(vectors) = qspec_document("complete-value-selection-vectors.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
     let accepted = vectors["accepted"].as_array().unwrap();
     assert!(!accepted.is_empty());
     for vector in accepted {
@@ -263,15 +206,7 @@ fn admit_selection_accepts_every_accepted_qspec_vector() {
             "{name}"
         );
     }
-}
 
-/// Every refused QSpec vector, including the two ordering vectors, refuses
-/// with exactly its `expected_code`, and the vectors together reach every
-/// closed refusal code.
-#[trace("QSpec-TC-192")]
-#[test]
-fn admit_selection_refuses_every_refused_qspec_vector_with_its_code() {
-    let vectors = selection_vectors();
     let refused = vectors["refused"].as_array().unwrap();
     let mut codes = BTreeSet::new();
     for vector in refused {
@@ -288,4 +223,9 @@ fn admit_selection_refuses_every_refused_qspec_vector_with_its_code() {
         codes.insert(code);
     }
     assert_eq!(codes, SelectionRefusalCode::ALL.into_iter().collect());
+    println!(
+        "conformance: {} accepted and {} refused selection vectors",
+        accepted.len(),
+        refused.len()
+    );
 }

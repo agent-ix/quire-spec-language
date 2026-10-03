@@ -36,12 +36,6 @@ pub enum InvalidProvenance {
     /// A [`RawSourceRef`]'s identity is empty (QSpec `Nonempty`).
     #[error("the source identity is empty")]
     EmptyIdentity,
-    /// A [`Revision`]'s namespace is empty (QSpec `Nonempty`).
-    #[error("the revision namespace is empty")]
-    EmptyRevisionNamespace,
-    /// A [`Revision`]'s value is empty (QSpec `Nonempty`).
-    #[error("the revision value is empty")]
-    EmptyRevisionValue,
     /// A [`RawSourceRef`]'s digest is not a `quire.source.bytes/v1` digest
     /// (QSpec `RawSourceRef.digest_domain` is that constant).
     #[error("a raw source digest must be quire.source.bytes/v1, not {0}")]
@@ -63,63 +57,27 @@ pub enum InvalidProvenance {
     DuplicateOccurrence(OccurrenceKey),
 }
 
-/// QSpec `Revision`: a revision value in a stable namespace. Serializes as
-/// QSpec's `Revision`, `{namespace, value}`.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize)]
-pub struct Revision {
-    namespace: String,
-    value: String,
-}
-
-impl Revision {
-    /// A revision `value` in `namespace`. Refuses an empty member.
-    pub fn new(
-        namespace: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Result<Self, InvalidProvenance> {
-        let (namespace, value) = (namespace.into(), value.into());
-        if namespace.is_empty() {
-            return Err(InvalidProvenance::EmptyRevisionNamespace);
-        }
-        if value.is_empty() {
-            return Err(InvalidProvenance::EmptyRevisionValue);
-        }
-        Ok(Self { namespace, value })
-    }
-
-    /// The revision namespace.
-    pub fn namespace(&self) -> &str {
-        &self.namespace
-    }
-
-    /// The revision value.
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-}
-
 /// ADR-013 O-07 and QSpec `RawSourceRef`: names one source document by
-/// authority, identity, revision and its `quire.source.bytes/v1` digest.
+/// authority and identity and binds it to its bytes by their
+/// `quire.source.bytes/v1` digest (QSpec STD-150).
 ///
 /// quire:canonical
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RawSourceRef {
     authority: String,
     identity: String,
-    revision: Revision,
     digest: DigestRecord,
 }
 
 /// QSpec FR-322 `RawSourceRef`, member for member: `authority`, `identity`,
-/// `revision`, `digest_domain` (always `quire.source.bytes/v1`) and the
-/// lowercase-hex `digest`.
+/// `digest_domain` (always `quire.source.bytes/v1`) and the lowercase-hex
+/// `digest`.
 impl serde::Serialize for RawSourceRef {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("RawSourceRef", 5)?;
+        let mut record = serializer.serialize_struct("RawSourceRef", 4)?;
         record.serialize_field("authority", &self.authority)?;
         record.serialize_field("identity", &self.identity)?;
-        record.serialize_field("revision", &self.revision)?;
         record.serialize_field("digest_domain", self.digest.domain().as_str())?;
         record.serialize_field("digest", &self.digest.hex())?;
         record.end()
@@ -132,7 +90,6 @@ impl RawSourceRef {
     pub fn new(
         authority: impl Into<String>,
         identity: impl Into<String>,
-        revision: Revision,
         digest: DigestRecord,
     ) -> Result<Self, InvalidProvenance> {
         let (authority, identity) = (authority.into(), identity.into());
@@ -148,7 +105,6 @@ impl RawSourceRef {
         Ok(Self {
             authority,
             identity,
-            revision,
             digest,
         })
     }
@@ -163,11 +119,6 @@ impl RawSourceRef {
         &self.identity
     }
 
-    /// The selected revision of that identity.
-    pub fn revision(&self) -> &Revision {
-        &self.revision
-    }
-
     /// The `quire.source.bytes/v1` digest of the source's bytes.
     pub fn digest(&self) -> DigestRecord {
         self.digest
@@ -180,7 +131,7 @@ impl RawSourceRef {
 /// Equality, ordering and hashing are lexical over (`RawSourceRef` digest,
 /// start, end), exactly O-12's region equality: the document's digest names
 /// its bytes, so two regions over the same bytes and offsets are one region
-/// whatever authority or revision label named the document.
+/// whatever authority or identity label named the document.
 ///
 /// An empty region (`start == end`) is a point, which a diagnostic may
 /// name. A v2 source-map entry's regions are non-empty; IR's reader
@@ -397,13 +348,7 @@ mod tests {
     }
 
     fn source(authority: &str, fill: u8) -> RawSourceRef {
-        RawSourceRef::new(
-            authority,
-            "unit",
-            Revision::new("git", "abc").unwrap(),
-            digest(DigestDomain::SourceBytesV1, fill),
-        )
-        .unwrap()
+        RawSourceRef::new(authority, "unit", digest(DigestDomain::SourceBytesV1, fill)).unwrap()
     }
 
     fn region(fill: u8, start: u64, end: u64) -> SourceRegion {
@@ -418,20 +363,14 @@ mod tests {
     }
 
     /// O-12 region equality is lexical over (digest, start, end): the
-    /// authority, identity and revision labels take no part, while each of
+    /// authority and identity labels take no part, while each of
     /// the three compared members does.
     #[trace("TC-420", "FR-095-AC-2")]
     #[test]
     fn region_equality_is_over_digest_start_and_end_only() {
         let base = region(1, 4, 9);
         let relabelled = SourceRegion::new(
-            RawSourceRef::new(
-                "b",
-                "other",
-                Revision::new("semver", "2").unwrap(),
-                digest(DigestDomain::SourceBytesV1, 1),
-            )
-            .unwrap(),
+            RawSourceRef::new("b", "other", digest(DigestDomain::SourceBytesV1, 1)).unwrap(),
             4,
             9,
         )
@@ -443,37 +382,23 @@ mod tests {
         assert_ne!(base, region(1, 4, 8));
     }
 
-    /// A `RawSourceRef` is QSpec's: non-empty authority, identity and
-    /// revision members, and a `quire.source.bytes/v1` digest only. A
-    /// region's end never precedes its start; an empty region is a point.
+    /// A `RawSourceRef` is QSpec's: non-empty authority and identity
+    /// members, and a `quire.source.bytes/v1` digest only. A region's end
+    /// never precedes its start; an empty region is a point.
     #[trace("TC-420", "FR-095-AC-1")]
     #[test]
     fn raw_source_refs_and_regions_refuse_malformed_members() {
-        let revision = || Revision::new("git", "abc").unwrap();
         let bytes = digest(DigestDomain::SourceBytesV1, 1);
         assert_eq!(
-            RawSourceRef::new("", "u", revision(), bytes),
+            RawSourceRef::new("", "u", bytes),
             Err(InvalidProvenance::EmptyAuthority)
         );
         assert_eq!(
-            RawSourceRef::new("a", "", revision(), bytes),
+            RawSourceRef::new("a", "", bytes),
             Err(InvalidProvenance::EmptyIdentity)
         );
         assert_eq!(
-            Revision::new("", "abc"),
-            Err(InvalidProvenance::EmptyRevisionNamespace)
-        );
-        assert_eq!(
-            Revision::new("git", ""),
-            Err(InvalidProvenance::EmptyRevisionValue)
-        );
-        assert_eq!(
-            RawSourceRef::new(
-                "a",
-                "u",
-                revision(),
-                digest(DigestDomain::DefinitionBytesV1, 1)
-            ),
+            RawSourceRef::new("a", "u", digest(DigestDomain::DefinitionBytesV1, 1)),
             Err(InvalidProvenance::NotSourceBytes(
                 DigestDomain::DefinitionBytesV1
             ))

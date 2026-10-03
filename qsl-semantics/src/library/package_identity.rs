@@ -558,13 +558,7 @@ pub(super) mod fixtures {
             "definition_selections": [],
             "dependency_selections": [],
             "edition": {
-                "definition": {
-                    "authority": "agent-ix",
-                    "digest": hex(b"quire-edition"),
-                    "digest_domain": "quire.definition.bytes/v1",
-                    "identity": "quire-edition",
-                    "revision": {"namespace": "semver", "value": "1"},
-                },
+                "definition": {"authority": "agent-ix", "identity": "quire-edition"},
                 "role": "edition",
             },
             "identity_projection": [node],

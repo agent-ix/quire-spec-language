@@ -38,10 +38,6 @@ serde_json = { version = "1.0.151", features = ["unbounded_depth", "raw_value"] 
 # `canonical-encoder` check refuses a second encoder.
 # `std` for `model::key`'s `WriteSink` over `io::sink`.
 quire-canonical = { workspace = true, features = ["std"] }
-# QSpec's `complete-value-lock.json` and `native-diagnostics.md` bytes:
-# `value::definition` reads its catalog and the diagnostics catalog's
-# `DefinitionRef` from them instead of holding a copy.
-quire-specification = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.20"
 agent-ix-extraction-frontend = { git = "https://github.com/agent-ix/filament-core-data", rev = "033e228408dd7b9f815800583af28e49c4e601a9" }
