@@ -280,7 +280,7 @@ node (T3) for a text value.
 | `Option<T>` | `composite_type` / `option` | itself | `aggregate{[reference(T)]}` |
 | `K<T>` for a collection kind `K` | `composite_type` / `sequence`, `set`, `bag`, `ordered_set` | itself | `aggregate{[reference(T)]}` |
 | `K<T>[min, max]` | `bounded_domain` / `collection_bounds` | the `K<T>` node | bindings `min`, `max` |
-| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f?: T` is `f` = `binding{name: "optional", value: reference(Option<T>)}`, so `f?: T` and `f: Option<T>` differ |
+| a declared `record R { f: T; ... }` | `composite_type` / `record`, with `declaration` and `owner` | itself | one binding per field in declaration order, `f` = `reference(T)`; an optional field `f?: T` is `f` = `aggregate{binding{name: "optional", value: reference(Option<T>)}}`, a Group, so `f?: T` and `f: Option<T>` differ and no binding holds a binding |
 | a declared `tuple Q(T0, ...)` | `composite_type` / `tuple`, with `declaration` and `owner` | itself | `aggregate{[reference(T0), ...]}` in position order |
 
 Each binding is `{term: "binding", name, value}` and each body with bindings

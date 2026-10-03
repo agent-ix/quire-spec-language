@@ -135,7 +135,7 @@ pub use node_key::{
     GroupMember, GroupTerm, IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole,
     LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag,
     Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
-    SourceOwner, WireNodeRef,
+    SourceOwner, TupleMember, TupleTerm, WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`

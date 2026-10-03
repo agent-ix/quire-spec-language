@@ -151,24 +151,26 @@ package is then fixed by the schema, whatever the model's size.
 | Stratum | Productions |
 | --- | --- |
 | Leaf | `literal`, `reference`, `dependency_reference` |
-| Group | `aggregate` whose members are Leaf or `binding` of a Leaf |
-| Member | Leaf, Group, or `binding` of a Leaf or a Group |
-| Body | Leaf, `application` whose `arguments` are each a Member, `aggregate` whose members are Member, or `frame` |
+| Group | `aggregate` whose members are each a Leaf or a `binding` of a Leaf |
+| Tuple | `aggregate` whose members are each a Leaf or a Group |
+| Member | Leaf, Group, or `binding` of a Leaf, a Group or a Tuple |
+| Body | Leaf, `application` whose `arguments` are each a Member, `aggregate` whose members are each a Member, `frame`, or `abstraction_relation` |
 
 Each composite subterm is its own node, reached by `reference`. A reader
 refuses a body outside the grammar as a malformed wire (`refused`), not as a
 limit.
 
-The strata are taken from the shapes QSL's lowering emits and from QSpec
-FR-322's grammar and fixtures: expression results and operands are references
-or literals, an application argument is a Member (a reference, a literal, a
-group of bindings or a binding of one), function nodes are an aggregate of
+QSpec owns the grammar, and QSL cites it. A `binding` never holds a `binding`.
+Expression results and operands are references or literals, an application
+argument is a Member (a reference, a literal, a group of bindings or a
+binding of a Leaf, a Group or a Tuple), function nodes are an aggregate of
 bindings whose `parameters` value is a group of references, and unit-power
 members are groups of bindings. The strata are closed. If an emitted shape
 falls outside them, lowering splits it into nodes rather than adding a
-stratum. Because QSL already emits this form, D-2 leaves every QSL node id
-unchanged; the conformance corpus re-encodes byte for byte under the new
-schema to show it.
+stratum. Two QSL shapes were a binding of a binding: an optional record
+field (FR-092) and a fold's step (FR-093). Each is now a binding of a Group
+that holds the inner binding, so those nodes' ids differ from the
+four-stratum form's, and so do the ids of every node that names them.
 
 With D-2 the reader-declared maximum depth for FR-322 is unnecessary: the
 schema fixes depth, and bytes, nodes, edges and work bound the rest.
@@ -269,7 +271,7 @@ smaller than one frame per level would need (D-6).
     being walked and, for a composite, its field cursor and the
     `open`-list length on entry. `open` and `prefixes` keep their roles.
   - QSL's `SemanticTerm` becomes stratified Rust types matching D-2
-    (`LeafTerm`, `GroupTerm`, `MemberTerm`, `BodyTerm`). `node_key::term`
+    (`LeafTerm`, `GroupTerm`, `TupleTerm`, `MemberTerm`, `BodyTerm`). `node_key::term`
     becomes a fixed-depth match, and its depth guard is deleted. Body
     preimages then have a schema-fixed depth.
   - Every other walk over a checked `Node` that recurses (for example the
@@ -384,8 +386,8 @@ fixed-depth path or the event API as D-4.4 states.
 #### D-4.9 v2 wire: emitter and reader
 
 - **Redesign.**
-  - The emitter already produces D-2's form. A conformance test asserts that
-    every emitted body is in the stratified grammar.
+  - The emitter produces D-2's form. A conformance test asserts that every
+    emitted body is in the stratified grammar.
   - The reader (`qsl-package/src/checked_v2.rs`) deletes
     `V2ReadLimits::depth` and its clamp to IR's reader maximum once IR's
     reader enforces D-2 (overlap item O-1). The decoded nodes are then

@@ -636,9 +636,7 @@ impl CompositeFrame<'_> {
                 field.name(),
                 match field.presence() {
                     Presence::Required => BindingValue::Leaf(reference),
-                    Presence::Optional => {
-                        BindingValue::Binding(Binding::new("optional", reference))
-                    }
+                    Presence::Optional => BindingValue::named_leaf("optional", reference),
                 },
             ),
         });
@@ -3722,10 +3720,7 @@ impl<'a> Lowering<'a> {
                 let member = self.type_argument(node.value_type(), node.location())?;
                 let mut arguments = vec![
                     MemberTerm::Leaf(source),
-                    MemberTerm::binding(
-                        accumulator,
-                        BindingValue::Binding(Binding::new(binder, term)),
-                    ),
+                    MemberTerm::binding(accumulator, BindingValue::named_leaf(binder, term)),
                 ];
                 let identity_name = match identity {
                     Some(identity) => {

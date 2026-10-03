@@ -188,8 +188,8 @@ to `x`'s node.
 | `Query{visit: Sum}` (`sum<N>`) | `collection` | `quire.op.collection.sum.integer` | member `type_argument` of `T(node)` | `[ref(c), binding{name: x, value: ref(summand)}]` |
 | `Flatten` whose operand is not a `Query{visit: Map}` (`flatten(c)`) | `collection` | `quire.op.collection.flatten` | leaves `result_inner` | `[ref(c)]` |
 | `Flatten` over a `Query{visit: Map}` (`flatMap(x in c: e)`, and `flatten(map(x in c: e))`) | `collection` | `quire.op.collection.flat_map`; no node is built for the inner map | leaves `result_inner` | `[ref(c), binding{name: x, value: ref(e)}]` |
-| `Fold{identity: Some(i)}` (`fold<A>`) | `collection` | `quire.op.collection.fold` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: binding{name: x, value: ref(step)}}, ref(i)]` |
-| `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: binding{name: x, value: ref(step)}}]` |
+| `Fold{identity: Some(i)}` (`fold<A>`) | `collection` | `quire.op.collection.fold` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}, ref(i)]` |
+| `Fold{identity: None}` (`reduce<A>`) | `collection` | `quire.op.collection.reduce` | member `type_argument` of `T(node)` | `[ref(c), binding{name: acc, value: aggregate{binding{name: x, value: ref(step)}}}]` |
 | `Size` | `collection` | `quire.op.collection.size` | member `type_argument` of `T(node)` | `[ref(c)]` |
 | `Contains` | `collection` | `quire.op.collection.contains` | leaves `inner:0` | `[ref(c), ref(v)]` |
 | `Attribute{reference, name}` (`deref(r).f`) | `deref`, then `query` | the node `quire.op.model.deref` over `[ref(r)]`, whose `result_type` is the model node of `r`'s object type `T`, and over it `quire.op.record.project` | the projection's member `field{declaration: T's model node, name: f}` | the projection's `[ref(deref node)]` |

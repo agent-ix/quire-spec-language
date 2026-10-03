@@ -380,11 +380,32 @@ pub struct GroupTerm {
     pub members: Vec<GroupMember>,
 }
 
-/// The value of a [`MemberTerm`] binding: a Leaf, a Group, or a binding of
-/// a Leaf. The last is the shape FR-092 gives an optional record field
-/// (`f` = `binding{optional, reference}`) and FR-093 a fold's step
-/// (`acc` = `binding{x, reference}`); it names a lower stratum, so the
-/// depth stays fixed.
+/// A member of a [`TupleTerm`]: a Leaf or a Group.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(untagged)]
+pub enum TupleMember {
+    /// A Leaf.
+    Leaf(LeafTerm),
+    /// A Group.
+    Group(GroupTerm),
+}
+
+/// The Tuple stratum: an `aggregate` whose members are each a Leaf or a
+/// Group.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "aggregate")]
+pub struct TupleTerm {
+    /// The members, in order.
+    pub members: Vec<TupleMember>,
+}
+
+/// The value of a [`MemberTerm`] binding: a Leaf, a Group or a Tuple. A
+/// binding never holds another binding (FR-322 "Body grammar"): FR-092 gives
+/// an optional record field as `f` bound to the Group `{optional:
+/// reference}`, and FR-093 a fold's step as the accumulator bound to the
+/// Group `{x: reference}`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 #[serde(untagged)]
@@ -393,8 +414,8 @@ pub enum BindingValue {
     Leaf(LeafTerm),
     /// A Group.
     Group(GroupTerm),
-    /// A binding of a Leaf.
-    Binding(Binding<LeafTerm>),
+    /// A Tuple.
+    Tuple(TupleTerm),
 }
 
 /// The Member stratum: an application argument or a body aggregate's
@@ -407,7 +428,7 @@ pub enum MemberTerm {
     Leaf(LeafTerm),
     /// A Group.
     Group(GroupTerm),
-    /// A binding of a Leaf, a Group or a binding of a Leaf.
+    /// A binding of a Leaf, a Group or a Tuple.
     Binding(Binding<BindingValue>),
 }
 
@@ -727,11 +748,11 @@ impl GroupTerm {
     }
 }
 
-impl BindingValue {
-    /// Every Leaf this value holds, in order.
+impl TupleMember {
+    /// Every Leaf of this member, in order.
     pub fn leaves(&self) -> Vec<&LeafTerm> {
         match self {
-            Self::Leaf(leaf) | Self::Binding(Binding { value: leaf, .. }) => vec![leaf],
+            Self::Leaf(leaf) => vec![leaf],
             Self::Group(group) => group.leaves().collect(),
         }
     }
@@ -740,7 +761,54 @@ impl BindingValue {
         match self {
             Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
             Self::Group(group) => Self::Group(group.map_keys(map)),
-            Self::Binding(binding) => Self::Binding(binding.map_keys(map)),
+        }
+    }
+}
+
+impl TupleTerm {
+    /// `{term: "aggregate", members}` over Tuple members.
+    pub(crate) fn new(members: Vec<TupleMember>) -> Self {
+        Self { members }
+    }
+
+    /// Every Leaf of this Tuple, in order.
+    pub fn leaves(&self) -> Vec<&LeafTerm> {
+        self.members.iter().flat_map(TupleMember::leaves).collect()
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        Self::new(
+            self.members
+                .iter()
+                .map(|member| member.map_keys(map))
+                .collect(),
+        )
+    }
+}
+
+impl BindingValue {
+    /// A Group of one named Leaf: `{name: leaf}`, the shape of an optional
+    /// record field's and a fold step's value.
+    pub(crate) fn named_leaf(name: impl Into<String>, leaf: LeafTerm) -> Self {
+        Self::Group(GroupTerm::new(vec![GroupMember::Binding(Binding::new(
+            name, leaf,
+        ))]))
+    }
+
+    /// Every Leaf this value holds, in order.
+    pub fn leaves(&self) -> Vec<&LeafTerm> {
+        match self {
+            Self::Leaf(leaf) => vec![leaf],
+            Self::Group(group) => group.leaves().collect(),
+            Self::Tuple(tuple) => tuple.leaves(),
+        }
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Tuple(tuple) => Self::Tuple(tuple.map_keys(map)),
         }
     }
 }
@@ -2076,6 +2144,19 @@ impl Walk<'_> {
         Ok(PreimageTerm::Aggregate { members })
     }
 
+    /// `tuple` in preimage form.
+    fn tuple<'a>(&self, tuple: &'a TupleTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        let members = tuple
+            .members
+            .iter()
+            .map(|member| match member {
+                TupleMember::Leaf(leaf) => self.leaf(leaf),
+                TupleMember::Group(group) => self.group(group),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(PreimageTerm::Aggregate { members })
+    }
+
     /// `member` in preimage form.
     fn member<'a>(&self, member: &'a MemberTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
         match member {
@@ -2085,7 +2166,7 @@ impl Walk<'_> {
                 let value = match &binding.value {
                     BindingValue::Leaf(leaf) => self.leaf(leaf)?,
                     BindingValue::Group(group) => self.group(group)?,
-                    BindingValue::Binding(bound) => self.bound_leaf(bound)?,
+                    BindingValue::Tuple(tuple) => self.tuple(tuple)?,
                 };
                 Self::binding(&binding.name, value)
             }

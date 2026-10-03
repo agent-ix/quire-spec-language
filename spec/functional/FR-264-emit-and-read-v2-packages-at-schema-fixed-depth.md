@@ -55,7 +55,7 @@ limits only (ADR-030 D-4.9).
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-264-AC-1 | On a thread with a 512 KiB stack, a package holding a 100,000-term sum, compiled under limits raised to fit it, is emitted, read back through QSL's I2 read with `i2.*` raised to fit it, and verified at its emitted `package_id`. The `V2Read` clones, compares equal to its clone, formats for debug and drops on the same thread. | Test (TC-738) |
-| FR-264-AC-2 | Every node body of every package the emitter writes for the TC-415 corpus and for AC-1 is in FR-322's stratified grammar, checked by a walk of the emitted JSON that classifies each body position as Leaf, Group, Member or Body. | Test (TC-738) |
+| FR-264-AC-2 | Every node body of every package the emitter writes for the TC-415 corpus and for AC-1 is in FR-322's stratified grammar, checked by a walk of the emitted JSON that classifies each body position as Leaf, Group, Tuple, Member or Body. | Test (TC-738) |
 | FR-264-AC-3 | A v2 artifact identical to an emitted one except that one `application` argument is an inline `application` term is refused by QSL's I2 read with code `malformed_wire`, with no limit outcome. | Test (TC-739) |
 | FR-264-AC-4 | A v2 artifact with more nodes than `i2.nodes` at bound `B` returns `StageFailure::Limit` with kind node count, bound `B`, IR's consumed count and setting `i2.nodes`, with `Locus::Artifact`; read again with `i2.nodes` raised through the v2 read limits' builder and through FR-255's settings operation given `i2.nodes=<n>` (FR-255), which the driver CLI exposes as `--limit` (ADR-029 CB-1), it verifies. | Test (TC-739) |
 

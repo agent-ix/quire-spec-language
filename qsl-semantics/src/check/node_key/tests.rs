@@ -319,7 +319,12 @@ fn group_references_are_rewritten_in_every_stratum() {
             GroupMember::Leaf(reference(1)),
             GroupMember::Binding(Binding::new("y", reference(2))),
         ])),
-        MemberTerm::binding("z", BindingValue::Binding(Binding::new("w", reference(1)))),
+        MemberTerm::binding(
+            "z",
+            BindingValue::Tuple(TupleTerm::new(vec![TupleMember::Group(GroupTerm::new(
+                vec![GroupMember::Binding(Binding::new("w", reference(1)))],
+            ))])),
+        ),
         argument(9),
     ]);
     let second = add(vec![argument(1)]);
@@ -334,7 +339,10 @@ fn group_references_are_rewritten_in_every_stratum() {
     assert_eq!(arguments[0]["value"], group_reference(other));
     assert_eq!(arguments[1]["members"][0], group_reference(own));
     assert_eq!(arguments[1]["members"][1]["value"], group_reference(other));
-    assert_eq!(arguments[2]["value"]["value"], group_reference(own));
+    assert_eq!(
+        arguments[2]["value"]["members"][0]["members"][0]["value"],
+        group_reference(own)
+    );
     assert_eq!(
         arguments[3],
         json!({"term": "reference", "target": {"domain": NODE_KEY_DOMAIN, "digest": key(9).to_string()}}),
