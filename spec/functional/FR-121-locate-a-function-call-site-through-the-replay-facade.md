@@ -31,7 +31,8 @@ layer-6 replay facade (ADR-011 §6.1, ADR-013 TK-01) beside `replay`
 (FR-098), for a consumer that must build an FR-071 replay request or an
 FR-116 frame or state-clause counterexample itself rather than execute
 one: the compiled package's own `package_id` and, for one selection, a
-named function's declared parameters, each paired with its own node id; a
+named function's node, its `declaration` occurrence key and its declared
+parameters, each paired with its own node id; a
 named operation's `operation_anchor` and `frame` nodes, the frame's
 occurrence key and the node and occurrence key of every state clause
 naming the operation; or a named state clause's node and occurrence key.
@@ -91,8 +92,10 @@ declaration by declared identity, never by position.
   (`Vec<u8>`, the compiled package's `quire.checked-package/v2` bytes
   exactly as the S4 emitter wrote them when it minted `package_id`), and
   `site`, whose type the selection decides:
-  - for a `QualifiedName`, a `FunctionSite`: `parameters`,
-    `Vec<(Identifier, WireNodeId)>`, in declared order;
+  - for a `QualifiedName`, a `FunctionSite`: `function` (`WireNodeId`,
+    the function declaration's `function` node, FR-092), `declaration`
+    (`OccurrenceKey`, that node's `declaration` occurrence) and
+    `parameters`, `Vec<(Identifier, WireNodeId)>`, in declared order;
   - for an `OperationName`, an `OperationSite`: `anchor` and `frame`
     (`WireNodeId`), `frame_occurrence` (`OccurrenceKey`) and `clauses`
     (`Vec<ClauseSite>`, each `name: Identifier`, `node: WireNodeId` and
@@ -122,6 +125,11 @@ declaration by declared identity, never by position.
   SHALL refuse `CallSiteRefusal::UnknownFunction`, pairing the
   `QualifiedName` with the compiled package's own `package_id` -- never a
   bare `QualifiedName` (FR-088-AC-6, TC-258).
+- For a function selection, `call_site` SHALL return the resolved
+  function's own node id and its one `declaration` occurrence key
+  (function node id, `declaration`, 0): the subject node id and occurrence
+  key of the function's ADR-013 O-09 function-contract obligation
+  identity, which CG computes and never derives itself.
 - For a function selection, `call_site` SHALL pair each of the resolved
   function's declared parameters, in declared order, with its own node id,
   derived the same way `replay`'s own executor derives it (FR-098), so the
@@ -189,6 +197,7 @@ declaration by declared identity, never by position.
 | FR-121-AC-12 | A `CallSite`'s `package` equals the S4 emitter's bytes for the same compile, and the RFC 8785 bytes of its `identity_preimage` member digest, under `quire.package.semantic/v2`, to the `CallSite`'s `package_id`. | Test (TC-516) |
 | FR-121-AC-13 | From outside the crate, a `DeclaredDomain` over an integer range on a parameter node `call_site` returned is built through `qsl_replay`'s root paths alone (`ProofBound`, `DomainKey`, `FiniteBound`, `Integer`), its kind is `FiniteBoundKind::IntegerRange` and its interval equals the `IntegerInterval` built there; an inverted range refuses `EmptyFiniteBound::InvertedIntegerRange` through `FiniteBound::integer_range` and `EmptyInterval` through `IntegerInterval::new`. | Test (TC-516) |
 | FR-121-AC-14 | `CallSiteRefusal::code` returns `missing_declaration` for AC-2's `UnknownFunction`, AC-5's `UnknownOperation` and AC-8's `UnknownClause`; for AC-9's `ModelIntake`, AC-10's `DependencyInput`, AC-11's `Dependency` and AC-4's `Import`, the code `ReplayRefusal::code` returns when `replay` is given the same unit, packages and dependency input; and for a unit with a syntax error, `Compile` carrying the same code as the `ReplayRefusal::Recompile` `replay` returns for it. | Test (TC-516) |
+| FR-121-AC-15 | Worked example. For a unit declaring `p(x: Int[0, 9]): Boolean { x < 5 }` and `q(x: Int[0, 9]): Boolean { x < 5 }`, the `FunctionSite` for `p` carries `function` equal to the compiled graph's `function` node whose `declaration` is `p`, and `declaration` equal to `OccurrenceKey::new(function, Origin::new(Role::new("declaration"), 0))`. With a CG obligation kind and `arguments` `[(x's parameter node id, [0, 9])]`, these are the members of `p`'s ADR-013 O-09 function-contract obligation preimage. `q`'s `FunctionSite` has the same `parameters` (one shared parameter node) and a different `function`, so the two obligations differ. Recompiling the unit with a comment and blank lines inserted before `p` gives `p` the same `function` and `declaration`. Over the AC-6 unit, `sameIdentity`'s `function` equals no `ClauseSite` `node` returned for `attemptUpdate`, `probe` or any AC-8 clause selection. | Test (TC-516) |
 
 ## Dependencies
 
@@ -209,7 +218,10 @@ declaration by declared identity, never by position.
   selection supplies.
 - [ADR-011](../decisions/ADR-011-stage-dag-and-dependency-architecture.md)
   §6.1, §3 FB-05, T-12 rule (a).
-- ADR-013 O-07, O-25, C-11, TK-01.
+- ADR-013 O-07, O-09 (the function-contract obligation identity whose
+  subject members a `FunctionSite` carries), O-25, C-11, TK-01.
+- [FR-092](FR-092-key-type-parameter-and-declared-nodes.md): the
+  `function` node a `FunctionSite` names.
 - ADR-015 D-1: the dependency input.
 
 ## Status
@@ -220,3 +232,6 @@ derivation with `qsl_replay::replay`'s own selection
 `Frame` selection and its clause lookup with FR-106's clause selection,
 and `CallSiteRefusal::code` giving each refusal the code `replay` gives
 it, verified by TC-516.
+
+Remaining work (Linear QSL-352): `FunctionSite`'s `function` and
+`declaration` members (AC-15).
