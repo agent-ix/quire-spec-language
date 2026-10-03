@@ -3,7 +3,9 @@
 //! library operations. [`parse`] reads source bytes into syntax (S1, S2),
 //! [`select`] admits the domain packages a unit's `model` declarations name
 //! (I1), [`check`] checks and links (S3, S4) and [`package`] emits the
-//! checked package (E4); [`execute`] calls a checked function (S6a).
+//! checked package (E4). [`execute`] calls a checked function (S6a); its
+//! signature names `qsl_eval` types, which the spine's public surface may
+//! not (FR-100-AC-8), so it is crate-internal.
 //!
 //! Each operation takes its predecessor's own type, so a program that passes
 //! another stage's value, raw bytes or an unchecked value does not compile.
@@ -69,35 +71,12 @@
 //!     let _ = package(checked, &Cancel::new());
 //! }
 //! ```
-//!
-//! Emitted package bytes are not a [`CheckedUnit`], so they cannot be
-//! executed:
-//!
-//! ```compile_fail
-//! # use qsl_replay::spine::{execute, ExecuteRequest};
-//! # use quire_exact::{Cancel, ScalarLimits};
-//! fn run(bytes: &[u8], request: &ExecuteRequest<'_>, accounting: ScalarLimits) {
-//!     let _ = execute(bytes, request, accounting, &Cancel::new());
-//! }
-//! ```
-//!
-//! ```
-//! # use qsl_replay::spine::{execute, CheckedUnit, ExecuteRequest};
-//! # use quire_exact::{Cancel, ScalarLimits};
-//! fn control(
-//!     checked: &CheckedUnit,
-//!     request: &ExecuteRequest<'_>,
-//!     accounting: ScalarLimits,
-//! ) {
-//!     let _ = execute(checked, request, accounting, &Cancel::new());
-//! }
-//! ```
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use qsl_cst::Limits as SourceLimits;
-use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation, QualifiedName};
+use qsl_eval::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
 use qsl_forms::{build_unit, ParsedUnit};
 use qsl_foundation::diagnostic::{InternalFault, StageFailure, Staged};
 use qsl_foundation::selection::ImportSelection;
@@ -359,9 +338,9 @@ pub fn package(
 /// The request [`execute`] takes: the function, its admitted argument
 /// values and the object environment it runs in.
 #[derive(Clone, Copy, Debug)]
-pub struct ExecuteRequest<'a> {
+pub(crate) struct ExecuteRequest<'a> {
     /// The function to call.
-    pub function: &'a QualifiedName,
+    pub function: &'a qsl_eval::value::QualifiedName,
     /// Its argument values, in parameter order.
     pub arguments: &'a [Value],
     /// The object environment.
@@ -371,7 +350,7 @@ pub struct ExecuteRequest<'a> {
 /// S6a: call a checked function under `accounting` (FR-275). It runs no
 /// stage up to S4. A cancelled handle returns
 /// [`CallFailure::Cancelled`] and no value.
-pub fn execute(
+pub(crate) fn execute(
     package: &CheckedUnit,
     request: &ExecuteRequest<'_>,
     accounting: ScalarLimits,

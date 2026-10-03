@@ -40,9 +40,10 @@ use quire_semantic_value::checking::CheckingLimits;
 
 mod lifecycle;
 pub use lifecycle::{
-    check, execute, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit,
-    EmittedUnit, ExecuteRequest, FrontEndFailure, ParseRequest, ParsedSource,
+    check, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit, EmittedUnit,
+    FrontEndFailure, ParseRequest, ParsedSource,
 };
+pub(crate) use lifecycle::{execute, ExecuteRequest};
 
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
