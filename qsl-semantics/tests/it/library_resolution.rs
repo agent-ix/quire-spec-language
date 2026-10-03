@@ -383,7 +383,7 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
             }
         )]
     );
-    let new_lock = resolve_libraries(&new_package, &[old_library, new_library]).unwrap();
+    let new_lock = resolve_libraries(&new_package, &[new_library]).unwrap();
     assert_eq!(
         new_lock.selections(),
         [(
