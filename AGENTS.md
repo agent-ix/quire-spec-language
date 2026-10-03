@@ -30,7 +30,7 @@ with C before overlapping edits.
 - Use isolated worktrees for concurrent code sessions; preserve unrelated edits.
 - Run the actual build/test commands documented in README.md.
 - New integration tests go in `tests/it/<name>.rs` with a `mod <name>;` line added to `tests/it/main.rs` never a new top-level `tests/*.rs` file.
-- Owner directive: checks run locally until stable. Every hosted workflow must be manual-dispatch only (`workflow_dispatch`); do not add automatic triggers or dispatch a run without explicit direction. See NFR-002 and IT-004.
+- Owner directive: checks run locally until stable. Every hosted workflow must be manual-dispatch only (`workflow_dispatch`); do not add automatic triggers or dispatch a run without explicit direction. See NFR-002.
 
 <!-- required-language-policy:start -->
 ## Required implementation language and containment
