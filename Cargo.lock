@@ -1551,11 +1551,12 @@ dependencies = [
 [[package]]
 name = "quire-canonical"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#59fe4f06370fbdbd8de4fa446ad78f3974926252"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#b4bb97a5fe0a946e9d980e6466c7ecf95c6e62f1"
 dependencies = [
  "quire-canonical-derive",
  "ryu-js",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
 ]
@@ -1563,7 +1564,7 @@ dependencies = [
 [[package]]
 name = "quire-canonical-derive"
 version = "0.3.0"
-source = "git+https://github.com/agent-ix/quire-canonical?branch=main#59fe4f06370fbdbd8de4fa446ad78f3974926252"
+source = "git+https://github.com/agent-ix/quire-canonical?branch=main#b4bb97a5fe0a946e9d980e6466c7ecf95c6e62f1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1573,7 +1574,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#afb01a23d1e047feff3159d96551663702187957"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=feat%2Fselections-bind-by-identity#d771c6afccc58cddcdcd63dea2836386da98d583"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-canonical",
