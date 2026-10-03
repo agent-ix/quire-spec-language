@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-059/FR-060/FR-061: stable diagnostics for the architecture-lint CLI.
+//! FR-059/FR-060: stable diagnostics for the architecture-lint CLI.
 use std::{fmt, io, path::Path};
 
 /// Stable error classification. Spellings never change once released.
@@ -9,12 +9,6 @@ pub(crate) enum Code {
     Io,
     CargoMetadata,
     InvalidMetadata,
-    InvalidLockfile,
-    /// A local clone's resolved head does not match its remote `main` --
-    /// #249 review round 2 H-2: a stale clone must fail loudly, never report
-    /// a silently different (and possibly clean-looking) answer than the
-    /// same command run against a fresh one.
-    Stale,
     /// FR-060 T12-B/T12-C/T12-D's scan (`#[cfg(test)]` exclusion, token
     /// matching, debt-list function resolution) could not parse or tokenize
     /// a source file as Rust.
@@ -28,8 +22,6 @@ impl Code {
             Self::Io => "io",
             Self::CargoMetadata => "cargo-metadata-failed",
             Self::InvalidMetadata => "invalid-metadata",
-            Self::InvalidLockfile => "invalid-lockfile",
-            Self::Stale => "stale-clone",
             Self::SourceParse => "source-parse-failed",
         }
     }
@@ -56,18 +48,6 @@ impl Error {
         }
     }
 
-    /// The message alone, without the `{code}: ` prefix `Display` adds --
-    /// so a caller that wraps this error's text into a larger report (for
-    /// example `run_direction` folding a `Stale` error into the revisions
-    /// summary, #249 review round 4) does not print the code twice.
-    pub(crate) fn message(&self) -> &str {
-        &self.message
-    }
-
-    pub(crate) fn at(self, path: &Path) -> Self {
-        Self::new(self.code, format!("{} ({})", self.message, path.display()))
-    }
-
     pub(crate) fn io(path: &Path, source: io::Error) -> Self {
         Self::new(Code::Io, format!("{source} ({})", path.display()))
     }
@@ -82,12 +62,7 @@ impl Error {
     pub(crate) fn exit_code(&self) -> u8 {
         match self.code {
             Code::Usage => 2,
-            Code::Io
-            | Code::CargoMetadata
-            | Code::InvalidMetadata
-            | Code::InvalidLockfile
-            | Code::SourceParse => 3,
-            Code::Stale => 4,
+            Code::Io | Code::CargoMetadata | Code::InvalidMetadata | Code::SourceParse => 3,
         }
     }
 }

@@ -24,9 +24,8 @@ const SHARED_LEAVES: [&str; 3] = ["quire-exact", "quire-semantic-value", "quire-
 /// [`SHARED_LEAVES`] contributes none. A shared leaf depends on no QSL module
 /// above it and on no IR, RT or CG crate (ADR-011 §6.1 "K is a leaf" and the
 /// SV row), so an edge into it closes no FB-11 cycle, and ADR-011 FB-05 places
-/// it outside the bypass. The exemption is local to edge extraction: FR-061's
-/// duplicate-revision check still classifies a QSL-sourced shared leaf as QSL
-/// through `classify`.
+/// it outside the bypass. The exemption is local to edge extraction:
+/// `classify` itself still classifies a QSL-sourced shared leaf as QSL.
 fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
     if SHARED_LEAVES.contains(&name) {
         None
@@ -39,18 +38,13 @@ fn edge_repo(name: &str, source: Option<&str>) -> Option<Repo> {
 /// resolved normal/dev edge whose source and target both classify as one of
 /// the four ADR-011 repositories (`classify`, by package name and source
 /// URL, so a `[patch]` or a differently pinned revision still resolves).
-pub(crate) fn edges_for_manifest(manifest_path: &Path, offline: bool) -> Result<Vec<Edge>> {
-    let mut command = Command::new("cargo");
-    command
+pub(crate) fn edges_for_manifest(manifest_path: &Path) -> Result<Vec<Edge>> {
+    let output = Command::new("cargo")
         .arg("metadata")
         .arg("--format-version=1")
         .arg("--locked")
         .arg("--manifest-path")
-        .arg(manifest_path);
-    if offline {
-        command.arg("--offline");
-    }
-    let output = command
+        .arg(manifest_path)
         .output()
         .map_err(|error| Error::io(manifest_path, error))?;
     if !output.status.success() {
@@ -70,88 +64,6 @@ pub(crate) fn edges_for_manifest(manifest_path: &Path, offline: bool) -> Result<
         )
     })?;
     parse_edges(&document)
-}
-
-/// The commit `root`'s working tree currently has checked out.
-pub(crate) fn git_head(root: &Path) -> Result<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .arg("rev-parse")
-        .arg("HEAD")
-        .output()
-        .map_err(|error| Error::io(root, error))?;
-    if !output.status.success() {
-        return Err(Error::new(
-            Code::Io,
-            format!(
-                "git -C {} rev-parse HEAD failed: {}",
-                root.display(),
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
-}
-
-/// The sha `refs/heads/<branch>` currently points to on `url`'s remote.
-fn git_ls_remote_head(url: &str, branch: &str) -> Result<String> {
-    let output = Command::new("git")
-        .args(["ls-remote", url, branch])
-        .output()
-        .map_err(|error| {
-            Error::new(
-                Code::Io,
-                format!("cannot run git ls-remote {url} {branch}: {error}"),
-            )
-        })?;
-    if !output.status.success() {
-        return Err(Error::new(
-            Code::Io,
-            format!(
-                "git ls-remote {url} {branch} failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        ));
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let sha = text.split_whitespace().next().ok_or_else(|| {
-        Error::new(
-            Code::Io,
-            format!("git ls-remote {url} {branch} returned no ref"),
-        )
-    })?;
-    Ok(sha.to_owned())
-}
-
-/// The pure comparison `require_current_head` shells out to reach: exercised
-/// directly by synthetic fixtures (the same "CLI layer shells out, the check
-/// itself stays pure" split `graph.rs` already uses), since a real
-/// `git ls-remote` call cannot be part of a hermetic unit test.
-fn check_freshness(label: &str, url: &str, resolved: &str, remote_head: &str) -> Result<()> {
-    if remote_head != resolved {
-        return Err(Error::new(
-            Code::Stale,
-            format!(
-                "{label}: resolved {resolved} does not match {url}'s current main head \
-                 {remote_head} -- this clone is stale, not current head; refresh it before \
-                 re-running, or pass --offline to skip this check and report the resolved \
-                 revision unverified"
-            ),
-        ));
-    }
-    Ok(())
-}
-
-/// Fails loudly (`Code::Stale`) if `resolved` -- the commit a local clone
-/// actually has checked out -- is not `url`'s current `main` head. Without
-/// this, `direction` trusts an unguarded local clone: the same command
-/// against a fresh checkout and against a clone that fell behind head can
-/// report two different, silently different answers with no warning (#249
-/// review round 2 H-2).
-pub(crate) fn require_current_head(label: &str, url: &str, resolved: &str) -> Result<()> {
-    let remote_head = git_ls_remote_head(url, "main")?;
-    check_freshness(label, url, resolved, &remote_head)
 }
 
 fn parse_edges(document: &Value) -> Result<Vec<Edge>> {
@@ -293,43 +205,6 @@ mod tests {
         assert_eq!(edges[0].kind, EdgeKind::Dev);
     }
 
-    /// tc_arch_lint_metadata_004 (#249 review round 2 H-2): a clone whose
-    /// resolved head does not match the remote's current `main` fails with
-    /// `Code::Stale`, naming both revisions and the url -- the freshness
-    /// guard `direction` now applies to every non-`--qsl` root.
-    #[trace("TC-156", "FR-059-AC-7")]
-    #[test]
-    fn tc_arch_lint_metadata_004_stale_clone_is_rejected() {
-        let error = check_freshness(
-            "quire-contract-codegen",
-            "https://github.com/agent-ix/quire-contract-codegen",
-            "bda01f1de7f2e25890434b7f062e46e5fdc80563",
-            "a4b2a733fd341fc108cdb2ea926fdde6225ea4c1",
-        )
-        .unwrap_err();
-        assert_eq!(error.code, Code::Stale);
-        assert!(error
-            .to_string()
-            .contains("bda01f1de7f2e25890434b7f062e46e5fdc80563"));
-        assert!(error
-            .to_string()
-            .contains("a4b2a733fd341fc108cdb2ea926fdde6225ea4c1"));
-    }
-
-    /// tc_arch_lint_metadata_005: a clone whose resolved head matches the
-    /// remote's current `main` passes.
-    #[trace("TC-156", "FR-059-AC-7")]
-    #[test]
-    fn tc_arch_lint_metadata_005_fresh_clone_passes() {
-        check_freshness(
-            "quire-contract-ir",
-            "https://github.com/agent-ix/quire-contract-ir",
-            "ef11217ad803502dd4bbd967f701a717c72693d0",
-            "ef11217ad803502dd4bbd967f701a717c72693d0",
-        )
-        .unwrap();
-    }
-
     /// tc_arch_lint_metadata_006 (positive control on real data): resolving
     /// QSL's own workspace manifest through `edges_for_manifest`, the path
     /// `direction` takes for `--qsl`, yields QSL's normal edge on the
@@ -340,7 +215,7 @@ mod tests {
     #[test]
     fn tc_arch_lint_metadata_006_real_qsl_manifest_yields_qsl_to_ir_model_edge() {
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let edges = edges_for_manifest(&workspace.join("Cargo.toml"), false).unwrap();
+        let edges = edges_for_manifest(&workspace.join("Cargo.toml")).unwrap();
         let expected = Edge {
             from: Repo::Qsl,
             to: Repo::Ir,
