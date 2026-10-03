@@ -279,7 +279,7 @@ impl Serialize for NodeRef {
     }
 }
 
-/// A [`NodeRef`] serializes as a [`NodeIdWire`], so it nests as deep.
+/// A [`NodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
 impl FixedShape for NodeRef {
     const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
 }
@@ -447,7 +447,7 @@ impl Serialize for FrameField {
     }
 }
 
-/// A [`FrameField`] serializes as a [`FrameFieldWire`], so it nests as deep.
+/// A [`FrameField`] serializes as a `FrameFieldWire`, so it nests as deep.
 impl FixedShape for FrameField {
     const DEPTH: usize = <FrameFieldWire<'static> as FixedShape>::DEPTH;
 }
@@ -490,7 +490,7 @@ impl Serialize for PackageRef {
     }
 }
 
-/// A [`PackageRef`] serializes as a [`PackageIdWire`], so it nests as deep.
+/// A [`PackageRef`] serializes as a `PackageIdWire`, so it nests as deep.
 impl FixedShape for PackageRef {
     const DEPTH: usize = <PackageIdWire<'static> as FixedShape>::DEPTH;
 }
@@ -519,7 +519,7 @@ impl Serialize for WireNodeRef {
     }
 }
 
-/// A [`WireNodeRef`] serializes as a [`NodeIdWire`], so it nests as deep.
+/// A [`WireNodeRef`] serializes as a `NodeIdWire`, so it nests as deep.
 impl FixedShape for WireNodeRef {
     const DEPTH: usize = <NodeIdWire<'static> as FixedShape>::DEPTH;
 }
@@ -630,7 +630,7 @@ impl Serialize for LiteralValue {
     }
 }
 
-/// A [`LiteralValue`] serializes as a [`LiteralWire`], so it nests as deep.
+/// A [`LiteralValue`] serializes as a `LiteralWire`, so it nests as deep.
 impl FixedShape for LiteralValue {
     const DEPTH: usize = <LiteralWire<'static> as FixedShape>::DEPTH;
 }
@@ -863,7 +863,7 @@ impl Serialize for OperationMode {
     }
 }
 
-/// An [`OperationMode`] serializes as an [`OperationModeWire`], so it nests
+/// An [`OperationMode`] serializes as an `OperationModeWire`, so it nests
 /// as deep.
 impl FixedShape for OperationMode {
     const DEPTH: usize = <OperationModeWire as FixedShape>::DEPTH;
