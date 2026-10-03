@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Definition and model selection validation in the parser: each invalid
-//! identity of a `profile`, and each invalid identity, version or digest of
-//! an `import` or `model` declaration, is located at its own literal. Formerly in the root crate's
+//! identity of a `profile`, and each invalid identity of an `import`, and each
+//! invalid identity, version or digest of a `model` declaration, is located at its own literal. Formerly in the root crate's
 //! `complete::package_tests`; it parses and never resolves, so it is
 //! layer 1's.
 use ix_trace_rs::trace;
@@ -24,7 +24,7 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
 
     for (declaration_kind, components) in [
         ("profile", &["identity"][..]),
-        ("import", &["identity", "version", "digest"][..]),
+        ("import", &["identity"][..]),
         ("model", &["identity", "version", "digest"][..]),
     ] {
         for &invalid_component in components {
@@ -38,20 +38,14 @@ fn selection_validation_locates_each_invalid_component_for_every_declaration_kin
             } else {
                 "1"
             };
-            // An import records a bare 64-hex `package_id` (ADR-015 D-2).
-            let bare_digest = "a".repeat(64);
             let digest = if invalid_component == "digest" {
                 "not-a-digest"
-            } else if declaration_kind == "import" {
-                &bare_digest
             } else {
                 &valid_digest
             };
             let declaration = match declaration_kind {
                 "profile" => format!("profile Complete = \"{identity}\";"),
-                "import" => format!(
-                    "import \"{identity}\" version \"{version}\" digest \"{digest}\" as Base;"
-                ),
+                "import" => format!("import \"{identity}\" as Base;"),
                 "model" => {
                     format!("model M = \"{identity}\" version \"{version}\" digest \"{digest}\";")
                 }
@@ -134,32 +128,28 @@ fn a_model_digest_keeps_the_slot_its_prefix_names() {
     assert_eq!(parsed.diagnostics(), []);
 }
 
-/// FR-099-AC-2 (TC-446 step 2): an import's digest is exactly 64 lowercase
-/// hexadecimal characters, read as a `quire.package.semantic/v2` digest
-/// record. A `sha256:` prefix, uppercase hex, and 63 or 65 characters each
-/// refuse with `invalid-digest` at the digest string.
+/// FR-099-AC-2 (TC-446 step 2): an `import` names its library by identity
+/// alone, `import "L" [as a];`. A `version` or `digest` token after the
+/// identity is a syntax error, and the selection is not recorded.
 #[trace("FR-099-AC-2", "TC-446")]
 #[test]
-fn an_import_digest_is_bare_lowercase_hex() {
-    use qsl_foundation::digest::{DigestDomain, DigestRecord};
-    let hex = "d".repeat(64);
-    let parse_import = |digest: &str| {
+fn an_import_names_only_its_library_identity() {
+    let parse_import = |import: &str| {
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
-             import \"test/geometry\" version \"1\" digest \"{digest}\" as g;\n\
+             {import}\n\
              record R {{ datum: Integer; }}\n"
         );
-        let parsed = parse(
+        parse(
             SourceIdentity::new("a", "u", "git", "1"),
             "unit.native",
             source.as_bytes(),
             Limits::default(),
         )
-        .unwrap();
-        (source, parsed)
+        .unwrap()
     };
-    let (_, parsed) = parse_import(&hex);
+    let parsed = parse_import("import \"test/geometry\" as g;");
     assert!(
         parsed.diagnostics().is_empty(),
         "{:?}",
@@ -167,32 +157,20 @@ fn an_import_digest_is_bare_lowercase_hex() {
     );
     let import = &parsed.selections().imports[0];
     assert_eq!(import.identity, "test/geometry");
-    assert_eq!(import.version, "1");
-    assert_eq!(
-        import.digest,
-        DigestRecord::from_domain_and_hex(DigestDomain::PackageSemanticV2, &hex).unwrap()
-    );
-    for invalid in [
-        format!("sha256:{hex}"),
-        "D".repeat(64),
-        "d".repeat(63),
-        "d".repeat(65),
+    assert_eq!(import.alias.as_deref(), Some("g"));
+    let bare = parse_import("import \"test/geometry\";");
+    assert!(bare.diagnostics().is_empty());
+    assert_eq!(bare.selections().imports[0].alias, None);
+
+    let hex = "d".repeat(64);
+    for old in [
+        "import \"test/geometry\" version \"1\" as g;".to_owned(),
+        format!("import \"test/geometry\" digest \"{hex}\" as g;"),
+        format!("import \"test/geometry\" version \"1\" digest \"{hex}\" as g;"),
     ] {
-        let (source, parsed) = parse_import(&invalid);
-        assert!(parsed.selections().imports.is_empty(), "{invalid}");
-        assert_eq!(parsed.diagnostics().len(), 1, "{invalid}");
-        let diagnostic = &parsed.diagnostics()[0];
-        assert_eq!(diagnostic.code, Code::InvalidDigest, "{invalid}");
-        assert_eq!(diagnostic.cause.as_str(), "invalid-digest", "{invalid}");
-        let literal = format!("\"{invalid}\"");
-        let start = source.find(&literal).unwrap();
-        assert_eq!(
-            diagnostic.byte_span().unwrap(),
-            qsl_foundation::Span {
-                start,
-                end: start + literal.len()
-            },
-            "{invalid}"
-        );
+        let parsed = parse_import(&old);
+        assert!(!parsed.is_admissible(), "{old}");
+        assert!(parsed.selections().imports.is_empty(), "{old}");
+        assert_eq!(parsed.diagnostics()[0].code, Code::InvalidSyntax, "{old}");
     }
 }

@@ -67,41 +67,6 @@ fn geometry() -> SuppliedLibrary {
     }
 }
 
-/// `library`'s own `package_id`, compiled alone under its own identity.
-fn library_id(library: &SuppliedLibrary) -> qsl_semantics::library::PackageId {
-    let cancel = Cancel::new();
-    let limits = SpineLimits::default();
-    let parsed = parse(
-        &ParseRequest {
-            source: &library.source,
-            path: &library.path,
-            bytes: &library.bytes,
-        },
-        limits.source,
-        &cancel,
-    )
-    .expect("the library parses")
-    .into_value();
-    let models = select(&parsed, &BTreeMap::new(), limits.model, &cancel)
-        .expect("a library with no model selects nothing")
-        .into_value();
-    let checked = check(
-        &parsed,
-        &models,
-        &DependencyInput::default(),
-        &LockEvidence::default(),
-        limits,
-        &cancel,
-    )
-    .expect("the library checks")
-    .into_value();
-    package(&checked, PackageLimits::default(), &cancel)
-        .expect("the library emits")
-        .into_value()
-        .package()
-        .package_id()
-}
-
 /// Every operation's output over one source, from a live handle.
 struct Chain {
     parsed: ParsedSource,
@@ -805,11 +770,9 @@ fn the_composition_emits_packages_the_i2_reader_reads_back() {
     // A library request: the unit imports a library the request supplies.
     let geometry = geometry();
     let dependencies = DependencyInput::new(vec![geometry.clone()]).expect("admissible");
-    let library_id = library_id(&geometry);
     let unit = format!(
-        "{HEADER}import \"test/geometry\" version \"1\" digest \"{}\" as g;\n\
-         function h using v(): Boolean pure {{ true }}\n",
-        library_id.hex()
+        "{HEADER}import \"test/geometry\" as g;\n\
+         function h using v(): Boolean pure {{ true }}\n"
     );
     let importing = chain_of(
         unit.as_bytes(),
@@ -907,11 +870,9 @@ fn each_operation_refuses_at_the_stage_that_owns_the_defect() {
 #[test]
 fn the_provision_names_every_source_the_package_was_compiled_from() {
     let geometry = geometry();
-    let library_id = library_id(&geometry);
     let unit = format!(
-        "{HEADER}import \"test/geometry\" version \"1\" digest \"{}\" as g;\n\
-         function h using v(): Boolean pure {{ true }}\n",
-        library_id.hex()
+        "{HEADER}import \"test/geometry\" as g;\n\
+         function h using v(): Boolean pure {{ true }}\n"
     );
     let chain = chain_of(
         unit.as_bytes(),

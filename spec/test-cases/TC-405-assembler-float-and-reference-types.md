@@ -31,7 +31,7 @@ alias is `v`.
 3. Assemble a unit, with no `model` selection and no admitted domain
    package, holding `function g using v(r: Reference<M::T>): Boolean pure { true }`.
 4. Spine-compile, with no library supplied, a unit that declares
-   `import "test/units" version "2" digest "<64 lowercase hex>" as u;`
+   `import "test/units" as u;`
    (FR-091-AC-24).
 
 Tag the tests `#[trace("FR-091-AC-19", "FR-091-AC-23", "TC-405")]`, and step 4's `#[trace("TC-405", "FR-091-AC-24")]`.

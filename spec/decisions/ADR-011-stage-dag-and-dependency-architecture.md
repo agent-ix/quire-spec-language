@@ -524,7 +524,7 @@ profile by identity alone (amended 2026-09-26).
 
 A `dependency_selections` entry is a QSpec `DependencySelection`
 `{identity, package_id}`: the library identity an
-`import "L" version "v" digest "d"` names (the version is not carried), and the dependency's own
+`import "L"` names, and the dependency's own
 `quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The lock
 and the identity preimage hold the same entries, one per library identity,
 in strictly ascending UTF-8 byte order of `identity`, so each dependency's

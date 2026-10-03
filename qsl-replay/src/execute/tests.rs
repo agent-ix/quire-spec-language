@@ -1000,9 +1000,8 @@ impl Importing {
         .package_id();
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
-             import \"test/units\" version \"2\" digest \"{}\" as u;\n\
-             function q using v(x: Int[0, 9]): Boolean pure {{ u::big(x) }}\n",
-            units_id.hex()
+             import \"test/units\" as u;\n\
+             function q using v(x: Int[0, 9]): Boolean pure {{ u::big(x) }}\n"
         );
         let dependencies =
             crate::spine::DependencyInput::new(vec![crate::spine::SuppliedLibrary {
@@ -1076,8 +1075,9 @@ impl Importing {
 /// FR-098-AC-6 (TC-444 step 7): a proved package importing `test/units`
 /// replays from the byte provision alone, the `dependencies` entry saying
 /// which source is `test/units`; `q(3)` is `false` and agrees. An edited
-/// `test/units` source refuses `Recompile` carrying
-/// `DependencyIdentityMismatch` at the import; a changed entry
+/// `test/units` source recompiles to another importing package and refuses
+/// `PackageIdMismatch`, since the lock binds the library's recomputed
+/// `package_id`; a changed entry
 /// `package_id` alone refuses `DependencyIdentityMismatch` naming
 /// `test/units`.
 #[trace("TC-444", "FR-098-AC-6")]
@@ -1102,25 +1102,16 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     stale.sources = vec![source_ref(UNITS_IDENTITY, REVISION, edited.as_bytes())];
     let refused = replay(importing.request(vec![stale], &[edited.as_bytes()]))
         .expect_err("test/units no longer compiles to the recorded id");
-    let ReplayRefusal::Recompile(refusal) = &refused else {
-        panic!("expected a recompile refusal, got {refused:?}");
-    };
     assert_eq!(refused.code(), Code::StaleDependency);
-    let CompileRefusal::Import {
-        refusal:
-            crate::spine::ImportRefusal::DependencyIdentityMismatch {
-                identity,
-                recorded,
-                recompiled,
-            },
-        ..
-    } = &**refusal
-    else {
-        panic!("expected DependencyIdentityMismatch, got {refusal:?}");
-    };
-    assert_eq!(identity.as_str(), "test/units");
-    assert_eq!(*recorded, importing.units_id.record());
-    assert_ne!(*recompiled, importing.units_id);
+    assert!(
+        matches!(
+            &refused,
+            ReplayRefusal::PackageIdMismatch { requested, recompiled }
+                if *requested == importing.compiled.emitted.package_id().record()
+                    && *recompiled != importing.compiled.emitted.package_id()
+        ),
+        "{refused:?}"
+    );
 
     // Only the entry's `package_id` changed.
     let other = importing.compiled.emitted.package_id();

@@ -1216,8 +1216,6 @@ mod library_import {
                 .iter()
                 .map(|imported| ImportDeclaration {
                     library: name(imported),
-                    version: "1".to_owned(),
-                    digest: PackageId::of_preimage(&preimage(imported, *imported == "L")).record(),
                     qualifier: Some(imported.to_lowercase()),
                 })
                 .collect(),

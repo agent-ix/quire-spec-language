@@ -13,7 +13,6 @@ use super::grammar::{self, Grammar, Rule, Terminal};
 use super::{CompleteCode, CompleteDiagnostic, ParsedSource};
 use crate::lexer::Limits;
 use crate::token::{Kind, LexError};
-use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::selection::{
     valid_selection_identity, ImportSelection, InvalidModelComponent, ModelDigest, ModelRef,
     ModelSelection, ProfileSelection, SourceSelections,
@@ -329,50 +328,17 @@ fn extract_selections(
             })
     }
 
-    /// An `import` selection (ADR-015 D-2): the identity and version under
-    /// the profile bounds, and a digest of exactly 64 lowercase hexadecimal
-    /// characters, read as a `quire.package.semantic/v2` digest record. Any
-    /// other spelling, a `sha256:` prefix included, is `invalid-digest`.
-    fn import<'a>(
-        identity: &'a Significant,
-        version: &'a Significant,
-        digest: &'a Significant,
-    ) -> Result<(String, String, DigestRecord), InvalidDefinition<'a>> {
-        let invalid_identity = || InvalidDefinition {
-            token: identity,
-            cause: HostCause::SelectionIdentity,
-            message: "import identity must be non-empty and at most 512 bytes",
-        };
-        let invalid_version = || InvalidDefinition {
-            token: version,
-            cause: HostCause::SelectionVersion,
-            message: "import version must be non-empty and at most 256 bytes",
-        };
-        let invalid_digest = || InvalidDefinition {
-            token: digest,
-            cause: HostCause::SelectionDigest,
-            message: "import digest must be exactly 64 lowercase hexadecimal characters",
-        };
-        let identity_value = text(identity).ok_or_else(invalid_identity)?;
-        let version_value = text(version).ok_or_else(invalid_version)?;
-        // Components first, so an invalid identity or version is located
-        // before the digest is read.
-        ModelRef::validate_components(identity_value, version_value).map_err(|component| {
-            match component {
-                InvalidModelComponent::Identity => invalid_identity(),
-                InvalidModelComponent::Version => invalid_version(),
-            }
-        })?;
-        let digest_value = DigestRecord::from_domain_and_hex(
-            DigestDomain::PackageSemanticV2,
-            text(digest).ok_or_else(invalid_digest)?,
-        )
-        .map_err(|_| invalid_digest())?;
-        Ok((
-            identity_value.to_owned(),
-            version_value.to_owned(),
-            digest_value,
-        ))
+    /// An `import` selection (ADR-015 D-2): the library identity alone,
+    /// under the profile bounds. The library is selected by identity.
+    fn import_identity(identity: &Significant) -> Result<String, InvalidDefinition<'_>> {
+        text(identity)
+            .filter(|value| valid_selection_identity(value))
+            .map(str::to_owned)
+            .ok_or(InvalidDefinition {
+                token: identity,
+                cause: HostCause::SelectionIdentity,
+                message: "import identity must be non-empty and at most 512 bytes",
+            })
     }
 
     fn model<'a>(
@@ -448,22 +414,15 @@ fn extract_selections(
                     Err(invalid) => record_invalid(source, invalid, diagnostics),
                 }
             }
-            Production::ImportDeclaration => {
-                let (Some(version), Some(digest)) = (captured.version, captured.digest) else {
-                    continue;
-                };
-                match import(captured.identity, version, digest) {
-                    Ok((identity, version, digest)) => selections.imports.push(ImportSelection {
-                        alias: captured.alias.map(|alias| alias.spelling.to_string()),
-                        identity,
-                        version,
-                        digest,
-                        span: node.span,
-                        identity_span: captured.identity.span,
-                    }),
-                    Err(invalid) => record_invalid(source, invalid, diagnostics),
-                }
-            }
+            Production::ImportDeclaration => match import_identity(captured.identity) {
+                Ok(identity) => selections.imports.push(ImportSelection {
+                    alias: captured.alias.map(|alias| alias.spelling.to_string()),
+                    identity,
+                    span: node.span,
+                    identity_span: captured.identity.span,
+                }),
+                Err(invalid) => record_invalid(source, invalid, diagnostics),
+            },
             Production::Model => {
                 let Some(alias) = captured.alias else {
                     continue;

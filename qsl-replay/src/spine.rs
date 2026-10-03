@@ -26,7 +26,6 @@ use std::collections::BTreeMap;
 use qsl_cst::{CompleteDiagnostic, HostCause};
 use qsl_forms::{FormsCause, FormsRefusal};
 use qsl_foundation::diagnostic::{LimitExceeded, LimitsField, Locus};
-use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
@@ -34,7 +33,7 @@ use qsl_semantics::check::{
     AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
     ShadowedDeclaration,
 };
-use qsl_semantics::library::{LibraryName, PackageId};
+use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{UnitIntakeCause, UnitIntakeRefusal};
 use quire_semantic_value::checking::CheckingLimits;
@@ -258,9 +257,7 @@ impl CompileRefusal {
             self,
             Self::DependencyInput(_)
                 | Self::Import {
-                    refusal: ImportRefusal::Cycle { .. }
-                        | ImportRefusal::Diamond { .. }
-                        | ImportRefusal::DepthLimit { .. },
+                    refusal: ImportRefusal::Cycle { .. } | ImportRefusal::DepthLimit { .. },
                     ..
                 }
         )
@@ -766,18 +763,6 @@ fn same_owner(first: &SourceIdentity, second: &SourceIdentity) -> bool {
     first.authority == second.authority && first.identity == second.identity
 }
 
-/// One import's selection as the S4 source resolution first visited it: the
-/// version and digest it records and the dependency path that reached it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VisitedImport {
-    /// The library identities from the unit's import down to this library.
-    pub path: Vec<LibraryName>,
-    /// The version the import names.
-    pub version: String,
-    /// The digest the import records.
-    pub digest: DigestRecord,
-}
-
 /// Why the S4 source resolution refused an `import` (ADR-015 D-1).
 #[derive(Debug, thiserror::Error)]
 pub enum ImportRefusal {
@@ -788,23 +773,6 @@ pub enum ImportRefusal {
         /// The identity path, from the library the cycle returns to, back
         /// to it.
         path: Vec<LibraryName>,
-    },
-    /// Step 2: an earlier import in the closure selects the same identity
-    /// with another version or digest
-    /// (`invalid_package`/`conflicting-definition`, QSpec FR-307's diamond
-    /// rule). Closure-level.
-    #[error(
-        "invalid_package/conflicting-definition: {} and {} select {identity} differently",
-        display_path(&.first.path),
-        display_path(&.second.path)
-    )]
-    Diamond {
-        /// The library identity.
-        identity: LibraryName,
-        /// The earlier import.
-        first: Box<VisitedImport>,
-        /// The later, conflicting import.
-        second: Box<VisitedImport>,
     },
     /// Step 3: no library is supplied under the import's identity
     /// (`missing_import`/`missing-selection`).
@@ -827,36 +795,7 @@ pub enum ImportRefusal {
     /// a broken invariant (`runtime_invariant`).
     #[error("runtime_invariant: an admitted import names the empty library identity")]
     UnnamedImport,
-    /// Step 3: the library supplied under the import's identity has another
-    /// version (`stale_dependency`/`revision-mismatch`).
-    #[error(
-        "stale_dependency/revision-mismatch: {identity} is imported at version {imported} but supplied at {supplied}"
-    )]
-    RevisionMismatch {
-        /// The library identity.
-        identity: LibraryName,
-        /// The version the import names.
-        imported: String,
-        /// The version the library is supplied at.
-        supplied: String,
-    },
-    /// Step 5: the library's recomputed `package_id` is not the digest the
-    /// import records (`stale_dependency`/`byte-digest-mismatch`,
-    /// ADR-011 §4).
-    #[error(
-        "stale_dependency/byte-digest-mismatch: {identity} is recorded as {} but its source compiles to {}",
-        .recorded.hex(),
-        .recompiled.hex()
-    )]
-    DependencyIdentityMismatch {
-        /// The library identity.
-        identity: LibraryName,
-        /// The digest the import records.
-        recorded: DigestRecord,
-        /// The library's recomputed `package_id`.
-        recompiled: PackageId,
-    },
-    /// Step 6: the I2 read of the library's emitted bytes built no import
+    /// Step 5: the I2 read of the library's emitted bytes built no import
     /// view.
     #[error("the I2 read of {identity} refused: {refusal}")]
     View {
@@ -871,13 +810,10 @@ impl ImportRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::Cycle { .. } | Self::Diamond { .. } => Code::InvalidPackage,
+            Self::Cycle { .. } => Code::InvalidPackage,
             Self::MissingSelection { .. } => Code::MissingImport,
             Self::DepthLimit { .. } => Code::StageLimitExceeded,
             Self::UnnamedImport => Code::RuntimeInvariant,
-            Self::RevisionMismatch { .. } | Self::DependencyIdentityMismatch { .. } => {
-                Code::StaleDependency
-            }
             Self::View { refusal, .. } => refusal.code(),
         }
     }
@@ -886,12 +822,9 @@ impl ImportRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::Cycle { .. } => Some("definition-cycle"),
-            Self::Diamond { .. } => Some("conflicting-definition"),
             Self::MissingSelection { .. } => Some("missing-selection"),
             Self::DepthLimit { .. } => Some("nesting-depth-exceeded"),
             Self::UnnamedImport => None,
-            Self::RevisionMismatch { .. } => Some("revision-mismatch"),
-            Self::DependencyIdentityMismatch { .. } => Some("byte-digest-mismatch"),
             Self::View { .. } => None,
         }
     }
@@ -1216,9 +1149,8 @@ mod tests {
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
              profile v = \"quire.value.complete/v1\";\n\
-             import \"test/units\" version \"2\" digest \"{}\" as u;\n\
-             function f using v(): Boolean pure {{ true }}\n",
-            "b".repeat(64)
+             import \"test/units\" as u;\n\
+             function f using v(): Boolean pure {{ true }}\n"
         );
         let refusal = compose(
             SourceIdentity::new("a", "u", "git", "1"),

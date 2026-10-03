@@ -85,3 +85,15 @@ four. Scope: FR-087-AC-12.
   variant, or an admission, fails this step.
 - Step 5: no new refusal variant is required; a passing implementation
   needs no change to `LibraryRefusal`'s variant set beyond relocation.
+
+## Amendment
+
+An import names its library by identity alone (ADR-015 D-2), so
+`resolve_libraries` selects the first supplied package of the import's
+identity. `ConflictingDefinition` is removed: two import paths reach one
+supplied package. `StaleDependency` is raised only by the §4 binding's
+condition 3, not by an import declaration, and `resolve_libraries` returns
+`MissingImport` for an identity no supplied package holds. Rows and
+fixtures for `ConflictingDefinition` and for an import-sourced
+`StaleDependency` no longer apply; `RefusalClass::class` still classifies
+`StaleDependency` for the binding.
