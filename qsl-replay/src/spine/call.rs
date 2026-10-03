@@ -28,9 +28,7 @@ use qsl_semantics::check::CheckedGraph;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{
-    Cancel, Integer, Meter, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType,
-};
+use quire_exact::{Cancel, Integer, Outcome, Refusal, ScalarLimits, Undefined, Value, ValueType};
 use quire_semantic_value::location::Location;
 
 use super::lifecycle as front_end;
@@ -321,16 +319,17 @@ pub fn run(
     let package = checked.package();
     let selected = select(package, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
-    let mut meter = Meter::new(call.accounting);
-    use qsl_eval::value::CheckedPackageEvaluation;
-    let evaluation = package
-        .call(
-            &selected.name,
-            arguments,
-            &ObjectEnvironment::default(),
-            &mut meter,
-        )
-        .map_err(convert_call_failure)?;
+    let evaluation = front_end::execute(
+        &checked,
+        &front_end::ExecuteRequest {
+            function: &selected.name,
+            arguments: &arguments,
+            objects: &ObjectEnvironment::default(),
+        },
+        call.accounting,
+        &cancel,
+    )
+    .map_err(convert_call_failure)?;
     // FND-016: the unit's and every resolved library's source, reused
     // exactly as the check already read them (FR-100: a locus is resolved
     // over "the `Source` whose reference equals the region's reference").

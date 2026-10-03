@@ -43,7 +43,6 @@ pub use lifecycle::{
     check, package, parse, refusal_or_fault, select, AdmittedModels, CheckedUnit, EmittedUnit,
     FrontEndFailure, ParseRequest, ParsedSource,
 };
-pub(crate) use lifecycle::{execute, ExecuteRequest};
 
 #[cfg(test)]
 pub(crate) use lifecycle::{compose, ComposedUnit};
