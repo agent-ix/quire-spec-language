@@ -605,8 +605,8 @@ mod digest_tests {
     /// FR-106 check 1.3: bytes the shared reader refuses -- a repeated
     /// member name, a lone surrogate escape, `1e400` -- are digested raw and
     /// never refused as malformed. A repeated-name document therefore
-    /// admits under its raw digest and refuses `content-mismatch` under the
-    /// RFC 8785 digest of its last-wins value.
+    /// admits under its raw digest and refuses `byte-digest-mismatch` under
+    /// the RFC 8785 digest of its last-wins value.
     #[trace("TC-465", "FR-106-AC-3")]
     #[test]
     fn bytes_the_shared_reader_refuses_are_digested_raw() {

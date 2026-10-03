@@ -5601,7 +5601,7 @@ mod tests {
     /// leading byte order mark at byte 0: RFC 8785 requires I-JSON, so
     /// neither document has a JCS digest. Admission digests such bytes raw,
     /// so a repeated-name document offered under the JCS digest of its
-    /// last-wins value refuses `content-mismatch`.
+    /// last-wins value refuses `byte-digest-mismatch`.
     #[trace("TC-145", "FR-056-AC-12")]
     #[test]
     fn a_repeated_member_name_or_byte_order_mark_does_not_parse() {
