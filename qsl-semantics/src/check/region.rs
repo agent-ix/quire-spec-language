@@ -69,12 +69,18 @@ impl SpanMemo {
     }
 }
 
+/// The source a region is read from, and the document it is embedded in.
+#[derive(Clone, Copy)]
+struct Document<'a> {
+    source: &'a RawSourceRef,
+    embedding: Option<&'a SourceMap>,
+}
+
 /// The region `location` names, given each function's and each state
 /// clause's form spans by declaration index.
 fn resolve<'s>(
     memo: &SpanMemo,
-    source: &RawSourceRef,
-    embedding: Option<&SourceMap>,
+    document: Document<'_>,
     spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     clause_spans: impl Fn(usize) -> Option<&'s DeclarationSpans>,
     type_spans: &BTreeMap<String, Span>,
@@ -93,7 +99,7 @@ fn resolve<'s>(
             return None
         }
     };
-    region(source, embedding, span)
+    region(document.source, document.embedding, span)
 }
 
 /// `span` as a region of `source`. For a body embedded in a document
@@ -126,8 +132,10 @@ impl PackageDeclarations {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &SpanMemo::default(),
-            &self.source,
-            self.embedding.as_deref(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.functions.get(index)?.spans(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.declared_type_spans,
@@ -187,8 +195,10 @@ impl DeclarationRegions {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &SpanMemo::default(),
-            &self.source,
-            self.embedding.as_deref(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.spans.get(index)?.as_ref(),
             |index| self.clause_spans.get(index),
             &self.type_spans,
@@ -261,8 +271,10 @@ impl CheckedGraph {
     pub fn region(&self, location: &Location) -> Option<SourceRegion> {
         resolve(
             &SpanMemo::default(),
-            &self.source,
-            self.embedding.as_deref(),
+            Document {
+                source: &self.source,
+                embedding: self.embedding.as_deref(),
+            },
             |index| self.form_spans.get(index)?.as_ref(),
             |index| Some(&self.state_clauses.get(index)?.spans),
             &self.type_spans,
@@ -280,8 +292,10 @@ impl CheckedGraph {
         move |location| {
             resolve(
                 &memo,
-                &self.source,
-                self.embedding.as_deref(),
+                Document {
+                    source: &self.source,
+                    embedding: self.embedding.as_deref(),
+                },
                 |index| self.form_spans.get(index)?.as_ref(),
                 |index| Some(&self.state_clauses.get(index)?.spans),
                 &self.type_spans,
