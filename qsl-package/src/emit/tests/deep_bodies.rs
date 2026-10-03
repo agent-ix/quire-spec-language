@@ -25,8 +25,10 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 fn deep_source(label: &str) -> String {
     let mut source =
         format!("{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ ");
-    for level in 1..DEEP {
+    for level in 0..DEEP {
         match label {
+            // 99,999 additions join 100,000 terms.
+            "sum" if level == 0 => {}
             "sum" => source.push_str("x + "),
             "else if" => source.push_str("if a then x else "),
             _ => source.push_str(&format!("let b{level} = x in ")),

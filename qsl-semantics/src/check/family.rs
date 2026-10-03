@@ -731,8 +731,8 @@ impl<'a> TargetTypes<'a> {
 /// which is the reimplementation-scale change FR-065-CON-1 rules out here,
 /// not a small addition to this one check. That is real, reported `Typer`
 /// entanglement, not a gap this check papers over: `Typer`'s own
-/// [`super::CheckingLimits`] node and work charges, made at every node it
-/// enters, are what bound a call's own nesting.
+/// [`super::CheckingLimits`] node charge, made at every node it enters, is
+/// what bounds a call's own nesting.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Application<'a> {
     /// A call of the declared function at index `function`.

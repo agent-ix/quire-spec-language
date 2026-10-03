@@ -357,8 +357,8 @@ pub enum OrderedKind {
 /// A checked literal's value. Two literals are equal when their canonical
 /// keys are: [`Value`] has no structural equality of its own. A value with
 /// no canonical key (one that holds a float, which ADR-013 O-13 excludes
-/// from `=`) is equal to another exactly when the two encode identically
-/// (see `same_encoding`), so a literal always equals its own clone.
+/// from `=`, or a population, which has no key) is compared by `same_encoding`
+/// instead, so a literal always equals its own clone.
 #[derive(Clone, Debug)]
 pub struct CheckedLiteral(pub Value);
 
@@ -371,11 +371,14 @@ impl PartialEq for CheckedLiteral {
     }
 }
 
-/// Whether `left` and `right` hold the same typed encoding: the same
-/// kinds, types and members, a float by width and bit pattern. Walked from
-/// an explicit stack, comparing exactly the members a replay deciding
-/// element writes. The writer itself lives in `qsl-replay`, downstream of
-/// this crate.
+/// Whether `left` and `right` are the same value where no canonical key
+/// compares them. The walk keeps its pending pairs on an explicit stack and
+/// compares, per kind: an option's payload type and payload, a composite's
+/// declaration and slots, a collection's type and elements in order, a
+/// float's width and bit pattern, a population's identity, and every other
+/// leaf by its canonical key (so `1.0` and `1.00` are one decimal and two
+/// texts of one payload are one text, as `=` has them). The relation needs no
+/// agreement with any writer's encoding.
 fn same_encoding(left: &Value, right: &Value) -> bool {
     use quire_exact::FieldValue;
     let mut pending = vec![(left, right)];
@@ -383,6 +386,11 @@ fn same_encoding(left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Float(left), Value::Float(right)) => {
                 if left.width() != right.width() || left.bits() != right.bits() {
+                    return false;
+                }
+            }
+            (Value::Population(left), Value::Population(right)) => {
+                if left != right {
                     return false;
                 }
             }
@@ -995,9 +1003,9 @@ mod tests {
         builder.finish(node(NodeKind::Negate(operand)))
     }
 
-    /// A literal holding a float, alone or inside an option, has no
-    /// canonical key, and still equals its own clone and differs from
-    /// another bit pattern.
+    /// A literal holding a float, alone or inside an option, or a
+    /// population has no canonical key, and still equals its own clone and
+    /// differs from another bit pattern or identity.
     #[trace("TC-725", "FR-258-AC-1")]
     #[test]
     fn a_float_literal_equals_its_clone_and_differs_by_bit_pattern() {
@@ -1020,6 +1028,13 @@ mod tests {
         let nested = CheckedLiteral(option(0x7ff8_0000_0000_0001));
         assert_eq!(nested, nested.clone());
         assert_ne!(nested, CheckedLiteral(option(0x7ff8_0000_0000_0002)));
+        // A population has no canonical key and is compared by identity.
+        let population =
+            |byte: u8| Value::Population(quire_exact::PopulationId::from_digest([byte; 32]));
+        let one = CheckedLiteral(population(1));
+        assert!(quire_exact::compare_keys(&one.0, &one.0).is_none());
+        assert_eq!(one, one.clone());
+        assert_ne!(one, CheckedLiteral(population(2)));
     }
 
     /// FR-258 behaviour 2: a 100,000-deep checked body clones, compares

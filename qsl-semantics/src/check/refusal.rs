@@ -582,8 +582,7 @@ pub enum CheckCause {
     /// than every other cause.
     InternalFault(Box<KeyFault>),
     /// `invalid_package`: a node preimage that cannot be encoded (an empty
-    /// or non-identifier name, a number RFC 8785 cannot render exactly, a
-    /// body nested past the preimage depth bound).
+    /// or non-identifier name, a number RFC 8785 cannot render exactly).
     NodePreimage(super::node_key::NodeKeyRefusal),
     /// FR-113: a scoped anchor's resolution or a protocol's declaration
     /// collection refused. Boxed for the same reason as

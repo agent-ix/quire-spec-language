@@ -6,15 +6,20 @@
 //! stable path `p`, and an integer ordering or equality between a stable
 //! integer path (or `size(p)`) and an integer literal. A comparison of two
 //! non-literal operands yields no fact. The walk and every guard-fact helper
-//! it calls keep their pending nodes on a heap stack, so no depth of typed
-//! expression is a limit (ADR-030 D-1).
+//! it calls run on the walker toolkit, and each path's facts are persistent
+//! (one trie path more than its parent's), so no depth of typed expression is
+//! a limit and no chain of nested guards copies facts per level (ADR-030
+//! D-1).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
+mod persistent;
+
+use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
     Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
@@ -56,12 +61,14 @@ enum Subject {
     Size(StablePath),
 }
 
-/// The facts proved on one reachable path.
-#[derive(Clone, Debug, Default)]
+/// The facts proved on one reachable path. Each is a persistent map, so a
+/// path's facts are its parent's plus one entry at the cost of one trie
+/// path, and a chain of nested guards shares them all.
+#[derive(Clone, Default)]
 struct Facts {
-    intervals: BTreeMap<Subject, ProvedInterval>,
-    present: BTreeSet<StablePath>,
-    nonzero: BTreeSet<StablePath>,
+    intervals: PersistentMap<Subject, ProvedInterval>,
+    present: PersistentMap<StablePath, ()>,
+    nonzero: PersistentMap<StablePath, ()>,
 }
 
 /// How a call argument relates to the caller's parameters.
@@ -337,16 +344,19 @@ fn join(left: Option<Rc<Facts>>, right: Option<Rc<Facts>>) -> Option<Rc<Facts>> 
         (Some(left), Some(right)) => Some(Rc::new(Facts {
             intervals: left
                 .intervals
-                .iter()
-                .filter_map(|(subject, interval)| {
-                    right.intervals.get(subject).map(|other| {
-                        let hull = Interval::of_proved(interval).hull(&Interval::of_proved(other));
-                        (subject.clone(), hull.proved())
-                    })
-                })
-                .collect(),
-            present: left.present.intersection(&right.present).cloned().collect(),
-            nonzero: left.nonzero.intersection(&right.nonzero).cloned().collect(),
+                .intersect_with(&right.intervals, &|left, right| {
+                    Some(
+                        Interval::of_proved(left)
+                            .hull(&Interval::of_proved(right))
+                            .proved(),
+                    )
+                }),
+            present: left
+                .present
+                .intersect_with(&right.present, &|_, _| Some(())),
+            nonzero: left
+                .nonzero
+                .intersect_with(&right.nonzero, &|_, _| Some(())),
         })),
     }
 }
@@ -588,7 +598,7 @@ impl<'a> Definedness<'a> {
         if let (Relation::NotEqual, true, Subject::Value(path)) =
             (relation, literal.is_zero(), &key)
         {
-            facts.nonzero.insert(path.clone());
+            facts.nonzero.insert(path.clone(), ());
         }
         facts.intervals.insert(key, refined.proved());
         Some(Rc::new(facts))
@@ -643,7 +653,7 @@ impl<'a> Definedness<'a> {
             NodeKind::Present(operand) => match self.stable_path(condition.at(*operand), facts) {
                 Some(path) => {
                     let mut when_true = Facts::clone(facts);
-                    when_true.present.insert(path);
+                    when_true.present.insert(path, ());
                     (Some(Rc::new(when_true)), Some(Rc::clone(facts)))
                 }
                 None => (Some(Rc::clone(facts)), Some(Rc::clone(facts))),
@@ -707,73 +717,30 @@ impl<'a> Definedness<'a> {
         }
     }
 
-    /// Walk `root` under `facts`, depth first in evaluation order, keeping
-    /// the pending nodes on a heap stack rather than the host stack.
-    /// A node's obligation is discharged once its operands are
-    /// walked, and a node whose later operands run under facts its first
+    /// Walk `root` under `facts`, depth first in evaluation order, on the
+    /// walker toolkit. A node's obligation is discharged once its operands
+    /// are walked, and a node whose later operands run under facts its first
     /// operand establishes (`if`, a connective, `let`) walks them once that
     /// operand is walked: the order, and so the first refusal and the order
     /// of [`Self::calls`], is the recursive walk's.
     fn walk(&mut self, root: CheckedNode<'_>, facts: Facts) -> Result<(), CheckRefusal> {
-        let mut pending = vec![Pending::Walk(root, Rc::new(facts))];
-        while let Some(step) = pending.pop() {
-            match step {
-                Pending::Walk(node, facts) => Self::open(node, facts, &mut pending),
-                Pending::Branch(node, facts) => self.branch(node, &facts, &mut pending),
-                Pending::Discharge(node, facts) => self.discharge(node, &facts)?,
-            }
-        }
-        Ok(())
-    }
-
-    /// Push the steps that walk `node` under `facts`.
-    fn open<'n>(node: CheckedNode<'n>, facts: Rc<Facts>, pending: &mut Vec<Pending<'n>>) {
-        match node.kind() {
-            NodeKind::If {
-                condition: first, ..
-            }
-            | NodeKind::Connective(_, first, _)
-            | NodeKind::Let { value: first, .. } => {
-                pending.push(Pending::Branch(node, Rc::clone(&facts)));
-                pending.push(Pending::Walk(node.at(*first), facts));
-            }
-            NodeKind::Fold {
-                source,
-                step,
-                identity,
-                ..
-            } => {
-                // The source, then the identity or the nonempty obligation
-                // of a reduction, then the step.
-                pending.push(Pending::Walk(node.at(*step), Rc::clone(&facts)));
-                match identity {
-                    Some(identity) => {
-                        pending.push(Pending::Walk(node.at(*identity), Rc::clone(&facts)));
-                    }
-                    None => pending.push(Pending::Discharge(node, Rc::clone(&facts))),
-                }
-                pending.push(Pending::Walk(node.at(*source), facts));
-            }
-            _ => {
-                pending.push(Pending::Discharge(node, Rc::clone(&facts)));
-                let children = node.children();
-                pending.extend(
-                    children
-                        .into_iter()
-                        .rev()
-                        .map(|child| Pending::Walk(child, Rc::clone(&facts))),
-                );
-            }
+        let mut walk = DefinednessWalk {
+            definedness: self,
+            nodes: PhantomData,
+        };
+        match quire_walk::walk(&mut walk, DefinedNode::Walk(root, Rc::new(facts))) {
+            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Break(refusal) => Err(refusal),
         }
     }
 
-    /// `node`'s first operand is walked under `facts`: push the walks of the
-    /// operands that run under the facts its outcome establishes.
+    /// `node`'s first operand is walked under `facts`: enter the operands
+    /// that run under the facts its outcome establishes.
     fn branch<'n>(
         &mut self,
         node: CheckedNode<'n>,
         facts: &Rc<Facts>,
-        pending: &mut Vec<Pending<'n>>,
+        children: &mut quire_walk::Children<'_, DefinedNode<'n>>,
     ) {
         match node.kind() {
             NodeKind::If {
@@ -782,11 +749,11 @@ impl<'a> Definedness<'a> {
                 otherwise,
             } => {
                 let (when_true, when_false) = self.outcomes(node.at(*condition), facts);
-                if let Some(when_false) = when_false {
-                    pending.push(Pending::Walk(node.at(*otherwise), when_false));
-                }
                 if let Some(when_true) = when_true {
-                    pending.push(Pending::Walk(node.at(*then), when_true));
+                    children.push(DefinedNode::Walk(node.at(*then), when_true));
+                }
+                if let Some(when_false) = when_false {
+                    children.push(DefinedNode::Walk(node.at(*otherwise), when_false));
                 }
             }
             NodeKind::Connective(connective, left, right) => {
@@ -796,14 +763,14 @@ impl<'a> Definedness<'a> {
                     Connective::Or => when_false,
                 };
                 if let Some(under) = under {
-                    pending.push(Pending::Walk(node.at(*right), under));
+                    children.push(DefinedNode::Walk(node.at(*right), under));
                 }
             }
             NodeKind::Let { slot, value, body } => {
                 if let Some(path) = self.stable_path(node.at(*value), facts) {
                     self.aliases.insert(*slot, path);
                 }
-                pending.push(Pending::Walk(node.at(*body), Rc::clone(facts)));
+                children.push(DefinedNode::Walk(node.at(*body), Rc::clone(facts)));
             }
             _ => {}
         }
@@ -1044,15 +1011,99 @@ impl<'a> Definedness<'a> {
     }
 }
 
-/// One pending step of [`Definedness::walk`].
-enum Pending<'n> {
+/// [`Definedness::walk`]'s walk.
+struct DefinednessWalk<'d, 'a, 'n> {
+    definedness: &'d mut Definedness<'a>,
+    nodes: PhantomData<CheckedNode<'n>>,
+}
+
+/// A node of the definedness walk.
+enum DefinedNode<'n> {
     /// Walk a node under the facts of its path.
     Walk(CheckedNode<'n>, Rc<Facts>),
-    /// The node's first operand is walked: walk the operands that run under
+    /// The node's first operand is walked: enter the operands that run under
     /// the facts its outcome establishes.
     Branch(CheckedNode<'n>, Rc<Facts>),
+    /// The node's obligation, between two of its operands.
+    Discharge(CheckedNode<'n>, Rc<Facts>),
+}
+
+/// What the definedness walk keeps for an entered node.
+enum DefinedFrame<'n> {
+    /// Nothing is left to do when the node is exited.
+    Done,
     /// The node's operands are walked: discharge its own obligation.
     Discharge(CheckedNode<'n>, Rc<Facts>),
+}
+
+impl<'n> quire_walk::Walk for DefinednessWalk<'_, '_, 'n> {
+    type Node = DefinedNode<'n>;
+    type Frame = DefinedFrame<'n>;
+    type Stop = CheckRefusal;
+
+    fn enter(
+        &mut self,
+        node: DefinedNode<'n>,
+        children: &mut quire_walk::Children<'_, DefinedNode<'n>>,
+    ) -> ControlFlow<CheckRefusal, DefinedFrame<'n>> {
+        match node {
+            DefinedNode::Branch(node, facts) => {
+                self.definedness.branch(node, &facts, children);
+                ControlFlow::Continue(DefinedFrame::Done)
+            }
+            DefinedNode::Discharge(node, facts) => match self.definedness.discharge(node, &facts) {
+                Ok(()) => ControlFlow::Continue(DefinedFrame::Done),
+                Err(refusal) => ControlFlow::Break(refusal),
+            },
+            DefinedNode::Walk(node, facts) => match node.kind() {
+                NodeKind::If {
+                    condition: first, ..
+                }
+                | NodeKind::Connective(_, first, _)
+                | NodeKind::Let { value: first, .. } => {
+                    children.push(DefinedNode::Walk(node.at(*first), Rc::clone(&facts)));
+                    children.push(DefinedNode::Branch(node, facts));
+                    ControlFlow::Continue(DefinedFrame::Done)
+                }
+                NodeKind::Fold {
+                    source,
+                    step,
+                    identity,
+                    ..
+                } => {
+                    // The source, then the identity or the nonempty
+                    // obligation of a reduction, then the step.
+                    children.push(DefinedNode::Walk(node.at(*source), Rc::clone(&facts)));
+                    match identity {
+                        Some(identity) => {
+                            children.push(DefinedNode::Walk(node.at(*identity), Rc::clone(&facts)))
+                        }
+                        None => children.push(DefinedNode::Discharge(node, Rc::clone(&facts))),
+                    }
+                    children.push(DefinedNode::Walk(node.at(*step), facts));
+                    ControlFlow::Continue(DefinedFrame::Done)
+                }
+                _ => {
+                    for child in node.children() {
+                        children.push(DefinedNode::Walk(child, Rc::clone(&facts)));
+                    }
+                    ControlFlow::Continue(DefinedFrame::Discharge(node, facts))
+                }
+            },
+        }
+    }
+
+    fn exit(&mut self, frame: DefinedFrame<'n>) -> ControlFlow<CheckRefusal> {
+        match frame {
+            DefinedFrame::Done => ControlFlow::Continue(()),
+            DefinedFrame::Discharge(node, facts) => {
+                match self.definedness.discharge(node, &facts) {
+                    Ok(()) => ControlFlow::Continue(()),
+                    Err(refusal) => ControlFlow::Break(refusal),
+                }
+            }
+        }
+    }
 }
 
 /// The facts on a condition's true and false outcomes, each `None` when

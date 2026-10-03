@@ -77,6 +77,10 @@ pub(super) enum Form {
     /// `g(g(… a))`: each argument is typed against its parameter, the
     /// typer's upcast step.
     Call,
+    /// `let b0 = x + 0 in if b0 > 0 then (let b1 = x + 1 in if b1 > 0 then
+    /// (… a) else a) else a`: nested guards on distinct subjects, each
+    /// level's facts one more than its parent's.
+    DistinctGuards,
     /// `(x < x) = ((x < x) = (… a))`.
     Comparison,
     /// `if ((a and x < 1) and x < 1) … then a else a`: a guard whose facts
@@ -119,7 +123,7 @@ pub(super) enum Form {
     Tuple,
 }
 
-pub(super) const FORMS: [Form; 25] = [
+pub(super) const FORMS: [Form; 26] = [
     Form::And,
     Form::AndLeft,
     Form::IfThen,
@@ -129,6 +133,7 @@ pub(super) const FORMS: [Form; 25] = [
     Form::Call,
     Form::Comparison,
     Form::Guard,
+    Form::DistinctGuards,
     Form::Add,
     Form::AddLeft,
     Form::Negate,
@@ -206,7 +211,8 @@ impl Form {
             | Self::Not
             | Self::Call
             | Self::Comparison
-            | Self::Guard => (
+            | Self::Guard
+            | Self::DistinctGuards => (
                 vec![("a", boolean()), ("x", int_form(0, 1))],
                 boolean(),
                 a(),
@@ -228,6 +234,22 @@ impl Form {
                     body,
                 ),
                 Self::Guard => binary(BinaryOperator::And, body, x_below_one()),
+                Self::DistinctGuards => {
+                    let slot = format!("b{level}");
+                    Expression::let_in(
+                        slot.clone(),
+                        binary(
+                            BinaryOperator::Add,
+                            x(),
+                            integer_expr(i64::try_from(level).unwrap_or(0)),
+                        ),
+                        Expression::if_then_else(
+                            binary(BinaryOperator::Greater, name_expr(&slot), integer_expr(0)),
+                            body,
+                            a(),
+                        ),
+                    )
+                }
                 Self::Add => binary(BinaryOperator::Add, x(), body),
                 Self::AddLeft => binary(BinaryOperator::Add, body, x()),
                 Self::Negate => Expression::negate(body),
@@ -304,6 +326,7 @@ impl Form {
             | Self::Not
             | Self::Call
             | Self::Comparison
+            | Self::DistinctGuards
             | Self::Add
             | Self::AddLeft
             | Self::Negate

@@ -31,33 +31,39 @@ use super::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use quire_semantic_value::location::{Location, Origin};
 
 /// The span node each location of a checked unit reaches, remembered by the
-/// address of the location's last link. A node's span is its parent's child,
-/// so a located arena resolves each node in constant time, never by walking
-/// its whole path again. The memo is only valid while the locations it was
-/// asked about are alive: [`CheckedGraph::memoized_regions`] holds the graph
-/// for the memo's life.
+/// address of the location's last link and the span tree it was read in. A
+/// node's span is its parent's child, so a located arena resolves each node
+/// in constant time, never by walking its whole path again. The memo keeps a
+/// clone of every location it remembered a link of, so no remembered address
+/// is freed and reused by another chain while the memo lives, and a span tree
+/// of another origin never reads another tree's entry.
 #[derive(Default)]
 struct SpanMemo {
-    reached: RefCell<HashMap<usize, Option<SpanId>>>,
+    reached: RefCell<HashMap<(usize, usize), Option<SpanId>>>,
+    held: RefCell<Vec<Location>>,
 }
 
 impl SpanMemo {
     /// The node of `spans` that `location`'s path reaches.
     fn reach(&self, spans: &ExpressionSpans, location: &Location) -> Option<SpanId> {
         let mut reached = self.reached.borrow_mut();
+        let tree = std::ptr::from_ref(spans) as usize;
         // The unresolved links from the tip up to a link already reached.
         let mut pending: Vec<(usize, usize)> = Vec::new();
         let mut node = spans.root();
         for (address, index) in location.ancestry() {
-            if let Some(known) = reached.get(&address) {
+            if let Some(known) = reached.get(&(address, tree)) {
                 node = (*known)?;
                 break;
             }
             pending.push((address, index));
         }
+        if !pending.is_empty() {
+            self.held.borrow_mut().push(location.clone());
+        }
         for (address, index) in pending.into_iter().rev() {
             let next = spans.child(node, index);
-            reached.insert(address, next);
+            reached.insert((address, tree), next);
             node = next?;
         }
         Some(node)
@@ -285,8 +291,9 @@ impl CheckedGraph {
 
     /// [`Self::region`] as a function that remembers the span node each
     /// location reaches, so resolving every location of a deep body costs
-    /// the body's size, not its size times its depth. The function borrows
-    /// the graph, which keeps the locations it was asked about alive.
+    /// the body's size, not its size times its depth. The function keeps a
+    /// clone of each location it remembers, so any location may be asked
+    /// about, graph-owned or not.
     pub fn memoized_regions(&self) -> impl Fn(&Location) -> Option<SourceRegion> + '_ {
         let memo = SpanMemo::default();
         move |location| {
