@@ -556,10 +556,10 @@ Key: `c6894922cc1c3d8df23386b264075d71b1c62d1e9890b86b58b04200ad72dd88`
 **D3**: record Opt { a: Int[0, 9]; b?: Int[0, 9]; }, owner (a, u)
 
 ```json
-{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"a","term":"binding","value":{"target":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"reference"}},{"name":"b","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"target":{"digest":"7bacf8b16f079a2352aac1a83b88a5925ed3f8c00e3a02735e8d3c646bb6461e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["Opt"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":null,"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `05067eac40eb72b83e944e9d7a97b285c47a569a0404c2d973862d46aafc91f6`
+Key: `6a60953f206cd06a31a0d998c02f2a84d236016394d9e01730eba9761d5f0252`
 
 **D4**: record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }, owner (a, u)
 
@@ -761,18 +761,18 @@ Key: `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31`
 **G2**: `record List { next?: List; }`, ordinal 0
 
 ```json
-{"body":{"members":[{"name":"next","term":"binding","value":{"name":"optional","term":"binding","value":{"ordinal":1,"term":"group_reference"}}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":0,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"next","term":"binding","value":{"members":[{"name":"optional","term":"binding","value":{"ordinal":0,"term":"group_reference"}}],"term":"aggregate"}}],"term":"aggregate"},"declaration":{"qualified_name":["List"]},"node_tag":"composite_type","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":1,"size":2},"semantic_form":"record","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `4471223e43af6f4377ab4e8a057b54a92020015e79944b9978ce90253f7e9636`
+Key: `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b`
 
 **G3**: `Option<List>`, ordinal 1
 
 ```json
-{"body":{"members":[{"ordinal":0,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660","ordinal":1,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
+{"body":{"members":[{"ordinal":1,"term":"group_reference"}],"term":"aggregate"},"declaration":null,"node_tag":"composite_type","recursion":{"group":"c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc","ordinal":0,"size":2},"semantic_form":"option","semantic_type":null,"version":"quire.structural-node/v1"}
 ```
 
-Key: `96901f2222cafaed9d09389407a1c38b35e99111f00abf38e3fb6a8aa84c9cae`
+Key: `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b`
 
 **G4**: function `f`, ordinal 1
 
