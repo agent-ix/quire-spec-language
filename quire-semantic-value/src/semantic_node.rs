@@ -103,12 +103,16 @@ pub fn check_terms<K: Ord>(terms: &[(K, Integer)]) -> Result<(), SemanticGraphCa
 /// module, so every QSL layer from SV up may name it (FR-068-AC-6), and this
 /// crate's compound-unit id encodes under it.
 ///
-/// The encoder bounds bytes only; depth is not a limit (ADR-030 D-4.4). The
-/// byte ceiling is `u64::MAX`, i.e. none of its own: every preimage is
-/// built from values an earlier stage already bounded (intake's
-/// `MAX_INPUT_BYTES`, the check stage's limits, a package reader's
-/// `artifact_bytes`), and a caller with a tighter byte budget of its own
-/// passes its own [`Limits`] instead (the v2 reader does).
+/// The encoder bounds bytes only; depth is not a limit (ADR-030 D-4.4).
+/// FR-259 B3 makes this the published default of the `identity.input_bytes`
+/// setting, 16777216 bytes. Until that setting lands it stays `u64::MAX`:
+/// `qsl-semantics`'s `preimage_digest` reports every encoder error as a
+/// non-canonical preimage, so a finite bound here would report a byte error
+/// as a malformed value, against FR-259 B4. Every preimage is built from
+/// values an earlier stage already bounded (intake's `MAX_INPUT_BYTES`, the
+/// check stage's limits, a package reader's `artifact_bytes`), and a caller
+/// with a tighter byte budget of its own passes its own [`Limits`] instead
+/// (the v2 reader does).
 pub const IDENTITY_LIMITS: Limits = Limits::new(u64::MAX);
 
 /// The `node-identity-preimage.schema.json` node-id member every node-key
