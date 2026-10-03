@@ -251,7 +251,9 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// via RFC 7493, admits none), a number with no finite double (`1e400`), a
 /// repeated member name, and every other departure from the JSON grammar.
 /// Each refuses as `invalid_model_binding`/`malformed-declaration` at the
-/// document root `$`, carrying that offset. A number keeps the lexeme the
+/// document root `$`, carrying that offset (FR-260 B4). That refusal is this
+/// parse's own: FR-154 admission ([`admit`]) and [`package_input`] digest
+/// bytes the reader refuses raw (FR-056). A number keeps the lexeme the
 /// document carried: the derived view converts it with `serde_json`'s own
 /// number parser, so it equals what `serde_json::from_slice` would have read,
 /// every integer exact, while the digest reads it as the double RFC 8785
@@ -260,7 +262,9 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH` refuse as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
 /// malformed document. The depth limit stays while the semantic-IR crate's
-/// checks and the two derived views recurse once per nesting level.
+/// checks and the two derived views recurse once per nesting level. A read
+/// or digest that cannot reserve memory refuses as
+/// [`ModelRefusalCause::AllocationFailed`] (FR-259 B6).
 ///
 /// The `sha256-jcs` digest is taken here, once, by `quire-canonical` (ADR-013
 /// §2, ADR-013:113: the one RFC 8785 implementation) under
@@ -283,8 +287,9 @@ impl PackageDocument {
     /// Input over `json::MAX_INPUT_BYTES`, or a value enclosed by
     /// `json::MAX_DEPTH` or more arrays and objects, refuses
     /// `resource_exhausted`/`intake-limit-exceeded` naming the limit and its
-    /// bound, and so does a read that cannot reserve memory. Bytes the
-    /// shared reader refuses as malformed refuse
+    /// bound. A read or digest that cannot reserve memory refuses
+    /// `resource_exhausted`/`allocation-failed` carrying the bytes requested.
+    /// Bytes the shared reader refuses as malformed refuse
     /// `invalid_model_binding`/`malformed-declaration` against the document
     /// root `$`, carrying the reader's byte offset.
     pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
@@ -297,25 +302,7 @@ impl PackageDocument {
         if too_deep(bytes) {
             return Err(limit_exceeded(IntakeLimit::NestingDepth, MAX_DEPTH));
         }
-        let document =
-            quire_canonical::read(bytes, max_input_bytes).map_err(|error| match error {
-                quire_canonical::ReadError::Malformed { offset, kind } => malformed_declaration(
-                    "$".to_owned(),
-                    None,
-                    None,
-                    format!("package document is malformed JSON at byte {offset}: {kind}"),
-                ),
-                quire_canonical::ReadError::Limit(_) => {
-                    limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
-                }
-                quire_canonical::ReadError::Allocation { requested } => memory_exhausted(requested),
-                other => malformed_declaration(
-                    "$".to_owned(),
-                    None,
-                    None,
-                    format!("package document could not be read: {other}"),
-                ),
-            })?;
+        let document = quire_canonical::read(bytes, max_input_bytes).map_err(read_refusal)?;
         let tree = value_of(document.root()).map_err(|lexeme| {
             malformed_declaration(
                 "$".to_owned(),
@@ -325,20 +312,7 @@ impl PackageDocument {
             )
         })?;
         let jcs_digest = *quire_canonical::sha256(&document, INTAKE_DIGEST_LIMITS)
-            .map_err(|error| match error {
-                quire_canonical::Error::Limit(_) => {
-                    limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
-                }
-                quire_canonical::Error::Allocation { requested } => memory_exhausted(requested),
-                // A read tree always has an RFC 8785 encoding: every number
-                // is a finite double and every member name a string.
-                other => malformed_declaration(
-                    "$".to_owned(),
-                    None,
-                    None,
-                    format!("package document could not be RFC 8785-encoded: {other}"),
-                ),
-            })?
+            .map_err(digest_refusal)?
             .as_bytes();
         Ok(Self {
             bundle: agent_ix_semantic_ir::json::Json::Object(vec![(
@@ -391,15 +365,55 @@ fn limit_exceeded(limit: IntakeLimit, bound: usize) -> ModelRefusal {
     }
 }
 
-/// Reading or digesting a package document could not reserve `requested`
-/// bytes of memory.
-fn memory_exhausted(requested: usize) -> ModelRefusal {
+/// [`PackageDocument::parse`]'s refusal for a refusal of the shared reader.
+fn read_refusal(error: quire_canonical::ReadError) -> ModelRefusal {
+    use agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+    match error {
+        quire_canonical::ReadError::Malformed { offset, kind } => malformed_declaration(
+            "$".to_owned(),
+            None,
+            None,
+            format!("package document is malformed JSON at byte {offset}: {kind}"),
+        ),
+        quire_canonical::ReadError::Limit(_) => {
+            limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
+        }
+        quire_canonical::ReadError::Allocation { requested } => allocation_failed(requested),
+        other => malformed_declaration(
+            "$".to_owned(),
+            None,
+            None,
+            format!("package document could not be read: {other}"),
+        ),
+    }
+}
+
+/// [`PackageDocument::parse`]'s refusal for an error of the `sha256-jcs`
+/// digest's encoding.
+fn digest_refusal(error: quire_canonical::Error) -> ModelRefusal {
+    use agent_ix_semantic_ir::json::MAX_INPUT_BYTES;
+    match error {
+        quire_canonical::Error::Limit(_) => {
+            limit_exceeded(IntakeLimit::InputBytes, MAX_INPUT_BYTES)
+        }
+        quire_canonical::Error::Allocation { requested } => allocation_failed(requested),
+        // A read tree always has an RFC 8785 encoding: every number is a
+        // finite double and every member name a string.
+        other => malformed_declaration(
+            "$".to_owned(),
+            None,
+            None,
+            format!("package document could not be RFC 8785-encoded: {other}"),
+        ),
+    }
+}
+
+/// FR-259 B6: reading or digesting a package document could not reserve
+/// `requested` bytes of memory.
+fn allocation_failed(requested: usize) -> ModelRefusal {
     ModelRefusal {
         code: Code::ResourceExhausted,
-        cause: ModelRefusalCause::IntakeLimitExceeded {
-            limit: IntakeLimit::Memory,
-            bound: requested,
-        },
+        cause: ModelRefusalCause::AllocationFailed { requested },
         detail: format!(
             "reading the package document could not reserve {requested} bytes of memory"
         ),
@@ -552,16 +566,20 @@ pub fn admit(
             ),
         });
     };
-    // A document over one of the parse limits has no parsed form to take a
-    // JCS digest of, so check 3 cannot tell whether it matches: that refuses
-    // naming the limit (ADR-011 Limits), not as a digest mismatch. Any other
-    // parse failure is not itself a refusal here: bytes that do not parse
-    // are digested raw by check 3, and supply no identity/version to check 4.
+    // A document over one of the parse limits, or one whose read could not
+    // reserve memory, has no parsed form to take a JCS digest of, so check 3
+    // cannot tell whether it matches: that refuses naming the limit
+    // (ADR-011 Limits) or the failed reservation (FR-259 B6), not as a
+    // digest mismatch. Any other parse failure is not itself a refusal here:
+    // bytes the shared reader refuses are digested raw by check 3 (FR-056),
+    // and supply no identity/version to check 4.
     let document = match PackageDocument::parse(bytes) {
         Ok(document) => Some(document),
         Err(
             refusal @ ModelRefusal {
-                cause: ModelRefusalCause::IntakeLimitExceeded { .. },
+                cause:
+                    ModelRefusalCause::IntakeLimitExceeded { .. }
+                    | ModelRefusalCause::AllocationFailed { .. },
                 ..
             },
         ) => return Err(refusal),
@@ -5524,10 +5542,7 @@ mod tests {
 
     /// PR #379 review F4: the tree and JCS bytes the one parse derives equal
     /// what `serde_json::from_slice` reads from the same bytes, for numbers
-    /// at every edge and every string escape. A repeated member name, which
-    /// `serde_json` resolves last-wins, is refused by the shared reader as
-    /// malformed at the repeated name: RFC 8785 requires I-JSON, so such a
-    /// document has no JCS digest.
+    /// at every edge and every string escape.
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn the_one_parse_reads_what_serde_json_reads() {
@@ -5574,7 +5589,17 @@ mod tests {
                 }
             }
         }
-        // Repeated member names: refused at the second occurrence's offset.
+    }
+
+    /// A repeated member name, which `serde_json` resolves last-wins, is
+    /// refused by the one parse as malformed at the repeated name, and a
+    /// leading byte order mark at byte 0: RFC 8785 requires I-JSON, so
+    /// neither document has a JCS digest. Admission digests such bytes raw,
+    /// so a repeated-name document offered under the JCS digest of its
+    /// last-wins value refuses `content-mismatch`.
+    #[trace("TC-145", "FR-056-AC-12")]
+    #[test]
+    fn a_repeated_member_name_or_byte_order_mark_does_not_parse() {
         for (text, repeated) in [
             (r#"{"a":1,"a":2}"#, r#""a":2"#),
             (r#"{"a":{"x":1},"a":{"y":2}}"#, r#""a":{"y""#),
@@ -5600,5 +5625,55 @@ mod tests {
                 "{text}"
             );
         }
+
+        let bom = b"\xEF\xBB\xBF{}";
+        assert_eq!(
+            PackageDocument::parse(bom).unwrap_err(),
+            malformed(
+                "$",
+                "package document is malformed JSON at byte 0: unexpected character"
+            )
+        );
+
+        let repeated = br#"{"package":{"identity":"acme/orders","version":"1"},"s":1,"s":2}"#;
+        let last_wins: Value = serde_json::from_slice(repeated).unwrap();
+        let digest = digest_of(&canonical(&last_wins));
+        let mut map = BTreeMap::new();
+        map.insert(digest, repeated.to_vec());
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, digest);
+        let refusal = admit(&offered, &digest_domain, &map).unwrap_err();
+        assert_eq!(refusal.code, Code::StaleDependency);
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::ByteDigestMismatch {
+                expected: digest,
+                actual: digest_of(repeated),
+            },
+            "a repeated-name document digests raw"
+        );
+    }
+
+    /// The reader's and the encoder's allocation failures refuse
+    /// `resource_exhausted`/`allocation-failed` carrying the bytes requested:
+    /// not a limit, and not a malformed document.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_refuses_allocation_failed() {
+        let expected = allocation_failed(4096);
+        assert_eq!(expected.code, Code::ResourceExhausted);
+        assert_eq!(
+            expected.cause,
+            ModelRefusalCause::AllocationFailed { requested: 4096 }
+        );
+        assert_eq!(expected.cause.as_str(), "allocation-failed");
+        assert_eq!(
+            read_refusal(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            expected
+        );
+        assert_eq!(
+            digest_refusal(quire_canonical::Error::Allocation { requested: 4096 }),
+            expected
+        );
     }
 }

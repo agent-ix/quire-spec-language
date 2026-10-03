@@ -66,10 +66,14 @@ pub enum PreimageDefect {
         /// The byte offset where the fault starts.
         offset: usize,
     },
-    /// The reader could not hold the bytes' tree: its refusal for want of
-    /// memory. The read sets no byte limit of its own, since the bytes are
-    /// already held whole under the package reader's artifact byte limit.
-    Unreadable(quire_canonical::ReadError),
+    /// Reading or encoding the bytes could not reserve memory (FR-259 B6).
+    /// It names no bound: the read sets no byte limit of its own, since the
+    /// bytes are already held whole under the package reader's artifact byte
+    /// limit.
+    AllocationFailed {
+        /// The size in bytes of the reservation that failed.
+        requested: usize,
+    },
     /// The bytes are JSON but not one JSON object.
     NotObject,
     /// The bytes are not the canonical serialization of their JSON value, so
@@ -372,6 +376,33 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
     }
 }
 
+/// [`project_declarations`]'s defect for a refusal of the shared reader.
+fn read_defect(error: quire_canonical::ReadError) -> PreimageDefect {
+    match error {
+        quire_canonical::ReadError::Malformed { offset, .. } => {
+            PreimageDefect::Malformed { offset }
+        }
+        quire_canonical::ReadError::Allocation { requested } => {
+            PreimageDefect::AllocationFailed { requested }
+        }
+        // The read sets no byte limit, so no other refusal names a bound;
+        // any other refusal is of the bytes themselves.
+        _ => PreimageDefect::Malformed { offset: 0 },
+    }
+}
+
+/// [`project_declarations`]'s defect for an error of the canonicity check's
+/// encoding: an allocation failure is its own defect, and any other error
+/// means the bytes have no canonical encoding.
+fn encode_defect(error: quire_canonical::Error) -> PreimageDefect {
+    match error {
+        quire_canonical::Error::Allocation { requested } => {
+            PreimageDefect::AllocationFailed { requested }
+        }
+        _ => PreimageDefect::NonCanonical,
+    }
+}
+
 /// Validate `bytes` as an identity preimage and derive the wire node id of
 /// each nominal declaration in its `identity_projection`.
 ///
@@ -387,20 +418,17 @@ fn declaration_mismatch(shape: &NodeShape) -> Option<PreimageDefect> {
 /// 754 double equals is not its canonical spelling and is refused as
 /// [`PreimageDefect::NonCanonical`].
 pub(crate) fn project_declarations(bytes: &[u8]) -> Result<ProjectedDeclarations, PreimageDefect> {
-    let document = quire_canonical::read(bytes, u64::MAX).map_err(|error| match error {
-        quire_canonical::ReadError::Malformed { offset, .. } => {
-            PreimageDefect::Malformed { offset }
-        }
-        unreadable => PreimageDefect::Unreadable(unreadable),
-    })?;
+    let document = quire_canonical::read(bytes, u64::MAX).map_err(read_defect)?;
     let value: Value = serde_json::from_slice(bytes).map_err(|_| PreimageDefect::NotObject)?;
     let preimage = members(&value, &PREIMAGE_REQUIRED, &[]).map_err(|defect| match defect {
         MemberDefect::NotObject => PreimageDefect::NotObject,
         MemberDefect::Missing(name) => PreimageDefect::MissingMember(name),
         MemberDefect::Unknown(name) => PreimageDefect::UnknownMember(name),
     })?;
-    if quire_canonical::to_vec(&document, LIMITS).ok().as_deref() != Some(bytes) {
-        return Err(PreimageDefect::NonCanonical);
+    match quire_canonical::to_vec(&document, LIMITS) {
+        Ok(canonical) if canonical == bytes => {}
+        Ok(_) => return Err(PreimageDefect::NonCanonical),
+        Err(error) => return Err(encode_defect(error)),
     }
     if preimage.get("version").and_then(Value::as_str) != Some(PACKAGE_ID_VERSION) {
         return Err(PreimageDefect::Version);
@@ -642,5 +670,31 @@ mod tests {
             declarations.undeclared(&exports(&["L::R", "L::T", "L::S"])),
             Some("L::T")
         );
+    }
+
+    /// The reader's and the canonicity encoding's allocation failures are
+    /// one defect, which reports `resource_exhausted`/`allocation-failed`:
+    /// not a malformed or non-canonical package.
+    #[trace("TC-729", "FR-259-AC-5")]
+    #[test]
+    fn an_allocation_failure_is_its_own_defect() {
+        let expected = PreimageDefect::AllocationFailed { requested: 4096 };
+        assert_eq!(
+            read_defect(quire_canonical::ReadError::Allocation { requested: 4096 }),
+            expected
+        );
+        assert_eq!(
+            encode_defect(quire_canonical::Error::Allocation { requested: 4096 }),
+            expected
+        );
+        let refusal = crate::library::LibraryRefusal::InvalidPreimage {
+            library: crate::library::LibraryName::new("acme").unwrap(),
+            defect: expected,
+        };
+        assert_eq!(
+            refusal.code(),
+            qsl_foundation::diagnostic::Code::ResourceExhausted
+        );
+        assert_eq!(refusal.cause().as_str(), "allocation-failed");
     }
 }
