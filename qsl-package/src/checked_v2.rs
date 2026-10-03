@@ -92,10 +92,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use quire_contract_model::{
-    read_checked_package, CheckedArtifactRef, CheckedOccurrenceRole, CheckedPackageDispatchResult,
+    read_checked_package, CheckedOccurrenceRole, CheckedPackageDispatchResult,
     CheckedPackageEvidence, CheckedPackageIncomplete, CheckedPackageLimit,
     CheckedPackageReadLimits, CheckedPackageRefusal, CheckedPackageRefusalCode, CheckedPackageV2,
-    CheckedSourceMapEntry, CheckedSourceRegion, CHECKED_PACKAGE_V2,
+    CheckedSourceMapEntry, CheckedSourceRef, CheckedSourceRegion, CHECKED_PACKAGE_V2,
 };
 
 use qsl_foundation::diagnostic::{
@@ -104,7 +104,7 @@ use qsl_foundation::diagnostic::{
 };
 use qsl_foundation::digest::{DigestRecord, InvalidDigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::{
-    InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, Revision, SourceRegion,
+    InvalidProvenance, OccurrenceKey, PackageSourceMap, RawSourceRef, SourceRegion,
 };
 use qsl_semantics::library::{
     declared_exports, verify_binding, ImportView, LibraryName, LibraryPackage, LibraryRefusal,
@@ -376,13 +376,11 @@ pub(crate) fn occurrence_role(spelling: &str) -> Option<CheckedOccurrenceRole> {
         .find(|role| role_spelling(role) == spelling)
 }
 
-fn raw_source_ref(source: &CheckedArtifactRef) -> Result<RawSourceRef, SourceMapDefect> {
+fn raw_source_ref(source: &CheckedSourceRef) -> Result<RawSourceRef, SourceMapDefect> {
     let digest = DigestRecord::from_wire(Some(&source.digest_domain), &source.digest)?;
-    let revision = Revision::new(&*source.revision.namespace, &*source.revision.value)?;
     Ok(RawSourceRef::new(
         &*source.authority,
         &*source.identity,
-        revision,
         digest,
     )?)
 }

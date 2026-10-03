@@ -139,12 +139,6 @@ fn lock_evidence() -> qsl_semantics::check::LockEvidence {
         qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: qsl_semantics::value::DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: entry.digest.to_owned(),
         },
     )
 }
@@ -159,12 +153,6 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
         &[qsl_semantics::value::DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: qsl_semantics::value::DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: entry.digest.to_owned(),
         }],
         &[],
     )

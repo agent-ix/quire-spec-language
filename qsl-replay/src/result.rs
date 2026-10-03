@@ -563,10 +563,7 @@ fn common_measured_bytes(resolved_regions: &[SourceRegion]) -> usize {
         .iter()
         .map(|region| {
             let source = region.source();
-            source.authority().len()
-                + source.identity().len()
-                + source.revision().namespace().len()
-                + source.revision().value().len()
+            source.authority().len() + source.identity().len()
         })
         .sum::<usize>()
 }
@@ -606,11 +603,10 @@ mod tests {
 
     fn regions() -> Vec<SourceRegion> {
         use qsl_foundation::digest::{DigestDomain, DigestRecord};
-        use qsl_foundation::source::provenance::{RawSourceRef, Revision};
+        use qsl_foundation::source::provenance::RawSourceRef;
         let source = RawSourceRef::new(
             "registry",
             "pkg-a",
-            Revision::new("git", "rev-1").unwrap(),
             DigestRecord::mint(DigestDomain::SourceBytesV1, [3; 32]),
         )
         .unwrap();
@@ -674,12 +670,11 @@ mod tests {
     /// `Input`-arm result's record field does not exist at all, so a call
     /// site expecting `WitnessArmResult::record()` cannot be satisfied by
     /// `InputArmResult`, which has no such method).
-    /// A resolved region's measured bytes are its source's authority,
-    /// identity, revision namespace and revision value lengths: `registry`
-    /// 8 + `pkg-a` 5 + `git` 3 + `rev-1` 5 = 21.
+    /// A resolved region's measured bytes are its source's authority and
+    /// identity lengths: `registry` 8 + `pkg-a` 5 = 13.
     #[test]
     fn common_measured_bytes_counts_each_source_member() {
-        assert_eq!(common_measured_bytes(&regions()), 21);
+        assert_eq!(common_measured_bytes(&regions()), 13);
     }
 
     #[trace("TC-189", "FR-072-AC-1")]

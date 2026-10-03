@@ -14,11 +14,12 @@
 //! # Lock
 //!
 //! - `edition` and `definition_selections` come from the `DefinitionLock`
-//!   catalog, which reads QSpec's lock by reference: the `edition` role,
-//!   every other always-selected role, and each law `DefinitionRef` a node
-//!   body names.
+//!   catalog: the `edition` role, every other always-selected role, and each
+//!   law `DefinitionRef` a node body names. Each is a QSpec `DefinitionRef`,
+//!   exactly `{authority, identity}`.
 //! - `sources` are the checked unit's `RawSourceRef` (`CheckedGraph::source`)
-//!   and any other raw source an occurrence region names.
+//!   and any other raw source an occurrence region names, each with its
+//!   `quire.source.bytes/v1` digest.
 //! - `required_features` is `quire.value.complete/v1` (ADR-011 §2.4) and
 //!   `capability_report` reports it available.
 //! - `profile_selections` is empty: the `Value` family selects no profile.
@@ -31,7 +32,7 @@
 //!   (FR-322, FR-307). The same entries are the identity preimage's, so each
 //!   dependency's `package_id` enters this package's.
 //! - `diagnostics.catalog` is QSpec's `quire.native.diagnostics/v1`
-//!   document, read by reference with its raw-byte digest.
+//!   catalog, named by its `DefinitionRef`.
 //!
 //! # Source regions
 //!
@@ -75,8 +76,8 @@ use quire_contract_model::{
     CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef, CheckedNodeId,
     CheckedNodeKind, CheckedNodeTag, CheckedOccurrence, CheckedOccurrenceRole,
     CheckedPackageEvidence, CheckedPackageIdentityPreimageV2, CheckedPackageLockV2,
-    CheckedRational, CheckedRevision, CheckedSelection, CheckedSelectionRole,
-    CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
+    CheckedRational, CheckedSelection, CheckedSelectionRole, CheckedSemanticGraphV2,
+    CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry, CheckedSourceRef,
     CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ValueForm, CHECKED_PACKAGE_V2,
     DOMAIN_PACKAGE_DIGEST, PACKAGE_DOMAIN_V2,
 };
@@ -105,7 +106,7 @@ const IDENTITY_PREIMAGE_V2: &str = qsl_semantics::library::PACKAGE_ID_VERSION;
 
 /// The diagnostics catalog the package's (empty) diagnostics are qualified
 /// by, written at `diagnostics.catalog`: QSpec's `quire.native.diagnostics/v1`
-/// document, its digest the raw-byte SHA-256 of that document's bytes.
+/// `DefinitionRef`.
 fn diagnostics_catalog() -> CheckedArtifactRef {
     artifact(&native_diagnostics_catalog())
 }
@@ -659,32 +660,23 @@ fn graph_order<'c, 'g>(kept: &[&'c Candidate<'g>]) -> Vec<&'c Candidate<'g>> {
     order
 }
 
+/// `reference` as the wire's `DefinitionRef`, `{authority, identity}`.
 fn artifact(reference: &DefinitionReference) -> CheckedArtifactRef {
     CheckedArtifactRef {
         authority: reference.authority.as_str().into(),
         identity: reference.identity.as_str().into(),
-        revision: CheckedRevision {
-            namespace: reference.revision.namespace.as_str().into(),
-            value: reference.revision.value.as_str().into(),
-        },
-        digest_domain: reference.digest_domain.as_str().into(),
-        digest: reference.digest.as_str().into(),
-        export: None,
     }
 }
 
-fn source_artifact(source: &RawSourceRef) -> CheckedArtifactRef {
+/// `source` as the wire's `RawSourceRef`: authority, identity and the
+/// digest of its bytes.
+fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
     let digest = source.digest();
-    CheckedArtifactRef {
+    CheckedSourceRef {
         authority: source.authority().into(),
         identity: source.identity().into(),
-        revision: CheckedRevision {
-            namespace: source.revision().namespace().into(),
-            value: source.revision().value().into(),
-        },
         digest_domain: digest.domain().to_string().into(),
         digest: digest.hex().into(),
-        export: None,
     }
 }
 
@@ -702,9 +694,8 @@ fn catalog_selections(
     lock: &DefinitionLock,
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
-    // Each digest is the catalog row's raw-byte SHA-256. A law's digest is
-    // also part of its `DefinitionRef`, so it feeds the application-node keys
-    // that name the law.
+    // A law's `DefinitionRef` is also part of the application-node keys that
+    // name the law.
     let edition = CheckedSelection {
         role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
@@ -745,7 +736,7 @@ fn recorded_occurrences(
 fn source_map(
     order: &[&Candidate<'_>],
     regions: &impl Fn(&Location) -> Option<SourceRegion>,
-) -> Result<(Vec<CheckedSourceMapEntry>, BTreeSet<CheckedArtifactRef>), EmitRefusal> {
+) -> Result<(Vec<CheckedSourceMapEntry>, BTreeSet<CheckedSourceRef>), EmitRefusal> {
     let mut entries = Vec::new();
     let mut sources = BTreeSet::new();
     for candidate in order {

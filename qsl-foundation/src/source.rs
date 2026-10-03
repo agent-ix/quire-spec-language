@@ -113,13 +113,9 @@ impl SourceIdentity {
         if let Some(label) = self.first_blank_label() {
             return Err(ReferenceError::Blank(label));
         }
-        let revision =
-            provenance::Revision::new(self.revision_namespace.clone(), self.revision.clone())
-                .map_err(ReferenceError::Provenance)?;
         RawSourceRef::new(
             self.authority.clone(),
             self.identity.clone(),
-            revision,
             DigestRecord::mint(DigestDomain::SourceBytesV1, digest.as_bytes()),
         )
         .map_err(ReferenceError::Provenance)
@@ -610,55 +606,40 @@ mod tests {
         }
     }
 
-    /// FR-001-AC-5: admission keeps the four labels exactly and adds the
-    /// `quire.source.bytes/v1` digest; a second revision value changes only
-    /// that member.
+    /// FR-001-AC-5: admission mints a `RawSourceRef` of the authority and
+    /// identity labels and the `quire.source.bytes/v1` digest of the bytes
+    /// (the type has no other member); other bytes under the same labels
+    /// change only the digest.
     #[trace("TC-424", "FR-001-AC-5")]
     #[test]
     fn admission_mints_the_caller_named_source_reference() {
-        let bytes = b"b";
-        let first = Source::read_typed(
-            labels("agent-ix", "specs/a.quire", "git", "3f2a"),
-            "a.quire",
-            bytes,
-            MAX_SOURCE_BYTES,
-        )
-        .unwrap_or_else(|_| panic!("admitted"));
+        let admit = |bytes: &[u8]| {
+            Source::read_typed(
+                labels("agent-ix", "specs/a.quire", "git", "3f2a"),
+                "a.quire",
+                bytes,
+                MAX_SOURCE_BYTES,
+            )
+            .unwrap_or_else(|_| panic!("admitted"))
+        };
+        let first = admit(b"b");
         let reference = first.reference();
         assert_eq!(reference.authority(), "agent-ix");
         assert_eq!(reference.identity(), "specs/a.quire");
-        assert_eq!(reference.revision().namespace(), "git");
-        assert_eq!(reference.revision().value(), "3f2a");
         assert_eq!(reference.digest().domain(), DigestDomain::SourceBytesV1);
         assert_eq!(
             reference.digest().as_bytes(),
-            &ByteDigest::of(bytes).as_bytes()
+            &ByteDigest::of(b"b").as_bytes()
         );
 
-        let second = Source::read_typed(
-            labels("agent-ix", "specs/a.quire", "git", "3f2b"),
-            "a.quire",
-            bytes,
-            MAX_SOURCE_BYTES,
-        )
-        .unwrap_or_else(|_| panic!("admitted"));
+        let second = admit(b"b'");
         let other = second.reference();
         assert_ne!(reference, other);
-        assert_eq!(other.revision().value(), "3f2b");
         assert_eq!(
-            (
-                other.authority(),
-                other.identity(),
-                other.revision().namespace(),
-                other.digest()
-            ),
-            (
-                reference.authority(),
-                reference.identity(),
-                reference.revision().namespace(),
-                reference.digest()
-            )
+            (other.authority(), other.identity()),
+            (reference.authority(), reference.identity())
         );
+        assert_eq!(other.digest().as_bytes(), &ByteDigest::of(b"b'").as_bytes());
     }
 
     /// FR-001-AC-6: exactly one empty, single-space or U+3000 label refuses
@@ -743,15 +724,7 @@ mod tests {
             let region = refused.error.region.expect("a located refusal");
             assert_eq!((region.start(), region.end()), (start, end));
             let reference = region.source();
-            assert_eq!(
-                (
-                    reference.authority(),
-                    reference.identity(),
-                    reference.revision().namespace(),
-                    reference.revision().value()
-                ),
-                ("a", "u", "git", "1")
-            );
+            assert_eq!((reference.authority(), reference.identity()), ("a", "u"));
             assert_eq!(
                 reference.digest().as_bytes(),
                 &ByteDigest::of(bytes).as_bytes()

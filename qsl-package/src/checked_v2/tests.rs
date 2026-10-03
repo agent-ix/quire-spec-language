@@ -34,7 +34,6 @@ use quire_exact::{Origin, Role};
 
 const NODE_DOMAIN: &str = "quire.checked-semantic-node/v1";
 const SOURCE_DOMAIN: &str = "quire.source.bytes/v1";
-const DEFINITION_DOMAIN: &str = "quire.definition.bytes/v1";
 
 fn hex(label: &str) -> String {
     Sha256::digest(label.as_bytes())
@@ -47,21 +46,16 @@ fn node_ref(label: &str) -> Value {
     json!({"digest": hex(label), "domain": NODE_DOMAIN})
 }
 
+/// A QSpec `DefinitionRef`: exactly `{authority, identity}`.
 fn artifact_ref(label: &str) -> Value {
-    json!({
-        "authority": "pkg",
-        "identity": label,
-        "revision": {"namespace": "semver", "value": "1"},
-        "digest_domain": DEFINITION_DOMAIN,
-        "digest": hex(label),
-    })
+    json!({"authority": "pkg", "identity": label})
 }
 
+/// A QSpec `RawSourceRef`: authority, identity and the digest of its bytes.
 fn source_ref(label: &str) -> Value {
     json!({
         "authority": "pkg",
         "identity": label,
-        "revision": {"namespace": "semver", "value": "1"},
         "digest_domain": SOURCE_DOMAIN,
         "digest": hex(label),
     })
@@ -615,6 +609,68 @@ fn refuses_unrecognized_top_level_member() {
         ),
         "expected Refused(Envelope(UnknownMember)), got {outcome:?}"
     );
+}
+
+/// A definition reference is exactly `{authority, identity}` and a source
+/// reference exactly `{authority, identity, digest_domain, digest}`: a
+/// `revision`, `digest_domain` or `digest` on the edition, a definition
+/// selection or the diagnostics catalog, or a `revision` on a source row or
+/// a region's source, refuses `unknown_member`. There is no reader for the
+/// old shapes. The admitted envelope reads.
+#[trace("TC-416", "FR-093-AC-17")]
+#[test]
+fn an_old_reference_shape_refuses_unknown_member() {
+    let preimage = identity_preimage(vec![]);
+    let envelope = valid_envelope(&preimage);
+    assert!(matches!(
+        read(&jcs(&envelope), &pinned_for(&preimage)),
+        Read::Verified { .. }
+    ));
+    let revision = json!({"namespace": "semver", "value": "1"});
+    let digest = json!(hex("bytes"));
+    let domain = json!("quire.definition.bytes/v1");
+    let definition_sites: [&[&str]; 3] = [
+        &["lock", "edition", "definition"],
+        &["lock", "definition_selections", "0"],
+        &["diagnostics", "catalog"],
+    ];
+    let mut mutations: Vec<(String, Value)> = Vec::new();
+    for site in definition_sites {
+        for (member, value) in [
+            ("revision", &revision),
+            ("digest_domain", &domain),
+            ("digest", &digest),
+        ] {
+            let mut mutated = envelope.clone();
+            mutated["lock"]["definition_selections"] = json!([artifact_ref("rule")]);
+            let mut at = &mut mutated;
+            for key in site {
+                at = match key.parse::<usize>() {
+                    Ok(index) => &mut at[index],
+                    Err(_) => &mut at[*key],
+                };
+            }
+            at[member] = value.clone();
+            mutations.push((format!("{} {member}", site.join(".")), mutated));
+        }
+    }
+    let mut source_row = envelope.clone();
+    source_row["lock"]["sources"][0]["revision"] = revision.clone();
+    mutations.push(("lock.sources.0 revision".to_owned(), source_row));
+    let mut region_source = envelope.clone();
+    region_source["source_map"][0]["regions"][0]["source"]["revision"] = revision;
+    mutations.push(("region source revision".to_owned(), region_source));
+    for (name, mutated) in mutations {
+        let outcome = read(&jcs(&mutated), &pinned_for(&preimage));
+        assert!(
+            matches!(
+                &outcome,
+                Read::Refused(V2ReadRefusal::Envelope { refusal, .. })
+                    if refusal.code == CheckedPackageRefusalCode::UnknownMember
+            ),
+            "{name}: expected Refused(Envelope(UnknownMember)), got {outcome:?}"
+        );
+    }
 }
 
 #[test]
@@ -1244,10 +1300,6 @@ fn a_verified_read_carries_the_wire_source_map() {
         for region in regions {
             let source = region.source();
             assert_eq!((source.authority(), source.identity()), ("pkg", "src"));
-            assert_eq!(
-                (source.revision().namespace(), source.revision().value()),
-                ("semver", "1")
-            );
             assert_eq!(source.digest().hex(), hex("src"));
         }
         assert_eq!(
@@ -1438,14 +1490,6 @@ fn conformance_c14_source_map_lookup_over_qspec_positive_fixtures() {
                 let source = region.source();
                 assert_eq!(source.authority(), wire["source"]["authority"]);
                 assert_eq!(source.identity(), wire["source"]["identity"]);
-                assert_eq!(
-                    source.revision().namespace(),
-                    wire["source"]["revision"]["namespace"]
-                );
-                assert_eq!(
-                    source.revision().value(),
-                    wire["source"]["revision"]["value"]
-                );
                 assert_eq!(source.digest().hex(), wire["source"]["digest"]);
             }
             *per_node.entry(node).or_default() += 1;

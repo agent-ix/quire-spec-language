@@ -135,14 +135,13 @@ mod tests {
 
     use super::*;
     use crate::digest::{DigestDomain, WireNodeId};
-    use crate::source::provenance::{OccurrenceKey, RawSourceRef, Revision};
+    use crate::source::provenance::{OccurrenceKey, RawSourceRef};
 
     fn region(start: u64, end: u64) -> SourceRegion {
         SourceRegion::new(
             RawSourceRef::new(
                 "a",
                 "u",
-                Revision::new("git", "abc").unwrap(),
                 DigestRecord::mint(DigestDomain::SourceBytesV1, [7; 32]),
             )
             .unwrap(),
