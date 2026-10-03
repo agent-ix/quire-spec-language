@@ -12,15 +12,20 @@ When an owned fixture or qualification check is executed, the repository shall e
 
 ## Scope
 
-The repository's fixture assertions and qualification checks. Standard Cargo
-launch commands do not embed a second-language verifier. An implementation in another repository or a Rust
-wrapper is not an exemption.
+The repository's fixture assertions and qualification checks. Their
+verification logic is the code that compares a fixture or vector with its
+expected result. Standard Cargo launch commands do not embed a second-language
+verifier. An implementation in another repository or a Rust wrapper is not an
+exemption. The `conformance` Makefile target's shell `grep` only checks that
+each Rust conformance test printed its summary line, so that a test filter
+matching nothing cannot pass. It compares no fixture or vector; the Rust tests
+do.
 
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Non-Rust verification logic in the Rust test targets, `xtask` and `tools/arch-lint` | 0 | 0 | inspection |
+| Fixture or qualification checks whose verification logic is not Rust | 0 | 0 | inspection |
 
 ## Verification
 
