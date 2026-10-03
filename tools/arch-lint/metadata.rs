@@ -228,6 +228,29 @@ mod tests {
         );
     }
 
+    /// tc_arch_lint_metadata_010 (real data): QSL's own resolved dependency
+    /// graph, read the way `direction` reads `--qsl`, has no edge back into
+    /// QSL, and the FB-05 and FB-11 check over it is clean. A dependency that
+    /// depended on a git-sourced QSL crate would add an edge into QSL and
+    /// fail here. The QSL -> IR assertion keeps the check from passing on an
+    /// empty graph.
+    #[trace("TC-139", "FR-051-AC-6")]
+    #[test]
+    fn tc_arch_lint_metadata_010_real_qsl_graph_has_no_edge_back_into_qsl() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let edges = edges_for_manifest(&workspace.join("Cargo.toml")).unwrap();
+        assert!(
+            edges
+                .iter()
+                .any(|edge| edge.from == Repo::Qsl && edge.to == Repo::Ir),
+            "no QSL -> IR edge among {edges:?}"
+        );
+        let into_qsl: Vec<_> = edges.iter().filter(|edge| edge.to == Repo::Qsl).collect();
+        assert!(into_qsl.is_empty(), "edges into QSL: {into_qsl:?}");
+        let report = crate::graph::check(&edges);
+        assert!(report.is_clean(), "{report:?}");
+    }
+
     /// tc_arch_lint_metadata_007: the kernel leaf `quire-exact`, git-sourced
     /// from the QSL repository, contributes no repository to the edge graph
     /// (`edge_repo`), so an RT dependency on it yields no edge and no finding; RT's dependency on

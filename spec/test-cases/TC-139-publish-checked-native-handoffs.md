@@ -55,4 +55,7 @@ no FB-11 cycle.
 Passing for `quire-spec-language#90`; activation-guard coverage extended by
 `quire-spec-language#98`. FR-051-AC-1 through FR-051-AC-5 retired
 (M-6d); FR-051-AC-6 amended to the still-live cycle-free production-graph
-check, which `arch-lint direction` (FR-059) runs.
+check, which `arch-lint direction` (FR-059) runs. FR-051-AC-6 passes:
+`tools/arch-lint`'s `tc_arch_lint_metadata_010` resolves QSL's own manifest
+the way `direction` reads `--qsl`, and asserts that no edge enters QSL and
+that the FB-05 and FB-11 check is clean.
