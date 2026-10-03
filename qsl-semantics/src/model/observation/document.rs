@@ -218,7 +218,7 @@ pub(super) fn read_document(
         )));
     }
     let document_bytes = bytes.len() as u64;
-    let mut parsed: Option<OrderedJson> = serde_json::from_slice(bytes).ok();
+    let parsed: Option<OrderedJson> = serde_json::from_slice(bytes).ok();
     // 1.2: nesting depth (only meaningful once parsed).
     let nesting_depth = parsed.as_ref().map_or(0, OrderedJson::depth);
     if nesting_depth > limits.nesting_depth {
@@ -229,7 +229,7 @@ pub(super) fn read_document(
     }
     // 1.3: digest, before any member is read. Bytes that do not parse are
     // digested raw, and so refuse here.
-    check_document_digest(bytes, selected.digest, parsed.as_mut())?;
+    check_document_digest(bytes, selected.digest)?;
     let digest = selected.digest;
     // Bytes that matched the expected digest raw (never parsed as JSON at
     // all) or that parsed but are not a JSON object trivially hold no

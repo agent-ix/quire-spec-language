@@ -617,12 +617,12 @@ impl Spelled {
 impl quire_canonical::Sink for Spelled {
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), quire_canonical::Error> {
         let end = self.length + bytes.len();
-        let room = self
-            .bytes
-            .get_mut(self.length..end)
-            .ok_or(quire_canonical::Error::Internal {
-                invariant: "a number's RFC 8785 text fits 32 bytes",
-            })?;
+        let room =
+            self.bytes
+                .get_mut(self.length..end)
+                .ok_or(quire_canonical::Error::Internal {
+                    invariant: "a number's RFC 8785 text fits 32 bytes",
+                })?;
         room.copy_from_slice(bytes);
         self.length = end;
         Ok(())

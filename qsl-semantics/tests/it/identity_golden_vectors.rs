@@ -27,12 +27,12 @@ use qsl_semantics::model::domain_package::{
     DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord,
 };
 use qsl_semantics::model::intake::admit;
-use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::model::key::{
     DeclarationKey, EffectiveDeclarationPreimage, EffectiveId, Fact, RULE_QUALIFY,
     SHA256_JCS_DIGEST_DOMAIN,
 };
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome, ObjectUniverse};
+use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
     admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, NodeOwner,
@@ -306,7 +306,11 @@ fn refusal_under(raw: &str, digest: [u8; 32]) -> Option<ModelRefusal> {
 /// `inexact-integer` at `/n`, never a digest mismatch.
 fn assert_inexact_integer_at_n(raw: &str, digest: [u8; 32], what: &str) {
     let refusal = refusal_under(raw, digest).unwrap_or_else(|| panic!("{what} admitted"));
-    assert_eq!(refusal.code, qsl_foundation::diagnostic::Code::NoncanonicalWire, "{what}");
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::NoncanonicalWire,
+        "{what}"
+    );
     assert!(
         matches!(
             &refusal.cause,
