@@ -2310,7 +2310,7 @@ fn checked_invariant_and_call_fault_both_report_the_same_internal_failure_shape(
     // postcondition to attempt it against -- `test/nodes` declares only
     // `NoCycle`, an invariant. FR-105 lifted the compile-time blocker this
     // comment used to describe (SR-751 FND-003): `post VersionUnchanged` on
-    // `attemptUpdate` now compiles through `spine::compile`, in
+    // `attemptUpdate` now compiles through the spine, in
     // `config_version_compiled()` below, in this same file. Constructing
     // `CallFailure::Fault` directly here rather than through
     // `package.evaluate_clause` against that fixture is still the

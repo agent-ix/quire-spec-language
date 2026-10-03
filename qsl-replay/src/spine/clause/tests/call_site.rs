@@ -382,7 +382,7 @@ fn function_site_names_its_function_node_and_declaration_occurrence() {
         .unwrap_or_else(|refusal| panic!("{name} is declared: {refusal:?}"))
         .site
     };
-    let compiled = compile(
+    let compiled = compose(
         source(),
         "pq.native",
         PQ.as_bytes(),

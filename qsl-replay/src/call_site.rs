@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! A thin CG-facing cut of [`crate::spine::compile`]: the facts a client
+//! A thin CG-facing cut of the front-end operations in [`crate::spine`]: the facts a client
 //! needs to key a `ReplayRequestWire` or a frame or state-clause
 //! counterexample by node id
 //! and package id (ADR-013 O-25, C-11), without reaching

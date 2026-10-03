@@ -3,7 +3,7 @@
 //! replay executor entry, [`replay`].
 //!
 //! It reads the request (FR-071), recompiles the one source unit the
-//! package reference names through the spine ([`crate::spine::compile`],
+//! package reference names through the spine ([`crate::spine::parse`],
 //! S1 to S4) from the digest-addressed byte provision, requires the
 //! recompiled `package_id` to equal the request's, selects the function by
 //! its `QualifiedName` in the recompiled package's declarations, joins the
