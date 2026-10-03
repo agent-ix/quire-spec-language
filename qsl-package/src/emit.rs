@@ -810,11 +810,9 @@ struct WireV2<'a> {
     diagnostics: &'a CheckedDiagnosticsV2,
 }
 
-// Does not compile until quire-contract-ir implements
-// `quire_canonical::Encode` (or `FixedShape`) for each IR type below:
-// `CheckedPackageIdentityPreimageV2`, `CheckedSemanticId`,
-// `CheckedPackageLockV2`, `CheckedSemanticGraphV2`, `CheckedSourceMapEntry`,
-// `CheckedCapability` and `CheckedDiagnosticsV2`.
+/// Each member writes itself through IR's own encoding: the identity
+/// preimage, the semantic graph and the diagnostics through their `Encode`,
+/// and the fixed-depth members through their derived `FixedShape`.
 impl Encode for WireV2<'_> {
     fn encode_into<S: Sink + ?Sized>(
         &self,

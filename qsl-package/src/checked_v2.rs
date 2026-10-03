@@ -595,8 +595,6 @@ fn canonical_preimage(
     artifact_bytes: usize,
 ) -> Result<Vec<u8>, String> {
     let limits = quire_canonical::Limits::new(u64::try_from(artifact_bytes).unwrap_or(u64::MAX));
-    // Does not compile until quire-contract-ir implements
-    // `quire_canonical::Encode` for `CheckedPackageIdentityPreimageV2`.
     quire_canonical::to_vec(preimage, limits).map_err(|error| error.to_string())
 }
 

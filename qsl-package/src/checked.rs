@@ -506,8 +506,6 @@ impl EmittedPackage {
         // preimage through its `quire_canonical::Encode`: the encoder orders
         // members itself, and the projected node bodies nest as deep as
         // their expressions.
-        // Does not compile until quire-contract-ir implements
-        // `quire_canonical::Encode` for `CheckedPackageIdentityPreimageV2`.
         let preimage_bytes = quire_canonical::to_vec(identity_preimage, IDENTITY_LIMITS)?;
         let package_id = PackageId::of_preimage(&preimage_bytes);
         Ok(Self {
