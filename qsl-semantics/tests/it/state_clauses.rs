@@ -127,9 +127,12 @@ fn assembly_refusals(document: &[u8], body: &str) -> Vec<AssemblyError> {
         .errors
 }
 
-/// Every node of `root`'s subtree, root included. `Node::descendants` is
-/// crate-private; `Node::children` is public, so this walks with it.
-fn descendants(root: &qsl_semantics::check::Node) -> Vec<&qsl_semantics::check::Node> {
+/// Every node of `root`'s subtree, root included. `CheckedNode::descendants`
+/// is crate-private; `CheckedNode::children` is public, so this walks with
+/// it.
+fn descendants(
+    root: qsl_semantics::check::CheckedNode<'_>,
+) -> Vec<qsl_semantics::check::CheckedNode<'_>> {
     let mut all = vec![root];
     let mut stack = root.children();
     while let Some(node) = stack.pop() {
@@ -231,7 +234,8 @@ fn the_configversion_state_clauses_check() {
             .into_iter()
             .any(|node| matches!(
                 node.kind(),
-                NodeKind::Pre(operand) if matches!(operand.kind(), NodeKind::Attribute { .. })
+                NodeKind::Pre(operand)
+                    if matches!(node.at(*operand).kind(), NodeKind::Attribute { .. })
             )),
         "pre(self.versionNumber) is a Pre node over an Attribute node"
     );

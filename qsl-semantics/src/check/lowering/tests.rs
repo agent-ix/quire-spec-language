@@ -4,7 +4,7 @@
 //! repository's own FR-092 text at compile time, so the spec and the test
 //! cannot drift apart.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_forms::{
@@ -25,6 +25,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{CompositeDeclaration, FieldDeclaration, TypeEnvironment};
 
 mod binder_scope;
+mod deep_bodies;
 mod depth;
 mod differential;
 mod expression_depth;
@@ -145,7 +146,6 @@ fn type_nodes(
         &[],
         scope.types().units().clone(),
         &lock,
-        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,
@@ -333,42 +333,59 @@ fn a_declared_record_carries_its_owner_and_an_anonymous_type_does_not() {
     }
 }
 
-/// TC-413 step 5 (FR-092-AC-7): the type walk is bounded by the check
-/// stage's depth limit.
-#[trace("FR-092-AC-7", "TC-413")]
-#[test]
-fn a_type_nested_past_the_depth_limit_refuses() {
-    let nested = |depth: usize| {
-        (0..depth).fold(boolean(), |inner, _| {
-            TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![inner])
+/// Every node key of the package holding `function p(x: T): Boolean {
+/// true }` for `T` 100,000 `Option`s around `Boolean`, checked and dropped
+/// on a thread with a `stack`-byte stack, under limits raised to fit it.
+fn deep_option_keys(stack: usize) -> BTreeSet<NodeKey> {
+    std::thread::Builder::new()
+        .stack_size(stack)
+        .spawn(|| {
+            let parameter = (0..100_000).fold(boolean(), |inner, _| {
+                TypeForm::builtin(BuiltinType::Option, SPAN).with_arguments(vec![inner])
+            });
+            let limits = CheckingLimits::new(u64::MAX)
+                .with_input_bytes(u64::MAX)
+                .with_work_budget(u64::MAX);
+            let checked = PackageDeclarations {
+                functions: vec![function(
+                    "p",
+                    &[("x", parameter)],
+                    boolean(),
+                    None,
+                    Expression::boolean(true),
+                )],
+                ..PackageDeclarations::new(fixture_source())
+            }
+            .check(limits)
+            .unwrap_or_else(|refusals| panic!("the deep option parameter checks: {refusals:?}"));
+            let options = checked
+                .semantic_graph()
+                .nodes()
+                .filter(|node| node.semantic_form() == "option")
+                .count();
+            assert_eq!(options, 100_000);
+            checked
+                .semantic_graph()
+                .nodes()
+                .map(SemanticNode::key)
+                .collect()
         })
-    };
-    let limits = CheckingLimits::new(u64::MAX, 4).expect("a depth of 4 is allowed");
-    let checked = |depth: usize| {
-        PackageDeclarations {
-            functions: vec![function(
-                "p",
-                &[("x", nested(depth))],
-                boolean(),
-                None,
-                Expression::boolean(true),
-            )],
-            ..PackageDeclarations::new(fixture_source())
-        }
-        .check(limits)
-    };
-    assert!(checked(4).is_ok(), "four nested options are keyed");
-    let refusals = checked(5).expect_err("five nested options refuse");
-    assert!(
-        refusals.iter().any(|refusal| matches!(
-            refusal.cause,
-            CheckCause::ResourceExhausted(ref exceeded)
-                if exceeded.kind == CheckingLimitKind::Depth && exceeded.limit == 4
-        )),
-        "{refusals:?}"
+        .expect("the check thread spawns")
+        .join()
+        .expect("the check completes")
+}
+
+/// TC-413 step 5 (FR-092-AC-7, FR-258-AC-2): FR-092's type-keying walk keys
+/// a parameter typed with 100,000 nested `Option`s around `Boolean` on a
+/// 512 KiB stack, to the keys the same package has on an 8 MiB stack.
+#[trace("FR-092-AC-7", "TC-413")]
+#[trace("FR-258-AC-2", "TC-726")]
+#[test]
+fn a_100000_deep_option_type_keys_on_a_small_stack() {
+    assert_eq!(
+        deep_option_keys(512 * 1024),
+        deep_option_keys(8 * 1024 * 1024)
     );
-    assert_eq!(refusals[0].cause.code().as_str(), "stage_limit_exceeded");
-    assert_eq!(refusals[0].cause.cause(), Some("nesting-depth-exceeded"));
 }
 
 /// `function name(x: Int[0, 9]): Boolean decreases(x) { if x > 0 then
@@ -1989,7 +2006,6 @@ fn tc_441_an_unbounded_population_refuses_to_lower() {
         &[],
         scope.types().units().clone(),
         &lock,
-        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,

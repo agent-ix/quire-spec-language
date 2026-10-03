@@ -453,7 +453,6 @@ fn lower<T>(
         models,
         units,
         &lock,
-        quire_semantic_value::checking::MAX_CHECKING_DEPTH,
         0,
         &mut occurrences,
         &mut meter,

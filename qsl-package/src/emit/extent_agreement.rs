@@ -636,8 +636,9 @@ fn requirement_records(
                 .expect("the record's node is lowered");
             matches!(
                 node.body(),
-                qsl_semantics::check::SemanticTerm::Application { operation: applied, .. }
-                    if applied.identity() == operation
+                qsl_semantics::check::BodyTerm::Application(
+                    qsl_semantics::check::ApplicationTerm { operation: applied, .. }
+                ) if applied.identity() == operation
             )
         })
         .map(|(key, record)| (key.node(), record.requirements().extent().clone()))

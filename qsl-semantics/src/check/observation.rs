@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 
-use super::ir::{Node, NodeKind, Observation, Slot};
+use super::ir::{CheckedNode, NodeKind, Observation, Slot};
 use quire_semantic_value::location::Location;
 
 /// The observation of every model read of one state clause body, by the
@@ -33,16 +33,15 @@ impl Observations {
     /// observation is `clause` and whose slots below `roots` are its
     /// `self`, `result` and operation parameter bindings.
     ///
-    /// The walk recurses over the checked tree, whose depth typing already
-    /// bounded by the checking depth limit, as the definedness guard
-    /// helpers do (`facts`).
-    pub(crate) fn of(body: &Node, clause: Observation, roots: usize) -> Self {
+    /// The walk keeps its pending nodes on a heap stack, so no depth of
+    /// checked expression is a limit (ADR-030 D-1).
+    pub(crate) fn of(body: CheckedNode<'_>, clause: Observation, roots: usize) -> Self {
         let mut walk = Walk {
             roots,
             binders: BTreeMap::new(),
             reads: BTreeMap::new(),
         };
-        walk.node(body, clause);
+        walk.run(body, clause);
         Self { reads: walk.reads }
     }
 
@@ -68,54 +67,170 @@ struct Walk {
     reads: BTreeMap<Location, Observation>,
 }
 
+/// One pending step of [`Walk::run`]. Each [`Task::Visit`] leaves exactly
+/// one result: the observation the reference value its node yields was
+/// read at, when it yields one.
+enum Task<'n> {
+    /// Record the reads of a node under an ambient observation.
+    Visit(CheckedNode<'n>, Observation),
+    /// An attribute read's reference is visited: record the read, at the
+    /// reference's own observation or else the ambient one.
+    Attribute(&'n Location, Observation),
+    /// Bind a `let` slot to the visited value's observation, then visit the
+    /// body, whose result is the `let`'s.
+    Let(Slot, CheckedNode<'n>, Observation),
+    /// Bind a query binder to the visited source's observation, then visit
+    /// the body.
+    Query(Slot, CheckedNode<'n>, Observation),
+    /// Bind a fold's binder to the visited source's observation, then visit
+    /// the identity and the step.
+    Fold {
+        binder: Slot,
+        accumulator: Slot,
+        identity: Option<CheckedNode<'n>>,
+        step: CheckedNode<'n>,
+        ambient: Observation,
+    },
+    /// A conditional's operands are visited: it keeps an observation only
+    /// when both branches read it at the same one.
+    If,
+    /// Drop `count` results, record a read at `read` when given, and leave
+    /// `value`.
+    Collapse {
+        count: usize,
+        read: Option<(&'n Location, Observation)>,
+        value: Option<Observation>,
+    },
+}
+
 impl Walk {
-    /// Record the reads of `node` under the ambient observation `ambient`,
-    /// and return the observation a reference value `node` yields was read
-    /// at, when it yields one.
-    fn node(&mut self, node: &Node, ambient: Observation) -> Option<Observation> {
+    /// Record the reads of `root` under the ambient observation `ambient`.
+    fn run(&mut self, root: CheckedNode<'_>, ambient: Observation) {
+        let mut pending = vec![Task::Visit(root, ambient)];
+        let mut results: Vec<Option<Observation>> = Vec::new();
+        while let Some(task) = pending.pop() {
+            match task {
+                Task::Visit(node, ambient) => self.visit(node, ambient, &mut pending, &mut results),
+                Task::Attribute(location, ambient) => {
+                    let read = results.pop().flatten().unwrap_or(ambient);
+                    self.reads.insert(location.clone(), read);
+                    results.push(Some(read));
+                }
+                Task::Let(slot, body, ambient) => {
+                    let bound = results.pop().flatten();
+                    self.binders.insert(slot, bound);
+                    pending.push(Task::Visit(body, ambient));
+                }
+                Task::Query(slot, body, ambient) => {
+                    let bound = results.pop().flatten();
+                    self.binders.insert(slot, bound);
+                    pending.push(Task::Collapse {
+                        count: 1,
+                        read: None,
+                        value: None,
+                    });
+                    pending.push(Task::Visit(body, ambient));
+                }
+                Task::Fold {
+                    binder,
+                    accumulator,
+                    identity,
+                    step,
+                    ambient,
+                } => {
+                    let bound = results.pop().flatten();
+                    self.binders.insert(binder, bound);
+                    self.binders.insert(accumulator, None);
+                    pending.push(Task::Collapse {
+                        count: 1 + usize::from(identity.is_some()),
+                        read: None,
+                        value: None,
+                    });
+                    pending.push(Task::Visit(step, ambient));
+                    if let Some(identity) = identity {
+                        pending.push(Task::Visit(identity, ambient));
+                    }
+                }
+                Task::If => {
+                    let otherwise = results.pop().flatten();
+                    let then = results.pop().flatten();
+                    results.pop();
+                    results.push(then.filter(|_| then == otherwise));
+                }
+                Task::Collapse { count, read, value } => {
+                    results.truncate(results.len().saturating_sub(count));
+                    if let Some((location, observation)) = read {
+                        self.reads.insert(location.clone(), observation);
+                    }
+                    results.push(value);
+                }
+            }
+        }
+    }
+
+    /// Start visiting `node` under `ambient`: a node with no operand to
+    /// visit leaves its result now; any other pushes the steps that visit
+    /// its operands, in evaluation order, and finish it.
+    fn visit<'n>(
+        &self,
+        node: CheckedNode<'n>,
+        ambient: Observation,
+        pending: &mut Vec<Task<'n>>,
+        results: &mut Vec<Option<Observation>>,
+    ) {
+        let visit = |id| Task::Visit(node.at(id), ambient);
         match node.kind() {
-            NodeKind::Local(slot) if *slot < self.roots => Some(ambient),
-            NodeKind::Local(slot) => self.binders.get(slot).copied().flatten(),
+            NodeKind::Local(slot) if *slot < self.roots => results.push(Some(ambient)),
+            NodeKind::Local(slot) => results.push(self.binders.get(slot).copied().flatten()),
             NodeKind::Attribute { reference, .. } => {
-                let read = self.node(reference, ambient).unwrap_or(ambient);
-                self.reads.insert(node.location().clone(), read);
-                Some(read)
+                pending.push(Task::Attribute(node.location(), ambient));
+                pending.push(visit(*reference));
             }
             NodeKind::Reaches { source, target, .. } => {
-                self.node(source, ambient);
-                self.node(target, ambient);
-                self.reads.insert(node.location().clone(), ambient);
-                None
+                pending.push(Task::Collapse {
+                    count: 2,
+                    read: Some((node.location(), ambient)),
+                    value: None,
+                });
+                pending.push(visit(*target));
+                pending.push(visit(*source));
             }
             NodeKind::AllInstances { population } => {
-                self.node(population, ambient);
-                self.reads.insert(node.location().clone(), ambient);
-                Some(ambient)
+                pending.push(Task::Collapse {
+                    count: 1,
+                    read: Some((node.location(), ambient)),
+                    value: Some(ambient),
+                });
+                pending.push(visit(*population));
             }
             NodeKind::Lookup {
                 population,
                 reference,
                 ..
             } => {
-                self.node(population, ambient);
-                self.node(reference, ambient);
-                self.reads.insert(node.location().clone(), ambient);
-                Some(ambient)
+                pending.push(Task::Collapse {
+                    count: 2,
+                    read: Some((node.location(), ambient)),
+                    value: Some(ambient),
+                });
+                pending.push(visit(*reference));
+                pending.push(visit(*population));
             }
-            NodeKind::Pre(operand) => self.node(operand, Observation::Pre),
-            NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => self.node(operand, ambient),
+            NodeKind::Pre(operand) => {
+                pending.push(Task::Visit(node.at(*operand), Observation::Pre))
+            }
+            NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => {
+                pending.push(visit(*operand))
+            }
             NodeKind::Let { slot, value, body } => {
-                let bound = self.node(value, ambient);
-                self.binders.insert(*slot, bound);
-                self.node(body, ambient)
+                pending.push(Task::Let(*slot, node.at(*body), ambient));
+                pending.push(visit(*value));
             }
             NodeKind::Query {
                 slot, source, body, ..
             } => {
-                let bound = self.node(source, ambient);
-                self.binders.insert(*slot, bound);
-                self.node(body, ambient);
-                None
+                pending.push(Task::Query(*slot, node.at(*body), ambient));
+                pending.push(visit(*source));
             }
             NodeKind::Fold {
                 accumulator,
@@ -124,32 +239,33 @@ impl Walk {
                 step,
                 identity,
             } => {
-                let bound = self.node(source, ambient);
-                self.binders.insert(*binder, bound);
-                self.binders.insert(*accumulator, None);
-                if let Some(identity) = identity {
-                    self.node(identity, ambient);
-                }
-                self.node(step, ambient);
-                None
+                pending.push(Task::Fold {
+                    binder: *binder,
+                    accumulator: *accumulator,
+                    identity: identity.map(|identity| node.at(identity)),
+                    step: node.at(*step),
+                    ambient,
+                });
+                pending.push(visit(*source));
             }
-            // A reference chosen by a conditional keeps an observation only
-            // when both branches read it at the same one.
             NodeKind::If {
                 condition,
                 then,
                 otherwise,
             } => {
-                self.node(condition, ambient);
-                let then = self.node(then, ambient);
-                let otherwise = self.node(otherwise, ambient);
-                then.filter(|_| then == otherwise)
+                pending.push(Task::If);
+                pending.push(visit(*otherwise));
+                pending.push(visit(*then));
+                pending.push(visit(*condition));
             }
             _ => {
-                for child in node.children() {
-                    self.node(child, ambient);
-                }
-                None
+                let children = node.kind().children();
+                pending.push(Task::Collapse {
+                    count: children.len(),
+                    read: None,
+                    value: None,
+                });
+                pending.extend(children.into_iter().rev().map(visit));
             }
         }
     }

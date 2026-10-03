@@ -30,7 +30,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 
 mod value;
-use value::{reference_of, Keys, ValueWire};
+use value::{encode_element, reference_of, ElementWire, Keys};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
@@ -252,7 +252,7 @@ mod verdict_tests {
 #[serde(deny_unknown_fields)]
 struct RecordWire {
     quantifier: OccurrenceWire,
-    deciding_element: ValueWire,
+    deciding_element: ElementWire,
     #[serde(
         default,
         deserialize_with = "present",
@@ -275,7 +275,7 @@ impl RecordWire {
         }
         Ok(Self {
             quantifier: OccurrenceWire::of(&record.quantifier),
-            deciding_element: ValueWire::of(&record.deciding_element)?,
+            deciding_element: ElementWire::of(&record.deciding_element)?,
             index: record.index,
             value_path: PathWire::of(&record.value_path),
             trace_position: record
@@ -652,12 +652,10 @@ impl LocationWire {
 /// Whether `left` and `right` have the same typed value encoding; a value
 /// with no encoding is the same as nothing.
 pub(super) fn same_encoding(left: &Value, right: &Value) -> bool {
-    match (ValueWire::of(left), ValueWire::of(right)) {
-        (Ok(left), Ok(right)) => {
-            matches!((serde_json::to_value(left), serde_json::to_value(right)), (Ok(l), Ok(r)) if l == r)
-        }
-        _ => false,
-    }
+    matches!(
+        (encode_element(left), encode_element(right)),
+        (Ok(left), Ok(right)) if left.get() == right.get()
+    )
 }
 
 /// `bytes` as 64 lowercase hexadecimal digits.

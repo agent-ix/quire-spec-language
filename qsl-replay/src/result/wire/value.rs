@@ -20,7 +20,8 @@ use quire_exact::{
     VariantId,
 };
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape, TypeEnvironment};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::value::RawValue;
 
 use super::{digest, hex, present, CauseCodecError};
 
@@ -317,17 +318,6 @@ pub(super) struct CollectionTypeWire {
 }
 
 impl CollectionTypeWire {
-    fn of(collection_type: &CollectionType) -> Self {
-        Self {
-            collection: KindWire::of(collection_type.kind()),
-            element: Box::new(TypeWire::of(collection_type.element())),
-            bound: collection_type.bound().map(|bound| BoundWire {
-                minimum: bound.minimum(),
-                maximum: bound.maximum(),
-            }),
-        }
-    }
-
     fn read(self, keys: Keys<'_>) -> Result<CollectionType, CauseCodecError> {
         let bound = self
             .bound
@@ -372,7 +362,9 @@ fn rounding(text: &str) -> Result<RoundingMode, CauseCodecError> {
     RoundingMode::from_code(text).ok_or(CauseCodecError::Value("rounding"))
 }
 
-/// A value type, by its kind.
+/// A value type, by its kind. [`encode_element`] writes `option` and
+/// `collection` itself, over an explicit stack, and writes each other kind
+/// through this type's own encoding.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum TypeWire {
@@ -431,57 +423,6 @@ pub(super) enum TypeWire {
 }
 
 impl TypeWire {
-    fn of(value_type: &ValueType) -> Self {
-        match value_type {
-            ValueType::Boolean => Self::Boolean,
-            ValueType::Integer => Self::Integer,
-            ValueType::Int(interval) => Self::Int {
-                interval: IntervalWire::of(interval),
-            },
-            ValueType::Rational(domain) => Self::Rational {
-                numerator: IntervalWire::of(domain.numerator()),
-                denominator: IntervalWire::of(domain.denominator()),
-            },
-            ValueType::Decimal(decimal) => Self::Decimal {
-                lower: decimal.lower().to_string(),
-                upper: decimal.upper().to_string(),
-                min_scale: u64::from(decimal.min_scale()),
-                max_scale: u64::from(decimal.max_scale()),
-                rounding: decimal.rounding().as_str().to_owned(),
-            },
-            ValueType::Float(float) => Self::Float {
-                width: WidthWire::of(float.width()),
-                rounding: float.rounding().as_str().to_owned(),
-            },
-            ValueType::Quantity(unit) => Self::Quantity {
-                unit: UnitWire::of(*unit),
-            },
-            ValueType::Text(text_type) => Self::Text {
-                text_type: TextTypeWire::of(text_type),
-            },
-            ValueType::Enum(shape) => Self::Enum {
-                ordered: shape.is_ordered(),
-                variants: shape
-                    .variants()
-                    .map(|variant| hex(variant.as_bytes()))
-                    .collect(),
-            },
-            ValueType::Option(payload) => Self::Option {
-                payload: Box::new(Self::of(payload)),
-            },
-            ValueType::Composite(declaration) => Self::Composite {
-                declaration: hex(declaration.as_bytes()),
-            },
-            ValueType::Collection(collection_type) => Self::Collection {
-                collection_type: CollectionTypeWire::of(collection_type),
-            },
-            ValueType::Reference(object_type) => Self::Reference {
-                object_type: hex(object_type.as_bytes()),
-            },
-            ValueType::Population(maximum) => Self::Population { maximum: *maximum },
-        }
-    }
-
     fn read(self, keys: Keys<'_>) -> Result<ValueType, CauseCodecError> {
         Ok(match self {
             Self::Boolean => ValueType::Boolean,
@@ -553,7 +494,9 @@ pub(super) enum SlotWire {
     Null,
 }
 
-/// A deciding element, by its value kind.
+/// A deciding element, by its value kind. [`encode_element`] writes the
+/// forms that hold another value or type itself, over an explicit stack, and
+/// writes each other form through this type's own encoding.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum ValueWire {
@@ -614,74 +557,6 @@ pub(super) enum ValueWire {
 }
 
 impl ValueWire {
-    pub(super) fn of(value: &Value) -> Result<Self, CauseCodecError> {
-        Ok(match value {
-            Value::Boolean(value) => Self::Boolean { value: *value },
-            Value::Integer(integer) => Self::Integer {
-                decimal: integer.to_string(),
-            },
-            Value::Rational(rational) => Self::Rational {
-                value: RationalWire::of(rational),
-            },
-            Value::Decimal(decimal) => Self::Decimal {
-                coefficient: decimal.representation().coefficient().to_string(),
-                scale: decimal.representation().scale(),
-            },
-            Value::Float(float) => Self::Float {
-                width: WidthWire::of(float.width()),
-                bits: float.bits(),
-            },
-            Value::Quantity(quantity) => Self::Quantity {
-                magnitude: RationalWire::of(quantity.magnitude()),
-                unit: UnitWire::of(quantity.unit()),
-            },
-            Value::Text(text) => Self::Text {
-                text_type: TextTypeWire::of(text.text_type()),
-                payload: text.payload().as_str().to_owned(),
-            },
-            Value::Enum(member) => Self::Enum {
-                variant: hex(member.variant().as_bytes()),
-                rank: member.rank(),
-            },
-            Value::Option(option) => Self::Option {
-                payload_type: TypeWire::of(option.payload_type()),
-                payload: option.payload().map(Self::of).transpose()?.map(Box::new),
-            },
-            Value::Composite(composite) => Self::Composite {
-                declaration: hex(composite.declaration().as_bytes()),
-                slots: composite
-                    .slots()
-                    .iter()
-                    .map(|slot| {
-                        Ok(match slot {
-                            FieldValue::Present(value) => SlotWire::Present {
-                                value: Self::of(value)?,
-                            },
-                            FieldValue::Absent => SlotWire::Absent,
-                            FieldValue::Null => SlotWire::Null,
-                        })
-                    })
-                    .collect::<Result<_, CauseCodecError>>()?,
-            },
-            Value::Collection(collection) => Self::Collection {
-                collection_type: CollectionTypeWire::of(collection.collection_type()),
-                elements: collection
-                    .elements()
-                    .iter()
-                    .map(Self::of)
-                    .collect::<Result<_, _>>()?,
-            },
-            Value::Reference(reference) => Self::Reference {
-                universe: hex(reference.universe().as_bytes()),
-                object_type: hex(reference.object_type().as_bytes()),
-                object_identity: reference.object().as_str().to_owned(),
-            },
-            // A state clause cannot name a population (ADR-016 FE-4), so no
-            // claim's domain holds one.
-            Value::Population(_) => return Err(CauseCodecError::UnsupportedElement),
-        })
-    }
-
     pub(super) fn read(self, keys: Keys<'_>) -> Result<Value, CauseCodecError> {
         Ok(match self {
             Self::Boolean { value } => Value::Boolean(value),
@@ -772,4 +647,231 @@ impl ValueWire {
             )?),
         })
     }
+}
+
+/// A deciding element's FR-269 encoding: written as the JSON
+/// [`encode_element`] renders from the value, read as its typed form.
+pub(super) enum ElementWire {
+    /// Rendered from a value, to be written.
+    Written(Box<RawValue>),
+    /// Read from a cause document.
+    Read(ValueWire),
+}
+
+impl ElementWire {
+    pub(super) fn of(value: &Value) -> Result<Self, CauseCodecError> {
+        encode_element(value).map(Self::Written)
+    }
+
+    pub(super) fn read(self, keys: Keys<'_>) -> Result<Value, CauseCodecError> {
+        match self {
+            Self::Read(wire) => wire.read(keys),
+            Self::Written(raw) => serde_json::from_str::<ValueWire>(raw.get())?.read(keys),
+        }
+    }
+}
+
+impl Serialize for ElementWire {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Written(raw) => raw.serialize(serializer),
+            Self::Read(_) => Err(serde::ser::Error::custom(
+                "a deciding element read from a document is not written again",
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ElementWire {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        ValueWire::deserialize(deserializer).map(Self::Read)
+    }
+}
+
+/// One step of [`encode_element`].
+enum Encode<'v> {
+    /// Write this JSON text.
+    Text(&'static str),
+    /// Write this rendered JSON.
+    Json(String),
+    /// Encode a value.
+    Value(&'v Value),
+    /// Encode a value type.
+    Type(&'v ValueType),
+    /// Encode a collection type.
+    Collection(&'v CollectionType),
+}
+
+/// `wire`'s JSON, for a form that holds no other value or type.
+fn json<T: Serialize>(wire: &T) -> Result<String, CauseCodecError> {
+    Ok(serde_json::to_string(wire)?)
+}
+
+/// FR-269: `value`'s typed encoding. An `option`, `composite` or
+/// `collection` value and an `option` or `collection` type are written here,
+/// their members kept on an explicit heap stack, so a value or type of any
+/// depth encodes in constant host stack; every other form is written by its
+/// own wire type.
+pub(super) fn encode_element(value: &Value) -> Result<Box<RawValue>, CauseCodecError> {
+    let mut out = String::new();
+    let mut pending = vec![Encode::Value(value)];
+    while let Some(step) = pending.pop() {
+        let mut next: Vec<Encode<'_>> = Vec::new();
+        match step {
+            Encode::Text(text) => out.push_str(text),
+            Encode::Json(text) => out.push_str(&text),
+            Encode::Value(value) => match value {
+                Value::Boolean(value) => {
+                    out.push_str(&json(&ValueWire::Boolean { value: *value })?)
+                }
+                Value::Integer(integer) => out.push_str(&json(&ValueWire::Integer {
+                    decimal: integer.to_string(),
+                })?),
+                Value::Rational(rational) => out.push_str(&json(&ValueWire::Rational {
+                    value: RationalWire::of(rational),
+                })?),
+                Value::Decimal(decimal) => out.push_str(&json(&ValueWire::Decimal {
+                    coefficient: decimal.representation().coefficient().to_string(),
+                    scale: decimal.representation().scale(),
+                })?),
+                Value::Float(float) => out.push_str(&json(&ValueWire::Float {
+                    width: WidthWire::of(float.width()),
+                    bits: float.bits(),
+                })?),
+                Value::Quantity(quantity) => out.push_str(&json(&ValueWire::Quantity {
+                    magnitude: RationalWire::of(quantity.magnitude()),
+                    unit: UnitWire::of(quantity.unit()),
+                })?),
+                Value::Text(text) => out.push_str(&json(&ValueWire::Text {
+                    text_type: TextTypeWire::of(text.text_type()),
+                    payload: text.payload().as_str().to_owned(),
+                })?),
+                Value::Enum(member) => out.push_str(&json(&ValueWire::Enum {
+                    variant: hex(member.variant().as_bytes()),
+                    rank: member.rank(),
+                })?),
+                Value::Reference(reference) => out.push_str(&json(&ValueWire::Reference {
+                    universe: hex(reference.universe().as_bytes()),
+                    object_type: hex(reference.object_type().as_bytes()),
+                    object_identity: reference.object().as_str().to_owned(),
+                })?),
+                Value::Option(option) => {
+                    next.push(Encode::Text(r#"{"kind":"option","payload_type":"#));
+                    next.push(Encode::Type(option.payload_type()));
+                    if let Some(payload) = option.payload() {
+                        next.push(Encode::Text(r#","payload":"#));
+                        next.push(Encode::Value(payload));
+                    }
+                    next.push(Encode::Text("}"));
+                }
+                Value::Composite(composite) => {
+                    next.push(Encode::Text(r#"{"kind":"composite","declaration":"#));
+                    next.push(Encode::Json(json(&hex(composite
+                        .declaration()
+                        .as_bytes()))?));
+                    next.push(Encode::Text(r#","slots":["#));
+                    for (at, slot) in composite.slots().iter().enumerate() {
+                        if at > 0 {
+                            next.push(Encode::Text(","));
+                        }
+                        match slot {
+                            FieldValue::Present(value) => {
+                                next.push(Encode::Text(r#"{"slot":"present","value":"#));
+                                next.push(Encode::Value(value));
+                                next.push(Encode::Text("}"));
+                            }
+                            FieldValue::Absent => next.push(Encode::Text(r#"{"slot":"absent"}"#)),
+                            FieldValue::Null => next.push(Encode::Text(r#"{"slot":"null"}"#)),
+                        }
+                    }
+                    next.push(Encode::Text("]}"));
+                }
+                Value::Collection(collection) => {
+                    next.push(Encode::Text(r#"{"kind":"collection","type":"#));
+                    next.push(Encode::Collection(collection.collection_type()));
+                    next.push(Encode::Text(r#","elements":["#));
+                    for (at, element) in collection.elements().iter().enumerate() {
+                        if at > 0 {
+                            next.push(Encode::Text(","));
+                        }
+                        next.push(Encode::Value(element));
+                    }
+                    next.push(Encode::Text("]}"));
+                }
+                // A state clause cannot name a population (ADR-016 FE-4), so
+                // no claim's domain holds one.
+                Value::Population(_) => return Err(CauseCodecError::UnsupportedElement),
+            },
+            Encode::Type(value_type) => match value_type {
+                ValueType::Boolean => out.push_str(&json(&TypeWire::Boolean)?),
+                ValueType::Integer => out.push_str(&json(&TypeWire::Integer)?),
+                ValueType::Int(interval) => out.push_str(&json(&TypeWire::Int {
+                    interval: IntervalWire::of(interval),
+                })?),
+                ValueType::Rational(domain) => out.push_str(&json(&TypeWire::Rational {
+                    numerator: IntervalWire::of(domain.numerator()),
+                    denominator: IntervalWire::of(domain.denominator()),
+                })?),
+                ValueType::Decimal(decimal) => out.push_str(&json(&TypeWire::Decimal {
+                    lower: decimal.lower().to_string(),
+                    upper: decimal.upper().to_string(),
+                    min_scale: u64::from(decimal.min_scale()),
+                    max_scale: u64::from(decimal.max_scale()),
+                    rounding: decimal.rounding().as_str().to_owned(),
+                })?),
+                ValueType::Float(float) => out.push_str(&json(&TypeWire::Float {
+                    width: WidthWire::of(float.width()),
+                    rounding: float.rounding().as_str().to_owned(),
+                })?),
+                ValueType::Quantity(unit) => out.push_str(&json(&TypeWire::Quantity {
+                    unit: UnitWire::of(*unit),
+                })?),
+                ValueType::Text(text_type) => out.push_str(&json(&TypeWire::Text {
+                    text_type: TextTypeWire::of(text_type),
+                })?),
+                ValueType::Enum(shape) => out.push_str(&json(&TypeWire::Enum {
+                    ordered: shape.is_ordered(),
+                    variants: shape
+                        .variants()
+                        .map(|variant| hex(variant.as_bytes()))
+                        .collect(),
+                })?),
+                ValueType::Composite(declaration) => out.push_str(&json(&TypeWire::Composite {
+                    declaration: hex(declaration.as_bytes()),
+                })?),
+                ValueType::Reference(object_type) => out.push_str(&json(&TypeWire::Reference {
+                    object_type: hex(object_type.as_bytes()),
+                })?),
+                ValueType::Population(maximum) => {
+                    out.push_str(&json(&TypeWire::Population { maximum: *maximum })?)
+                }
+                ValueType::Option(payload) => {
+                    next.push(Encode::Text(r#"{"kind":"option","payload":"#));
+                    next.push(Encode::Type(payload));
+                    next.push(Encode::Text("}"));
+                }
+                ValueType::Collection(collection_type) => {
+                    next.push(Encode::Text(r#"{"kind":"collection","type":"#));
+                    next.push(Encode::Collection(collection_type));
+                    next.push(Encode::Text("}"));
+                }
+            },
+            Encode::Collection(collection_type) => {
+                next.push(Encode::Text(r#"{"collection":"#));
+                next.push(Encode::Json(json(&KindWire::of(collection_type.kind()))?));
+                next.push(Encode::Text(r#","element":"#));
+                next.push(Encode::Type(collection_type.element()));
+                if let Some(bound) = collection_type.bound() {
+                    next.push(Encode::Text(r#","bound":"#));
+                    next.push(Encode::Json(json(&BoundWire {
+                        minimum: bound.minimum(),
+                        maximum: bound.maximum(),
+                    })?));
+                }
+                next.push(Encode::Text("}"));
+            }
+        }
+        pending.extend(next.into_iter().rev());
+    }
+    Ok(RawValue::from_string(out)?)
 }

@@ -20,7 +20,9 @@ use quire_exact::{EffectiveId, Integer, NodeKey, UnitDomain, UnitId, ValueType};
 
 use super::{identifiers, refuse, type_declaration, Lowering, NodeContent, NominalNode};
 use crate::check::family::OccurrenceRole;
-use crate::check::node_key::{ModelOwner, NodeTag, Owner, SemanticTerm};
+use crate::check::node_key::{
+    Binding, BodyTerm, GroupMember, GroupTerm, LeafTerm, MemberTerm, ModelOwner, NodeTag, Owner,
+};
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault};
 use crate::model::domain_package::{DomainPackage, DomainPackageRecord, DomainPackageRef};
 use crate::model::key::DeclarationKey;
@@ -290,9 +292,7 @@ impl<'a> Lowering<'a> {
             form,
             None,
             Owner::Model(owner),
-            SemanticTerm::Aggregate {
-                members: Vec::new(),
-            },
+            BodyTerm::aggregate(Vec::new()),
         )?;
         self.correspondence
             .record(key, declaration.clone())
@@ -360,9 +360,7 @@ impl<'a> Lowering<'a> {
             "reference",
             None,
             None,
-            SemanticTerm::Aggregate {
-                members: vec![SemanticTerm::reference(object)],
-            },
+            BodyTerm::aggregate(vec![MemberTerm::reference(object)]),
         )
     }
 
@@ -390,9 +388,7 @@ impl<'a> Lowering<'a> {
             "set",
             None,
             None,
-            SemanticTerm::Aggregate {
-                members: vec![SemanticTerm::reference(reference)],
-            },
+            BodyTerm::aggregate(vec![MemberTerm::reference(reference)]),
         )?;
         let max = self.integer_literal(Integer::from(maximum), location)?;
         self.bounded("model_population", set, vec![("max", max)], location)
@@ -426,12 +422,10 @@ impl<'a> Lowering<'a> {
                 for (root, exponent) in terms {
                     self.unit_nodes(root, location)?;
                     let exponent = self.integer_literal(exponent, location)?;
-                    members.push(SemanticTerm::Aggregate {
-                        members: vec![
-                            SemanticTerm::binding("unit", SemanticTerm::reference(root)),
-                            SemanticTerm::binding("exponent", exponent),
-                        ],
-                    });
+                    members.push(MemberTerm::Group(GroupTerm::new(vec![
+                        GroupMember::Binding(Binding::new("unit", LeafTerm::reference(root))),
+                        GroupMember::Binding(Binding::new("exponent", exponent)),
+                    ])));
                 }
                 self.insert(
                     location,
@@ -439,7 +433,7 @@ impl<'a> Lowering<'a> {
                     "compound_unit",
                     None,
                     None,
-                    SemanticTerm::Aggregate { members },
+                    BodyTerm::aggregate(members),
                 )
             }
         }
@@ -513,9 +507,7 @@ impl<'a> Lowering<'a> {
                     semantic_type,
                     declaration: Some(declaration),
                     owner: None,
-                    body: SemanticTerm::Aggregate {
-                        members: Vec::new(),
-                    },
+                    body: BodyTerm::aggregate(Vec::new()),
                 },
                 nominal,
             )?;
@@ -531,13 +523,10 @@ impl<'a> Lowering<'a> {
         &mut self,
         clause: &ModelClause,
         location: &Location,
-    ) -> Result<(Owner, SemanticTerm), CheckRefusal> {
+    ) -> Result<(Owner, MemberTerm), CheckRefusal> {
         let (owner, _) = self.model_owner(&clause.declaration, location)?;
         let spelling = self.text_literal(clause_spelling(clause.kind), location)?;
-        Ok((
-            Owner::Model(owner),
-            SemanticTerm::binding("clause", spelling),
-        ))
+        Ok((Owner::Model(owner), MemberTerm::bound("clause", spelling)))
     }
 }
 

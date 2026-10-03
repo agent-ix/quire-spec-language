@@ -3,11 +3,12 @@
 //! declarations into the typed tree, before any definedness or termination
 //! judgment.
 //!
-//! Every refusal here is made before any charge. Typing nesting is bounded
-//! by the declared [`CheckingLimits`] depth; reaching a declared limit is
-//! `stage_limit_exceeded`, never an admission verdict. The typer itself
-//! (`typing`) walks an expression over an explicit heap stack, so
-//! its host stack use does not grow with nesting.
+//! Every refusal here is made before any charge. Typing is bounded by the
+//! declared [`CheckingLimits`] node ceiling, not by nesting depth (ADR-030
+//! D-1); reaching a declared limit is `stage_limit_exceeded`, never an
+//! admission verdict. The typer itself (`typing`) walks an expression over
+//! an explicit heap stack whose frames the node ceiling charges, so its host
+//! stack use does not grow with nesting.
 //!
 //! FR-065 (owner ruling, carried from the QSL-25 spec review): this module
 //! retains `infer_form`'s dispatch over [`Expression`] for every `Value`
@@ -48,7 +49,8 @@ use std::collections::{BTreeMap, BTreeSet};
 mod typing;
 
 use super::ir::{
-    Arithmetic, Connective, DispatchTable, Node, NodeKind, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
+    OrderedKind, RecordSlot, Slot, Visit,
 };
 use super::refusal::{
     CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
@@ -646,7 +648,6 @@ pub(crate) struct Typer<'a> {
     signatures: &'a Signatures,
     limits: CheckingLimits,
     nodes: &'a mut u64,
-    depth: u64,
     locals: Vec<Local>,
     slots: usize,
     /// The name each slot was bound under, indexed by slot (FR-092: a
@@ -666,6 +667,8 @@ pub(crate) struct Typer<'a> {
     /// The package's quantity units, then every compound unit this pass
     /// formed as a product or quotient type.
     units: UnitScope<'a>,
+    /// The nodes typed so far, each stored once a parent names it.
+    body: BodyBuilder,
 }
 
 /// A state clause's own typing context (FR-104 "Typing"): its kind, the
@@ -808,29 +811,35 @@ fn contextual(expression: ExprRef<'_>) -> bool {
     }
 }
 
-/// Admit `node` where `required` is expected: identical types, an integer into
-/// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
-/// through a range-obligated [`NodeKind::Coerce`].
-pub(crate) fn coerce(node: Node, required: &ValueType) -> Result<Node, CheckRefusal> {
-    if &node.value_type == required {
-        return Ok(node);
-    }
-    match (&node.value_type, required) {
-        (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
-        (ValueType::Int(source), ValueType::Int(target))
-            if target.lower() <= source.lower() && source.upper() <= target.upper() =>
-        {
-            Ok(node)
+impl Typer<'_> {
+    /// Admit `node` where `required` is expected: identical types, an integer into
+    /// `Integer` or a containing `Int[..]`, or an integer into another `Int[..]`
+    /// through a range-obligated [`NodeKind::Coerce`].
+    pub(crate) fn coerce(
+        &mut self,
+        node: Node,
+        required: &ValueType,
+    ) -> Result<Node, CheckRefusal> {
+        if &node.value_type == required {
+            return Ok(node);
         }
-        (ValueType::Integer | ValueType::Int(_), ValueType::Int(target)) => {
-            let location = node.location.clone();
-            Ok(Node {
-                kind: NodeKind::Coerce(Box::new(node), target.clone()),
-                value_type: required.clone(),
-                location,
-            })
+        match (&node.value_type, required) {
+            (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => Ok(node),
+            (ValueType::Int(source), ValueType::Int(target))
+                if target.lower() <= source.lower() && source.upper() <= target.upper() =>
+            {
+                Ok(node)
+            }
+            (ValueType::Integer | ValueType::Int(_), ValueType::Int(target)) => {
+                let location = node.location.clone();
+                Ok(Node {
+                    kind: NodeKind::Coerce(self.push(node), target.clone()),
+                    value_type: required.clone(),
+                    location,
+                })
+            }
+            _ => Err(mismatch(&node.location)),
         }
-        _ => Err(mismatch(&node.location)),
     }
 }
 
@@ -856,14 +865,19 @@ impl<'a> Typer<'a> {
             signatures,
             limits,
             nodes,
-            depth: 0,
             locals: Vec::new(),
             slots: 0,
             slot_names: Vec::new(),
             clause_kind,
             state: None,
             units: UnitScope::new(scope.types.units()),
+            body: BodyBuilder::default(),
         }
+    }
+
+    /// Store `node` as an operand of the node being built, and name it.
+    fn push(&mut self, node: Node) -> NodeId {
+        self.body.push(node)
     }
 
     /// Type this pass as the state clause `state` (FR-104): `self`, `result`
@@ -1132,20 +1146,8 @@ impl<'a> Typer<'a> {
                 self.nodes.saturating_add(1),
             ));
         }
-        if self.depth >= self.limits.depth() {
-            return Err(exhausted(
-                CheckingLimitKind::Depth,
-                self.limits.depth(),
-                self.depth.saturating_add(1),
-            ));
-        }
         *self.nodes = self.nodes.saturating_add(1);
-        self.depth = self.depth.saturating_add(1);
         Ok(())
-    }
-
-    fn leave(&mut self) {
-        self.depth = self.depth.saturating_sub(1);
     }
 
     /// Check a declared type: its named declarations, reference targets, keyed
@@ -1254,7 +1256,7 @@ impl<'a> Typer<'a> {
             ));
         }
         Ok(node(
-            NodeKind::Literal(Value::Rational(value)),
+            NodeKind::Literal(CheckedLiteral(Value::Rational(value))),
             ValueType::Rational(domain.clone()),
             location,
         ))
@@ -1279,10 +1281,10 @@ impl<'a> Typer<'a> {
                 let rank = u32::try_from(member.position())
                     .expect("an admitted enum has far fewer than u32::MAX members");
                 Ok(node(
-                    NodeKind::Literal(Value::Enum(EnumMember::new(
+                    NodeKind::Literal(CheckedLiteral(Value::Enum(EnumMember::new(
                         mint_variant_id(binding.declaration.key(), member.case()),
                         rank,
-                    ))),
+                    )))),
                     ValueType::Enum(binding.shape()),
                     location,
                 ))
@@ -1302,7 +1304,7 @@ impl<'a> Typer<'a> {
     /// `left = right` or `left != right` over its two typed operands, each
     /// with the equality operand it compares as.
     fn equality(
-        &self,
+        &mut self,
         operator: EqualityOperator,
         (left, left_operand): (Node, EqualityOperand),
         (right, right_operand): (Node, EqualityOperand),
@@ -1320,7 +1322,12 @@ impl<'a> Typer<'a> {
             )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(
-            NodeKind::Equality(operator, Box::new(checked), Box::new(left), Box::new(right)),
+            NodeKind::Equality(
+                operator,
+                Box::new(checked),
+                self.push(left),
+                self.push(right),
+            ),
             ValueType::Boolean,
             location,
         ))
@@ -1328,7 +1335,7 @@ impl<'a> Typer<'a> {
 
     /// An ordering over its two typed operands.
     fn ordering(
-        &self,
+        &mut self,
         operator: OrderingOperator,
         left: Node,
         right: Node,
@@ -1374,7 +1381,7 @@ impl<'a> Typer<'a> {
             _ => return Err(mismatch(location)),
         };
         Ok(node(
-            NodeKind::Order(operator, kind, Box::new(left), Box::new(right)),
+            NodeKind::Order(operator, kind, self.push(left), self.push(right)),
             ValueType::Boolean,
             location,
         ))
@@ -1392,7 +1399,7 @@ impl<'a> Typer<'a> {
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let (left_type, right_type) = (left.value_type.clone(), right.value_type.clone());
-        let (left_box, right_box) = (Box::new(left), Box::new(right));
+        let (left_box, right_box) = (self.push(left), self.push(right));
         let (kind, value_type) = match (&left_type, &right_type, operator) {
             (l, r, ArithmeticOperator::Divide) if is_integer(l) && is_integer(r) => match hint {
                 Some(ValueType::Rational(domain)) => (
@@ -1498,14 +1505,14 @@ impl<'a> Typer<'a> {
     /// Unary `-` over its typed operand: integers, rationals and decimals.
     /// FR-148 and FR-142 define no negation of an IEEE value or a quantity.
     fn negate(
-        &self,
+        &mut self,
         operand: Node,
         hint: Option<&ValueType>,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         let (kind, value_type) = match &operand.value_type {
             ValueType::Integer | ValueType::Int(_) => {
-                (NodeKind::Negate(Box::new(operand)), ValueType::Integer)
+                (NodeKind::Negate(self.push(operand)), ValueType::Integer)
             }
             ValueType::Rational(domain) => {
                 let domain = match hint {
@@ -1513,7 +1520,7 @@ impl<'a> Typer<'a> {
                     _ => domain.negated(),
                 };
                 (
-                    NodeKind::RationalNegate(Box::new(operand), domain.clone()),
+                    NodeKind::RationalNegate(self.push(operand), domain.clone()),
                     ValueType::Rational(domain),
                 )
             }
@@ -1530,7 +1537,7 @@ impl<'a> Typer<'a> {
                     .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?,
                 };
                 (
-                    NodeKind::DecimalNegate(Box::new(operand), target.clone()),
+                    NodeKind::DecimalNegate(self.push(operand), target.clone()),
                     ValueType::Decimal(target),
                 )
             }
@@ -1553,7 +1560,7 @@ impl<'a> Typer<'a> {
     /// (`self.f`/`r.f` inside a state clause never does; SR-750 FND-008
     /// round 2).
     fn attribute(
-        &self,
+        &mut self,
         reference: Node,
         field: &str,
         operand_location: &Location,
@@ -1580,7 +1587,7 @@ impl<'a> Typer<'a> {
         Ok(node(
             NodeKind::Attribute {
                 field: attribute.identity(),
-                reference: Box::new(reference),
+                reference: self.push(reference),
                 optional,
                 derefed,
             },
@@ -1642,7 +1649,7 @@ impl<'a> Typer<'a> {
     /// a set, bag or ordered set of references included, refuses
     /// `ill_typed`/`operator-ineligible` at the `reaches`.
     fn reaches(
-        &self,
+        &mut self,
         source: Node,
         target: Node,
         edge: &str,
@@ -1676,8 +1683,8 @@ impl<'a> Typer<'a> {
         }
         Ok(node(
             NodeKind::Reaches {
-                source: Box::new(source),
-                target: Box::new(target),
+                source: self.push(source),
+                target: self.push(target),
                 edge: attribute.identity(),
             },
             ValueType::Boolean,
@@ -1751,7 +1758,12 @@ impl<'a> Typer<'a> {
     }
 
     /// `e.f` over the typed record `e`.
-    fn field(&self, operand: Node, field: &str, location: &Location) -> Result<Node, CheckRefusal> {
+    fn field(
+        &mut self,
+        operand: Node,
+        field: &str,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
         let ValueType::Composite(key) = operand.value_type else {
             return Err(mismatch(location));
         };
@@ -1776,7 +1788,7 @@ impl<'a> Typer<'a> {
         };
         Ok(node(
             NodeKind::Field {
-                operand: Box::new(operand),
+                operand: self.push(operand),
                 index,
                 optional,
             },
@@ -1982,7 +1994,7 @@ impl<'a> Typer<'a> {
 
     /// `convert<target>(e)` over the typed operand `e`.
     fn convert(
-        &self,
+        &mut self,
         target: &ValueType,
         operand: Node,
         location: &Location,
@@ -1995,7 +2007,7 @@ impl<'a> Typer<'a> {
                 Ok(node(
                     NodeKind::ConvertCollection {
                         target: (**to).clone(),
-                        operand: Box::new(operand),
+                        operand: self.push(operand),
                     },
                     target.clone(),
                     location,
@@ -2009,7 +2021,7 @@ impl<'a> Typer<'a> {
                     return Err(refuse(location, CheckCause::IeeeProfileNotAdmitted));
                 }
                 Ok(node(
-                    NodeKind::IeeeToRational(Box::new(operand), domain.clone()),
+                    NodeKind::IeeeToRational(self.push(operand), domain.clone()),
                     target.clone(),
                     location,
                 ))
@@ -2018,7 +2030,7 @@ impl<'a> Typer<'a> {
                 if !admits_equality_conversion(&operand.value_type, target, &self.units) =>
             {
                 Ok(node(
-                    NodeKind::ConvertDecimal(Box::new(operand), decimal.clone()),
+                    NodeKind::ConvertDecimal(self.push(operand), decimal.clone()),
                     target.clone(),
                     location,
                 ))
@@ -2031,7 +2043,7 @@ impl<'a> Typer<'a> {
                 }
                 let converted = EqualityOperand::converted(source.clone(), target.clone());
                 Ok(node(
-                    NodeKind::ConvertScalar(converted, Box::new(operand)),
+                    NodeKind::ConvertScalar(converted, self.push(operand)),
                     target.clone(),
                     location,
                 ))
@@ -2058,6 +2070,7 @@ impl<'a> Typer<'a> {
     /// the result's declared bound `[0,N]` directly; no runtime value is
     /// consulted at check time.
     fn all_instances(
+        &mut self,
         target: &ValueType,
         population: Node,
         location: &Location,
@@ -2077,7 +2090,7 @@ impl<'a> Typer<'a> {
             CollectionType::new(CollectionKind::Set, target.clone(), result_bound);
         Ok(node(
             NodeKind::AllInstances {
-                population: Box::new(population),
+                population: self.push(population),
             },
             ValueType::collection(collection_type),
             location,
@@ -2108,7 +2121,7 @@ impl<'a> Typer<'a> {
     /// evaluation (`crate::model::population::lookup`), which still decides
     /// `S` against `T` for a runtime binding.
     fn lookup(
-        &self,
+        &mut self,
         target: &ValueType,
         population: Node,
         reference: Node,
@@ -2128,8 +2141,8 @@ impl<'a> Typer<'a> {
         };
         Ok(node(
             NodeKind::Lookup {
-                population: Box::new(population),
-                reference: Box::new(reference),
+                population: self.push(population),
+                reference: self.push(reference),
                 absence,
             },
             value_type,
@@ -2192,8 +2205,8 @@ impl<'a> Typer<'a> {
                     NodeKind::Query {
                         visit: Visit::Map,
                         slot,
-                        source: Box::new(source),
-                        body: Box::new(body),
+                        source: self.push(source),
+                        body: self.push(body),
                     },
                     value_type,
                     location,
@@ -2217,8 +2230,8 @@ impl<'a> Typer<'a> {
                     NodeKind::Query {
                         visit: Visit::Filter,
                         slot,
-                        source: Box::new(source),
-                        body: Box::new(body),
+                        source: self.push(source),
+                        body: self.push(body),
                     },
                     ValueType::collection(filtered),
                     location,
@@ -2234,8 +2247,8 @@ impl<'a> Typer<'a> {
                     NodeKind::Query {
                         visit,
                         slot,
-                        source: Box::new(source),
-                        body: Box::new(body),
+                        source: self.push(source),
+                        body: self.push(body),
                     },
                     ValueType::Boolean,
                     location,
@@ -2246,7 +2259,7 @@ impl<'a> Typer<'a> {
         Ok(typed)
     }
 
-    fn flatten(&self, source: Node, location: &Location) -> Result<Node, CheckRefusal> {
+    fn flatten(&mut self, source: Node, location: &Location) -> Result<Node, CheckRefusal> {
         let ValueType::Collection(outer) = &source.value_type else {
             return Err(mismatch(location));
         };
@@ -2282,7 +2295,7 @@ impl<'a> Typer<'a> {
         let value_type = ValueType::collection(flattened);
         self.check_declared_type(&value_type, location)?;
         Ok(node(
-            NodeKind::Flatten(Box::new(source)),
+            NodeKind::Flatten(self.push(source)),
             value_type,
             location,
         ))
@@ -2327,7 +2340,7 @@ impl<'a> Typer<'a> {
     /// `contains(c, v)` over its typed collection `c`, of element type
     /// `element`, and its typed item `v`: the element type admits equality.
     fn contains(
-        &self,
+        &mut self,
         collection: Node,
         item: Node,
         element: ValueType,
@@ -2344,7 +2357,7 @@ impl<'a> Typer<'a> {
             )
             .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
         Ok(node(
-            NodeKind::Contains(Box::new(collection), Box::new(item)),
+            NodeKind::Contains(self.push(collection), self.push(item)),
             ValueType::Boolean,
             location,
         ))
@@ -2354,7 +2367,12 @@ impl<'a> Typer<'a> {
 /// Whether a well-typed step is in the FR-145 set-and-bag catalog: `acc OP t`
 /// or `t OP acc`, `acc` not in `t`, `t` of type `A`, and `+` or `*` on
 /// `Integer` or `and` or `or` on `Boolean`.
-fn catalogued_step(step: &Node, accumulator: Slot, value_type: &ValueType) -> bool {
+fn catalogued_step(
+    body: &BodyBuilder,
+    step: &Node,
+    accumulator: Slot,
+    value_type: &ValueType,
+) -> bool {
     let (left, right) = match (&step.kind, value_type) {
         (
             NodeKind::Arithmetic(Arithmetic::Add | Arithmetic::Multiply, left, right),
@@ -2363,19 +2381,32 @@ fn catalogued_step(step: &Node, accumulator: Slot, value_type: &ValueType) -> bo
         | (
             NodeKind::Connective(Connective::And | Connective::Or, left, right),
             ValueType::Boolean,
-        ) => (left, right),
+        ) => (*left, *right),
         _ => return false,
     };
     let is_accumulator =
         |operand: &Node| matches!(operand.kind, NodeKind::Local(slot) if slot == accumulator);
-    let other = if is_accumulator(left) {
+    let (Some(left_node), Some(right_node)) = (body.get(left), body.get(right)) else {
+        return false;
+    };
+    let other = if is_accumulator(left_node) {
         right
-    } else if is_accumulator(right) {
+    } else if is_accumulator(right_node) {
         left
     } else {
         return false;
     };
-    &other.value_type == value_type && !other.descendants().into_iter().any(is_accumulator)
+    if body.get(other).map(|node| &node.value_type) != Some(value_type) {
+        return false;
+    }
+    let mut pending = vec![other];
+    while let Some(id) = pending.pop() {
+        match body.get(id) {
+            Some(node) if !is_accumulator(node) => pending.extend(node.kind.children()),
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// Check a function signature's declared types and bind its parameters.

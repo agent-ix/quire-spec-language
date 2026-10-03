@@ -33,7 +33,7 @@ quire-semantic-value = { path = "../quire-semantic-value" }
 thiserror = "2.0.20"
 # FR-269: the `DisagreementCause` wire codec and its strict reader.
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = { version = "1.0.151", features = ["raw_value"] }
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

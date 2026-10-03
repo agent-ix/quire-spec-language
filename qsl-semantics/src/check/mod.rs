@@ -129,10 +129,11 @@ pub use lowering::{
     AdmittedModel, ForeignView, LockEvidence, ModelClause, NominalNode, SemanticGraph, SemanticNode,
 };
 pub use node_key::{
-    FrameField, IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole, LeafSegment,
-    LiteralValue, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag, Operation, OperationLaw,
-    OperationLeaf, OperationMode, Operator, Owner, PackageRef, SemanticTerm, SourceOwner,
-    WireNodeRef,
+    AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameField, FrameTerm,
+    GroupMember, GroupTerm, IntegerSite, InvalidModelOwner, InvalidSourceOwner, LawRole,
+    LeafSegment, LeafTerm, LiteralValue, MemberTerm, ModelOwner, NodeKeyRefusal, NodeRef, NodeTag,
+    Operation, OperationLaw, OperationLeaf, OperationMode, Operator, Owner, PackageRef,
+    SourceOwner, WireNodeRef,
 };
 // PR #303 review, finding N7b: `empty_scope`/`root_location` used to be
 // defined twice -- once here (`check::family`'s own `checking_tests`
@@ -155,7 +156,8 @@ pub use family::fixtures::{
     SCALAR_LIMITS_UNLIMITED,
 };
 pub use ir::{
-    Arithmetic, Connective, Node, NodeKind, Observation, OrderedKind, RecordSlot, Slot, Visit,
+    Arithmetic, CheckedBody, CheckedLiteral, CheckedNode, Connective, Node, NodeId, NodeKind,
+    Observation, OrderedKind, RecordSlot, Slot, Visit,
 };
 
 pub use assemble::{
@@ -204,7 +206,7 @@ struct CheckedFunction {
     /// (`lowering`), independent of this function's position in the
     /// package's function list.
     identity: quire_exact::NodeKey,
-    body: Node,
+    body: CheckedBody,
     slots: usize,
 }
 
@@ -261,7 +263,7 @@ fn function_state<'a>(
 ) -> FunctionState<'a> {
     FunctionState {
         name: &signature.name,
-        body: &function.body,
+        body: function.body.root(),
         slots: function.slots,
     }
 }
@@ -369,7 +371,7 @@ pub struct CheckedGraph {
 #[derive(Debug)]
 pub struct CheckedExpression {
     parameters: Vec<(String, ValueType)>,
-    root: Node,
+    root: CheckedBody,
     slots: usize,
     /// NFR-011: the ceilings this expression was checked under.
     effective_limits: CheckingLimits,
@@ -378,18 +380,18 @@ pub struct CheckedExpression {
 impl CheckedExpression {
     /// The result type.
     pub fn value_type(&self) -> &ValueType {
-        &self.root.value_type
+        self.root.root().value_type()
     }
 
     /// Every `convert` loss in pre-order.
     pub fn losses(&self) -> Vec<CollectionLoss> {
-        self.root.losses()
+        self.root.root().losses()
     }
 
     /// Every `deref(r).f` location, whose target existence is a runtime input
     /// requirement.
     pub fn dereferences(&self) -> Vec<Location> {
-        self.root.dereferences()
+        self.root.root().dereferences()
     }
 
     /// The declared parameters, in evaluation-slot order -- the accessor
@@ -401,7 +403,12 @@ impl CheckedExpression {
     }
 
     /// The checked expression tree evaluation runs.
-    pub fn root(&self) -> &Node {
+    pub fn root(&self) -> CheckedNode<'_> {
+        self.root.root()
+    }
+
+    /// The checked expression's whole node arena.
+    pub fn body(&self) -> &CheckedBody {
         &self.root
     }
 
@@ -411,8 +418,7 @@ impl CheckedExpression {
     }
 
     /// NFR-011: the ceilings this expression was checked under. A
-    /// standalone expression check applies the node and depth ceilings
-    /// only: it encodes no declaration preimage and charges no work, so the
+    /// standalone expression check applies the node ceiling only: it encodes no declaration preimage and charges no work, so the
     /// input-byte and work ceilings are recorded here as given but were not
     /// applied.
     pub fn effective_limits(&self) -> CheckingLimits {
@@ -429,7 +435,7 @@ pub struct FunctionState<'a> {
     /// The declared name.
     pub name: &'a str,
     /// The checked body.
-    pub body: &'a Node,
+    pub body: CheckedNode<'a>,
     /// The evaluation slot count.
     pub slots: usize,
 }
@@ -903,16 +909,6 @@ impl PackageDeclarations {
             );
             type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
         }
-        // PR #262 review, finding F4: this used to hardcode
-        // `MAX_CHECKING_DEPTH` here regardless of what `limits` (this
-        // method's own caller-supplied `CheckingLimits`) declared, and a
-        // fresh `CheckContext` is built inside the per-declaration loop
-        // below (`depth` starts at 0 every time) -- so `enter_nesting`'s
-        // `0 >= nesting_depth` never held for any real caller, and the
-        // `StageFailure::Limit` arm below was dead through this, the only
-        // production entry point. Reading `limits.depth()` here (the same
-        // `CheckingLimits` the unchanged `Typer` below already honors)
-        // makes the contract's own resource bound live.
         // `node_count` reads the same `CheckingLimits.nodes()` the
         // unchanged `Typer` below also honors, but the two are separate,
         // deliberately different-shaped bounds over the same underlying
@@ -934,7 +930,6 @@ impl PackageDeclarations {
         // `work_budget`) and is exercised directly against tight fixtures in
         // `qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`.
         let contract_limits = crate::family::StageLimits {
-            nesting_depth: limits.depth(),
             input_bytes: limits.input_bytes(),
             node_count: limits.nodes(),
         };
@@ -1001,11 +996,13 @@ impl PackageDeclarations {
                     nodes_used = checked.body.nodes_used;
                     drafts.push((signatures.as_slice()[index].clone(), checked.body, kind));
                 }
+                // NFR-011: a reached stage limit stops checking.
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location: location.clone(),
                         cause: limit_cause(&limit),
                     });
+                    return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
@@ -1126,7 +1123,7 @@ impl PackageDeclarations {
             .map(|(signature, body, _)| termination::Member {
                 name: &signature.name,
                 parameters: &signature.parameters,
-                measure: body.measure.as_ref(),
+                measure: body.measure.as_ref().map(CheckedBody::root),
                 calls: &body.calls,
             })
             .collect();
@@ -1147,9 +1144,9 @@ impl PackageDeclarations {
         let callees: Vec<Vec<usize>> = drafts
             .iter()
             .map(|(_, body, _)| {
-                let mut callees = body.body.callees();
+                let mut callees = body.body.root().callees();
                 if let Some(measure) = &body.measure {
-                    callees.extend(measure.callees());
+                    callees.extend(measure.root().callees());
                 }
                 callees
             })
@@ -1171,7 +1168,6 @@ impl PackageDeclarations {
             &models,
             units,
             &lock_evidence,
-            limits.depth(),
             drafts.len(),
             &mut occurrences,
             &mut contract_meter,
@@ -1189,9 +1185,9 @@ impl PackageDeclarations {
                         location: &locations[index],
                         parameters: &signature.parameters,
                         result: &signature.result,
-                        body: &body.body,
+                        body: body.body.root(),
                         body_slots: &body.slot_names,
-                        measure: body.measure.as_ref(),
+                        measure: body.measure.as_ref().map(CheckedBody::root),
                         measure_slots: &body.measure_slot_names,
                         population_targets: population_targets
                             .get(index)
@@ -1328,7 +1324,7 @@ impl PackageDeclarations {
                                 location,
                             }),
                         parameters: &typed.parameters,
-                        body: &typed.body,
+                        body: typed.body.root(),
                         body_slots: &typed.slot_names,
                         population_types: &typed.population_types,
                     };
@@ -1790,7 +1786,7 @@ impl CheckedGraph {
                 &self.dispatch_tables,
                 &self.scope.dispatch_operations,
             )
-            .check(&root)?;
+            .check(root.root())?;
         }
         Ok(CheckedExpression {
             parameters,
@@ -1919,14 +1915,14 @@ impl CheckedGraph {
     /// undeclared name.
     pub fn dereferences(&self, function: &str) -> Option<Vec<Location>> {
         self.function(function)
-            .map(|(_, function)| function.body.dereferences())
+            .map(|(_, function)| function.body.root().dereferences())
     }
 
     /// The `convert` losses of a function body, or `None` for an undeclared
     /// name.
     pub fn losses(&self, function: &str) -> Option<Vec<CollectionLoss>> {
         self.function(function)
-            .map(|(_, function)| function.body.losses())
+            .map(|(_, function)| function.body.root().losses())
     }
 
     /// FR-065-AC-2: `name`'s checked identity, minted once at `check` and

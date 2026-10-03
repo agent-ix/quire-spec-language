@@ -15,6 +15,7 @@ use quire_semantic_value::declaration::{
 };
 use quire_semantic_value::location::Location;
 use std::collections::BTreeSet;
+use std::fmt;
 
 /// A local slot of one function frame or checked expression.
 pub type Slot = usize;
@@ -34,13 +35,34 @@ pub enum Observation {
     Post,
 }
 
-/// One typed node.
+/// The typed index of one node of a [`CheckedBody`]: its position there.
+///
+/// An id names a node of the body that minted it. Ids are positions, so
+/// they stay valid in a clone of that body.
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NodeId(usize);
+
+impl NodeId {
+    /// The node's position in its body: the number of nodes stored before
+    /// it.
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Debug for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
+
+/// One typed node: what it computes, with each operand named by its
+/// [`NodeId`] in the same [`CheckedBody`].
 ///
 /// Only `check` builds or edits a `Node`: its fields are private to `check`,
-/// and every other layer reads them through [`Self::kind`],
-/// [`Self::value_type`] and [`Self::location`]. A node from outside `check`
-/// therefore always went through checking. Building one from outside `check`
-/// does not compile:
+/// and every other layer reads a stored node through [`CheckedNode`]. A node
+/// from outside `check` therefore always went through checking. Building
+/// one from outside `check` does not compile:
 /// ```compile_fail,E0451
 /// use qsl_semantics::check::{Node, NodeKind};
 /// use quire_semantic_value::location::Location;
@@ -57,7 +79,7 @@ pub enum Observation {
 ///     node
 /// }
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Node {
     pub(in crate::check) kind: NodeKind,
     pub(in crate::check) value_type: ValueType,
@@ -78,6 +100,196 @@ impl Node {
     /// The node's source location.
     pub fn location(&self) -> &Location {
         &self.location
+    }
+}
+
+/// One checked expression: an arena of [`Node`]s, each stored after its
+/// operands, with the root last (ADR-030 D-4.3, FR-258).
+///
+/// Operands are named by [`NodeId`], so `Clone`, `PartialEq`, `Debug` and
+/// `Drop` run over one flat vector and never recurse, however deep the
+/// expression. Only `check` builds one. A node no path from the root
+/// reaches is never read.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckedBody {
+    /// Never empty: the root is the last node.
+    nodes: Vec<Node>,
+}
+
+impl CheckedBody {
+    /// The root node.
+    pub fn root(&self) -> CheckedNode<'_> {
+        CheckedNode {
+            body: self,
+            id: NodeId(self.nodes.len().saturating_sub(1)),
+        }
+    }
+
+    /// The node `id` names.
+    ///
+    /// # Panics
+    ///
+    /// When `id` is from another body and past this one's last node.
+    pub fn node(&self, id: NodeId) -> CheckedNode<'_> {
+        assert!(id.0 < self.nodes.len(), "{id:?} names no node of this body");
+        CheckedNode { body: self, id }
+    }
+
+    /// How many nodes the body stores.
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Whether the body stores no node: never, since it holds its root.
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+}
+
+/// The nodes one typing pass builds, each pushed once a node naming it as
+/// an operand is built, so each is stored after its operands.
+#[derive(Debug, Default)]
+pub(in crate::check) struct BodyBuilder {
+    nodes: Vec<Node>,
+}
+
+impl BodyBuilder {
+    /// Store `node` after every node pushed so far, and return its id.
+    pub(in crate::check) fn push(&mut self, node: Node) -> NodeId {
+        self.nodes.push(node);
+        NodeId(self.nodes.len() - 1)
+    }
+
+    /// The pushed node `id` names, when it names one.
+    pub(in crate::check) fn get(&self, id: NodeId) -> Option<&Node> {
+        self.nodes.get(id.0)
+    }
+
+    /// The body whose root is `root`, stored after every pushed node.
+    pub(in crate::check) fn finish(mut self, root: Node) -> CheckedBody {
+        self.nodes.push(root);
+        CheckedBody { nodes: self.nodes }
+    }
+}
+
+/// A node of a [`CheckedBody`] together with the body it lives in, so its
+/// operands can be reached.
+#[derive(Clone, Copy)]
+pub struct CheckedNode<'a> {
+    body: &'a CheckedBody,
+    id: NodeId,
+}
+
+impl<'a> CheckedNode<'a> {
+    /// The node itself.
+    fn node(self) -> &'a Node {
+        &self.body.nodes[self.id.0]
+    }
+
+    /// This node's id in its body.
+    pub fn id(self) -> NodeId {
+        self.id
+    }
+
+    /// The body this node lives in.
+    pub fn body(self) -> &'a CheckedBody {
+        self.body
+    }
+
+    /// What the node computes.
+    pub fn kind(self) -> &'a NodeKind {
+        &self.node().kind
+    }
+
+    /// The node's checked static type.
+    pub fn value_type(self) -> &'a ValueType {
+        &self.node().value_type
+    }
+
+    /// The node's source location.
+    pub fn location(self) -> &'a Location {
+        &self.node().location
+    }
+
+    /// The node `id` names in this node's body.
+    ///
+    /// # Panics
+    ///
+    /// When `id` is from another body and past this one's last node.
+    pub fn at(self, id: NodeId) -> CheckedNode<'a> {
+        self.body.node(id)
+    }
+
+    /// Direct operands in evaluation order.
+    pub fn children(self) -> Vec<CheckedNode<'a>> {
+        self.kind()
+            .children()
+            .into_iter()
+            .map(|id| self.at(id))
+            .collect()
+    }
+
+    /// Every node of the tree under this one in pre-order, without host
+    /// recursion.
+    pub(crate) fn descendants(self) -> Vec<CheckedNode<'a>> {
+        let mut visited = Vec::new();
+        let mut pending = vec![self];
+        while let Some(node) = pending.pop() {
+            visited.push(node);
+            pending.extend(node.children().into_iter().rev());
+        }
+        visited
+    }
+
+    /// Every `convert` loss in pre-order.
+    pub(crate) fn losses(self) -> Vec<CollectionLoss> {
+        self.descendants()
+            .into_iter()
+            .filter_map(|node| match node.kind() {
+                NodeKind::ConvertCollection { target, operand } => {
+                    match node.at(*operand).value_type() {
+                        ValueType::Collection(source) => Some(CollectionLoss {
+                            location: node.location().clone(),
+                            discarded: CollectionProperty::discarded(source.kind(), target.kind()),
+                        }),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every `deref(r).f` location, whose target existence is a runtime input
+    /// requirement.
+    pub(crate) fn dereferences(self) -> Vec<Location> {
+        self.descendants()
+            .into_iter()
+            .filter(|node| matches!(node.kind(), NodeKind::Attribute { .. }))
+            .map(|node| node.location().clone())
+            .collect()
+    }
+
+    /// Every function index a `NodeKind::Call` in this subtree names, in
+    /// pre-order: the callees whose keys this subtree's own key hashes
+    /// (FR-093 `Call` row).
+    pub(crate) fn callees(self) -> Vec<usize> {
+        self.descendants()
+            .into_iter()
+            .filter_map(|node| match node.kind() {
+                NodeKind::Call { function, .. } => Some(*function),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+impl fmt::Debug for CheckedNode<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CheckedNode")
+            .field("id", &self.id)
+            .field("node", self.node())
+            .finish()
     }
 }
 
@@ -120,15 +332,26 @@ pub enum OrderedKind {
     Quantities,
 }
 
-/// One record slot in declaration order.
+/// A checked literal's value. Two literals are equal when their canonical
+/// keys are: [`Value`] has no structural equality of its own.
 #[derive(Clone, Debug)]
+pub struct CheckedLiteral(pub Value);
+
+impl PartialEq for CheckedLiteral {
+    fn eq(&self, other: &Self) -> bool {
+        quire_exact::compare_keys(&self.0, &other.0) == Some(std::cmp::Ordering::Equal)
+    }
+}
+
+/// One record slot in declaration order.
+#[derive(Clone, Debug, PartialEq)]
 pub enum RecordSlot {
     /// An omitted optional field.
     Absent,
     /// An optional field given `null`.
     Null,
     /// A field given a value.
-    Present(Box<Node>),
+    Present(NodeId),
 }
 
 /// A one-binder query that visits every occurrence or stops early.
@@ -286,20 +509,21 @@ impl DispatchTable {
     }
 }
 
-#[derive(Clone, Debug)]
-/// What a checked [`Node`] computes.
+#[derive(Clone, Debug, PartialEq)]
+/// What a checked [`Node`] computes. Each operand is a [`NodeId`] in the
+/// node's own [`CheckedBody`].
 ///
 /// `#[cfg(seam_probe)]` adds one further probe-only variant (ADR-012 §5.1
 /// S3, FR-063): under `--cfg seam_probe`, every closed `match` over
-/// this type below this module's own [`Node::children`] becomes
+/// this type below this module's own [`NodeKind::children`] becomes
 /// non-exhaustive (`E0004`) unless it has its own probe arm. Never
 /// constructed outside the probe build.
 pub enum NodeKind {
     /// A literal value.
-    Literal(Value),
+    Literal(CheckedLiteral),
     /// An integer operand admitted into `Int[..]`: a static range obligation
     /// and an uncharged runtime membership check.
-    Coerce(Box<Node>, IntegerInterval),
+    Coerce(NodeId, IntegerInterval),
     /// A read of a local slot.
     Local(Slot),
     /// `let slot = value in body`.
@@ -307,29 +531,29 @@ pub enum NodeKind {
         /// The bound slot.
         slot: Slot,
         /// The bound value.
-        value: Box<Node>,
+        value: NodeId,
         /// The body the binding scopes.
-        body: Box<Node>,
+        body: NodeId,
     },
     /// `if condition then then else otherwise`.
     If {
         /// The condition.
-        condition: Box<Node>,
+        condition: NodeId,
         /// The branch taken when the condition holds.
-        then: Box<Node>,
+        then: NodeId,
         /// The branch taken otherwise.
-        otherwise: Box<Node>,
+        otherwise: NodeId,
     },
     /// Integer arithmetic.
-    Arithmetic(Arithmetic, Box<Node>, Box<Node>),
+    Arithmetic(Arithmetic, NodeId, NodeId),
     /// Unary integer `-`.
-    Negate(Box<Node>),
+    Negate(NodeId),
     /// Integer `/` producing `Rational[..]`.
     Divide {
         /// The dividend.
-        left: Box<Node>,
+        left: NodeId,
         /// The divisor.
-        right: Box<Node>,
+        right: NodeId,
         /// The result domain.
         domain: RationalDomain,
     },
@@ -338,47 +562,47 @@ pub enum NodeKind {
         /// The operator.
         operator: ArithmeticOperator,
         /// The left operand.
-        left: Box<Node>,
+        left: NodeId,
         /// The right operand.
-        right: Box<Node>,
+        right: NodeId,
         /// The result domain.
         domain: RationalDomain,
     },
     /// Unary `-` of a `Rational[..]` into `domain`.
-    RationalNegate(Box<Node>, RationalDomain),
+    RationalNegate(NodeId, RationalDomain),
     /// FR-140 decimal arithmetic into `target`.
     Decimal {
         /// The operator.
         operator: ArithmeticOperator,
         /// The left operand.
-        left: Box<Node>,
+        left: NodeId,
         /// The right operand.
-        right: Box<Node>,
+        right: NodeId,
         /// The result decimal type.
         target: DecimalType,
     },
     /// Unary `-` of a decimal into `target`.
-    DecimalNegate(Box<Node>, DecimalType),
+    DecimalNegate(NodeId, DecimalType),
     /// FR-148 IEEE arithmetic of one width under the rounding mode the
     /// operand types carry (FR-091-OQ-4).
-    Ieee(ArithmeticOperator, RoundingMode, Box<Node>, Box<Node>),
+    Ieee(ArithmeticOperator, RoundingMode, NodeId, NodeId),
     /// FR-142 quantity arithmetic; the result unit is the node type's.
-    Quantity(ArithmeticOperator, Box<Node>, Box<Node>),
+    Quantity(ArithmeticOperator, NodeId, NodeId),
     /// An ordinary FR-140 conversion of a rational or decimal into `target`,
     /// with its loss record.
-    ConvertDecimal(Box<Node>, DecimalType),
+    ConvertDecimal(NodeId, DecimalType),
     /// An ordering comparison of two values of one [`OrderedKind`].
-    Order(OrderingOperator, OrderedKind, Box<Node>, Box<Node>),
+    Order(OrderingOperator, OrderedKind, NodeId, NodeId),
     /// An FR-149 equality comparison under its checked schedule.
-    Equality(EqualityOperator, Box<CheckedEquality>, Box<Node>, Box<Node>),
+    Equality(EqualityOperator, Box<CheckedEquality>, NodeId, NodeId),
     /// A boolean connective with a skippable right operand.
-    Connective(Connective, Box<Node>, Box<Node>),
+    Connective(Connective, NodeId, NodeId),
     /// `not`.
-    Not(Box<Node>),
+    Not(NodeId),
     /// A record field slot; an optional field projects to `Option<T>`.
     Field {
         /// The record.
-        operand: Box<Node>,
+        operand: NodeId,
         /// The field's declaration-order slot.
         index: usize,
         /// Whether the field is optional.
@@ -387,7 +611,7 @@ pub enum NodeKind {
     /// `deref(r).f` of a model object attribute.
     Attribute {
         /// The object reference.
-        reference: Box<Node>,
+        reference: NodeId,
         /// The field `f` resolves to in the reference's static type's
         /// effective attribute set: its declaring type and name.
         field: FieldRef,
@@ -402,9 +626,9 @@ pub enum NodeKind {
         derefed: bool,
     },
     /// Whether an `Option` operand holds a value.
-    Present(Box<Node>),
+    Present(NodeId),
     /// The payload of an `Option` operand.
-    Value(Box<Node>),
+    Value(NodeId),
     /// A call of a function of this package. Its checked identity is the
     /// key of the `expression` node the FR-093 lowering builds for it
     /// (`check::lowering`), minted after every callee is keyed.
@@ -412,7 +636,7 @@ pub enum NodeKind {
         /// The callee's function index in this package.
         function: usize,
         /// The arguments, in parameter order.
-        arguments: Vec<Node>,
+        arguments: Vec<NodeId>,
     },
     /// A call of an imported library's function (ADR-015 D-5). Its
     /// callee lowers to a `dependency_reference` term.
@@ -423,14 +647,14 @@ pub enum NodeKind {
         /// resolved from `callee.node` once, at check time.
         function: usize,
         /// The arguments, in parameter order.
-        arguments: Vec<Node>,
+        arguments: Vec<NodeId>,
     },
     /// A tuple of a declared tuple type.
     Tuple {
         /// The tuple type's declaration.
         declaration: NodeKey,
         /// The components, in order.
-        arguments: Vec<Node>,
+        arguments: Vec<NodeId>,
     },
     /// A record of a declared record type.
     Record {
@@ -444,19 +668,19 @@ pub enum NodeKind {
         /// The collection type.
         collection_type: CollectionType,
         /// The elements, in source order.
-        elements: Vec<Node>,
+        elements: Vec<NodeId>,
     },
     /// A collection kind conversion.
     ConvertCollection {
         /// The target collection type.
         target: CollectionType,
         /// The collection converted.
-        operand: Box<Node>,
+        operand: NodeId,
     },
     /// A scalar conversion of the operand into the equality operand's target type.
-    ConvertScalar(EqualityOperand, Box<Node>),
+    ConvertScalar(EqualityOperand, NodeId),
     /// An exact conversion of an IEEE value into `domain`.
-    IeeeToRational(Box<Node>, RationalDomain),
+    IeeeToRational(NodeId, RationalDomain),
     /// A one-binder query over `source`, binding each occurrence to `slot`.
     Query {
         /// What the query computes.
@@ -464,12 +688,12 @@ pub enum NodeKind {
         /// The slot each occurrence binds.
         slot: Slot,
         /// The collection visited.
-        source: Box<Node>,
+        source: NodeId,
         /// The body evaluated per occurrence.
-        body: Box<Node>,
+        body: NodeId,
     },
     /// A collection of collections, flattened.
-    Flatten(Box<Node>),
+    Flatten(NodeId),
     /// `fold`/`reduce` over `source`.
     Fold {
         /// The accumulator slot.
@@ -477,22 +701,22 @@ pub enum NodeKind {
         /// The slot each occurrence binds.
         binder: Slot,
         /// The collection folded.
-        source: Box<Node>,
+        source: NodeId,
         /// The step evaluated per occurrence.
-        step: Box<Node>,
+        step: NodeId,
         /// `None` for `reduce`.
-        identity: Option<Box<Node>>,
+        identity: Option<NodeId>,
     },
     /// A collection's size.
-    Size(Box<Node>),
+    Size(NodeId),
     /// Whether a collection contains an item.
-    Contains(Box<Node>, Box<Node>),
+    Contains(NodeId, NodeId),
     /// `allInstances<T>(p)` (FR-153). `T`, `N` and the bound `[0,N]` are
     /// exactly this node's own checked `value_type`
     /// (`ValueType::Collection`), never restated here.
     AllInstances {
         /// The population.
-        population: Box<Node>,
+        population: NodeId,
     },
     /// `lookup<T>(p, r) absent m` (FR-153). `T` is exactly this node's own
     /// checked `value_type` (a bare `Reference<T>` for
@@ -500,9 +724,9 @@ pub enum NodeKind {
     /// restated here.
     Lookup {
         /// The population.
-        population: Box<Node>,
+        population: NodeId,
         /// The reference looked up.
-        reference: Box<Node>,
+        reference: NodeId,
         /// The authored absence mode.
         absence: AbsenceMode,
     },
@@ -516,18 +740,18 @@ pub enum NodeKind {
     /// runtime by the receiver's most-specific type (TC-196 D06).
     Dispatch {
         /// The receiver.
-        receiver: Box<Node>,
+        receiver: NodeId,
         /// The dispatch table index.
         table: usize,
         /// The dispatch operation index.
         operation: usize,
         /// The arguments after the receiver.
-        arguments: Vec<Node>,
+        arguments: Vec<NodeId>,
     },
     /// `pre(e)` (FR-153): evaluate `e` with `allInstances`/`lookup`
     /// underneath it reading the invocation pre population. Identity-typed:
     /// this node's `value_type` is always exactly its operand's.
-    Pre(Box<Node>),
+    Pre(NodeId),
     /// `reaches(source, target, edge)` (FR-104, ADR-012 §15.2): whether
     /// `target` is reachable from `source` by following `edge`, in the state
     /// clause's own observation. Checked only inside a state clause, with
@@ -536,9 +760,9 @@ pub enum NodeKind {
     /// sequence of `Reference<T>`.
     Reaches {
         /// The source reference.
-        source: Box<Node>,
+        source: NodeId,
         /// The target reference.
-        target: Box<Node>,
+        target: NodeId,
         /// The edge field, in `T`'s effective attribute set.
         edge: FieldRef,
     },
@@ -568,10 +792,10 @@ pub(crate) fn scalar_conversion_target<'t>(
     (target != operand).then_some(target)
 }
 
-impl Node {
-    /// Direct children in evaluation order.
-    pub fn children(&self) -> Vec<&Node> {
-        match &self.kind {
+impl NodeKind {
+    /// Direct operands in evaluation order.
+    pub fn children(&self) -> Vec<NodeId> {
+        match self {
             NodeKind::Literal(_) | NodeKind::Local(_) => Vec::new(),
             NodeKind::Coerce(operand, _)
             | NodeKind::Negate(operand)
@@ -590,13 +814,13 @@ impl Node {
             | NodeKind::ConvertDecimal(operand, _)
             | NodeKind::Flatten(operand)
             | NodeKind::Size(operand)
-            | NodeKind::Pre(operand) => vec![operand],
-            NodeKind::Let { value, body, .. } => vec![value, body],
+            | NodeKind::Pre(operand) => vec![*operand],
+            NodeKind::Let { value, body, .. } => vec![*value, *body],
             NodeKind::If {
                 condition,
                 then,
                 otherwise,
-            } => vec![condition, then, otherwise],
+            } => vec![*condition, *then, *otherwise],
             NodeKind::Arithmetic(_, left, right)
             | NodeKind::Divide { left, right, .. }
             | NodeKind::Rational { left, right, .. }
@@ -611,42 +835,42 @@ impl Node {
                 source: left,
                 target: right,
                 ..
-            } => vec![left, right],
+            } => vec![*left, *right],
             NodeKind::Call { arguments, .. }
             | NodeKind::ImportedCall { arguments, .. }
-            | NodeKind::Tuple { arguments, .. } => arguments.iter().collect(),
+            | NodeKind::Tuple { arguments, .. } => arguments.clone(),
             NodeKind::Record { slots, .. } => slots
                 .iter()
                 .filter_map(|slot| match slot {
-                    RecordSlot::Present(node) => Some(&**node),
+                    RecordSlot::Present(node) => Some(*node),
                     RecordSlot::Absent | RecordSlot::Null => None,
                 })
                 .collect(),
-            NodeKind::Collection { elements, .. } => elements.iter().collect(),
-            NodeKind::Query { source, body, .. } => vec![source, body],
+            NodeKind::Collection { elements, .. } => elements.clone(),
+            NodeKind::Query { source, body, .. } => vec![*source, *body],
             NodeKind::Fold {
                 source,
                 step,
                 identity,
                 ..
             } => {
-                let mut children: Vec<&Node> = vec![source];
-                children.extend(identity.as_deref());
-                children.push(step);
+                let mut children = vec![*source];
+                children.extend(*identity);
+                children.push(*step);
                 children
             }
-            NodeKind::AllInstances { population } => vec![population],
+            NodeKind::AllInstances { population } => vec![*population],
             NodeKind::Lookup {
                 population,
                 reference,
                 ..
-            } => vec![population, reference],
+            } => vec![*population, *reference],
             NodeKind::Dispatch {
                 receiver,
                 arguments,
                 ..
             } => {
-                let mut children: Vec<&Node> = vec![receiver];
+                let mut children = vec![*receiver];
                 children.extend(arguments);
                 children
             }
@@ -657,55 +881,57 @@ impl Node {
             NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }
     }
+}
 
-    /// Every node of the tree in pre-order, without host recursion.
-    pub(crate) fn descendants(&self) -> Vec<&Node> {
-        let mut visited = Vec::new();
-        let mut pending = vec![self];
-        while let Some(node) = pending.pop() {
-            visited.push(node);
-            pending.extend(node.children().into_iter().rev());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ix_trace_rs::trace;
+    use quire_semantic_value::location::Origin;
+
+    /// How many nodes the deep body holds.
+    const DEEP: usize = 100_000;
+
+    /// `-(-(… -x))`: [`DEEP`] nodes, the local read `slot` at the bottom.
+    fn negations(slot: Slot) -> CheckedBody {
+        let node = |kind| Node {
+            kind,
+            value_type: ValueType::Integer,
+            location: Location {
+                origin: Origin::Expression,
+                path: Vec::new(),
+            },
+        };
+        let mut builder = BodyBuilder::default();
+        let mut operand = builder.push(node(NodeKind::Local(slot)));
+        for _ in 2..DEEP {
+            operand = builder.push(node(NodeKind::Negate(operand)));
         }
-        visited
+        builder.finish(node(NodeKind::Negate(operand)))
     }
 
-    /// Every `convert` loss in pre-order.
-    pub(crate) fn losses(&self) -> Vec<CollectionLoss> {
-        self.descendants()
-            .into_iter()
-            .filter_map(|node| match &node.kind {
-                NodeKind::ConvertCollection { target, operand } => match &operand.value_type {
-                    ValueType::Collection(source) => Some(CollectionLoss {
-                        location: node.location.clone(),
-                        discarded: CollectionProperty::discarded(source.kind(), target.kind()),
-                    }),
-                    _ => None,
-                },
-                _ => None,
+    /// FR-258 behaviour 2: a 100,000-deep checked body clones, compares
+    /// equal to its clone and unequal to a body differing at its deepest
+    /// node, walks every node, formats for debug and drops on a 512 KiB
+    /// stack, since each of those runs over the arena's one vector.
+    #[trace("TC-725", "FR-258-AC-1")]
+    #[test]
+    fn a_100000_deep_checked_body_clones_compares_formats_and_drops_on_a_small_stack() {
+        std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let body = negations(0);
+                assert_eq!(body.len(), DEEP);
+                assert_eq!(body.root().descendants().len(), DEEP);
+                let clone = body.clone();
+                assert_eq!(clone, body);
+                assert_ne!(negations(1), body);
+                assert!(format!("{clone:?}").matches("Negate").count() == DEEP - 1);
+                drop(clone);
+                drop(body);
             })
-            .collect()
-    }
-
-    /// Every `deref(r).f` location, whose target existence is a runtime input
-    /// requirement.
-    pub(crate) fn dereferences(&self) -> Vec<Location> {
-        self.descendants()
-            .into_iter()
-            .filter(|node| matches!(node.kind, NodeKind::Attribute { .. }))
-            .map(|node| node.location.clone())
-            .collect()
-    }
-
-    /// Every function index a `NodeKind::Call` in this subtree names, in
-    /// pre-order: the callees whose keys this subtree's own key hashes
-    /// (FR-093 `Call` row).
-    pub(crate) fn callees(&self) -> Vec<usize> {
-        self.descendants()
-            .into_iter()
-            .filter_map(|node| match &node.kind {
-                NodeKind::Call { function, .. } => Some(*function),
-                _ => None,
-            })
-            .collect()
+            .expect("the thread spawns")
+            .join()
+            .expect("the deep body completes on a 512 KiB stack");
     }
 }

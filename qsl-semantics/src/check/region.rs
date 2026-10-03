@@ -721,12 +721,11 @@ mod tests {
         .is_some());
     }
 
-    /// FR-096 (SR-745 FND-003): each of nesting depth, node count,
-    /// input bytes and work budget is a `CheckRefusal` with code
-    /// `stage_limit_exceeded`, carrying its kind, bound and counter, located
-    /// at a specific source text. Depth is located at the node whose entry
-    /// failed the charge (`Typer`'s own per-node check); node count, input
-    /// bytes and work budget are the family's own per-declaration precheck
+    /// FR-096 (SR-745 FND-003): each of node count, input bytes and work
+    /// budget is a `CheckRefusal` with code `stage_limit_exceeded`, carrying
+    /// its kind, bound and counter, located at a specific source text. Node
+    /// count, input bytes and work budget are the family's own
+    /// per-declaration precheck
     /// (`check_node_count`/`check_input_bytes`/`ValueFunctionFamily::check`'s
     /// own work charge), fired before `Typer` starts, and located at the
     /// whole declaration's span. `Typer`'s own package-wide node count and
@@ -757,20 +756,12 @@ mod tests {
                 declaration_text,
             ),
             (
-                CheckingLimits::new(2, 64).unwrap(),
+                CheckingLimits::new(2),
                 CheckingLimitKind::Nodes,
                 "node-count-exceeded",
                 2,
                 7,
                 declaration_text,
-            ),
-            (
-                CheckingLimits::new(u64::MAX, 1).unwrap(),
-                CheckingLimitKind::Depth,
-                "nesting-depth-exceeded",
-                1,
-                2,
-                "a",
             ),
         ] {
             let unit = unit();
@@ -941,7 +932,7 @@ mod tests {
         // isolation, but Typer's package-wide counter, seeded at g1's
         // final 3, crosses 4 on g2's second node.
         let refusals = declarations
-            .check(CheckingLimits::new(g1_count + 1, 64).unwrap())
+            .check(CheckingLimits::new(g1_count + 1))
             .expect_err("g2's Typer walk crosses the package-wide node bound");
         let [refusal] = refusals.as_slice() else {
             panic!("one refusal, got {refusals:?}");
@@ -952,7 +943,6 @@ mod tests {
         assert_eq!(limit.kind, CheckingLimitKind::Nodes);
         assert_eq!(limit.limit, g1_count + 1);
         assert_eq!(limit.actual, u128::from(g1_count + 2));
-        assert_eq!(limit.region, None, "Typer's own node stop names no region");
         assert_eq!(
             refusal.location,
             Location {
@@ -960,12 +950,15 @@ mod tests {
                     function: "g2".into(),
                     index: 1,
                 },
-                path: vec![0],
-            }
+                path: Vec::new(),
+            },
+            "the stage limit is g2's: its locus names the node"
         );
-        let region = regions
-            .refusal_region(refusal)
-            .expect("the position was read from the unit");
+        let region = limit
+            .region
+            .clone()
+            .expect("the stop names its node's region");
+        assert_eq!(regions.refusal_region(refusal), Some(region.clone()));
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
         assert_eq!(

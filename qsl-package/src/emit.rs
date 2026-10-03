@@ -85,7 +85,7 @@ use quire_contract_model::{
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::{RawSourceRef, SourceRegion};
 use qsl_foundation::Code;
-use qsl_semantics::check::{CheckedGraph, NodeTag, NominalNode, SemanticNode, SemanticTerm};
+use qsl_semantics::check::{BodyTerm, CheckedGraph, LeafTerm, NodeTag, NominalNode, SemanticNode};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
@@ -262,59 +262,58 @@ struct BodyNames {
 }
 
 impl BodyNames {
-    /// Walk `body`, every term at any depth.
-    fn of(body: &SemanticTerm) -> Self {
+    /// Read `body`: its stratified terms have a fixed depth (ADR-030 D-2),
+    /// so this is a fixed-depth match over its leaves.
+    fn of(body: &BodyTerm) -> Self {
         let mut names = Self::default();
-        let mut pending = vec![body];
-        while let Some(term) = pending.pop() {
-            match term {
-                SemanticTerm::Literal { ty, .. } => {
+        match body {
+            BodyTerm::Application(application) => {
+                let operation = &application.operation;
+                names.annotations.insert(node_id(application.result_type.0));
+                if let Some(declaration) = operation.member().and_then(Member::declaration) {
+                    names.dependencies.insert(node_id(declaration));
+                }
+                let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
+                names.laws.extend(
+                    operation
+                        .laws()
+                        .iter()
+                        .chain(leaf_laws)
+                        .map(|law| law.definition.clone()),
+                );
+            }
+            // QSpec FR-340: every `modifies` declaration and every
+            // `creates`/`deletes` entry is a declared dependency of the
+            // frame node, so a reader can join each entry to the node it
+            // names among the frame's own `dependencies`.
+            BodyTerm::Frame(frame) => {
+                names.dependencies.extend(
+                    frame
+                        .modifies
+                        .iter()
+                        .map(|field| node_id(field.declaration().0)),
+                );
+                names.dependencies.extend(
+                    frame
+                        .creates
+                        .iter()
+                        .chain(&frame.deletes)
+                        .map(|node| node_id(node.0)),
+                );
+            }
+            BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
+        }
+        for leaf in body.leaves() {
+            match leaf {
+                LeafTerm::Literal { ty, .. } => {
                     names.annotations.insert(node_id(ty.0));
                 }
-                SemanticTerm::Reference { target } => {
+                LeafTerm::Reference { target } => {
                     names.dependencies.insert(node_id(target.0));
                 }
-                SemanticTerm::Application {
-                    operation,
-                    result_type,
-                    arguments,
-                    ..
-                } => {
-                    names.annotations.insert(node_id(result_type.0));
-                    if let Some(declaration) = operation.member().and_then(Member::declaration) {
-                        names.dependencies.insert(node_id(declaration));
-                    }
-                    let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
-                    names.laws.extend(
-                        operation
-                            .laws()
-                            .iter()
-                            .chain(leaf_laws)
-                            .map(|law| law.definition.clone()),
-                    );
-                    pending.extend(arguments);
-                }
-                SemanticTerm::Aggregate { members } => pending.extend(members),
-                SemanticTerm::Binding { value, .. } => pending.push(value),
                 // FR-322-AC-37: a `dependency_reference` is never one of the
                 // node's `dependencies`, and names no node of this graph.
-                SemanticTerm::DependencyReference { .. } => {}
-                // QSpec FR-340: every `modifies` declaration and every
-                // `creates`/`deletes` entry is a declared dependency of the
-                // frame node, so a reader can join each entry to the node
-                // it names among the frame's own `dependencies`.
-                SemanticTerm::Frame {
-                    modifies,
-                    creates,
-                    deletes,
-                } => {
-                    names
-                        .dependencies
-                        .extend(modifies.iter().map(|field| node_id(field.declaration().0)));
-                    names
-                        .dependencies
-                        .extend(creates.iter().chain(deletes).map(|node| node_id(node.0)));
-                }
+                LeafTerm::DependencyReference { .. } => {}
             }
         }
         names

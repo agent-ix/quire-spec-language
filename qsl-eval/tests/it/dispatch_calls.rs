@@ -25,9 +25,8 @@ use qsl_semantics::check::{
     OperationClauses,
 };
 use qsl_semantics::check::{
-    AdmittedModel, CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, DispatchCandidate,
-    DispatchFunctionRole, DispatchOperation, DispatchTable, InvalidDispatchDeclaration,
-    ModelClause, PackageDeclarations,
+    AdmittedModel, CheckCause, CheckRefusal, DispatchCandidate, DispatchFunctionRole,
+    DispatchOperation, DispatchTable, InvalidDispatchDeclaration, ModelClause, PackageDeclarations,
 };
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -653,73 +652,6 @@ fn checked_package_call_refuses_a_non_callable_by_name_function_found_by_lookup(
 // The deletion of this crate's second v2 producer removed its round-trip
 // test here; FR-065-AC-2 is now backed by `qsl-package/src/emit/tests.rs`'s
 // `a_function_identity_survives_emission_and_the_i2_read`.
-
-/// PR #262 review, finding F4: `PackageDeclarations::check` used to hardcode
-/// the checked-family contract's own nesting-depth `StageLimits` at
-/// `MAX_CHECKING_DEPTH`, ignoring the caller's own `CheckingLimits` entirely
-/// -- so the contract's `StageFailure::Limit` -> `CheckCause::
-/// ResourceExhausted` arm was dead through this, the only production entry
-/// point that reaches it. This test calls `check` with `CheckingLimits::new(
-/// _, 0)` (this method's own `depth()` bound wired through, per this
-/// finding's fix) and asserts a real `ResourceExhausted` refusal comes back
-/// -- if the wiring reverts to the hardcoded constant, `enter_nesting`'s
-/// `0 >= 128` never holds and this package checks cleanly instead, failing
-/// this test.
-///
-/// **Untagged.** This test's zero-depth `CheckingLimits` refuses before
-/// `ValueFunctionFamily::check` ever reaches `check_declaration_body`,
-/// because `check`'s contract-level `StageLimits.nesting_depth` is derived
-/// from the same caller-supplied `CheckingLimits.depth()`
-/// (`PackageDeclarations::check`, `src/check/mod.rs`) and is charged once
-/// per top-level declaration -- it proves that wiring is live through the
-/// public API, not real recursive descent. Real recursive checking has since moved
-/// into `check_declaration_body`, reached from
-/// `ValueFunctionFamily::check`, and `Typer`'s own separate
-/// `CheckingLimits.depth` bound on that real descent is demonstrated by
-/// `real_checker_depth_limit_is_the_proximate_cause`
-/// (`check::family`'s `checking_tests`, also untagged) -- but neither test backs
-/// FR-062-AC-7 itself: that criterion's own `Limit`-outcome-on-real-descent
-/// requirement would need `CheckContext` threaded through `Typer`'s
-/// recursive engine, which is out of scope here. See FR-062's own Status
-/// section, AC-7 row, for the full reasoning.
-#[test]
-fn contract_nesting_limit_reflects_the_callers_own_checking_limits() {
-    let declaration = |name: &str| {
-        FunctionDeclaration::new(
-            name,
-            Vec::new(),
-            crate::support::type_form::type_form(&ValueType::Boolean),
-            None,
-            Expression::boolean(true),
-        )
-    };
-    let tight_limits = CheckingLimits::new(u64::MAX, 0).expect("0 is within MAX_CHECKING_DEPTH");
-    let refused = PackageDeclarations {
-        functions: vec![declaration("f")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
-    }
-    .check(tight_limits)
-    .expect_err("a zero-depth limit must refuse every declaration's contract-level check");
-    assert!(
-        refused.iter().any(|refusal| matches!(
-            refusal.cause,
-            CheckCause::ResourceExhausted(ref exceeded)
-                if exceeded.stage == CheckingStage::Typing
-                    && exceeded.kind == CheckingLimitKind::Depth
-                    && exceeded.limit == 0
-                    && exceeded.actual == 1
-        )),
-        "expected a contract-level ResourceExhausted(Depth, limit=0) refusal, got {refused:?}"
-    );
-
-    let admitting_limits = CheckingLimits::default();
-    PackageDeclarations {
-        functions: vec![declaration("f")],
-        ..PackageDeclarations::new(qsl_semantics::check::fixture_source())
-    }
-    .check(admitting_limits)
-    .expect("the default depth limit admits an ordinary boolean-literal function");
-}
 
 /// [`FunctionDeclaration::clause`] takes [`DeclaredClauseKind`], which has
 /// no `Postcondition` variant: the only path that can actually stand behind

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! A lowered node's body as the v2 wire carries it: the JSON tree FR-322's
 //! node `body` member holds, built from the typed
-//! [`SemanticTerm`](super::SemanticTerm). The
+//! [`BodyTerm`](super::BodyTerm). The
 //! wire, not the key: a key hashes `quire-canonical`'s encoding of the typed
 //! preimage (`node_key`). serde_json builds the tree only; quire-canonical
 //! encodes the hashed bytes.

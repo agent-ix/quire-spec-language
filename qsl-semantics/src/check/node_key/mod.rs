@@ -26,7 +26,7 @@
 //! of its group, a body `reference` or its `semantic_type`, becomes
 //! `{term: "group_reference", ordinal}`.
 //!
-//! The body is typed ([`SemanticTerm`] and its parts mirror the v2 schema's
+//! The body is typed ([`BodyTerm`] and its strata mirror the v2 schema's
 //! closed `SemanticTerm`, `Operation`, `OperationLaw`, `OperationMode` and
 //! `OperationLeaf` definitions), so the preimage has a field list the compiler
 //! checks rather than a `serde_json::Value` assembled by hand. Mode values are
@@ -56,8 +56,10 @@
 //! spelled by this module's own lowercase hex ([`HexDigest`]), which is
 //! `NodeKey`'s wire spelling. The pinned-bytes tests fix the exact encoding.
 //!
-//! The body walk is bounded: a body nested deeper than
-//! [`MAX_CHECKING_DEPTH`] terms is refused, whatever path built it.
+//! The body is stratified ([`BodyTerm`], [`MemberTerm`], [`GroupTerm`],
+//! [`LeafTerm`]): no stratum names itself or a higher one, so keying a body
+//! is a fixed-depth match and every preimage nests a depth the grammar fixes,
+//! whatever the expression's depth (ADR-030 D-2, FR-258).
 //!
 //! Conformance against QSpec's own published `operation_vectors` is the
 //! opt-in `conformance` test (`make conformance` with `QSPEC_DIR` pointing at
@@ -80,7 +82,6 @@ use quire_exact::{Identifier, Integer, Rational, RoundingMode, TextProfile};
 use crate::value::definition::DefinitionReference;
 use crate::value::member::Member;
 use quire_exact::{NodeKey, NODE_KEY_DOMAIN};
-use quire_semantic_value::checking::MAX_CHECKING_DEPTH;
 
 /// FR-322's application-node preimage version.
 pub(crate) const APPLICATION_NODE_VERSION: &str = "quire.application-node/v1";
@@ -312,14 +313,15 @@ pub enum NodeTag {
     Correspondence,
 }
 
-/// The v2 schema's closed `SemanticTerm` union.
+/// The Leaf stratum of QSpec FR-322's v2 body grammar (ADR-030 D-2): a
+/// term that holds no other term.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[cfg_attr(test, derive(serde::Deserialize))]
 // No `deny_unknown_fields`: serde does not combine it with the literal's
 // `flatten`, and the conformance test compares re-encoded bytes with the
 // published ones, so a dropped member fails there instead.
 #[serde(tag = "term", rename_all = "snake_case")]
-pub enum SemanticTerm {
+pub enum LeafTerm {
     /// A typed literal: its kind and JSON value come from [`LiteralValue`].
     Literal {
         /// The literal's type node.
@@ -334,29 +336,6 @@ pub enum SemanticTerm {
         /// The referenced node.
         target: NodeRef,
     },
-    /// An operation application.
-    Application {
-        /// The operator class.
-        operator: Operator,
-        /// The catalogued operation and its laws.
-        operation: Operation,
-        /// The application's result type node.
-        result_type: NodeRef,
-        /// The operands, in order.
-        arguments: Vec<SemanticTerm>,
-    },
-    /// An ordered aggregate of terms.
-    Aggregate {
-        /// The members, in order.
-        members: Vec<SemanticTerm>,
-    },
-    /// A named binding of a term.
-    Binding {
-        /// The bound name (schema `Nonempty`; an empty name is refused).
-        name: String,
-        /// The bound term.
-        value: Box<SemanticTerm>,
-    },
     /// A reference to a node of a dependency package (ADR-015 D-5, QSpec
     /// FR-322): the dependency's `package_id` and the node's id there. It
     /// enters the referencing node's identity and is never one of its
@@ -367,25 +346,131 @@ pub enum SemanticTerm {
         /// The node's id in the dependency.
         node: WireNodeRef,
     },
-    /// A `state`/`frame` node's own body shape (QSpec FR-340): not a member
-    /// of the ordinary `SemanticTerm` union at all -- FR-340 scopes this
-    /// shape to validate only as a `state`/`frame` node's `body`, never
-    /// nested inside another term -- but carried as one more closed variant
-    /// here because [`SemanticNode::body`](super::SemanticNode::body) has
-    /// exactly one field for a node's body, whichever shape it holds. It
-    /// contains no `application`, so `node_key` always keys a frame node
-    /// through the FR-092 structural preimage, never the application one.
-    Frame {
-        /// Every field or relationship the operation may write, ascending
-        /// by (declaring node digest, field name) (FR-340).
-        modifies: Vec<FrameField>,
-        /// Every object type or process the operation may create, ascending
-        /// by node digest.
-        creates: Vec<NodeRef>,
-        /// Every object type or process the operation may delete, ascending
-        /// by node digest.
-        deletes: Vec<NodeRef>,
-    },
+}
+
+/// `{term: "binding", name, value}`: a named `value` of a lower stratum.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "binding")]
+pub struct Binding<V> {
+    /// The bound name (schema `Nonempty`; an empty name is refused).
+    pub name: String,
+    /// The bound term.
+    pub value: V,
+}
+
+/// A member of a [`GroupTerm`]: a Leaf, or a binding whose value is a Leaf.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(untagged)]
+pub enum GroupMember {
+    /// A Leaf.
+    Leaf(LeafTerm),
+    /// A binding of a Leaf.
+    Binding(Binding<LeafTerm>),
+}
+
+/// The Group stratum: an `aggregate` whose members are each a Leaf or a
+/// binding of a Leaf.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "aggregate")]
+pub struct GroupTerm {
+    /// The members, in order.
+    pub members: Vec<GroupMember>,
+}
+
+/// The value of a [`MemberTerm`] binding: a Leaf, a Group, or a binding of
+/// a Leaf. The last is the shape FR-092 gives an optional record field
+/// (`f` = `binding{optional, reference}`) and FR-093 a fold's step
+/// (`acc` = `binding{x, reference}`); it names a lower stratum, so the
+/// depth stays fixed.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(untagged)]
+pub enum BindingValue {
+    /// A Leaf.
+    Leaf(LeafTerm),
+    /// A Group.
+    Group(GroupTerm),
+    /// A binding of a Leaf.
+    Binding(Binding<LeafTerm>),
+}
+
+/// The Member stratum: an application argument or a body aggregate's
+/// member.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(untagged)]
+pub enum MemberTerm {
+    /// A Leaf.
+    Leaf(LeafTerm),
+    /// A Group.
+    Group(GroupTerm),
+    /// A binding of a Leaf, a Group or a binding of a Leaf.
+    Binding(Binding<BindingValue>),
+}
+
+/// An operation application: a Body production whose arguments are each a
+/// Member.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "application")]
+pub struct ApplicationTerm {
+    /// The operator class.
+    pub operator: Operator,
+    /// The catalogued operation and its laws.
+    pub operation: Operation,
+    /// The application's result type node.
+    pub result_type: NodeRef,
+    /// The operands, in order.
+    pub arguments: Vec<MemberTerm>,
+}
+
+/// An ordered aggregate: a Body production whose members are each a Member.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "aggregate")]
+pub struct AggregateTerm {
+    /// The members, in order.
+    pub members: Vec<MemberTerm>,
+}
+
+/// A `state`/`frame` node's own body shape (QSpec FR-340), valid only as a
+/// node's body. It contains no `application`, so `node_key` always keys a
+/// frame node through the FR-092 structural preimage, never the application
+/// one.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(tag = "term", rename = "frame")]
+pub struct FrameTerm {
+    /// Every field or relationship the operation may write, ascending by
+    /// (declaring node digest, field name) (FR-340).
+    pub modifies: Vec<FrameField>,
+    /// Every object type or process the operation may create, ascending by
+    /// node digest.
+    pub creates: Vec<NodeRef>,
+    /// Every object type or process the operation may delete, ascending by
+    /// node digest.
+    pub deletes: Vec<NodeRef>,
+}
+
+/// A node's body: the Body stratum of QSpec FR-322's v2 body grammar
+/// (ADR-030 D-2, FR-258). No stratum names itself or a higher one, so every
+/// body, and its node-key preimage, nests a depth the grammar fixes, and
+/// every composite subterm is its own node, reached by `reference`.
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[cfg_attr(test, derive(serde::Deserialize))]
+#[serde(untagged)]
+pub enum BodyTerm {
+    /// A Leaf.
+    Leaf(LeafTerm),
+    /// An operation application.
+    Application(ApplicationTerm),
+    /// An ordered aggregate of Members.
+    Aggregate(AggregateTerm),
+    /// A `state`/`frame` node's body.
+    Frame(FrameTerm),
 }
 
 /// One `modifies` entry of a `state`/`frame` node's body (QSpec FR-340): a
@@ -534,19 +619,11 @@ impl<'de> serde::Deserialize<'de> for WireNodeRef {
     }
 }
 
-impl SemanticTerm {
+impl LeafTerm {
     /// `{term: "reference", target}`.
     pub(crate) fn reference(target: NodeKey) -> Self {
         Self::Reference {
             target: NodeRef(target),
-        }
-    }
-
-    /// `{term: "binding", name, value}`.
-    pub(crate) fn binding(name: impl Into<String>, value: Self) -> Self {
-        Self::Binding {
-            name: name.into(),
-            value: Box::new(value),
         }
     }
 
@@ -558,6 +635,180 @@ impl SemanticTerm {
         }
     }
 
+    /// The node key this leaf names in its own graph: a `reference`'s
+    /// target or a literal's `type`. A dependency's node is no key of this
+    /// graph.
+    pub fn key(&self) -> Option<NodeKey> {
+        match self {
+            Self::Literal { ty, .. } => Some(ty.0),
+            Self::Reference { target } => Some(target.0),
+            Self::DependencyReference { .. } => None,
+        }
+    }
+
+    /// This leaf with the node key it names replaced by `map`'s image.
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Literal { ty, value } => Self::Literal {
+                ty: NodeRef(map(ty.0)),
+                value: value.clone(),
+            },
+            Self::Reference { target } => Self::Reference {
+                target: NodeRef(map(target.0)),
+            },
+            Self::DependencyReference { package, node } => Self::DependencyReference {
+                package: *package,
+                node: *node,
+            },
+        }
+    }
+}
+
+impl<V> Binding<V> {
+    /// `{term: "binding", name, value}`.
+    pub(crate) fn new(name: impl Into<String>, value: V) -> Self {
+        Self {
+            name: name.into(),
+            value,
+        }
+    }
+}
+
+impl Binding<LeafTerm> {
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        Self::new(self.name.clone(), self.value.map_keys(map))
+    }
+}
+
+impl GroupMember {
+    /// The member's Leaf, bound or not.
+    pub fn leaf(&self) -> &LeafTerm {
+        match self {
+            Self::Leaf(leaf) | Self::Binding(Binding { value: leaf, .. }) => leaf,
+        }
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Binding(binding) => Self::Binding(binding.map_keys(map)),
+        }
+    }
+}
+
+impl GroupTerm {
+    /// `{term: "aggregate", members}` over Group members.
+    pub(crate) fn new(members: Vec<GroupMember>) -> Self {
+        Self { members }
+    }
+
+    /// An aggregate of the references to `targets`, in order.
+    pub(crate) fn references(targets: impl IntoIterator<Item = NodeKey>) -> Self {
+        Self::new(
+            targets
+                .into_iter()
+                .map(|target| GroupMember::Leaf(LeafTerm::reference(target)))
+                .collect(),
+        )
+    }
+
+    /// Every Leaf of this Group, in order.
+    pub fn leaves(&self) -> impl Iterator<Item = &LeafTerm> {
+        self.members.iter().map(GroupMember::leaf)
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        Self::new(
+            self.members
+                .iter()
+                .map(|member| member.map_keys(map))
+                .collect(),
+        )
+    }
+}
+
+impl BindingValue {
+    /// Every Leaf this value holds, in order.
+    pub fn leaves(&self) -> Vec<&LeafTerm> {
+        match self {
+            Self::Leaf(leaf) | Self::Binding(Binding { value: leaf, .. }) => vec![leaf],
+            Self::Group(group) => group.leaves().collect(),
+        }
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Binding(binding) => Self::Binding(binding.map_keys(map)),
+        }
+    }
+}
+
+impl MemberTerm {
+    /// `{term: "reference", target}` as a Member.
+    pub(crate) fn reference(target: NodeKey) -> Self {
+        Self::Leaf(LeafTerm::reference(target))
+    }
+
+    /// `{term: "binding", name, value}` as a Member.
+    pub(crate) fn binding(name: impl Into<String>, value: BindingValue) -> Self {
+        Self::Binding(Binding::new(name, value))
+    }
+
+    /// `{term: "binding", name, value}` of a Leaf, as a Member.
+    pub(crate) fn bound(name: impl Into<String>, value: LeafTerm) -> Self {
+        Self::binding(name, BindingValue::Leaf(value))
+    }
+
+    /// Every Leaf this Member holds, in order.
+    pub fn leaves(&self) -> Vec<&LeafTerm> {
+        match self {
+            Self::Leaf(leaf) => vec![leaf],
+            Self::Group(group) => group.leaves().collect(),
+            Self::Binding(binding) => binding.value.leaves(),
+        }
+    }
+
+    fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Group(group) => Self::Group(group.map_keys(map)),
+            Self::Binding(binding) => Self::Binding(Binding::new(
+                binding.name.clone(),
+                binding.value.map_keys(map),
+            )),
+        }
+    }
+}
+
+impl BodyTerm {
+    /// `{term: "literal", type, value_kind, value}` as a body.
+    pub(crate) fn literal(ty: NodeKey, value: LiteralValue) -> Self {
+        Self::Leaf(LeafTerm::literal(ty, value))
+    }
+
+    /// `{term: "aggregate", members}` as a body.
+    pub(crate) fn aggregate(members: Vec<MemberTerm>) -> Self {
+        Self::Aggregate(AggregateTerm { members })
+    }
+
+    /// `{term: "application", operator, operation, result_type,
+    /// arguments}` as a body.
+    pub(crate) fn application(
+        operator: Operator,
+        operation: Operation,
+        result_type: NodeKey,
+        arguments: Vec<MemberTerm>,
+    ) -> Self {
+        Self::Application(ApplicationTerm {
+            operator,
+            operation,
+            result_type: NodeRef(result_type),
+            arguments,
+        })
+    }
+
     /// `{term: "frame", modifies, creates, deletes}` (QSpec FR-340).
     /// `creates` and `deletes` are each an ascending-by-digest list of
     /// object type or process node keys.
@@ -566,10 +817,110 @@ impl SemanticTerm {
         creates: Vec<NodeKey>,
         deletes: Vec<NodeKey>,
     ) -> Self {
-        Self::Frame {
+        Self::Frame(FrameTerm {
             modifies,
             creates: creates.into_iter().map(NodeRef).collect(),
             deletes: deletes.into_iter().map(NodeRef).collect(),
+        })
+    }
+
+    /// The application this body is, when it is one.
+    pub fn application_term(&self) -> Option<&ApplicationTerm> {
+        match self {
+            Self::Application(application) => Some(application),
+            Self::Leaf(_) | Self::Aggregate(_) | Self::Frame(_) => None,
+        }
+    }
+
+    /// Every Leaf of this body, in order: the body itself, an
+    /// application's arguments' or an aggregate's members' leaves. A frame
+    /// body holds none. The body's depth is fixed, so this is a fixed-depth
+    /// match, not a walk.
+    pub fn leaves(&self) -> Vec<&LeafTerm> {
+        match self {
+            Self::Leaf(leaf) => vec![leaf],
+            Self::Application(ApplicationTerm { arguments, .. })
+            | Self::Aggregate(AggregateTerm { members: arguments }) => {
+                arguments.iter().flat_map(MemberTerm::leaves).collect()
+            }
+            Self::Frame(_) => Vec::new(),
+        }
+    }
+
+    /// Call `visit` with every node key this body names (FR-092 "names"):
+    /// each `reference` target, literal `type`, application `result_type`
+    /// and operation member `declaration`, and a frame's entries.
+    pub(crate) fn for_each_key(&self, visit: &mut impl FnMut(NodeKey)) {
+        match self {
+            Self::Application(ApplicationTerm {
+                operation,
+                result_type,
+                ..
+            }) => {
+                if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
+                    visit(declaration);
+                }
+                visit(result_type.0);
+            }
+            Self::Frame(FrameTerm {
+                modifies,
+                creates,
+                deletes,
+            }) => {
+                for field in modifies {
+                    visit(field.declaration.0);
+                }
+                for reference in creates.iter().chain(deletes) {
+                    visit(reference.0);
+                }
+            }
+            Self::Leaf(_) | Self::Aggregate(_) => {}
+        }
+        for key in self.leaves().into_iter().filter_map(LeafTerm::key) {
+            visit(key);
+        }
+    }
+
+    /// This body with every node key it names replaced by `map`'s image.
+    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
+        match self {
+            Self::Leaf(leaf) => Self::Leaf(leaf.map_keys(map)),
+            Self::Application(ApplicationTerm {
+                operator,
+                operation,
+                result_type,
+                arguments,
+            }) => {
+                let mut operation = operation.clone();
+                operation.member = operation.member.map(|member| map_member(member, map));
+                Self::Application(ApplicationTerm {
+                    operator: *operator,
+                    operation,
+                    result_type: NodeRef(map(result_type.0)),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| argument.map_keys(map))
+                        .collect(),
+                })
+            }
+            Self::Aggregate(AggregateTerm { members }) => Self::Aggregate(AggregateTerm {
+                members: members.iter().map(|member| member.map_keys(map)).collect(),
+            }),
+            Self::Frame(FrameTerm {
+                modifies,
+                creates,
+                deletes,
+            }) => Self::Frame(FrameTerm {
+                modifies: modifies
+                    .iter()
+                    .map(|field| FrameField {
+                        declaration: NodeRef(map(field.declaration.0)),
+                        name: field.name.clone(),
+                    })
+                    .collect(),
+                creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
+                deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
+            }),
         }
     }
 }
@@ -932,7 +1283,7 @@ pub(crate) struct NodeInput<'a> {
     /// `minItems: 1`; an empty name is refused).
     pub(crate) declaration: Option<&'a [Identifier]>,
     /// The node's body.
-    pub(crate) body: &'a SemanticTerm,
+    pub(crate) body: &'a BodyTerm,
 }
 
 /// The inputs of one application-bearing node's FR-322 key: the
@@ -949,7 +1300,7 @@ pub(crate) struct ApplicationNode<'a> {
     /// The node's `declaration.qualified_name`, when it carries one.
     pub(crate) declaration: Option<&'a [Identifier]>,
     /// The node's body.
-    pub(crate) body: &'a SemanticTerm,
+    pub(crate) body: &'a BodyTerm,
 }
 
 /// The canonical preimage bytes and the key they hash to.
@@ -1012,14 +1363,6 @@ pub enum NodeKeyRefusal {
         /// The offending value.
         value: u64,
     },
-    /// The body nests deeper than [`MAX_CHECKING_DEPTH`] terms.
-    #[error("the body nests deeper than {limit} terms")]
-    TooDeep {
-        /// The depth limit.
-        limit: u64,
-        /// The depth the refused term is at.
-        actual: u64,
-    },
     /// A recursion group has no member, names one member twice, or a
     /// placeholder names no member: an internal fault of the caller.
     #[error("a recursion group is empty, names a member twice, or names no member")]
@@ -1077,7 +1420,7 @@ pub(crate) fn application_node_key(
         declaration: node.declaration,
         body: node.body,
     };
-    let (_, has_application) = Walk::OUTSIDE.term(node.body, 1)?;
+    let (_, has_application) = Walk::OUTSIDE.body(node.body)?;
     if !has_application {
         return Err(NodeKeyRefusal::NoApplication);
     }
@@ -1378,7 +1721,7 @@ fn typed_preimage<'a>(
     if node.declaration.is_some_and(<[Identifier]>::is_empty) {
         return Err(NodeKeyRefusal::EmptyQualifiedName);
     }
-    let (body, has_application) = walk.term(node.body, 1)?;
+    let (body, has_application) = walk.body(node.body)?;
     let (version, recursion) = if has_application {
         if node.owner.is_some() {
             return Err(NodeKeyRefusal::OwnedApplication);
@@ -1613,109 +1956,6 @@ impl Encode for PreimageTerm<'_> {
     }
 }
 
-impl SemanticTerm {
-    /// Call `visit` with every node key this term names (FR-092 "names"):
-    /// each `reference` target, literal `type`, application `result_type`
-    /// and operation member `declaration`.
-    pub(crate) fn for_each_key(&self, visit: &mut impl FnMut(NodeKey)) {
-        match self {
-            Self::Literal { ty, .. } => visit(ty.0),
-            Self::Reference { target } => visit(target.0),
-            Self::Application {
-                operation,
-                result_type,
-                arguments,
-                ..
-            } => {
-                if let Some(declaration) = operation.member.as_ref().and_then(Member::declaration) {
-                    visit(declaration);
-                }
-                visit(result_type.0);
-                for argument in arguments {
-                    argument.for_each_key(visit);
-                }
-            }
-            Self::Aggregate { members } => {
-                for member in members {
-                    member.for_each_key(visit);
-                }
-            }
-            Self::Binding { value, .. } => value.for_each_key(visit),
-            // A dependency's node is no key of this package.
-            Self::DependencyReference { .. } => {}
-            Self::Frame {
-                modifies,
-                creates,
-                deletes,
-            } => {
-                for field in modifies {
-                    visit(field.declaration.0);
-                }
-                for reference in creates.iter().chain(deletes) {
-                    visit(reference.0);
-                }
-            }
-        }
-    }
-
-    /// This term with every node key it names replaced by `map`'s image.
-    pub(crate) fn map_keys(&self, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Self {
-        match self {
-            Self::Literal { ty, value } => Self::Literal {
-                ty: NodeRef(map(ty.0)),
-                value: value.clone(),
-            },
-            Self::Reference { target } => Self::Reference {
-                target: NodeRef(map(target.0)),
-            },
-            Self::Application {
-                operator,
-                operation,
-                result_type,
-                arguments,
-            } => {
-                let mut operation = operation.clone();
-                operation.member = operation.member.map(|member| map_member(member, map));
-                Self::Application {
-                    operator: *operator,
-                    operation,
-                    result_type: NodeRef(map(result_type.0)),
-                    arguments: arguments
-                        .iter()
-                        .map(|argument| argument.map_keys(map))
-                        .collect(),
-                }
-            }
-            Self::Aggregate { members } => Self::Aggregate {
-                members: members.iter().map(|member| member.map_keys(map)).collect(),
-            },
-            Self::Binding { name, value } => Self::Binding {
-                name: name.clone(),
-                value: Box::new(value.map_keys(map)),
-            },
-            Self::DependencyReference { package, node } => Self::DependencyReference {
-                package: *package,
-                node: *node,
-            },
-            Self::Frame {
-                modifies,
-                creates,
-                deletes,
-            } => Self::Frame {
-                modifies: modifies
-                    .iter()
-                    .map(|field| FrameField {
-                        declaration: NodeRef(map(field.declaration.0)),
-                        name: field.name.clone(),
-                    })
-                    .collect(),
-                creates: creates.iter().map(|node| NodeRef(map(node.0))).collect(),
-                deletes: deletes.iter().map(|node| NodeRef(map(node.0))).collect(),
-            },
-        }
-    }
-}
-
 /// `member` with its declaring node replaced by `map`'s image.
 fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Member {
     match member {
@@ -1750,8 +1990,8 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
     }
 }
 
-/// One pass over a body: builds its preimage form, reports whether it
-/// contains an application, and enforces the depth and number bounds.
+/// One pass over a body: builds its preimage form, reports whether it is
+/// an application, and enforces the number bounds.
 #[derive(Clone, Copy)]
 struct Walk<'g> {
     /// The recursion group's members by handle, each with the ordinal its
@@ -1779,50 +2019,97 @@ impl Walk<'_> {
         }
     }
 
-    /// `term` at nesting `depth` (the body root is depth 1) in preimage form,
-    /// and whether it is or contains an application.
-    fn term<'a>(
-        &self,
-        term: &'a SemanticTerm,
-        depth: u64,
-    ) -> Result<(PreimageTerm<'a>, bool), NodeKeyRefusal> {
-        if depth > MAX_CHECKING_DEPTH {
-            return Err(NodeKeyRefusal::TooDeep {
-                limit: MAX_CHECKING_DEPTH,
-                actual: depth,
-            });
-        }
-        let terms = |terms: &'a [SemanticTerm]| {
-            terms.iter().try_fold(
-                (Vec::with_capacity(terms.len()), false),
-                |(mut mapped, any), term| {
-                    let (preimage, has) = self.term(term, depth + 1)?;
-                    mapped.push(preimage);
-                    Ok::<_, NodeKeyRefusal>((mapped, any || has))
-                },
-            )
-        };
-        Ok(match term {
-            SemanticTerm::Literal { ty, value } => {
+    /// `leaf` in preimage form.
+    fn leaf<'a>(&self, leaf: &'a LeafTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        Ok(match leaf {
+            LeafTerm::Literal { ty, value } => {
                 self.type_position(ty.0)?;
-                (
-                    PreimageTerm::Leaf(PreimageLeaf::Literal { ty: *ty, value }),
-                    false,
-                )
+                PreimageTerm::Leaf(PreimageLeaf::Literal { ty: *ty, value })
             }
-            SemanticTerm::Reference { target } => {
-                let leaf = match self.ordinal(target.0) {
-                    Some(ordinal) => PreimageLeaf::GroupReference { ordinal },
-                    None => PreimageLeaf::Reference { target: *target },
+            LeafTerm::Reference { target } => match self.ordinal(target.0) {
+                Some(ordinal) => PreimageTerm::Leaf(PreimageLeaf::GroupReference { ordinal }),
+                None => PreimageTerm::Leaf(PreimageLeaf::Reference { target: *target }),
+            },
+            // ADR-015 D-5: the dependency's `package_id` and node id enter
+            // the preimage as written; neither names a node of this graph.
+            LeafTerm::DependencyReference { package, node } => {
+                PreimageTerm::Leaf(PreimageLeaf::DependencyReference {
+                    package: *package,
+                    node: *node,
+                })
+            }
+        })
+    }
+
+    /// `binding` of a value already in preimage form.
+    fn binding<'a>(
+        name: &'a str,
+        value: PreimageTerm<'a>,
+    ) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        if name.is_empty() {
+            return Err(NodeKeyRefusal::EmptyBindingName);
+        }
+        Ok(PreimageTerm::Binding {
+            name,
+            value: Box::new(value),
+        })
+    }
+
+    /// A binding of a Leaf in preimage form.
+    fn bound_leaf<'a>(
+        &self,
+        binding: &'a Binding<LeafTerm>,
+    ) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        Self::binding(&binding.name, self.leaf(&binding.value)?)
+    }
+
+    /// `group` in preimage form.
+    fn group<'a>(&self, group: &'a GroupTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        let members = group
+            .members
+            .iter()
+            .map(|member| match member {
+                GroupMember::Leaf(leaf) => self.leaf(leaf),
+                GroupMember::Binding(binding) => self.bound_leaf(binding),
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(PreimageTerm::Aggregate { members })
+    }
+
+    /// `member` in preimage form.
+    fn member<'a>(&self, member: &'a MemberTerm) -> Result<PreimageTerm<'a>, NodeKeyRefusal> {
+        match member {
+            MemberTerm::Leaf(leaf) => self.leaf(leaf),
+            MemberTerm::Group(group) => self.group(group),
+            MemberTerm::Binding(binding) => {
+                let value = match &binding.value {
+                    BindingValue::Leaf(leaf) => self.leaf(leaf)?,
+                    BindingValue::Group(group) => self.group(group)?,
+                    BindingValue::Binding(bound) => self.bound_leaf(bound)?,
                 };
-                (PreimageTerm::Leaf(leaf), false)
+                Self::binding(&binding.name, value)
             }
-            SemanticTerm::Application {
+        }
+    }
+
+    /// `body` in preimage form, and whether it is an application. Each
+    /// stratum's function calls only the strata below it, so the walk is a
+    /// fixed-depth match whatever the expression's depth (FR-258).
+    fn body<'a>(&self, body: &'a BodyTerm) -> Result<(PreimageTerm<'a>, bool), NodeKeyRefusal> {
+        let members = |members: &'a [MemberTerm]| {
+            members
+                .iter()
+                .map(|member| self.member(member))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(match body {
+            BodyTerm::Leaf(leaf) => (self.leaf(leaf)?, false),
+            BodyTerm::Application(ApplicationTerm {
                 operator,
                 operation,
                 result_type,
                 arguments,
-            } => {
+            }) => {
                 if let Some(Member::Position { position, .. }) = &operation.member {
                     exact_integer(IntegerSite::MemberPosition, *position)?;
                 }
@@ -1830,37 +2117,18 @@ impl Walk<'_> {
                     self.type_position(declaration)?;
                 }
                 self.type_position(result_type.0)?;
-                let (arguments, _) = terms(arguments)?;
                 let preimage = PreimageTerm::Application {
                     operator: *operator,
                     operation,
                     result_type: *result_type,
-                    arguments,
+                    arguments: members(arguments)?,
                 };
                 (preimage, true)
             }
-            SemanticTerm::Aggregate { members } => {
-                let (members, has) = terms(members)?;
-                (PreimageTerm::Aggregate { members }, has)
-            }
-            SemanticTerm::Binding { name, value } => {
-                if name.is_empty() {
-                    return Err(NodeKeyRefusal::EmptyBindingName);
-                }
-                let (value, has) = self.term(value, depth + 1)?;
-                let preimage = PreimageTerm::Binding {
-                    name,
-                    value: Box::new(value),
-                };
-                (preimage, has)
-            }
-            // ADR-015 D-5: the dependency's `package_id` and node id enter
-            // the preimage as written; neither names a node of this graph.
-            SemanticTerm::DependencyReference { package, node } => (
-                PreimageTerm::Leaf(PreimageLeaf::DependencyReference {
-                    package: *package,
-                    node: *node,
-                }),
+            BodyTerm::Aggregate(AggregateTerm { members: terms }) => (
+                PreimageTerm::Aggregate {
+                    members: members(terms)?,
+                },
                 false,
             ),
             // QSpec FR-340: a frame body holds no application, and its
@@ -1870,11 +2138,11 @@ impl Walk<'_> {
             // `state`/`frame` node is never part of a recursion group (only
             // a function's own body can be), so this is a direct passthrough,
             // not a gap in the group-reference rule.
-            SemanticTerm::Frame {
+            BodyTerm::Frame(FrameTerm {
                 modifies,
                 creates,
                 deletes,
-            } => (
+            }) => (
                 PreimageTerm::Leaf(PreimageLeaf::Frame {
                     modifies,
                     creates,

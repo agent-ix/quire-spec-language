@@ -25,7 +25,7 @@ use qsl_eval::value::ClauseEvaluation;
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{Operator, SemanticTerm};
+use qsl_semantics::check::{ApplicationTerm, BodyTerm, Operator};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 
 /// The `witness` unit's invariants, on `Config::ConfigVersion` at
@@ -281,7 +281,8 @@ fn occurrence(unit: &Unit, clause: &str, path: &[usize], operator: Operator) -> 
                 && location.path == path
                 && matches!(
                     semantic.node(*key).map(|node| node.body()),
-                    Some(SemanticTerm::Application { operator: applied, .. }) if *applied == operator
+                    Some(BodyTerm::Application(ApplicationTerm { operator: applied, .. }))
+                        if *applied == operator
                 )
         })
         .map(|(key, origin, _)| {
@@ -441,7 +442,9 @@ fn tc_740_a_satisfied_exists_or_negated_forall_derives_a_decisive_witness() {
         panic!("EqualsAll's body is an equality");
     };
     assert!(
-        evaluation.stop(left.location()).is_some(),
+        evaluation
+            .stop(forall.body().at(*left).location())
+            .is_some(),
         "its forall stopped"
     );
     assert_eq!(derive(&unit, "EqualsAll", Snapshot::High, "mid"), closed());
@@ -1271,6 +1274,70 @@ fn cause_deciding(unit: &Unit, element: Value) -> DisagreementCause {
         derived: None,
         failure: WitnessFailure::Mismatch,
     }
+}
+
+/// A deciding element whose type nests 100,000 `Option`s, and one whose
+/// value nests 100,000 records, each encode on a 512 KiB stack: the
+/// encoding keeps the value's and type's members on a heap stack, so no
+/// depth is a limit (ADR-030 D-1). The cause and its document drop on the
+/// same stack.
+#[trace("TC-744", "FR-269-AC-3")]
+#[test]
+fn a_100000_deep_deciding_element_encodes_on_a_small_stack() {
+    const DEEP: usize = 100_000;
+    let unit = witness_unit();
+    let template = all_below_record(&unit);
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let deep_type = (0..DEEP).fold(quire_exact::ValueType::Boolean, |inner, _| {
+                quire_exact::ValueType::option(inner)
+            });
+            let declaration = quire_exact::NodeKey::from_digest([7; 32]);
+            let deep_record = (0..DEEP).fold(
+                quire_exact::from_admitted_slots(
+                    declaration,
+                    Box::new([quire_exact::FieldValue::Absent]),
+                ),
+                |next, _| {
+                    quire_exact::from_admitted_slots(
+                        declaration,
+                        Box::new([quire_exact::FieldValue::Present(next)]),
+                    )
+                },
+            );
+            // The `none` itself and each of its type's levels; each record
+            // holding the next.
+            let elements = [
+                (
+                    "option type",
+                    quire_exact::OptionValue::none(deep_type),
+                    r#""kind":"option""#,
+                    DEEP + 1,
+                ),
+                ("record value", deep_record, r#""slot":"present""#, DEEP),
+            ];
+            for (label, element, level, levels) in elements {
+                let violation = Verdict::from_category(Category::Violation);
+                let cause = DisagreementCause::Witness {
+                    proved: violation,
+                    replayed: violation,
+                    given: Some(Box::new(SeparatingWitnessRecord {
+                        deciding_element: element,
+                        ..template.clone()
+                    })),
+                    derived: None,
+                    failure: WitnessFailure::Mismatch,
+                };
+                let text = cause
+                    .to_json()
+                    .unwrap_or_else(|error| panic!("{label}: encodes: {error}"));
+                assert_eq!(text.matches(level).count(), levels, "{label}: every level");
+            }
+        })
+        .expect("the thread spawns")
+        .join()
+        .expect("the deep elements encode on a 512 KiB stack");
 }
 
 /// TC-744 step 3 (FR-269-AC-3): a deciding element of each value kind

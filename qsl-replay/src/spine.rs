@@ -1202,14 +1202,15 @@ mod tests {
     use quire_semantic_value::checking::CheckingLimits;
     use std::collections::BTreeMap;
 
-    /// FR-096 at the CLI's compile: `Typer`'s depth stop on
-    /// `not not not true` under depth 3 is reported at the region of
-    /// `true`, not the whole body.
+    /// FR-096 at the CLI's compile: `Typer`'s package-wide node stop on
+    /// `not not not true`, after `g`'s one node, under a node limit of 4
+    /// is reported at the region of `true`, not the whole body.
     #[trace("TC-378", "FR-096-AC-11")]
     #[test]
-    fn a_family_depth_stop_is_reported_at_the_node_that_failed() {
+    fn a_family_node_stop_is_reported_at_the_node_that_failed() {
         const UNIT: &str = "language \"ix:native\" edition \"1-draft\";\n\
             profile v = \"quire.value.complete/v1\";\n\
+            function g using v(): Boolean pure { true }\n\
             function f using v(): Boolean pure { not not not true }\n";
         let refusal = compile(
             SourceIdentity::new("a", "u", "git", "1"),
@@ -1218,11 +1219,11 @@ mod tests {
             &BTreeMap::new(),
             &DependencyInput::default(),
             SpineLimits {
-                checking: CheckingLimits::new(u64::MAX, 3).unwrap(),
+                checking: CheckingLimits::new(4),
                 ..SpineLimits::default()
             },
         )
-        .expect_err("depth 3 stops a body four deep");
+        .expect_err("a node limit of 4 stops `f` after `g`");
         assert_eq!(refusal.stage(), SpineStage::Check);
         assert_eq!(refusal.code(), Code::StageLimitExceeded);
         let region = refusal.region().expect("the stop is located");

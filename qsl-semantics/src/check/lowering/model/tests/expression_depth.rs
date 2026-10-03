@@ -3,17 +3,14 @@
 //! `lookup` chain, an attribute read and a dispatched call over one,
 //! `allInstances` under a nested sum, nested dispatch arguments, and a
 //! nested precondition a redefinition inherits through the dispatch bridge,
-//! each checked on a 2 MiB thread at the deepest nesting the default limits
-//! admit and refused on the depth limit one level deeper and 1,000 levels
-//! deep.
+//! each checked on a 512 KiB thread nested 2 and 1,000 levels deep at the
+//! default limits: no limit names a depth.
 
 use qsl_foundation::absence::AbsenceMode;
 
 use super::*;
-use crate::check::refusal::{CheckingLimitKind, CheckingStage, StageLimitCause};
-use quire_semantic_value::checking::MAX_CHECKING_DEPTH;
 
-const STACK: usize = 2 * 1024 * 1024;
+const STACK: usize = 512 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 enum ModelForm {
@@ -46,18 +43,6 @@ const MODEL_FORMS: [ModelForm; 6] = [
 ];
 
 impl ModelForm {
-    /// The deepest nesting the default limits admit: the `lookup` chain
-    /// reaches the limit itself; an attribute read or a dispatched call over
-    /// it, and each `size(allInstances(p))` operand, add two levels.
-    fn deepest(self) -> usize {
-        match self {
-            Self::Lookup => 127,
-            Self::Attribute | Self::Dispatch | Self::AllInstances => 125,
-            Self::DispatchArguments => DEEPEST_ARGUMENTS,
-            Self::InheritedPrecondition => DEEPEST_INHERITED,
-        }
-    }
-
     /// `acme/orders`' dispatch package for `Order.size` with `f`, over
     /// `p: Population<M::Order>[3]` and `r: Reference<M::Order>`, holding this
     /// form nested `levels` times.
@@ -119,18 +104,9 @@ impl ModelForm {
             .spawn(move || self.declarations(levels).check(limits).map(drop))
             .expect("the check thread spawns")
             .join()
-            .expect("the check completes on a 2 MiB stack")
+            .expect("the check completes on a 512 KiB stack")
     }
 }
-
-/// The deepest dispatch-argument nesting the default limits admit: the
-/// comparison, 126 dispatches and the innermost `0` are 128 levels.
-const DEEPEST_ARGUMENTS: usize = 126;
-
-/// The deepest inherited-precondition nesting the default limits admit:
-/// `Sub.scaled`'s effective `false or (…)`, the comparison, 125 additions
-/// and the innermost `m` are 128 levels.
-const DEEPEST_INHERITED: usize = 125;
 
 /// `acme/orders`' dispatch package for `Order.scaled` with the clause `f`,
 /// over `r: Reference<M::Order>`: `r.scaled(r.scaled(… 0)) >= 0`, nested
@@ -177,50 +153,16 @@ fn inherited_precondition(acme: &Acme, levels: usize) -> PackageDeclarations {
     dispatch_with(acme, "Order/scaled", &clauses)
 }
 
-fn assert_depth_refusals(form: ModelForm, refusals: &[CheckRefusal], limit: u64) {
-    assert!(!refusals.is_empty(), "{form:?}");
-    for refusal in refusals {
-        assert_eq!(
-            refusal.cause,
-            CheckCause::ResourceExhausted(Box::new(StageLimitCause {
-                stage: CheckingStage::Typing,
-                kind: CheckingLimitKind::Depth,
-                limit,
-                actual: u128::from(limit) + 1,
-                region: None,
-            })),
-            "{form:?}: {refusal:?}"
-        );
-    }
-}
-
-/// Each model form checks at its deepest admitted nesting and refuses on
-/// the depth limit one level deeper, and 1,000 levels deep at the default
-/// limits, at the maximum depth with nodes, input bytes and work unlimited,
-/// and at a caller depth of 16.
+/// Each model form checks nested 2 and 1,000 levels deep at the default
+/// limits.
 #[trace("FR-093-AC-14", "TC-415")]
 #[test]
-fn every_nested_model_form_refuses_on_the_depth_limit_on_a_small_stack() {
-    let maximum = CheckingLimits::new(u64::MAX, MAX_CHECKING_DEPTH)
-        .expect("the maximum depth is admitted")
-        .with_work_budget(u64::MAX)
-        .with_input_bytes(u64::MAX);
-    let narrowed = CheckingLimits::new(u64::MAX, 16).expect("16 is admitted");
+fn every_nested_model_form_checks_1000_levels_deep_on_a_small_stack() {
     for form in MODEL_FORMS {
-        let deepest = form.deepest();
-        if let Err(refusals) = form.check(deepest, CheckingLimits::default()) {
-            panic!("{form:?} at {deepest} levels checks: {refusals:?}");
-        }
-        for (levels, limits, limit) in [
-            (deepest + 1, CheckingLimits::default(), MAX_CHECKING_DEPTH),
-            (1_000, CheckingLimits::default(), MAX_CHECKING_DEPTH),
-            (1_000, maximum, MAX_CHECKING_DEPTH),
-            (1_000, narrowed, 16),
-        ] {
-            let refusals = form
-                .check(levels, limits)
-                .expect_err("the nesting passes the depth limit");
-            assert_depth_refusals(form, &refusals, limit);
+        for levels in [2, 1_000] {
+            if let Err(refusals) = form.check(levels, CheckingLimits::default()) {
+                panic!("{form:?} at {levels} levels checks: {refusals:?}");
+            }
         }
     }
 }

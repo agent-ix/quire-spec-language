@@ -1504,9 +1504,8 @@ mod tests {
         assert_eq!(renamed, expected);
     }
 
-    /// The renaming of an inherited precondition nested 100,000 levels --
-    /// far past the check stage's depth limit, which refuses it afterwards
-    /// -- completes on a 512 KiB thread and renames every level.
+    /// The renaming of an inherited precondition nested 100,000 levels
+    /// completes on a 512 KiB thread and renames every level.
     #[trace("FR-093-AC-14", "TC-415")]
     #[test]
     fn rename_walks_a_deep_clause_on_a_small_stack() {

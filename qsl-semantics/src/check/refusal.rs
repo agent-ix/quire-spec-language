@@ -341,8 +341,6 @@ pub enum CheckingStage {
 pub enum CheckingLimitKind {
     /// Admitted expression nodes per checked package.
     Nodes,
-    /// Expression nesting depth.
-    Depth,
     /// A checked-family declaration's own preimage byte length
     /// (`qsl_foundation::diagnostic::LimitKind::InputBytes`).
     InputBytes,
@@ -360,7 +358,6 @@ impl CheckingLimitKind {
     pub(crate) const fn foundation_kind(self) -> LimitKind {
         match self {
             Self::Nodes => LimitKind::NodeCount,
-            Self::Depth => LimitKind::NestingDepth,
             Self::InputBytes => LimitKind::InputBytes,
             Self::WorkBudget => LimitKind::WorkBudget,
         }
@@ -376,14 +373,16 @@ impl TryFrom<LimitKind> for CheckingLimitKind {
     /// 3, finding 4), so a new `LimitKind` forces a decision here.
     /// `NodeCount` maps onto the pre-existing `Self::Nodes` (both name "how
     /// many expression nodes"). The token, edge, occurrence and diagnostic
-    /// counts name S1 and I2 ceilings no checking limit has, and refuse.
+    /// counts, and nesting depth, name S1, I2 and library ceilings no
+    /// checking limit has, and refuse: checking has no depth limit
+    /// (ADR-030 D-1).
     fn try_from(kind: LimitKind) -> Result<Self, LimitKind> {
         match kind {
-            LimitKind::NestingDepth => Ok(Self::Depth),
             LimitKind::NodeCount => Ok(Self::Nodes),
             LimitKind::InputBytes => Ok(Self::InputBytes),
             LimitKind::WorkBudget => Ok(Self::WorkBudget),
-            LimitKind::TokenCount
+            LimitKind::NestingDepth
+            | LimitKind::TokenCount
             | LimitKind::EdgeCount
             | LimitKind::OccurrenceCount
             | LimitKind::DiagnosticCount => Err(kind),
@@ -474,7 +473,7 @@ pub struct StageLimitCause {
     pub actual: u128,
     /// FR-096: the region where a family `check` reached the limit, when
     /// the refusal's `location` cannot name it: a declaration's whole span,
-    /// or the node `Typer`'s depth stop failed at. `None` when `location`
+    /// or the node whose entry `Typer`'s node stop failed at. `None` when `location`
     /// names the position, or when no region of the unit does.
     pub region: Option<SourceRegion>,
 }
@@ -923,7 +922,6 @@ mod tests {
     fn resource_exhausted_reports_stage_limit_exceeded_per_kind() {
         let cases = [
             (CheckingLimitKind::Nodes, "node-count-exceeded"),
-            (CheckingLimitKind::Depth, "nesting-depth-exceeded"),
             (CheckingLimitKind::InputBytes, "input-bytes-exceeded"),
             (CheckingLimitKind::WorkBudget, "work-budget-exceeded"),
         ];
@@ -945,13 +943,14 @@ mod tests {
         }
     }
 
-    /// The four kinds a checking limit names convert back from
-    /// `LimitKind`; the S1 and I2 kinds no checking limit names refuse,
+    /// The three kinds a checking limit names convert back from
+    /// `LimitKind`; nesting depth and the S1 and I2 kinds no checking limit
+    /// names refuse,
     /// and name the `KeyFault` `check::mod` raises for them.
     #[test]
     fn only_checking_kinds_convert_from_a_limit_kind() {
         for (kind, expected) in [
-            (LimitKind::NestingDepth, Ok(CheckingLimitKind::Depth)),
+            (LimitKind::NestingDepth, Err(LimitKind::NestingDepth)),
             (LimitKind::NodeCount, Ok(CheckingLimitKind::Nodes)),
             (LimitKind::InputBytes, Ok(CheckingLimitKind::InputBytes)),
             (LimitKind::WorkBudget, Ok(CheckingLimitKind::WorkBudget)),

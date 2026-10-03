@@ -68,8 +68,8 @@ use qsl_foundation::diagnostic::{LimitExceeded, LimitKind, Locus, StageFailure, 
 use super::check::{bind_parameters, Signature, Signatures, Typer};
 use super::facts::{CallSite, Definedness};
 use super::imports::ImportedNames;
-use super::ir::Node;
-use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, KeyFault};
+use super::ir::{CheckedBody, Node};
+use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::AdmittedImport;
 use super::{DeclarationRegions, DispatchTable, Scope};
 use crate::family::ClassifyFailure;
@@ -382,9 +382,8 @@ fn encode_value_type(out: &mut DeclarationMeter, value_type: &ValueType) {
 // see `encode_value_type`'s own doc comment above.
 //
 // The walk keeps its pending sub-expressions on a heap stack, not
-// the host stack, so an expression nested past every checking limit is
-// measured (and then refused by the typer's depth limit) rather than
-// overflowing here first. Sub-expressions are visited in source pre-order,
+// the host stack, so an expression of any depth is measured in constant
+// host stack. Sub-expressions are visited in source pre-order,
 // so a `Convert`/`AllInstances`/`Lookup` target that does not resolve is
 // refused at the same node the recursive walk refused it at. A node's own
 // writes all happen at its visit, including the few (a field name, an
@@ -942,7 +941,11 @@ impl<'a> Application<'a> {
     }
 
     /// The application node over its checked `arguments`.
-    pub(crate) fn finish(self, arguments: Vec<Node>, location: &CheckLocation) -> Node {
+    pub(crate) fn finish(
+        self,
+        arguments: Vec<super::ir::NodeId>,
+        location: &CheckLocation,
+    ) -> Node {
         match self {
             // FR-093: the call's identity is the key of the `expression`
             // node `check::lowering` builds for it once its callee is keyed.
@@ -989,9 +992,9 @@ impl<'a> Application<'a> {
 #[derive(Debug)]
 pub(crate) struct CheckedDeclarationBody {
     /// The typed body.
-    pub(crate) body: Node,
+    pub(crate) body: CheckedBody,
     /// The typed `decreases` measure, when the declaration wrote one.
-    pub(crate) measure: Option<Node>,
+    pub(crate) measure: Option<CheckedBody>,
     /// The evaluation slot count the body's own parameter/local bindings
     /// allocated.
     pub(crate) slots: usize,
@@ -1135,7 +1138,7 @@ pub(crate) fn check_declaration_body(
         input.dispatch_tables,
         &input.scope.dispatch_operations,
     );
-    definedness.check(&body)?;
+    definedness.check(body.root())?;
     // The measure's own definedness is checked, but (unchanged from the
     // pre-migration behavior) its calls are not folded into `calls` below:
     // termination's call graph is built from each function's *body*, not
@@ -1146,7 +1149,7 @@ pub(crate) fn check_declaration_body(
             input.dispatch_tables,
             &input.scope.dispatch_operations,
         )
-        .check(measure)?;
+        .check(measure.root())?;
     }
     Ok(CheckedDeclarationBody {
         body,
@@ -1435,24 +1438,17 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         form: &Self::Form,
         cx: &mut crate::family::CheckContext<'a, ValueDeclarations<'a>>,
     ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
-        // FR-062 "Explicit limits bound every stage entry, including
-        // recursion": `check` charges one nesting-entry before minting,
-        // and refuses with a `Limit` outcome rather than reading `form` at
-        // all once the configured depth is reached. This is the contract's
-        // own per-declaration entry charge, unrelated to (and not a
-        // replacement for) `Typer`'s own separate, pre-existing
-        // `CheckingLimits.depth` bound that `check_declaration_body`'s real
-        // recursive descent below is charged against -- see
-        // `Application`'s own doc for why the two are not unified in
-        // this change.
+        // FR-062 "Explicit resource limits bound every stage entry, at any
+        // depth": the declaration's input bytes and node count, then its work
+        // charge, then the `Typer`'s package-wide node budget. No limit
+        // bounds depth (ADR-030 D-1).
         //
         // FR-096: every limit this function reaches for the declaration as
-        // a whole is located at the declaration's span; `Typer`'s depth
-        // stop, at the node whose entry failed.
+        // a whole is located at the declaration's span; `Typer`'s node stop,
+        // at the node whose entry failed.
         let declarations = cx.declarations();
         let located =
             |limit: LimitExceeded| StageFailure::Limit(limit.at(declarations.declaration_locus()));
-        cx.enter_nesting().map_err(located)?;
         // FR-062-AC-3 "no side door": the scope stack is pushed and popped
         // around this one check (`cx.scopes.enter`/`leave` below), not just
         // read.
@@ -1467,15 +1463,13 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             Ok(metrics) => metrics,
             Err(refusal) => {
                 cx.scopes.leave();
-                cx.leave_nesting();
                 return Err(StageFailure::Refused(refusal));
             }
         };
         // The measured byte length and node count
         // are checked against `cx`'s restored `StageLimits` fields before
         // this declaration is admitted -- the first one exceeded refuses
-        // with a `Limit` outcome naming it, matching `enter_nesting`'s own
-        // `NestingDepth` case above. `check_node_count` is a real, but
+        // with a `Limit` outcome naming it. `check_node_count` is a real, but
         // deliberately per-declaration-only bound over this same
         // declaration's own preimage node count (`StageLimits::node_count`'s
         // own doc); it is not the package-wide `nodes` budget
@@ -1492,7 +1486,6 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             .and_then(|()| cx.check_node_count(metrics.node_count))
         {
             cx.scopes.leave();
-            cx.leave_nesting();
             return Err(located(exceeded));
         }
         // PR #302 review finding 3: `WorkBudget` is a `Limit` outcome
@@ -1514,7 +1507,6 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 .work(quire_exact::Integer::from(metrics.work_budget)),
         ) {
             cx.scopes.leave();
-            cx.leave_nesting();
             // The meter's own report: the charge carries work units only, so
             // the denied counter is `work_units`, and the refused charge
             // would have taken its cumulative spend to what was consumed
@@ -1564,10 +1556,10 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
             cx.diagnostics.record(
                 cx.scopes,
                 format!(
-                    "{}: checked function declaration {} (limit={}, meter admissions={})",
+                    "{}: checked function declaration {} (node limit={}, meter admissions={})",
                     crate::family::FamilyKind::Value.catalog_code_prefix(),
                     form.name,
-                    cx.limits().nesting_depth,
+                    cx.limits().node_count,
                     cx.meter.admission_count(),
                 ),
             );
@@ -1581,37 +1573,26 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
         // calls already guarantee by construction, not something a broken
         // implementation could trip. `ScopeStack::depth`, that assertion's
         // only reader, is deleted with it.
-        cx.leave_nesting();
-        // Both cleanup calls above run before this `?` (PR #303 review,
-        // finding 12): `check_declaration_body`'s call happens between the
-        // paired `enter`/`leave` calls, with the `?` moved after both, so
-        // every return path -- success or refusal -- balances the scope
-        // stack and the nesting depth identically.
-        // FR-062-AC-7: the Typer's own nesting-depth limit is
-        // the one `CheckCause::ResourceExhausted` cause AC-7 requires a
-        // `StageFailure::Limit` for, not a typed `Refused` -- the contract's
-        // other checking limits (nodes, work budget, input bytes) reach
-        // `Typer::enter` through `CheckContext`, already `Limit`-mapped
-        // above (this function's own `cx.enter_nesting()` and
-        // `check_declaration_body`'s meter charges); only the Typer's
-        // unrelated, pre-existing `CheckingLimits.depth` bound was still
-        // surfacing as a typed refusal.
+        // FR-062-AC-7: a `Typer` stage limit (its package-wide node budget,
+        // or a lowering work charge) is a `StageFailure::Limit` naming that
+        // limit's kind, bound and count, located at the node whose entry
+        // failed (FR-096), not a typed `Refused`.
         let body = checked_body.map_err(|refusal| match refusal.cause {
-            CheckCause::ResourceExhausted(ref exceeded)
-                if exceeded.kind == CheckingLimitKind::Depth =>
-            {
-                StageFailure::Limit(
-                    LimitExceeded::new(LimitKind::NestingDepth, exceeded.limit, exceeded.actual)
-                        .at(declarations.locus(&refusal.location)),
+            CheckCause::ResourceExhausted(ref exceeded) => StageFailure::Limit(
+                LimitExceeded::new(
+                    exceeded.kind.foundation_kind(),
+                    exceeded.limit,
+                    exceeded.actual,
                 )
-            }
+                .at(declarations.locus(&refusal.location)),
+            ),
             _ => StageFailure::Refused(refusal),
         })?;
         // FR-062: each claim's extent is classified here, under the
         // declaration's node-count limit. A reached ceiling is the
         // declaration's limit; a broken check invariant, an internal fault.
         let claims = super::claims::claims_of(
-            &body.body,
+            body.body.root(),
             &declarations.own_signature.parameters,
             declarations.location,
             declarations.scope.types(),
@@ -1932,7 +1913,6 @@ pub mod fixtures {
     /// is bounded except where a test tightens one field.
     pub fn limits() -> StageLimits {
         StageLimits {
-            nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         }
@@ -1974,7 +1954,7 @@ pub(crate) mod checking_tests {
         name: &str,
         arguments: &[Expression],
         location: &CheckLocation,
-    ) -> Result<Node, CheckRefusal> {
+    ) -> Result<CheckedBody, CheckRefusal> {
         let call = Expression::call(name.to_owned(), arguments.to_vec());
         typer.infer(&call, None, location)
     }
@@ -2012,9 +1992,9 @@ pub(crate) mod checking_tests {
         let arguments = vec![Expression::boolean(true)];
         let checked = check_application(&mut typer, "f", &arguments, &location)
             .expect("one Boolean argument against a one-Boolean-parameter signature admits");
-        assert_eq!(checked.value_type, ValueType::Boolean);
+        assert_eq!(checked.root().value_type(), &ValueType::Boolean);
         assert!(matches!(
-            checked.kind,
+            checked.root().kind(),
             super::super::ir::NodeKind::Call { function: 0, .. }
         ));
     }
@@ -2771,72 +2751,14 @@ pub(crate) mod checking_tests {
         scan.0
     }
 
-    /// Guards the top-level declaration-entry charge alone (limit 0
-    /// refuses with actual counter 1, limit 1 admits a leaf-bodied
-    /// declaration). Not tagged for FR-062-AC-7, whose own fixture-at-depth-D
-    /// requirement [`real_checker_depth_limit_is_the_proximate_cause`] below
-    /// addresses (see that test's own doc for why it is untagged, rather than
-    /// retagged onto this narrower charge).
-    #[trace("TC-432", "FR-062-AC-12")]
-    #[test]
-    fn nesting_depth_limit_is_the_proximate_cause() {
-        let scope = empty_scope();
-        let location = root_location();
-        let own_signature = declaration_signature("f");
-        let signatures = Signatures::default();
-        let declarations = declarations_for(
-            &scope,
-            &signatures,
-            &own_signature,
-            &[],
-            CheckingLimits::default(),
-            &location,
-        );
-        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-        let mut diagnostics = DiagnosticSink::default();
-        let mut scopes = ScopeStack::default();
-        let mut tight = StageLimits {
-            nesting_depth: 0,
-            input_bytes: u64::MAX,
-            node_count: u64::MAX,
-        };
-        let mut cx = CheckContext::new(
-            &declarations,
-            tight,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let form = declaration("f", Expression::boolean(true));
-        // The refused entry would have reached depth 1 against a bound of 0.
-        match ValueFunctionFamily::check(&form, &mut cx) {
-            Err(StageFailure::Limit(exceeded)) => {
-                assert_eq!(exceeded, LimitExceeded::new(LimitKind::NestingDepth, 0, 1));
-            }
-            other => panic!("expected a nesting-depth Limit outcome, got {other:?}"),
-        }
-
-        tight.nesting_depth = 1;
-        let mut cx = CheckContext::new(
-            &declarations,
-            tight,
-            &mut meter,
-            &mut diagnostics,
-            &mut scopes,
-        );
-        let admitted = ValueFunctionFamily::check(&form, &mut cx);
-        assert!(admitted.is_ok());
-    }
-
     /// `StageLimits`' restored `input_bytes`/`node_count` each have
     /// a real producer (`measure_declaration`'s own pass) and
     /// a real consumer (`CheckContext::check_input_bytes`/
     /// `check_node_count`, called from `ValueFunctionFamily::check`) that
     /// changes behaviour: a limit configured one below the real, measured
     /// metric refuses with `Limit` naming that exact kind; the same limit
-    /// at the metric itself admits -- the same "varies by exactly one"
-    /// shape `nesting_depth`'s own test uses, so the limit (not the
-    /// fixture) is shown to be the proximate cause. `work_budget` is a real
+    /// at the metric itself admits -- the limit varies by exactly one, so
+    /// the limit (not the fixture) is shown to be the proximate cause. `work_budget` is a real
     /// producer and consumer too, but through the shared kernel meter's own
     /// `work_units` charge (PR #302 review finding 3), not a `StageLimits`
     /// field -- see `work_budget_kind_refuses_from_a_denied_meter_charge`.
@@ -2861,7 +2783,6 @@ pub(crate) mod checking_tests {
         assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
 
         let base = StageLimits {
-            nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         };
@@ -2999,7 +2920,6 @@ pub(crate) mod checking_tests {
         let charge = measure_resolved(&empty_scope(), &form).work_budget;
         assert!(charge > 0);
         let limits = StageLimits {
-            nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         };
@@ -3090,7 +3010,6 @@ pub(crate) mod checking_tests {
             &location,
         );
         let roomy = StageLimits {
-            nesting_depth: 128,
             input_bytes: u64::MAX,
             node_count: u64::MAX,
         };
@@ -3119,17 +3038,6 @@ pub(crate) mod checking_tests {
             seen(
                 &good,
                 StageLimits {
-                    nesting_depth: 0,
-                    ..roomy
-                },
-                unlimited
-            ),
-            Seen::Limit(LimitKind::NestingDepth)
-        );
-        assert_eq!(
-            seen(
-                &good,
-                StageLimits {
                     input_bytes: 0,
                     ..roomy
                 },
@@ -3151,27 +3059,17 @@ pub(crate) mod checking_tests {
         assert_eq!(seen(&good, roomy, 0), Seen::Limit(LimitKind::WorkBudget));
     }
 
-    /// FR-062-AC-7's fixture-at-depth-D requirement, backed against
-    /// `Typer`'s own pre-existing, already-correct
-    /// [`quire_semantic_value::checking::CheckingLimits`] depth bound --
-    /// not the contract's own `StageLimits.nesting_depth`. A body nested to depth D
-    /// (`Not(Not(Not(true)))`, four levels deep counting the `Boolean`
-    /// leaf) checked through `ValueFunctionFamily::check` -- reachable now
-    /// that `check` calls `check_declaration_body`, which
-    /// drives the real `Typer` -- refuses at a configured depth of D-1 and
-    /// admits at D, varying only the limit by exactly one.
-    ///
-    /// **Tagged for FR-062-AC-7 (M1).** AC-7's own text requires
-    /// `check` to return a `Limit` outcome specifically; `check` now maps a
-    /// Typer `CheckCause::ResourceExhausted` whose kind is `Depth` onto
-    /// `StageFailure::Limit(LimitExceeded::new(LimitKind::NestingDepth,
-    /// ..))`, so this test's refusal is that `Limit` outcome, carrying the
-    /// configured bound and the actual depth the refused entry would have
-    /// reached. Its declarations were not read from a unit, so it carries
-    /// no `Locus` (FR-096; `locus_tests` covers the located case).
+    /// FR-062-AC-7: a body of N = 4 expression nodes nested 4 deep
+    /// (`Not(Not(Not(true)))`), checked through `ValueFunctionFamily::check`
+    /// with the `CheckingLimits` node limit at N - 1, returns a `Limit`
+    /// outcome naming the node-count limit, bound N - 1 and count N; at N it
+    /// checks. Only the limit varies, by exactly one, so the limit, not the
+    /// fixture's depth or the host stack, is the proximate cause. Its
+    /// declarations were not read from a unit, so it carries no `Locus`
+    /// (FR-096; `locus_tests` covers the located case).
     #[test]
-    #[trace("FR-062-AC-7")]
-    fn real_checker_depth_limit_is_the_proximate_cause() {
+    #[trace("TC-378", "FR-062-AC-7")]
+    fn real_checker_node_limit_is_the_proximate_cause() {
         let scope = empty_scope();
         let location = root_location();
         let nested = Expression::logical_not(Expression::logical_not(Expression::logical_not(
@@ -3180,7 +3078,7 @@ pub(crate) mod checking_tests {
         let form = declaration("f", nested);
         let own_signature = declaration_signature("f");
 
-        let tight = CheckingLimits::new(u64::MAX, 3).expect("3 is within MAX_CHECKING_DEPTH");
+        let tight = CheckingLimits::new(3);
         let signatures = Signatures::default();
         let declarations =
             declarations_for(&scope, &signatures, &own_signature, &[], tight, &location);
@@ -3195,17 +3093,17 @@ pub(crate) mod checking_tests {
             &mut scopes,
         );
         let refused = ValueFunctionFamily::check(&form, &mut cx)
-            .expect_err("a depth limit of 3 must refuse a body nested 4 deep");
+            .expect_err("a node limit of 3 must refuse a body of 4 nodes");
         match refused {
             StageFailure::Limit(exceeded) => {
-                assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+                assert_eq!(exceeded.kind(), LimitKind::NodeCount);
                 assert_eq!(exceeded.configured_bound(), 3);
                 assert_eq!(exceeded.actual(), 4);
             }
             other => panic!("expected StageFailure::Limit, got {other:?}"),
         }
 
-        let wide = CheckingLimits::new(u64::MAX, 4).expect("4 is within MAX_CHECKING_DEPTH");
+        let wide = CheckingLimits::new(4);
         let signatures = Signatures::default();
         let declarations =
             declarations_for(&scope, &signatures, &own_signature, &[], wide, &location);
@@ -3219,7 +3117,7 @@ pub(crate) mod checking_tests {
         let admitted = ValueFunctionFamily::check(&form, &mut cx);
         assert!(
             admitted.is_ok(),
-            "a depth limit of 4 must admit the identical body nested exactly 4 deep"
+            "a node limit of 4 must admit the identical body of exactly 4 nodes"
         );
     }
 
@@ -3389,7 +3287,7 @@ mod locus_tests {
         measure_resolved, root_location,
     };
     use super::*;
-    use crate::check::refusal::StageLimitCause;
+    use crate::check::refusal::{CheckingLimitKind, StageLimitCause};
     use crate::check::PackageDeclarations;
     use crate::family::{CheckContext, DiagnosticSink, FamilyContract, ScopeStack, StageLimits};
     use ix_trace_rs::trace;
@@ -3488,27 +3386,28 @@ mod locus_tests {
         Meter::new(SCALAR_LIMITS_UNLIMITED)
     }
 
-    /// FR-096-AC-11: `Typer`'s depth stop on `not not not true` (four
-    /// deep) under depth 3 is a nesting-depth limit with bound 3, actual 4,
-    /// located at the span of `true` and coded
-    /// `stage_limit_exceeded`/`nesting-depth-exceeded`; depth 4 admits. The
-    /// same stop in a function not read from a unit carries no locus.
+    /// FR-096-AC-11: `Typer`'s node stop on `not not not true` (four
+    /// nodes) under a node limit of 3 is a node-count limit with bound 3,
+    /// actual 4, located at the span of `true`, the node whose entry failed,
+    /// and coded `stage_limit_exceeded`/`node-count-exceeded`; a limit of 4
+    /// admits. The same stop in a function not read from a unit carries no
+    /// locus.
     #[trace("TC-378", "FR-096-AC-11", "FR-062-AC-7")]
     #[test]
-    fn the_typer_depth_stop_is_located_at_the_node_whose_entry_failed() {
+    fn the_typer_node_stop_is_located_at_the_node_whose_entry_failed() {
         let unit = unit();
-        let tight = CheckingLimits::new(u64::MAX, 3).unwrap();
+        let tight = CheckingLimits::new(3);
         let exceeded = limit(check_unit(&unit, tight, limits(), &mut unlimited()));
-        assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+        assert_eq!(exceeded.kind(), LimitKind::NodeCount);
         assert_eq!(exceeded.configured_bound(), 3);
         assert_eq!(exceeded.actual(), 4);
         assert_eq!(text(exceeded.locus(), &unit), "true");
         assert_eq!(
             exceeded.catalog_code(),
-            CatalogCode::new("stage_limit_exceeded", "nesting-depth-exceeded")
+            CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
         );
 
-        let wide = CheckingLimits::new(u64::MAX, 4).unwrap();
+        let wide = CheckingLimits::new(4);
         assert!(check_unit(&unit, wide, limits(), &mut unlimited()).is_ok());
 
         let scope = empty_scope();
@@ -3528,8 +3427,152 @@ mod locus_tests {
             &mut scopes,
         );
         let exceeded = limit(ValueFunctionFamily::check(&unit.functions[0], &mut cx));
-        assert_eq!(exceeded.kind(), LimitKind::NestingDepth);
+        assert_eq!(exceeded.kind(), LimitKind::NodeCount);
         assert_eq!(exceeded.locus(), None);
+    }
+
+    /// `function f using v(): Integer pure { 1 + 1 + … + 1 }`, 1,000 terms
+    /// (1,999 expression nodes), through S1, S2 and the assembler, with its
+    /// source text.
+    fn sum_unit() -> (PackageDeclarations, String) {
+        let terms = vec!["1"; 1_000].join(" + ");
+        let text = format!(
+            "language \"ix:native\" edition \"1-draft\";\n\
+             profile v = \"quire.value.complete/v1\";\n\
+             function f using v(): Integer pure {{ {terms} }}\n"
+        );
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            text.as_bytes(),
+            qsl_cst::Limits::default(),
+        )
+        .expect("S1 reads the unit");
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let forms = build_unit(&parsed).expect("S2 builds the unit");
+        let unit = PackageDeclarations::assemble(
+            parsed.source().reference().clone(),
+            forms,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("the unit assembles");
+        (unit, text)
+    }
+
+    /// The outcome of checking [`sum_unit`]'s function under `checking` and
+    /// `meter`, located through its regions.
+    fn check_sum(
+        unit: &PackageDeclarations,
+        checking: CheckingLimits,
+        meter: &mut Meter,
+    ) -> crate::family::CheckOutcome<CheckedDeclaration, CheckRefusal> {
+        let scope = empty_scope();
+        let signatures = Signatures::default();
+        let own_signature = Signature {
+            name: "f".to_owned(),
+            parameters: Vec::new(),
+            result: ValueType::Integer,
+            callable_by_name: true,
+        };
+        let location = body_location();
+        let regions = unit.regions();
+        let declarations = ValueDeclarations {
+            regions: Some(&regions),
+            ..declarations_for(
+                &scope,
+                &signatures,
+                &own_signature,
+                &[],
+                checking,
+                &location,
+            )
+        };
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            &declarations,
+            limits(),
+            meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        ValueFunctionFamily::check(&unit.functions[0], &mut cx)
+    }
+
+    /// TC-727 step 2: the 1,000-term sum under a node limit of 1,500 stops
+    /// on the node limit, bound 1,500, count 1,501, at the `1` whose entry
+    /// failed; raised to 5,000 through the library builder, it checks.
+    #[trace("TC-727", "FR-258-AC-4")]
+    #[test]
+    fn a_1000_term_sum_stops_on_the_node_limit_at_the_failing_node() {
+        let (unit, text) = sum_unit();
+        let exceeded = limit(check_sum(
+            &unit,
+            CheckingLimits::new(1_500),
+            &mut unlimited(),
+        ));
+        assert_eq!(
+            exceeded.catalog_code(),
+            CatalogCode::new("stage_limit_exceeded", "node-count-exceeded")
+        );
+        assert_eq!(exceeded.kind(), LimitKind::NodeCount);
+        assert_eq!(exceeded.configured_bound(), 1_500);
+        assert_eq!(exceeded.actual(), 1_501);
+        let Some(Locus::Region(region)) = exceeded.locus() else {
+            panic!("expected a region locus, got {:?}", exceeded.locus());
+        };
+        let start = usize::try_from(region.start()).unwrap();
+        let end = usize::try_from(region.end()).unwrap();
+        assert_eq!(&text[start..end], "1", "the node whose entry failed");
+        assert!(check_sum(&unit, CheckingLimits::new(5_000), &mut unlimited()).is_ok());
+    }
+
+    /// TC-727 step 3: the same sum under a work budget one below its
+    /// measured work `w` stops on the work budget, bound `w - 1`; at `w` it
+    /// checks.
+    #[trace("TC-727", "FR-258-AC-4")]
+    #[test]
+    fn a_1000_term_sum_stops_on_a_work_budget_one_below_its_work() {
+        let (unit, _) = sum_unit();
+        let work = measure_resolved(&empty_scope(), &unit.functions[0]).work_budget;
+        let budget = |work_units| {
+            Meter::new(ScalarLimits {
+                work_units,
+                ..SCALAR_LIMITS_UNLIMITED
+            })
+        };
+        let exceeded = limit(check_sum(
+            &unit,
+            CheckingLimits::new(5_000),
+            &mut budget(work - 1),
+        ));
+        assert_eq!(
+            exceeded.catalog_code(),
+            CatalogCode::new("stage_limit_exceeded", "work-budget-exceeded")
+        );
+        assert_eq!(exceeded.configured_bound(), work - 1);
+        assert!(check_sum(&unit, CheckingLimits::new(5_000), &mut budget(work)).is_ok());
+    }
+
+    /// TC-727 step 1: `CheckingLimits::default()` holds 100,000 nodes,
+    /// 16,777,216 preimage bytes and 16,777,216 work units, and a node
+    /// limit of 0, 1 or `u64::MAX` builds.
+    #[trace("TC-727", "FR-258-AC-3")]
+    #[test]
+    fn the_checking_defaults_hold_no_depth() {
+        let defaults = CheckingLimits::default();
+        assert_eq!(
+            (
+                defaults.nodes(),
+                defaults.input_bytes(),
+                defaults.work_budget()
+            ),
+            (100_000, 16_777_216, 16_777_216)
+        );
+        for nodes in [0, 1, u64::MAX] {
+            assert_eq!(CheckingLimits::new(nodes).nodes(), nodes);
+        }
     }
 
     /// FR-096-AC-4: a declaration whose preimage input bytes exceed a bound
@@ -3620,18 +3663,19 @@ mod locus_tests {
     }
 
     /// FR-096 through package checking, `ValueFunctionFamily::check`'s
-    /// production caller: `Typer`'s depth stop on `not not not true` under
-    /// depth 3 keeps the region of `true`, and the declaration-level input
-    /// bytes and work limits keep the declaration's span.
+    /// production caller: a node limit of 3 on `not not not true` (four
+    /// nodes), and the declaration-level input bytes and work limits, keep
+    /// the declaration's span: the declaration's own node count is checked
+    /// before `Typer` runs.
     #[trace("TC-427", "TC-378", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
     fn package_checking_keeps_the_family_limit_region() {
-        let (depth, region) = package_limit(unit(), CheckingLimits::new(u64::MAX, 3).unwrap());
-        assert_eq!(depth.kind, CheckingLimitKind::Depth);
-        assert_eq!((depth.limit, depth.actual), (3, 4));
-        assert_eq!(unit_text(region), "true");
-
         let declaration = "function f using v(): Boolean pure { not not not true }";
+        let (nodes, region) = package_limit(unit(), CheckingLimits::new(3));
+        assert_eq!(nodes.kind, CheckingLimitKind::Nodes);
+        assert_eq!((nodes.limit, nodes.actual), (3, 4));
+        assert_eq!(unit_text(region), declaration);
+
         let bytes = measure_resolved(&empty_scope(), &unit().functions[0]).input_bytes;
         let (input, region) = package_limit(
             unit(),
@@ -3651,7 +3695,7 @@ mod locus_tests {
 
     /// FR-096 through package checking: a function with no form spans (one
     /// synthesized for FR-151 dispatch) in a unit whose regions are
-    /// supplied reaches `Typer`'s depth stop with no region.
+    /// supplied reaches its node limit with no region.
     #[trace("TC-378", "FR-096-AC-11")]
     #[test]
     fn package_checking_locates_no_limit_in_a_function_without_spans() {
@@ -3661,9 +3705,9 @@ mod locus_tests {
         let mut unit = unit();
         unit.functions = vec![declaration("f", nested)];
         assert!(unit.functions[0].spans().is_none());
-        let (depth, region) = package_limit(unit, CheckingLimits::new(u64::MAX, 3).unwrap());
-        assert_eq!(depth.kind, CheckingLimitKind::Depth);
-        assert_eq!(depth.region, None);
+        let (nodes, region) = package_limit(unit, CheckingLimits::new(3));
+        assert_eq!(nodes.kind, CheckingLimitKind::Nodes);
+        assert_eq!(nodes.region, None);
         assert_eq!(region, None);
     }
 

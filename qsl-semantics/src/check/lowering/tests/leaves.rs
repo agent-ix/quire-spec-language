@@ -432,8 +432,7 @@ fn eq_over_node(
 }
 
 fn node_limit(nodes: u64) -> CheckingLimits {
-    CheckingLimits::new(nodes, quire_semantic_value::checking::MAX_CHECKING_DEPTH)
-        .expect("the depth is allowed")
+    CheckingLimits::new(nodes)
 }
 
 /// The smallest node limit `checks` passes under.
@@ -584,17 +583,15 @@ fn a_checked_result_records_its_effective_limits() {
     assert_eq!(
         (
             defaults.nodes(),
-            defaults.depth(),
             defaults.input_bytes(),
             defaults.work_budget()
         ),
-        (100_000, 128, 16_777_216, 16_777_216)
+        (100_000, 16_777_216, 16_777_216)
     );
     let checked = eq_over_node(vector_lock(), defaults).expect("eq over Node checks");
     assert_eq!(checked.effective_limits(), defaults);
 
-    let raised = CheckingLimits::new(u64::MAX, 64)
-        .expect("64 is within the maximum depth")
+    let raised = CheckingLimits::new(u64::MAX)
         .with_input_bytes(u64::MAX)
         .with_work_budget(u64::MAX);
     let lowered = node_limit(64)
@@ -617,20 +614,14 @@ fn a_checked_result_records_its_effective_limits() {
 }
 
 /// TC-423 step 3 (NFR-011-M-3, NFR-011-M-4): `CheckingLimits::new` sets the
-/// node and depth ceilings and keeps the default input-byte and work
-/// ceilings.
+/// node ceiling and keeps the default input-byte and work ceilings.
 #[trace("NFR-011-M-3", "NFR-011-M-4", "TC-423")]
 #[test]
 fn new_keeps_the_default_byte_and_work_ceilings() {
-    let limits = CheckingLimits::new(7, 9).expect("9 is within the maximum depth");
+    let limits = CheckingLimits::new(7);
     assert_eq!(
-        (
-            limits.nodes(),
-            limits.depth(),
-            limits.input_bytes(),
-            limits.work_budget()
-        ),
-        (7, 9, 16_777_216, 16_777_216)
+        (limits.nodes(), limits.input_bytes(), limits.work_budget()),
+        (7, 16_777_216, 16_777_216)
     );
 }
 
