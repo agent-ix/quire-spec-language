@@ -621,6 +621,7 @@ impl<'a> Definedness<'a> {
         let mut walk = OutcomeWalk {
             definedness: self,
             results: Vec::new(),
+            nodes: PhantomData,
         };
         let ControlFlow::Continue(()) =
             quire_walk::walk(&mut walk, OutcomeNode::Evaluate(condition, Rc::clone(facts)));
@@ -1150,9 +1151,10 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
 /// operand only after its left operand has been exited, so the right
 /// operand's facts are read from the left's outcomes at the moment it is
 /// entered.
-struct OutcomeWalk<'d, 'a> {
+struct OutcomeWalk<'d, 'a, 'n> {
     definedness: &'d Definedness<'a>,
     results: Vec<Outcomes>,
+    nodes: PhantomData<CheckedNode<'n>>,
 }
 
 /// A node of an outcome walk.
@@ -1174,7 +1176,7 @@ enum OutcomeFrame {
     Connective(Connective),
 }
 
-impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_> {
+impl<'n> quire_walk::Walk for OutcomeWalk<'_, '_, 'n> {
     type Node = OutcomeNode<'n>;
     type Frame = OutcomeFrame;
     type Stop = Infallible;
