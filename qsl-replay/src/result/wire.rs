@@ -9,6 +9,7 @@
 //! member, an unknown tag, a `null` member and a record missing a component
 //! its family assigns.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::catalog_category;
@@ -18,9 +19,11 @@ use qsl_foundation::witness::{
     ObservationIdentity, RuntimeValuePath, SeparationStep, ValuePathStep, ValuePathSubject,
 };
 use qsl_package::CheckedPackage;
+use quire_canonical::{Document, Encode, Limits, Node, NodeRef, Sink, Writer};
 use quire_exact::{Origin, Role, Value};
 use quire_semantic_value::location::{Location, Origin as Declaration};
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::value::RawValue;
 
 use super::{
     DisagreementCause, SeparatingWitnessRecord, SeparationReason, SeparationRefusal, Verdict,
@@ -30,7 +33,7 @@ use crate::identity::TracePosition;
 use qsl_foundation::diagnostic::Category;
 
 mod value;
-use value::{encode_element, reference_of, ElementWire, Keys};
+use value::{decode_element, encode_element, reference_of, Keys};
 
 /// Why a [`DisagreementCause`] did not encode or read.
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +55,16 @@ pub enum CauseCodecError {
     /// quantifier's family assigns one (QSpec FR-351).
     #[error("a record naming a deciding quantifier carries no index")]
     MissingIndex,
+    /// The document is not well-formed JSON the shared reader admits.
+    #[error("the cause document is not readable JSON: {0}")]
+    Read(#[from] quire_canonical::ReadError),
+    /// `quire-canonical` refused to write or re-write a form.
+    #[error("the cause document does not encode canonically: {0}")]
+    Canonical(#[from] quire_canonical::Error),
+    /// A deciding element's document is not one of the typed forms: a form
+    /// that is no object, or lacks, repeats or adds a member.
+    #[error("the deciding element is malformed: {0}")]
+    Shape(&'static str),
     /// A deciding element of a kind this codec has no encoding for: a
     /// population, which no claim's domain holds.
     #[error("the deciding element's kind has no encoding")]
@@ -68,18 +81,104 @@ pub enum CauseCodecError {
     Spelling(&'static str),
 }
 
+/// A [`CauseCodecError::Shape`] refusal.
+fn malformed(detail: &'static str) -> CauseCodecError {
+    CauseCodecError::Shape(detail)
+}
+
 impl DisagreementCause {
     /// FR-269: this cause's JSON document.
     pub fn to_json(&self) -> Result<String, CauseCodecError> {
-        Ok(serde_json::to_string(&CauseWire::of(self)?)?)
+        Ok(serde_json::to_string(&CauseWire::<Box<RawValue>>::of(
+            self,
+        )?)?)
     }
 
     /// FR-269: read a cause from `text`, refusing any document that is not
     /// exactly a cause this codec writes. Declaration identities resolve
     /// among those `package` admitted.
     pub fn from_json(text: &str, package: &CheckedPackage) -> Result<Self, CauseCodecError> {
-        serde_json::from_str::<CauseWire>(text)?.read(Keys::new(package))
+        // The deciding element nests as deep as the value it holds, which
+        // serde_json's recursive reader refuses past 128 levels. The shared
+        // reader keeps it as a document on the heap; the cause's own members
+        // are read by serde from that document with each deciding element
+        // replaced by its index, and each element is decoded from its
+        // document node on an explicit stack.
+        let document = quire_canonical::read(text.as_bytes(), u64::MAX)?;
+        let splice = Splice {
+            document: &document,
+            elements: RefCell::new(Vec::new()),
+        };
+        let bytes = quire_canonical::to_vec(&splice, Limits::new(u64::MAX))?;
+        let wire = serde_json::from_slice::<CauseWire<ElementSlot>>(&bytes)?;
+        let keys = Keys::new(package);
+        let mut elements = splice
+            .elements
+            .into_inner()
+            .into_iter()
+            .map(|node| decode_element(node, keys).map(Some))
+            .collect::<Result<Vec<_>, _>>()?;
+        wire.read(keys, &mut elements)
     }
+}
+
+/// A cause document copied as the shared reader holds it, each record's
+/// `deciding_element` replaced by its index among `elements`.
+struct Splice<'d> {
+    document: &'d Document,
+    /// The deciding element nodes, in the order their indexes were handed out.
+    elements: RefCell<Vec<NodeRef<'d>>>,
+}
+
+impl Encode for Splice<'_> {
+    fn encode_into<S: Sink + ?Sized>(
+        &self,
+        writer: &mut Writer<'_, S>,
+    ) -> Result<(), quire_canonical::Error> {
+        let root = self.document.root();
+        let Node::Object(members) = root.node() else {
+            return root.encode_into(writer);
+        };
+        writer.begin_object()?;
+        for (name, member) in members {
+            writer.name(name)?;
+            match (name, member.node()) {
+                ("given" | "derived", Node::Object(record)) => {
+                    writer.begin_object()?;
+                    for (name, member) in record {
+                        writer.name(name)?;
+                        if name == "deciding_element" {
+                            let mut elements = self.elements.borrow_mut();
+                            let slot = elements.len();
+                            elements.push(member);
+                            writer.integer(i128::try_from(slot).unwrap_or(i128::MAX))?;
+                        } else {
+                            member.encode_into(writer)?;
+                        }
+                    }
+                    writer.end_object()?;
+                }
+                _ => member.encode_into(writer)?,
+            }
+        }
+        writer.end_object()
+    }
+}
+
+/// The index of a deciding element among those a [`Splice`] collected.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(transparent)]
+struct ElementSlot(usize);
+
+/// The deciding elements read from a document, each taken once.
+type Elements = [Option<Value>];
+
+/// The deciding element at `slot`, moved out of `elements`.
+fn take(elements: &mut Elements, slot: ElementSlot) -> Result<Value, CauseCodecError> {
+    elements
+        .get_mut(slot.0)
+        .and_then(Option::take)
+        .ok_or_else(|| malformed("a deciding element is read twice"))
 }
 
 /// An optional member that must be absent rather than `null`: present, it
@@ -94,8 +193,13 @@ where
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "cause", rename_all = "kebab-case", deny_unknown_fields)]
-enum CauseWire {
+#[serde(
+    tag = "cause",
+    rename_all = "kebab-case",
+    deny_unknown_fields,
+    bound(serialize = "E: Serialize", deserialize = "E: Deserialize<'de>")
+)]
+enum CauseWire<E> {
     Verdicts {
         proved: VerdictWire,
         replayed: VerdictWire,
@@ -112,18 +216,18 @@ enum CauseWire {
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        given: Option<Box<RecordWire>>,
+        given: Option<Box<RecordWire<E>>>,
         #[serde(
             default,
             deserialize_with = "present",
             skip_serializing_if = "Option::is_none"
         )]
-        derived: Option<Box<RecordWire>>,
+        derived: Option<Box<RecordWire<E>>>,
         failure: FailureWire,
     },
 }
 
-impl CauseWire {
+impl CauseWire<Box<RawValue>> {
     fn of(cause: &DisagreementCause) -> Result<Self, CauseCodecError> {
         Ok(match cause {
             DisagreementCause::Verdicts { proved, replayed } => Self::Verdicts {
@@ -157,8 +261,14 @@ impl CauseWire {
             },
         })
     }
+}
 
-    fn read(self, keys: Keys<'_>) -> Result<DisagreementCause, CauseCodecError> {
+impl CauseWire<ElementSlot> {
+    fn read(
+        self,
+        keys: Keys<'_>,
+        elements: &mut Elements,
+    ) -> Result<DisagreementCause, CauseCodecError> {
         Ok(match self {
             Self::Verdicts { proved, replayed } => DisagreementCause::Verdicts {
                 proved: proved.read(),
@@ -178,11 +288,11 @@ impl CauseWire {
                 proved: proved.read(),
                 replayed: replayed.read(),
                 given: given
-                    .map(|record| record.read(keys))
+                    .map(|record| record.read(keys, elements))
                     .transpose()?
                     .map(Box::new),
                 derived: derived
-                    .map(|record| record.read(keys))
+                    .map(|record| record.read(keys, elements))
                     .transpose()?
                     .map(Box::new),
                 failure: failure.read()?,
@@ -249,10 +359,13 @@ mod verdict_tests {
 
 /// QSpec FR-352's `witness` record.
 #[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RecordWire {
+#[serde(
+    deny_unknown_fields,
+    bound(serialize = "E: Serialize", deserialize = "E: Deserialize<'de>")
+)]
+struct RecordWire<E> {
     quantifier: OccurrenceWire,
-    deciding_element: ElementWire,
+    deciding_element: E,
     #[serde(
         default,
         deserialize_with = "present",
@@ -268,14 +381,14 @@ struct RecordWire {
     trace_position: Option<String>,
 }
 
-impl RecordWire {
+impl RecordWire<Box<RawValue>> {
     fn of(record: &SeparatingWitnessRecord) -> Result<Self, CauseCodecError> {
         if record.index.is_none() {
             return Err(CauseCodecError::MissingIndex);
         }
         Ok(Self {
             quantifier: OccurrenceWire::of(&record.quantifier),
-            deciding_element: ElementWire::of(&record.deciding_element)?,
+            deciding_element: encode_element(&record.deciding_element)?,
             index: record.index,
             value_path: PathWire::of(&record.value_path),
             trace_position: record
@@ -284,14 +397,20 @@ impl RecordWire {
                 .map(|position| position.as_str().to_owned()),
         })
     }
+}
 
-    fn read(self, keys: Keys<'_>) -> Result<SeparatingWitnessRecord, CauseCodecError> {
+impl RecordWire<ElementSlot> {
+    fn read(
+        self,
+        keys: Keys<'_>,
+        elements: &mut Elements,
+    ) -> Result<SeparatingWitnessRecord, CauseCodecError> {
         // The record names a deciding quantifier, so its family is a
         // collection quantifier's, which assigns an index (QSpec FR-351).
         let index = self.index.ok_or(CauseCodecError::MissingIndex)?;
         Ok(SeparatingWitnessRecord {
             quantifier: self.quantifier.read()?,
-            deciding_element: self.deciding_element.read(keys)?,
+            deciding_element: take(elements, self.deciding_element)?,
             index: Some(index),
             value_path: self.value_path.read(keys)?,
             trace_position: self.trace_position.map(TracePosition::new),

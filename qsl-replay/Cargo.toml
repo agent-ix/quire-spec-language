@@ -31,6 +31,12 @@ quire-exact = { path = "../quire-exact" }
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { path = "../quire-semantic-value" }
 thiserror = "2.0.20"
+# FR-269: the deciding element is written through the shared canonical writer
+# and read through the shared reader, so a value of any depth round-trips.
+# Also FR-106's snapshot/invocation `DocumentRef.digest`, the document's own
+# `sha256-jcs` digest (FR-056's digest-first rule), which the test fixtures
+# compute over the same RFC 8785 implementation.
+quire-canonical = { workspace = true }
 # FR-269: the `DisagreementCause` wire codec and its strict reader.
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
@@ -51,12 +57,6 @@ qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
 # `reaches` charge-sequence test asserts. A production meter keeps a count
 # only; only this dev-dependency enables `test-support`.
 quire-exact = { path = "../quire-exact", features = ["test-support"] }
-# FR-106's snapshot/invocation `DocumentRef.digest` is the
-# document's own `sha256-jcs` digest (FR-056's digest-first rule); the test
-# fixture computes it the same way `model::observation`'s own
-# `document_digest` does, over the one RFC 8785 implementation, rather than
-# guessing or duplicating that logic.
-quire-canonical = { workspace = true }
 # FR-105-AC-6: the fault-injection seam
 # (`emit_checked_with_fault`/`checked_node_id_of`) is public only under
 # `test-support` (qsl-package's own Cargo.toml); this dev-dependency edge is
