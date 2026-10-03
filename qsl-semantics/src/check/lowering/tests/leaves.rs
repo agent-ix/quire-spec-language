@@ -33,7 +33,6 @@ fn assert_fr093(graph: &SemanticGraph, name: &str) {
 fn vector_text_definition() -> DefinitionReference {
     DefinitionLock::pinned()
         .entry(CatalogRole::TextProfile)
-        .expect("QSpec's lock has a `text_profile` row")
         .reference()
 }
 

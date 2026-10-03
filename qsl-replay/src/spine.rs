@@ -1363,7 +1363,7 @@ mod tests {
     #[test]
     fn a_header_profile_resolves_by_identity_against_the_root_row() {
         let lock = DefinitionLock::pinned();
-        let root = lock.entry(CatalogRole::Root).unwrap();
+        let root = lock.entry(CatalogRole::Root);
 
         // Step 1 (AC-1): compiles; the lock selects the root row once.
         let compiled =
@@ -1398,7 +1398,7 @@ mod tests {
 
         // Step 3 (AC-3): another catalog row's identity.
         for role in [CatalogRole::IeeeProfile, CatalogRole::Edition] {
-            let row = lock.entry(role).unwrap();
+            let row = lock.entry(role);
             let refusal = compile_header(&profile_line("v", row.identity))
                 .expect_err("another row's identity refuses");
             assert_eq!(refusal.code(), Code::UnknownProfile);
@@ -1411,7 +1411,7 @@ mod tests {
         }
 
         // Step 4 (AC-6): every refusing profile, in source order.
-        let ieee = lock.entry(CatalogRole::IeeeProfile).unwrap();
+        let ieee = lock.entry(CatalogRole::IeeeProfile);
         let header = format!(
             "{}{}{}",
             profile_line("v", root.identity),

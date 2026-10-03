@@ -684,7 +684,6 @@ fn source_artifact(source: &RawSourceRef) -> CheckedSourceRef {
 /// role (`the_catalog_covers_every_role_exactly_once`).
 fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
     lock.entry(role)
-        .expect("the closed catalog has a row for every role")
 }
 
 /// The lock's `edition` and `definition_selections`: the catalog's edition,

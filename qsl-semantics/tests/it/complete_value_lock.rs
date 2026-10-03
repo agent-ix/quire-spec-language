@@ -58,7 +58,7 @@ fn the_catalog_covers_every_role_exactly_once() {
         );
         assert!(!entry.identity.is_empty(), "{:?}", entry.role);
         assert_eq!(entry.authority, "agent-ix", "{:?}", entry.role);
-        assert_eq!(lock.entry(entry.role), Some(entry));
+        assert_eq!(lock.entry(entry.role), entry);
         assert_eq!(
             serde_json::to_value(entry.reference()).unwrap(),
             serde_json::json!({"authority": entry.authority, "identity": entry.identity})
@@ -70,7 +70,7 @@ fn the_catalog_covers_every_role_exactly_once() {
 /// authority and identity, in order, every package-selection rule, the
 /// trigger vocabulary and the selection refusal codes. Skipped (and
 /// passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
-#[trace("QSpec-TC-192")]
+#[trace("TC-490", "FR-110-AC-9")]
 #[test]
 fn conformance_catalog_matches_qspec_complete_value_lock() {
     let Some(document) = qspec_document("complete-value-lock.json") else {
@@ -174,7 +174,7 @@ fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
 /// its `expected_code`, and the refused vectors together reach every closed
 /// refusal code. Skipped (and passing) when `QSPEC_DIR` is unset; `make
 /// conformance` requires it.
-#[trace("QSpec-TC-192")]
+#[trace("QSpec-TC-192", "TC-490", "FR-110-AC-9")]
 #[test]
 fn conformance_admit_selection_matches_qspec_selection_vectors() {
     let Some(vectors) = qspec_document("complete-value-selection-vectors.json") else {

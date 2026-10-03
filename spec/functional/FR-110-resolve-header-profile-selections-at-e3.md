@@ -178,6 +178,7 @@ edge therefore compile to distinct packages.
 | FR-110-AC-6 | A unit with three header profiles, the `root` selection under alias `v`, the `ieee_profile` row's identity under `w` and an `unsupported-selection` selection under `x`, refuses with exactly two refusals, `w`'s then `x`'s, and no package. A unit with the `root` selection under two aliases compiles. | Test (TC-490) |
 | FR-110-AC-7 | For each of the five layers, a unit whose one header profile names the layer and whose declarations use only that layer's forms compiles, and its emitted lock's `definition_selections` hold the layer and every layer its `requires` closure names and no layer that requires it. | Test (TC-490) |
 | FR-110-AC-8 | A unit whose header profile names `quire.state.core/v1` and whose declaration calls a named predicate refuses `unsupported_construct`/`expression-form` at the call's span naming `quire.state.core/v1`; a unit naming `quire.state.core/v1` that declares a named predicate refuses `unsupported_construct`/`declaration-form` at the declaration's span; both units naming `quire.state.queries/v1` compile. | Test (TC-490) |
+| FR-110-AC-9 | Under `make conformance`, `DefinitionLock::pinned()`'s catalog rows (role, authority and identity, in order), its package-selection rules, its trigger vocabulary and its selection refusal codes equal QSpec's `complete-value-lock.json`, and QSpec's selection vectors give the outcomes the lock's rules compute. | Test (TC-490) |
 
 ## Dependencies
 
@@ -208,7 +209,7 @@ and `a_token_after_a_header_profile_identity_is_a_syntax_error`,
 
 The emitted lock rows are `{authority, identity}`, with no revision and no
 digest, and `DefinitionLock` names each catalog definition the same way
-(`CatalogRole::identity`); the `quire-specification` crate dependency is
+(`CatalogRole::identity`), compared with QSpec's lock by AC-9; the `quire-specification` crate dependency is
 deleted.
 
 Remaining work: layer selection (AC-7, AC-8) and AC-1's layer-closure lock

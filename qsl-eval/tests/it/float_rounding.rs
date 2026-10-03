@@ -163,7 +163,7 @@ fn operands_of_different_rounding_modes_are_a_type_mismatch() {
 
 fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
     let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+    let entry = lock.entry(CatalogRole::IeeeProfile);
     lock.admit_ieee_profile(
         &[DefinitionReference {
             authority: entry.authority.to_owned(),

@@ -348,9 +348,10 @@ impl DefinitionLock {
         &self.catalog
     }
 
-    /// The catalog entry for `role`.
-    pub fn entry(&self, role: CatalogRole) -> Option<&CatalogEntry> {
-        self.catalog.iter().find(|entry| entry.role == role)
+    /// The catalog entry for `role`. The catalog has one entry per role, in
+    /// the declaration order of [`CatalogRole::ALL`], so the lookup is total.
+    pub fn entry(&self, role: CatalogRole) -> &CatalogEntry {
+        &self.catalog[role as usize]
     }
 
     /// Roles every package selects.
@@ -581,9 +582,7 @@ impl DefinitionLock {
         retained: &[DefinitionReference],
         declarations: &[&str],
     ) -> Result<AdmittedIeeeProfile, PackageRefusal> {
-        let expected = self
-            .entry(CatalogRole::IeeeProfile)
-            .ok_or(PackageRefusal::invalid_package(PackageCause::MissingMember))?;
+        let expected = self.entry(CatalogRole::IeeeProfile);
         if retained.iter().any(|reference| {
             reference.identity != expected.identity || reference.authority != expected.authority
         }) {

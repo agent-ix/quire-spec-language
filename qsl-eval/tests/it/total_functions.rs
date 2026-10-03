@@ -845,7 +845,7 @@ fn ieee_profile() -> qsl_semantics::value::AdmittedIeeeProfile {
 
 fn ieee_reference() -> DefinitionReference {
     let lock = DefinitionLock::pinned();
-    let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+    let entry = lock.entry(CatalogRole::IeeeProfile);
     DefinitionReference {
         authority: entry.authority.to_owned(),
         identity: entry.identity.to_owned(),

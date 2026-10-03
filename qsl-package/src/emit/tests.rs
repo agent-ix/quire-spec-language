@@ -285,7 +285,7 @@ fn a_function_identity_survives_emission_and_the_i2_read() {
 /// `{agent-ix, quire.native.diagnostics/v1}` and no other member; each
 /// source row, and each source-map region's source, keeps its
 /// `quire.source.bytes/v1` digest; and IR's reader admits the package.
-#[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17")]
+#[trace("TC-416", "FR-093-AC-7", "FR-093-AC-17", "FR-093-AC-20")]
 #[test]
 fn the_lock_selects_the_catalog_definitions() {
     let emission = emit(&package(vec![t()]));
@@ -293,7 +293,7 @@ fn the_lock_selects_the_catalog_definitions() {
     let wire = wire(&emission);
     let lock = DefinitionLock::pinned();
     let row = |role: CatalogRole| {
-        let entry = lock.entry(role).unwrap();
+        let entry = lock.entry(role);
         json!({"authority": entry.authority, "identity": entry.identity})
     };
     assert_eq!(
@@ -342,9 +342,8 @@ fn the_lock_selects_the_catalog_definitions() {
 
 /// An operation law's `definition` is the catalog row of its role, exactly
 /// `{authority, identity}`, and is one of the lock's `definition_selections`
-/// rows; IR's reader admits the package (FR-093-AC-6's law, IR FR-038's law
-/// join).
-#[trace("TC-416", "FR-093-AC-7")]
+/// rows; IR's reader admits the package (IR FR-038's law join).
+#[trace("TC-416", "FR-093-AC-20")]
 #[test]
 fn a_law_names_its_definition_by_authority_and_identity() {
     let emission = emit(&golden::float_add_of(BuiltinType::Float64, "nearest-even"));
@@ -352,7 +351,6 @@ fn a_law_names_its_definition_by_authority_and_identity() {
     let wire = wire(&emission);
     let ieee = DefinitionLock::pinned()
         .entry(CatalogRole::IeeeProfile)
-        .unwrap()
         .reference();
     let ieee = json!({"authority": ieee.authority, "identity": ieee.identity});
     let laws: Vec<&Value> = wire["semantic_graph"]["nodes"]

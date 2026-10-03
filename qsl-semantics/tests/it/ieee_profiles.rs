@@ -131,7 +131,7 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
 /// The [`DefinitionReference`] for the IEEE profile role: the catalog
 /// entry's `{authority, identity}`.
 fn ieee_reference(lock: &DefinitionLock) -> DefinitionReference {
-    lock.entry(CatalogRole::IeeeProfile).unwrap().reference()
+    lock.entry(CatalogRole::IeeeProfile).reference()
 }
 
 fn f32v(bits: u32) -> IeeeValue {

@@ -1085,7 +1085,7 @@ fn profile() -> &'static AdmittedIeeeProfile {
     static PROFILE: OnceLock<AdmittedIeeeProfile> = OnceLock::new();
     PROFILE.get_or_init(|| {
         let lock = DefinitionLock::pinned();
-        let entry = lock.entry(CatalogRole::IeeeProfile).unwrap();
+        let entry = lock.entry(CatalogRole::IeeeProfile);
         let reference = DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),

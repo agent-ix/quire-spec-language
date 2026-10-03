@@ -710,6 +710,7 @@ G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a6
 | FR-093-AC-17 | The v2 emission of a checked package holding `t` writes `diagnostics.catalog` with authority `agent-ix` and identity `quire.native.diagnostics/v1`, and no other member, and IR's v2 reader admits the package. | Test (TC-416) |
 | FR-093-AC-18 | For `ordered enum Status { READY, DONE }` read from source text, with no member literal written: when the enum's only uses are the parameter types of `before using v(a: Status, b: Status): Boolean pure { a < b }`, or of the same function with `a = b`, each member node has exactly one occurrence, a `generated` one whose source-map region is that function's body text, and the package emits with nothing omitted. When no function names the enum, each member's region is the declared name `Status`, and for `record P { x: Int[0, 9]; }` no function names, the `Int[0, 9]` node's region is `P`, and stays `P` with `record Q { y: Int[0, 9]; }` declared before it. Each of those packages reads back Verified through QSL's I2 read. With `record R { x: Int[0, 9]; }` beside the post clause `VersionUnchanged` over `1 < 2`, which a protocol attempt names, the `Integer` node's only occurrence is `generated`, with region `1 < 2`: a type name never displaces a state clause or attempt placement. | Test (TC-416) |
 | FR-093-AC-19 | Every IR checked-package/v2 node kind (`node_tag`, `semantic_form`) is classified exactly once: as a family QSL's lowering writes, or as a kind QSL's lowering never writes, with the reason. For each family QSL writes, a package holding a node of it is admitted by IR's checked-package/v2 reader, through QSL's I2 read, at its emitted `package_id`. | Test (TC-416) |
+| FR-093-AC-20 | The v2 emission of a checked package holding `t` writes the lock's `edition` and each `definition_selections` row as the `DefinitionLock` catalog's row of that role, exactly `{authority, identity}` with no revision and no digest. The emission of a `Float64` addition writes the `definition` of the operation's `ieee_profile` law as that same exactly-two-member row, and the lock's `definition_selections` holds it. IR's v2 reader admits both packages. | Test (TC-416) |
 
 ## Dependencies
 
@@ -767,7 +768,7 @@ text-leaf walk (`text_leaves`) follows the Text leaves rules, charges each
 leaf to the node limit before any leaf's law is read, and keys the Recursive
 text-leaf vectors. The lowering spells an integer literal as a decimal string and gives
 `quire.op.quantity.convert` mode `rounding` = `exact`. The emission half is the M-4 emitter, in `qsl-package/src/emit.rs`:
-TC-416 backs AC-7, AC-9, AC-12, AC-18, AC-19 and CON-2 there. The IR reader
+TC-416 backs AC-7, AC-9, AC-12, AC-17, AC-18, AC-19, AC-20 and CON-2 there. The IR reader
 admits `value`/`parameter` and `scalar_type`/`compound_unit` nodes (IR-280)
 and keys recursion-group application nodes by `{size, ordinal}` (IR-242),
 so a function with parameters and a recursive function are written whole
@@ -794,7 +795,8 @@ and does not lower. No FR-093 AC backs the `Pre` row; the `ProtocolClause`
 postcondition lowering backs it. Remaining work: #218.
 
 The emitter writes `diagnostics.catalog`, each lock definition and each law
-`definition` as the identity-only `DefinitionRef` AC-17 states
+`definition` as the identity-only `DefinitionRef`: AC-17 states it for
+`diagnostics.catalog`, AC-20 for the lock rows and the law `definition`
 (`the_lock_selects_the_catalog_definitions` and
 `a_law_names_its_definition_by_authority_and_identity`,
 `qsl-package/src/emit/tests.rs`).

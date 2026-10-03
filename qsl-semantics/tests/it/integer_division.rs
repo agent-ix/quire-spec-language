@@ -46,7 +46,7 @@ fn role(profile: DivisionProfile) -> CatalogRole {
 /// The [`DefinitionReference`] for `role`: the catalog entry's
 /// `{authority, identity}`.
 fn reference(role: CatalogRole) -> DefinitionReference {
-    lock().entry(role).unwrap().reference()
+    lock().entry(role).reference()
 }
 
 fn admitted(profile: DivisionProfile) -> AdmittedIntegerDivision {
