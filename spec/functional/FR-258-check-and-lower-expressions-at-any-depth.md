@@ -82,6 +82,7 @@ for checking; this requirement carries that rule through QSL's checker.
 | FR-258-AC-3 | At the default limits, a function whose body is the longest `a and (…)` chain S1's defaults admit checks, lowers and emits with no outcome naming a depth. `CheckingLimits::default()` holds 100000 nodes, 16777216 preimage bytes and 16777216 work units, and constructing `CheckingLimits` with any node count succeeds. | Test (TC-727) |
 | FR-258-AC-4 | A function whose body is a 1,000-term sum (1,999 expression nodes), checked with `s3.nodes` at 1,500, stops with `stage_limit_exceeded`/`node-count-exceeded` naming bound 1,500, count 1,501 and setting `s3.nodes`, at the node whose entry failed. Checked again with `s3.nodes` at 5,000 through the library builder, the replay request's `stage_limits` entry and FR-255's settings operation given `s3.nodes=5000`, it checks each time. With `s3.work_units` one below the declaration's measured work `w`, it stops with `stage_limit_exceeded`/`work-budget-exceeded` naming bound `w - 1`, count `w` and setting `s3.work_units`, at the declaration's span: the work charge is made once per declaration, not per node. At `w` the declaration's own charge is admitted, and the stop is a later lowering charge. | Test (TC-727) |
 | FR-258-AC-5 | Every node body lowering writes is in QSpec FR-322's five-stratum v2 body grammar (Leaf, Group, Tuple, Member, Body): across the checked packages of TC-415 and of AC-1, no `application` argument, `aggregate` member or `binding` value holds a term of its own stratum or a higher one, no `binding` holds a `binding`, and every composite subterm is a `reference` to its own node. | Test (TC-725) |
+| FR-258-AC-6 | The text-leaf walk's heap stack never holds more entries than the visits it has entered, and enters two visits per charged record: over a chain of 1,000 records ending in one `Text` field it enters `2 × 1,001 + 1` visits and charges at least one work unit per record. | Test (TC-726) |
 
 ## Dependencies
 
@@ -102,7 +103,7 @@ for checking; this requirement carries that rule through QSL's checker.
 
 ## Status
 
-- FR-258-AC-1, AC-2, AC-3 and AC-5: backed (TC-725, TC-726, TC-727).
+- FR-258-AC-1, AC-2, AC-3, AC-5 and AC-6: backed (TC-725, TC-726, TC-727).
 - FR-258-AC-4: the node stop and the work stop through package checking and
   the library builder are backed (TC-727). Remainder: B5 (the setting names
   `s3.nodes` and `s3.work_units` in an outcome, the replay request's

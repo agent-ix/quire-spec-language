@@ -214,6 +214,7 @@ impl<W: quire_walk::Walk> quire_walk::Walk for Counting<'_, W> {
 /// visit it names, so its stack never holds more entries than the visits it
 /// enters. Over a 1,000-record chain each record is one entered type and
 /// one entered field, and each record charges one work unit on entry.
+#[trace("FR-258-AC-6", "TC-726")]
 #[test]
 fn the_text_leaf_walk_enters_two_visits_per_charged_record() {
     const RECORDS: usize = 1_000;

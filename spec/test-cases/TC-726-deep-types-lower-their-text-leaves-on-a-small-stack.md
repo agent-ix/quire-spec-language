@@ -13,7 +13,7 @@ relationships:
 Verify the iterative text-leaf walk and type-keying walk over 100,000-deep
 types.
 
-Scope: FR-258-AC-2.
+Scope: FR-258-AC-2, FR-258-AC-6.
 
 ## Test Procedure
 
@@ -25,8 +25,11 @@ Run every step on a thread spawned with a 512 KiB stack unless the step says oth
    chain of 100,000 records, each holding the next in an optional field
    `next`, the last holding a `Text[0, 8; nfc]` field `label`.
 3. Key a parameter typed with 100,000 nested `Option`s around `Boolean`.
+4. Walk the text leaves of a chain of 1,000 records ending in one `Text`
+   field, counting the visits the walk enters and the work units it
+   charges.
 
-Tag the tests `#[trace("TC-726", "FR-258-AC-2")]`.
+Tag the tests `#[trace("TC-726", "FR-258-AC-2")]` and `#[trace("TC-726", "FR-258-AC-6")]`.
 
 ## Expected Results
 
@@ -36,10 +39,13 @@ Tag the tests `#[trace("TC-726", "FR-258-AC-2")]`.
   segments per level (`field:next`, then `inner`) and ends `field:label`, and
   the thread completes.
 - Step 3: the parameter is keyed, and the thread completes.
+- Step 4: the walk enters `2 × 1,001 + 1` visits, no more than twice the
+  work units it charged, plus one.
 
 ## Status
 
 Backed: `a_100000_deep_option_lowers_its_text_leaf_on_a_small_stack`,
 `a_100000_record_chain_lowers_its_text_leaf_on_a_small_stack` and
-`a_100000_deep_option_type_keys_on_a_small_stack`
+`a_100000_deep_option_type_keys_on_a_small_stack` and
+`the_text_leaf_walk_enters_two_visits_per_charged_record`
 (`qsl-semantics/src/check/lowering/tests/depth.rs`).

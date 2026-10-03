@@ -745,9 +745,9 @@ fn is_integer(value_type: &ValueType) -> bool {
 /// (a bare parameter) fail it for the same reason: a literal or a `Name`
 /// alone is never itself an eligible read.
 ///
-/// The walk keeps its pending sub-expressions on a heap stack: it
-/// runs before the typer has entered `expression`'s own levels, so no
-/// checking limit has bounded its depth yet.
+/// The walk keeps its pending sub-expressions on a heap stack: it runs
+/// before the typer has entered `expression`'s own levels, and its stack
+/// grows by one entry per node it names, which the typer then charges.
 fn contains_pre_eligible_read(expression: ExprRef<'_>) -> bool {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
@@ -1018,9 +1018,9 @@ impl<'a> Typer<'a> {
     /// resolves the general case rather than special-casing one syntax.
     ///
     /// The walk and [`Self::resolves_to_captured_alias`] keep their pending
-    /// sub-expressions and `let` bindings on the heap: they run
-    /// before the typer has entered the operand's own levels, so no
-    /// checking limit has bounded its depth yet.
+    /// sub-expressions and `let` bindings on the heap: they run before the
+    /// typer has entered the operand's own levels, and each stack grows by
+    /// one entry per node or `let` they name, which the typer then charges.
     fn contains_captured_pre_alias(&self, expression: ExprRef<'_>, boundary: usize) -> bool {
         let mut bindings: Vec<AliasBinding<'_>> = Vec::new();
         let mut pending: Vec<(ExprRef<'_>, Option<usize>)> = vec![(expression, None)];
