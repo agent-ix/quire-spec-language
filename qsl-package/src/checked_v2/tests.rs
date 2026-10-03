@@ -1898,7 +1898,7 @@ fn each_reader_limit_names_its_kind_bound_actual_and_locus() {
             },
             LimitKind::NestingDepth,
             1,
-            8,
+            7,
             "/capability_report",
         ),
         (
