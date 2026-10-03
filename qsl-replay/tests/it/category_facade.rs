@@ -45,7 +45,10 @@ fn category_success_and_violation_are_usable_through_the_facade() {
         charges(),
     );
     assert_eq!(agreed.category(), Category::Success);
-    assert_eq!(agreed.settlement(), InputSettlement::ReproducedWithoutWitness);
+    assert_eq!(
+        agreed.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
 
     let disagreed = InputArmResult::settle(
         success,
