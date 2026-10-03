@@ -88,10 +88,6 @@ pub enum PackageCause {
     /// `incompatible-definition`: not a division definition, or `mod` claims a
     /// non-Euclidean law.
     IncompatibleDefinition,
-    /// `revision-mismatch`.
-    RevisionMismatch,
-    /// `digest-domain-mismatch`.
-    DigestDomainMismatch,
 }
 
 impl PackageCause {
@@ -101,8 +97,6 @@ impl PackageCause {
             Self::MissingMember => "missing-member",
             Self::ConflictingDefinition => "conflicting-definition",
             Self::IncompatibleDefinition => "incompatible-definition",
-            Self::RevisionMismatch => "revision-mismatch",
-            Self::DigestDomainMismatch => "digest-domain-mismatch",
         }
     }
 }

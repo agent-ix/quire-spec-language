@@ -259,6 +259,11 @@ CONFORMANCE_GOLDEN_TEST := emit::tests::golden::conformance_emitted_application_
 # (code, cause) pair against QSpec's `native-diagnostics.md`.
 CONFORMANCE_PROFILE_CAUSES_TEST := check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics
 CONFORMANCE_BUNDLE_CAUSES_TEST := library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics
+# The `Value` family's definition catalog and its package-selection
+# admission against QSpec's `complete-value-lock.json` and
+# `complete-value-selection-vectors.json`.
+CONFORMANCE_CATALOG_TEST := complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock
+CONFORMANCE_SELECTION_TEST := complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors
 conformance:
 	@if [ -z "$(QSPEC_DIR)" ]; then \
 		echo "conformance: set QSPEC_DIR to a quire-specification checkout" >&2; \
@@ -315,6 +320,16 @@ conformance:
 	echo "$$out"; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* bundle (code, cause) pairs listed by QSpec$$' || { echo "conformance: the bundle cause check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_CATALOG_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* catalog rows match QSpec.s lock$$' || { echo "conformance: the definition catalog check did not run" >&2; exit 1; }
+	@out=$$(QSPEC_DIR="$(QSPEC_DIR)" cargo test --locked -p qsl-semantics --test it -- --exact $(CONFORMANCE_SELECTION_TEST) --nocapture 2>&1); \
+	status=$$?; \
+	echo "$$out"; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	echo "$$out" | grep -q '^conformance: [1-9][0-9]* accepted and [1-9][0-9]* refused selection vectors$$' || { echo "conformance: the package-selection vector check did not run" >&2; exit 1; }
 
 # FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem.

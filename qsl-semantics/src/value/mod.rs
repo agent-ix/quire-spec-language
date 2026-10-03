@@ -163,9 +163,9 @@ pub(crate) mod unit;
 // import them from there, not through a re-export here.
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, DefinitionRevision, LockReadError, Trigger,
+    CatalogRole, DefinitionLock, DefinitionReference, Trigger,
 };
-pub use diagnostics_catalog::{native_diagnostics_catalog, native_diagnostics_identity};
+pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
 // `ExactScalar`, `IeeeOperand`, `IeeeProvenance`, `IeeeResult`,
 // `IeeeExact`, `IeeeExactTarget`, the five entry points (`evaluate_ieee`/
 // `compare_ieee`/`convert_ieee_width`/`ieee_to_exact`/`exact_to_ieee`) and

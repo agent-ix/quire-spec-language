@@ -25,7 +25,7 @@ use qsl_semantics::value::enumeration::{
 };
 use qsl_semantics::value::{
     admit_unit_graph, AdmittedIeeeProfile, CatalogRole, DefinitionLock, DefinitionReference,
-    DefinitionRevision, DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
+    DimensionPreimage, NodeOwner, OwnerSelection, OwnerSubject, UnitPreimage,
 };
 use quire_exact::EffectiveId;
 use quire_exact::EnumMember;
@@ -1089,12 +1089,6 @@ fn profile() -> &'static AdmittedIeeeProfile {
         let reference = DefinitionReference {
             authority: entry.authority.to_owned(),
             identity: entry.identity.to_owned(),
-            revision: DefinitionRevision {
-                namespace: entry.revision_namespace.to_owned(),
-                value: entry.revision_value.to_owned(),
-            },
-            digest_domain: "quire.definition.bytes/v1".to_owned(),
-            digest: "0".repeat(64),
         };
         lock.admit_ieee_profile(&[reference], &[]).unwrap()
     })

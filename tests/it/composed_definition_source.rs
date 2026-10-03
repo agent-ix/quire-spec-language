@@ -15,9 +15,7 @@ use RegisteredDefinition::{
 struct Expected {
     definition: RegisteredDefinition,
     identity: &'static str,
-    /// `None`: the revision is QSpec's own document header, read by
-    /// reference (`native_diagnostics_identity`).
-    revision: Option<&'static str>,
+    revision: &'static str,
     file: &'static str,
     requirements: &'static [RegisteredDefinition],
 }
@@ -28,98 +26,98 @@ const EXPECTED: &[Expected] = &[
     Expected {
         definition: Edition,
         identity: "ix:native",
-        revision: Some("1-draft.2"),
+        revision: "1-draft.2",
         file: "edition.md",
         requirements: &[],
     },
     Expected {
         definition: StateCore,
         identity: "quire.state.core/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "state-core.md",
         requirements: &[Edition],
     },
     Expected {
         definition: StateQueries,
         identity: "quire.state.queries/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "state-queries.md",
         requirements: &[StateCore],
     },
     Expected {
         definition: StateGraph,
         identity: "quire.state.graph/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "state-graph.md",
         requirements: &[StateQueries],
     },
     Expected {
         definition: TemporalFacet,
         identity: "quire.temporal.bounded-facet/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "temporal-common.md",
         requirements: &[StateGraph],
     },
     Expected {
         definition: EventPosition,
         identity: "quire.temporal.event-position.false-extension/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "temporal-event-position.md",
         requirements: &[TemporalFacet],
     },
     Expected {
         definition: FixedSample,
         identity: "quire.temporal.fixed-sample.false-extension/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "temporal-fixed-sample.md",
         requirements: &[TemporalFacet],
     },
     Expected {
         definition: TimestampedWindow,
         identity: "quire.temporal.timestamped-event.finite-window/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "temporal-timestamped-window.md",
         requirements: &[TemporalFacet],
     },
     Expected {
         definition: Protocol,
         identity: "quire.protocol.finite-global/v1",
-        revision: Some("1-draft.4"),
+        revision: "1-draft.4",
         file: "protocol-finite.md",
         requirements: &[StateGraph, TemporalFacet],
     },
     Expected {
         definition: ObservationBinding,
         identity: "quire.observation.binding/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "observation-binding.md",
         requirements: &[Package, Range, TemporalFacet, Protocol],
     },
     Expected {
         definition: Progress,
         identity: "quire.observation.progress/v1",
-        revision: Some("1-draft.3"),
+        revision: "1-draft.3",
         file: "observation-progress.md",
         requirements: &[ObservationBinding, Range, TemporalFacet],
     },
     Expected {
         definition: Range,
         identity: "quire.observation.range/v1",
-        revision: Some("1-draft.1"),
+        revision: "1-draft.1",
         file: "observation-range.md",
         requirements: &[],
     },
     Expected {
         definition: Package,
         identity: "quire.package.composed/v1",
-        revision: Some("1-draft.2"),
+        revision: "1-draft.2",
         file: "package-reference.md",
         requirements: &[Edition],
     },
     Expected {
         definition: Diagnostics,
         identity: "quire.native.diagnostics/v1",
-        revision: None,
+        revision: "1-draft.8",
         file: "native-diagnostics.md",
         requirements: &[],
     },
@@ -141,10 +139,7 @@ fn exact_definition_identities_and_labels_select_distinct_registered_meanings() 
         let definition = row.definition;
         assert_eq!(definition.path(), path);
         assert_eq!(definition.identity(), row.identity);
-        let revision = row
-            .revision
-            .unwrap_or_else(|| qsl_semantics::value::native_diagnostics_identity().1);
-        assert_eq!(definition.revision(), revision);
+        assert_eq!(definition.revision(), row.revision);
         assert_eq!(definition.authority(), "agent-ix");
         assert_eq!(definition.requirements(), row.requirements);
         assert!(identities.insert(row.identity));

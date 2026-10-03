@@ -323,26 +323,20 @@ impl RegisteredDefinition {
                     rule!("proposals/shared-reference-2-draft/README.md"),
                 ]
             ),
-            // Identity and revision are QSpec's `native-diagnostics.md`
-            // header, read by reference, so this entry and the emitter's
-            // `diagnostics.catalog` name one revision.
-            Self::Diagnostics => {
-                let (identity, revision) = qsl_semantics::value::native_diagnostics_identity();
-                RegisteredSource {
-                    identity,
-                    revision,
-                    ..definition!(
-                        "native-diagnostics",
-                        "",
-                        "",
-                        [],
-                        [
-                            rule!("qsl-foundation/src/diagnostic.rs"),
-                            rule!("docs/native-error-codes.md"),
-                        ]
-                    )
-                }
-            }
+            // The identity is the emitter's `diagnostics.catalog` identity.
+            Self::Diagnostics => RegisteredSource {
+                identity: qsl_semantics::value::NATIVE_DIAGNOSTICS_IDENTITY,
+                ..definition!(
+                    "native-diagnostics",
+                    "",
+                    "1-draft.8",
+                    [],
+                    [
+                        rule!("qsl-foundation/src/diagnostic.rs"),
+                        rule!("docs/native-error-codes.md"),
+                    ]
+                )
+            },
         }
     }
 }
