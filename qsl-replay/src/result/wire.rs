@@ -12,6 +12,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+use qsl_attrs::string_edge;
 use qsl_foundation::diagnostic::catalog_category;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -131,6 +132,9 @@ struct Splice<'d> {
 }
 
 impl Encode for Splice<'_> {
+    /// `#[string_edge]`: finds a cause document's `given`, `derived` and
+    /// `deciding_element` members by their wire names.
+    #[string_edge]
     fn encode_into<S: Sink + ?Sized>(
         &self,
         writer: &mut Writer<'_, S>,

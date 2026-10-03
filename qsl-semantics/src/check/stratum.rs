@@ -8,6 +8,7 @@
 //! No production names itself or a higher stratum, so a body's JSON depth is
 //! fixed whatever the expression's depth.
 
+use qsl_attrs::string_edge;
 use serde_json::Value;
 
 /// Whether `term` is a Leaf: a literal, a reference, a dependency reference,
@@ -21,12 +22,15 @@ fn is_leaf(term: &Value) -> bool {
 }
 
 /// Whether `term` is a `binding` that has a name and whose value `value`
-/// admits.
+/// admits. `#[string_edge]`: a term's `term` member is its wire tag.
+#[string_edge]
 fn is_binding(term: &Value, value: fn(&Value) -> bool) -> bool {
     term["term"] == "binding" && term["name"].is_string() && value(&term["value"])
 }
 
 /// Whether `term` is an `aggregate` whose members each satisfy `member`.
+/// `#[string_edge]`: a term's `term` member is its wire tag.
+#[string_edge]
 fn is_aggregate(term: &Value, member: fn(&Value) -> bool) -> bool {
     term["term"] == "aggregate"
         && term["members"]
