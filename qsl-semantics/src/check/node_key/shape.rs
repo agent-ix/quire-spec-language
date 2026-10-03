@@ -100,6 +100,12 @@ struct Shape<'d> {
 }
 
 impl Encode for Shape<'_> {
+    /// Marked `#[string_edge]`: a shape is defined over the preimage's
+    /// RFC 8785 text (FR-092), so this walk reads that JSON back and leaves
+    /// out or nulls members by their wire names (`ordinal`, `owner`,
+    /// `declaration`) from the node-identity preimage schema. No typed
+    /// value exists at this edge to dispatch on instead.
+    #[qsl_attrs::string_edge]
     fn encode_into<S: Sink + ?Sized>(
         &self,
         writer: &mut Writer<'_, S>,
