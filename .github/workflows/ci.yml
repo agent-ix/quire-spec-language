@@ -42,4 +42,4 @@ jobs:
       - name: Parse example
         run: cargo run --locked --no-default-features -- parse test:parent fixture:1 tests/fixtures/parent.native
       - name: Registry bans (cargo-deny)
-        run: cargo deny check bans --config deny.toml
+        run: cargo deny --workspace check bans --config deny.toml
