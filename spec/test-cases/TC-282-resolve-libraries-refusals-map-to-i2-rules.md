@@ -24,9 +24,8 @@ four. Scope: FR-087-AC-12.
 
 1. Enumerate every variant `LibraryRefusal` defines today: `PackageIdMismatch`,
    `InvalidPreimage`, `UndeclaredExport`, `InvalidQualifier`,
-   `ConflictingDefinition`, `ImportCycle`, `StaleDependency` (its
-   `StaleCause` `ByteDigestMismatch`), `MissingImport`, and
-   `DuplicatePackageId` — nine variants, plus any variant its refusal type
+   `ConflictingDefinition`, `ImportCycle`, `MissingImport`, and
+   `DuplicatePackageId` — eight variants, plus any variant its refusal type
    gains after relocation.
 2. For each variant, read the code path that raises it and classify it
    against this fixed table (not the earlier, incomplete "one for one with
@@ -38,9 +37,8 @@ four. Scope: FR-087-AC-12.
    | `InvalidPreimage` | Per-package admission within `verify_package` | Raised after condition 2's digest comparison already completed (`identity_preimage` matched its declared `package_id`); validates the preimage's own structure. Grouped with condition 2 only because the same reused `verify_package` call raises it, not because condition 2 depends on it. |
    | `UndeclaredExport` | Per-package admission within `verify_package` | Raised by the same `verify_package` call, after the preimage structure check, comparing the package's own declared exports against its own projected declarations. Per-package admission, not an import-graph or name question, and not part of condition 2's digest check either. |
    | `InvalidQualifier` | E3 name resolution | Validates an `as` qualifier used only for binding `a::Name` references; moves conceptually with `resolve_name` to E3. |
-   | `ConflictingDefinition` | I2 rule 2 | Two import paths claim one library identity with different selections — I2's second rule exactly. |
+   | `ConflictingDefinition` | I2 rule 2 | Two supplied packages claim one library identity, so the identity has no one selection — I2's second rule. |
    | `ImportCycle` | I2 rule 3 | An import-graph cycle — I2's third rule exactly. |
-   | `StaleDependency{ByteDigestMismatch}` | I2 rule 1 | The import's `package_id` is not present among the supplied packages under its identity — "not listed," I2's first rule. |
    | `MissingImport` | I2 rule 1 | No supplied package matches the import's identity at all — "an import is missing," I2's first rule. |
    | `DuplicatePackageId` | Named exception (none of the four) | Raised only after both supplied packages have already, independently, passed `verify_package`'s digest check — so each one's `package_id` already equals the digest recomputed over its own `identity_preimage`. Two packages sharing one `package_id` therefore share byte-identical `identity_preimage` bytes; they can only still differ in the `LibraryPackage` fields the preimage excludes (`version`, `imports`, `exports`) — conflicting metadata over identical identity content, not two different contents colliding on one digest. This is the reverse of `ConflictingDefinition` (one identity, two competing selections from different import sites) and needs no ADR-011 `:203-210` I2 rule of its own; it is a content-addressing precondition the `by_id` index needs, independent of I2, the §4 binding, and E3. |
 
@@ -48,7 +46,7 @@ four. Scope: FR-087-AC-12.
    2's table states; a variant classified to a different bucket than the
    table (for example `DuplicatePackageId` mapped to I2 rule 2 instead of
    the named exception), or left unclassified, fails this step.
-4. Construct one concrete fixture per row in step 2's table (nine
+4. Construct one concrete fixture per row in step 2's table (eight
    fixtures, one per row, each varying exactly the one fault its row
    names: a package whose declared `package_id` does not equal the digest
    recomputed over its own `identity_preimage`, all else valid, for
@@ -57,11 +55,8 @@ four. Scope: FR-087-AC-12.
    second, unrelated fault; a structurally malformed preimage for
    `InvalidPreimage`; a package whose declared export matches no
    declaration for `UndeclaredExport`; a malformed `as` qualifier for
-   `InvalidQualifier`; a diamond import with two conflicting selections for
-   `ConflictingDefinition`; a two-package import cycle for `ImportCycle`; a
-   supplied package whose
-   `package_id` does not match the import's for
-   `StaleDependency{ByteDigestMismatch}`; no supplied package under the
+   `InvalidQualifier`; two supplied packages of one identity for
+   `ConflictingDefinition`; a two-package import cycle for `ImportCycle`; no supplied package under the
    imported identity at all for `MissingImport`; and two supplied packages
    sharing one byte-identical `identity_preimage` (and hence one recomputed
    `package_id`, each independently passing its own digest check) but
@@ -70,7 +65,7 @@ four. Scope: FR-087-AC-12.
    confirm `resolve_libraries` refuses each with exactly the variant its
    row names.
 5. Confirm this criterion does not require a new refusal variant:
-   `resolve_libraries`' existing nine-variant refusal set, unchanged in
+   `resolve_libraries`' existing eight-variant refusal set, unchanged in
    shape by this requirement (Description, item 3, owner ruling (a)), is
    sufficient to cover every classification, including the
    `DuplicatePackageId` exception.
@@ -81,19 +76,7 @@ four. Scope: FR-087-AC-12.
   2's table states; an unclassified variant, or one classified to the
   wrong bucket (including forcing `DuplicatePackageId` into an I2 rule),
   fails this step and names the variant.
-- Step 4: each of the nine fixtures refuses with exactly its table-predicted variant; a different
+- Step 4: each of the eight fixtures refuses with exactly its table-predicted variant; a different
   variant, or an admission, fails this step.
 - Step 5: no new refusal variant is required; a passing implementation
   needs no change to `LibraryRefusal`'s variant set beyond relocation.
-
-## Amendment
-
-An import names its library by identity alone (ADR-015 D-2), so
-`resolve_libraries` selects the first supplied package of the import's
-identity. `ConflictingDefinition` is removed: two import paths reach one
-supplied package. `StaleDependency` is raised only by the §4 binding's
-condition 3, not by an import declaration, and `resolve_libraries` returns
-`MissingImport` for an identity no supplied package holds. Rows and
-fixtures for `ConflictingDefinition` and for an import-sourced
-`StaleDependency` no longer apply; `RefusalClass::class` still classifies
-`StaleDependency` for the binding.

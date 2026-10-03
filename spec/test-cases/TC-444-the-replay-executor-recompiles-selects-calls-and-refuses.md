@@ -103,8 +103,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   `quire.checked-package/v2` emit and IR's own I2 decode.
 
 - Step 7: `q(3)` is `false` and agrees (`reproduced-without-witness`). The
-  edited bytes refuse `PackageIdMismatch` (`stale_dependency`) naming
-  the request's and the recompiled `package_id`; the changed entry refuses `DependencyIdentityMismatch`
+  edited bytes refuse `DependencyIdentityMismatch` (`stale_dependency`)
+  naming `test/units`, the entry's and the recompiled `package_id`; the changed entry refuses `DependencyIdentityMismatch`
   naming `test/units`; the extra entry refuses `DependencySelections`
   (`invalid_package`/`invalid-value` at `/package/dependencies`); the
   swapped and the repeated entries refuse `DependencySelections` before any

@@ -175,7 +175,8 @@ and the dependency packages the proving run admitted, and invents none
 (ADR-013 C-12).
 
 `replay` refuses with the first of these rules, each rule applied over all
-entries, in entry order, before the next rule. It uses QSpec FR-323's codes
+entries, in entry order, before the next rule, except that rules 6 and 7 apply
+before rule 5. It uses QSpec FR-323's codes
 for the rules FR-323 states; the one-source rule and the dependency-input
 rule (rules 2 and 3) are QSL's own preconditions on its request, and both
 run before the recompile:
@@ -197,15 +198,15 @@ run before the recompile:
    (`invalid_package`/`conflicting-definition`).
 4. `replay` recompiles the proved source through spine `compile` against
    that dependency input (D-1), and carries its refusal as
-   `ReplayRefusal::Recompile`. A stale dependency's source refuses there as
-   `DependencyIdentityMismatch` at the import that records it, naming the
-   identity. A removed entry refuses there as
+   `ReplayRefusal::Recompile`. A removed entry refuses there as
    `missing_import`/`missing-selection` at the import it supplied.
    When that import is in a library, not in the proved unit, the refusal
    arrives wrapped in `CompileRefusal::Dependency` with the library's path
    (D-1).
-5. The recompiled `package_id` equals the request's (ADR-013 O-26), else
-   the existing `PackageIdMismatch`.
+5. After rules 6 and 7, the recompiled `package_id` equals the request's
+   (ADR-013 O-26), else the existing `PackageIdMismatch`. An edited
+   dependency source changes the proved package's `package_id` too, so rules
+   6 and 7 run first and name the stale dependency.
 6. Every entry's identity is held by the recompiled package's
    `dependency_selections`, else `ReplayRefusal::DependencySelections`
    (`invalid_package`/`invalid-value` at `/package/dependencies`).

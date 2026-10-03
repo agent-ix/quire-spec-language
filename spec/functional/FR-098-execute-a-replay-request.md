@@ -83,14 +83,15 @@ through it, or a crate alias or glob import that reaches it.
   `missing_import`/`missing-selection`; when that import is in a
   library, the refusal is wrapped in `CompileRefusal::Dependency` with the
   library's path.
-- When the recompiled `package_id` equals the request's, the executor SHALL
-  refuse an entry whose identity the recompiled package's
+- After the recompile, and before comparing the proved package's
+  `package_id`, the executor SHALL refuse an entry whose identity the recompiled package's
   `dependency_selections` does not hold as
   `ReplayRefusal::DependencySelections`, and then an entry whose
   `package_id` differs from the closure's selection of its identity as
   `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming
   the identity, the entry's `package_id` (`requested`) and the recompiled
-  one.
+  one. An edited dependency source also changes the proved package's
+  `package_id`, so these checks run first and name the stale dependency.
 - The recompile SHALL run under the stage limits the request carries. The
   request's `stage_limits` maps each setting name to its bound, every entry
   passes through to its stage, and a setting with no entry runs at its
@@ -148,7 +149,7 @@ through it, or a crate alias or glob import that reaches it.
 | FR-098-AC-3 | A meaning-affecting source edit refuses by `package_id`, naming both identities. A presentation-only edit, which keeps the `package_id`, refuses by source digest. | Test (TC-444) |
 | FR-098-AC-4 | Each refusal in Behavior -- a missing input, a byte/digest mismatch, a stale `package_id`, a selection naming no function node, an arity mismatch, a type mismatch and a value outside the declared domain (each `WrongValueKind`), a limit above the reader limit, a recompile stage limit at S1 or S3, and a selection whose declared result is not `Boolean` (refused before any call, even with no accounting budget) -- refuses with its typed variant and no partial result. | Test (TC-444) |
 | FR-098-AC-5 | A replay that disagrees with the refuted property settles `inconclusive` with cause `Verdicts`, and one that completes no value with cause `NoValue`, each holding both verdicts; neither is repaired. | Test (TC-444) |
-| FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the importing package's lock binds the edited library's recompiled `package_id`, so the replay refuses `ReplayRefusal::PackageIdMismatch` (`stale_dependency`), naming the request's `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `ReplayRefusal::DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
+| FR-098-AC-6 | A request for a proved package importing `test/units`, whose `dependencies` entry names `test/units`, its `package_id` and its one source, replays from the byte provision alone. With that entry's source bytes replaced by an edit that changes `test/units`'s `package_id` (digests updated to match), the replay refuses `ReplayRefusal::DependencyIdentityMismatch` (`stale_dependency`), naming `test/units`, the entry's `package_id` and the recompiled one, with no verdict; with only the entry's `package_id` changed, it refuses `ReplayRefusal::DependencyIdentityMismatch` naming the same identity. | Test (TC-444) |
 | FR-098-AC-7 | A request whose `dependencies` entries are swapped, or repeat one identity, refuses `ReplayRefusal::DependencySelections` (`invalid_package`/`invalid-value` at `/package/dependencies`) before any recompile; one carrying an extra entry no import reaches refuses `DependencySelections` after the recompile; two entries whose sources share one authority and identity refuse `ReplayRefusal::DependencyInput` (`invalid_package`/`conflicting-definition`); one lacking an entry refuses `ReplayRefusal::Recompile` carrying `missing_import`/`missing-selection` at the import; an entry naming two sources, or a definition document, refuses as a source reference that is not one source unit. None yields a verdict. | Test (TC-444) |
 
 ## Dependencies

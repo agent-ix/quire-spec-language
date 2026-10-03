@@ -696,17 +696,8 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
         .map_err(refusal)?
         .into_value();
     let compiled = Recompiled { checked, emitted };
-    // Rule 5: the proved package's `package_id`.
-    let requested = request.package_id();
-    let recompiled = compiled.emitted.package().package_id();
-    if !recompiled.matches(&requested) {
-        return Err(ReplayRefusal::PackageIdMismatch {
-            requested,
-            recompiled,
-        });
-    }
     // Rules 6 and 7: every entry names a selection of the recompiled
-    // closure, then at its recomputed `package_id`.
+    // closure, then at its recomputed `package_id`, before rule 5.
     let selections = compiled.checked.package().dependency_selections();
     for entry in request.dependencies() {
         if !selections.contains_key(entry.identity()) {
@@ -733,6 +724,17 @@ fn recompile(request: &ReplayRequest) -> Result<Recompiled, ReplayRefusal> {
                 recompiled: selected,
             });
         }
+    }
+    // Rule 5: the proved package's `package_id`. It runs after rules 6 and 7,
+    // so a stale dependency is named by its identity before the proved
+    // package's own mismatch, which the dependency's id also changes.
+    let requested = request.package_id();
+    let recompiled = compiled.emitted.package().package_id();
+    if !recompiled.matches(&requested) {
+        return Err(ReplayRefusal::PackageIdMismatch {
+            requested,
+            recompiled,
+        });
     }
     Ok(compiled)
 }

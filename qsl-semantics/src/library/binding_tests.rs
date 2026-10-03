@@ -20,7 +20,7 @@ use super::package_identity::fixtures::{hex, one_node_preimage};
 use super::{
     resolve_libraries, verify_binding, ConflictingPin, ImportDeclaration, LibraryName,
     LibraryPackage, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    Selection, StaleCause, StalePin, SupportedV2Wire, VerifiedPackage,
+    Selection, StaleCause, SupportedV2Wire, VerifiedPackage,
 };
 use qsl_foundation::digest::WireNodeId;
 
@@ -178,10 +178,10 @@ fn refuses_when_the_pinned_id_and_version_both_disagree() {
         bind(candidate(recomputed()), &pin("2", other)),
         Err(LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
-            pin: StalePin::Pinned(Box::new(PinMismatch {
+            pin: Box::new(PinMismatch {
                 pinned: selection("2", other),
                 presented: selection("1", recomputed()),
-            })),
+            }),
             cause: StaleCause::ByteDigestMismatch,
         })
     );

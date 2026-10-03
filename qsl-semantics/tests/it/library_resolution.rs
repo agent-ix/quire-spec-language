@@ -358,6 +358,17 @@ fn l07_migration_creates_new_identities_and_never_relabels_evidence() {
             }
         )]
     );
+    // Supplying both versions of `L` is a conflicting definition, not a
+    // choice between them.
+    assert_library_refusal(
+        resolve_libraries(&new_package, &[old_library, new_library.clone()]),
+        &LibraryRefusal::ConflictingDefinition {
+            library: name("L"),
+            package_ids: [id("L@1"), id("L'@2")],
+        },
+        Code::InvalidPackage,
+        LibraryCause::ConflictingDefinition,
+    );
     let new_lock = resolve_libraries(&new_package, &[new_library]).unwrap();
     assert_eq!(
         new_lock.selections(),
@@ -1123,6 +1134,24 @@ fn invalid_qualifier_classifies_to_e3_name_resolution() {
         Code::InvalidPackage,
         LibraryCause::InvalidValue,
         RefusalClass::E3NameResolution,
+    );
+}
+
+#[trace("TC-282", "FR-087-AC-12")]
+#[test]
+fn conflicting_definition_classifies_to_i2_rule_2() {
+    assert_library_refusal_classified(
+        resolve_libraries(
+            &over_l("P"),
+            &[library_l(), package("L", "2", "L'@2", Vec::new())],
+        ),
+        &LibraryRefusal::ConflictingDefinition {
+            library: name("L"),
+            package_ids: [id("L@1"), id("L'@2")],
+        },
+        Code::InvalidPackage,
+        LibraryCause::ConflictingDefinition,
+        RefusalClass::I2Rule(2),
     );
 }
 

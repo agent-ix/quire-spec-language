@@ -1075,9 +1075,9 @@ impl Importing {
 /// FR-098-AC-6 (TC-444 step 7): a proved package importing `test/units`
 /// replays from the byte provision alone, the `dependencies` entry saying
 /// which source is `test/units`; `q(3)` is `false` and agrees. An edited
-/// `test/units` source recompiles to another importing package and refuses
-/// `PackageIdMismatch`, since the lock binds the library's recomputed
-/// `package_id`; a changed entry
+/// `test/units` source refuses `DependencyIdentityMismatch` naming
+/// `test/units`, before the proved package's own id is compared; a changed
+/// entry
 /// `package_id` alone refuses `DependencyIdentityMismatch` naming
 /// `test/units`.
 #[trace("TC-444", "FR-098-AC-6")]
@@ -1106,9 +1106,10 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     assert!(
         matches!(
             &refused,
-            ReplayRefusal::PackageIdMismatch { requested, recompiled }
-                if *requested == importing.compiled.emitted.package_id().record()
-                    && *recompiled != importing.compiled.emitted.package_id()
+            ReplayRefusal::DependencyIdentityMismatch { identity, requested, recompiled }
+                if identity.as_str() == "test/units"
+                    && *requested == importing.units_id.record()
+                    && *recompiled != importing.units_id
         ),
         "{refused:?}"
     );

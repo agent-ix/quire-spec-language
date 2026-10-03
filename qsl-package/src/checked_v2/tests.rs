@@ -28,7 +28,7 @@ use qsl_semantics::check::imports::ImportedNames;
 use qsl_semantics::check::CheckCause;
 use qsl_semantics::library::{
     ImportView, LibraryName, LibraryRefusal, PackageId, PackageNodeKey, PinMismatch, PinnedRequest,
-    RefusalClass, Selection, StaleCause, StalePin,
+    RefusalClass, Selection, StaleCause,
 };
 use quire_exact::{Origin, Role};
 
@@ -432,7 +432,7 @@ fn refuses_when_the_pinned_package_id_disagrees() {
         refusal,
         LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
-            pin: StalePin::Pinned(Box::new(PinMismatch {
+            pin: Box::new(PinMismatch {
                 pinned: Selection {
                     version: "1".to_owned(),
                     package_id: stale,
@@ -441,7 +441,7 @@ fn refuses_when_the_pinned_package_id_disagrees() {
                     version: "1".to_owned(),
                     package_id: PackageId::of_preimage(&jcs(&preimage)),
                 },
-            })),
+            }),
             cause: StaleCause::ByteDigestMismatch,
         }
     );
@@ -462,7 +462,7 @@ fn refuses_when_the_pinned_version_disagrees() {
         refusal,
         LibraryRefusal::StaleDependency {
             path: vec![identity("pkg")],
-            pin: StalePin::Pinned(Box::new(PinMismatch {
+            pin: Box::new(PinMismatch {
                 pinned: Selection {
                     version: "2".to_owned(),
                     package_id: id,
@@ -471,7 +471,7 @@ fn refuses_when_the_pinned_version_disagrees() {
                     version: "1".to_owned(),
                     package_id: id,
                 },
-            })),
+            }),
             cause: StaleCause::RevisionMismatch,
         }
     );
