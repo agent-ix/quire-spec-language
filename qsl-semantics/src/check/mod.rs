@@ -908,24 +908,18 @@ impl PackageDeclarations {
             );
             type_nodes.insert(node, identity::CheckedTypeNode::Sum { node, variants });
         }
-        // `node_count` reads the same `CheckingLimits.nodes()` the
-        // unchanged `Typer` below also honors, but the two are separate,
-        // deliberately different-shaped bounds over the same underlying
-        // quantity (PR #303 review round 3, finding F1): the contract's own
-        // `check_node_count` compares one declaration's own preimage node
-        // count against `limits.nodes()` in isolation, while `Typer`'s
-        // counter (seeded from `nodes_used` below) accumulates across every
-        // declaration in the package, against that same unmodified bound --
-        // the contract's check can refuse a single oversized declaration
-        // first, but it is not a substitute for the package-wide budget, and
-        // does not make it redundant. `input_bytes` reads `CheckingLimits`' own
-        // dedicated knob (`with_input_bytes`). `work_budget` has no
-        // `StageLimits` field at all (PR #302 review finding 3): it is
-        // charged against `contract_meter`'s own `work_units` bound
-        // instead, read from `CheckingLimits::work_budget`. All three are
-        // NFR-011's finite defaults unless a caller sets them.
-        // The mechanism is real (`CheckContext::
-        // check_input_bytes`/`check_node_count`, and a `cx.meter` charge for
+        // `node_count` reads the same `CheckingLimits.nodes()` the `Typer`
+        // below honors: it is the ceiling claim classification walks under,
+        // not a stage-entry check. `Typer`'s counter (seeded from
+        // `nodes_used` below) accumulates across every declaration in the
+        // package against that bound and stops at the node whose entry
+        // crosses it. `input_bytes` reads `CheckingLimits`' own dedicated
+        // knob (`with_input_bytes`). `work_budget` has no `StageLimits`
+        // field at all (PR #302 review finding 3): it is charged against
+        // `contract_meter`'s own `work_units` bound instead, read from
+        // `CheckingLimits::work_budget`. All three are NFR-011's finite
+        // defaults unless a caller sets them. The mechanism is real
+        // (`CheckContext::check_input_bytes` and a `cx.meter` charge for
         // `work_budget`) and is exercised directly against tight fixtures in
         // `qsl-eval/src/value/expression/family.rs`'s `family_contract_tests`.
         let contract_limits = crate::family::StageLimits {

@@ -4,13 +4,10 @@
 //! the real typing, coercion and static-definedness checking for
 //! both a function declaration and a function application.
 //!
-//! **This module's role is wider than it was.** Before,
-//! `ValueFunctionFamily::check` (below) only minted a declaration's identity
-//! and charged the contract's own nesting-depth limit once; the real typing
-//! and definedness verdict was made separately, by a `Typer` `check::mod`'s
-//! per-declaration loop constructed and drove directly (a parallel path
-//! alongside the contract, not through it) -- so calling the contract's own
-//! `check` on an ill-typed declaration returned `Ok` regardless. `check` now
+//! **This module's role is wider than it was.** `ValueFunctionFamily::check`
+//! (below) does not only charge the declaration's own limits: the real typing
+//! and definedness verdict is made inside it, by a `Typer`, so calling the
+//! contract's own `check` on an ill-typed declaration refuses. `check`
 //! calls [`check_declaration_body`] itself, inside the one `FamilyContract`
 //! entry point, and returns the crate's real, located [`CheckRefusal`]
 //! through [`StageFailure::Refused`] when the body or measure
@@ -108,9 +105,8 @@ pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exac
 };
 
 /// The size meter over one parsed declaration: the `StageLimits`
-/// figures [`ValueFunctionFamily::check`] compares before it types the
-/// declaration (`input_bytes`, `node_count`) and the work it charges
-/// (`work_budget`). It hashes nothing and mints no identity: a checked
+/// figure [`ValueFunctionFamily::check`] compares before it types the
+/// declaration (`input_bytes`) and the work it charges (`work_budget`). It hashes nothing and mints no identity: a checked
 /// node's identity is its FR-092/FR-093 key (`check::lowering`),
 /// minted after typing.
 ///
@@ -118,13 +114,12 @@ pub(crate) const SCALAR_LIMITS_UNLIMITED: quire_exact::ScalarLimits = quire_exac
 /// limits keep their meaning: `input_bytes` is the encoding's
 /// logical byte length (a `u64` length prefix plus the bytes of each written
 /// string, eight bytes per number, one per flag), accumulated via
-/// [`quire_exact::length_amount`], never a bare `as` cast; `nodes` counts
-/// each [`encode_expression`] visit; `writes` counts each base write.
+/// [`quire_exact::length_amount`], never a bare `as` cast; `writes` counts
+/// each base write.
 /// Every tag is an explicit `&'static str` chosen at its `match` arm and
 /// every `match` below is exhaustive, so a new `Expression` or `ValueType`
 /// variant does not compile until it is measured.
 pub(super) struct DeclarationMeter {
-    nodes: u64,
     writes: u64,
     input_bytes: u64,
 }
@@ -132,7 +127,6 @@ pub(super) struct DeclarationMeter {
 impl DeclarationMeter {
     fn new() -> Self {
         Self {
-            nodes: 0,
             writes: 0,
             input_bytes: 0,
         }
@@ -161,11 +155,6 @@ impl DeclarationMeter {
     fn write_bool(&mut self, _value: bool) {
         self.writes += 1;
         self.input_bytes = self.input_bytes.saturating_add(1);
-    }
-
-    /// One [`encode_expression`] visit of an `Expression` node.
-    fn enter_node(&mut self) {
-        self.nodes += 1;
     }
 }
 
@@ -397,7 +386,6 @@ fn encode_expression(
 ) -> Result<(), CheckRefusal> {
     let mut pending = vec![root.root()];
     while let Some(expr) = pending.pop() {
-        out.enter_node();
         // The node's sub-expressions in source order; pushed reversed below
         // so the first is visited next.
         let first = pending.len();
@@ -655,23 +643,20 @@ pub(crate) fn measure_declaration(
     encode_expression(&mut meter, &declaration.body, targets)?;
     Ok(DeclarationMetrics {
         input_bytes: meter.input_bytes,
-        node_count: meter.nodes,
         work_budget: meter.writes,
     })
 }
 
 /// [`StageLimits`](crate::family::StageLimits)'s real producer values,
 /// read back from one `measure_declaration` pass.
-/// `input_bytes` and `node_count` are `StageLimits` fields, compared by
-/// `crate::family::CheckContext::check_input_bytes`/`check_node_count`;
+/// `input_bytes` is a `StageLimits` field, compared by
+/// `crate::family::CheckContext::check_input_bytes`;
 /// `work_budget` is charged against the shared kernel meter instead (PR
 /// #302 review finding 3) -- see `StageLimits`'s own doc.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeclarationMetrics {
     /// The measured encoding's logical byte length.
     pub(crate) input_bytes: u64,
-    /// The number of `Expression` nodes `encode_expression` visited.
-    pub(crate) node_count: u64,
     /// The number of base writes performed.
     pub(crate) work_budget: u64,
 }
@@ -739,18 +724,15 @@ impl<'a> TargetTypes<'a> {
 /// knows it happened at all.
 ///
 /// What this check does *not* do, on either path, is charge the
-/// contract's own `CheckContext`/`StageLimits.nesting_depth` once
-/// per real nesting step the way [`FamilyContract::check`](crate::family::FamilyContract::check)'s
-/// top-level entry charge does: that would mean threading `&mut
+/// contract's own `CheckContext` per node: that would mean threading `&mut
 /// CheckContext` through every form the typer checks, not just `Call`
 /// (`Let`'s body, `If`'s three arms, `Binary`'s operands, and so on all
 /// nest too) -- reworking the general engine for every form it checks,
 /// which is the reimplementation-scale change FR-065-CON-1 rules out here,
 /// not a small addition to this one check. That is real, reported `Typer`
-/// entanglement, not a gap this check papers
-/// over: `Typer`'s pre-existing, separate [`super::CheckingLimits`] depth
-/// bound (unchanged, checked at every real nesting step already) is what
-/// bounds a call's own nesting.
+/// entanglement, not a gap this check papers over: `Typer`'s own
+/// [`super::CheckingLimits`] node and work charges, made at every node it
+/// enters, are what bound a call's own nesting.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Application<'a> {
     /// A call of the declared function at index `function`.
@@ -1063,12 +1045,11 @@ pub(crate) struct CheckedDeclarationBody {
 /// **`Typer`'s own node-budget counter is package-wide again (PR #303 review
 /// round 3, finding F1).** An earlier round of this fix gave `Typer` a fresh
 /// `let mut nodes = 0_u64` here, on the reasoning that
-/// `CheckContext::check_node_count` already bounded the same underlying
-/// concern one step earlier in [`FamilyContract::check`](crate::family::FamilyContract::check). That reasoning
-/// was wrong: `check_node_count` compares one declaration's own preimage node
-/// count against `limits.node_count` -- it is a real, but deliberately
-/// *per-declaration-only* bound (`StageLimits::node_count`'s own doc), not a
-/// substitute for a *cumulative* one. Resetting `Typer`'s counter to zero for
+/// a per-declaration node check one step earlier in
+/// [`FamilyContract::check`](crate::family::FamilyContract::check) already
+/// bounded the same underlying concern. That reasoning was wrong: a
+/// per-declaration count is no substitute for a *cumulative* one, and that
+/// check is gone. Resetting `Typer`'s counter to zero for
 /// every declaration silently dropped `CheckingLimits::new`'s documented,
 /// package-wide contract ("at most `nodes` expression nodes per checked
 /// package") down to a per-declaration one -- a package of many small,
@@ -1338,11 +1319,7 @@ impl<S> OccurrenceMap<S> {
 /// this declaration's own -- restoring `CheckingLimits::new`'s documented
 /// contract ("at most `nodes` expression nodes per checked package") without
 /// a `Cell`, a second call into the caller, or a mutation through this
-/// struct's own read-only `&D` reference. `CheckContext::check_node_count`
-/// is a separate, deliberately *per-declaration-only* bound over
-/// the preimage's own node count (`StageLimits::node_count`'s own doc); it
-/// does not substitute for this one and does not accumulate across
-/// declarations.
+/// struct's own read-only `&D` reference.
 pub struct ValueDeclarations<'a> {
     pub(crate) scope: &'a Scope,
     pub(crate) signatures: &'a Signatures,
@@ -1466,25 +1443,17 @@ impl crate::family::FamilyContract for ValueFunctionFamily {
                 return Err(StageFailure::Refused(refusal));
             }
         };
-        // The measured byte length and node count
-        // are checked against `cx`'s restored `StageLimits` fields before
-        // this declaration is admitted -- the first one exceeded refuses
-        // with a `Limit` outcome naming it. `check_node_count` is a real, but
-        // deliberately per-declaration-only bound over this same
-        // declaration's own preimage node count (`StageLimits::node_count`'s
-        // own doc); it is not the package-wide `nodes` budget
-        // `check_declaration_body`'s own `Typer` counter enforces below,
+        // The measured byte length is checked against `cx`'s `StageLimits`
+        // before this declaration is admitted: past it, `check` refuses with
+        // a `Limit` outcome naming it. The node count has no such stage-entry
+        // check: the package-wide `nodes` budget is charged per node, at the
+        // node, by `check_declaration_body`'s own `Typer` counter below,
         // through `ValueDeclarations::nodes_used`/
-        // `CheckedDeclarationBody::nodes_used` (PR #303 review round 3,
-        // finding F1 -- see `check_declaration_body`'s own doc). PR #303
-        // review, finding N1: these checks (and the meter charge below) run
-        // *before* `check_declaration_body` -- the real typing/definedness
-        // pass -- ever starts, since they are what guards the work that pass
-        // is about to do, not a check on its output.
-        if let Err(exceeded) = cx
-            .check_input_bytes(metrics.input_bytes)
-            .and_then(|()| cx.check_node_count(metrics.node_count))
-        {
+        // `CheckedDeclarationBody::nodes_used`. This check (and the meter
+        // charge below) runs *before* `check_declaration_body` -- the real
+        // typing/definedness pass -- ever starts, since it guards the work
+        // that pass is about to do, not a check on its output.
+        if let Err(exceeded) = cx.check_input_bytes(metrics.input_bytes) {
             cx.scopes.leave();
             return Err(located(exceeded));
         }
@@ -2748,17 +2717,19 @@ pub(crate) mod checking_tests {
         scan.0
     }
 
-    /// `StageLimits`' restored `input_bytes`/`node_count` each have
-    /// a real producer (`measure_declaration`'s own pass) and
-    /// a real consumer (`CheckContext::check_input_bytes`/
-    /// `check_node_count`, called from `ValueFunctionFamily::check`) that
-    /// changes behaviour: a limit configured one below the real, measured
-    /// metric refuses with `Limit` naming that exact kind; the same limit
-    /// at the metric itself admits -- the limit varies by exactly one, so
-    /// the limit (not the fixture) is shown to be the proximate cause. `work_budget` is a real
-    /// producer and consumer too, but through the shared kernel meter's own
-    /// `work_units` charge (PR #302 review finding 3), not a `StageLimits`
-    /// field -- see `work_budget_kind_refuses_from_a_denied_meter_charge`.
+    /// `StageLimits`' `input_bytes` has a real producer
+    /// (`measure_declaration`'s own pass) and a real consumer
+    /// (`CheckContext::check_input_bytes`, called from
+    /// `ValueFunctionFamily::check`) that changes behaviour: a limit
+    /// configured one below the real, measured metric refuses with `Limit`
+    /// naming that exact kind; the same limit at the metric itself admits --
+    /// the limit varies by exactly one, so the limit (not the fixture) is
+    /// shown to be the proximate cause. `work_budget` is a real producer and
+    /// consumer too, but through the shared kernel meter's own `work_units`
+    /// charge (PR #302 review finding 3), not a `StageLimits` field -- see
+    /// `work_budget_kind_refuses_from_a_denied_meter_charge`. The node count
+    /// has no stage-entry check: `Typer` charges it at the node
+    /// (`real_checker_node_limit_is_the_proximate_cause`).
     #[trace("TC-160", "FR-062-AC-5")]
     #[trace("TC-432", "FR-062-AC-12")]
     #[test]
@@ -2777,7 +2748,7 @@ pub(crate) mod checking_tests {
         );
         let form = declaration("f", Expression::boolean(true));
         let metrics = measure_resolved(&empty_scope(), &form);
-        assert!(metrics.input_bytes > 0 && metrics.node_count > 0);
+        assert!(metrics.input_bytes > 0);
 
         let base = StageLimits {
             input_bytes: u64::MAX,
@@ -2831,25 +2802,9 @@ pub(crate) mod checking_tests {
             ..base
         });
 
-        check_kind(
-            StageLimits {
-                node_count: metrics.node_count - 1,
-                ..base
-            },
-            LimitExceeded::new(
-                LimitKind::NodeCount,
-                metrics.node_count - 1,
-                u128::from(metrics.node_count),
-            ),
-        );
-        admits(StageLimits {
-            node_count: metrics.node_count,
-            ..base
-        });
-
-        // A bound of 0, far below a larger declaration's measured counters:
-        // the reported counter is the measured metric, not the bound plus
-        // one.
+        // A bound of 0, far below a larger declaration's measured byte
+        // length: the reported counter is the measured metric, not the bound
+        // plus one.
         let larger = declaration(
             "f",
             Expression::if_then_else(
@@ -2859,37 +2814,27 @@ pub(crate) mod checking_tests {
             ),
         );
         let measured = measure_resolved(&empty_scope(), &larger);
-        assert!(measured.input_bytes > 1 && measured.node_count > 1);
-        let limit_of = |limits: StageLimits| {
-            let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
-            let mut diagnostics = DiagnosticSink::default();
-            let mut scopes = ScopeStack::default();
-            let mut cx = CheckContext::new(
-                &declarations,
-                limits,
-                &mut meter,
-                &mut diagnostics,
-                &mut scopes,
-            );
-            match ValueFunctionFamily::check(&larger, &mut cx) {
-                Err(StageFailure::Limit(exceeded)) => exceeded,
-                other => panic!("expected a Limit outcome, got {other:?}"),
-            }
+        assert!(measured.input_bytes > 1);
+        let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+        let mut diagnostics = DiagnosticSink::default();
+        let mut scopes = ScopeStack::default();
+        let mut cx = CheckContext::new(
+            &declarations,
+            StageLimits {
+                input_bytes: 0,
+                ..base
+            },
+            &mut meter,
+            &mut diagnostics,
+            &mut scopes,
+        );
+        let bytes = match ValueFunctionFamily::check(&larger, &mut cx) {
+            Err(StageFailure::Limit(exceeded)) => exceeded,
+            other => panic!("expected a Limit outcome, got {other:?}"),
         };
-        let bytes = limit_of(StageLimits {
-            input_bytes: 0,
-            ..base
-        });
         assert_eq!(bytes.kind(), LimitKind::InputBytes);
         assert_eq!(bytes.configured_bound(), 0);
         assert_eq!(bytes.actual(), u128::from(measured.input_bytes));
-        let nodes = limit_of(StageLimits {
-            node_count: 0,
-            ..base
-        });
-        assert_eq!(nodes.kind(), LimitKind::NodeCount);
-        assert_eq!(nodes.configured_bound(), 0);
-        assert_eq!(nodes.actual(), u128::from(measured.node_count));
     }
 
     /// PR #302 review finding 3: `WorkBudget` is a `Limit` outcome from a
@@ -3041,17 +2986,6 @@ pub(crate) mod checking_tests {
                 unlimited
             ),
             Seen::Limit(LimitKind::InputBytes)
-        );
-        assert_eq!(
-            seen(
-                &good,
-                StageLimits {
-                    node_count: 0,
-                    ..roomy
-                },
-                unlimited
-            ),
-            Seen::Limit(LimitKind::NodeCount)
         );
         assert_eq!(seen(&good, roomy, 0), Seen::Limit(LimitKind::WorkBudget));
     }
@@ -3655,17 +3589,18 @@ mod locus_tests {
 
     /// FR-096 through package checking, `ValueFunctionFamily::check`'s
     /// production caller: a node limit of 3 on `not not not true` (four
-    /// nodes), and the declaration-level input bytes and work limits, keep
-    /// the declaration's span: the declaration's own node count is checked
-    /// before `Typer` runs.
+    /// nodes) stops at the node whose entry failed, and the
+    /// declaration-level input bytes and work limits keep the declaration's
+    /// span.
     #[trace("TC-427", "TC-378", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
-    fn package_checking_keeps_the_family_limit_region() {
+    fn package_checking_locates_a_node_limit_at_its_node_and_a_declaration_limit_at_the_declaration()
+    {
         let declaration = "function f using v(): Boolean pure { not not not true }";
         let (nodes, region) = package_limit(unit(), CheckingLimits::new(3));
         assert_eq!(nodes.kind, CheckingLimitKind::Nodes);
         assert_eq!((nodes.limit, nodes.actual), (3, 4));
-        assert_eq!(unit_text(region), declaration);
+        assert_eq!(unit_text(region), "true");
 
         let bytes = measure_resolved(&empty_scope(), &unit().functions[0]).input_bytes;
         let (input, region) = package_limit(

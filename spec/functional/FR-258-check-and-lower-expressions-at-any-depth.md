@@ -40,8 +40,10 @@ for checking; this requirement carries that rule through QSL's checker.
    declaration preimage byte limit (`s3.input_bytes`) and the work budget
    (`s3.work_units`), each set through its builder method. Constructing
    `CheckingLimits` SHALL always succeed. The checked-family contract's
-   per-declaration stage limits SHALL be input bytes and node count, with
-   the work budget charged through the contract meter (FR-062).
+   per-declaration stage limit SHALL be input bytes, with the work budget
+   charged through the contract meter (FR-062). The node limit SHALL be
+   charged per node, at the node whose entry crosses it; no per-declaration
+   node count is compared before typing.
 2. **Arena checked nodes.** The checker SHALL store the checked `Node` as one
    vector of nodes per checked body, with each child named by a typed index, so
    that cloning, comparing, hashing, formatting for debug and dropping a

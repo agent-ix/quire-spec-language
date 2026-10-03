@@ -78,21 +78,22 @@ impl ScopeStack {
 
 /// Explicit stage-entry limits (FR-062 "Explicit resource limits bound
 /// every stage entry, at any depth"; ADR-013 T-4): one declaration's input
-/// bytes and node count. No limit bounds nesting depth (ADR-030 D-1,
-/// FR-258): every walk `check` makes runs over an explicit heap stack whose
-/// growth these limits and the contract meter charge.
+/// bytes, and the node ceiling a family classifies its claims under. No
+/// limit bounds nesting depth (ADR-030 D-1, FR-258): every walk `check`
+/// makes runs over an explicit heap stack whose growth these limits, the
+/// contract meter and `Typer`'s node counter charge.
 ///
 /// - **Producer**: `crate::check::family::measure_declaration`'s preimage
 ///   pass builds a length-prefixed byte buffer over the declaration's
-///   structure and walks every [`qsl_forms::Expression`] node in it to do
-///   so. `input_bytes` is that buffer's own logical byte length
-///   (accumulated as the pass writes; see `DeclarationMeter`'s own doc);
-///   `node_count` is the number of `Expression` nodes the same pass visits.
-/// - **Consumer**: `CheckContext::check_input_bytes` and
-///   `CheckContext::check_node_count` each compare their metric against
-///   this struct's matching field and return `LimitKind`'s matching variant
-///   on the first one exceeded. `ValueFunctionFamily::check`
-///   (`crate::check::family`) calls both before minting succeeds.
+///   structure. `input_bytes` is that buffer's own logical byte length
+///   (accumulated as the pass writes; see `DeclarationMeter`'s own doc).
+/// - **Consumer**: `CheckContext::check_input_bytes` compares that metric
+///   against `input_bytes` and returns `LimitKind::InputBytes` when it is
+///   exceeded. `ValueFunctionFamily::check` (`crate::check::family`) calls
+///   it before minting succeeds. `node_count` is not compared against any
+///   measured count at stage entry: it is the ceiling claim classification
+///   walks under, and a family's `check` reads it from
+///   `CheckContext::limits`.
 ///
 /// **The work budget is not a field here.** `LimitKind::WorkBudget` is
 /// produced through `CheckContext::meter`, the shared kernel budget every
@@ -100,9 +101,12 @@ impl ScopeStack {
 /// `ValueFunctionFamily::check` charges it one `ChargePoint::
 /// DeclarationCheck`, sized by the same preimage pass's field-write count,
 /// and maps a denied charge to `Limit{WorkBudget}` naming the meter's own
-/// configured `work_units` bound. `input_bytes`/`node_count` bound one
-/// declaration's own shape; the work budget bounds the checking stage's
-/// total spend.
+/// configured `work_units` bound. `input_bytes` bounds one declaration's own
+/// shape; the work budget bounds the checking stage's total spend.
+///
+/// **The node count has no stage-entry check.** The package-wide node limit
+/// is charged by `Typer`, at the node whose entry crosses it, against
+/// `CheckingLimits::nodes`.
 ///
 /// `input_bytes`/`node_count`'s one production call site
 /// (`crate::check::mod::PackageDeclarations::check`) reads both from the
@@ -115,7 +119,7 @@ pub struct StageLimits {
     /// Maximum length-prefixed preimage byte count for one checked
     /// declaration.
     pub(crate) input_bytes: u64,
-    /// Maximum `Expression` node count for one checked declaration.
+    /// The node ceiling a family classifies a declaration's claims under.
     pub(crate) node_count: u64,
 }
 
@@ -171,19 +175,6 @@ impl<'a, D> CheckContext<'a, D> {
             return Err(LimitExceeded::new(
                 LimitKind::InputBytes,
                 self.limits.input_bytes,
-                u128::from(amount),
-            ));
-        }
-        Ok(())
-    }
-
-    /// Refuse `amount` (a declaration's own visited `Expression` node
-    /// count) once it exceeds `limits.node_count`.
-    pub(crate) fn check_node_count(&self, amount: u64) -> Result<(), LimitExceeded> {
-        if amount > self.limits.node_count {
-            return Err(LimitExceeded::new(
-                LimitKind::NodeCount,
-                self.limits.node_count,
                 u128::from(amount),
             ));
         }

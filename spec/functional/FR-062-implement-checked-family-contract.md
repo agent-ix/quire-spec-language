@@ -167,9 +167,8 @@ bytes, node count or work budget it reached.
 The expression-node budget a caller configures for checking a package
 (`CheckingLimits::new(nodes)`) bounds the package as a whole: the
 expression nodes of every declaration in the package count against that one
-budget. It is separate from the per-declaration stage-entry node-count limit
-(`StageLimits::node_count`), whose exhaustion is the `Limit` outcome of
-FR-062-AC-5. When the package's declarations together exceed the package
+budget. No per-declaration node count is compared before typing: the budget
+is charged per node, at the node. When the package's declarations together exceed the package
 budget, package checking SHALL stop with a stage limit: the contract's
 `check` returns `StageFailure::Limit` with kind node count, the caller's
 configured limit as bound, the actual count and the locus of the node whose
@@ -329,8 +328,8 @@ condition.
 | FR-062-AC-8 | A family `Cause` enum's `catalog_code()` mapping contains no fallback arm; this is verified by FR-063's seam probe reporting `E0004` at that mapping under the `seam-probe` feature (S4), never by inspecting the source for the absence of a `_` arm. | Test (TC-161) |
 | FR-062-AC-9 | Given a checked package holding two functions, one of whose body names a node the emitter omits and one that names no omitted node: `emit_checked` omits the first function's declaration node and each node on its path to the omitted node, each with cause `NamesOmittedNode`; it writes the second function and its body; and QSL's I2 read of the bytes reads back Verified and exports the second function and not the first. Given the same package with an occurrence the region conversion cannot place, `emit_package` returns `EmitRefusal::UnlocatedOccurrence` and no bytes. | Test (TC-160) |
 | FR-062-AC-10 | The layer-6 `replay` facade's function-selection key, when it calls a family's widened `evaluate` hook, is a typed `QualifiedName`; a test that attempts to call the facade's entry point with a bare `&str` in place of a `QualifiedName` fails to compile, and a call with an unresolvable `QualifiedName` returns a typed refusal rather than falling back to a string comparison against a display name. | Test (TC-166) |
-| FR-062-AC-11 | The package-wide `CheckingLimits` node budget is separate from the per-declaration `StageLimits::node_count` limit of FR-062-AC-5, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4)` admits a package holding `a` alone; with `CheckingLimits::new(100)` it admits a package holding both; with `CheckingLimits::new(4)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
-| FR-062-AC-12 | A family `check` that reaches one of its three stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes, the measured expression-node count for node count, and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
+| FR-062-AC-11 | The package-wide `CheckingLimits` node budget counts the nodes of every declaration together, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4)` admits a package holding `a` alone; with `CheckingLimits::new(100)` it admits a package holding both; with `CheckingLimits::new(4)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
+| FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound and guards are those of its own occurrence. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160) |
 
 ## Dependencies
@@ -449,8 +448,8 @@ tags as they exist in the delivered code today:
   family.rs`): `quire_exact::Meter::charge`/`charge_plan` are `pub`,
   which `qsl-eval` uses as `ValueFunctionFamily::check`'s and
   `::evaluate`'s real call sites to tag the `Limit` half, implement the
-  `Incomplete` half, and restore `StageLimits`' `input_bytes`/`node_count`
-  fields plus a denied `CheckContext::meter` charge for the work-budget
+  `Incomplete` half, and restore `StageLimits`' `input_bytes`
+  field plus a denied `CheckContext::meter` charge for the work-budget
   kind (`crate::family::contract::StageLimits`'s own doc names each
   field's real producer and consumer). This backs the criterion's first
   two clauses -- a `Limit` outcome naming the right kind, and `evaluate`
