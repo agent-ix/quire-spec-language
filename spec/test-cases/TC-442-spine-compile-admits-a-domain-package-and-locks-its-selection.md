@@ -56,7 +56,7 @@ including its two field-access and conforming-equality cases),
 - Step 1: nothing is omitted; `M::Gadget` and `M::Widget` are declared object
   types and `Gadget` conforms to `Widget`, not the reverse; the lock and the
   identity preimage `model_selections` are
-  `[{"identity": "acme/orders", "version": "1.0.0", "digest_domain":
+  `[{"identity": "acme/orders", "digest_domain":
   "sha256-jcs", "digest": <the document's digest>}]`; a model node is emitted;
   without `code` and `same` the read is Verified and exports `keep` and
   `held`, and the other digest is refused. With `code` only, the read is

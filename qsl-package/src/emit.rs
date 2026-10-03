@@ -24,10 +24,10 @@
 //!   `capability_report` reports it available.
 //! - `profile_selections` is empty: the `Value` family selects no profile.
 //! - `model_selections` is `CheckedGraph::model_selections`: each domain
-//!   package the package was checked against, by identity, version and
+//!   package the package was checked against, by identity and
 //!   `sha256-jcs` digest (ADR-011 §2.4).
 //! - `dependency_selections` is [`CheckedPackage::dependency_selections`]:
-//!   the resolved library closure, one `{identity, version, package_id}`
+//!   the resolved library closure, one `{identity, package_id}`
 //!   entry per library identity in ascending UTF-8 byte order of `identity`
 //!   (FR-322, FR-307). The same entries are the identity preimage's, so each
 //!   dependency's `package_id` enters this package's.
@@ -839,7 +839,6 @@ fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelec
         .iter()
         .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
-            version: resolved.selection.version.as_str().into(),
             package_id: semantic_id(resolved.selection.package_id),
         })
         .collect()
@@ -976,7 +975,6 @@ fn emit_package_inner(
         .iter()
         .map(|selection| CheckedDomainPackageRef {
             identity: selection.identity.as_str().into(),
-            version: selection.version.as_str().into(),
             digest_domain: DOMAIN_PACKAGE_DIGEST.into(),
             digest: hex(&selection.digest).into(),
         })

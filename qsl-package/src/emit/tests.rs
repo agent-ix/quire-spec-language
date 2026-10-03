@@ -2265,9 +2265,9 @@ fn emit_model_unit(unit: &str, evidence_digest: Option<&str>) -> (Emission, Valu
 /// omitted. The assembler declares `M::Gadget` and `M::Widget` in the
 /// package's `TypeEnvironment`, `Gadget` conforming to `Widget` through its
 /// declared supertype. The lock and the identity preimage select the domain
-/// package by identity, version and the `sha256-jcs` digest of the supplied
-/// document, while the emitted model nodes are keyed by the content-only
-/// `ModelOwner`, which carries no version. QSL's I2 read, given that digest
+/// package by identity and the `sha256-jcs` digest of the supplied
+/// document, with no version, while the emitted model nodes are keyed by the
+/// content-only `ModelOwner`, which carries no version. QSL's I2 read, given that digest
 /// as domain package evidence, returns Verified exporting `keep` and `held`.
 #[trace("TC-442", "FR-027-AC-9", "FR-056-AC-9")]
 #[test]
@@ -2303,7 +2303,6 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let (emission, wire, digest, read) = emit_model_unit(&unit, None);
     let selection = json!([{
         "identity": "acme/orders",
-        "version": "1.0.0",
         "digest_domain": "sha256-jcs",
         "digest": digest,
     }]);
@@ -2635,7 +2634,7 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
 }
 
 /// FR-322 `dependency_selections`, FR-307, ADR-011 §2.4: the E4
-/// closure is written as one `{identity, version, package_id}` entry per
+/// closure is written as one `{identity, package_id}` entry per
 /// library identity, in ascending UTF-8 byte order, identically in the lock
 /// and the identity preimage. The package reads back Verified through IR's
 /// reader, and the entries enter its `package_id`. A dependency's own
@@ -2658,14 +2657,13 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
     let emission = emit(&linked_root);
     read_linked(&linked_root);
     let written = wire(&emission);
-    let entry = |identity: &str, version: &str| {
+    let entry = |identity: &str| {
         json!({
             "identity": identity,
-            "version": version,
             "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
         })
     };
-    let expected = json!([entry("test/geometry", "1"), entry("test/units", "2")]);
+    let expected = json!([entry("test/geometry"), entry("test/units")]);
     assert_eq!(written["lock"]["dependency_selections"], expected);
     assert_eq!(
         written["identity_preimage"]["dependency_selections"],

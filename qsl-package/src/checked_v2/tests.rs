@@ -65,12 +65,11 @@ fn selection(role: &str, label: &str) -> Value {
     json!({"role": role, "definition": artifact_ref(label)})
 }
 
-/// A FR-322 `DependencySelection`: library `identity` at `version`, whose
+/// A FR-322 `DependencySelection`: library `identity`, whose
 /// `package_id` digest is `label`'s hash.
-fn dependency_selection(identity: &str, version: &str, label: &str) -> Value {
+fn dependency_selection(identity: &str, label: &str) -> Value {
     json!({
         "identity": identity,
-        "version": version,
         "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": hex(label)},
     })
 }
@@ -796,8 +795,8 @@ fn refuses_an_ambiguous_declaration_at_ir_intake() {
 #[test]
 fn dependency_selections_reach_binding_and_refuse_unsupplied() {
     let dependencies = vec![
-        dependency_selection("geometry", "1", "geometry-pkg"),
-        dependency_selection("units", "2", "units-pkg"),
+        dependency_selection("geometry", "geometry-pkg"),
+        dependency_selection("units", "units-pkg"),
     ];
     let preimage = identity_preimage(dependencies);
     assert_ne!(
@@ -1727,7 +1726,7 @@ fn unknown_temporal_profile_is_unknown_profile(base: &Value) {
 /// mutation in both); and each order vector gets its recorded outcome, a
 /// refusal located at its last recorded locus (the repeating or misordered
 /// entry). Skipped when `QSPEC_DIR` is unset; `make conformance` requires it.
-#[trace("TC-253", "FR-087-AC-3")]
+#[trace("TC-253", "TC-416", "FR-087-AC-3", "FR-093-AC-16")]
 #[test]
 fn conformance_dependency_selection_vectors() {
     let Some((directory, _)) = qspec_v2_fixtures() else {
@@ -1969,8 +1968,8 @@ fn a_refusal_at_a_value_is_located_at_its_pointer() {
     }
 
     let preimage = identity_preimage(vec![
-        dependency_selection("geometry", "1", "geometry-pkg"),
-        dependency_selection("geometry", "2", "geometry-pkg-2"),
+        dependency_selection("geometry", "geometry-pkg"),
+        dependency_selection("geometry", "geometry-pkg-2"),
     ]);
     let bytes = jcs(&valid_envelope(&preimage));
     match read(&bytes, &pinned_for(&preimage)) {
