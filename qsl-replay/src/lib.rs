@@ -91,6 +91,9 @@ pub use qsl_foundation::source::provenance::{OccurrenceKey, SourceRegion};
 // needs exactly these to build the requests `call_site` and `replay`
 // (FR-098) and `replay_frame` (FR-116) read.
 pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNodeId};
+// The ADR-013 O-16 category a `Verdict` and each arm result carry, re-exported
+// so CG names `Category::Success` and `Category::Violation` through this crate.
+pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, Origin, Role, ScalarLimits};
 // The ADR-014 B-4 proof bound a `DeclaredDomain` wraps, its domain key and
