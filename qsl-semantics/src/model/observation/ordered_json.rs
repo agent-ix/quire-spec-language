@@ -44,6 +44,33 @@ pub(super) enum OrderedJson {
 }
 
 impl OrderedJson {
+    /// Replace each float with the correctly rounded double of the same
+    /// number of `node`, the shared reader's read of the same document, in
+    /// lockstep. `serde_json`'s float parse can land one unit in the last
+    /// place away from it; the document's digest encodes the double `node`
+    /// holds. Integers keep their exact read, and a shape that differs from
+    /// `node`'s is left alone.
+    pub(super) fn take_digest_doubles(&mut self, node: quire_canonical::NodeRef<'_>) {
+        match (self, node.node()) {
+            (Self::Number(value), quire_canonical::Node::Number(number)) if value.is_f64() => {
+                if let Some(exact) = serde_json::Number::from_f64(number.value()) {
+                    *value = exact;
+                }
+            }
+            (Self::Array(items), quire_canonical::Node::Array(nodes)) => {
+                for (item, node) in items.iter_mut().zip(nodes) {
+                    item.take_digest_doubles(node);
+                }
+            }
+            (Self::Object(members), quire_canonical::Node::Object(nodes)) => {
+                for ((_, value), (_, node)) in members.iter_mut().zip(nodes) {
+                    value.take_digest_doubles(node);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// This value's members, in document order, or `None` when it is not
     /// an object.
     pub(super) fn as_object(&self) -> Option<&[(String, OrderedJson)]> {
@@ -259,5 +286,22 @@ mod tests {
         let value: OrderedJson =
             serde_json::from_str(r#"{"a": [1, {"b": 2}]}"#).expect("valid JSON");
         assert_eq!(value.depth(), 3);
+    }
+
+    /// A non-whole number of an observation document holds the correctly
+    /// rounded double the document's digest encodes, where `serde_json`'s
+    /// own float parse reads `1.5e-300` one unit in the last place off.
+    #[trace("TC-465", "FR-106-AC-12")]
+    #[test]
+    fn a_non_whole_number_takes_the_digests_double() {
+        let bytes = br#"{"a":[1.5e-300,7,{"b":0.1}]}"#;
+        let mut value: OrderedJson = serde_json::from_slice(bytes).expect("valid JSON");
+        let document = quire_canonical::read(bytes, u64::MAX).expect("reads");
+        value.take_digest_doubles(document.root());
+        let tree = value.into_value();
+        let array = &tree["a"];
+        assert_eq!(array[0].as_f64(), Some(1.5e-300));
+        assert_eq!(array[1].as_u64(), Some(7));
+        assert_eq!(array[2]["b"].as_f64(), Some(0.1));
     }
 }

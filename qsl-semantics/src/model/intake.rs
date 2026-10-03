@@ -265,10 +265,11 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// from it only in that number. [`admit`] returns this refusal where it
 /// returns a limit refusal, before check 3 (FR-056).
 ///
-/// Every number that remains is exactly the value of its double's shortest
-/// round-trip text: the derived view converts it with `serde_json`'s own
-/// number parser, so it equals what `serde_json::from_slice` would have
-/// read, and the digest spells exactly that value.
+/// Every number that remains is exactly the value of its double's RFC 8785
+/// text: the derived view keeps an integer as `serde_json` reads it, exact
+/// within ±2^53, and takes a non-whole number's correctly rounded double
+/// from `quire_canonical`, the double the digest spells (`serde_json`'s own
+/// float parse can land one unit in the last place away from it).
 ///
 /// `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH` refuse as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
@@ -459,8 +460,8 @@ const TWO_TO_THE_53: &[u8] = b"9007199254740992";
 
 /// The exact value of a decimal number's text: `digits × 10^shift`, where
 /// `digits` are its significant digits, with no leading and no trailing
-/// zero. Read from an RFC 8259 number lexeme, or from Rust's `{:e}`
-/// spelling of a double, in time linear in the text and with nothing
+/// zero. Read from an RFC 8259 number lexeme, or from the RFC 8785 spelling
+/// of a double, in time linear in the text and with nothing
 /// allocated. The exponent accumulates saturating at `u64::MAX`; a text is
 /// far shorter than that, so a saturated exponent decides every comparison
 /// as the exact one would.
@@ -584,10 +585,48 @@ pub(super) fn inexactness(number: quire_canonical::Number<'_>) -> Option<Inexact
     if written.is_whole_beyond_2_53() {
         return Some(Inexact::Integer);
     }
-    // Rust's `{:e}` writes the shortest text that reads back as the same
-    // double, as RFC 8785's ECMAScript `Number::toString` does.
-    let shortest = format!("{:e}", number.value());
-    (!written.same_value(&Decimal::of(&shortest))).then_some(Inexact::Number)
+    // The text quire-canonical writes for the double is RFC 8785's: the
+    // shortest round-trip text, the closest of those and then the even digit
+    // on a tie.
+    let mut spelled = Spelled::default();
+    let Ok(()) = quire_canonical::Writer::new(&mut spelled, quire_canonical::Limits::new(64))
+        .number(number.value())
+    else {
+        return Some(Inexact::Number);
+    };
+    let exact = spelled
+        .text()
+        .is_some_and(|text| written.same_value(&Decimal::of(text)));
+    (!exact).then_some(Inexact::Number)
+}
+
+/// A [`quire_canonical::Sink`] holding one number's RFC 8785 text: at most 25
+/// bytes, so it needs no allocation.
+#[derive(Default)]
+struct Spelled {
+    bytes: [u8; 32],
+    length: usize,
+}
+
+impl Spelled {
+    fn text(&self) -> Option<&str> {
+        std::str::from_utf8(self.bytes.get(..self.length)?).ok()
+    }
+}
+
+impl quire_canonical::Sink for Spelled {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), quire_canonical::Error> {
+        let end = self.length + bytes.len();
+        let room = self
+            .bytes
+            .get_mut(self.length..end)
+            .ok_or(quire_canonical::Error::Internal {
+                invariant: "a number's RFC 8785 text fits 32 bytes",
+            })?;
+        room.copy_from_slice(bytes);
+        self.length = end;
+        Ok(())
+    }
 }
 
 /// The RFC 6901 pointer, the reason and the lexeme of the first number of
@@ -5788,8 +5827,10 @@ mod tests {
 
     /// PR #379 review F4: the tree the one parse derives, and the digest it
     /// takes, equal what `serde_json::from_slice` reads from the same bytes
-    /// and the RFC 8785 digest of that value, for numbers at every edge and
-    /// every string escape. A number with no exact RFC 8785 spelling is
+    /// and the RFC 8785 digest of that value, for numbers at every edge
+    /// where serde_json's read is exact and every string escape (a non-whole
+    /// number's double is the digest's:
+    /// `a_non_whole_number_in_the_tree_is_the_digests_double`). A number with no exact RFC 8785 spelling is
     /// refused instead (`refuses_a_whole_number_beyond_2_53_at_its_pointer`,
     /// `refuses_a_number_that_is_not_its_doubles_shortest_text`).
     #[trace("TC-145", "FR-056-AC-2")]
@@ -5842,7 +5883,7 @@ mod tests {
     /// A non-whole number in the tree is the correctly rounded double the
     /// digest encodes, even where serde_json's own float parse is one unit
     /// in the last place off.
-    #[trace("TC-145", "FR-056-AC-2")]
+    #[trace("TC-145", "FR-056-AC-15")]
     #[test]
     fn a_non_whole_number_in_the_tree_is_the_digests_double() {
         for text in ["1.5e-300", "0.1", "2.5", "-3e-7"] {
@@ -5983,14 +6024,55 @@ mod tests {
             );
         }
         // 2^53 is the double nearest to 9007199254740993.
-        assert!(!Decimal::of("9007199254740993")
-            .same_value(&Decimal::of(&format!("{:e}", 9_007_199_254_740_992_f64))));
+        assert!(!Decimal::of("9007199254740993").same_value(&Decimal::of("9007199254740992")));
         assert_noncanonical(
             r#"{"a":[0.5,1e-400],"b":9007199254740993}"#,
             Inexact::Number,
             "/a/1",
             "1e-400",
         );
+    }
+
+    /// A double with two equally close shortest round-trip texts is spelled
+    /// by RFC 8785 with the even last digit, as quire-canonical writes it
+    /// (`1125899906842624.25` is `1125899906842624.2`, not `.3`). Only that
+    /// spelling is exact: the other refuses `inexact-number`, and the exact
+    /// one admits with a tree holding its double and the digest of its text.
+    #[trace("TC-145", "FR-056-AC-14")]
+    #[test]
+    fn a_tie_between_two_shortest_texts_admits_only_the_even_digit() {
+        for number in [
+            "1500000000000000.2",
+            "1125899906842624.2",
+            "-1125899906842624.2",
+            "2.9802322387695312e-8",
+        ] {
+            let document = PackageDocument::parse(document_with_count(number).as_bytes())
+                .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
+            let expected: f64 = number.parse().unwrap();
+            assert_eq!(
+                document.tree()["package"]["count"].as_f64(),
+                Some(expected),
+                "{number}"
+            );
+            assert_eq!(
+                document.jcs_digest(),
+                digest_of(&canonical(document.tree())),
+                "{number}"
+            );
+        }
+        for number in [
+            "1500000000000000.3",
+            "1125899906842624.3",
+            "2.9802322387695313e-8",
+        ] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Number,
+                "/package/count",
+                number,
+            );
+        }
     }
 
     /// ±2^53, every whole number within them, and every number that is

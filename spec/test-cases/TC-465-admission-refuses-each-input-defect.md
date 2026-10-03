@@ -15,7 +15,7 @@ and input path, that completeness precedes closure, that the frame compares
 scalar as well as reference fields, and that a document with several defects
 reports the first by FR-106's order.
 
-Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11.
+Scope: FR-106-AC-3, FR-106-AC-4, FR-106-AC-5, FR-106-AC-7, FR-106-AC-11, FR-106-AC-12.
 
 ## Test Procedure
 
@@ -70,6 +70,7 @@ mutated document except where the row says otherwise.
 | 43 | 8 over a parameter | probe invocation with `target` `{config_history, missing}` | `dangling_reference`/`absent-target-in-complete-population`, naming `missing` and `config_history` |
 | 44 | 6.5 | a package variant that adds object type `Other`, unrelated to `ConfigVersion`, and a population `others` over it; `child.parent` naming `o`, an `Other` object of a complete `others` | `invalid_runtime_input`/`wrong-value-kind` at `child`, `parent` |
 | 45 | 1.3 over an unread member | the authorized-change invocation (pre `root` at 1, post `root` at 2) selected for the precondition `AttemptUpdatePre`, with `post` `9007199254740993`, `result` `0.1000000000000000000001`, `created` `[0,1e-400]` or `deleted` `[{"a/b":18446744073709551616}]`, one at a time; then each member holding `2`, `0.1`, `[0,1e-300]` or `[{"a/b":9007199254740992}]` | `noncanonical_wire`/`inexact-integer` at `/post`, `inexact-number` at `/result` and `/created/1`, `inexact-integer` at `/deleted/0/a~1b`, each in the record's `document_pointer`; each exact replacement admits |
+| 46 | 1.3 over a non-whole number | a document holding `{"a":[1.5e-300,7,{"b":0.1}]}`, read as admission reads a document | the tree holds `1.5e-300` and `0.1` as the doubles the digest encodes, and `7` exactly |
 
 Rows 25, 40 and 41 need the fixture package to declare a second population
 `archive`. Every population declaration is an unbounded `Population(None)`

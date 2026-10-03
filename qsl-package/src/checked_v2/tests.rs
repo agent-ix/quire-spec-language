@@ -598,6 +598,7 @@ fn refuses_duplicate_top_level_member() {
 /// (one space after the opening brace) is refused by IR `noncanonical_wire`,
 /// which maps to the native `Code::NoncanonicalWire`, not
 /// `Code::InvalidPackage`.
+#[trace("TC-429", "FR-096-AC-18")]
 #[test]
 fn maps_noncanonical_bytes_to_the_native_noncanonical_wire_code() {
     let preimage = identity_preimage(vec![]);

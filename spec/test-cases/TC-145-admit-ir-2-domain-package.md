@@ -12,7 +12,7 @@ relationships:
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
 FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 (digest-slot
-refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-CON-4.
+refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-CON-4.
 
 ## Test Procedure
 
@@ -41,7 +41,12 @@ refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-CON-4.
    `0.1000000000000000000001`, `1e-400`, `-1e-400`, `4.9e-324`, `1e20` and
    `9007199254740993`; one carrying `0.5` at `/a/0` and `1e-400` at `/a/1`;
    and the same document carrying `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`,
-   `1e15` and `9007199254740991`. Offer
+   `1e15` and `9007199254740991`. Parse documents carrying
+   `1125899906842624.2`, `1500000000000000.2` and `2.9802322387695312e-8`
+   (each the even-digit text of a double with two shortest texts), and
+   `1125899906842624.3`, `1500000000000000.3` and `2.9802322387695313e-8`;
+   and one carrying `1.5e-300`, whose tree holds the double `1.5e-300` reads
+   as. Offer
    documents carrying `18446744073709551615`, `18446744073709551616`,
    `123456789012345678901234567890` and `-9007199254740993`, each first
    under the digest of its double form and then under the digest of its

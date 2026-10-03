@@ -544,7 +544,16 @@ fn view_of(views: &[ModelView], effective: EffectiveId) -> Option<&ModelView> {
 /// reads every number of the document, including members admission reads no
 /// further, such as an invocation's `post`, `result`, `created` and
 /// `deleted` under a precondition.
-fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), AdmissionFailure> {
+///
+/// A document the reader reads also corrects `tree`, the same document as
+/// `serde_json` read it: each non-whole number takes the correctly rounded
+/// double the digest encodes, which `serde_json`'s float parse can miss by
+/// one unit in the last place.
+fn check_document_digest(
+    bytes: &[u8],
+    expected: [u8; 32],
+    tree: Option<&mut OrderedJson>,
+) -> Result<(), AdmissionFailure> {
     let parsed_digest = match quire_canonical::read(bytes, u64::MAX) {
         Ok(document) => {
             if let Some((pointer, inexact, _)) =
@@ -554,6 +563,9 @@ fn check_document_digest(bytes: &[u8], expected: [u8; 32]) -> Result<(), Admissi
                     AdmissionRecord::new(Code::NoncanonicalWire, inexact.as_str())
                         .with("document_pointer", pointer.as_str()),
                 ));
+            }
+            if let Some(tree) = tree {
+                tree.take_digest_doubles(document.root());
             }
             Some(
                 *quire_canonical::sha256(&document, quire_canonical::Limits::new(u64::MAX))
@@ -631,7 +643,7 @@ mod digest_tests {
         for text in [r#"{"a":1,"a":2}"#, r#"{"s":"\ud800"}"#, r#"{"n":1e400}"#] {
             let raw: [u8; 32] = Sha256::digest(text.as_bytes()).into();
             assert_eq!(
-                check_document_digest(text.as_bytes(), raw),
+                check_document_digest(text.as_bytes(), raw, None),
                 Ok(()),
                 "{text}"
             );
@@ -642,7 +654,7 @@ mod digest_tests {
                 .unwrap()
                 .as_bytes();
         assert_eq!(
-            check_document_digest(br#"{"a":1,"a":2}"#, canonical),
+            check_document_digest(br#"{"a":1,"a":2}"#, canonical, None),
             Err(refuse(AdmissionRecord::new(
                 Code::StaleDependency,
                 "byte-digest-mismatch"
@@ -878,6 +890,7 @@ mod frame;
 mod ordered_json;
 
 use document::{read_document, DocumentKind};
+use ordered_json::OrderedJson;
 
 #[allow(clippy::too_many_arguments)]
 fn admit_invariant(
