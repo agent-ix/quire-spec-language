@@ -81,7 +81,7 @@ unicode-normalization = "0.1.25"
 # one-copy-deps (agent-ix org-wide, IR #225/RT #88): branch = "main", no rev,
 # so an identical spec in every dependent unifies to one lockfile entry
 # instead of pinning independently per repo.
-quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "main" }
+quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", branch = "feat/artifact-ref-authority-identity" }
 qsl-attrs = { path = "qsl-attrs" }
 
 [dev-dependencies]

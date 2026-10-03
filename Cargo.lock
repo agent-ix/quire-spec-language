@@ -1574,7 +1574,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#ebea67821976a7e695d88cb42503e636a05b44a7"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=feat%2Fartifact-ref-authority-identity#74f0b9969eeb81df7676edb1b67f8944b621ed7d"
 dependencies = [
  "jsonschema 0.17.1",
  "quire-canonical",
@@ -1672,7 +1672,7 @@ source = "git+https://github.com/agent-ix/quire-specification?branch=main#a18859
 [[package]]
 name = "quire-verification-contracts"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#ead78f3f1bea336e2cb230a2ed1b98fa10a913e1"
+source = "git+https://github.com/agent-ix/quire-verification-contracts?branch=main#ec4563ff33e03135ac4d0d9500cc53b0a956ecb6"
 dependencies = [
  "chrono",
  "jsonschema 0.55.1",
