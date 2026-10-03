@@ -74,6 +74,13 @@ pub enum PreimageDefect {
         /// The size in bytes of the reservation that failed.
         requested: usize,
     },
+    /// The shared reader refused the bytes for a reason that is neither a
+    /// located malformed fault nor an allocation failure. It claims no byte
+    /// offset; `reason` is the reader's own account.
+    ReaderRefused {
+        /// The reader's refusal, as it states it.
+        reason: String,
+    },
     /// The bytes are JSON but not one JSON object.
     NotObject,
     /// The bytes are not the canonical serialization of their JSON value, so
@@ -385,9 +392,12 @@ fn read_defect(error: quire_canonical::ReadError) -> PreimageDefect {
         quire_canonical::ReadError::Allocation { requested } => {
             PreimageDefect::AllocationFailed { requested }
         }
-        // The read sets no byte limit, so no other refusal names a bound;
-        // any other refusal is of the bytes themselves.
-        _ => PreimageDefect::Malformed { offset: 0 },
+        // The read sets no byte limit, so a limit cannot be reached; any
+        // other refusal is reported as the reader states it, with no
+        // offset it did not measure.
+        other => PreimageDefect::ReaderRefused {
+            reason: other.to_string(),
+        },
     }
 }
 
@@ -669,6 +679,26 @@ mod tests {
         assert_eq!(
             declarations.undeclared(&exports(&["L::R", "L::T", "L::S"])),
             Some("L::T")
+        );
+    }
+
+    /// A reader refusal that is neither a located malformed fault nor an
+    /// allocation failure is reported as the reader states it, claiming no
+    /// byte offset.
+    #[trace("TC-733", "FR-261-AC-1")]
+    #[test]
+    fn a_reader_refusal_with_no_offset_claims_none() {
+        let limit = quire_canonical::read(b"[]", 1).unwrap_err();
+        assert!(matches!(limit, quire_canonical::ReadError::Limit(_)));
+        assert_eq!(
+            read_defect(limit),
+            PreimageDefect::ReaderRefused {
+                reason: limit.to_string()
+            }
+        );
+        assert_eq!(
+            read_defect(quire_canonical::read(b"{", u64::MAX).unwrap_err()),
+            PreimageDefect::Malformed { offset: 1 }
         );
     }
 
