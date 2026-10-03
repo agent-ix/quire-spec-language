@@ -46,13 +46,11 @@ impl fmt::Display for Repo {
 }
 
 /// Classify a resolved package as one of the four ADR-011 ecosystem
-/// repositories, by package name or by its `source` string. Shared by the
-/// FR-059 direction check (`metadata::edges_for_manifest`) and
-/// `xtask canonical-types` (ADR-032 DT-4), so QSL holds one definition of an
-/// ecosystem *repository* component: a package published from the same git
-/// repository under a different crate name (for example IR's own workspace
-/// member, published as `quire-contract-model`) still classifies as that one
-/// repository, never a second, distinct one.
+/// repositories, by package name or by its `source` string. This is QSL's one
+/// definition of an ecosystem *repository* component: a package published
+/// from the same git repository under a different crate name (for example
+/// IR's own workspace member, published as `quire-contract-model`) still
+/// classifies as that one repository, never a second, distinct one.
 pub fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
     let haystack = source.unwrap_or(name);
     if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
