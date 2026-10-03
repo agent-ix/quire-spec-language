@@ -333,9 +333,8 @@ conformance:
 # `arch-lint-api-surface-qsl` passes `--qsl-only`, which skips T12-A, so the
 # QSL-tree rules gate `ci:` without CG_CLONE.
 #
-# `arch-lint` runs this repo's own checks: api-surface and canonical-encoder.
-# `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
-# above.
+# `arch-lint` runs the checks that need only this repository:
+# api-surface-qsl, canonical-encoder and qualified-core.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
@@ -369,10 +368,10 @@ arch-lint-canonical-encoder:
 arch-lint-qualified-core:
 	cargo run --locked -p arch-lint -- qualified-core --qsl .
 
-# Runs the two checks that need only this repository.
-# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
-# run separately.
-arch-lint: arch-lint-api-surface arch-lint-canonical-encoder
+# Runs the three checks that need only this repository.
+# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
+# `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
+arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
 
 # The whole 30,000-input parser differential against
 # tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first
