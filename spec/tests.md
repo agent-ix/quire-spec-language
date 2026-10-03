@@ -1,15 +1,13 @@
 ---
 id: TM-001
-title: "Rust fixture audit test matrix"
+title: "Root test matrix"
 type: TestMatrix
 ---
 
 ## Overview
 
-Scoped to FR-012/NFR-005 and IT-004. Status: locally verified after
-implementation. This matrix does not assert coverage of the earlier
-compiler/evaluator scope. US-004/StR-001 are the driving lineage; their full
-operational validation remains outside this audit-only plan.
+The root matrix indexes the test cases that no area matrix owns. Each
+coverage section below names the requirements it covers.
 
 ## Requirements Traceability
 
@@ -23,28 +21,19 @@ names different artifacts in each.
 
 | Functional Req | Acceptance Criteria | Test Cases | Status |
 | --- | --- | --- | --- |
-| FR-012 | FR-012-AC-1 | TC-001 | ✅ Passed locally |
-| FR-012 | FR-012-AC-2 | TC-002 | ✅ Passed locally |
-| FR-012 | FR-012-AC-3 | TC-003 | ✅ Passed locally |
-| FR-012 | FR-012-AC-5 | TC-005 | ✅ Passed locally |
-| FR-012 | FR-012-AC-6 | TC-006 | ✅ Passed locally |
-| FR-012 | FR-012-AC-7 | TC-007 | ✅ Passed locally |
-| FR-012 | FR-012-AC-8 | TC-005 | ✅ Passed locally |
-| FR-012 | FR-012-AC-9 | TC-008 | ✅ Passed locally |
-| FR-012 | FR-012-AC-10 | TC-009 | ✅ Passed locally |
+| FR-059 | FR-059-AC-1 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-2 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-3 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-4 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-5 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-6 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-8 | TC-156 | ✅ Passed locally |
+| FR-059 | FR-059-AC-9 | TC-156 | ✅ Passed locally |
 
 ## Test Case Summary
 
 | Test ID | Title | Type | Priority | Traces To | Status |
 | --- | --- | --- | --- | --- | --- |
-| TC-001 | Self-contained identity negative controls | Unit | P1 | FR-012-AC-1 | ✅ Passed locally |
-| TC-002 | Selected invocation packet audit | Integration | P1 | FR-012-AC-2 | ✅ Passed locally |
-| TC-003 | Selected role and source correspondence audit | Integration | P1 | FR-012-AC-3 | ✅ Passed locally |
-| TC-005 | Real native rule syntax outcomes | Integration | P1 | FR-012-AC-5, FR-012-AC-8 | ✅ Passed locally |
-| TC-006 | Malformed JSON and field types | Property | P1 | FR-012-AC-6 | ✅ Passed locally |
-| TC-007 | Fixture root containment | Property | P1 | FR-012-AC-7 | ✅ Passed locally |
-| TC-008 | Audit resource ceilings | Property | P1 | FR-012-AC-9 | ✅ Passed locally |
-| TC-009 | CLI encoding and Rust-only execution | E2E | P1 | FR-012-AC-10, NFR-005-M-1 | ✅ Passed locally |
 | TC-156 | Report FB-05 and FB-11 violations over the four-repository backend dependency graph | Integration | P1 | FR-059-AC-1..FR-059-AC-6, FR-059-AC-8, FR-059-AC-9 | ✅ Passed locally |
 | TC-157 | Report pending, passing and failing T-12 API-surface rules | Integration | P1 | FR-060-AC-1..FR-060-AC-5 | ✅ Passed locally for FR-060-AC-1..AC-3 and AC-5; 🚧 FR-060-AC-4's T12-B and T12-C clauses amended to allow-lists plus debt lists (2026-09-22), gate rewrite planned |
 | TC-160 | Every family implements the six-part checked contract with no bypass | Unit | P1 | FR-062-AC-1..FR-062-AC-7, FR-062-AC-9, FR-062-AC-13, FR-057-AC-10 | ✅ Passed locally for AC-2, AC-4 (step 5), AC-5 (all three clauses; the third, `check` and `emit_checked` never return `Incomplete`), AC-7 backed by TC-378, AC-9 (step 8), AC-12, and AC-13 (steps 10 and 11); AC-3 (all three clauses, for `src/check` and `src/family`) and AC-6 (first sentence, an API-surface scan and a rename test); AC-1 (step 1: `compile_fail` doctests on `FamilyContract`, omitting `requirements` and omitting the checked-input parameter, plus a compiling control; `evaluate` is crate-private to `qsl-eval`, so its omission is not a case); depth steps re-planned for ADR-030 |
@@ -743,31 +732,6 @@ This is a retrospective spec in the same sense
 [FR-047](../spec/functional/FR-047-evaluate-finite-object-reference-graphs.md)
 already is for this repo: it states the coverage that exists rather than
 treating the whole slice as unbuilt.
-
-## Six coverage rules
-
-All nine FR-012 ACs and both NFR-005 metric obligations are verified above.
-Modes are mutually exclusive, not combinable options. Valid/unknown modes,
-missing/extra arguments, contained/foreign paths, zero/exact/over resource
-limits, malformed fields and identity changes are covered. No asynchronous
-state machine is introduced; the identity registry's first binding/repeated
-binding/conflicting binding transitions have explicit controls. The generated
-input rows require actual generation and retained failures, not a Property
-label on one example. The implemented Property cases enumerate bounded JSON,
-field, path and budget families deterministically; no randomized campaign or
-fuzzing result is claimed. Independent fixture mutations reach real audit code.
-
-## Integration Test Matrix
-
-IT-004 is a command/file boundary, not a service/browser/event/database system.
-TC-002, TC-003 and TC-005 execute real filesystem/parser integration, and TC-009
-executes the compiled binary. The private standard packet remains an explicit
-local lane; the default local suite uses self-contained negative controls. No substitute network/daemon classification is invented.
-
-## Coverage gaps
-
-The preexisting 21 Rust tests and older FR/NFR obligations still need their own
-formal TC/evidence remediation. Hosted CI is manual-dispatch only.
 
 ## Kernel population identity (FR-089) coverage
 

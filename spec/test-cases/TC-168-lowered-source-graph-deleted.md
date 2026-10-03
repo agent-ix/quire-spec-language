@@ -32,7 +32,7 @@ FR-067-AC-6.
    `LoweredSourceGraph`, `LoweredDeclaration` and `lower_source_graph`.
 2. Search `complete::mod`'s re-export list for the same three names.
 3. Search every Rust source and build-input file — `src/`, `tests/`,
-   `benches/`, `examples/` and `tools/fixture-audit/`, and every other
+   `benches/` and `examples/`, and every other
    workspace member's directory as `cargo metadata` lists them (`xtask/`,
    the layer crates, `tools/arch-lint/`), not `src/` alone, and not
    `spec/` or `docs/` — for a source reference to any of the three names.

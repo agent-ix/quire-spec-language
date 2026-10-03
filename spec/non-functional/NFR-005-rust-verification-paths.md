@@ -3,9 +3,6 @@ id: NFR-005
 title: "Keep owned executable verification paths in Rust"
 type: NFR
 quality_attribute: maintainability
-relationships:
-  - target: "ix://agent-ix/quire-spec-language/FR-012"
-    type: constrains
 ---
 # NFR-005: Keep owned executable verification paths in Rust
 
@@ -15,38 +12,31 @@ When an owned fixture or qualification check is executed, the repository shall e
 
 ## Scope
 
-The four existing audit helpers, their replacements, CI fixture assertions and
-native rule-syntax checks. Standard Cargo/CI launch commands do not embed a
-second-language verifier. An implementation in another repository or a Rust
+The repository's fixture assertions and qualification checks. Standard Cargo
+launch commands do not embed a second-language verifier. An implementation in another repository or a Rust
 wrapper is not an exemption.
 
 ## Measurement and Evaluation
 
 | Metric | Target | Threshold | Method |
 | --- | --- | --- | --- |
-| Non-Rust verification logic launched by the audit command | 0 | 0 | integration-testing |
+| Non-Rust verification logic in the Rust test targets, `xtask` and `tools/arch-lint` | 0 | 0 | inspection |
 
 ## Verification
 
-Execute the Rust self-test check without Python or Node in the
-command's environment; run the optional packet/syntax modes against
-the selected local fixtures. Trace actual test functions to TC and AC identities
+Inspect the fixture and qualification checks: each runs as a Rust test or a
+Rust tool. Trace actual test functions to TC and AC identities
 with imported `ix_trace_rs::trace` and canonical `#[trace("TC-...", "FR-...-AC-...")]`
 attributes under the installed Quire/module grammar. Legacy doc-comment tags
 are not the convention for new tests. `#[cfg(test)]` controls compilation only.
 Quire checks actual bindings separately from the macro's argument-shape check.
-Use serde for the Rust audit target's strict JSON and reuse
-thiserror for the audit error envelope. Native Diagnostic implements
-standard error traits directly to preserve its source-identity field, as
-specified in FR-010. Use
-tempfile only for isolated Rust test
-fixtures; all offer MIT OR Apache-2.0 and retain their original grants.
+Use tempfile only for isolated Rust test fixtures; it offers MIT OR
+Apache-2.0 and retains its original grant.
 Use the existing shared ix-trace-rs marker as a dev-dependency tracking its
 `main` branch, retaining its AGPL-3.0-or-later grant. No local marker implementation or
 second trace grammar is introduced.
 
 ## Dependencies
 
-- [FR-012](../functional/FR-012-audit-fixtures-in-rust.md) defines the observable audits.
 - [NFR-002](NFR-002-reproduce-native-builds.md) retains the pinned native build contract.
 - [NFR-004](NFR-004-preserve-implementation-rights.md) governs dependency and fixture rights.

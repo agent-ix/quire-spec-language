@@ -11,7 +11,7 @@ Ten linking cases, TC-020–024 and TC-030–034, now execute through the
 public formal linker API. Their eleven FR-005/013 criteria are backed by the
 Rust tests in tests/linking.rs. The five FR-006 typing cases now execute through
 the native checker. Model/checker qualification covers the earlier adopted definition; executable projection
-and the full workflow remain open. TM-001/002 retain their existing native/audit evidence.
+and the full workflow remain open. TM-001/002 retain their existing native evidence.
 
 Task-034 extends TC-041 with the sequence-declaration ceiling and retains TC-065's
 hard exhaustion checks using admitted nested sequences. SR-263 records actual
@@ -82,7 +82,6 @@ per-group counts before moving this row to Passed.
 | FR-016 | FR-016-AC-9 | TC-052 | ✅ Passed |
 | FR-017 | FR-017-AC-1 | TC-054 | ✅ Passed |
 | FR-017 | FR-017-AC-3 | TC-030, TC-031, TC-032, TC-033, TC-034 | ✅ Passed |
-| FR-017 | FR-017-AC-4 | TC-001, TC-002, TC-003, TC-006 | ✅ Passed |
 | FR-042 | FR-042-AC-1 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-2 | TC-121 | ✅ Passed |
 | FR-042 | FR-042-AC-3 | TC-121 | 🚧 Passed locally for NativeModel inputs; domain-package portion planned, #131/#132 |
@@ -667,11 +666,10 @@ assuming the existing IR proof implementation qualifies that added logic.
 ## Construction repair qualification
 
 FR-017 / Task-011 is complete. TC-054 has three executed tests for
-original occurrences and strict/foreign refusals. Existing linker and audit
-regressions carry FR-017-AC-3/4 attributes and retain their actual outcomes.
-SR-083 supplies the separate FR-017-AC-2 ownership inspection. The default
-suite passed 61 tests and the selected private lane passed three tests.
-These results qualified the four scoped construction repairs. Subsequent
+original occurrences and strict/foreign refusals. Existing linker
+regressions carry FR-017-AC-3 attributes and retain their actual outcomes.
+SR-083 supplies the separate FR-017-AC-2 ownership inspection. These results
+qualified the scoped construction repairs. Subsequent
 Task-008/009 evidence appears below; trace presence alone is not qualification.
 
 ## Native linkage qualification

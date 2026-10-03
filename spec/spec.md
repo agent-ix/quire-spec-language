@@ -128,11 +128,7 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-003
     type: contains
-  - target: ix://agent-ix/quire-spec-language/FR-012
-    type: contains
   - target: ix://agent-ix/quire-spec-language/NFR-005
-    type: contains
-  - target: ix://agent-ix/quire-spec-language/IT-004
     type: contains
   - target: ix://agent-ix/quire-spec-language/IT-005
     type: contains
@@ -734,7 +730,7 @@ qualification.
 
 ### 2.1 In Scope
 
-LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned fixture verification under FR-012/NFR-005.
+LC01 native source/parse/format/diagnostics; LC02 model linking and typing; LC03 reference evaluation; LC04 qualified existing-IR lowering; LC05 existing-extractor integration; Rust-owned verification under NFR-005.
 
 L2 admits Semantic IR 2.0.0 domain packages as Quire model declarations through
 [FR-056](functional/FR-056-admit-domain-package-model-declarations.md) and adds edition-selected syntax and exact package linking across state, temporal
@@ -923,9 +919,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [IT-002](integration/IT-002-native-state-workflow.md) | IT | Draft |
 | [IT-003](integration/IT-003-opaque-extraction-adapter.md) | IT | Draft |
 
-| [FR-012](functional/FR-012-audit-fixtures-in-rust.md) | FR | Draft Rust verification remediation |
 | [NFR-005](non-functional/NFR-005-rust-verification-paths.md) | NFR | Draft campaign language constraint |
-| [IT-004](integration/IT-004-rust-fixture-audits.md) | IT | Draft real Rust audits |
 | [IT-005](integration/IT-005-qualify-native-model-consumption.md) | IT | Planned qualified model consumption |
 | [FR-013](functional/FR-013-link-formal-environments.md) | FR | Implemented formal linking |
 | [FR-014](functional/FR-014-bind-native-formal-source.md) | FR | Implemented native/formal source bridge |

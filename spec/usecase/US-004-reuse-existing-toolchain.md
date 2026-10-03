@@ -13,8 +13,6 @@ relationships:
     type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-011"
     type: exercises
-  - target: "ix://agent-ix/quire-spec-language/FR-012"
-    type: exercises
   - target: "ix://agent-ix/quire-spec-language/FR-045"
     type: exercises
 ---
@@ -56,8 +54,6 @@ Priority: High. Confusing a source/model identity or incomplete execution with a
 
 - [FR-009](../functional/FR-009-lower-qualified-projections.md)
 - [FR-011](../functional/FR-011-integrate-opaque-extraction.md)
-
-- [FR-012](../functional/FR-012-audit-fixtures-in-rust.md) covers Rust verification of selected fixtures.
 - [FR-038](../functional/FR-038-encode-exact-protocol-numbers.md) preserves exact integer/rational wire values for protocol consumers.
 - [FR-042](../functional/FR-042-publish-compiled-protocol-artifacts.md) defines the full compiled artifact and real Rust consumer handoff.
 - [FR-045](../functional/FR-045-classify-temporal-mapping-support.md)

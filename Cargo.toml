@@ -135,10 +135,6 @@ test = true
 name = "quire-spec"
 path = "src/main.rs"
 
-[[bin]]
-name = "fixture-audit"
-path = "tools/fixture-audit/main.rs"
-
 # Every former `tests/*.rs` integration-test target is now a
 # `mod` of this one `tests/it/main.rs` binary (see that file's own doc for
 # the full rationale). It needs no `required-features`: the `qsl-semantics`

@@ -5,7 +5,6 @@ source labels, display path, original span and explanatory message. `Display`
 renders `code: message`; `std::error::Error` has no underlying cause. The public
 `source` field is provenance, so the standard traits are implemented directly:
 the thiserror derive would incorrectly treat that field as an error cause.
-The fixture-audit target retains its separate [audit codes](audit-error-codes.md).
 
 Native package APIs use the same Code vocabulary in a separate PackageError
 envelope with a package stage, field/index path and measured pass usage. Its
@@ -82,9 +81,7 @@ built from a `FormalSourceError` (a `to_ir` coordinate-mapping failure) keeps
 the `source_map` phase from its origin and can still populate `upstream`, so
 `source_map` is not one of the phases that always leaves both fields null.
 Resource exhaustion is incomplete, never false. This
-six-code contract is carried by the `quire-spec` binary; the separate
-`fixture-audit` target keeps its own [audit codes](audit-error-codes.md) and is
-not on this contract. On FR-301's six-code contract, `quire-spec` exits 0 for a
+six-code contract is carried by the `quire-spec` binary. On FR-301's six-code contract, `quire-spec` exits 0 for a
 successful parse or a completed-true run predicate; 10 for a completed-false
 run predicate, a logical violation, not a tool defect; 20 for malformed
 requests, invalid command usage, request syntax, identifier and I/O failures

@@ -168,10 +168,8 @@ ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 	cargo test --locked --workspace --all-features
 
-# The same three no-default-features checks `.github/workflows/ci.yml` runs
-# after its own clippy/test steps: a from-clean build (its own target-dir, so
-# it never reuses this build's cached artifacts), the fixture-audit negative
-# controls and the parse example.
+# The no-default-features checks: a from-clean build (its own target-dir, so
+# it never reuses this build's cached artifacts) and the parse example.
 #
 # FR-042-AC-15/FR-050-AC-8: a `--lib`, `--no-default-features`
 # check with only `handoff-writer` turned on demonstrates the acceptance
@@ -182,7 +180,6 @@ ci-all-features:
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir target/clean
 	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
-	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only

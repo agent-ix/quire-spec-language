@@ -64,7 +64,6 @@ mod evaluate_reads_no_display_strings;
 mod exact_decimals;
 mod extracted_command;
 mod family_outcome_layering;
-mod fixture_audit;
 mod formal_source;
 // The handoff writer is behind its feature; the all-features lane runs this.
 #[cfg(feature = "handoff-writer")]
