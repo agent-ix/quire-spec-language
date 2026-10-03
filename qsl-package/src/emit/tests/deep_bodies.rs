@@ -23,7 +23,8 @@ const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
 /// A unit whose `f(a, x)` has a body of [`DEEP`] terms, read from source: a
 /// sum of `x`, an `else if` chain over `a`, or nested `let`s.
 fn deep_source(label: &str) -> String {
-    let mut source = format!("{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ ");
+    let mut source =
+        format!("{HEADER}function f using v(a: Boolean, x: Integer): Integer pure {{ ");
     for level in 1..DEEP {
         match label {
             "sum" => source.push_str("x + "),
@@ -109,9 +110,10 @@ fn a_100000_deep_body_checks_lowers_and_emits_on_a_small_stack() {
                 let semantic = graph.semantic_graph();
                 let semantic_clone = semantic.clone();
                 assert!(
-                    semantic.nodes().map(|node| (node.key(), node.body())).eq(semantic_clone
+                    semantic
                         .nodes()
-                        .map(|node| (node.key(), node.body()))),
+                        .map(|node| (node.key(), node.body()))
+                        .eq(semantic_clone.nodes().map(|node| (node.key(), node.body()))),
                     "{label}: the lowered graph equals its clone"
                 );
                 assert!(!format!("{package:?}").is_empty());

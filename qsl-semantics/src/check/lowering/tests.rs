@@ -1449,10 +1449,13 @@ fn a_law_comes_only_from_the_lock_evidence() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert_eq!(
         refusals[0].location,
-        Location::at(Origin::Body {
+        Location::at(
+            Origin::Body {
                 function: "te".to_owned(),
                 index: 0,
-            }, &[0]),
+            },
+            &[0]
+        ),
         "the refusal names the equality node's region"
     );
     assert_eq!(

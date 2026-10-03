@@ -516,9 +516,9 @@ mod tests {
             DeclaredClauseKind::Precondition,
         ));
         let synthesized = Location::root(Origin::Body {
-                function: "synthesized".into(),
-                index: 1,
-            });
+            function: "synthesized".into(),
+            index: 1,
+        });
         let standalone = Location::root(Origin::Expression);
         let unresolved = [
             synthesized,
@@ -527,9 +527,9 @@ mod tests {
             body(&[2, 1, 0]),
             measure(&[0]),
             Location::root(Origin::Body {
-                    function: "f".into(),
-                    index: 9,
-                }),
+                function: "f".into(),
+                index: 9,
+            }),
         ];
         let regions = declarations.regions();
         for location in &unresolved {
@@ -990,9 +990,9 @@ mod tests {
         assert_eq!(
             refusal.location,
             Location::root(Origin::Body {
-                    function: "g2".into(),
-                    index: 1,
-                }),
+                function: "g2".into(),
+                index: 1,
+            }),
             "the stage limit is g2's: its locus names the node"
         );
         let region = limit

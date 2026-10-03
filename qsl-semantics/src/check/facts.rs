@@ -623,8 +623,10 @@ impl<'a> Definedness<'a> {
             results: Vec::new(),
             nodes: PhantomData,
         };
-        let ControlFlow::Continue(()) =
-            quire_walk::walk(&mut walk, OutcomeNode::Evaluate(condition, Rc::clone(facts)));
+        let ControlFlow::Continue(()) = quire_walk::walk(
+            &mut walk,
+            OutcomeNode::Evaluate(condition, Rc::clone(facts)),
+        );
         walk.results.pop().unwrap_or_default()
     }
 

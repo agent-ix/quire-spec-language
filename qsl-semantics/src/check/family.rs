@@ -3181,10 +3181,12 @@ pub(crate) mod checking_tests {
         }
         .check(CheckingLimits::default())
         .expect_err("repeated names are refused");
-        let at = |index: usize| BodyLocation::root(BodyOrigin::Body {
+        let at = |index: usize| {
+            BodyLocation::root(BodyOrigin::Body {
                 function: names[index].to_owned(),
                 index,
-            });
+            })
+        };
         let expected: Vec<CheckRefusal> = [0, 1, 2, 4, 5]
             .into_iter()
             .map(|index| {
@@ -3418,7 +3420,10 @@ mod locus_tests {
         let checking = |work_units| CheckingLimits::new(5_000).with_work_budget(work_units);
         let (exceeded, region) = package_limit(unit, checking(work - 1));
         assert_eq!(exceeded.kind, CheckingLimitKind::WorkBudget);
-        assert_eq!((exceeded.limit, exceeded.actual), (work - 1, u128::from(work)));
+        assert_eq!(
+            (exceeded.limit, exceeded.actual),
+            (work - 1, u128::from(work))
+        );
         let region = region.expect("the stop is located at the declaration");
         let start = usize::try_from(region.start()).unwrap();
         let end = usize::try_from(region.end()).unwrap();
@@ -3549,8 +3554,8 @@ mod locus_tests {
     /// span.
     #[trace("TC-427", "TC-378", "FR-096-AC-4", "FR-096-AC-5", "FR-096-AC-11")]
     #[test]
-    fn package_checking_locates_a_node_limit_at_its_node_and_a_declaration_limit_at_the_declaration()
-    {
+    fn package_checking_locates_a_node_limit_at_its_node_and_a_declaration_limit_at_the_declaration(
+    ) {
         let declaration = "function f using v(): Boolean pure { not not not true }";
         let (nodes, region) = package_limit(unit(), CheckingLimits::new(3));
         assert_eq!(nodes.kind, CheckingLimitKind::Nodes);

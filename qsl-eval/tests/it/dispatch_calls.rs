@@ -1292,9 +1292,9 @@ fn d08_a_cycle_through_a_dispatch_edge_is_refused_definition_cycle() {
     assert_eq!(
         refusal.location,
         Location::root(Origin::Body {
-                function: "candidate.precondition".to_owned(),
-                index: 1,
-            })
+            function: "candidate.precondition".to_owned(),
+            index: 1,
+        })
     );
 }
 

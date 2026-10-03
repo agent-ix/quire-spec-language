@@ -820,8 +820,8 @@ fn a_declared_type_resolves_to_its_names_region() {
     );
     let package = assemble_as("a", "u", &text).expect("the unit assembles");
     let location = Location::root(Origin::TypeDeclaration {
-            name: "Point".into(),
-        });
+        name: "Point".into(),
+    });
     let region = package.region(&location).expect("Point has a region");
     let span = last(&text, "Point {");
     assert_eq!(

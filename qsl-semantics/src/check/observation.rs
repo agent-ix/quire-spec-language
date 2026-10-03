@@ -139,8 +139,7 @@ impl<'n> Walk<'n> {
                 Exit::Pass
             }
             NodeKind::Local(slot) => {
-                self.results
-                    .push(self.binders.get(slot).copied().flatten());
+                self.results.push(self.binders.get(slot).copied().flatten());
                 Exit::Pass
             }
             NodeKind::Attribute { reference, .. } => {

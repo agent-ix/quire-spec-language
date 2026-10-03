@@ -480,17 +480,17 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(
         located[0].location,
         Location::root(Origin::StateClause {
-                clause: "ParentOrder".to_owned(),
-                index: 0,
-            }),
+            clause: "ParentOrder".to_owned(),
+            index: 0,
+        }),
         "the first ParentOrder is its own locus"
     );
     assert_eq!(
         located[1].location,
         Location::root(Origin::StateClause {
-                clause: "ParentOrder".to_owned(),
-                index: 1,
-            }),
+            clause: "ParentOrder".to_owned(),
+            index: 1,
+        }),
         "the second ParentOrder is its own locus"
     );
 
@@ -508,17 +508,17 @@ fn missing_and_ambiguous_names_refuse_at_their_locus() {
     assert_eq!(
         located[0].location,
         Location::root(Origin::Body {
-                function: "ParentOrder".to_owned(),
-                index: 0,
-            }),
+            function: "ParentOrder".to_owned(),
+            index: 0,
+        }),
         "the function's own declaration is its locus"
     );
     assert_eq!(
         located[1].location,
         Location::root(Origin::StateClause {
-                clause: "ParentOrder".to_owned(),
-                index: 0,
-            }),
+            clause: "ParentOrder".to_owned(),
+            index: 0,
+        }),
         "the clause's own declaration is its locus"
     );
 }
@@ -672,9 +672,9 @@ fn ill_typed_and_operator_ineligible_clauses_refuse() {
     assert_eq!(
         located[0].location,
         Location::root(Origin::Body {
-                function: "r".to_owned(),
-                index: 0,
-            }),
+            function: "r".to_owned(),
+            index: 0,
+        }),
         "the reaches call is the whole function body"
     );
 }

@@ -36,7 +36,9 @@ fn is_aggregate(term: &Value, member: fn(&Value) -> bool) -> bool {
 
 /// A Group: an `aggregate` of Leaves and bindings of a Leaf.
 fn is_group(term: &Value) -> bool {
-    is_aggregate(term, |member| is_leaf(member) || is_binding(member, is_leaf))
+    is_aggregate(term, |member| {
+        is_leaf(member) || is_binding(member, is_leaf)
+    })
 }
 
 /// A Tuple: an `aggregate` of Leaves and Groups.
