@@ -17,7 +17,7 @@ at IR's pointer, and gives its own byte ceiling and a refusal at no value
 no locus. This catches an
 empty pointer standing in for a located failure.
 
-Scope: FR-096-AC-9, FR-096-AC-10.
+Scope: FR-096-AC-9, FR-096-AC-10, FR-096-AC-18.
 
 ## Test Procedure
 
@@ -25,6 +25,7 @@ Scope: FR-096-AC-9, FR-096-AC-10.
 2. Read a v2 wire whose graph has more nodes than node bound `B`.
 3. Read bytes longer than the artifact byte ceiling.
 4. Read bytes that are not JSON.
+5. Read a v2 wire carrying one space after the opening brace.
 
 Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
 
@@ -39,6 +40,7 @@ Tag the tests `#[trace("TC-429", "FR-096-AC-n")]` with the AC each backs.
   and IR's pointer.
 - Step 3: kind input bytes and no locus.
 - Step 4: a refusal with no locus.
+- Step 5: the envelope refusal carries the native code `noncanonical_wire`, not `invalid_package`.
 
 ## Status
 
@@ -49,4 +51,5 @@ which also covers IR's edge, occurrence, diagnostic and work limits. IR's
 own depth limit is IR's to delete, an IR-owned follow-up (ADR-030 D-8 O-1).
 `a_refusal_at_a_value_is_located_at_its_pointer` locates an IR refusal at a
 value. Every fixture is a real v2 wire mutated at one member; each expected
-locus hashes the bytes in the test.
+locus hashes the bytes in the test. Step 5 is backed by
+`maps_noncanonical_bytes_to_the_native_noncanonical_wire_code`.

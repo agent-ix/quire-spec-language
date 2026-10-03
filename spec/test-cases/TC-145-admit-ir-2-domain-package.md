@@ -12,7 +12,7 @@ relationships:
 Verify FR-154 admission, reader refusal, artifact-id identity, relationship
 exports and all-or-nothing declaration refusal through the intake seam. Scope:
 FR-056-AC-1, FR-056-AC-2, FR-056-AC-4, FR-056-AC-5, FR-056-AC-7 (digest-slot
-refusal), FR-056-AC-12, FR-056-CON-4.
+refusal), FR-056-AC-12, FR-056-AC-13, FR-056-AC-14, FR-056-AC-15, FR-056-CON-4.
 
 ## Test Procedure
 
@@ -32,9 +32,28 @@ refusal), FR-056-AC-12, FR-056-CON-4.
    document under the `sha256-jcs` digest of the same document with U+FFFD in
    its place, and `not json` under its own raw digest with an empty identity
    and version. Offer a document over `intake.input_bytes`.
-   Offer documents carrying `18446744073709551615`, `18446744073709551616`,
-   `123456789012345678901234567890` and `-9007199254740993`, each first under
-   the digest of its double form and then under the digest of its exact digits.
+   Parse documents carrying, at `/package/count`, `18446744073709551616`,
+   `-18446744073709551616`, `1e20`, `9.007199254740993e15`,
+   `9007199254740993` and `-9007199254740993`; one carrying `1e20` at
+   `/a~1b/0/c~0d`; one carrying such numbers at `/b` and then `/a/0`; and the
+   same document carrying `9007199254740992` and `-9007199254740992`. Parse
+   documents carrying, at `/package/count`, `9007199254740993.5`,
+   `0.1000000000000000000001`, `1e-400`, `-1e-400`, `4.9e-324`, `1e20` and
+   `9007199254740993`; one carrying `0.5` at `/a/0` and `1e-400` at `/a/1`;
+   and the same document carrying `0.1`, `1.0`, `-0`, `-0.0`, `5e-324`,
+   `1e15` and `9007199254740991`. Parse documents carrying
+   `1125899906842624.2`, `1500000000000000.2` and `2.9802322387695312e-8`
+   (each the even-digit text of a double with two shortest texts), and
+   `1125899906842624.3`, `1500000000000000.3` and `2.9802322387695313e-8`;
+   and one carrying `1.5e-300`, whose tree holds the double `1.5e-300` reads
+   as. Offer
+   documents carrying `18446744073709551615`, `18446744073709551616`,
+   `123456789012345678901234567890` and `-9007199254740993`, each first
+   under the digest of its double form and then under the digest of its
+   exact digits; a document carrying a multiplicity `upper` of 2^60 + 1
+   under the digest of its double form and under its raw digest; and
+   documents carrying `0.1000000000000000000001` and `0.1` under the digest
+   of the document carrying `0.1`.
    Parse documents repeating a member name within one object, and one that
    begins with a byte order mark. Offer a repeated-name document under the
    `sha256-jcs` digest of its last-wins value.
@@ -71,9 +90,24 @@ refusal), FR-056-AC-12, FR-056-CON-4.
   The lone-surrogate document refuses `stale_dependency`/`byte-digest-mismatch`,
   and `not json` refuses `invalid_model_binding`/`wrong-model-selection`. Each
   limit case refuses `resource_exhausted`/`intake-limit-exceeded` naming its
-  limit. Each large integer admits under the digest of its nearest double
-  (`18446744073709552000` for both 2^64 neighbours) and does not admit under
-  the digest of its exact digits. The parse refuses each repeated-name
+  limit. The parse refuses each whole number beyond ±2^53
+  `noncanonical_wire`/`inexact-integer` with `document_pointer` naming it
+  (`/package/count`, `/a~1b/0/c~0d`, and `/b`, the first in document order),
+  and admits ±2^53. It refuses `9007199254740993.5`,
+  `0.1000000000000000000001`, `1e-400`, `-1e-400` and `4.9e-324`
+  `noncanonical_wire`/`inexact-number` at `/package/count`, `1e20` and
+  `9007199254740993` (which fits both causes) `inexact-integer`, and names
+  `/a/1` in the two-number document; it admits `0.1`, `1.0`, `-0`, `-0.0`,
+  `5e-324`, `1e15` and `9007199254740991` with the digest of the RFC 8785
+  text of the same value. No large-integer document admits, under the
+  digest of its nearest double (`18446744073709552000` for both 2^64
+  neighbours, the digest they shared before FR-056-AC-13) or under the
+  digest of its exact digits: admission refuses
+  `noncanonical_wire`/`inexact-integer` before check 3, as it does the
+  2^60 + 1 bound under both digests. Under the digest of the `0.1`
+  document, the `0.1000000000000000000001` document refuses
+  `noncanonical_wire`/`inexact-number` and the `0.1` document admits. The
+  parse refuses each repeated-name
   document at the repeated name's byte offset and the byte-order-mark
   document at byte 0, and the repeated-name document offered under its
   last-wins digest refuses `stale_dependency`/`byte-digest-mismatch` with its

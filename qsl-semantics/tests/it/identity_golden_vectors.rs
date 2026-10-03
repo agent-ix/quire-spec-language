@@ -32,6 +32,7 @@ use qsl_semantics::model::key::{
     SHA256_JCS_DIGEST_DOMAIN,
 };
 use qsl_semantics::model::normalize::{normalize, NormalizeOutcome, ObjectUniverse};
+use qsl_semantics::model::normalize::{ModelRefusal, ModelRefusalCause};
 use qsl_semantics::value::enumeration::{EnumDeclarationPreimage, EnumMemberPreimage};
 use qsl_semantics::value::{
     admit_unit_graph, CompoundUnitPreimage, DimensionPreimage, NodeIdentityPreimage, NodeOwner,
@@ -287,13 +288,38 @@ fn a_runtime_compound_unit_carries_the_golden_compound_unit_id() {
 /// Admit `raw` under the `sha256-jcs` digest `digest`: intake's check 3
 /// passes only when the digest it takes over the parsed document equals it.
 fn admit_under(raw: &str, digest: [u8; 32]) -> bool {
+    refusal_under(raw, digest).is_none()
+}
+
+/// The refusal of [`admit_under`], or `None` when `raw` admits.
+fn refusal_under(raw: &str, digest: [u8; 32]) -> Option<ModelRefusal> {
     let offered = DomainPackageRef {
         identity: "test/golden".to_owned(),
         version: "1".to_owned(),
         digest,
     };
     let bytes = BTreeMap::from([(digest, raw.as_bytes().to_vec())]);
-    admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).is_ok()
+    admit(&offered, SHA256_JCS_DIGEST_DOMAIN, &bytes).err()
+}
+
+/// `raw`, offered under `digest`, refuses `noncanonical_wire` with cause
+/// `inexact-integer` at `/n`, never a digest mismatch.
+fn assert_inexact_integer_at_n(raw: &str, digest: [u8; 32], what: &str) {
+    let refusal = refusal_under(raw, digest).unwrap_or_else(|| panic!("{what} admitted"));
+    assert_eq!(
+        refusal.code,
+        qsl_foundation::diagnostic::Code::NoncanonicalWire,
+        "{what}"
+    );
+    assert!(
+        matches!(
+            &refusal.cause,
+            ModelRefusalCause::NoncanonicalNumber { inexact, document_pointer }
+                if inexact.as_str() == "inexact-integer" && document_pointer.as_str() == "/n"
+        ),
+        "{what}: {:?}",
+        refusal.cause
+    );
 }
 
 fn digest_bytes(hex: &str) -> [u8; 32] {
@@ -362,15 +388,15 @@ fn big_integer_document(literal: &str) -> String {
 }
 
 /// An integer outside ±2^53 has no exact double, and RFC 8785
-/// canonicalizes the double it parses to. Both spellings of 2^64's
-/// neighbourhood (`2^64 - 1`, a `u64`, and `2^64`, beyond it) admit under
-/// the digest of `18446744073709552000`; an integer beyond `u64` admits
-/// under `1.2345678901234568e+29`'s; one below `-2^53` under
-/// `-9007199254740992`'s. None is refused, and none admits under the
-/// digest of its own exact digits.
-#[trace("TC-145", "FR-056-AC-2")]
+/// canonicalizes the double it parses to, so `2^64 - 1` and `2^64` once
+/// both admitted under the digest of `18446744073709552000`, an integer
+/// beyond `u64` under `1.2345678901234568e+29`'s and one below `-2^53`
+/// under `-9007199254740992`'s. Intake now refuses each document, so none
+/// admits under the digest of its double, nor under the digest of its own
+/// exact digits.
+#[trace("TC-145", "FR-056-AC-13")]
 #[test]
-fn big_integers_canonicalize_to_the_double_rfc_8785_reads() {
+fn big_integers_admit_under_neither_their_double_nor_their_digits() {
     assert_eq!(
         sha256_hex(BIG_INTEGER_DOCUMENT.as_bytes()),
         BIG_INTEGER_DIGEST
@@ -382,12 +408,13 @@ fn big_integers_canonicalize_to_the_double_rfc_8785_reads() {
         ("-9007199254740993", BELOW_I53_DIGEST),
     ] {
         let raw = big_integer_document(literal);
-        assert!(admit_under(&raw, digest_bytes(digest)), "{literal}");
+        assert_inexact_integer_at_n(&raw, digest_bytes(digest), literal);
         let exact_digits =
             format!(r#"{{"n":{literal},"package":{{"identity":"test/golden","version":"1"}}}}"#);
-        assert!(
-            !admit_under(&raw, digest_bytes(&sha256_hex(exact_digits.as_bytes()))),
-            "{literal} admitted under its exact digits"
+        assert_inexact_integer_at_n(
+            &raw,
+            digest_bytes(&sha256_hex(exact_digits.as_bytes())),
+            &format!("{literal} under its exact digits"),
         );
     }
 }

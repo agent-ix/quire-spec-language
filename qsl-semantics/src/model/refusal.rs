@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::model::domain_package::{DomainPackageRef, Multiplicity, ValueTypeRef};
 use crate::model::key::{DeclarationKey, EffectiveId};
-use qsl_foundation::diagnostic::{CatalogCode, ALLOCATION_FAILED};
+use qsl_foundation::diagnostic::{CatalogCode, JsonPointer, ALLOCATION_FAILED};
 use qsl_foundation::source::LocatedSpan;
 use quire_exact::UniverseId;
 
@@ -576,6 +576,18 @@ pub enum ModelRefusalCause {
         /// The size in bytes of the reservation that failed.
         requested: usize,
     },
+    /// FR-056: a domain package document carries a number with no exact
+    /// RFC 8785 spelling. RFC 8785 encodes every number as the shortest
+    /// round-trip text of its nearest double, so the document's
+    /// `sha256-jcs` digest would be the digest of a different value;
+    /// intake's read refuses it before the digest is taken.
+    NoncanonicalNumber {
+        /// Why the number has no exact spelling; its cause tag.
+        inexact: Inexact,
+        /// The RFC 6901 pointer of the first such number, in document
+        /// order.
+        document_pointer: JsonPointer,
+    },
     /// FR-154 Intake check 4 (`model-complete.md:70`): the package's own
     /// identity and version disagree with the selection.
     WrongModelSelection {
@@ -726,6 +738,28 @@ impl IntakeLimit {
     }
 }
 
+/// Why a document's number has no exact RFC 8785 spelling
+/// ([`ModelRefusalCause::NoncanonicalNumber`], FR-056).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Inexact {
+    /// The number denotes a whole value whose magnitude exceeds 2^53.
+    Integer,
+    /// The number's exact value is not the exact value of the shortest
+    /// round-trip text of its nearest double, such as
+    /// `0.1000000000000000000001` or `1e-400`.
+    Number,
+}
+
+impl Inexact {
+    /// The cause tag: `inexact-integer` or `inexact-number`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Integer => "inexact-integer",
+            Self::Number => "inexact-number",
+        }
+    }
+}
+
 impl ModelRefusalCause {
     /// FR-096: the catalog payload of this cause, for a cause with a row in
     /// FR-096's key table, else `None`: a cause with no row has no fields to
@@ -802,6 +836,7 @@ impl ModelRefusalCause {
             | Self::ByteDigestMismatch { .. }
             | Self::IntakeLimitExceeded { .. }
             | Self::AllocationFailed { .. }
+            | Self::NoncanonicalNumber { .. }
             | Self::WrongModelSelection { .. }
             | Self::ReservedPackageIdentity { .. }
             | Self::DuplicateSelection { .. }
@@ -885,6 +920,7 @@ impl ModelRefusalCause {
             Self::WrongModelSelection { .. } => "wrong-model-selection",
             Self::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.cause(),
+            Self::NoncanonicalNumber { inexact, .. } => inexact.as_str(),
             Self::DuplicateMember { .. } => "duplicate-member",
             Self::SubsettingViolation { .. } => "subsetting-violation",
             Self::FrameCreateOutsideGrant { .. }
@@ -943,6 +979,7 @@ impl ModelRefusalCause {
             | Self::AncestorSteps { .. }
             | Self::IntakeLimitExceeded { .. } => "resource_exhausted",
             Self::AllocationFailed { .. } => ALLOCATION_FAILED.code(),
+            Self::NoncanonicalNumber { .. } => "noncanonical_wire",
             Self::UnclosedMethodSet
             | Self::IncompleteScope { .. }
             | Self::UnclosedSubtypes { .. } => "incomplete_population",
@@ -1293,6 +1330,10 @@ pub mod fixtures {
             bound: 0,
         },
         AllocationFailed => ModelRefusalCause::AllocationFailed { requested: 0 },
+        NoncanonicalNumber => ModelRefusalCause::NoncanonicalNumber {
+            inexact: super::Inexact::Number,
+            document_pointer: qsl_foundation::diagnostic::JsonPointer::root(),
+        },
         ReservedPackageIdentity => ModelRefusalCause::ReservedPackageIdentity {
             selection: DomainPackageRef::fixture("p"),
         },
@@ -1443,6 +1484,14 @@ pub(crate) mod tests {
             ModelRefusalCause::WrongModelSelection { .. } => "wrong-model-selection",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "intake-limit-exceeded",
             ModelRefusalCause::AllocationFailed { .. } => "allocation-failed",
+            ModelRefusalCause::NoncanonicalNumber {
+                inexact: super::Inexact::Integer,
+                ..
+            } => "inexact-integer",
+            ModelRefusalCause::NoncanonicalNumber {
+                inexact: super::Inexact::Number,
+                ..
+            } => "inexact-number",
             ModelRefusalCause::DuplicateMember { .. } => "duplicate-member",
             ModelRefusalCause::SubsettingViolation { .. } => "subsetting-violation",
             ModelRefusalCause::FrameCreateOutsideGrant { .. }
@@ -1496,6 +1545,7 @@ pub(crate) mod tests {
             ModelRefusalCause::WrongModelSelection { .. } => "invalid_model_binding",
             ModelRefusalCause::IntakeLimitExceeded { .. } => "resource_exhausted",
             ModelRefusalCause::AllocationFailed { .. } => "resource_exhausted",
+            ModelRefusalCause::NoncanonicalNumber { .. } => "noncanonical_wire",
             ModelRefusalCause::FamilySteps { .. } => "resource_exhausted",
             ModelRefusalCause::AncestorSteps { .. } => "resource_exhausted",
             ModelRefusalCause::UnclosedMethodSet => "incomplete_population",

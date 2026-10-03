@@ -19,6 +19,7 @@ use crate::identity::{
     Backend, ObligationIdentity, ProfileSelection, QualifiedName, RawSourceRef, SourceDigestWire,
 };
 use crate::witness::ReplaySource;
+use qsl_foundation::diagnostic::JsonPointer;
 use qsl_foundation::digest::{
     ByteDigest, DigestDomain, DigestRecord, InvalidDigestRecord, ManifestDigest,
 };
@@ -26,7 +27,7 @@ use qsl_foundation::Code;
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::intake::PackageDocument;
 use qsl_semantics::model::normalize::ModelRefusal;
-use qsl_semantics::model::refusal::{IntakeLimit, ModelRefusalCause};
+use qsl_semantics::model::refusal::{Inexact, IntakeLimit, ModelRefusalCause};
 
 /// The `quire.value.accounting/v1` scalar environment a replay starts from
 /// (FR-071's "state environment"). Opaque to #231: only the executor (#243)
@@ -327,6 +328,23 @@ pub enum ReplayRequestRefusal {
         /// The size in bytes of the reservation that failed.
         requested: usize,
     },
+    /// A byte-provision entry under a `sha256-jcs` digest holds a number
+    /// with no exact RFC 8785 spelling: intake's own refusal,
+    /// `noncanonical_wire` with its cause and `document_pointer` (FR-056).
+    #[error(
+        "noncanonical_wire/{}: entry under {entry} holds a number at {:?} with no exact RFC 8785 spelling",
+        inexact.as_str(),
+        document_pointer.as_str()
+    )]
+    NoncanonicalNumber {
+        /// The entry's declared digest.
+        entry: String,
+        /// Why the number has no exact spelling; the cause tag.
+        inexact: Inexact,
+        /// The RFC 6901 pointer of the first such number in the entry's
+        /// document.
+        document_pointer: JsonPointer,
+    },
     /// A byte-provision entry does not hash to its own declared digest.
     #[error("stale_dependency/byte-digest-mismatch: entry under {0} does not hash to its own declared digest")]
     ByteDigestMismatch(String),
@@ -368,8 +386,10 @@ fn digest_of(digest: DigestRecord, bytes: &[u8]) -> Result<[u8; 32], ReplayReque
 
 /// The refusal for a `sha256-jcs` entry under `digest` that intake's read
 /// refused, by its cause: an intake limit stays intake's limit outcome, an
-/// allocation failure stays `allocation-failed` (FR-259 B6), and only a
-/// document intake cannot read is not a domain package document.
+/// allocation failure stays `allocation-failed` (FR-259 B6), a number with
+/// no exact RFC 8785 spelling stays `noncanonical_wire` with its pointer
+/// (FR-056), and only a document intake cannot read is not a domain package
+/// document.
 fn package_document_refusal(digest: DigestRecord, refusal: ModelRefusal) -> ReplayRequestRefusal {
     let entry = format!("{digest:?}");
     match refusal.cause {
@@ -383,6 +403,14 @@ fn package_document_refusal(digest: DigestRecord, refusal: ModelRefusal) -> Repl
         ModelRefusalCause::AllocationFailed { requested } => {
             ReplayRequestRefusal::AllocationFailed { entry, requested }
         }
+        ModelRefusalCause::NoncanonicalNumber {
+            inexact,
+            document_pointer,
+        } => ReplayRequestRefusal::NoncanonicalNumber {
+            entry,
+            inexact,
+            document_pointer,
+        },
         _ => ReplayRequestRefusal::NotAPackageDocument(entry),
     }
 }
@@ -400,6 +428,7 @@ impl ReplayRequestRefusal {
             Self::IntakeLimitExceeded { .. } | Self::AllocationFailed { .. } => {
                 Code::ResourceExhausted
             }
+            Self::NoncanonicalNumber { .. } => Code::NoncanonicalWire,
             Self::IncompleteByteProvision(_) => Code::MissingDeclaration,
             Self::EmptyDependencySelection { .. } => Code::InvalidIdentifier,
             Self::BoundExceeded(_) => Code::StageLimitExceeded,
@@ -1047,9 +1076,11 @@ mod tests {
     /// A `sha256-jcs` byte-provision entry that intake's read refuses keeps
     /// the refusal's cause (FR-071-AC-11, TC-186 step 9): bytes intake
     /// cannot read are not a domain package document, a document over an
-    /// intake limit refuses with intake's limit outcome, and an allocation
+    /// intake limit refuses with intake's limit outcome, an allocation
     /// failure refuses `resource_exhausted`/`allocation-failed` carrying the
-    /// bytes requested (FR-259 B6).
+    /// bytes requested (FR-259 B6), and a number with no exact RFC 8785
+    /// spelling refuses `noncanonical_wire` with its cause and
+    /// `document_pointer` (FR-056).
     #[trace("TC-186", "FR-071-AC-11")]
     #[test]
     fn a_package_document_refusal_keeps_its_cause() {
@@ -1103,7 +1134,7 @@ mod tests {
         assert_eq!(
             allocation,
             ReplayRequestRefusal::AllocationFailed {
-                entry,
+                entry: entry.clone(),
                 requested: 4096,
             }
         );
@@ -1111,6 +1142,33 @@ mod tests {
         assert!(allocation
             .to_string()
             .starts_with("resource_exhausted/allocation-failed:"));
+
+        for (bytes, inexact, pointer) in [
+            (
+                br#"{"package":{"count":18446744073709551616}}"#.to_vec(),
+                Inexact::Integer,
+                "/package/count",
+            ),
+            (
+                br#"{"a/b":[0.1000000000000000000001]}"#.to_vec(),
+                Inexact::Number,
+                "/a~1b/0",
+            ),
+        ] {
+            let noncanonical = decode(bytes);
+            assert_eq!(
+                noncanonical,
+                ReplayRequestRefusal::NoncanonicalNumber {
+                    entry: entry.clone(),
+                    inexact,
+                    document_pointer: pointer.parse().unwrap(),
+                }
+            );
+            assert_eq!(noncanonical.code(), Code::NoncanonicalWire);
+            assert!(noncanonical
+                .to_string()
+                .starts_with(&format!("noncanonical_wire/{}:", inexact.as_str())));
+        }
     }
 
     /// A semantic-profile identifier outside the closed set refuses at

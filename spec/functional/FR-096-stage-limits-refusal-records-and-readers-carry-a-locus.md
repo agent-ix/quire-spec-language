@@ -330,6 +330,10 @@ fields are `actual`, the contract version IR read, and `expected`,
 `quire.checked-package/v2`. Its locus is `Locus::Artifact` with the supplied
 bytes' `raw-artifact-digest` record and the pointer `/contract_version`.
 
+When IR refuses the bytes as not the RFC 8785 bytes of the document they
+hold (`noncanonical_wire`), the I2 reader SHALL refuse with the native code
+`noncanonical_wire`, not `invalid_package`.
+
 Every other IR refusal that IR reports at a value SHALL be located at
 `Locus::Artifact` with that digest and the RFC 6901 pointer IR reports. A
 refusal IR reports at no value, such as malformed JSON, SHALL carry no
@@ -357,6 +361,7 @@ name.
 | FR-096-AC-15 | An S6a evaluation of `not x` for `x: Boolean`, called through `qsl_semantics::check::ValueFunctionFamily::evaluate` with an Integer argument that admission would have refused, stops on a kernel `CheckedInvariant`. It returns `Err(InternalFault)` naming stage `S6a` and invariant `checked-program-invariant` (category internal failure, code `runtime_invariant`); it returns no `Evaluation` and builds no refusal record. | Test (TC-428) |
 | FR-096-AC-16 | A lowering work-budget stop -- the shared work meter denying a per-node charge past a declaration's own precheck -- is a `CheckRefusal`/`stage_limit_exceeded` with kind work budget, `region: None` on its `StageLimitCause`, and `DeclarationRegions::refusal_region` resolving to the specific node whose lowering charge crossed the bound, not the declaration span. | Test (TC-427) |
 | FR-096-AC-17 | Two declarations `g1`, `g2`, each with an individually-under-bound preimage node count, checked together under a package-wide node bound one past `g1`'s own count: `g1` passes its own precheck and types fully, and `Typer`'s package-wide counter, seeded from `g1`'s final count, crosses the bound partway through `g2`'s own body walk -- a `CheckRefusal`/`stage_limit_exceeded` with kind node count located at the specific node of `g2` where the running count passed the bound, never at either declaration's span. | Test (TC-427) |
+| FR-096-AC-18 | The I2 reader, given a v2 wire whose bytes are valid JSON for a valid envelope but carry one space after the opening brace, refuses with the native code `noncanonical_wire`, not `invalid_package`. | Test (TC-429) |
 
 ## Dependencies
 

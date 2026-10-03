@@ -53,8 +53,8 @@ use crate::model::domain_package::{
 };
 use crate::model::key::{hex, raw_bytes_digest, DeclarationKey, SHA256_JCS_DIGEST_DOMAIN};
 use crate::model::normalize::{ModelRefusal, ModelRefusalCause};
-use crate::model::refusal::IntakeLimit;
-use qsl_foundation::diagnostic::Code;
+use crate::model::refusal::{Inexact, IntakeLimit};
+use qsl_foundation::diagnostic::{Code, JsonPointer};
 use qsl_foundation::source::{LocatedSpan, Position};
 use quire_canonical::Node;
 use quire_exact::Presence;
@@ -253,11 +253,23 @@ pub fn lift_document(bundle_root: &Path, module_roots: &[PathBuf]) -> Result<Vec
 /// Each refuses as `invalid_model_binding`/`malformed-declaration` at the
 /// document root `$`, carrying that offset (FR-260 B4). That refusal is this
 /// parse's own: FR-154 admission ([`admit`]) and [`package_input`] digest
-/// bytes the reader refuses raw (FR-056). A number keeps the lexeme the
-/// document carried: the derived view converts it with `serde_json`'s own
-/// number parser, so it equals what `serde_json::from_slice` would have read,
-/// every integer exact, while the digest reads it as the double RFC 8785
-/// reads it as.
+/// bytes the reader refuses raw (FR-056).
+///
+/// A number with no exact RFC 8785 spelling (`inexactness`) refuses
+/// `noncanonical_wire`, carrying the RFC 6901 `document_pointer` of the
+/// first such number in document order, before any digest is taken:
+/// `inexact-integer` for a whole value beyond ±2^53, `inexact-number` for a
+/// value that is not its nearest double's shortest round-trip text. RFC 8785
+/// writes that text in its place, so the digest of such a document would be
+/// the digest of a different value, shared with every document differing
+/// from it only in that number. [`admit`] returns this refusal where it
+/// returns a limit refusal, before check 3 (FR-056).
+///
+/// Every number that remains is exactly the value of its double's RFC 8785
+/// text: the derived view keeps an integer as `serde_json` reads it, exact
+/// within ±2^53, and takes a non-whole number's correctly rounded double
+/// from `quire_canonical`, the double the digest spells (`serde_json`'s own
+/// float parse can land one unit in the last place away from it).
 ///
 /// `json::MAX_INPUT_BYTES` and `json::MAX_DEPTH` refuse as
 /// [`ModelRefusalCause::IntakeLimitExceeded`] naming the limit, never as a
@@ -291,7 +303,10 @@ impl PackageDocument {
     /// `resource_exhausted`/`allocation-failed` carrying the bytes requested.
     /// Bytes the shared reader refuses as malformed refuse
     /// `invalid_model_binding`/`malformed-declaration` against the document
-    /// root `$`, carrying the reader's byte offset.
+    /// root `$`, carrying the reader's byte offset. A document holding a
+    /// number with no exact RFC 8785 spelling refuses `noncanonical_wire`
+    /// (`inexact-integer` or `inexact-number`) at that number's pointer,
+    /// before the digest is taken.
     pub fn parse(bytes: &[u8]) -> Result<Self, ModelRefusal> {
         use agent_ix_semantic_ir::json::{MAX_DEPTH, MAX_INPUT_BYTES};
         // `usize` is at most 64 bits on every target Rust supports: lossless.
@@ -303,6 +318,9 @@ impl PackageDocument {
             return Err(limit_exceeded(IntakeLimit::NestingDepth, MAX_DEPTH));
         }
         let document = quire_canonical::read(bytes, max_input_bytes).map_err(read_refusal)?;
+        if let Some((document_pointer, inexact, lexeme)) = first_inexact_number(document.root()) {
+            return Err(noncanonical_number(document_pointer, inexact, lexeme));
+        }
         let tree = value_of(document.root()).map_err(|lexeme| {
             malformed_declaration(
                 "$".to_owned(),
@@ -408,6 +426,270 @@ fn digest_refusal(error: quire_canonical::Error) -> ModelRefusal {
     }
 }
 
+/// FR-056: the package document's number `lexeme`, at `document_pointer`,
+/// has no exact RFC 8785 spelling, for the reason `inexact` names.
+fn noncanonical_number(
+    document_pointer: JsonPointer,
+    inexact: Inexact,
+    lexeme: &str,
+) -> ModelRefusal {
+    let pointer = document_pointer.as_str();
+    let detail = match inexact {
+        Inexact::Integer => format!(
+            "package document number {lexeme} at {pointer:?} denotes a whole value beyond \
+             ±2^53, which RFC 8785 cannot encode exactly"
+        ),
+        Inexact::Number => format!(
+            "package document number {lexeme} at {pointer:?} is not the value of its nearest \
+             double's shortest round-trip text, which RFC 8785 encodes in its place"
+        ),
+    };
+    ModelRefusal {
+        code: Code::NoncanonicalWire,
+        detail,
+        cause: ModelRefusalCause::NoncanonicalNumber {
+            inexact,
+            document_pointer,
+        },
+    }
+}
+
+/// 2^53 in decimal: the largest magnitude up to which every whole number
+/// has an exact IEEE 754 double, and so an exact RFC 8785 spelling.
+const TWO_TO_THE_53: &[u8] = b"9007199254740992";
+
+/// The exact value of a decimal number's text: `digits × 10^shift`, where
+/// `digits` are its significant digits, with no leading and no trailing
+/// zero. Read from an RFC 8259 number lexeme, or from the RFC 8785 spelling
+/// of a double, in time linear in the text and with nothing
+/// allocated. The exponent accumulates saturating at `u64::MAX`; a text is
+/// far shorter than that, so a saturated exponent decides every comparison
+/// as the exact one would.
+struct Decimal<'t> {
+    negative: bool,
+    integer: &'t str,
+    fraction: &'t str,
+    /// Zeros before the first significant digit.
+    leading: usize,
+    /// The number of significant digits; zero for the value zero.
+    significant: usize,
+    shift: i128,
+}
+
+impl<'t> Decimal<'t> {
+    #[qsl_attrs::string_edge]
+    fn of(text: &'t str) -> Self {
+        let (negative, unsigned) = match text.strip_prefix('-') {
+            Some(unsigned) => (true, unsigned),
+            None => (false, text),
+        };
+        let (mantissa, exponent) = unsigned.split_once(['e', 'E']).unwrap_or((unsigned, ""));
+        let (integer, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        let digits = || integer.bytes().chain(fraction.bytes());
+        let total = integer.len() + fraction.len();
+        let leading = digits().take_while(|digit| *digit == b'0').count();
+        let trailing = if leading == total {
+            0
+        } else {
+            fraction
+                .bytes()
+                .rev()
+                .chain(integer.bytes().rev())
+                .take_while(|digit| *digit == b'0')
+                .count()
+        };
+        let (exponent_negative, exponent) = match exponent.strip_prefix('-') {
+            Some(magnitude) => (true, magnitude),
+            None => (false, exponent.strip_prefix('+').unwrap_or(exponent)),
+        };
+        let magnitude = i128::from(exponent.bytes().fold(0u64, |value, digit| {
+            value
+                .saturating_mul(10)
+                .saturating_add(u64::from(digit.saturating_sub(b'0')))
+        }));
+        let exponent = if exponent_negative {
+            -magnitude
+        } else {
+            magnitude
+        };
+        Self {
+            negative,
+            integer,
+            fraction,
+            leading,
+            significant: total - leading - trailing,
+            shift: exponent - count(fraction.len()) + count(trailing),
+        }
+    }
+
+    /// The significant digits, as ASCII bytes.
+    fn digits(&self) -> impl Iterator<Item = u8> + '_ {
+        self.integer
+            .bytes()
+            .chain(self.fraction.bytes())
+            .skip(self.leading)
+            .take(self.significant)
+    }
+
+    /// Whether the value is whole and its magnitude exceeds 2^53. Because
+    /// the digits end in a non-zero digit, the value is whole exactly when
+    /// `shift >= 0`, and then it has `significant + shift` digits.
+    fn is_whole_beyond_2_53(&self) -> bool {
+        if self.significant == 0 || self.shift < 0 {
+            return false;
+        }
+        match (count(self.significant) + self.shift).cmp(&count(TWO_TO_THE_53.len())) {
+            std::cmp::Ordering::Less => false,
+            std::cmp::Ordering::Greater => true,
+            // Equal lengths: the digits, then `shift` zeros, compared with
+            // 2^53's digit by digit. `shift` is at most 16 here.
+            std::cmp::Ordering::Equal => {
+                let zeros = usize::try_from(self.shift).unwrap_or(usize::MAX);
+                self.digits()
+                    .chain(std::iter::repeat_n(b'0', zeros))
+                    .cmp(TWO_TO_THE_53.iter().copied())
+                    .is_gt()
+            }
+        }
+    }
+
+    /// Whether `self` and `other` denote the same exact value. Zero has no
+    /// sign: `-0` and `0` are equal.
+    fn same_value(&self, other: &Decimal<'_>) -> bool {
+        if self.significant == 0 || other.significant == 0 {
+            return self.significant == other.significant;
+        }
+        self.negative == other.negative
+            && self.significant == other.significant
+            && self.shift == other.shift
+            && self.digits().eq(other.digits())
+    }
+}
+
+/// `length`, a byte count of one text, as a wide signed integer.
+fn count(length: usize) -> i128 {
+    // A slice length is at most `isize::MAX`: lossless.
+    i128::try_from(length).unwrap_or(i128::MAX)
+}
+
+/// Why `number` has no exact RFC 8785 spelling, or `None` when it has one
+/// (FR-056). A whole value beyond ±2^53 is [`Inexact::Integer`], decided on
+/// the text alone. Otherwise the number is exact when its text's value
+/// equals the value of the shortest round-trip text of its nearest double,
+/// the text RFC 8785 writes: `0.1`, `1.0`, `-0` and `5e-324` are exact,
+/// `0.1000000000000000000001`, `9007199254740993.5` and the underflowing
+/// `1e-400` are [`Inexact::Number`]. Both comparisons are exact decimal
+/// reasoning over digits; no floating-point arithmetic decides either.
+pub(super) fn inexactness(number: quire_canonical::Number<'_>) -> Option<Inexact> {
+    let written = Decimal::of(number.text());
+    if written.is_whole_beyond_2_53() {
+        return Some(Inexact::Integer);
+    }
+    // The text quire-canonical writes for the double is RFC 8785's: the
+    // shortest round-trip text, the closest of those and then the even digit
+    // on a tie.
+    let mut spelled = Spelled::default();
+    let Ok(()) = quire_canonical::Writer::new(&mut spelled, quire_canonical::Limits::new(64))
+        .number(number.value())
+    else {
+        return Some(Inexact::Number);
+    };
+    let exact = spelled
+        .text()
+        .is_some_and(|text| written.same_value(&Decimal::of(text)));
+    (!exact).then_some(Inexact::Number)
+}
+
+/// A [`quire_canonical::Sink`] holding one number's RFC 8785 text: at most 25
+/// bytes, so it needs no allocation.
+#[derive(Default)]
+struct Spelled {
+    bytes: [u8; 32],
+    length: usize,
+}
+
+impl Spelled {
+    fn text(&self) -> Option<&str> {
+        std::str::from_utf8(self.bytes.get(..self.length)?).ok()
+    }
+}
+
+impl quire_canonical::Sink for Spelled {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), quire_canonical::Error> {
+        let end = self.length + bytes.len();
+        let room =
+            self.bytes
+                .get_mut(self.length..end)
+                .ok_or(quire_canonical::Error::Internal {
+                    invariant: "a number's RFC 8785 text fits 32 bytes",
+                })?;
+        room.copy_from_slice(bytes);
+        self.length = end;
+        Ok(())
+    }
+}
+
+/// The RFC 6901 pointer, the reason and the lexeme of the first number of
+/// `root`, in document order, that has no exact RFC 8785 spelling
+/// ([`inexactness`]); `None` when every number has one. Walked over an
+/// explicit heap stack, so a document of any depth is walked on any thread
+/// stack.
+pub(super) fn first_inexact_number(
+    root: quire_canonical::NodeRef<'_>,
+) -> Option<(JsonPointer, Inexact, &str)> {
+    /// How a value is reached from the container holding it.
+    enum Step<'d> {
+        Member(&'d str),
+        Element(usize),
+    }
+    /// The values of one open container not yet walked.
+    enum Children<'d> {
+        Items(std::iter::Enumerate<quire_canonical::Items<'d>>),
+        Members(quire_canonical::Members<'d>),
+    }
+    // Each open container, with the step that reached it (`None` for the
+    // root).
+    let mut open: Vec<(Option<Step<'_>>, Children<'_>)> = Vec::new();
+    let mut next = Some((None, root));
+    loop {
+        if let Some((step, value)) = next.take() {
+            match value.node() {
+                Node::Number(number) => {
+                    if let Some(inexact) = inexactness(number) {
+                        let steps = open.iter().filter_map(|(step, _)| step.as_ref());
+                        let pointer = steps.chain(step.as_ref()).fold(
+                            JsonPointer::root(),
+                            |pointer, step| match step {
+                                Step::Member(name) => pointer.key(name),
+                                Step::Element(index) => pointer.key(&index.to_string()),
+                            },
+                        );
+                        return Some((pointer, inexact, number.text()));
+                    }
+                }
+                Node::Array(items) => open.push((step, Children::Items(items.enumerate()))),
+                Node::Object(members) => open.push((step, Children::Members(members))),
+                Node::Null | Node::Bool(_) | Node::String(_) => {}
+            }
+        }
+        let (_, children) = open.last_mut()?;
+        let child = match children {
+            Children::Items(items) => items
+                .next()
+                .map(|(index, item)| (Step::Element(index), item)),
+            Children::Members(members) => members
+                .next()
+                .map(|(name, value)| (Step::Member(name), value)),
+        };
+        match child {
+            Some((step, value)) => next = Some((Some(step), value)),
+            None => {
+                open.pop();
+            }
+        }
+    }
+}
+
 /// FR-259 B6: reading or digesting a package document could not reserve
 /// `requested` bytes of memory.
 fn allocation_failed(requested: usize) -> ModelRefusal {
@@ -484,7 +766,15 @@ fn value_of(node: quire_canonical::NodeRef<'_>) -> Result<Value, &str> {
         Node::Bool(value) => Value::Bool(value),
         Node::Number(number) => {
             let lexeme = number.text();
-            Value::Number(lexeme.parse().map_err(|_| lexeme)?)
+            let parsed: serde_json::Number = lexeme.parse().map_err(|_| lexeme)?;
+            // serde_json's float parser can land one unit in the last place
+            // off; the digest encodes the correctly rounded double, so the
+            // tree takes that same double.
+            Value::Number(if parsed.is_f64() {
+                serde_json::Number::from_f64(number.value()).ok_or(lexeme)?
+            } else {
+                parsed
+            })
         }
         Node::String(text) => Value::String(text.to_owned()),
         Node::Array(items) => Value::Array(items.map(value_of).collect::<Result<_, _>>()?),
@@ -566,20 +856,22 @@ pub fn admit(
             ),
         });
     };
-    // A document over one of the parse limits, or one whose read could not
-    // reserve memory, has no parsed form to take a JCS digest of, so check 3
-    // cannot tell whether it matches: that refuses naming the limit
-    // (ADR-011 Limits) or the failed reservation (FR-259 B6), not as a
-    // digest mismatch. Any other parse failure is not itself a refusal here:
-    // bytes the shared reader refuses are digested raw by check 3 (FR-056),
-    // and supply no identity/version to check 4.
+    // A document over one of the parse limits, one whose read could not
+    // reserve memory, and one holding a number with no exact RFC 8785
+    // spelling have no JCS digest check 3 can compare: each refuses naming
+    // the limit (ADR-011 Limits), the failed reservation (FR-259 B6) or the
+    // number's pointer (FR-056, IR FR-038-AC-93), never as a digest
+    // mismatch. Any other parse failure is not itself a refusal here: bytes
+    // the shared reader refuses are digested raw by check 3 (FR-056), and
+    // supply no identity/version to check 4.
     let document = match PackageDocument::parse(bytes) {
         Ok(document) => Some(document),
         Err(
             refusal @ ModelRefusal {
                 cause:
                     ModelRefusalCause::IntakeLimitExceeded { .. }
-                    | ModelRefusalCause::AllocationFailed { .. },
+                    | ModelRefusalCause::AllocationFailed { .. }
+                    | ModelRefusalCause::NoncanonicalNumber { .. },
                 ..
             },
         ) => return Err(refusal),
@@ -3298,17 +3590,19 @@ mod tests {
         .into_bytes()
     }
 
-    /// RFC 8785's rounding applies to the hashed bytes
-    /// only. A field whose multiplicity `upper` is 2^60 + 1 -- no double
-    /// equals it -- is admitted, intake's parsed tree holds the bound
-    /// exactly, and the
-    /// package digest is the RFC 8785 digest of the document with that
-    /// bound as the double RFC 8785 reads, 2^60, which ECMAScript spells
-    /// `1152921504606847000` (`JSON.stringify(JSON.parse("1152921504606846977"))`
-    /// in Node prints exactly that).
-    #[trace("TC-145", "FR-056-AC-2")]
+    /// A field whose multiplicity `upper` is 2^60 + 1, a whole number no
+    /// double equals, is refused at the parse `noncanonical_wire` at that
+    /// bound's pointer. Admission returns that refusal before check 3
+    /// (FR-056, IR FR-038-AC-93), whatever digest selects the bytes: under
+    /// the RFC 8785 digest of the document with the bound read as its
+    /// double, 2^60, which ECMAScript spells `1152921504606847000`
+    /// (`JSON.stringify(JSON.parse("1152921504606846977"))` in Node prints
+    /// exactly that) and under which the document used to admit, and under
+    /// the bytes' raw digest, never `byte-digest-mismatch` or
+    /// `wrong-model-selection`.
+    #[trace("TC-145", "FR-056-AC-13")]
     #[test]
-    fn a_u64_bound_above_2_53_reads_exactly_and_digests_as_rfc_8785_does() {
+    fn a_u64_bound_above_2_53_refuses_at_its_pointer_before_check_3() {
         const EXACT: u64 = (1 << 60) + 1;
         let mut field = wire_field(
             "ix://acme/orders/Widget/count",
@@ -3318,37 +3612,28 @@ mod tests {
         field["multiplicity"] =
             serde_json::json!({"lower": 0, "upper": EXACT, "ordered": false, "unique": true});
         let bytes = document_with_one_field(field);
+        let expected = noncanonical_number(
+            "/types/0/fields/0/multiplicity/upper".parse().unwrap(),
+            Inexact::Integer,
+            &EXACT.to_string(),
+        );
+        assert_eq!(PackageDocument::parse(&bytes).unwrap_err(), expected);
 
-        // The RFC 8785 text, the bound spelled as ECMAScript spells 2^60.
+        // The RFC 8785 text the document used to admit under, the bound
+        // spelled as ECMAScript spells 2^60.
         let mut rounded: Value = serde_json::from_slice(&bytes).unwrap();
         rounded["types"][0]["fields"][0]["multiplicity"]["upper"] =
             Value::Number(serde_json::Number::from_f64(1_152_921_504_606_846_976.0).unwrap());
         let text = String::from_utf8(canonical(&rounded)).unwrap();
         assert!(text.contains(r#""upper":1152921504606847000}"#), "{text}");
-        assert!(!text.contains(&EXACT.to_string()), "{text}");
-        let digest = digest_of(text.as_bytes());
-
-        let mut map = BTreeMap::new();
-        map.insert(digest, bytes);
-        let (offered, digest_domain) =
-            selection("acme/orders", "1.0.0", SHA256_JCS_DIGEST_DOMAIN, digest);
-        let (_, document) = admit(&offered, &digest_domain, &map).expect("the document admits");
-        assert_eq!(
-            document.tree()["types"][0]["fields"][0]["multiplicity"]["upper"].as_u64(),
-            Some(EXACT),
-            "the parsed tree keeps the exact integer"
-        );
-        // The per-node reader then sees the exact integer too. Its FCD
-        // validator admits a bound below 2^53 only, on `main` as here, so
-        // the refusal names the bound -- a schema rule, not a rounded read.
-        let refusals = read_records("acme/orders", &document).unwrap_err();
-        assert_eq!(refusals.len(), 1, "{refusals:?}");
-        assert!(
-            refusals[0]
-                .detail
-                .contains("/fields/0/multiplicity/upper (agent-ix.semantic-ir.SCHEMA_VIOLATION)"),
-            "{refusals:?}"
-        );
+        let rounded_digest = digest_of(text.as_bytes());
+        let raw = digest_of(&bytes);
+        let map = BTreeMap::from([(rounded_digest, bytes.clone()), (raw, bytes)]);
+        for digest in [rounded_digest, raw] {
+            let (offered, digest_domain) =
+                selection("acme/orders", "1.0.0", SHA256_JCS_DIGEST_DOMAIN, digest);
+            assert_eq!(admit(&offered, &digest_domain, &map).unwrap_err(), expected);
+        }
     }
 
     // `agent-ix-semantic-ir` at the pinned rev resolves
@@ -5542,8 +5827,12 @@ mod tests {
 
     /// PR #379 review F4: the tree the one parse derives, and the digest it
     /// takes, equal what `serde_json::from_slice` reads from the same bytes
-    /// and the RFC 8785 digest of that value, for numbers at every edge and
-    /// every string escape.
+    /// and the RFC 8785 digest of that value, for numbers at every edge
+    /// where serde_json's read is exact and every string escape (a non-whole
+    /// number's double is the digest's:
+    /// `a_non_whole_number_in_the_tree_is_the_digests_double`). A number with no exact RFC 8785 spelling is
+    /// refused instead (`refuses_a_whole_number_beyond_2_53_at_its_pointer`,
+    /// `refuses_a_number_that_is_not_its_doubles_shortest_text`).
     #[trace("TC-145", "FR-056-AC-2")]
     #[test]
     fn the_one_parse_reads_what_serde_json_reads() {
@@ -5553,19 +5842,14 @@ mod tests {
             "-0",
             "-0.0",
             "1.0",
+            "0.1",
             "1e2",
             "1E+2",
-            "1e-400",
-            "-1e-400",
-            "18446744073709551615",
-            "18446744073709551616",
-            "-9223372036854775808",
-            "-9223372036854775809",
-            "123456789012345678901234567890",
+            "9007199254740992",
+            "-9007199254740992",
+            "9.007199254740992e15",
             "5e-324",
-            "4.9e-324",
-            "1.7976931348623157e308",
-            "0.123456789012345678901234567890123456789012345678901234567890123456789012345",
+            "2.5",
             r#"[0, -0, 1.5, -2, 3e-7, -1E-2]"#,
             // Out of range for both: refused, never a different value.
             "1e400",
@@ -5593,6 +5877,340 @@ mod tests {
                     panic!("{text}: the one parse gave {parsed:?}, serde_json gave {expected:?}")
                 }
             }
+        }
+    }
+
+    /// A non-whole number in the tree is the correctly rounded double the
+    /// digest encodes, even where serde_json's own float parse is one unit
+    /// in the last place off.
+    #[trace("TC-145", "FR-056-AC-15")]
+    #[test]
+    fn a_non_whole_number_in_the_tree_is_the_digests_double() {
+        for text in ["1.5e-300", "0.1", "2.5", "-3e-7"] {
+            let document = PackageDocument::parse(text.as_bytes()).unwrap();
+            let expected: f64 = text.parse().unwrap();
+            assert_eq!(document.tree().as_f64(), Some(expected), "{text}");
+            assert_eq!(
+                document.jcs_digest(),
+                digest_of(&canonical(document.tree())),
+                "{text}"
+            );
+        }
+    }
+
+    /// A package document holding `number` at `/package/count`, beside the
+    /// package's own identity and version.
+    fn document_with_count(number: &str) -> String {
+        format!(r#"{{"package":{{"identity":"acme/orders","version":"1","count":{number}}}}}"#)
+    }
+
+    /// `text` refuses at the one parse `noncanonical_wire` with cause
+    /// `inexact` and `document_pointer` `pointer`, naming `number`.
+    fn assert_noncanonical(text: &str, inexact: Inexact, pointer: &str, number: &str) {
+        let refusal = PackageDocument::parse(text.as_bytes()).unwrap_err();
+        assert_eq!(
+            refusal,
+            noncanonical_number(pointer.parse().unwrap(), inexact, number),
+            "{text}"
+        );
+        assert_eq!(refusal.code, Code::NoncanonicalWire, "{text}");
+        assert_eq!(
+            refusal.cause.catalog_code(),
+            qsl_foundation::diagnostic::CatalogCode::new("noncanonical_wire", inexact.as_str()),
+            "{text}"
+        );
+        assert_eq!(
+            refusal.cause,
+            ModelRefusalCause::NoncanonicalNumber {
+                inexact,
+                document_pointer: pointer.parse().unwrap(),
+            },
+            "{text}"
+        );
+    }
+
+    /// A number denoting a whole value beyond ±2^53 refuses at the one parse
+    /// `noncanonical_wire`/`inexact-integer` carrying its RFC 6901 pointer,
+    /// however it is spelled: past `u64`, as an exponent, as a decimal, or
+    /// just past 2^53. A member name holding `/` or `~` is escaped in the
+    /// pointer, an element is named by its index, a bare number is the
+    /// whole document, and of two such numbers the first in document order
+    /// is named.
+    #[trace("TC-145", "FR-056-AC-13")]
+    #[test]
+    fn refuses_a_whole_number_beyond_2_53_at_its_pointer() {
+        for number in [
+            "18446744073709551616",
+            "-18446744073709551616",
+            "1e20",
+            "9.007199254740993e15",
+            "9007199254740993",
+            "-9007199254740993",
+            "9007199254740993.0",
+            "0.9007199254740993E+16",
+            "18446744073709551615",
+            "-9223372036854775809",
+            "123456789012345678901234567890",
+            "1.7976931348623157e308",
+        ] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Integer,
+                "/package/count",
+                number,
+            );
+        }
+        for (text, number, pointer) in [
+            (
+                r#"{"a/b":[{"c~d":1e20}],"package":{}}"#,
+                "1e20",
+                "/a~1b/0/c~0d",
+            ),
+            (
+                r#"{"b":9007199254740993,"a":[18446744073709551616]}"#,
+                "9007199254740993",
+                "/b",
+            ),
+            (
+                r#"[0,9007199254740992,[1,-9007199254740993]]"#,
+                "-9007199254740993",
+                "/2/1",
+            ),
+            (
+                "123456789012345678901234567890",
+                "123456789012345678901234567890",
+                "",
+            ),
+        ] {
+            assert_noncanonical(text, Inexact::Integer, pointer, number);
+        }
+    }
+
+    /// A number whose exact value is not the exact value of its nearest
+    /// double's shortest round-trip text refuses at the one parse
+    /// `noncanonical_wire`/`inexact-number` carrying its pointer: a
+    /// non-whole value beyond 2^53, a decimal with more digits than its
+    /// double, and a literal that underflows to zero. A number that fits
+    /// both causes refuses `inexact-integer`: `9007199254740993` is also not
+    /// its double's shortest text (`9007199254740992`), and `1e20` is
+    /// exactly a double yet whole beyond 2^53. The first inexact number in
+    /// document order is named, whichever cause it has.
+    #[trace("TC-145", "FR-056-AC-14")]
+    #[test]
+    fn refuses_a_number_that_is_not_its_doubles_shortest_text() {
+        let long = "0.123456789012345678901234567890123456789012345678901234567890123456789012345";
+        for number in [
+            "9007199254740993.5",
+            "0.1000000000000000000001",
+            "1e-400",
+            "-1e-400",
+            "4.9e-324",
+            "9007199254740992.5",
+            long,
+        ] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Number,
+                "/package/count",
+                number,
+            );
+        }
+        for number in ["9007199254740993", "1e20"] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Integer,
+                "/package/count",
+                number,
+            );
+        }
+        // 2^53 is the double nearest to 9007199254740993.
+        assert!(!Decimal::of("9007199254740993").same_value(&Decimal::of("9007199254740992")));
+        assert_noncanonical(
+            r#"{"a":[0.5,1e-400],"b":9007199254740993}"#,
+            Inexact::Number,
+            "/a/1",
+            "1e-400",
+        );
+    }
+
+    /// A double with two equally close shortest round-trip texts is spelled
+    /// by RFC 8785 with the even last digit, as quire-canonical writes it
+    /// (`1125899906842624.25` is `1125899906842624.2`, not `.3`). Only that
+    /// spelling is exact: the other refuses `inexact-number`, and the exact
+    /// one admits with a tree holding its double and the digest of its text.
+    #[trace("TC-145", "FR-056-AC-14")]
+    #[test]
+    fn a_tie_between_two_shortest_texts_admits_only_the_even_digit() {
+        for number in [
+            "1500000000000000.2",
+            "1125899906842624.2",
+            "-1125899906842624.2",
+            "2.9802322387695312e-8",
+        ] {
+            let document = PackageDocument::parse(document_with_count(number).as_bytes())
+                .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
+            let expected: f64 = number.parse().unwrap();
+            assert_eq!(
+                document.tree()["package"]["count"].as_f64(),
+                Some(expected),
+                "{number}"
+            );
+            assert_eq!(
+                document.jcs_digest(),
+                digest_of(&canonical(document.tree())),
+                "{number}"
+            );
+        }
+        for number in [
+            "1500000000000000.3",
+            "1125899906842624.3",
+            "2.9802322387695313e-8",
+        ] {
+            assert_noncanonical(
+                &document_with_count(number),
+                Inexact::Number,
+                "/package/count",
+                number,
+            );
+        }
+    }
+
+    /// ±2^53, every whole number within them, and every number that is
+    /// exactly its double's shortest round-trip text admit, however they
+    /// are spelled, with the digest of that text: `0.1` and `1.0`, `-0`
+    /// (zero has no sign), and the least subnormal `5e-324`. A whole number
+    /// within ±2^53 is refused under neither cause.
+    #[trace("TC-145", "FR-056-AC-13", "FR-056-AC-14")]
+    #[test]
+    fn admits_2_53_its_negation_and_every_exact_number() {
+        for (number, exact) in [
+            ("9007199254740992", Some(9_007_199_254_740_992_i64)),
+            ("-9007199254740992", Some(-9_007_199_254_740_992)),
+            ("9007199254740991", Some(9_007_199_254_740_991)),
+            ("-4503599627370497", Some(-4_503_599_627_370_497)),
+            ("1e15", None),
+            ("9.007199254740992e15", None),
+            ("90071992547409920e-1", None),
+            ("9007199254740992.000", None),
+            ("0.1", None),
+            ("1.0", None),
+            ("-0", None),
+            ("-0.0", None),
+            ("5e-324", None),
+            ("1E+2", None),
+            ("-1E-2", None),
+            ("0.10", None),
+        ] {
+            let text = document_with_count(number);
+            let document = PackageDocument::parse(text.as_bytes())
+                .unwrap_or_else(|refusal| panic!("{number}: {refusal:?}"));
+            let count = &document.tree()["package"]["count"];
+            if let Some(exact) = exact {
+                assert_eq!(count.as_i64(), Some(exact), "{number}");
+            }
+            let expected: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(count, &expected["package"]["count"], "{number}");
+            assert_eq!(
+                document.jcs_digest(),
+                digest_of(&canonical(&expected)),
+                "{number}"
+            );
+        }
+    }
+
+    /// Two documents that differ only in a number rounding to one double
+    /// used to share one `sha256-jcs` digest, the digest of that double's
+    /// text. Now a document whose number is not that text refuses at the
+    /// parse, and admission returns that refusal under the digest they used
+    /// to share: `18446744073709551615` and `18446744073709551616` both
+    /// refuse, and of `0.1` and `0.1000000000000000000001` only `0.1`
+    /// admits. No two documents share a digest.
+    #[trace("TC-145", "FR-056-AC-13", "FR-056-AC-14")]
+    #[test]
+    fn documents_differing_only_in_an_inexact_number_share_no_digest() {
+        let shared_integer = digest_of(
+            br#"{"package":{"count":18446744073709552000,"identity":"acme/orders","version":"1"}}"#,
+        );
+        let shared_tenth =
+            digest_of(br#"{"package":{"count":0.1,"identity":"acme/orders","version":"1"}}"#);
+        for (number, shared, inexact) in [
+            ("18446744073709551615", shared_integer, Inexact::Integer),
+            ("18446744073709551616", shared_integer, Inexact::Integer),
+            ("0.1000000000000000000001", shared_tenth, Inexact::Number),
+        ] {
+            let bytes = document_with_count(number).into_bytes();
+            let map = BTreeMap::from([(shared, bytes)]);
+            let (offered, digest_domain) =
+                selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared);
+            assert_eq!(
+                admit(&offered, &digest_domain, &map).unwrap_err(),
+                noncanonical_number("/package/count".parse().unwrap(), inexact, number),
+                "{number}"
+            );
+        }
+        let tenth = document_with_count("0.1").into_bytes();
+        let map = BTreeMap::from([(shared_tenth, tenth)]);
+        let (offered, digest_domain) =
+            selection("acme/orders", "1", SHA256_JCS_DIGEST_DOMAIN, shared_tenth);
+        assert!(admit(&offered, &digest_domain, &map).is_ok());
+    }
+
+    /// The decision reads the number's text in time linear in its length
+    /// and allocates nothing, so a nine-digit exponent decides at once, and
+    /// a fraction or exponent of any length decides by exact decimal
+    /// reasoning rather than a rounded double. Two texts denote the same
+    /// value exactly when their digits and scale agree; zero has no sign.
+    #[trace("TC-145", "FR-056-AC-13", "FR-056-AC-14")]
+    #[test]
+    fn decides_on_the_text_without_rounding() {
+        let long_fraction = format!("9007199254740992.{}1", "0".repeat(400));
+        let long_exponent = format!("9007199254740993e{}", "0".repeat(400));
+        let long_negative_exponent = format!("9007199254740993e-{}1", "0".repeat(400));
+        let zeros_then_digits = format!("0.{}9007199254740993e416", "0".repeat(400));
+        for (lexeme, beyond) in [
+            ("1e999999999", true),
+            ("-1E+999999999", true),
+            ("1e-999999999", false),
+            ("1e99999999999999999999999999999", true),
+            ("1e-99999999999999999999999999999", false),
+            ("0.0e99999999999999999999999999999", false),
+            ("9007199254740992e0", false),
+            ("9007199254740993e0", true),
+            ("900719925474099.3e1", true),
+            ("900719925474099.2e1", false),
+            ("10000000000000000", true),
+            ("9999999999999999", true),
+            ("1000000000000000", false),
+            (long_fraction.as_str(), false),
+            (long_exponent.as_str(), true),
+            (long_negative_exponent.as_str(), false),
+            (zeros_then_digits.as_str(), true),
+        ] {
+            assert_eq!(
+                Decimal::of(lexeme).is_whole_beyond_2_53(),
+                beyond,
+                "{lexeme}"
+            );
+        }
+        let tenth_zeros = format!("0.1{}", "0".repeat(400));
+        for (left, right, same) in [
+            ("0.1", "1e-1", true),
+            ("0.10", "1e-1", true),
+            (tenth_zeros.as_str(), "1e-1", true),
+            ("100", "1e2", true),
+            ("-0", "0e0", true),
+            ("-0.0e-999", "0e0", true),
+            ("1e-400", "0e0", false),
+            ("-1.5", "1.5e0", false),
+            ("0.1000000000000000000001", "1e-1", false),
+            ("9007199254740993.5", "9.007199254740994e15", false),
+            ("1e-99999999999999999999999999999", "0e0", false),
+        ] {
+            assert_eq!(
+                Decimal::of(left).same_value(&Decimal::of(right)),
+                same,
+                "{left} = {right}"
+            );
         }
     }
 

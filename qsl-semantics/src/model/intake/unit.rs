@@ -75,8 +75,8 @@ pub struct UnitIntakeRefusal {
 /// The package input FR-056 names: each supplied domain package document
 /// keyed by its `sha256-jcs` digest. A document that does not parse is keyed
 /// by the SHA-256 of its raw bytes, the digest FR-154 check 3 takes of such
-/// bytes, so a selection of it refuses there rather than as a missing
-/// package. Each document is parsed here to key it and again when a
+/// bytes, so a selection of it refuses at admission rather than as a
+/// missing package. Each document is parsed here to key it and again when a
 /// selection admits it.
 pub fn package_input<'a>(
     documents: impl IntoIterator<Item = &'a [u8]>,

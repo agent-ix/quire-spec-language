@@ -1269,7 +1269,6 @@ fn frame_invocation_bytes(
 /// Runs `clause_name` (`AttemptUpdatePre`/`AttemptUpdatePost`) over an
 /// invocation built from `pre_objects`/`post_objects` ((key, versionNumber,
 /// parent) triples), self object `self_key`, declared `created`/`deleted`.
-#[allow(clippy::too_many_arguments)]
 fn run_frame_clause(
     clause_name: &str,
     pre_objects: &[(&str, i64, Option<&str>)],
@@ -1277,6 +1276,32 @@ fn run_frame_clause(
     self_key: &str,
     created: &[&str],
     deleted: &[&str],
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    run_frame_clause_editing(
+        clause_name,
+        pre_objects,
+        post_objects,
+        self_key,
+        created,
+        deleted,
+        |bytes| bytes,
+    )
+}
+
+/// [`run_frame_clause`], with the invocation's bytes passed through
+/// `edit_invocation` before they are digested and provisioned.
+#[allow(clippy::too_many_arguments)]
+fn run_frame_clause_editing(
+    clause_name: &str,
+    pre_objects: &[(&str, i64, Option<&str>)],
+    post_objects: &[(&str, i64, Option<&str>)],
+    self_key: &str,
+    created: &[&str],
+    deleted: &[&str],
+    edit_invocation: impl FnOnce(Vec<u8>) -> Vec<u8>,
 ) -> Result<
     qsl_semantics::model::observation::AdmittedObservations,
     qsl_semantics::model::observation::AdmissionFailure,
@@ -1308,7 +1333,7 @@ fn run_frame_clause(
         ..post
     };
     let invocation = frame_label("invocation");
-    let invocation_bytes = frame_invocation_bytes(
+    let invocation_bytes = edit_invocation(frame_invocation_bytes(
         &invocation,
         &model_digest,
         &pre,
@@ -1316,7 +1341,7 @@ fn run_frame_clause(
         self_key,
         created,
         deleted,
-    );
+    ));
     let invocation = qsl_semantics::model::observation::DocumentRef {
         digest: frame_document_digest(&invocation_bytes),
         ..invocation
@@ -4655,6 +4680,88 @@ fn tc465_row42_two_blank_labels_names_the_first_in_order() {
     assert_eq!(
         record.fields.get("label").map(String::as_str),
         Some("revision_namespace")
+    );
+}
+
+/// The precondition `AttemptUpdatePre` over the authorized-change
+/// invocation, with the invocation's `member` replaced by the JSON text
+/// `raw`.
+fn run_precondition_with_member(
+    member: &str,
+    raw: &str,
+) -> Result<
+    qsl_semantics::model::observation::AdmittedObservations,
+    qsl_semantics::model::observation::AdmissionFailure,
+> {
+    let pre = [("root", 1, None)];
+    let post = [("root", 2, None)];
+    run_frame_clause_editing("AttemptUpdatePre", &pre, &post, "root", &[], &[], |bytes| {
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value[member] = json!("@raw@");
+        value.to_string().replace("\"@raw@\"", raw).into_bytes()
+    })
+}
+
+/// FR-106-AC-11: a precondition reads no further than check 1.3 into an
+/// invocation's `member`, yet a number there with no exact RFC 8785
+/// spelling refuses `noncanonical_wire` with `cause` and `pointer`, before
+/// the digest is compared; the same member holding `exact` admits.
+fn assert_member_number_refused(member: &str, raw: &str, exact: &str, cause: &str, pointer: &str) {
+    match run_precondition_with_member(member, raw) {
+        Err(qsl_semantics::model::observation::AdmissionFailure::Refused(record)) => {
+            assert_eq!(record.code, Code::NoncanonicalWire, "{member}");
+            assert_eq!(record.cause, cause, "{member}");
+            assert_eq!(
+                record.fields.get("document_pointer").map(String::as_str),
+                Some(pointer),
+                "{member}"
+            );
+        }
+        other => panic!("{member}: expected Refused(noncanonical_wire/{cause}), got {other:?}"),
+    }
+    run_precondition_with_member(member, exact)
+        .unwrap_or_else(|failure| panic!("{member} holding {exact}: {failure:?}"));
+}
+
+#[trace("TC-465", "FR-106-AC-11")]
+#[test]
+fn an_inexact_number_in_an_unread_post_member_refuses() {
+    assert_member_number_refused("post", "9007199254740993", "2", "inexact-integer", "/post");
+}
+
+#[trace("TC-465", "FR-106-AC-11")]
+#[test]
+fn an_inexact_number_in_an_unread_result_member_refuses() {
+    assert_member_number_refused(
+        "result",
+        "0.1000000000000000000001",
+        "0.1",
+        "inexact-number",
+        "/result",
+    );
+}
+
+#[trace("TC-465", "FR-106-AC-11")]
+#[test]
+fn an_inexact_number_in_an_unread_created_member_refuses() {
+    assert_member_number_refused(
+        "created",
+        "[0,1e-400]",
+        "[0,1e-300]",
+        "inexact-number",
+        "/created/1",
+    );
+}
+
+#[trace("TC-465", "FR-106-AC-11")]
+#[test]
+fn an_inexact_number_in_an_unread_deleted_member_refuses() {
+    assert_member_number_refused(
+        "deleted",
+        r#"[{"a/b":18446744073709551616}]"#,
+        r#"[{"a/b":9007199254740992}]"#,
+        "inexact-integer",
+        "/deleted/0/a~1b",
     );
 }
 
