@@ -11,7 +11,7 @@
 //! semantic decision. They are published as four typed operations,
 //! [`parse`], [`select`], [`check`] and [`package`], each over a
 //! caller-owned [`Cancel`](quire_exact::Cancel) handle (FR-275, FR-276,
-//! FR-278), and [`execute`] calls a checked function.
+//! FR-278); a checked function is called by the crate-internal `execute`.
 //!
 //! It lives in layer 6 `replay` because its callers are layer 6: `command`'s
 //! CLI `compile`, which writes the emitted bytes, and this crate's replay
