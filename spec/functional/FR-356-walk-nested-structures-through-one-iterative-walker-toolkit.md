@@ -21,9 +21,12 @@ relationships:
 ## Description
 
 QSL SHALL walk every nested structure iteratively, in arena order or on one
-shared `no_std` walker toolkit, so that no walk's native stack use grows
+shared `no_std` walker toolkit, the crate `quire-walk` in its own repository,
+`agent-ix/quire-walk`, so that no walk's native stack use grows
 with the input's depth (ADR-030 D-1 items 2, 6 and 7; QSpec FR-460). The
-qualified core (the S0 to S4 checker, the prove path and the certificate
+toolkit's own behaviour (arena order, the walker, its Kani harnesses;
+FR-356 AC-2 to AC-4, TC-898, TC-899) is specified and tested in that
+repository. The qualified core (the S0 to S4 checker, the prove path and the certificate
 checkers; ADR-029 CB-2) is iterative only. Outside the core, growing the
 stack on demand is a justified exception through one wrapper.
 
@@ -39,32 +42,17 @@ a hand-written stack in each walk.
 
 ## Behavior
 
-1. **Arena order.** A tree stored as an arena SHALL hold each node after its
-   children, and a bottom-up computation over it SHALL be one forward loop
-   over the arena, with no stack.
-2. **The walker toolkit.** A top-down or mutually recursive walk SHALL run on
-   the walker toolkit. The toolkit SHALL keep an explicit heap stack of
-   frames, each frame a value of a type the walk declares, and SHALL call
-   the walk's enter callback when it pushes a node's frame and its exit
-   callback with that frame when it pops it. An enter callback SHALL name
-   the children to push, possibly of another node type, and MAY stop the
-   walk with a value, which the toolkit returns with no further callback.
-   The toolkit SHALL grow its stack by one frame per entered node, so a
-   walk's memory is bounded by the nodes its stage charges (ADR-030 D-1
-   item 3).
-3. **One shared leaf crate.** The toolkit SHALL be the crate `quire-walk`,
-   a `#![no_std]` shared leaf in the QSL workspace that depends only on
-   `core` and `alloc` (ADR-011 §6.1 layer W). It is in FB-05's shared-leaf
-   class beside `quire-exact` and `quire-semantic-value`, and arch-lint's
-   `SHARED_LEAVES` lists it, so QSL, IR, CG and RT each depend on it at
-   `branch = "main"` without depending on any `qsl-*` crate (ADR-011 FB-05).
-   `quire-exact` stays a leaf with no dependency and keeps its hand-written
-   iterative traits (ADR-030 D-4.7).
-4. **Kani-verified.** The toolkit SHALL carry Kani harnesses proving, for
-   every tree within each harness's bound, that every node is entered and
-   exited exactly once, that each exit receives the frame its enter pushed,
-   that exits come in the reverse order of their enters along each path,
-   that a stop ends the walk at once, and that no traversal panics.
+1. **Arena order.** Moved to `agent-ix/quire-walk` (FR-356 Behavior 1).
+2. **The walker toolkit.** Moved to `agent-ix/quire-walk` (FR-356 Behavior 2).
+3. **One shared leaf crate.** QSL SHALL depend on `quire-walk`, the
+   `#![no_std]` shared leaf that depends only on `core` and `alloc`, as a git
+   dependency at `branch = "main"` of `agent-ix/quire-walk` (ADR-011 §6.1
+   layer W). It is in FB-05's shared-leaf class beside `quire-exact` and
+   `quire-semantic-value`, and arch-lint's `SHARED_LEAVES` lists it, so QSL,
+   IR, CG and RT each depend on it without depending on any `qsl-*` crate
+   (ADR-011 FB-05). `quire-exact` stays a leaf with no dependency and keeps
+   its hand-written iterative traits (ADR-030 D-4.7).
+4. **Kani-verified.** Moved to `agent-ix/quire-walk` (FR-356 Behavior 4).
 5. **Iterative only in the core.** No walk in the qualified core SHALL grow
    or switch the native stack, and no crate in the core SHALL depend on
    `stacker` or on `qsl-walk-grow`, directly or through a feature.
@@ -84,7 +72,7 @@ a hand-written stack in each walk.
    of the qualified core SHALL have a test that runs a 100,000-deep input
    through it on a thread with a 512 KiB stack, under limits raised to fit
    the input, so leftover or hidden recursion fails at test time.
-8. **Deep-input fuzz target.** The toolkit's crate set SHALL ship a fuzz
+8. **Deep-input fuzz target.** QSL SHALL ship a fuzz
    target that generates deeply nested QSL sources (nested brackets, sums,
    `else if` chains, nested `let`s and nested `Option` types) and drives
    each through the S1 parser and the S3 checker.
@@ -93,18 +81,16 @@ a hand-written stack in each walk.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-356-AC-1 | `quire-walk` builds for `thumbv7em-none-eabi` with `#![no_std]`, and it has no features and a dependency tree of only `core` and `alloc`. arch-lint's `SHARED_LEAVES` holds `quire-walk`, and its direction check admits an IR, RT or CG edge to `quire-walk` and refuses one to any `qsl-*` crate other than CG's normal edge to `qsl-replay` (FB-05). | Test (TC-898) |
-| FR-356-AC-2 | On a thread with a 512 KiB stack, a toolkit walk over a 100,000-deep chain enters every node once in pre-order and exits every node once in post-order, each exit receiving the frame its enter pushed. A mutually recursive walk over a 100,000-level chain that alternates an expression node and a type node does the same, each level's frame of its own type. An enter callback that stops at depth 50,000 returns its value, and no callback runs after it. | Test (TC-898) |
-| FR-356-AC-3 | A bottom-up computation over a 100,000-node arena (the node count of a 100,000-term sum's checked body) is one forward loop over the arena and completes on a thread with a 512 KiB stack. | Test (TC-898) |
-| FR-356-AC-4 | `cargo kani` on the toolkit crate verifies every harness: each node entered and exited exactly once, each exit receiving its enter's frame, exits in reverse enter order along each path, a stop ending the walk at once, and no panic, for every tree within the harness bound. | Kani proof (TC-899) |
+| FR-356-AC-1 | arch-lint's `SHARED_LEAVES` holds `quire-walk`, and its direction check admits an IR, RT or CG edge to `quire-walk`, sourced from `agent-ix/quire-walk`, and refuses one to any `qsl-*` crate other than CG's normal edge to `qsl-replay` (FB-05). The crate's own `no_std` build, features and dependency tree are FR-356-AC-1 of `agent-ix/quire-walk`. | Test (`tools/arch-lint`: `tc_arch_lint_metadata_009`, `tc_arch_lint_direction_004`) |
 | FR-356-AC-5 | Each public entry point of the qualified core (the S0 to S4 checker, the prove path and the certificate checkers) has a test that runs a 100,000-deep input through it on a thread with a 512 KiB stack, under limits raised to fit, and returns its result. No crate in the core depends on `stacker` or on `qsl-walk-grow`, either in its own `cargo tree` or in the resolved workspace build, and arch-lint's direction check refuses a core crate's edge to `qsl-walk-grow`. | Test (TC-902) |
 | FR-356-AC-6 | `qsl-walk-grow`'s `maybe_grow` called on a 100,000-deep native recursion completes on a thread with a 512 KiB stack, and is a plain call of its closure under `cfg(kani)`. Each call site of `maybe_grow` outside the core has a test driving a 100,000-deep recursion through it on a thread with a 512 KiB stack, and no code outside `maybe_grow` calls `stacker`. | Test (TC-902) |
 | FR-356-AC-7 | The deep-input fuzz target generates sources nested from 1 to 100,000 levels deep and drives each through the S1 parser and the S3 checker. A run of 10,000 inputs ends with every input returning a result or a stated limit outcome, and no panic, abort or stack overflow. | Test (TC-903) |
 
 ## Status
 
-Partly implemented. `quire-walk` and `qsl-walk-grow` land with their tests,
-Kani harnesses (TC-898, TC-899) and the deep-input fuzz target (TC-903).
+Partly implemented. `quire-walk` lives in `agent-ix/quire-walk` with its
+tests and Kani harnesses (TC-898 and TC-899 there). `qsl-walk-grow` and the
+deep-input fuzz target (TC-903) land here.
 Until ADR-030 slice 1 deletes the S2 forms and S3 checker depth caps, a
 fuzz input nested deeper than either cap ends in that cap's limit outcome,
 so it does not yet reach the walks past it. AC-5 and the call-site half of

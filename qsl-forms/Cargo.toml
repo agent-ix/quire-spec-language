@@ -15,7 +15,7 @@ description = "ADR-011 §6.1 layer 2: S2 parsed semantic forms -- the forms core
 qsl-cst = { path = "../qsl-cst" }
 qsl-foundation = { path = "../qsl-foundation" }
 quire-exact = { path = "../quire-exact" }
-quire-walk = { path = "../quire-walk" }
+quire-walk = { workspace = true }
 
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }

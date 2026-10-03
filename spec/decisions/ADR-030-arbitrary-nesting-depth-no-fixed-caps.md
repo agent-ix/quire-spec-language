@@ -40,7 +40,8 @@ relationships:
 
 Draft, 2026-10-01. Design only: this record makes the decisions. The QSL
 requirements that carry them are FR-255 to FR-264 and FR-356 (US-027, TC-720
-to TC-739, TC-898, TC-899 and TC-902), with the D-5 deletions applied in place. The QSpec requirements for
+to TC-739 and TC-902; the walker toolkit's own TC-898 and TC-899 are in
+`agent-ix/quire-walk`), with the D-5 deletions applied in place. The QSpec requirements for
 D-1 and D-2 follow as separate work. No code changes
 with this record. The owner's rulings on the draft's questions are
 recorded in D-9.
@@ -104,7 +105,8 @@ wire format.
    - **Arena order.** An arena stores each node after its children, so a
      bottom-up computation is one forward loop over the arena with no stack.
    - **The walker toolkit.** A top-down or mutually recursive walk runs on
-     the one shared `no_std` walker toolkit, the crate `quire-walk`: an
+     the one shared `no_std` walker toolkit, the crate `quire-walk`, in its own repository
+     `agent-ix/quire-walk`: an
      explicit heap stack of typed frames, with enter and exit callbacks. The
      toolkit is Kani-verified. It is a shared leaf in FB-05's class (ADR-011
      §6.1 layer W), so QSL, IR, CG and RT all use it.
@@ -454,7 +456,8 @@ requirements work that follows this record.
 - Each public entry point of the qualified core, and each `maybe_grow` call
   site outside it, has a test at 100,000 depth on a thread with a small
   fixed stack (D-1 items 6 and 7; FR-356, TC-902). The walker toolkit has
-  its own small-stack tests and Kani harnesses (TC-898, TC-899).
+  its own small-stack tests and Kani harnesses (TC-898, TC-899, in
+  `agent-ix/quire-walk`).
 - Deep inputs cover a sum, an `else if` chain and nested `let`s through parse,
   forms, check, lower, emit, v2 read and evaluate; a deep `Option` type and a
   recursive list value through state key, replay and identity; deep JSON
@@ -477,7 +480,8 @@ QSL's own work lands in four slices. Each names only the other lane's work
 it waits on.
 
 - **Slice 1. Waits on nothing outside QSL.**
-  - The walker toolkit `quire-walk` and the `maybe_grow` wrapper crate
+  - The walker toolkit `quire-walk` (its own repository,
+    `agent-ix/quire-walk`) and the `maybe_grow` wrapper crate
     `qsl-walk-grow` (FR-356), landing first,
     since the walks below run on it.
   - Forms arena and iterative `control_anchors` (D-4.2).

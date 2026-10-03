@@ -311,7 +311,7 @@ mod tests {
     /// facade's crate is the one stated exception and is not reported; its
     /// normal dependency on any other QSL crate, the layer-3
     /// `qsl-semantics` or the root crate, is reported.
-    #[trace("TC-156", "FR-059-AC-1", "TC-898", "FR-356-AC-1")]
+    #[trace("TC-156", "FR-059-AC-1", "FR-356-AC-1")]
     #[test]
     fn tc_arch_lint_direction_004_cg_normal_edge_is_the_named_exception() {
         let report = check(&[edge(Repo::Cg, Repo::Qsl, EdgeKind::Normal, "qsl-replay")]);

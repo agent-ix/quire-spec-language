@@ -534,8 +534,6 @@ names different artifacts in each.
 | TC-737 | Replay passes every stage limit through and names the setting it reached | Integration | P1 | FR-263-AC-2, FR-263-AC-3 | 🚧 Planned |
 | TC-738 | A deep package emits, reads back and verifies, in the stratified grammar | Integration | P1 | FR-264-AC-1, FR-264-AC-2 | 🚧 Planned |
 | TC-739 | The v2 read refuses an inline nested term and names its limits' settings | Unit | P1 | FR-264-AC-3, FR-264-AC-4 | 🚧 Planned |
-| TC-898 | The walker toolkit walks deep trees on a small stack | Unit | P1 | FR-356-AC-1, FR-356-AC-2, FR-356-AC-3 | 🚧 Planned |
-| TC-899 | Kani verifies the walker toolkit | Property | P1 | FR-356-AC-4 | 🚧 Planned |
 | TC-902 | Core entry points and maybe_grow sites run 100,000 deep on a small stack | Unit | P1 | FR-356-AC-5, FR-356-AC-6 | 🚧 Planned |
 | TC-903 | A deep-input fuzz target drives the parser and the checker | Property | P1 | FR-356-AC-7 | 🚧 Planned |
 | TC-894 | An imported call discharges its preconditions as a local call does | Integration | P1 | FR-099-AC-8 | 🚧 Planned |
@@ -1016,10 +1014,12 @@ limit that bounds it and its deep-input criteria: S1 (FR-256), S2 (FR-257),
 S3 (FR-258), identities and QSL's use of `quire-canonical`
 (FR-259), semantic-IR intake (FR-260), the other untrusted JSON reads
 (FR-261), the evaluator (FR-262), replay (FR-263) and the v2 wire (FR-264).
-FR-356 is the walker toolkit those walks run on, the qualified core's
+FR-356 is the walker toolkit those walks run on (the crate
+`quire-walk` in `agent-ix/quire-walk`, which holds its AC-2 to AC-4 and
+TC-898 and TC-899), the qualified core's
 iterative-only rule with its deep entry-point tests, the `maybe_grow`
 wrapper outside the core, and the deep-input fuzz target. TC-720 to TC-739,
-TC-898, TC-899, TC-902 and TC-903 back every AC, all `🚧 Planned`. Each 100,000-deep case
+TC-902 and TC-903 back every AC that stays here (AC-1 is backed by arch-lint's `tc_arch_lint_metadata_009` and `tc_arch_lint_direction_004`), all `🚧 Planned`. Each 100,000-deep case
 sets its own limits and runs on a thread with a 512 KiB stack. TC-729 waits
 on the `quire-canonical` capabilities FR-259 names, TC-730 and TC-731 on the
 semantic-IR crate's move onto that reader, and TC-739's malformed-wire step
