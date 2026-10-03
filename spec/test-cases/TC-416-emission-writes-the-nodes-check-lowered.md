@@ -113,12 +113,9 @@ Tag the tests `#[trace("FR-093-AC-n", "TC-416")]` with the AC each backs.
   written before `test/\u{1F600}` and reads back Verified. The
   vectors' `package_id` recomputes, each entry mutation refuses at its entry
   and each order vector gets its recorded outcome and locus.
-- Step 9: `diagnostics.catalog` is authority `agent-ix`, identity
-  `quire.native.diagnostics/v1`, revision `quire-draft` with the value
-  QSpec's `native-diagnostics.md` header declares, digest domain
-  `quire.definition.bytes/v1`, digest the SHA-256 of that document's bytes
-  as `native_diagnostics_catalog` reads it, and IR admits the package
-  (FR-093-AC-17).
+- Step 9: `diagnostics.catalog` is exactly authority `agent-ix` and
+  identity `quire.native.diagnostics/v1`, with no other member, and IR
+  admits the package (FR-093-AC-17).
 - Step 10: every package emits with nothing omitted. Each member node's
   occurrences are exactly one `generated` occurrence, ordinal 0, whose
   region text is `a < b`, `a = b`, or `Status` when no function names the

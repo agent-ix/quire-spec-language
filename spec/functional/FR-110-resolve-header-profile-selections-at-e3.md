@@ -30,8 +30,9 @@ header declarations in the catalog of the family that owns the selected
 definition, and refuse, with a catalogued code and cause, every header
 profile that does not resolve (ADR-011 §2.4, amended 2026-09-26).
 This requirement specifies the `Value` family's catalog,
-`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which reads
-QSpec's `complete-value-lock.json` by reference, including its
+`DefinitionLock` (`qsl-semantics/src/value/definition.rs`), which names
+each definition the QSL build implements by `{authority, identity}`, the
+identities QSpec's `complete-value-lock.json` names, including its
 `header_selectable_layers` rows. A clause profile (FR-322 roles
 `temporal_profile` and `protocol_profile`) resolves in its clause family's
 catalog (ADR-012 §2, the `TemporalTrace` and `ProtocolClause` families,
@@ -49,11 +50,12 @@ through the emitter (ADR-011 §2.4, amended 2026-09-24).
 - The unit's profile selections as S2 carries them
   (`qsl_foundation::selection::ProfileSelection`: alias, `DefinitionRef`
   identity, declaration span, identity-literal span).
-- `DefinitionLock::pinned()`, the closed catalog of QSpec
-  `complete-value-lock.json` rows, including its `header_selectable_layers`
-  rows (each layer's identity, the layers it requires and its admitted-form
-  definition file), read from the `quire-specification` crate's
-  compiled-in bytes, which the resolution reads itself.
+- `DefinitionLock::pinned()`, the closed catalog of the definitions QSpec
+  `complete-value-lock.json` names, each by `{authority, identity}`,
+  including its `header_selectable_layers` rows (each layer's identity, the
+  layers it requires and its admitted-form definition file). It holds no
+  revision, no digest and no QSpec document; `make conformance` compares it
+  with QSpec's lock, read at run time.
 
 ## Outputs
 
@@ -204,7 +206,10 @@ and `a_token_after_a_header_profile_identity_is_a_syntax_error`,
 `qsl-replay/src/spine.rs`). A header profile is
 `profile <alias> = "<identity>";` and resolves by identity alone.
 
+The emitted lock rows are `{authority, identity}`, with no revision and no
+digest, and `DefinitionLock` names each catalog definition the same way
+(`CatalogRole::identity`); the `quire-specification` crate dependency is
+deleted.
+
 Remaining work: layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented. `DefinitionLock` still reads its catalog from
-the `quire-specification` crate's compiled-in lock bytes, because the
-emitted lock rows still carry a revision and digest.
+rows are not yet implemented.

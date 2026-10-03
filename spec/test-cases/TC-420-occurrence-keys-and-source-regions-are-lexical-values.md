@@ -12,7 +12,7 @@ relationships:
 
 Verify ADR-013 O-07's occurrence key and region, and O-12's region
 equality. This catches a region equality that compares the authority or
-revision labels, a `RawSourceRef` that admits a non-source digest, and a
+identity labels, a `RawSourceRef` that admits a non-source digest, and a
 lowering that leaves a node with no source occurrence.
 
 Scope: FR-095-AC-1, FR-095-AC-2.
@@ -22,11 +22,10 @@ Scope: FR-095-AC-1, FR-095-AC-2.
 1. Compare occurrence keys that differ only in node id, only in role and only
    in ordinal, and two with equal members.
 2. Build a `RawSourceRef` with an empty authority, an empty identity and a
-   `quire.definition.bytes/v1` digest; a `Revision` with an empty namespace
-   and an empty value; a `SourceRegion` with start 5, end 4 and with start 5,
-   end 5.
+   `quire.definition.bytes/v1` digest; a `SourceRegion` with start 5, end 4
+   and with start 5, end 5.
 3. Compare a region (digest `d`, 4, 9) with one of the same members under
-   another authority, identity and revision, and with regions changing only
+   another authority and identity, and with regions changing only
    the digest, only the start and only the end.
 4. Check a package holding `helper(flag: Boolean): Boolean { flag }` and
    `caller(): Boolean { if true then helper(false) else false }`, and look up
