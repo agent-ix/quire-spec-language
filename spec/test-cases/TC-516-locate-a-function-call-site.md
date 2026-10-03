@@ -29,7 +29,7 @@ library as `DependencyInput` or `Dependency`.
 It returns the compiled package's bytes its `package_id` names, and
 builds a `DeclaredDomain` through the facade's re-exports.
 
-Scope: FR-121-AC-1 to FR-121-AC-14.
+Scope: FR-121-AC-1 to FR-121-AC-15.
 
 ## Test Procedure
 
@@ -86,6 +86,14 @@ Scope: FR-121-AC-1 to FR-121-AC-14.
     with a syntax error; run `replay` over the same unit, packages and
     dependency input for each and read `ReplayRefusal::code`.
 
+15. Compile a unit declaring `p(x: Int[0, 9]): Boolean { x < 5 }` and
+    `q(x: Int[0, 9]): Boolean { x < 5 }`, select `p` and `q`, and compare
+    each `function` and `declaration` with the compiled graph's `function`
+    nodes and an occurrence key built through the facade. Recompile the unit
+    with a comment and blank lines inserted before `p` and select `p`
+    again. Over the step 6 unit, select `sameIdentity` and compare its
+    `function` with every `ClauseSite` `node` of steps 6 and 8.
+
 Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
 
 ## Expected Results
@@ -133,3 +141,8 @@ Tag the tests `#[trace("TC-516", "FR-121-AC-n")]`.
   each `CallSiteRefusal::code` equals the `ReplayRefusal::code` for the
   same input, the syntax error's equal to that of `replay`'s
   `ReplayRefusal::Recompile`.
+- Step 15: `p`'s `function` is the graph's `function` node declared `p`
+  and its `declaration` is that node's `declaration` occurrence at ordinal
+  0; `q`'s `parameters` equal `p`'s and its `function` differs; the
+  recompiled unit gives `p` the same `function` and `declaration`;
+  `sameIdentity`'s `function` equals no `ClauseSite` `node`.
