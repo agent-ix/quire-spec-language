@@ -664,14 +664,14 @@ Key: `2c4bc1a531910aea486974e46bacb6526d271f456f8dc85c92ddfdd86283c27b`
 
 Key: `676d25d447e1bfc754a7a442e57f1d73cf40a5173d32e5aa1d3f7f2e9f7d0ae0`
 
-G16-G17, group digest `5479ad5c83c36a2788eafecaa0a608d82573b59b3bc46c44c917bc082ace8254`:
+G16-G17, group digest `4b7258b03a4f23909ef95b5c016640367fdd077e66542ff237c007522689802f`:
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|
 | 0 | G16 `Node` | `48941cd392fb2016446dcf8d97800d86c49aa8245cf24059b1898720f7f48c22` | `7a49f3f01641ff7adf2eea5f8c494c0a82d536535da4123194f9c56c4f23166e` |
 | 1 | G17 `Option<Node>` | `581d248695dafdd3eaa1e684a6ff9085b68d9f192adfa77cf9d5162ca8048266` | `c2ed1d827853bc7815578d453189cff97a1cf9751934e6d0a591a3d8312f5c69` |
 
-G18-G21, group digest `3416bf755bd330e4277e231f64f2a0ac5bc9d69530f62f16f71a9f8a633919f0`:
+G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b9914c865f`:
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|

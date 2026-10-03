@@ -877,7 +877,7 @@ G1, group digest `4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b1
 |---|---|---|---|
 | 0 | G1 | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` | `3ae296ebb5c73914192b56dcb1ed43464dc277339747b6840db238a5d65f51e4` |
 
-G2-G3, group digest `c79c9c74f6849f66fcf9d2d2af6c4fddd157c567785083171cfa5c7acabfc660`:
+G2-G3, group digest `c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442bafcc`:
 
 | Ordinal | Member | Anonymous signature | Full signature |
 |---|---|---|---|
