@@ -41,12 +41,14 @@ checked-input:
 # FR-080-AC-2: denies the inventory/linkme/ctor crates outright
 # (deny.toml), so a future contributor cannot repopulate the registry through
 # a link-time/plugin-discovery mechanism instead of the ordinary value FR-075
-# requires. Scoped to `check bans` -- deny.toml configures no license or
-# advisory policy.
+# requires. ADR-013 §2: deny.toml's `quire-canonical` entry denies a second
+# copy of QSL's one RFC 8785 implementation. The recipe runs with
+# `--workspace`, so both checks cover every workspace crate, not only the
+# root package's graph. Scoped to `check bans` -- deny.toml configures no
+# license or advisory policy.
 #
-# Install: `cargo install cargo-deny --locked --version 0.19.8` (the same
-# pinned version `.github/workflows/ci.yml` installs). This target FAILS
-# when `cargo-deny` is not on PATH, with that exact install command --
+# Install: `cargo install cargo-deny --locked`. This target FAILS when
+# `cargo-deny` is not on PATH, with that install command --
 # `.github/workflows/ci.yml` is `workflow_dispatch`-only, so `make ci` is the
 # gate that actually runs in practice, and a machine without cargo-deny must
 # not be able to report a green `make ci` over a tree that depends on one of
@@ -60,9 +62,9 @@ checked-input:
 # what actually enforces the check locally.
 cargo-deny-bans:
 	@if command -v cargo-deny >/dev/null 2>&1; then \
-		cargo deny check bans --config deny.toml; \
+		cargo deny --workspace check bans --config deny.toml; \
 	else \
-		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked --version 0.19.8\` to install it" >&2; \
+		echo "cargo-deny-bans: cargo-deny is not installed; run \`cargo install cargo-deny --locked\` to install it" >&2; \
 		exit 1; \
 	fi
 
@@ -169,10 +171,8 @@ ci-all-features:
 	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 	cargo test --locked --workspace --all-features
 
-# The same three no-default-features checks `.github/workflows/ci.yml` runs
-# after its own clippy/test steps: a from-clean build (its own target-dir, so
-# it never reuses this build's cached artifacts), the fixture-audit negative
-# controls and the parse example.
+# The no-default-features checks: a from-clean build (its own target-dir, so
+# it never reuses this build's cached artifacts) and the parse example.
 #
 # FR-042-AC-15/FR-050-AC-8: a `--lib`, `--no-default-features`
 # check with only `handoff-writer` turned on demonstrates the acceptance
@@ -183,7 +183,6 @@ ci-all-features:
 ci-clean-build:
 	cargo build --locked --workspace --no-default-features --target-dir target/clean
 	cargo check --locked -p quire-spec-language --lib --no-default-features --features handoff-writer --target-dir target/clean
-	cargo run --locked --no-default-features --bin fixture-audit -- self-test
 	cargo run --locked --no-default-features -- parse agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 
 # PLAT-856: `rustdoc::broken_intra_doc_links` and `missing_docs` are only
@@ -222,7 +221,7 @@ fuzz-deep-input:
 	cp Cargo.lock fuzz/Cargo.lock
 	cd fuzz && cargo fuzz run -s none deep_input -- -runs=$(FUZZ_RUNS) -max_len=64
 
-ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-duplicate-revisions arch-lint-api-surface-qsl arch-lint-qualified-core
+ci: check-no-committed-binaries quire-exact-no-std quire-semantic-value-no-std quire-walk-no-std check-index-completeness ci-default-features ci-all-features ci-clean-build seam-probe string-edge route-lint checked-input cargo-deny-bans ci-docs arch-lint-canonical-encoder arch-lint-api-surface-qsl arch-lint-qualified-core
 
 # The FR-322 application-node key checked against QSpec's
 # published `operation_vectors`, read at run time from the
@@ -317,11 +316,8 @@ conformance:
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
 	echo "$$out" | grep -q '^conformance: [1-9][0-9]* bundle (code, cause) pairs listed by QSpec$$' || { echo "conformance: the bundle cause check did not run" >&2; exit 1; }
 
-# FR-059/FR-060/FR-061 (ADR-011 §7.1 T-12, #215): architecture-conformance
+# FR-059/FR-060 (ADR-011 §7.1 T-12, #215): architecture-conformance
 # checks over the QSL/IR/RT/CG ecosystem.
-#
-# `arch-lint-duplicate-revisions` (FR-061) needs only this repository's
-# `Cargo.lock` and is part of `ci:`: one copy of each first-party crate.
 #
 # `arch-lint-direction` (FR-059, FB-05/FB-11) needs real local checkouts of
 # the three backend repositories; point IR_CLONE/RT_CLONE/CG_CLONE at them.
@@ -337,15 +333,13 @@ conformance:
 # `arch-lint-api-surface-qsl` passes `--qsl-only`, which skips T12-A, so the
 # QSL-tree rules gate `ci:` without CG_CLONE.
 #
-# `arch-lint` runs this repo's own checks: api-surface, duplicate-revisions on
-# QSL's own root lock and canonical-encoder.
-# `arch-lint-api-surface` exits 2 without a `CG_CLONE` checkout, per T12-A
-# above.
+# `arch-lint` runs the checks that need only this repository:
+# api-surface-qsl, canonical-encoder and qualified-core.
 IR_CLONE ?=
 RT_CLONE ?=
 CG_CLONE ?=
 
-.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint-duplicate-revisions arch-lint arch-lint-canonical-encoder arch-lint-qualified-core
+.PHONY: arch-lint-direction arch-lint-api-surface arch-lint-api-surface-qsl arch-lint arch-lint-canonical-encoder arch-lint-qualified-core
 
 arch-lint-direction:
 	cargo run --locked -p arch-lint -- direction \
@@ -359,9 +353,6 @@ arch-lint-api-surface:
 # repository, so it is part of `ci:`.
 arch-lint-api-surface-qsl:
 	cargo run --locked -p arch-lint -- api-surface --qsl . --qsl-only
-
-arch-lint-duplicate-revisions:
-	cargo run --locked -p arch-lint -- duplicate-revisions --lockfile Cargo.lock
 
 # ADR-013 §2 (ADR-013:113): no second canonical encoder beside
 # `quire-canonical` -- a shipped file pairing a `serde_json` serializer with
@@ -378,9 +369,9 @@ arch-lint-qualified-core:
 	cargo run --locked -p arch-lint -- qualified-core --qsl .
 
 # Runs the three checks that need only this repository.
-# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE (see above) and is
-# run separately.
-arch-lint: arch-lint-api-surface arch-lint-duplicate-revisions arch-lint-canonical-encoder
+# `arch-lint-direction` needs IR_CLONE/RT_CLONE/CG_CLONE, and
+# `arch-lint-api-surface` needs CG_CLONE (see above); each runs separately.
+arch-lint: arch-lint-api-surface-qsl arch-lint-canonical-encoder arch-lint-qualified-core
 
 # The whole 30,000-input parser differential against
 # tests/fixtures/parser-differential/baseline.txt. `make ci` runs the first

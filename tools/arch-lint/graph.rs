@@ -46,13 +46,11 @@ impl fmt::Display for Repo {
 }
 
 /// Classify a resolved package as one of the four ADR-011 ecosystem
-/// repositories, by package name or by its `source` string. Shared by the
-/// FR-059 direction check (`metadata::edges_for_manifest`) and the FR-061
-/// duplicate-revision check (`duplicate_revisions::check`), so QSL holds one
-/// definition of an ecosystem *repository* component, not two: a package
-/// published from the same git repository under a different crate name (for
-/// example IR's own workspace member, published as `quire-contract-model`)
-/// still classifies as that one repository, never a second, distinct one.
+/// repositories, by package name or by its `source` string. This is QSL's one
+/// definition of an ecosystem *repository* component: a package published
+/// from the same git repository under a different crate name (for example
+/// IR's own workspace member, published as `quire-contract-model`) still
+/// classifies as that one repository, never a second, distinct one.
 pub fn classify(name: &str, source: Option<&str>) -> Option<Repo> {
     let haystack = source.unwrap_or(name);
     if name == "quire-spec-language" || haystack.contains("quire-spec-language") {
@@ -347,9 +345,7 @@ mod tests {
     }
 
     /// tc_arch_lint_direction_006 (negative control): QSL -> IR -> QSL is a
-    /// two-repository cycle (ADR-011 §7.1: "QSL's own Cargo.lock resolves
-    /// exactly one revision per quire-ecosystem crate" is a different rule;
-    /// this is FB-11's direction cycle, observed today as IR root -> QSL).
+    /// two-repository FB-11 cycle.
     #[trace("TC-156", "FR-059-AC-4")]
     #[test]
     fn tc_arch_lint_direction_006_two_repo_cycle_is_fb11_violation() {
@@ -389,10 +385,10 @@ mod tests {
 
     /// tc_arch_lint_direction_009: `classify` maps a package published from
     /// IR's repository under a different crate name (`quire-contract-model`)
-    /// to the same `Repo::Ir` as the repository's own facade package name --
-    /// this is what lets FR-061's duplicate-revision check treat both as one
-    /// component (R2, #249 review).
-    #[trace("TC-156", "FR-061-AC-2")]
+    /// to the same `Repo::Ir` as the repository's own facade package name,
+    /// so the direction check reads QSL's edge on `quire-contract-model` as
+    /// QSL -> IR.
+    #[trace("TC-156", "FR-059-AC-6")]
     #[test]
     fn tc_arch_lint_direction_009_classify_shares_repo_across_package_names() {
         assert_eq!(classify("quire-contract-ir", None), Some(Repo::Ir));

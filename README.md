@@ -225,8 +225,7 @@ cargo run --locked --target-dir target -- format agent-ix test:value-format fixt
 
 Run the full local gate with `make ci`: the committed-binary and index-completeness
 checks, formatting, clippy and `cargo test` under default features and
-`--all-features`, a clean no-default-features build with `fixture-audit self-test`
-and the parse example above, `cargo doc`, `seam-probe`, `string-edge`,
+`--all-features`, a clean no-default-features build and the parse example above, `cargo doc`, `seam-probe`, `string-edge`,
 `route-lint`, `cargo-deny-bans` and `arch-lint-canonical-encoder`. See `Makefile`
 for each step.
 
@@ -361,43 +360,8 @@ Private tracking: [LC01](https://github.com/agent-ix/quire-spec-language/issues/
 [compiler epic](https://github.com/agent-ix/quire-spec-language/issues/1).
 The shared contracts and LC02–LC05 work are tracked separately, in their own issues.
 
-## Review fixture audits
-
-The Rust `fixture-audit` binary checks optional private state-core review,
-role and rule-syntax packets under
-[Agent A #58](https://github.com/agent-ix/quire-research/issues/58).
-
-```sh
-cargo run --locked --target-dir target --bin fixture-audit -- review /path/to/specification/proposals/state-core/fixtures
-cargo run --locked --target-dir target --bin fixture-audit -- roles /path/to/specification/proposals/state-core/fixtures
-cargo run --locked --target-dir target --bin fixture-audit -- rule-syntax /path/to/specification/proposals/state-core
-QUIRE_STATE_CORE=/path/to/specification/proposals/state-core cargo test --locked --target-dir target --test it fixture_audit:: -- --ignored
-```
-
-Review checks 23 artifact files, seven invocation cases and six independent
-negative controls. The second command checks the optional private FS02 packet's exact
-artifacts and source regions. It is bookkeeping, not an independent
-semantic-reference matcher. These optional checks run separately from the native
-runtime.
-
-Rule-syntax wraps the FS03 rule examples in native source units and checks
-their syntax with the existing parser library. It checks the selected rule/profile digests,
-then expects 50 parsed expressions and one explicit unsupported refusal. It
-does not interpret the abstract type environments or execute their 51 authored
-typing/evaluation expectations. The owner adopted the separately digest-bound
-FS03 refinements for internal implementation; that decision does not rewrite
-the original profile bytes or establish executed typing/evaluation evidence.
-
-The final command runs the three explicitly selected private-packet integration
-tests, including independent corruptions. The normal Rust test suite needs no
-private sibling repository. Audit intake bounds files to 8 MiB, aggregate reads
-to 64 MiB, files/decoded values to 10,000, and JSON nesting to 64 values; it refuses
-escaped duplicate keys, invalid fields, foreign paths and exhausted budgets.
-Fixture trees must stay immutable during a run. See the
-[audit error catalog](docs/audit-error-codes.md).
-
 New tests use the shared `ix_trace_rs::trace` macro with canonical attributes
-such as `#[trace("TC-006", "FR-012-AC-6")]`. Quire's declared grammar binds the
+such as `#[trace("TC-156", "FR-059-AC-1")]`. Quire's declared grammar binds the
 IDs; the macro checks argument shape. `#[cfg(test)]` controls compilation.
 Read [license decision](LICENSE-DECISION.md) before adding code or normative artifacts. Publication requires a fresh review; do not flip private history public.
 

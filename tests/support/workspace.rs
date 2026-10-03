@@ -65,7 +65,7 @@ pub fn member_dirs() -> Vec<PathBuf> {
 /// The source roots of every workspace member's shipped targets (`lib`,
 /// `proc-macro` and `bin`): the directory holding each target's root file,
 /// relative to the workspace root, sorted and deduplicated. The root crate
-/// gives `src` and `tools/fixture-audit`; `tools/arch-lint`, whose sources
+/// gives `src`; `tools/arch-lint`, whose sources
 /// sit beside its manifest, gives `tools/arch-lint`. Members whose directory
 /// is named in `excluded` are left out. Each root must exist.
 pub fn member_src_roots(excluded: &[&str]) -> Vec<PathBuf> {

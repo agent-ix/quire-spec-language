@@ -50,5 +50,4 @@ passing check.
 ## Verification language policy
 
 [NFR-005](NFR-005-rust-verification-paths.md) additionally requires Rust for owned
-verification logic. The previous native-runtime boundary is not an exemption
-for audit helpers.
+verification logic.

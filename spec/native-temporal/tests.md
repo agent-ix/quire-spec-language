@@ -99,7 +99,7 @@ diagnostic for any matrix, so the status check ran rather than being skipped.
 | FR-045 | FR-045-AC-5 | TC-125 | ✅ Tested |
 | FR-045 | FR-045-AC-6 | TC-125 | ✅ Tested and inspected; the retained selection has no public constructor, and the missing-binding and other-definition refusals are inspected |
 | FR-051 | FR-051-AC-1, FR-051-AC-2, FR-051-AC-3, FR-051-AC-4, FR-051-AC-5 (retired) | TC-139 | ⛔ Retired (M-6d); handoff modules and their tests deleted |
-| FR-051 | FR-051-AC-6 | TC-139 | 🚧 Planned: verified by `arch-lint direction` (FR-059) |
+| FR-051 | FR-051-AC-6 | TC-139 | ✅ Tested: `tools/arch-lint` `tc_arch_lint_metadata_010` runs the `arch-lint direction` (FR-059) check over QSL's own resolved graph |
 | FR-052 | FR-052-AC-1 through FR-052-AC-8 (retired) | TC-140 | ⛔ Retired (M-6d); `protocol_artifact::native_temporal` and `tests/it/native_temporal_owner.rs` deleted |
 | FR-053 | FR-053-AC-1 through FR-053-AC-6 (retired) | TC-141 | ⛔ Retired (M-6d), for the same reason as FR-052 |
 | NFR-008 | NFR-008-AC-1 | TC-124 | ✅ Tested |
@@ -130,7 +130,7 @@ groups 2 and 3. Illustrative EX IDs are not minted as acceptance criteria.
 | TC-123 | Activation dispositions and immutable captures | Integration | P1 | FR-044 | ✅ Tested |
 | TC-124 | Checked bounds, exhaustion and retained state | Property | P1 | NFR-008 | ✅ Tested |
 | TC-125 | Native-to-TL mapping support classification | Unit | P1 | FR-045 | ✅ Tested |
-| TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | 🚧 FR-051-AC-1–AC-5 steps retired (M-6d); FR-051-AC-6 planned over `arch-lint direction` |
+| TC-139 | Publish and read checked native handoffs | Integration | P0 | FR-051 | ✅ FR-051-AC-6 tested (`tc_arch_lint_metadata_010`); FR-051-AC-1–AC-5 steps retired (M-6d) |
 | TC-140 | Canonical native temporal request/result owner boundary | Integration | P0 | FR-052 | ⛔ Retired (M-6d); `tests/it/native_temporal_owner.rs` deleted |
 | TC-141 | Preserve opaque semantic-trigger identity through native temporal v2 | Integration | P0 | FR-053 | ⛔ Retired (M-6d), for the same reason as TC-140 |
 

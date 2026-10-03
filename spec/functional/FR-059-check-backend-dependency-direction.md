@@ -94,15 +94,3 @@ Specified and implemented under
 [#215](https://github.com/agent-ix/quire-spec-language/issues/215) as the
 `arch-lint direction` subcommand (`tools/arch-lint/graph.rs`,
 `tools/arch-lint/metadata.rs`).
-
-Remaining work (implementation A5, QSL-477): `tools/arch-lint` still has the
-`duplicate-revisions` subcommand (`duplicate_revisions.rs`, its `main.rs`
-entry and its `graph.rs` helpers) tracing the deleted FR-061 and TC-158, and
-the Makefile's `arch-lint-duplicate-revisions` target runs it in `make ci`.
-The subcommand, its traces and the target are deleted; `graph::classify`
-stays for this check.
-
-`arch-lint direction` also still compares each `--ir`/`--rt`/`--cg` clone's
-head with its remote `main` and prints every resolved revision, under the
-deleted FR-059-AC-7 (implementation A5, QSL-477). That comparison, its
-`--offline` switch and its traces are deleted.

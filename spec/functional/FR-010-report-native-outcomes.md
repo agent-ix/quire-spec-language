@@ -47,8 +47,8 @@ the `quire.source.bytes/v1` digest (QSpec STD-150).
 Native Diagnostic implements standard Display and Error,
 retaining its structured phase/code/source/path/span/message fields and existing
 code spellings. The Copy Code enum exposes as_str, all and from_code; unknown
-spellings return None. The repository owns a stable native-code catalog,
-separate from the fixture-audit catalog. The source labels are the members of
+spellings return None. The repository owns a stable native-code catalog.
+The source labels are the members of
 the source's `RawSourceRef` (FR-001), the reference the checked package's lock
 and source regions name the source by.
 

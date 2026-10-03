@@ -376,9 +376,7 @@ JSON grammar belongs to Serde; private typed/budget adapters own only this
 payload's fields and limits. Existing shared-reference consumption and the IR
 strict executable binder were inspected and remain under B/C ownership.
 
-The existing fixture-audit JSON visitor has a different numeric, node/depth and
-error contract; copying it would not establish these limits. The package's
-recognition adapter remains private and contains no application interpretation.
+The package's recognition adapter remains private and contains no application interpretation.
 Typed selectors stay strings until explicit selection, so a Deserialize enum
 cannot turn unknown_wire or unknown_profile into an accidental shape error.
 The serde_json dependency may enable unbounded_depth solely so this adapter's

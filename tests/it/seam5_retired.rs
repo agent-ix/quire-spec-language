@@ -67,8 +67,7 @@ fn no_source_or_build_input_file_references_the_retired_seam() {
     let names = banned_names();
     let mut offending = Vec::new();
     let mut scanned = 0_usize;
-    // The root crate's `src/`, `tests/`, `benches/`, `examples/` and
-    // `tools/fixture-audit/` (its second binary), and
+    // The root crate's `src/`, `tests/`, `benches/` and `examples/`, and
     // every other workspace member's whole directory, read from `cargo
     // metadata`, so a crate extracted later is covered
     // without an edit. `benches/` does not exist in this repository, and
@@ -80,16 +79,15 @@ fn no_source_or_build_input_file_references_the_retired_seam() {
         members.iter().any(|member| member.as_os_str().is_empty()),
         "cargo metadata lists no root crate: {members:?}"
     );
-    let roots: Vec<std::path::PathBuf> =
-        ["src", "tests", "benches", "examples", "tools/fixture-audit"]
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .chain(
-                members
-                    .into_iter()
-                    .filter(|member| !member.as_os_str().is_empty()),
-            )
-            .collect();
+    let roots: Vec<std::path::PathBuf> = ["src", "tests", "benches", "examples"]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .chain(
+            members
+                .into_iter()
+                .filter(|member| !member.as_os_str().is_empty()),
+        )
+        .collect();
     for root in &roots {
         let mut files = Vec::new();
         files_under(&manifest_dir.join(root), &mut files);
