@@ -15,8 +15,8 @@
 //! [`CatalogRole`] names the definition the QSL build implements for it, by
 //! authority and identity ([`CatalogRole::identity`]), and each role's
 //! package-selection rule is QSpec FR-001's. A definition is named by its
-//! identity alone, so the catalog holds no revision, no digest and no QSpec
-//! document. Admission recognizes a caller-supplied [`DefinitionReference`]
+//! authority and identity alone, so the catalog holds no revision, no digest
+//! and no QSpec document. Admission recognizes a caller-supplied [`DefinitionReference`]
 //! by authority and identity. The v2 emitter writes each row as the package
 //! lock's edition and definition selections ([`CatalogEntry::reference`]).
 //! `make conformance` compares the catalog and its selection rules with
@@ -265,8 +265,8 @@ impl CatalogRole {
 }
 
 /// A retained DefinitionRef as it appears in a checked package: QSpec's
-/// closed `{authority, identity}`. A definition is named by its identity
-/// alone. This is untrusted data; only admission turns it into authority.
+/// closed `{authority, identity}`, with no revision and no digest. This is
+/// untrusted data; only admission turns it into authority.
 #[derive(
     Clone, Debug, Deserialize, Eq, Serialize, FixedShape, Hash, Ord, PartialEq, PartialOrd,
 )]
