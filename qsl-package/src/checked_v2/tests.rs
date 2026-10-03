@@ -1565,6 +1565,7 @@ fn conformance_i2_read_over_qspec_checked_package_v2_fixtures() {
             "refused:digest_domain_mismatch" => CheckedPackageRefusalCode::DigestDomainMismatch,
             "refused:unsupported_node_tag" => CheckedPackageRefusalCode::UnsupportedNodeTag,
             "refused:invalid_semantic_graph" => CheckedPackageRefusalCode::InvalidSemanticGraph,
+            "refused:invalid_package" => CheckedPackageRefusalCode::InvalidPackage,
             other => panic!("{id}: unmapped adverse outcome {other}"),
         };
         let mut candidate = base.clone();
@@ -1637,7 +1638,7 @@ fn conformance_dependency_selection_vectors() {
     // vectors with supplied dependency packages.
     let unsupplied = |id: &str, outcome: &Read| match outcome {
         Read::Refused(refusal @ V2ReadRefusal::Envelope { refusal: ir, .. }) => {
-            assert_eq!(ir.code, CheckedPackageRefusalCode::MissingImport, "{id}");
+            assert_eq!(ir.code, CheckedPackageRefusalCode::MissingImport, "{id}: {ir:?}");
             assert!(
                 matches!(refusal.locus(), Some(Locus::Artifact { pointer, .. })
                     if pointer.as_str() == "/lock/dependency_selections/0"),
