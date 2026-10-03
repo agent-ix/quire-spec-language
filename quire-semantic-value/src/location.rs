@@ -253,11 +253,26 @@ impl Hash for Location {
     }
 }
 
+/// A total order that costs the same at any depth: by origin, then depth,
+/// then the path's fingerprint. It is not the order of the index sequences
+/// (a map keyed by location needs a deterministic order, not that one); two
+/// different paths of one depth whose fingerprints collide fall back to the
+/// sequences themselves.
 impl Ord for Location {
     fn cmp(&self, other: &Self) -> Ordering {
+        let fingerprint =
+            |location: &Self| location.tip.as_deref().map_or(0, |link| link.fingerprint);
         self.origin
             .cmp(&other.origin)
-            .then_with(|| self.path().cmp(&other.path()))
+            .then_with(|| self.depth().cmp(&other.depth()))
+            .then_with(|| fingerprint(self).cmp(&fingerprint(other)))
+            .then_with(|| {
+                if self.same_path(other) {
+                    Ordering::Equal
+                } else {
+                    self.path().cmp(&other.path())
+                }
+            })
     }
 }
 
@@ -300,10 +315,10 @@ mod tests {
         assert_eq!(parent.path(), vec![1]);
     }
 
-    /// Paths built apart compare, hash and order by their indices, not by
-    /// the chain they share.
+    /// Paths built apart compare and hash by their indices, not by the
+    /// chain they share, and order by depth first.
     #[test]
-    fn equal_paths_built_apart_are_equal_and_order_lexicographically() {
+    fn equal_paths_built_apart_are_equal_and_order_by_depth() {
         let left = Location::at(body(), &[0, 4, 1]);
         let right = Location::root(body()).child(0).child(4).child(1);
         assert!(!left.shares_chain_with(&right));
@@ -311,7 +326,9 @@ mod tests {
         assert_ne!(left, Location::at(body(), &[0, 4, 2]));
         assert_ne!(left, Location::at(body(), &[0, 4]));
         assert!(Location::at(body(), &[0, 4]) < left);
-        assert!(left < Location::at(body(), &[1]));
+        assert!(Location::at(body(), &[7]) < Location::at(body(), &[0, 4]));
+        assert_eq!(left.cmp(&right), Ordering::Equal);
+        assert_ne!(left.cmp(&Location::at(body(), &[0, 4, 2])), Ordering::Equal);
     }
 
     /// A chain a million links long is built, cloned, compared, formatted
