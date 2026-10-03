@@ -88,9 +88,9 @@ node, both defined below. `check` SHALL key a model-owned node by the
 
 A domain package selects one version of an identity per check (ADR-013 O-01,
 QSpec FR-321), so within one check the owner's (`identity`, `node`) names
-exactly one declaration. The selected version is lock evidence in
-`model_selections`, not owner content, so a version-only change of the
-domain package keys the same model-owned nodes, and a node id depends only
+exactly one declaration. The selected package's `sha256-jcs` digest is lock evidence in
+`model_selections`, not owner content, so a change of the domain package
+that leaves a node's content unchanged keys the same model-owned nodes, and a node id depends only
 on content (QSpec FR-322-AC-28).
 
 ### Model declaration nodes

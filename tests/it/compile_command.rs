@@ -722,7 +722,6 @@ fn a_complete_v1_request_with_a_domain_package_locks_its_model_selection() {
         .to_owned();
     let selection = json!([{
         "identity": "acme/orders",
-        "version": "1.0.0",
         "digest_domain": "sha256-jcs",
         "digest": selected,
     }]);

@@ -58,8 +58,8 @@ selects is a domain package
 document in format `semantic-ir/2.0.0`, read and handed
 to spine `compile` as FR-056's package input; the program's `model`
 declarations select from it by `sha256-jcs` digest, and the v2 lock's
-`model_selections` names each selected package by identity, version and that
-digest. A `1-draft` request may carry `libraries`: one
+`model_selections` names each selected package by identity and that
+digest, with no version. A `1-draft` request may carry `libraries`: one
 `{identity, source}` object per supplied library, where `source` is
 the same source selection a model or the program uses (file and the FR-001
 labels). The command hands
@@ -116,7 +116,7 @@ typed failure without a successful artifact.
 | FR-027-AC-6 | A program source declaring `edition "0-draft"` compiles through native compile, and its bytes equal the native static pipeline's (FR-027-AC-1). | Test (TC-435) |
 | FR-027-AC-7 | A program source declaring any other edition refuses with `unknown_edition`, exit 20, empty stdout, and a message naming the file and the edition. A `1-draft` request selecting native rule models or clause bindings refuses with `invalid-request`, exit 20, whatever state the model files are in. | Test (TC-435) |
 | FR-027-AC-8 | A `1-draft` source each spine stage refuses (`source`, `forms`, `assembly`, `check`, `emit`) exits with that stage's cause code and reports the stage, with empty stdout. | Test (TC-435) |
-| FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, version, `sha256-jcs` and digest, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
+| FR-027-AC-9 | A `1-draft` request selecting a `semantic-ir/2.0.0` domain package document whose program declares `model M` by that document's `sha256-jcs` digest writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and package input. Their lock and identity preimage `model_selections` hold that package's identity, `digest_domain` (`sha256-jcs`) and digest, and no version, and QSL's I2 reader, given that digest as domain package evidence, reads them back Verified. `M::Nope` refuses at stage `assembly` (`missing_declaration`) at `M::Nope`; a missing or different document and a `sha256:` digest refuse at stage `intake` at the `model` declaration. | Test (TC-442) |
 | FR-027-AC-10 | A `1-draft` request whose program imports `test/geometry` and whose `libraries` supplies it by file, source digest and labels writes exactly the bytes `qsl_replay::spine::compile` returns over the same source and dependency input, exit 0. A `0-draft` request carrying a library, and a library with an empty identity or version, refuse with `invalid-request`, exit 20, empty stdout. | Test (TC-446) |
 | FR-027-AC-11 | For FR-027-AC-5's, AC-9's and AC-10's requests, the bytes the command writes equal the `package` output of `parse`, `select`, `check` and `package` composed over the same source, domain packages and libraries; for FR-027-AC-8's sources, the refusing operation's stage and cause code equal the command's, and its FR-285 exit code equals the command's exit status. | Test (TC-785) |
 

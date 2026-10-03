@@ -2303,7 +2303,6 @@ fn a_model_bearing_unit_emits_its_model_selection_and_reads_back_verified() {
     let (emission, wire, digest, read) = emit_model_unit(&unit, None);
     let selection = json!([{
         "identity": "acme/orders",
-        "version": "1.0.0",
         "digest_domain": "sha256-jcs",
         "digest": digest,
     }]);
@@ -2658,14 +2657,13 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
     let emission = emit(&linked_root);
     read_linked(&linked_root);
     let written = wire(&emission);
-    let entry = |identity: &str, version: &str| {
+    let entry = |identity: &str| {
         json!({
             "identity": identity,
-            "version": version,
             "package_id": {"domain": PACKAGE_DOMAIN_V2, "algorithm": "sha256", "digest": d.hex()},
         })
     };
-    let expected = json!([entry("test/geometry", "1"), entry("test/units", "2")]);
+    let expected = json!([entry("test/geometry"), entry("test/units")]);
     assert_eq!(written["lock"]["dependency_selections"], expected);
     assert_eq!(
         written["identity_preimage"]["dependency_selections"],

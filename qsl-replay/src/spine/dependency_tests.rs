@@ -138,7 +138,6 @@ fn an_import_binds_the_library_compiled_from_source() {
     let written = wire(&compiled);
     let expected = serde_json::json!([{
         "identity": "test/geometry",
-        "version": "1",
         "package_id": {
             "domain": "quire.package.semantic/v2",
             "algorithm": "sha256",

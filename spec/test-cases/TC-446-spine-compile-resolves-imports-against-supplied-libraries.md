@@ -74,7 +74,7 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 ## Expected Results
 
 - Step 1: the lock and the identity preimage each hold the one
-  `DependencySelection` `{test/geometry, 1, d}`; the I2 read admits it;
+  `DependencySelection` `{test/geometry, d}`; the I2 read admits it;
   both compiles emit identical bytes.
 - Step 2: `invalid-digest` at S1 at the digest string, four times; then
   `DependencyIdentityMismatch` (`stale_dependency`/`byte-digest-mismatch`)
